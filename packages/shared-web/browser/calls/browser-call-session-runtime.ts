@@ -13,7 +13,7 @@ import type {
     RallarTargetSelector
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade, RallarWaitForOpenOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
 
 export namespace BrowserCallSessionRuntime {
     export interface Input extends BrowserCallMediaRuntime.Input {

@@ -1,10 +1,11 @@
 import { dirname } from 'node:path';
 
-import type { ClientInfo } from '@shared/api/api-config.ts';
+import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
+import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
-import { WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
 
 import {
     parseRtcBaselineAcceptedWorker,
@@ -81,10 +82,11 @@ export async function runWebRtcGroupManagerPeerOwners(
 ): Promise<WebRtcGroupManagerPeerOwnersResult> {
     const groupCache = new LatestRepository<string, GroupSnapshot>();
     const clientCache = new LatestRepository<string, ClientInfo>();
+    const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
     const connectionService = createSimulatedConnectionService('self');
     const manager = new WebRtcGroupManager(
         connectionService,
-        { groupCache, clientCache }
+        { groupCache, clientCache, acceptedOverlayCache }
     );
 
     for (let groupIndex = 0; groupIndex < input.groups; groupIndex += 1) {
@@ -93,6 +95,10 @@ export async function runWebRtcGroupManagerPeerOwners(
             return peerId;
         });
         const group = createGroupSnapshot(`group-${groupIndex}`, 1, ['self', ...peerIds]);
+        acceptedOverlayCache.set(
+            toScopedOverlayId(group.group),
+            createAcceptedOverlay(group, peerIds)
+        );
 
         await manager.getOrCreate(group.group).acceptGroupUpdate(group);
     }
@@ -108,7 +114,7 @@ export async function runWebRtcGroupManagerPeerOwners(
     for (const peerId of lookupPeerIds) {
         const ownerGroups = manager.ownerGroupsOfPeer(peerId);
         totalOwnerGroups += ownerGroups.length;
-        if (manager.isPeerOwnedByAnyGroup(peerId)) {
+        if (manager.isPeerDialAllowedByAnyGroup(peerId)) {
             ownedLookups += 1;
         }
     }
@@ -121,6 +127,27 @@ export async function runWebRtcGroupManagerPeerOwners(
         ownedLookups,
         totalOwnerGroups,
         desiredPeerCount: manager.state().desiredPeerIds.length
+    };
+}
+
+function createAcceptedOverlay(
+    group: GroupSnapshot,
+    nextHopSessionIds: readonly string[]
+): OverlayInfo {
+    return {
+        sourceGroupStateCausalRevision: group.causalRevision,
+        provenance: 'server',
+        state: 'active',
+        overlayId: toScopedOverlayId(group.group),
+        groupRef: group.group,
+        topology: 'tree',
+        name: group.group.displayName,
+        createdByClientId: 'server',
+        createdAtEpochMs: 1,
+        nextHopSessionIds,
+        degreeLimit: Math.max(1, nextHopSessionIds.length),
+        overlayVersion: 1,
+        updatedAtEpochMs: 1
     };
 }
 
@@ -211,7 +238,7 @@ function createGroupSnapshotGroup(
         snapshotVersion: membershipVersion,
         metadataVersion: 0,
         rosterVersion: membershipVersion,
-        presenceVersion: 0,
+        presenceVersion: membershipVersion,
         created: {
             atEpochMs: 1,
             actor: { kind: 'principal', principalId: 'creator' },
@@ -234,8 +261,13 @@ function createGroupSnapshotGroup(
         formationAttemptCount: 0,
         lastFormationOutcome: null,
         establishmentStartedAtEpochMs: null,
-        formationElectorate: [],
-        acceptedLayoutIdentity: null,
+        formationElectorate: [...memberSessionIds],
+        acceptedLayoutIdentity: {
+            groupRevision: membershipVersion,
+            presenceRevision: membershipVersion,
+            version: 1,
+            state: 'active'
+        },
         transportState: 'flowing'
     };
 }
@@ -250,7 +282,7 @@ function createGroupSnapshotMembers(
         workspaceId: 'workspace-1',
         groupId,
         principalId: sessionId,
-        role: 'member',
+        role: sessionId === memberSessionIds[0] ? 'owner' : 'member',
         status: 'active',
         joined: {
             atEpochMs: 1,
@@ -288,7 +320,7 @@ function createGroupSnapshotSessions(
         generationId: `generation-${sessionId}`,
         generationVersion: membershipVersion,
         status: 'active',
-        connectedAtEpochMs: 1,
+        connectedAtEpochMs: membershipVersion,
         lastHeartbeatAtEpochMs: membershipVersion,
         expiresAtEpochMs: membershipVersion + 60_000,
         disconnectedAtEpochMs: null,

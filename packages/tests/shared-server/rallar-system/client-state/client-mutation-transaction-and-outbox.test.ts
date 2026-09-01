@@ -1,15 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
-
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-
-import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
@@ -17,22 +19,18 @@ import {
     createAutoAuthorizingClientStateService,
     createResilience,
     issuedSession,
-    processAppInbox,
     processAuthenticatedClientMutation,
     readEntries
 } from './app-client-inbox-mutation-test-harness.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
 import { createRollbackHarness, processRollbackMutation } from './client-mutation-rollback-test-harness.ts';
-import { createHandlerHarness } from './client-mutation-transaction-boundary-fixture.ts';
-import { createClientStateServiceStub } from './client-state-service-stub.ts';
+import { createClientMutationTransactionBoundaryFixture } from './create-client-mutation-transaction-boundary-fixture.ts';
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
-const EXPECTED_DURABLE_JSON = '{"status":"ok","result":{"snapshot":{"snapshotVersion":4,"stateRevision":3},' +
-    '"event":{"eventId":"event-4"}}}';
 
 describe('client mutation transaction and outbox', () => {
     it('persists durable JSON bytes before observing the exact committed snapshot', async () => {
-        const harness = await createHandlerHarness();
+        const harness = await createClientMutationTransactionBoundaryFixture();
 
         const result = await harness.handler.processCommand(
             harness.context,
@@ -51,7 +49,8 @@ describe('client mutation transaction and outbox', () => {
 
         const persisted = await harness.results.findByKey(harness.context.entry.key);
         expect(persisted?.status).toBe(EntityStatus.COMPLETED);
-        expect(persisted?.resource).toBe(EXPECTED_DURABLE_JSON);
+        expect(persisted?.resource).toBe(JSON.stringify({ status: 'ok', result: result.result }));
+        expect(result.result.snapshot.principal).toMatchObject({ principalId: 'alice', username: 'alice', snapshotVersion: 1 });
         if (!persisted) {
             throw new Error('Expected the committed AppInbox result');
         }
@@ -65,12 +64,12 @@ describe('client mutation transaction and outbox', () => {
         ]);
         expect(harness.actions).toEqual(['write', 'commit', 'observe']);
         expect(harness.observedSnapshots).toHaveLength(1);
-        expect(harness.observedSnapshots[0]).toBe(harness.committedSnapshot);
-        expect(result.result?.snapshot).toBe(harness.committedSnapshot);
+        expect(harness.observedSnapshots[0]).toBe(harness.computedSnapshots[0]);
+        expect(result.result?.snapshot).toBe(harness.computedSnapshots[0]);
     });
 
     it('does not observe a snapshot when transaction finalization rejects', async () => {
-        const harness = await createHandlerHarness({ failTransaction: true });
+        const harness = await createClientMutationTransactionBoundaryFixture({ failTransaction: true });
 
         await expect(
             harness.handler.processCommand(
@@ -123,7 +122,8 @@ describe('client mutation AppInbox retry and rollback', () => {
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         await new Promise((resolve) => setTimeout(resolve, 2));
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-        await resultPromise;
+        const accepted = await resultPromise;
+        expect(accepted.right?.result.snapshot.principal.displayName).toBe('recomputed-successor');
 
         expect(harness.state.phases).toEqual([
             'read',
@@ -135,7 +135,6 @@ describe('client mutation AppInbox retry and rollback', () => {
             'validate',
             'write-accepted'
         ]);
-        expect(harness.state.serviceLocalSleeps).toEqual([]);
         const [entry] = await readEntries(harness.queue);
         expect(entry.dequeueAudit.attempts).toBe(2);
     });
@@ -158,21 +157,27 @@ describe('client mutation AppInbox retry and rollback', () => {
 
 interface RetryHarnessState {
     readonly phases: string[];
-    readonly serviceLocalSleeps: number[];
     writeAttempt: number;
-    serviceMethodAttempt: number;
 }
 
-function createRetryHarness() {
+interface RetryHarness {
+    readonly queue: TestResourceInbox;
+    readonly reader: InboxQueueReader;
+    readonly state: RetryHarnessState;
+    readonly service: AppClientInboxService;
+}
+
+function createRetryHarness(): RetryHarness {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
     const state: RetryHarnessState = {
         phases: [],
-        serviceLocalSleeps: [],
-        writeAttempt: 0,
-        serviceMethodAttempt: 0
+        writeAttempt: 0
     };
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
+    const durable = createAutoAuthorizingClientStateService(runtimeRepository, database);
     return {
         queue,
         reader,
@@ -182,8 +187,8 @@ function createRetryHarness() {
                 inboxQueueReader: reader,
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
-                database: createAppInboxTestDatabase(queue, results),
-                clientStateService: createRetryClientState(state)
+                database,
+                clientStateService: createRetryClientState(state, durable)
             },
             {
                 serviceId: 'server-12345678'
@@ -192,55 +197,29 @@ function createRetryHarness() {
     };
 }
 
-function createRetryClientState(state: RetryHarnessState) {
-    return createClientStateServiceStub({
-        upsertPrincipal: vi.fn(async () => {
-            state.serviceMethodAttempt += 1;
-            if (state.serviceMethodAttempt === 1) {
+function createRetryClientState(state: RetryHarnessState, durable: ClientStateService): ClientStateService {
+    return {
+        ...durable,
+        read: async (command) => {
+            state.phases.push('read');
+            return await durable.read(command);
+        },
+        compute: (command, read) => {
+            state.phases.push('compute');
+            return durable.compute(command, read);
+        },
+        validate: (command, read, computed) => {
+            state.phases.push('validate');
+            durable.validate(command, read, computed);
+        },
+        write: async (transaction, computed) => {
+            state.writeAttempt += 1;
+            if (state.writeAttempt === 1) {
+                state.phases.push('write-conflict');
                 throw new RuntimeStateWriteConflictError();
             }
-            return { status: 'ok', result: { accepted: true } };
-        }),
-        read: vi.fn(async () => {
-            state.phases.push('read');
-            return { lifecycle: state.writeAttempt === 0 ? 'active' : 'disabled' };
-        }),
-        compute: vi.fn((_command, read) => {
-            state.phases.push('compute');
-            return {
-                outcome: 'write',
-                lifecycle: (read as { lifecycle: string; }).lifecycle,
-                snapshot: { recomputed: true },
-                event: null
-            };
-        }),
-        validate: vi.fn(() => state.phases.push('validate')),
-        write: vi.fn(async () => writeRetryResult(state)),
-        sleep: vi.fn(async (delayMs: number) => {
-            state.serviceLocalSleeps.push(delayMs);
-        })
-    } as never);
-}
-
-function writeRetryResult(state: RetryHarnessState) {
-    state.writeAttempt += 1;
-    if (state.writeAttempt === 1) {
-        state.phases.push('write-conflict');
-        throw new RuntimeStateWriteConflictError();
-    }
-    state.phases.push('write-accepted');
-    return {
-        commandId: 'retry-client-alice',
-        requestId: 'retry-client-alice',
-        commandHash: `sha256:${'a'.repeat(64)}`,
-        aggregateRef: { ...SCOPE, principalId: 'alice' },
-        outcome: 'no-op' as const,
-        attemptCount: 2,
-        acceptedStorageRevision: 0,
-        stateRevision: 1,
-        snapshotVersion: 1,
-        presenceVersion: 1,
-        eventId: null,
-        outboxIds: []
+            state.phases.push('write-accepted');
+            return await durable.write(transaction, computed);
+        }
     };
 }

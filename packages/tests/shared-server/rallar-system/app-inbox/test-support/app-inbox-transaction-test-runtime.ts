@@ -1,7 +1,14 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+
+import type {
+    PSqlParameter,
+    PSqlRows,
+    PSqlSql
+} from '@shared-server/postgres/p-sql-sql.ts';
+import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '@shared-server/rallar-system/app-inbox/app-inbox-persistence-ports.ts';
 import type { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
@@ -11,10 +18,10 @@ import type { AppInboxHandlerRegistration } from '@shared-server/rallar-system/a
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-runtime.ts';
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
-import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
-
-import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Reservator } from '@shared/queuebox/DequeueController.ts';
 import {
@@ -23,14 +30,21 @@ import {
     type ResourceInboxRetryExhaustionRecovery
 } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus, isExpiredResourceEntry, toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    isExpiredResourceEntry,
+    toKeyAsString,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import type { Either } from '@shared/resilience/Either.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 
 const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
-
-type PSqlValues = Parameters<PSqlSql>[0];
 
 interface RegisteredHandlerHarness {
     readonly enqueue: AppInboxMessageContext<JsonWireValue>['enqueue'];
@@ -69,19 +83,21 @@ interface AtomicResultRow {
     readonly expire_ts: string;
 }
 
-interface AtomicAppInboxDependencies {
-    readonly inboxQueueReader: InboxQueueReader;
-    readonly resourceInboxRepository: AppInboxEntryRepository;
-    readonly resourceInboxResultsRepository: AppInboxResultRepository;
-    readonly database: PSqlSql;
-}
+namespace AtomicAppInboxService {
+    export interface Dependencies {
+        readonly inboxQueueReader: InboxQueueReader;
+        readonly resourceInboxRepository: AppInboxEntryRepository;
+        readonly resourceInboxResultsRepository: AppInboxResultRepository;
+        readonly database: PSqlSql;
+    }
 
-interface AtomicAppInboxConfig {
-    readonly serviceId: string;
-    readonly defaultTopicId: string;
-    readonly timing?: RallarTimingSink;
-    readonly options?: AppInboxOptions;
-    readonly wakeOwningQueue?: () => void;
+    export interface Config {
+        readonly serviceId: string;
+        readonly defaultTopicId: string;
+        readonly timing?: RallarTimingSink;
+        readonly options?: AppInboxOptions;
+        readonly wakeOwningQueue?: () => void;
+    }
 }
 
 class AtomicAppInboxService {
@@ -91,8 +107,8 @@ class AtomicAppInboxService {
     private readonly transactionWriter: AppInboxTransactionWriter;
 
     constructor(
-        dependencies: AtomicAppInboxDependencies,
-        config: AtomicAppInboxConfig
+        dependencies: AtomicAppInboxService.Dependencies,
+        config: AtomicAppInboxService.Config
     ) {
         const clientRuntime = createAppInboxClientRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
@@ -156,12 +172,13 @@ class AtomicAppInboxService {
 
     enqueueAndWait(
         input: AppInboxEnqueueInput
-    ) {
+    ): Promise<Either<AppInboxFailure, JsonWireValue>> {
         return this.commandClient.enqueueAndWait(input);
     }
 
     enqueueWithoutWaiting(input: AppInboxMessageContext<JsonWireValue>['enqueue']): void {
-        void this.queueEntryWriter.enqueue(input).catch((error) => {
+        void this.queueEntryWriter.enqueue(input).catch((caught) => {
+            const error = toError(caught);
             console.error('Error enqueueing test AppInbox command without waiting', error);
         });
     }
@@ -246,12 +263,14 @@ class RegisteredHandlerResults {
     }
 }
 
+interface RegisteredHandlerOptions {
+    readonly failResultWriteAfter?: number;
+    readonly timing?: RallarTimingSink;
+    readonly topicId?: string;
+}
+
 export function createRegisteredHandlerHarness(
-    options: Readonly<{
-        failResultWriteAfter?: number;
-        timing?: (event: RallarTimingEvent) => void;
-        topicId?: string;
-    }> = {}
+    options: RegisteredHandlerOptions = {}
 ): RegisteredHandlerHarness {
     const queue = new RegisteredHandlerInbox();
     const results = new RegisteredHandlerResults(options.failResultWriteAfter);
@@ -276,9 +295,21 @@ export function createRegisteredHandlerHarness(
             }
         }
     );
-    const enqueue = {
+    const enqueue = createRegisteredHandlerCommand(options.topicId);
+    return {
+        enqueue,
+        queue,
+        readEntry: async () => await queue.readLatest(),
+        reader,
+        results,
+        service
+    };
+}
+
+function createRegisteredHandlerCommand(topicId?: string): AppInboxEnqueueInput {
+    return {
         type: AppInboxType.GROUP_CREATE,
-        topicId: options.topicId ?? 'app-inbox.group-state',
+        topicId: topicId ?? 'app-inbox.group-state',
         resourceId: 'registered-handler-request',
         contextId: 'group-1',
         authority: {
@@ -309,14 +340,6 @@ export function createRegisteredHandlerHarness(
             }
         },
         data: { requestId: 'registered-handler-request' }
-    } as const;
-    return {
-        enqueue,
-        queue,
-        readEntry: async () => await queue.readLatest(),
-        reader,
-        results,
-        service
     };
 }
 
@@ -333,35 +356,44 @@ export async function waitForRegisteredHandlerEntry(
     throw new Error('Expected registered handler entry');
 }
 
+interface RegisteredHandlerOperationIdentity {
+    readonly kind: 'operation';
+    readonly type: string;
+}
+
+interface RegisteredHandlerIdentity {
+    readonly outerType: string;
+    readonly nested:
+        | RegisteredHandlerOperationIdentity
+        | { readonly kind: 'missing'; }
+        | { readonly kind: 'corrupt'; };
+}
+
 export function toRegisteredHandlerIdentityResource(
     entry: ResourceEntry,
-    identity: Readonly<{
-        outerType: string;
-        nested:
-            | Readonly<{ kind: 'operation'; type: string; }>
-            | Readonly<{ kind: 'missing'; }>
-            | Readonly<{ kind: 'corrupt'; }>;
-    }>
+    identity: RegisteredHandlerIdentity
 ): string {
-    const message = JSON.parse(entry.resource) as {
-        payload: { typeId: string; resource: string; };
-    };
-    message.payload.typeId = identity.outerType;
-    if (identity.nested.kind === 'corrupt') {
-        message.payload.resource = '{"secret":"nested-password"';
-        return JSON.stringify(message);
+    const message = decodePersistedALMessage(entry.resource);
+    const command = decodeAppInboxEnqueue(JSON.parse(message.payload.resource));
+    const { type: _type, ...withoutType } = command;
+    const resource = identity.nested.kind === 'corrupt'
+        ? '{"secret":"nested-password"'
+        : JSON.stringify(
+            identity.nested.kind === 'missing'
+                ? withoutType
+                : { ...command, type: identity.nested.type }
+        );
+    return JSON.stringify({
+        ...message,
+        payload: { ...message.payload, typeId: identity.outerType, resource }
+    });
+}
+
+namespace AtomicDatabase {
+    export interface Options {
+        readonly failResultWrite: boolean;
+        readonly loseReservation: boolean;
     }
-    const nestedCommand = JSON.parse(message.payload.resource) as {
-        type?: string;
-    };
-    if (identity.nested.kind === 'missing') {
-        delete nestedCommand.type;
-    }
-    else {
-        nestedCommand.type = identity.nested.type;
-    }
-    message.payload.resource = JSON.stringify(nestedCommand);
-    return JSON.stringify(message);
 }
 
 class AtomicDatabase {
@@ -373,17 +405,11 @@ class AtomicDatabase {
 
     readonly sql: PSqlSql;
 
-    private readonly options: Readonly<{
-        failResultWrite: boolean;
-        loseReservation: boolean;
-    }>;
+    private readonly options: AtomicDatabase.Options;
 
     constructor(
         entry: ResourceEntry,
-        options: Readonly<{
-            failResultWrite: boolean;
-            loseReservation: boolean;
-        }>
+        options: AtomicDatabase.Options
     ) {
         this.options = options;
         this.loseReservation = options.loseReservation;
@@ -393,71 +419,97 @@ class AtomicDatabase {
             inbox: new Map([[toKeyAsString(entry.key), entry]]),
             results: new Map()
         };
-        const sql = (async (_stringsOrValues: TemplateStringsArray | PSqlValues) => {
-            throw new Error('Unexpected raw SQL in atomic test database');
-        }) as PSqlSql;
-        sql.begin = async <T>(write: (transaction: PSqlSql) => Promise<T>) => {
-            this.beginCalls += 1;
-            const transaction = (async (strings: TemplateStringsArray, ...values: PSqlValues) => {
-                const query = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
-                if (query.includes('insert into resource_inbox_results')) {
-                    if (this.options.failResultWrite) {
-                        throw new Error('result write failed');
-                    }
-                    const result = toAtomicResultEntry(values);
-                    this.requireWorking().results.set(toKeyAsString(result.key), result);
-                    return [toAtomicResultRow(result)];
-                }
-                if (query.includes('update resource_inbox') && query.includes('ri_status = \'reserved\'')) {
-                    const [status, completedAt, topicId, resourceId, contextId, attempts] = values as [
-                        EntityStatus,
-                        Date,
-                        string,
-                        string,
-                        string,
-                        number
-                    ];
-                    if (this.loseReservation) {
-                        return [];
-                    }
-                    const key = toKeyAsString({ topicId, resourceId, contextId });
-                    const stored = this.requireWorking().inbox.get(key);
-                    if (
-                        !stored ||
-                        stored.status !== EntityStatus.RESERVED ||
-                        stored.dequeueAudit.attempts !== attempts
-                    ) {
-                        return [];
-                    }
-                    this.requireWorking().inbox.set(key, {
-                        ...stored,
-                        status,
-                        dequeueAudit: {
-                            ...stored.dequeueAudit,
-                            endTs: Temporal.Instant.fromEpochMilliseconds(completedAt.getTime()),
-                            nextTs: undefined
-                        }
-                    });
-                    return [{ ri_row_id: 1n }];
-                }
-                throw new Error(`Unexpected raw transaction SQL in atomic test database: ${query}`);
-            }) as PSqlSql;
-            transaction.begin = async () => {
-                throw new Error('Nested transaction');
-            };
-            this.activeTransaction = transaction;
-            this.working = cloneState(this.state);
-            try {
-                const result = await write(transaction);
-                this.state = this.working;
-                return result;
+        this.sql = this.createSql(false);
+    }
+
+    private createSql(transactional: boolean): PSqlSql {
+        const execute = (strings: TemplateStringsArray, values: readonly PSqlParameter[]): PSqlRows => {
+            if (!transactional) {
+                throw new Error('Unexpected raw SQL in atomic test database');
             }
-            finally {
-                this.activeTransaction = undefined;
-                this.working = undefined;
-            }
+            return this.executeSql(strings, values);
         };
-        this.sql = sql;
+        function sql(values: readonly PSqlParameter[]): object;
+        function sql<Result>(strings: TemplateStringsArray, ...values: readonly PSqlParameter[]): Promise<Result>;
+        function sql<Result>(
+            stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+            ...values: readonly PSqlParameter[]
+        ): object | Promise<Result> {
+            if (!('raw' in stringsOrValues)) {
+                return { values: stringsOrValues };
+            }
+            // The generic row result belongs to the native SQL query boundary.
+            return Promise.resolve().then(() => execute(stringsOrValues, values) as Result);
+        }
+        return Object.assign(sql, {
+            begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
+                if (transactional) {
+                    throw new Error('Nested transaction');
+                }
+                return await this.withTransaction(write);
+            }
+        });
+    }
+
+    private async withTransaction<T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> {
+        this.beginCalls += 1;
+        const transaction = this.createSql(true);
+        this.activeTransaction = transaction;
+        this.working = cloneState(this.state);
+        try {
+            const result = await write(transaction);
+            this.state = this.working;
+            return result;
+        }
+        finally {
+            this.activeTransaction = undefined;
+            this.working = undefined;
+        }
+    }
+
+    private executeSql(strings: TemplateStringsArray, values: readonly PSqlParameter[]): PSqlRows {
+        const query = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
+        if (query.includes('insert into resource_inbox_results')) {
+            if (this.options.failResultWrite) {
+                throw new Error('result write failed');
+            }
+            const result = toAtomicResultEntry(values);
+            this.requireWorking().results.set(toKeyAsString(result.key), result);
+            return [toAtomicResultRow(result)];
+        }
+        if (query.includes('update resource_inbox') && query.includes('ri_status = \'reserved\'')) {
+            return this.finalizeReservation(values);
+        }
+        throw new Error(`Unexpected raw transaction SQL in atomic test database: ${query}`);
+    }
+
+    private finalizeReservation(values: readonly PSqlParameter[]): PSqlRows {
+        const [status, completedAt, topicId, resourceId, contextId, attempts] = values;
+        if (
+            (status !== EntityStatus.COMPLETED && status !== EntityStatus.FAILED) ||
+            !(completedAt instanceof Date) || typeof topicId !== 'string' ||
+            typeof resourceId !== 'string' || typeof contextId !== 'string' || typeof attempts !== 'number'
+        ) {
+            throw new TypeError('Invalid atomic reservation SQL parameters');
+        }
+        if (this.loseReservation) {
+            return [];
+        }
+        const key = toKeyAsString({ topicId, resourceId, contextId });
+        const stored = this.requireWorking().inbox.get(key);
+        if (!stored || stored.status !== EntityStatus.RESERVED || stored.dequeueAudit.attempts !== attempts) {
+            return [];
+        }
+        this.requireWorking().inbox.set(key, {
+            ...stored,
+            status,
+            dequeueAudit: {
+                ...stored.dequeueAudit,
+                endTs: Temporal.Instant.fromEpochMilliseconds(completedAt.getTime()),
+                nextTs: undefined
+            }
+        });
+        return [{ ri_row_id: 1n }];
     }
 
     writeMutation(key: string, value: JsonWireValue): void {
@@ -494,15 +546,17 @@ class AtomicDatabase {
     }
 }
 
+interface AtomicHarnessOptions {
+    readonly attempts?: number;
+    readonly entryResource?: string;
+    readonly entryTopicId?: string;
+    readonly failResultWrite?: boolean;
+    readonly loseReservation?: boolean;
+    readonly timing?: RallarTimingSink;
+}
+
 export function createAtomicHarness(
-    options: Readonly<{
-        attempts?: number;
-        entryResource?: string;
-        entryTopicId?: string;
-        failResultWrite?: boolean;
-        loseReservation?: boolean;
-        timing?: (event: RallarTimingEvent) => void;
-    }> = {}
+    options: AtomicHarnessOptions = {}
 ): AtomicHarness {
     const baseEntry = createReservedEntry(options.attempts ?? 7);
     const entry = {
@@ -517,6 +571,7 @@ export function createAtomicHarness(
         failResultWrite: options.failResultWrite ?? false,
         loseReservation: options.loseReservation ?? false
     });
+
     const queue = new RegisteredHandlerInbox();
     const reader = new InboxQueueReader(queue);
     const results = new RegisteredHandlerResults();
@@ -537,12 +592,13 @@ export function createAtomicHarness(
             }
         }
     );
-    const enqueue = {
+
+    const enqueue: AppInboxEnqueueInput = {
         type: AppInboxType.GROUP_CREATE,
         resourceId: entry.key.resourceId,
         contextId: entry.key.contextId,
         data: { requestId: entry.key.resourceId }
-    } as const;
+    };
     const context: AppInboxMessageContext<JsonWireValue> = {
         enqueue,
         message: newALUntargetedMessage(
@@ -557,7 +613,7 @@ export function createAtomicHarness(
     return { context, database, entry, service };
 }
 
-function toAtomicResultEntry(values: PSqlValues): ResourceEntry {
+function toAtomicResultEntry(values: readonly PSqlParameter[]): ResourceEntry {
     const [
         resourceId,
         topicId,
@@ -570,18 +626,26 @@ function toAtomicResultEntry(values: PSqlValues): ResourceEntry {
         createdTs,
         expiryTs
     ] = values;
+    if (
+        typeof resourceId !== 'string' || typeof topicId !== 'string' || typeof contextId !== 'string' ||
+        typeof resource !== 'string' || typeof typeId !== 'string' || typeof createdBy !== 'string' ||
+        typeof createdTs !== 'string' || typeof expiryTs !== 'string' ||
+        (status !== EntityStatus.COMPLETED && status !== EntityStatus.FAILED)
+    ) {
+        throw new TypeError('Invalid atomic result SQL parameters');
+    }
     return {
-        key: { resourceId, topicId, contextId } as Key,
-        resource: resource as string,
-        typeId: typeId as string,
-        status: status as EntityStatus,
+        key: { resourceId, topicId, contextId },
+        resource: resource,
+        typeId: typeId,
+        status: status,
         audit: {
             date: Temporal.PlainTime.from('00:00:00'),
-            createdBy: createdBy as string,
+            createdBy: createdBy,
             createdTs: Temporal.PlainDateTime.from(String(createdTs).replace(/Z$/u, '')),
             expiryTs: String(expiryTs).endsWith('Z')
-                ? Temporal.Instant.from(expiryTs as string)
-                : Temporal.PlainDateTime.from(expiryTs as string)
+                ? Temporal.Instant.from(expiryTs)
+                : Temporal.PlainDateTime.from(expiryTs)
                     .toZonedDateTime('UTC')
                     .toInstant()
         },
@@ -606,7 +670,7 @@ function toAtomicResultRow(entry: ResourceEntry): AtomicResultRow {
 }
 
 function createReservedEntry(attempts: number): ResourceEntry {
-    const enqueue = {
+    const enqueue: AppInboxEnqueueInput = {
         type: AppInboxType.GROUP_CREATE,
         resourceId: 'request-1',
         contextId: 'group-1',
@@ -639,11 +703,13 @@ function createReservedEntry(attempts: number): ResourceEntry {
     };
 }
 
+interface PersistedAppInboxResourceOptions {
+    readonly outerType?: string;
+    readonly nestedType?: string;
+}
+
 export function toPersistedAppInboxResource(
-    options: Readonly<{
-        outerType?: string;
-        nestedType?: string;
-    }>
+    options: PersistedAppInboxResourceOptions
 ): string {
     const command = options.nestedType === undefined
         ? { data: { secret: 'nested-password' } }

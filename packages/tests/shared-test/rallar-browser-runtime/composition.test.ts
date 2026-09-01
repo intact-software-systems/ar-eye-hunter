@@ -1,9 +1,9 @@
-import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import {
     createBlackBoxRallarRuntime,
-    installBlackBoxRallarRuntime
+    installBlackBoxRallarRuntime,
+    type BlackBoxRallarRuntimeInstallationTarget
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
-import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
 import {
     afterEach,
     beforeEach,
@@ -12,10 +12,6 @@ import {
     vi
 } from 'vitest';
 import { facade, resetFacade } from './browser-rallar-runtime-test-harness.ts';
-
-interface RuntimeInstallWindow extends Window {
-    __blackBoxRallar?: BlackBoxRallarRuntime;
-}
 
 beforeEach(() => {
     resetFacade();
@@ -26,7 +22,7 @@ afterEach(() => {
 });
 
 it('installs the composed runtime on the target browser window', () => {
-    const targetWindow = {} as RuntimeInstallWindow;
+    const targetWindow: BlackBoxRallarRuntimeInstallationTarget = {};
 
     const runtime = installBlackBoxRallarRuntime(targetWindow);
 
@@ -35,11 +31,11 @@ it('installs the composed runtime on the target browser window', () => {
 
 it('creates an injectable runtime without installing a browser global', async () => {
     const factoryEvents: BlackBoxRallarEvent[] = [];
-    const targetWindow = {
+    const targetWindow: BlackBoxRallarRuntimeInstallationTarget = {
         __blackBoxRallarEmit: (event: BlackBoxRallarEvent) => {
             factoryEvents.push(event);
         }
-    } as Window;
+    };
     const runtime = createBlackBoxRallarRuntime({
         facade: facade.rallar,
         targetWindow,

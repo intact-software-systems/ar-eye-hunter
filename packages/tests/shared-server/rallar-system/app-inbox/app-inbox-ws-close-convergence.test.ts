@@ -1,24 +1,19 @@
-import { describe, expect, it } from 'vitest';
-
-import type { StateScope } from '@shared/api/state-types.ts';
-
-import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-
-import type {
-    AuthenticatedGroupMutationEnqueue,
-    GroupCreateAppInboxPayload,
-    GroupPresenceConnectAppInboxPayload
-} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import { requireGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
-import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
-
 import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+import { requireGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
+import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import type { ConnectGroupPresenceSessionRequest, StateScope } from '@shared/api/state-types.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 
-import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
     delayEntry,
     groupPresenceFacts,
@@ -32,6 +27,7 @@ import {
     createAppInboxWsCloseHarness as createHarness,
     createAuthorisedWsCloseFacts as closeFacts,
     pauseNextLifecycleRead,
+    type AppInboxWsCloseHarness,
     type AuthorisedWsCloseFacts
 } from './test-support/app-inbox-ws-close-test-harness.ts';
 
@@ -45,7 +41,9 @@ describe('AppInbox websocket close convergence', () => {
         const authoritativeWrites: string[] = [];
         const harness = await createHarness({
             onRollback: () => (rollbacks += 1),
-            onConditionalWrite: (_operation, namespace) => authoritativeWrites.push(namespace)
+            onConditionalWrite: (_operation, namespace) => {
+                authoritativeWrites.push(namespace);
+            }
         });
         const facts = closeFacts(harness.authSession, 'client-interleaved-close', 5);
         const pause = pauseNextLifecycleRead(harness.clientState);
@@ -91,7 +89,9 @@ describe('AppInbox websocket close convergence', () => {
         const authoritativeWrites: string[] = [];
         const harness = await createHarness({
             onRollback: () => (rollbacks += 1),
-            onConditionalWrite: (_operation, namespace) => authoritativeWrites.push(namespace)
+            onConditionalWrite: (_operation, namespace) => {
+                authoritativeWrites.push(namespace);
+            }
         });
         await createRoom(harness, 'interleaved-cleanup-room');
         rollbacks = 0;
@@ -321,10 +321,10 @@ async function enqueueGroupClose(
 }
 
 async function createRoom(
-    harness: Awaited<ReturnType<typeof createHarness>>,
+    harness: AppInboxWsCloseHarness,
     groupId: string
 ): Promise<void> {
-    const pending = processAuthenticated(harness.group, harness.authSession, {
+    const pending = harness.group.processAuthenticatedGroupEntryUntilCompletion({
         type: AppInboxType.GROUP_CREATE,
         resourceId: `create-${groupId}`,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -342,7 +342,7 @@ async function createRoom(
                 requestId: `create-${groupId}`
             }
         }
-    });
+    }, harness.authSession);
     await waitForQueuedType(harness.queue, AppInboxType.GROUP_CREATE);
     await processNext(harness.reader);
     const result = await pending;
@@ -353,20 +353,16 @@ async function createRoom(
 }
 
 interface EnqueueGroupConnectInput {
-    readonly harness: Awaited<ReturnType<typeof createHarness>>;
+    readonly harness: AppInboxWsCloseHarness;
     readonly groupId: string;
     readonly facts: AuthorisedWsCloseFacts;
-    readonly presence?: Readonly<{
-        generationId: string;
-        connectedAtEpochMs: number;
-        expiresAtEpochMs: number;
-    }>;
+    readonly presence: Pick<ConnectGroupPresenceSessionRequest, 'generationId' | 'connectedAtEpochMs' | 'expiresAtEpochMs'>;
 }
 
-function enqueueGroupConnect(input: EnqueueGroupConnectInput) {
+function enqueueGroupConnect(input: EnqueueGroupConnectInput): Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>> {
     const { harness, groupId, facts } = input;
-    const presence = input.presence ?? groupPresenceFacts(facts, facts.generationId, 0);
-    return processAuthenticated(harness.group, harness.authSession, {
+    const presence = input.presence;
+    return harness.group.processAuthenticatedGroupEntryUntilCompletion({
         type: AppInboxType.GROUP_PRESENCE_CONNECT,
         resourceId: `presence-${groupId}-${presence.generationId}`,
         contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
@@ -386,19 +382,11 @@ function enqueueGroupConnect(input: EnqueueGroupConnectInput) {
                 requestId: `presence-${groupId}-${presence.generationId}`
             }
         }
-    });
-}
-
-function processAuthenticated(
-    service: GroupStateInboxService,
-    authority: IssuedAuthSession,
-    enqueue: AuthenticatedGroupMutationEnqueue
-): ReturnType<GroupStateInboxService['processAuthenticatedGroupEntryUntilCompletion']> {
-    return service.processAuthenticatedGroupEntryUntilCompletion(enqueue, authority);
+    }, harness.authSession);
 }
 
 async function activeGroupSessionCount(
-    harness: Awaited<ReturnType<typeof createHarness>>,
+    harness: AppInboxWsCloseHarness,
     groupId: string
 ): Promise<number> {
     return (await harness.groups.listAllPresenceSessions()).filter(

@@ -1,9 +1,14 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../protocol/json-wire-identity.ts';
 import {
     decodeAdminPruneAppData,
     readExactRecord,
@@ -29,11 +34,9 @@ export interface AdminPrunePageWork {
     readonly appData: AdminPruneAppData | null;
 }
 
-export type ReservedAdminPrunePageWork =
-    & AdminPrunePageWork
-    & Readonly<{
-        reservation: ResourceEntry;
-    }>;
+export interface ReservedAdminPrunePageWork extends AdminPrunePageWork {
+    readonly reservation: ResourceEntry;
+}
 
 export function decodeAdminPruneWork(entry: ResourceEntry): ReservedAdminPrunePageWork {
     if (entry.status !== EntityStatus.RESERVED) {
@@ -69,11 +72,6 @@ export function decodeAdminPruneOutboxMessage(
         'payload',
         'audit'
     ], 'admin prune message');
-    const id = readExactRecord(outer.id, ['v', 'msgId', 'ts', 'senderId'], 'admin prune id');
-    const route = readExactRecord(outer.route, ['topicId', 'resourceId', 'contextId'], 'admin prune route');
-    const targets = readExactRecord(outer.targets, ['mode', 'scope'], 'admin prune targets');
-    const constraints = readExactRecord(outer.constraints, ['expiresAtMs'], 'admin prune constraints');
-    const audit = readExactRecord(outer.audit, ['createdBy', 'createdTs'], 'admin prune audit');
     const payload = readExactRecord(outer.payload, ['typeId', 'contentType', 'resource'], 'admin prune payload');
     if (payload.typeId !== 'ADMIN_PRUNE_EXPIRED' || payload.contentType !== 'application/json') {
         throw new TypeError('Admin prune payload identity is invalid');
@@ -82,6 +80,19 @@ export function decodeAdminPruneOutboxMessage(
         throw new TypeError('Admin prune resource is invalid');
     }
     const work = decodePageWork(decodeJsonWireValue(JSON.parse(payload.resource), 'Admin prune page work'));
+    return { work, senderId: requireAdminPruneOutboxIdentity(entry, work, outer) };
+}
+
+function requireAdminPruneOutboxIdentity(
+    entry: Pick<ResourceEntry, 'key'>,
+    work: AdminPrunePageWork,
+    outer: JsonWireObject
+): string {
+    const id = readExactRecord(outer.id, ['v', 'msgId', 'ts', 'senderId'], 'admin prune id');
+    const route = readExactRecord(outer.route, ['topicId', 'resourceId', 'contextId'], 'admin prune route');
+    const targets = readExactRecord(outer.targets, ['mode', 'scope'], 'admin prune targets');
+    const constraints = readExactRecord(outer.constraints, ['expiresAtMs'], 'admin prune constraints');
+    const audit = readExactRecord(outer.audit, ['createdBy', 'createdTs'], 'admin prune audit');
     const expectedRoute = toAppQueueKey({
         topicId: ADMIN_PRUNE_APP_OUTBOX_TOPIC,
         resourceId: `${work.jobId}:${work.category}:${work.pageIndex}`,
@@ -93,13 +104,13 @@ export function decodeAdminPruneOutboxMessage(
         route.topicId !== expectedRoute.topicId || route.resourceId !== expectedRoute.resourceId ||
         route.contextId !== expectedRoute.contextId || entry.key.topicId !== route.topicId ||
         entry.key.resourceId !== route.resourceId || entry.key.contextId !== route.contextId ||
-        targets.mode !== 'all' || targets.scope !== 'global' ||
+        targets.mode !== 'broadcast' || targets.scope !== 'all' ||
         constraints.expiresAtMs !== work.expireAtEpochMs ||
         audit.createdBy !== id.senderId || audit.createdTs !== work.capturedAtEpochMs
     ) {
         throw new TypeError('Admin prune work route, sender, expiry, or audit identity is invalid');
     }
-    return { work, senderId: id.senderId };
+    return id.senderId;
 }
 
 export function toAdminPruneOutbox(work: AdminPrunePageWork, serviceId: string): ResourceEntry {
@@ -108,10 +119,10 @@ export function toAdminPruneOutbox(work: AdminPrunePageWork, serviceId: string):
         resourceId: `${work.jobId}:${work.category}:${work.pageIndex}`,
         contextId: work.jobId
     });
-    const message = {
+    const message: ALMessage = {
         id: { v: 2, msgId: route.resourceId, ts: work.capturedAtEpochMs, senderId: serviceId },
         route,
-        targets: { mode: 'all', scope: 'global' },
+        targets: { mode: 'broadcast', scope: 'all' },
         constraints: { expiresAtMs: work.expireAtEpochMs },
         payload: {
             typeId: 'ADMIN_PRUNE_EXPIRED',

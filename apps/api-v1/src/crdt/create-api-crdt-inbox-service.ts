@@ -8,7 +8,7 @@ import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mut
 import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
-import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 export interface CurrentMutationSession {
     readonly clientId: string;

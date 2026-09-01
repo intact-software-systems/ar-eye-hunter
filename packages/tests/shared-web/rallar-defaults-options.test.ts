@@ -11,9 +11,10 @@ describe('Rallar defaults and operation options', () => {
             signal,
             timeoutMs: 250
         });
-        expect(toRallarCommandOptions({ shouldRetry: explicitRetry })).toEqual({
-            shouldRetry: explicitRetry
-        });
+        const retryOptions = toRallarCommandOptions({ shouldRetry: explicitRetry });
+        const failure = new Error('retry decision');
+        expect(retryOptions.shouldRetry?.(failure, 2)).toBe(false);
+        expect(explicitRetry).toHaveBeenCalledWith(failure, 2);
         expect(toRallarCommandOptions({ maxAttempts: 3 })).toEqual({
             maxAttempts: 3,
             shouldRetry: shouldRetryRallarOperation

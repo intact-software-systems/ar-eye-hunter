@@ -1,729 +1,263 @@
-import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
-import type { RallarRealtimeMessage } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type * as RoomMutationWorkflowsModule from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
-import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+import type { RallarRealtimeHandler, RallarRealtimeMessage } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
-import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
-import type * as StateEventHttpApiModule from '@shared-web/browser/state-read/state-event-http-api.ts';
-import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
-import { Either } from '@shared/resilience/Either.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import type { QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
-import type { QRtcDataChannel, RtcDataChannelHealth, RtcDataChannelSendResult, RtcRawMessageCallback } from '@shared/webrtc/QRtcDataChannel.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
-import { createDeferred, createMediaStream, createMediaTrack } from '../browser-lifecycle-fixtures.ts';
+import { createNativeRealtimeLaneFixture } from './native-realtime-lane-fixture.ts';
 
 const mocks = await vi.hoisted(async () => {
-    // The shared double must be pulled in dynamically: vi.hoisted runs above the static import
-    // transform, so a statically imported factory is still in its temporal dead zone here.
-    const { createApiMiddlewareTestDouble } = await import(
-        '../api-middleware-test-double.ts'
-    );
-    const ctx = createApiMiddlewareTestDouble();
-    const session = ctx.session;
-    const readMissingClientStateSnapshotRepository = (): never => {
-        throw new Error(
-            'Repository not found: shared.repository.client-state-snapshots'
-        );
-    };
-    const readMissingGroupStateSnapshotRepository = (): never => {
-        throw new Error(
-            'Repository not found: shared.repository.group-state-snapshots'
-        );
-    };
-
+    const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
+    const ctx = createDefaultApiMiddlewareTestDouble();
     return {
         ctx,
-        readMissingClientStateSnapshotRepository,
-        readMissingGroupStateSnapshotRepository,
-        clearSession: vi.fn<typeof AuthModule.clearSession>(),
-        createAndJoinStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.createAndJoinStateGroup>(() => Promise.reject(new Error('create not mocked'))),
-        findClientStateSnapshotByPrincipalId: vi.fn<typeof ClientStateSnapshotsRepositoryModule.findClientStateSnapshotByPrincipalId>(
-            readMissingClientStateSnapshotRepository
-        ),
-        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn>(
-            readMissingGroupStateSnapshotRepository
-        ),
-        findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(readMissingGroupStateSnapshotRepository),
-        getAllClientStateSnapshots: vi.fn<typeof ClientStateSnapshotsRepositoryModule.getAllClientStateSnapshots>(readMissingClientStateSnapshotRepository),
-        getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>(readMissingGroupStateSnapshotRepository),
-        hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(
-            () => Promise.resolve()
-        ),
-        initialiseApiMiddleware: vi.fn<BrowserTransportRuntimePort['init']>(() => Promise.resolve(ctx)),
-        joinStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.joinStateGroup>(() => Promise.reject(new Error('join not mocked'))),
-        leaveStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.leaveStateGroup>(() => Promise.reject(new Error('leave not mocked'))),
-        listStateClientEventPage: vi.fn<typeof StateEventHttpApiModule.listStateClientEventPage>(() =>
-            Promise.reject(new Error('client event page not mocked'))
-        ),
-        listStateClientEvents: vi.fn<typeof StateEventHttpApiModule.listStateClientEvents>(() => Promise.reject(new Error('client events not mocked'))),
-        listStateGroupEventPage: vi.fn<typeof StateEventHttpApiModule.listStateGroupEventPage>(() => Promise.reject(new Error('group event page not mocked'))),
-        listStateGroupEvents: vi.fn<typeof StateEventHttpApiModule.listStateGroupEvents>(() => Promise.reject(new Error('group events not mocked'))),
-        loginToApi: vi.fn<typeof AuthApiModule.loginToApi>(() => Promise.resolve(session)),
-        logoutFromApi: vi.fn<typeof AuthApiModule.logoutFromApi>(() => Promise.resolve({ loggedOut: true })),
-        onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(
-            () => vi.fn()
-        ),
-        readSession: vi.fn<typeof AuthModule.readSession>(() => session),
-        refreshStateSnapshots: vi.fn<typeof RefreshStateSnapshotsModule.refreshStateSnapshots>(() => Promise.resolve({ clients: [], groups: [] })),
-        registerWithApi: vi.fn<typeof AuthApiModule.registerWithApi>(
-            () =>
-                Promise.resolve({
-                    clientId: 'client-new',
-                    username: 'new-user',
-                    displayName: null,
-                    registeredAtEpochMs: 1_000
-                })
-        ),
-        updateStateGroupMetadata: vi.fn<typeof RoomMutationWorkflowsModule.updateStateGroupMetadata>(() =>
-            Promise.reject(new Error('metadata update not mocked'))
-        ),
-        writeSession: vi.fn<typeof AuthModule.writeSession>()
+        hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(async () => {}),
+        initialiseApiMiddleware: vi.fn<BrowserTransportRuntimePort['init']>(async () => ctx),
+        onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(() => vi.fn()),
+        readSession: vi.fn<typeof AuthModule.readSession>(() => ctx.session),
+        findClientStateSnapshotByPrincipalId: vi.fn<typeof ClientStateSnapshotsRepositoryModule.findClientStateSnapshotByPrincipalId>(),
+        getAllClientStateSnapshots: vi.fn<typeof ClientStateSnapshotsRepositoryModule.getAllClientStateSnapshots>(() => []),
+        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn>(),
+        findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(),
+        getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>(() => [])
     };
 });
 
-const qboxEngine = vi.mocked(mocks.ctx.middleware.qboxEngine);
-const rtcRxStreamer = vi.mocked(mocks.ctx.middleware.rtcRxStreamer);
-const webRtcConnectionService = vi.mocked(
-    mocks.ctx.middleware.webRtcConnectionService
-);
-const webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
-const webSocketClient = vi.mocked(mocks.ctx.middleware.webSocketQueueBox.socket);
+const connection = vi.mocked(mocks.ctx.middleware.webRtcConnectionService);
 
-vi.mock(
-    import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
-    (): Partial<typeof MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
-    })
-);
-
-vi.mock(
-    import('@shared-web/browser/state-read/state-event-http-api.ts'),
-    (): Partial<typeof StateEventHttpApiModule> => ({
-        listStateClientEventPage: mocks.listStateClientEventPage,
-        listStateClientEvents: mocks.listStateClientEvents,
-        listStateGroupEventPage: mocks.listStateGroupEventPage,
-        listStateGroupEvents: mocks.listStateGroupEvents
-    })
-);
-
-vi.mock(
-    import('@shared-web/browser/auth/session-http-api.ts'),
-    (): Partial<typeof AuthApiModule> => ({
-        loginToApi: mocks.loginToApi,
-        logoutFromApi: mocks.logoutFromApi,
-        registerWithApi: mocks.registerWithApi
-    })
-);
-
-vi.mock(
-    import('@shared-web/browser/rooms/room-group-state-workflows.ts'),
-    (): Partial<typeof RoomGroupStateWorkflowsModule> => ({
-        createAndJoinStateGroup: mocks.createAndJoinStateGroup,
-        joinStateGroup: mocks.joinStateGroup,
-        leaveStateGroup: mocks.leaveStateGroup
-    })
-);
-vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), (): Partial<typeof RefreshStateSnapshotsModule> => ({
-    refreshStateSnapshots: mocks.refreshStateSnapshots
+vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), (): Partial<typeof MiddlewareModule> => ({
+    initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
 }));
-vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'), (): Partial<typeof RoomMutationWorkflowsModule> => ({
-    updateStateGroupMetadata: mocks.updateStateGroupMetadata
+vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'), (): Partial<typeof StateCacheLifecycleModule> => ({
+    browserStateCacheLifecycle: { hydrate: mocks.hydrateStateCache, onChange: mocks.onCacheChange, initialise: vi.fn() }
+}));
+vi.mock(import('@shared/api/auth.ts'), (): Partial<typeof AuthModule> => ({
+    clearSession: vi.fn(),
+    isLoggedIn: vi.fn(() => true),
+    readSession: mocks.readSession,
+    writeSession: vi.fn()
+}));
+vi.mock(import('@shared/repository/client-state-snapshots-repository.ts'), (): Partial<typeof ClientStateSnapshotsRepositoryModule> => ({
+    findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
+    getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
+}));
+vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), (): Partial<typeof GroupStateSnapshotsRepositoryModule> => ({
+    findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
+    findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
+    getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
 }));
 
-vi.mock(
-    import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
-    (): Partial<typeof StateCacheLifecycleModule> => ({
-        browserStateCacheLifecycle: {
-            hydrate: mocks.hydrateStateCache,
-            onChange: mocks.onCacheChange,
-            initialise: vi.fn()
-        }
-    })
-);
+beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
+    mocks.getAllClientStateSnapshots.mockReturnValue([]);
+    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
+    mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
+    mocks.getAllGroupStateSnapshots.mockReturnValue([]);
+    mocks.hydrateStateCache.mockResolvedValue(undefined);
+    mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
+    mocks.readSession.mockReturnValue(mocks.ctx.session);
+    connection.activePeerIds.mockReturnValue([]);
+    connection.knownPeerIds.mockReturnValue([]);
+    connection.readyPeerIdsForLane.mockReturnValue([]);
+    connection.readPeer.mockReturnValue(undefined);
+    connection.ensurePeerLaneOpen.mockImplementation(async (peerId, laneId = 'reliable') => ({
+        status: 'no-lane',
+        peerId,
+        laneId,
+        error: new Error('No lane installed for this test')
+    }));
+});
 
-vi.mock(
-    import('@shared/api/auth.ts'),
-    (): Partial<typeof AuthModule> => ({
-        clearSession: mocks.clearSession,
-        isLoggedIn: vi.fn<typeof AuthModule.isLoggedIn>(() => true),
-        readSession: mocks.readSession,
-        writeSession: mocks.writeSession
-    })
-);
-
-vi.mock(
-    import('@shared/repository/client-state-snapshots-repository.ts'),
-    (): Partial<typeof ClientStateSnapshotsRepositoryModule> => ({
-        findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
-        getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
-    })
-);
-
-vi.mock(
-    import('@shared/repository/group-state-snapshots-repository.ts'),
-    (): Partial<typeof GroupStateSnapshotsRepositoryModule> => ({
-        findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
-        findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
-        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
-    })
-);
+interface PositionUpdate {
+    readonly x: number;
+}
 
 describe('Rallar realtime send and listen', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        vi.useRealTimers();
-        mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
-        mocks.getAllClientStateSnapshots.mockReturnValue([]);
-        mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
-        mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
-        mocks.getAllGroupStateSnapshots.mockReturnValue([]);
-        mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
-        mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
-        mocks.clearSession.mockImplementation(() => undefined);
-        mocks.readSession.mockReturnValue(mocks.ctx.session);
-        mocks.logoutFromApi.mockResolvedValue({ loggedOut: true });
-        mocks.createAndJoinStateGroup.mockRejectedValue(new Error('create not mocked'));
-        mocks.joinStateGroup.mockRejectedValue(new Error('join not mocked'));
-        mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
-        mocks.updateStateGroupMetadata.mockRejectedValue(
-            new Error('metadata update not mocked')
-        );
-        webRtcConnectionService.peerIdsWithNoReconnectableLanes.mockReturnValue([]);
-        webRtcConnectionService.knownPeerIds.mockReturnValue([]);
-        webRtcConnectionService.activePeerIds.mockReturnValue([]);
-        webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
-        webRtcConnectionService.ensurePeerConnectionStarted.mockImplementation(
-            (peerId) =>
-                Either.ofLeft({
-                    kind: 'connect-failed',
-                    peerId,
-                    error: new Error('connect not mocked')
-                })
-        );
-        webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
-            async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => ({
-                status: 'connect-failed',
-                peerId,
-                laneId,
-                error: new Error('connect not mocked')
-            })
-        );
-        webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(() => webRtcConnectionService);
-        webRtcConnectionService.readPeer.mockReturnValue(undefined);
-        webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
-        rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(async (message) => ({
-            status: 'enqueued',
-            message,
-            entries: []
-        }));
-        rtcRxStreamer.onInboxMessageDo.mockReturnValue(rtcRxStreamer);
-        rtcRxStreamer.removeInboxMessageCallback.mockReturnValue(true);
-        webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(async (message) => ({
-            status: 'enqueued',
-            message,
-            entries: []
-        }));
-        webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(webSocketQueueBox);
-        webSocketQueueBox.removeAnyInboxMessageCallback.mockReturnValue(true);
-        webSocketQueueBox.readHealth.mockReturnValue({
-            sessionId: mocks.ctx.session.sessionId,
-            url: 'ws://localhost/ws',
-            readyState: 'missing',
-            isOpen: false,
-            reconnecting: false,
-            reconnectEnabled: false,
-            reconnectAttempts: 0,
-            maxReconnectAttempts: 12,
-            reconnectExhausted: false
-        });
-        webSocketQueueBox.close.mockImplementation((code, reason) => {
-            webSocketClient.close(code, reason);
-        });
-        webSocketClient.onWebsocketCallbacksDo.mockReturnValue(webSocketClient);
-        webSocketClient.removeWebsocketCallbackById.mockReturnValue(true);
-        mocks.registerWithApi.mockResolvedValue({
-            clientId: 'client-new',
-            username: 'new-user',
-            displayName: null,
-            registeredAtEpochMs: 1_000
-        });
-        mocks.listStateClientEvents.mockRejectedValue(
-            new Error('client events not mocked')
-        );
-        mocks.listStateClientEventPage.mockRejectedValue(
-            new Error('client event page not mocked')
-        );
-        mocks.listStateGroupEvents.mockRejectedValue(
-            new Error('group events not mocked')
-        );
-        mocks.listStateGroupEventPage.mockRejectedValue(
-            new Error('group event page not mocked')
-        );
-    });
-
     it('sends realtime JSON over the requested peer lane', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
-        const sendResult: RtcDataChannelSendResult = {
-            status: 'sent',
-            bufferedAmount: 0
-        };
-        const realtimeChannel = createRtcDataChannelTestDouble({
-            sendJson: vi.fn(() => sendResult)
-        });
-        const peer = createRtcPeerTestDouble({
-            peerId: 'peer-1',
-            channels: new Map([['realtime', realtimeChannel]])
-        });
-        webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValueOnce({
-            status: 'open',
-            peerId: 'peer-1',
-            laneId: 'realtime',
-            peer,
-            channel: realtimeChannel
-        });
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const lane = await createNativeRealtimeLaneFixture('peer-1', 'realtime');
+        const sendJson = vi.spyOn(lane.channel, 'sendJson');
+        connection.ensurePeerLaneOpen.mockResolvedValueOnce({ status: 'open', peerId: 'peer-1', laneId: 'realtime', peer: lane.peer, channel: lane.channel });
 
-        const result = await createRallarFacade().realtime.sendJson({
-            peerIds: ['peer-1'],
-            data: {
-                x: 1
-            },
-            key: 'player-1'
-        });
+        const result = await createRallarFacade().realtime.sendJson({ peerIds: ['peer-1'], data: { x: 1 }, key: 'player-1' });
 
-        expect(webRtcConnectionService.ensurePeerLaneOpen)
-            .toHaveBeenCalledWith(
-                'peer-1',
-                'realtime',
-                expect.objectContaining({
-                    timeoutMs: 5_000
-                })
-            );
-        expect(realtimeChannel.sendJson).toHaveBeenCalledWith(
-            {
-                x: 1
-            },
-            expect.objectContaining({
-                key: 'player-1'
-            })
-        );
-        expect(result).toEqual([
-            {
-                peerId: 'peer-1',
-                laneId: 'realtime',
-                result: sendResult
-            }
-        ]);
+        expect(connection.ensurePeerLaneOpen).toHaveBeenCalledWith('peer-1', 'realtime', expect.objectContaining({ timeoutMs: 5_000 }));
+        expect(sendJson).toHaveBeenCalledWith({ x: 1 }, expect.objectContaining({ key: 'player-1' }));
+        expect(lane.native.sent).toEqual([JSON.stringify({ x: 1 })]);
+        expect(result).toEqual([{ peerId: 'peer-1', laneId: 'realtime', result: { status: 'sent', bufferedAmount: 0, key: 'player-1' } }]);
     });
 
     it('does not send realtime JSON before the requested lane opens', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
-        const realtimeChannel = createRtcDataChannelTestDouble({
-            sendJson: () => {
-                throw new Error('A timed-out realtime lane cannot send JSON');
-            }
-        });
-        webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValueOnce({
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const lane = await createNativeRealtimeLaneFixture('peer-1', 'realtime', { open: false });
+        connection.ensurePeerLaneOpen.mockResolvedValueOnce({
             status: 'timeout',
             peerId: 'peer-1',
             laneId: 'realtime',
-            channel: realtimeChannel,
+            channel: lane.channel,
             error: new Error('lane did not open')
         });
 
-        await expect(
-            createRallarFacade().realtime.sendJson({
-                peerIds: ['peer-1'],
-                data: {
-                    x: 1
-                },
-                openTimeoutMs: 25
-            })
-        ).resolves.toEqual([
-            {
-                peerId: 'peer-1',
-                laneId: 'realtime',
-                result: {
-                    status: 'closed',
-                    reason: 'Realtime lane not connected',
-                    bufferedAmount: 0
-                }
-            }
-        ]);
+        const result = await createRallarFacade().realtime.sendJson({ peerIds: ['peer-1'], data: { x: 1 }, openTimeoutMs: 25 });
 
-        expect(webRtcConnectionService.ensurePeerLaneOpen)
-            .toHaveBeenCalledWith(
-                'peer-1',
-                'realtime',
-                expect.objectContaining({
-                    timeoutMs: 25
-                })
-            );
+        expect(result).toEqual([{
+            peerId: 'peer-1',
+            laneId: 'realtime',
+            result: { status: 'closed', reason: 'Realtime lane not connected', bufferedAmount: 0 }
+        }]);
+        expect(lane.native.sent).toEqual([]);
+        expect(connection.ensurePeerLaneOpen).toHaveBeenCalledWith('peer-1', 'realtime', expect.objectContaining({ timeoutMs: 25 }));
     });
 
     it('sends realtime binary over the requested peer lane', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const lane = await createNativeRealtimeLaneFixture('peer-1', 'realtime');
         const bytes = new Uint8Array([1, 2, 3]);
-        const sendResult: RtcDataChannelSendResult = {
-            status: 'sent',
-            bufferedAmount: 0
-        };
-        const realtimeChannel = createRtcDataChannelTestDouble({
-            sendBinary: vi.fn(() => sendResult)
-        });
-        webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValueOnce({
-            status: 'open',
-            peerId: 'peer-1',
-            laneId: 'realtime',
-            channel: realtimeChannel
-        });
+        connection.ensurePeerLaneOpen.mockResolvedValueOnce({ status: 'open', peerId: 'peer-1', laneId: 'realtime', channel: lane.channel });
 
-        const result = await createRallarFacade().realtime.sendBinary({
-            peerIds: ['peer-1'],
-            data: bytes,
-            openTimeoutMs: 75
-        });
+        const result = await createRallarFacade().realtime.sendBinary({ peerIds: ['peer-1'], data: bytes, openTimeoutMs: 75 });
 
-        expect(webRtcConnectionService.ensurePeerLaneOpen)
-            .toHaveBeenCalledWith(
-                'peer-1',
-                'realtime',
-                expect.objectContaining({
-                    timeoutMs: 75
-                })
-            );
-        expect(realtimeChannel.sendBinary).toHaveBeenCalledWith(
-            bytes,
-            expect.objectContaining({})
-        );
-        expect(result).toEqual([
-            {
-                peerId: 'peer-1',
-                laneId: 'realtime',
-                result: sendResult
-            }
-        ]);
+        expect(connection.ensurePeerLaneOpen).toHaveBeenCalledWith('peer-1', 'realtime', expect.objectContaining({ timeoutMs: 75 }));
+        expect(lane.native.sent).toEqual([bytes]);
+        expect(result).toEqual([{ peerId: 'peer-1', laneId: 'realtime', result: { status: 'sent', bufferedAmount: 0 } }]);
     });
 
-    it('returns a closed realtime send result when the peer has no requested lane', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
-        webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValueOnce({
-            status: 'no-lane',
+    it('returns a closed send result when the peer has no requested lane', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        connection.ensurePeerLaneOpen.mockResolvedValueOnce({ status: 'no-lane', peerId: 'peer-1', laneId: 'missing', error: new Error('missing lane') });
+
+        const result = await createRallarFacade().realtime.sendJson({ peerIds: ['peer-1'], laneId: 'missing', data: { x: 1 } });
+
+        expect(result).toEqual([{
             peerId: 'peer-1',
             laneId: 'missing',
-            error: new Error('missing lane')
-        });
-
-        await expect(
-            createRallarFacade().realtime.sendJson({
-                peerIds: ['peer-1'],
-                laneId: 'missing',
-                data: {
-                    x: 1
-                }
-            })
-        ).resolves.toEqual([
-            {
-                peerId: 'peer-1',
-                laneId: 'missing',
-                result: {
-                    status: 'closed',
-                    reason: 'Realtime lane not connected',
-                    bufferedAmount: 0
-                }
-            }
-        ]);
-        expect(webRtcConnectionService.ensurePeerLaneOpen)
-            .toHaveBeenCalledWith(
-                'peer-1',
-                'missing',
-                expect.objectContaining({
-                    timeoutMs: 5_000
-                })
-            );
+            result: { status: 'closed', reason: 'Realtime lane not connected', bufferedAmount: 0 }
+        }]);
+        expect(connection.ensurePeerLaneOpen).toHaveBeenCalledWith('peer-1', 'missing', expect.objectContaining({ timeoutMs: 5_000 }));
     });
 
-    it('registers realtime JSON listeners on connected peers', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
-        const rawCallbacks = new Map<string, RtcRawMessageCallback>();
-        const realtimeChannel: QRtcDataChannel = createRtcDataChannelTestDouble({
-            onRawMessageDo: vi.fn((id, callback) => {
-                rawCallbacks.set(id, callback);
-                return realtimeChannel;
-            }),
-            removeOnRawMessageCallbackById: vi.fn(() => true)
-        });
-        const peer = createRtcPeerTestDouble({
-            peerId: 'peer-1',
-            channels: new Map([['realtime', realtimeChannel]])
-        });
-        webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
-        webRtcConnectionService.readPeer.mockReturnValue(peer);
-        const handler = vi.fn();
+    it('registers JSON listeners on connected peers and detaches the last subscriber', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const lane = await createNativeRealtimeLaneFixture('peer-1', 'realtime');
+        connection.activePeerIds.mockReturnValue(['peer-1']);
+        connection.knownPeerIds.mockReturnValue(['peer-1']);
+        connection.readPeer.mockReturnValue(lane.peer);
+        const messages: PositionUpdate[] = [];
         const facade = createRallarFacade();
-
-        facade.realtime.onJson('realtime', handler);
+        const unsubscribe = facade.realtime.onJson<PositionUpdate>('realtime', (message) => {
+            messages.push(message.data);
+        });
         await facade.connect();
 
-        expect(realtimeChannel.onRawMessageDo).toHaveBeenCalledWith(
-            'rallar:realtime:realtime',
-            expect.objectContaining({
-                onMessage: expect.any(Function)
-            })
-        );
+        await lane.native.receive(JSON.stringify({ x: 1 }));
+        expect(messages).toEqual([{ x: 1 }]);
+        expect(lane.channel.readHealth().rawCallbackCount).toBe(1);
+        unsubscribe();
+        await lane.native.receive(JSON.stringify({ x: 2 }));
 
-        const callback = rawCallbacks.get('rallar:realtime:realtime');
-        await callback?.onMessage?.(
-            JSON.stringify({
-                x: 1
-            }),
-            {
-                data: JSON.stringify({
-                    x: 1
-                })
-            } as MessageEvent
-        );
-
-        expect(handler).toHaveBeenCalledWith(
-            expect.objectContaining({
-                peerId: 'peer-1',
-                laneId: 'realtime',
-                data: {
-                    x: 1
-                }
-            })
-        );
+        expect(messages).toEqual([{ x: 1 }]);
+        expect(lane.channel.readHealth().rawCallbackCount).toBe(0);
     });
 
-    it('registers realtime binary listeners and normalizes typed arrays to ArrayBuffer', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
-        const rawCallbacks = new Map<string, RtcRawMessageCallback>();
-        const realtimeChannel: QRtcDataChannel = createRtcDataChannelTestDouble({
-            onRawMessageDo: vi.fn((id, callback) => {
-                rawCallbacks.set(id, callback);
-                return realtimeChannel;
-            }),
-            removeOnRawMessageCallbackById: vi.fn(() => true)
+    it('registers listeners added after connect and preserves duplicate handler identity', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const lane = await createNativeRealtimeLaneFixture('peer-1', 'realtime');
+        connection.activePeerIds.mockReturnValue(['peer-1']);
+        connection.knownPeerIds.mockReturnValue(['peer-1']);
+        connection.readPeer.mockReturnValue(lane.peer);
+        const facade = createRallarFacade();
+        await facade.connect();
+        const messages: PositionUpdate[] = [];
+        const handler: RallarRealtimeHandler<PositionUpdate> = (message) => {
+            messages.push(message.data);
+        };
+
+        const unsubscribe = facade.realtime.onJson('realtime', handler);
+        facade.realtime.onJson('realtime', handler);
+        await lane.native.receive(JSON.stringify({ x: 1 }));
+        expect(messages).toEqual([{ x: 1 }]);
+        unsubscribe();
+        await lane.native.receive(JSON.stringify({ x: 2 }));
+
+        expect(messages).toEqual([{ x: 1 }]);
+        expect(lane.channel.readHealth().rawCallbackCount).toBe(0);
+    });
+
+    it('rejects malformed JSON without exposing its payload in logs and accepts the next message', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const lane = await createNativeRealtimeLaneFixture('peer-1', 'realtime');
+        connection.activePeerIds.mockReturnValue(['peer-1']);
+        connection.readPeer.mockReturnValue(lane.peer);
+        const messages: PositionUpdate[] = [];
+        const facade = createRallarFacade();
+        facade.realtime.onJson<PositionUpdate>('realtime', (message) => {
+            messages.push(message.data);
         });
-        const peer = createRtcPeerTestDouble({
-            peerId: 'peer-1',
-            channels: new Map([['realtime', realtimeChannel]])
-        });
-        webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
-        webRtcConnectionService.readPeer.mockReturnValue(peer);
+        await facade.connect();
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            await lane.native.receive('private-message-content{');
+            expect(messages).toEqual([]);
+            expect(logged).toHaveBeenCalledWith('Error parsing Rallar realtime JSON message');
+            expect(logged.mock.calls.flat()).not.toContain(expect.any(Error));
+            await lane.native.receive(JSON.stringify({ x: 2 }));
+            expect(messages).toEqual([{ x: 2 }]);
+        }
+        finally {
+            logged.mockRestore();
+        }
+    });
+
+    it.each([
+        ['ArrayBuffer', new Uint8Array([1, 2, 3]).buffer],
+        ['typed array subview', new Uint8Array([0, 1, 2, 3, 4]).subarray(1, 4)],
+        ['DataView', new DataView(new Uint8Array([0, 1, 2, 3, 4]).buffer, 1, 3)],
+        ['Blob', new Blob([new Uint8Array([1, 2, 3])])]
+    ])('normalizes a native %s message to an ArrayBuffer', async (_kind, data) => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const lane = await createNativeRealtimeLaneFixture('peer-1', 'realtime');
+        connection.activePeerIds.mockReturnValue(['peer-1']);
+        connection.readPeer.mockReturnValue(lane.peer);
         const messages: RallarRealtimeMessage<ArrayBuffer>[] = [];
         const facade = createRallarFacade();
-
         facade.realtime.onBinary('realtime', (message) => {
             messages.push(message);
         });
         await facade.connect();
 
-        const callback = rawCallbacks.get('rallar:realtime:realtime');
-        await callback?.onMessage?.(
-            new Uint8Array([1, 2, 3]),
-            {
-                data: new Uint8Array([1, 2, 3])
-            } as MessageEvent
-        );
+        await lane.native.receive(data);
 
         expect(messages).toHaveLength(1);
-        const message = messages[0];
-        expect(message).toMatchObject({
-            peerId: 'peer-1',
-            laneId: 'realtime'
-        });
-        expect(Array.from(new Uint8Array(message.data))).toEqual([1, 2, 3]);
+        expect(messages[0]).toMatchObject({ peerId: 'peer-1', laneId: 'realtime' });
+        expect(Array.from(new Uint8Array(messages[0].data))).toEqual([1, 2, 3]);
     });
 
-    it('exposes realtime lane health for active peers', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
-        const health: RtcDataChannelHealth = {
-            peerId: 'peer-1',
-            label: 'rtc-realtime',
-            state: 'Open',
-            role: 'Initiator',
-            readyState: 'open',
-            binaryType: 'arraybuffer',
-            bufferedAmount: 12,
-            bufferedAmountLowThreshold: 0,
-            queuedItemCount: 1,
-            rawCallbackCount: 0,
-            messageCallbackCount: 0,
-            lifecycleCallbackCount: 0,
-            flowControl: {
-                highWatermarkBytes: 64 * 1024,
-                lowWatermarkBytes: 16 * 1024,
-                overflow: 'drop-new',
-                maxQueueItems: 32
-            },
-            counters: {
-                sent: 2,
-                queued: 0,
-                dropped: 1,
-                replaced: 0,
-                closed: 0,
-                flushed: 0,
-                droppedOldest: 0,
-                droppedStale: 0,
-                receivedRaw: 0,
-                receivedString: 0,
-                receivedBinary: 0
-            }
-        };
-        const realtimeChannel = createRtcDataChannelTestDouble({
-            readHealth: vi.fn(() => health)
-        });
-        const peer = createRtcPeerTestDouble({
-            peerId: 'peer-1',
-            channels: new Map([['realtime', realtimeChannel]])
-        });
-        webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
-        webRtcConnectionService.readPeer.mockReturnValue(peer);
+    it('exposes actual send and queue health for active peer lanes', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const lane = await createNativeRealtimeLaneFixture('peer-1', 'realtime', { flowControl: { overflow: 'queue' } });
+        connection.activePeerIds.mockReturnValue(['peer-1']);
+        connection.readPeer.mockReturnValue(lane.peer);
+        lane.channel.sendJson({ x: 1 });
+        lane.channel.sendJson({ x: 2 });
+        lane.native.bufferedAmount = 64 * 1024 + 1;
+        lane.channel.sendJson({ x: 3 });
         const facade = createRallarFacade();
-
         await facade.connect();
 
-        expect(facade.realtime.health({ laneIds: ['realtime'] })).toEqual([
-            {
-                peerId: 'peer-1',
-                laneId: 'realtime',
-                channel: health
+        expect(facade.realtime.health({ laneIds: ['realtime'] })).toMatchObject([{
+            peerId: 'peer-1',
+            laneId: 'realtime',
+            channel: {
+                state: 'Open',
+                readyState: 'open',
+                bufferedAmount: 64 * 1024 + 1,
+                queuedItemCount: 1,
+                counters: { sent: 2, queued: 1 }
             }
-        ]);
+        }]);
+        expect(lane.native.sent).toEqual([JSON.stringify({ x: 1 }), JSON.stringify({ x: 2 })]);
     });
 });
-
-function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
-    return webSocketQueueBox
-        .onAnyInboxMessageDo.mock.calls
-        .filter(([callbackId]) => callbackId === 'rallar:ws:any-message')
-        .at(-1)?.[1];
-}
-// QRtcDataChannel and QRtcPeerDto wrap live RTCDataChannel/RTCPeerConnection state that a unit test
-// cannot construct, so these builders assert the completeness of the double while leaving the shape
-// of every supplied member checked against the production signature.
-function createRtcDataChannelTestDouble(
-    members: Partial<QRtcDataChannel>
-): QRtcDataChannel {
-    return members as QRtcDataChannel;
-}
-
-function createRtcPeerTestDouble(members: Partial<QRtcPeerDto>): QRtcPeerDto {
-    return members as QRtcPeerDto;
-}
-
-function createChannelHealth(
-    input: Readonly<{
-        peerId: string;
-        label: string;
-        state: string;
-        readyState: RTCDataChannelState;
-    }>
-) {
-    return {
-        peerId: input.peerId,
-        label: input.label,
-        state: input.state,
-        role: 'Initiator',
-        readyState: input.readyState,
-        binaryType: 'arraybuffer' as const,
-        bufferedAmount: 0,
-        bufferedAmountLowThreshold: 0,
-        queuedItemCount: 0,
-        rawCallbackCount: 0,
-        messageCallbackCount: 0,
-        lifecycleCallbackCount: 0,
-        flowControl: {
-            highWatermarkBytes: 64 * 1024,
-            lowWatermarkBytes: 16 * 1024,
-            overflow: 'drop-new' as const,
-            maxQueueItems: 32
-        },
-        counters: {
-            sent: 0,
-            queued: 0,
-            dropped: 0,
-            replaced: 0,
-            closed: 0,
-            flushed: 0,
-            droppedOldest: 0,
-            droppedStale: 0,
-            receivedRaw: 0,
-            receivedString: 0,
-            receivedBinary: 0
-        }
-    };
-}
-
-function mockGroupSnapshot(snapshot: GroupSnapshot): void {
-    mockGroupSnapshots([snapshot]);
-}
-
-function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
-    mocks.getAllGroupStateSnapshots.mockImplementation(() => [...snapshots]);
-    mocks.findGroupStateSnapshotByRef.mockImplementation((ref) =>
-        snapshots.find((snapshot) =>
-            snapshot.group.groupId === ref.groupId &&
-            snapshot.group.applicationId === ref.applicationId &&
-            (snapshot.group.workspaceId ?? '') === (ref.workspaceId ?? '')
-        )
-    );
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation((sessionId) =>
-        snapshots.find((snapshot) => snapshot.group.groupId === sessionId)?.group
-    );
-}
-
-function withSnapshotVersion(
-    snapshot: GroupSnapshot,
-    snapshotVersion: number
-): GroupSnapshot {
-    return {
-        ...snapshot,
-        group: {
-            ...snapshot.group,
-            snapshotVersion
-        }
-    };
-}
-
-function createGroupSnapshot(
-    groupId: string,
-    sessionIds: readonly string[],
-    scope: Readonly<{
-        applicationId?: string;
-        workspaceId?: string;
-    }> = {}
-): GroupSnapshot {
-    const applicationId = scope.applicationId ?? 'app-1';
-    const workspaceId = scope.workspaceId ?? 'workspace-1';
-    return createGroupSnapshotFixture({
-        applicationId,
-        workspaceId,
-        groupId,
-        sessionIds
-    });
-}

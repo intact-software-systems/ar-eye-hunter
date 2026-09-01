@@ -17,8 +17,8 @@ import {
     type RallarReadinessEvaluation
 } from '@shared-web/browser/readiness.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { WebRtcPeerLaneOpenResult } from '@shared/services/WebRtcConnectionService.ts';
-import type { RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
+import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 
 export namespace BrowserRtcWaitRuntime {
     export interface Input {
@@ -292,7 +292,7 @@ function toErrorMessage(error: Error['cause']): string {
 }
 
 function toRallarWaitForOpenStatus(
-    status: WebRtcPeerLaneOpenResult['status']
+    status: WebRtcConnectionService.PeerLaneOpenResult['status']
 ): RallarWaitForOpenStatus {
     switch (status) {
         case 'open':
@@ -372,7 +372,7 @@ function toExpectationAwareRtcRoomLaneWaitStatus(
     return input.waitStatus;
 }
 
-function toPeerLaneOpenReason(result: WebRtcPeerLaneOpenResult): string | undefined {
+function toPeerLaneOpenReason(result: WebRtcConnectionService.PeerLaneOpenResult): string | undefined {
     if (result.status === 'open' || !result.error) {
         return undefined;
     }

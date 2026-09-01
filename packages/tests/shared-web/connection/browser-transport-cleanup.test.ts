@@ -5,7 +5,7 @@ import { createRallarLifecycleCoordinator } from '@shared-web/browser/session/ra
 import { createRallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import { BrowserSessionConnectionLifecycle, type RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { createApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
+import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
@@ -29,7 +29,7 @@ vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
 
 describe('Browser transport cleanup', () => {
     it('continues transport and lifecycle cleanup when a detach participant fails', async () => {
-        const middleware = createApiMiddlewareTestDouble();
+        const middleware = createDefaultApiMiddlewareTestDouble();
         const effects: string[] = [];
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             effects.push('transport-closed');
@@ -75,7 +75,7 @@ describe('Browser transport cleanup', () => {
     });
 
     it('rolls back transport and attached lifecycle state when attach fails', async () => {
-        const middleware = createApiMiddlewareTestDouble();
+        const middleware = createDefaultApiMiddlewareTestDouble();
         const effects: string[] = [];
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             effects.push('transport-closed');
@@ -124,7 +124,7 @@ describe('Browser transport cleanup', () => {
     });
 
     it('rolls back transport and attached lifecycle state when connected notification fails', async () => {
-        const middleware = createApiMiddlewareTestDouble();
+        const middleware = createDefaultApiMiddlewareTestDouble();
         const effects: string[] = [];
         vi.mocked(middleware.middleware.webSocketQueueBox.close).mockImplementation(() => {
             effects.push('transport-closed');
@@ -169,10 +169,10 @@ describe('Browser transport cleanup', () => {
     });
 
     it('starts a new session connection while a cancelled initializer is still pending', async () => {
-        const first = createApiMiddlewareTestDouble({
+        const first = createDefaultApiMiddlewareTestDouble({
             session: { sessionId: 'session-old', accessToken: 'token-old' }
         });
-        const second = createApiMiddlewareTestDouble({
+        const second = createDefaultApiMiddlewareTestDouble({
             session: { sessionId: 'session-new', accessToken: 'token-new' }
         });
         const initializationSessions: string[] = [];
@@ -227,7 +227,7 @@ describe('Browser transport cleanup', () => {
     });
 
     it('cancels pending middleware initialization and tears down its resolved transport once', async () => {
-        const middleware = createApiMiddlewareTestDouble();
+        const middleware = createDefaultApiMiddlewareTestDouble();
         const cleanupEffects: string[] = [];
         vi.mocked(middleware.middleware.qboxEngine.stop).mockImplementation(() => {
             cleanupEffects.push('queue-stopped');
@@ -257,7 +257,7 @@ describe('Browser transport cleanup', () => {
     });
 
     it('cleans one connected runtime once, continues past a heartbeat failure, and notifies after runtime clearing', async () => {
-        const middleware = createApiMiddlewareTestDouble({
+        const middleware = createDefaultApiMiddlewareTestDouble({
             middleware: {
                 webRtcOverlayMulticastManager: {
                     dispose: vi.fn()
@@ -339,7 +339,7 @@ describe('Browser transport cleanup', () => {
     });
 
     it('fences configure during connection and coalesces concurrent session disconnects', async () => {
-        const middleware = createApiMiddlewareTestDouble();
+        const middleware = createDefaultApiMiddlewareTestDouble();
         const cleanupEffects: string[] = [];
         vi.mocked(middleware.middleware.qboxEngine.stop).mockImplementation(() => {
             cleanupEffects.push('queue-stopped');

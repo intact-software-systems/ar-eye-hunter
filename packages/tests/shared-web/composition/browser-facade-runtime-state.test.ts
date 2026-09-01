@@ -2,7 +2,7 @@ import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/brows
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 

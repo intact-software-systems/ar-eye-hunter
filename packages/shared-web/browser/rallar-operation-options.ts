@@ -1,23 +1,24 @@
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { CommandOptions } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
-import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 
 export type RallarOperationRetryPredicate = (
-    error: unknown,
+    error: Error,
     attempt: number
 ) => boolean;
 
-export type RallarOperationOptions = Readonly<{
-    signal?: AbortSignal;
-    timeoutMs?: number;
-    maxAttempts?: number;
-    shouldRetry?: RallarOperationRetryPredicate;
-    dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
-    maxPeerConnections?: number;
-    rttReportingDegreeLimit?: number;
-    bootstrapDegree?: number;
-}>;
+export interface RallarOperationOptions {
+    readonly signal?: AbortSignal;
+    readonly timeoutMs?: number;
+    readonly maxAttempts?: number;
+    readonly shouldRetry?: RallarOperationRetryPredicate;
+    readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
+    readonly maxPeerConnections?: number;
+    readonly rttReportingDegreeLimit?: number;
+    readonly bootstrapDegree?: number;
+}
 
 export function toRallarWorkflowPolicies<V>(
     options?: RallarOperationOptions
@@ -52,16 +53,7 @@ export function toRallarOperationOptions(
         return {};
     }
 
-    const normalized: {
-        signal?: AbortSignal;
-        timeoutMs?: number;
-        maxAttempts?: number;
-        shouldRetry?: RallarOperationRetryPredicate;
-        dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
-        maxPeerConnections?: number;
-        rttReportingDegreeLimit?: number;
-        bootstrapDegree?: number;
-    } = {};
+    const normalized: { -readonly [Key in keyof RallarOperationOptions]: RallarOperationOptions[Key]; } = {};
     if (options.signal) {
         normalized.signal = options.signal;
     }
@@ -104,7 +96,8 @@ export function toRallarCommandOptions<T>(
         commandOptions.maxAttempts = options.maxAttempts;
     }
     if (options.shouldRetry) {
-        commandOptions.shouldRetry = options.shouldRetry;
+        const shouldRetry = options.shouldRetry;
+        commandOptions.shouldRetry = (error, attempt) => shouldRetry(toError(error), attempt);
     }
     else if (options.maxAttempts !== undefined) {
         commandOptions.shouldRetry = shouldRetryRallarOperation;

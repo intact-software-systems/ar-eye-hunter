@@ -1,13 +1,18 @@
-import { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
+import { flushRtcIceCandidateQueue } from '@shared/webrtc/flush-rtc-ice-candidate-queue.ts';
 
-import { runRtcBaselineAcceptedWorkerSamples } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
+import {
+    runRtcBaselineAcceptedWorkerSamples,
+    type RtcBaselineAcceptedWorkerIdentityInput
+} from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 import {
     parseRtcBaselineBoundedInteger,
     parseRtcBaselineOneTokenOptions
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import {
     rtcBaselineIssue,
+    type RtcBaselineIssueDto,
     type RtcBaselineJson,
+    type RtcBaselineResult,
     type RtcBaselineSampleDto,
     type RtcBaselineSampleIdentityDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
@@ -59,7 +64,9 @@ const acceptedNames = [
     'rtc-inner-runs'
 ];
 
-export function parseRtcIceCandidateQueueArguments(arguments_: readonly string[]) {
+export function parseRtcIceCandidateQueueArguments(
+    arguments_: readonly string[]
+): RtcBaselineResult<DiagnosticArguments | AcceptedArguments> {
     const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
     const parsed = parseRtcBaselineOneTokenOptions(
         arguments_,
@@ -71,10 +78,14 @@ export function parseRtcIceCandidateQueueArguments(arguments_: readonly string[]
     return accepted ? parseAcceptedArguments(parsed.value) : parseDiagnosticArguments(parsed.value);
 }
 
-export async function runRtcIceCandidateQueueAcceptedSamples(input: {
+export interface RtcIceCandidateQueueAcceptedSamplesInput {
     worker: AcceptedArguments;
     run: () => Promise<RtcIceCandidateQueueResult>;
-}): Promise<RtcBaselineSampleDto[]> {
+}
+
+export async function runRtcIceCandidateQueueAcceptedSamples(
+    input: RtcIceCandidateQueueAcceptedSamplesInput
+): Promise<RtcBaselineSampleDto[]> {
     return runRtcBaselineAcceptedWorkerSamples({
         worker: acceptedWorkerIdentity(input.worker),
         run: input.run,
@@ -99,7 +110,7 @@ function classifyAcceptedSampleOutcome(
     return issues.length === 0 ? 'passed' : 'failed';
 }
 
-function acceptedWorkerIdentity(worker: AcceptedArguments) {
+function acceptedWorkerIdentity(worker: AcceptedArguments): RtcBaselineAcceptedWorkerIdentityInput {
     return {
         ...worker,
         workloadId: 'RTC-B01' as const,
@@ -145,40 +156,35 @@ async function main(): Promise<void> {
 }
 
 async function runQueue(candidates: number): Promise<RtcIceCandidateQueueResult> {
-    const peer = new QRtcPeerConnection(
-        { send: async () => {} },
-        {
-            sessionId: 'self',
-            token: 'token',
-            peerSessionId: 'peer',
-            iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-            isPolite: true
-        }
-    );
-    const status = peer.status;
-    status.iceCandidateQueue = Array.from({ length: candidates }, (_value, index) => ({
+    const queue: RTCIceCandidateInit[] = Array.from({ length: candidates }, (_value, index) => ({
         candidate: `candidate-${index}`,
         sdpMid: '0',
         sdpMLineIndex: 0
     }));
-    const nativePeer = new FakeRTCPeerConnection();
-    const startedAt = performance.now();
-    await (
-        peer as unknown as {
-            flushIceCandidateQueue(
-                peerConnection: Pick<RTCPeerConnection, 'addIceCandidate'>
-            ): Promise<void>;
+    let addedCandidates = 0;
+    const nativePeer: Pick<RTCPeerConnection, 'addIceCandidate'> = {
+        addIceCandidate: async () => {
+            addedCandidates++;
         }
-    ).flushIceCandidateQueue(nativePeer);
-    return {
-        durationMs: performance.now() - startedAt,
-        candidateCount: candidates,
-        addedCandidates: nativePeer.addedCandidates,
-        remainingQueuedCandidates: status.iceCandidateQueue.length
     };
+    const counters = { addedIceCandidateCount: 0, flushedIceCandidateCount: 0 };
+    const startedAt = performance.now();
+    await flushRtcIceCandidateQueue({
+        queue,
+        peerConnection: nativePeer,
+        onCandidateAdded: () => {
+            counters.addedIceCandidateCount++;
+            counters.flushedIceCandidateCount++;
+        }
+    });
+    const durationMs = performance.now() - startedAt;
+    if (counters.addedIceCandidateCount !== addedCandidates || counters.flushedIceCandidateCount !== addedCandidates) {
+        throw new Error('ICE drain accounting did not match native additions');
+    }
+    return { durationMs, candidateCount: candidates, addedCandidates, remainingQueuedCandidates: queue.length };
 }
 
-function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
+function parseDiagnosticArguments(options: Readonly<Record<string, string>>): RtcBaselineResult<DiagnosticArguments> {
     const out = options.out ?? 'tmp/perf/results/rtc-ice-candidate-queue.json';
     const outComponents = out.split('/');
     const validOut = out.startsWith('tmp/perf/results/') &&
@@ -213,7 +219,7 @@ function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
     };
 }
 
-function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
+function parseAcceptedArguments(options: Readonly<Record<string, string>>): RtcBaselineResult<AcceptedArguments> {
     const outer = parseRtcBaselineBoundedInteger(
         options['outer-ordinal'] ?? '',
         'outer-ordinal',
@@ -252,8 +258,8 @@ function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
             value: {
                 mode: 'accepted' as const,
                 input: { candidates: 25000, runs: 5 },
-                baselineId: options['baseline-id']!,
-                intendedPhase: phase as 'warmup' | 'retained',
+                baselineId: options['baseline-id'] ?? '',
+                intendedPhase: phase === 'warmup' ? 'warmup' : 'retained',
                 outerOrdinal: ordinal,
                 sampleIds
             }
@@ -286,8 +292,8 @@ function createSample(sampleInput: CreateRtcIceCandidateQueueSampleInput): RtcBa
     };
 }
 
-function validateResult(input: QueueInput, result: RtcIceCandidateQueueResult) {
-    const issues = [];
+function validateResult(input: QueueInput, result: RtcIceCandidateQueueResult): RtcBaselineIssueDto[] {
+    const issues: RtcBaselineIssueDto[] = [];
     if (result.candidateCount !== input.candidates) {
         issues.push(
             rtcBaselineIssue('$.rawEvidence.candidateCount', 'counter-mismatch', 'Unexpected.')
@@ -313,14 +319,6 @@ function createRawEvidence(result: RtcIceCandidateQueueResult): RtcBaselineJson 
         addedCandidates: result.addedCandidates,
         remainingQueuedCandidates: result.remainingQueuedCandidates
     };
-}
-
-class FakeRTCPeerConnection {
-    addedCandidates = 0;
-    addIceCandidate(_candidate?: RTCIceCandidateInit | null): Promise<void> {
-        this.addedCandidates += 1;
-        return Promise.resolve();
-    }
 }
 
 if (import.meta.main) {

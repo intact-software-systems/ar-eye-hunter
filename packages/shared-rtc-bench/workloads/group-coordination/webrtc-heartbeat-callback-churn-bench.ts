@@ -1,6 +1,8 @@
 import { dirname } from 'node:path';
 
-import { WebRtcHeartbeatService } from '@shared/services/WebRtcHeartbeatService.ts';
+import { WebRtcHeartbeatService } from '@shared/services/web-rtc-heartbeat-service.ts';
+import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
+import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import {
     parseRtcBaselineAcceptedWorker,
@@ -16,10 +18,6 @@ import {
     type RtcBaselineResult,
     type RtcBaselineSampleDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
-
-interface CallbackDto {
-    readonly onMessage: (data: unknown) => Promise<void>;
-}
 
 export interface WebRtcHeartbeatCallbackChurnInput {
     readonly channels: number;
@@ -40,31 +38,6 @@ export interface WebRtcHeartbeatCallbackChurnResult {
 }
 
 const acceptedChannels = 10000;
-
-class FakeHeartbeatChannel {
-    private readonly callbacks = new Map<string, CallbackDto>();
-
-    onRtcMessageDo(id: string, callback: CallbackDto, _type: string): this {
-        this.callbacks.set(id, callback);
-        return this;
-    }
-
-    removeOnRtcMessageCallbackById(id: string): boolean {
-        return this.callbacks.delete(id);
-    }
-
-    sendAsJsonString(_data: string): Promise<void> {
-        return Promise.resolve();
-    }
-
-    isOpen(): boolean {
-        return true;
-    }
-
-    callbackCount(): number {
-        return this.callbacks.size;
-    }
-}
 
 export function parseWebRtcHeartbeatCallbackChurnArguments(
     arguments_: readonly string[]
@@ -88,14 +61,24 @@ export function parseWebRtcHeartbeatCallbackChurnArguments(
 export function runWebRtcHeartbeatCallbackChurn(
     input: WebRtcHeartbeatCallbackChurnInput
 ): WebRtcHeartbeatCallbackChurnResult {
-    const channels = Array.from({ length: input.channels }, () => new FakeHeartbeatChannel());
+    const channels = Array.from({ length: input.channels }, (_value, index) => {
+        const peerSessionId = `peer-${index}`;
+        const peer = new QRtcPeerConnection({ send: async () => {} }, {
+            sessionId: `self-${index}`,
+            token: 'benchmark-token',
+            peerSessionId,
+            iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
+            isPolite: true
+        });
+        return new QRtcDataChannel(peer, { peerId: peerSessionId, dataChannelName: 'realtime' });
+    });
     const startedAt = performance.now();
 
     for (let index = 0; index < channels.length; index += 1) {
         const service = new WebRtcHeartbeatService({
             sessionId: `self-${index}`,
             peerSessionId: `peer-${index}`,
-            channel: channels[index] as never,
+            channel: channels[index],
             maxMissedPings: 3,
             pingFrequencyMsecs: 60_000
         });
@@ -109,17 +92,21 @@ export function runWebRtcHeartbeatCallbackChurn(
     return {
         durationMs: performance.now() - startedAt,
         channelCount: input.channels,
-        retainedCallbacks: channels.reduce((sum, channel) => sum + channel.callbackCount(), 0),
-        maxCallbacksPerChannel: Math.max(...channels.map((channel) => channel.callbackCount()))
+        retainedCallbacks: channels.reduce((sum, channel) => sum + channel.readHealth().messageCallbackCount, 0),
+        maxCallbacksPerChannel: Math.max(...channels.map((channel) => channel.readHealth().messageCallbackCount))
     };
 }
 
-export function runWebRtcHeartbeatCallbackChurnAcceptedSamples(input: {
+export interface WebRtcHeartbeatCallbackChurnAcceptedSamplesInput {
     readonly worker: RtcBaselineAcceptedWorker<WebRtcHeartbeatCallbackChurnInput>;
     readonly run: () =>
         | WebRtcHeartbeatCallbackChurnResult
         | Promise<WebRtcHeartbeatCallbackChurnResult>;
-}): Promise<RtcBaselineSampleDto[]> {
+}
+
+export function runWebRtcHeartbeatCallbackChurnAcceptedSamples(
+    input: WebRtcHeartbeatCallbackChurnAcceptedSamplesInput
+): Promise<RtcBaselineSampleDto[]> {
     return runRtcBaselineAcceptedWorker({
         worker: input.worker,
         run: input.run,

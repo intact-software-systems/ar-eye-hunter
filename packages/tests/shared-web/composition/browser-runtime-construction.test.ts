@@ -13,10 +13,10 @@ type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise
 type AuthModule = typeof import('@shared/api/auth.ts');
 
 const runtime = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import(
+    const { createDefaultApiMiddlewareTestDouble } = await import(
         '../api-middleware-test-double.ts'
     );
-    const middleware = createApiMiddlewareTestDouble();
+    const middleware = createDefaultApiMiddlewareTestDouble();
 
     return {
         middleware,

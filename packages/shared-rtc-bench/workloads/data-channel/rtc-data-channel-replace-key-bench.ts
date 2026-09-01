@@ -1,4 +1,10 @@
-import { QRtcDataChannel, type RtcDataChannelPayload } from '@shared/webrtc/QRtcDataChannel.ts';
+import { RtcBenchmarkNativeChannel } from '../native-rtc/rtc-benchmark-native-channel.ts';
+import {
+    createRtcBenchmarkPeerConnection,
+    type RtcBenchmarkPeerConnection
+} from '../native-rtc/rtc-benchmark-native-peer.ts';
+
+import { QRtcDataChannel, type RtcDataChannelCounters } from '@shared/webrtc/qrtc-data-channel.ts';
 
 import { runRtcBaselineAcceptedWorkerSamples } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 import {
@@ -7,6 +13,8 @@ import {
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import {
     rtcBaselineIssue,
+    type RtcBaselineIssueDto,
+    type RtcBaselineResult,
     type RtcBaselineSampleDto,
     type RtcBaselineSampleIdentityDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
@@ -16,6 +24,12 @@ interface RtcDataChannelReplaceKeyInput {
     readonly queueDepth: number;
     readonly replacements: number;
     readonly runs: number;
+}
+
+interface RtcDataChannelReplaceKeyDiagnosticArguments {
+    readonly mode: 'diagnostic';
+    readonly input: RtcDataChannelReplaceKeyInput;
+    readonly out: string;
 }
 
 interface RtcDataChannelReplaceKeyAcceptedArguments {
@@ -34,7 +48,7 @@ export interface RtcDataChannelReplaceKeyResult {
     readonly replacements: number;
     readonly queuedItemCount: number;
     readonly sentCount: number;
-    readonly counters: Readonly<Record<string, number>>;
+    readonly counters: RtcDataChannelCounters;
 }
 
 const frozenDepths = new Set<number>([32, 1000, 5000]);
@@ -43,7 +57,9 @@ const acceptedNames = (
     'rtc-queue-depth rtc-replacements rtc-inner-runs'
 ).split(' ');
 
-export function parseRtcDataChannelReplaceKeyArguments(arguments_: readonly string[]) {
+export function parseRtcDataChannelReplaceKeyArguments(
+    arguments_: readonly string[]
+): RtcBaselineResult<RtcDataChannelReplaceKeyDiagnosticArguments | RtcDataChannelReplaceKeyAcceptedArguments> {
     const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
     const parsed = parseRtcBaselineOneTokenOptions(
         arguments_,
@@ -55,16 +71,17 @@ export function parseRtcDataChannelReplaceKeyArguments(arguments_: readonly stri
     return accepted ? parseAcceptedArguments(parsed.value) : parseDiagnosticArguments(parsed.value);
 }
 
-export async function runRtcDataChannelReplaceKey(
-    queueDepth: number,
-    replacements: number
-): Promise<RtcDataChannelReplaceKeyResult> {
-    const nativeChannel = new FakeRtcDataChannel('realtime');
-    const peerConnection = {
-        onDataChannelDo: () => peerConnection,
-        createDataChannel: () => nativeChannel
-    };
-    const dataChannel = new QRtcDataChannel(peerConnection as never, {
+interface RtcDataChannelReplaceKeyChannel {
+    readonly peerFixture: RtcBenchmarkPeerConnection;
+    readonly nativeChannel: RtcBenchmarkNativeChannel;
+    readonly dataChannel: QRtcDataChannel;
+}
+
+function createReplaceKeyChannel(queueDepth: number): RtcDataChannelReplaceKeyChannel {
+    const peerFixture = createRtcBenchmarkPeerConnection('peer-1');
+    const nativeChannel = new RtcBenchmarkNativeChannel('realtime');
+    peerFixture.native.pendingChannels.push(nativeChannel);
+    const dataChannel = new QRtcDataChannel(peerFixture.peer, {
         peerId: 'peer-1',
         dataChannelName: 'realtime',
         flowControl: {
@@ -74,50 +91,68 @@ export async function runRtcDataChannelReplaceKey(
             maxQueueItems: queueDepth
         }
     });
-    dataChannel.connect(true);
-    await nativeChannel.emitOpen();
-    nativeChannel.bufferedAmount = 1;
-
-    const totalStart = performance.now();
-    const fillStart = performance.now();
-    for (let index = 0; index < queueDepth; index += 1) {
-        const result = dataChannel.sendJson(createPayload(index), {
-            key: `entity-${index}`,
-            now: () => 1_700_000_000_000
-        });
-        if (result.status !== 'queued') {
-            throw new Error(`Expected queued during fill, received ${result.status}.`);
-        }
-    }
-    const fillDurationMs = performance.now() - fillStart;
-    const replacementStart = performance.now();
-    for (let index = 0; index < replacements; index += 1) {
-        const result = dataChannel.sendJson(createPayload(index + queueDepth), {
-            key: `entity-${index % queueDepth}`,
-            now: () => 1_700_000_000_001 + index
-        });
-        if (result.status !== 'replaced') {
-            throw new Error(`Expected replaced during replacements, received ${result.status}.`);
-        }
-    }
-    const replacementDurationMs = performance.now() - replacementStart;
-    const health = dataChannel.readHealth();
-    return {
-        fillDurationMs,
-        replacementDurationMs,
-        totalDurationMs: performance.now() - totalStart,
-        queueDepth,
-        replacements,
-        queuedItemCount: health.queuedItemCount,
-        sentCount: nativeChannel.sent.length,
-        counters: health.counters
-    };
+    return { peerFixture, nativeChannel, dataChannel };
 }
 
-export async function runRtcDataChannelReplaceKeyAcceptedSamples(input: {
+export async function runRtcDataChannelReplaceKey(
+    queueDepth: number,
+    replacements: number
+): Promise<RtcDataChannelReplaceKeyResult> {
+    const { peerFixture, nativeChannel, dataChannel } = createReplaceKeyChannel(queueDepth);
+    try {
+        dataChannel.connect(true);
+        await nativeChannel.emitOpen();
+        nativeChannel.bufferedAmount = 1;
+
+        const totalStart = performance.now();
+        const fillStart = performance.now();
+        for (let index = 0; index < queueDepth; index += 1) {
+            const result = dataChannel.sendJson(createPayload(index), {
+                key: `entity-${index}`,
+                now: () => 1_700_000_000_000
+            });
+            if (result.status !== 'queued') {
+                throw new Error(`Expected queued during fill, received ${result.status}.`);
+            }
+        }
+        const fillDurationMs = performance.now() - fillStart;
+        const replacementStart = performance.now();
+        for (let index = 0; index < replacements; index += 1) {
+            const result = dataChannel.sendJson(createPayload(index + queueDepth), {
+                key: `entity-${index % queueDepth}`,
+                now: () => 1_700_000_000_001 + index
+            });
+            if (result.status !== 'replaced') {
+                throw new Error(`Expected replaced during replacements, received ${result.status}.`);
+            }
+        }
+        const replacementDurationMs = performance.now() - replacementStart;
+        const health = dataChannel.readHealth();
+        return {
+            fillDurationMs,
+            replacementDurationMs,
+            totalDurationMs: performance.now() - totalStart,
+            queueDepth,
+            replacements,
+            queuedItemCount: health.queuedItemCount,
+            sentCount: nativeChannel.sent.length,
+            counters: health.counters
+        };
+    }
+    finally {
+        dataChannel.reset();
+        peerFixture.dispose();
+    }
+}
+
+export interface RtcDataChannelReplaceKeyAcceptedSamplesInput {
     readonly worker: RtcDataChannelReplaceKeyAcceptedArguments;
     readonly run: () => Promise<RtcDataChannelReplaceKeyResult>;
-}): Promise<RtcBaselineSampleDto[]> {
+}
+
+export async function runRtcDataChannelReplaceKeyAcceptedSamples(
+    input: RtcDataChannelReplaceKeyAcceptedSamplesInput
+): Promise<RtcBaselineSampleDto[]> {
     return runRtcBaselineAcceptedWorkerSamples({
         worker: {
             ...input.worker,
@@ -131,7 +166,9 @@ export async function runRtcDataChannelReplaceKeyAcceptedSamples(input: {
     });
 }
 
-function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
+function parseDiagnosticArguments(
+    options: Readonly<Record<string, string>>
+): RtcBaselineResult<RtcDataChannelReplaceKeyDiagnosticArguments> {
     const queueDepth = parseRtcBaselineBoundedInteger(
         options['queue-size'] ?? '5000',
         'queue-size',
@@ -171,7 +208,9 @@ function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
         };
 }
 
-function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
+function parseAcceptedArguments(
+    options: Readonly<Record<string, string>>
+): RtcBaselineResult<RtcDataChannelReplaceKeyAcceptedArguments> {
     const queueDepth = parseRtcBaselineBoundedInteger(
         options['rtc-queue-depth'] ?? '',
         'rtc-queue-depth',
@@ -194,23 +233,7 @@ function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
             )
         );
     }
-    issues.push(...validateRtcBaselineId(options['baseline-id'] ?? ''));
-    const expected = queueDepth.ok
-        ? {
-            capture: 'worker',
-            workload: 'RTC-B02',
-            'case-id': 'data-channel-replace-key',
-            'input-key': `depth-${queueDepth.value}`,
-            'rtc-queue-depth': String(queueDepth.value),
-            'rtc-replacements': '25000',
-            'rtc-inner-runs': '5'
-        }
-        : {};
-    for (const [name, value] of Object.entries(expected)) {
-        if (options[name] !== value) {
-            issues.push(rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`));
-        }
-    }
+    issues.push(...validateAcceptedWorkerIdentity(options, queueDepth.ok ? queueDepth.value : undefined));
     const phase = options['intended-phase'];
     if (phase !== 'warmup' && phase !== 'retained') {
         issues.push(rtcBaselineIssue('$.intended-phase', 'unexpected-worker-input', 'Invalid phase.'));
@@ -233,11 +256,36 @@ function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
             value: {
                 mode: 'accepted' as const,
                 input: { queueDepth: depth, replacements: 25000, runs: 5 },
-                intendedPhase: phase as 'warmup' | 'retained',
+                intendedPhase: phase === 'warmup' ? 'warmup' : 'retained',
                 outerOrdinal: ordinal,
                 sampleIds
             }
         };
+}
+
+function validateAcceptedWorkerIdentity(
+    options: Readonly<Record<string, string>>,
+    queueDepth: number | undefined
+): RtcBaselineIssueDto[] {
+    const issues = validateRtcBaselineId(options['baseline-id'] ?? '');
+    if (queueDepth === undefined) {
+        return issues;
+    }
+    const expected = {
+        capture: 'worker',
+        workload: 'RTC-B02',
+        'case-id': 'data-channel-replace-key',
+        'input-key': `depth-${queueDepth}`,
+        'rtc-queue-depth': String(queueDepth),
+        'rtc-replacements': '25000',
+        'rtc-inner-runs': '5'
+    };
+    for (const [name, value] of Object.entries(expected)) {
+        if (options[name] !== value) {
+            issues.push(rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`));
+        }
+    }
+    return issues;
 }
 
 function createExpectedSampleIds(
@@ -261,7 +309,7 @@ function createSample(
     return {
         schema: 'rallar.rtc-baseline.sample.v1',
         identity,
-        outcome: result === null ? 'not-run' : issues.length === 0 ? 'passed' : 'failed',
+        outcome: classifySampleOutcome(result, issues),
         evidenceClass: 'synthetic-path',
         metrics: result === null
             ? []
@@ -276,8 +324,8 @@ function createSample(
 function validateResult(
     input: RtcDataChannelReplaceKeyInput,
     result: RtcDataChannelReplaceKeyResult
-) {
-    const issues = [];
+): RtcBaselineIssueDto[] {
+    const issues: RtcBaselineIssueDto[] = [];
     if (result.queueDepth !== input.queueDepth || result.queuedItemCount !== input.queueDepth) {
         issues.push(
             rtcBaselineIssue('$.rawEvidence.queueDepth', 'queue-bound-mismatch', 'Unexpected.')
@@ -295,7 +343,13 @@ function validateResult(
     return issues;
 }
 
-function createPayload(sequence: number): Record<string, number> {
+interface RtcReplacementPayload {
+    readonly sequence: number;
+    readonly x: number;
+    readonly y: number;
+}
+
+function createPayload(sequence: number): RtcReplacementPayload {
     return { sequence, x: sequence % 1024, y: sequence % 2048 };
 }
 
@@ -350,32 +404,14 @@ async function main(): Promise<void> {
     writeLine(`Wrote ${parsed.value.out}`);
 }
 
-class FakeRtcDataChannel {
-    readonly label: string;
-    readonly sent: RtcDataChannelPayload[] = [];
-    readyState: RTCDataChannelState = 'connecting';
-    bufferedAmount = 1;
-    bufferedAmountLowThreshold = 0;
-    binaryType: BinaryType = 'blob';
-    onmessage: ((event: MessageEvent) => void | Promise<void>) | null = null;
-    onopen: (() => void | Promise<void>) | null = null;
-    onclose: (() => void | Promise<void>) | null = null;
-    onerror: (() => void | Promise<void>) | null = null;
-    onbufferedamountlow: (() => void | Promise<void>) | null = null;
-
-    constructor(label: string) {
-        this.label = label;
+function classifySampleOutcome(
+    result: RtcDataChannelReplaceKeyResult | null,
+    issues: readonly RtcBaselineIssueDto[]
+): RtcBaselineSampleDto['outcome'] {
+    if (result === null) {
+        return 'not-run';
     }
-    send(data: RtcDataChannelPayload): void {
-        this.sent.push(data);
-    }
-    close(): void {
-        this.readyState = 'closed';
-    }
-    async emitOpen(): Promise<void> {
-        this.readyState = 'open';
-        await this.onopen?.();
-    }
+    return issues.length === 0 ? 'passed' : 'failed';
 }
 
 if (import.meta.main) {

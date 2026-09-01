@@ -1,3 +1,6 @@
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { vi } from 'vitest';
 
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
@@ -22,10 +25,11 @@ export interface PeopleEventFixtureInput {
 }
 
 const peopleEventMocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
-    const context = createApiMiddlewareTestDouble();
+    const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
+    const context = createDefaultApiMiddlewareTestDouble();
 
     return {
+        wsInboxCallbacks: new Map<string, OnMessageCallback>(),
         session: context.session,
         context,
         hydrateStateCache: vi.fn(async (): Promise<void> => undefined),
@@ -96,6 +100,7 @@ export function readPeopleEventMocks(): typeof peopleEventMocks {
 
 export function resetPeopleEventTestRuntime(): void {
     vi.clearAllMocks();
+    peopleEventMocks.wsInboxCallbacks.clear();
     peopleEventMocks.hydrateStateCache.mockResolvedValue(undefined);
     peopleEventMocks.initialiseApiMiddleware.mockResolvedValue(peopleEventMocks.context);
     peopleEventMocks.listStateClientEvents.mockRejectedValue(new Error('client events not mocked'));
@@ -107,19 +112,19 @@ export function resetPeopleEventTestRuntime(): void {
     vi.mocked(webSocketQueueBox.close).mockImplementation((code, reason) => {
         webSocketQueueBox.socket.close(code, reason);
     });
-    vi.mocked(webSocketQueueBox.onAnyInboxMessageDo).mockReturnValue(webSocketQueueBox);
-    vi.mocked(webSocketQueueBox.removeAnyInboxMessageCallback).mockReturnValue(true);
+    vi.mocked(webSocketQueueBox.onAnyInboxMessageDo).mockImplementation((id, callback) => {
+        peopleEventMocks.wsInboxCallbacks.set(id, callback);
+        return webSocketQueueBox;
+    });
+    vi.mocked(webSocketQueueBox.removeAnyInboxMessageCallback).mockImplementation(
+        (id) => peopleEventMocks.wsInboxCallbacks.delete(id)
+    );
     vi.mocked(webRtcConnectionService.onRtcPeerLifecycleDo).mockReturnValue(webRtcConnectionService);
 }
 
-export function findPeopleWsCallback(
-    latest = false
-): { onMessage?: (message: unknown) => Promise<void>; } | undefined {
-    const calls = vi
-        .mocked(peopleEventMocks.context.middleware.webSocketQueueBox.onAnyInboxMessageDo)
-        .mock.calls.filter(([callbackId]) => callbackId === 'rallar:ws:any-message');
-    const call = latest ? calls.at(-1) : calls[0];
-    return call?.[1] as { onMessage?: (message: unknown) => Promise<void>; } | undefined;
+export async function dispatchPeopleWsMessage(message: ALMessage): Promise<void> {
+    const entry = toResourceEntry(message.payload.typeId, message);
+    await Promise.all([...peopleEventMocks.wsInboxCallbacks.values()].map((callback) => callback.onMessage(message, entry)));
 }
 
 export function toPeopleEventMessage(event: ClientEvent) {

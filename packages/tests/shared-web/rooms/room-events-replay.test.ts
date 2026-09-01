@@ -7,7 +7,7 @@ import type { StateEventCursor } from '@shared/api/state-event-types.ts';
 import {
     createRoomEvent,
     createRoomEventPage,
-    findRoomWsCallback,
+    dispatchRoomWsMessage,
     readRoomEventMocks,
     resetRoomEventTestRuntime,
     toRoomEventEnvelopeMessage
@@ -45,7 +45,7 @@ describe('room event replay', () => {
         }, { roomId: 'room-1' });
         mocks.listStateGroupEventPage.mockResolvedValue(createRoomEventPage([live, replayed], false));
         await facade.connect();
-        await findRoomWsCallback(true)?.onMessage?.(toRoomEventEnvelopeMessage(live));
+        await dispatchRoomWsMessage(toRoomEventEnvelopeMessage(live));
 
         const result = await facade.rooms.replayEvents(
             {
@@ -58,7 +58,7 @@ describe('room event replay', () => {
                 replayMessages.push(message);
             }
         );
-        await findRoomWsCallback(true)?.onMessage?.(toRoomEventEnvelopeMessage(replayed));
+        await dispatchRoomWsMessage(toRoomEventEnvelopeMessage(replayed));
 
         expect(liveEvents.map((event) => event.eventId)).toEqual(['event-1']);
         expect(replayEvents).toEqual([replayed]);

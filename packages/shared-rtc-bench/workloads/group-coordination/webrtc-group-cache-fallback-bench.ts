@@ -1,8 +1,10 @@
 import { dirname } from 'node:path';
 
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts';
-import { WebRtcGroupService } from '@shared/services/WebRtcGroupService.ts';
+import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { WebRtcGroupService } from '@shared/services/web-rtc-group-service.ts';
 
 import {
     parseRtcBaselineAcceptedWorker,
@@ -48,7 +50,7 @@ interface CreateGroupSnapshotInput {
     readonly groupId: string;
     readonly version: number;
     readonly memberSessionIds: readonly string[];
-    readonly scope: Readonly<{ applicationId: string; workspaceId: string; }>;
+    readonly scope: Pick<GroupRef, 'applicationId' | 'workspaceId'>;
 }
 
 interface ValidationRule {
@@ -157,11 +159,13 @@ export function runWebRtcGroupCacheFallback(
     const snapshots = createSnapshots(input.snapshots, input.matchingVersions);
     const cache = new FallbackOnlyGroupCache(snapshots);
     const service = new WebRtcGroupService(
-        {
-            input: {
-                sessionId: 'self'
-            }
-        } as never,
+        new WebRtcConnectionService({ send: async () => {}, connect: async () => {} }, {
+            sessionId: 'self',
+            token: 'benchmark-token',
+            iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
+            dataChannelName: 'realtime',
+            rtcSignalingTopicId: 'rtc'
+        }),
         {
             ...targetScope,
             groupId: targetGroupId
@@ -191,10 +195,14 @@ export function runWebRtcGroupCacheFallback(
     };
 }
 
-export function runWebRtcGroupCacheFallbackAcceptedSamples(input: {
+export interface WebRtcGroupCacheFallbackAcceptedSamplesInput {
     readonly worker: RtcBaselineAcceptedWorker<WebRtcGroupCacheFallbackInput>;
     readonly run: () => WebRtcGroupCacheFallbackResult | Promise<WebRtcGroupCacheFallbackResult>;
-}): Promise<RtcBaselineSampleDto[]> {
+}
+
+export function runWebRtcGroupCacheFallbackAcceptedSamples(
+    input: WebRtcGroupCacheFallbackAcceptedSamplesInput
+): Promise<RtcBaselineSampleDto[]> {
     return runRtcBaselineAcceptedWorker({
         worker: input.worker,
         run: input.run,
@@ -282,9 +290,9 @@ function createGroupSnapshotGroup(input: CreateGroupSnapshotInput): GroupSnapsho
         activeMemberCount: input.memberSessionIds.length,
         ownerPrincipalId: input.memberSessionIds[0] ?? 'creator',
         snapshotVersion: input.version,
-        metadataVersion: 0,
+        metadataVersion: 1,
         rosterVersion: input.version,
-        presenceVersion: 0,
+        presenceVersion: input.version,
         created: {
             atEpochMs: 1,
             actor: { kind: 'principal', principalId: 'creator' },
@@ -319,7 +327,7 @@ function createGroupSnapshotMembers(input: CreateGroupSnapshotInput): GroupSnaps
         workspaceId: input.scope.workspaceId,
         groupId: input.groupId,
         principalId: sessionId,
-        role: 'member',
+        role: sessionId === input.memberSessionIds[0] ? 'owner' : 'member',
         status: 'active',
         joined: {
             atEpochMs: 1,
@@ -355,7 +363,7 @@ function createGroupSnapshotSessions(
         generationId: `generation-${sessionId}`,
         generationVersion: input.version,
         status: 'active',
-        connectedAtEpochMs: 1,
+        connectedAtEpochMs: input.version,
         lastHeartbeatAtEpochMs: input.version,
         expiresAtEpochMs: input.version + 60_000,
         disconnectedAtEpochMs: null,

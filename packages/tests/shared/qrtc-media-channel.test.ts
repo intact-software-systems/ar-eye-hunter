@@ -1,140 +1,137 @@
-import { MediaSessionState, QRtcMediaChannel } from '@shared/webrtc/QRtcMediaChannel.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { MediaSessionState, QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
+import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
+
+import {
+    SimulatedMediaStream,
+    SimulatedMediaTrack,
+    SimulatedNativeMediaPeerConnection,
+    SimulatedRtcTrackEvent
+} from './native-rtc-media-fixture.ts';
+
+const peers: QRtcPeerConnection[] = [];
+
+beforeEach(() => {
+    vi.stubGlobal('RTCPeerConnection', SimulatedNativeMediaPeerConnection);
+});
+
+afterEach(() => {
+    for (const peer of peers.splice(0)) {
+        peer.reset();
+    }
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+});
 
 describe('QRtcMediaChannel', () => {
-    it('subscribes once, caches remote streams, and resets cleanly', async () => {
-        const peerConnection = new FakePeerConnection();
-        const channel = new QRtcMediaChannel(peerConnection as never, {
-            peerId: 'peer-1'
+    it('delivers native tracks once across repeated connect and unsubscribes on reset', async () => {
+        const { peerConnection, native, channel } = createNativeMediaChannelFixture();
+        const deliveredTracks: MediaStreamTrack[] = [];
+        const deliveredStreams: MediaStream[] = [];
+        channel.onTrackDo('track', async (event) => {
+            deliveredTracks.push(event.track);
         });
-
-        const onTrack = vi.fn(async () => {
+        channel.onRemoteStreamDo('stream', async (stream) => {
+            deliveredStreams.push(stream);
         });
-        const onRemoteStream = vi.fn(async () => {
-        });
-
-        channel.onTrackDo('track', onTrack);
-        channel.onRemoteStreamDo('stream', onRemoteStream);
-
         channel.connect();
         channel.connect();
-
         expect(channel.status.state).toBe(MediaSessionState.Connecting);
-        expect(peerConnection.onRemoteStreamDo).toHaveBeenCalledTimes(1);
-        expect(peerConnection.onTrackDo).toHaveBeenCalledTimes(1);
 
-        const remoteStream = createMediaStream('remote-1');
-        const remoteEvent = createTrackEvent(remoteStream);
+        const track = new SimulatedMediaTrack('video');
+        const stream = new SimulatedMediaStream('remote-1', [track]);
+        await native.ontrack?.call(native, new SimulatedRtcTrackEvent(track, stream));
 
-        await peerConnection.emitRemoteStream(remoteStream, remoteEvent);
-        await peerConnection.emitTrack(remoteEvent);
-
-        expect(channel.getRemoteStreams()).toEqual([remoteStream]);
-        expect(onRemoteStream).toHaveBeenCalledWith(remoteStream, remoteEvent);
-        expect(onTrack).toHaveBeenCalledWith(remoteEvent);
-
+        expect(channel.getRemoteStreams()).toEqual([stream]);
+        expect(deliveredStreams).toEqual([stream]);
+        expect(deliveredTracks).toEqual([track]);
         channel.reset();
+        const laterStream = new SimulatedMediaStream('remote-2', [track]);
+        await native.ontrack?.call(native, new SimulatedRtcTrackEvent(track, laterStream));
 
+        expect([...peerConnection.status.remoteStreams.values()]).toEqual([stream, laterStream]);
         expect(channel.status.state).toBe(MediaSessionState.Idle);
+        expect(channel.isReadyToConnect()).toBe(true);
         expect(channel.getRemoteStreams()).toEqual([]);
-        expect(peerConnection.removeOnRemoteStreamCallbackById).toHaveBeenCalledWith(
-            'peer-1:media:stream'
-        );
-        expect(peerConnection.removeOnTrackCallbackById).toHaveBeenCalledWith(
-            'peer-1:media:track'
-        );
-
-        await peerConnection.emitRemoteStream(createMediaStream('remote-2'), remoteEvent);
-        expect(onRemoteStream).toHaveBeenCalledTimes(1);
+        expect(deliveredStreams).toEqual([stream]);
+        expect(deliveredTracks).toEqual([track]);
     });
 
-    it('propagates local media state and reports openness from the peer connection', async () => {
-        const peerConnection = new FakePeerConnection(true);
-        const channel = new QRtcMediaChannel(peerConnection as never, {
-            peerId: 'peer-1'
-        });
-
+    it('applies current audio/video toggles to native senders and stops local tracks', async () => {
+        const { native, channel } = createNativeMediaChannelFixture();
+        native.setConnected();
         channel.connect();
-
-        expect(channel.status.state).toBe(MediaSessionState.Open);
         expect(channel.isOpen()).toBe(true);
         expect(channel.isReadyToConnect()).toBe(false);
 
         channel.setLocalAudioEnabled(false);
         channel.setLocalVideoEnabled(true);
+        const audio = new SimulatedMediaTrack('audio');
+        const video = new SimulatedMediaTrack('video');
+        const stream = new SimulatedMediaStream('local-1', [audio, video]);
+        await channel.setLocalMediaStream(stream);
 
-        const localStream = createMediaStream('local-1');
-        await channel.setLocalMediaStream(localStream);
-        await channel.setParameters(localStream, true, false);
-
-        expect(peerConnection.setLocalMediaStream).toHaveBeenCalledTimes(2);
-        expect(peerConnection.setLocalAudioEnabled).toHaveBeenLastCalledWith(true);
-        expect(peerConnection.setLocalVideoEnabled).toHaveBeenLastCalledWith(false);
+        expect(native.getSenders().map((sender) => sender.track)).toEqual([audio, video]);
+        expect(audio.enabled).toBe(false);
+        expect(video.enabled).toBe(true);
+        await channel.setParameters(stream, true, false);
+        expect(audio.enabled).toBe(true);
+        expect(video.enabled).toBe(false);
         expect(channel.status.localAudioEnabled).toBe(true);
         expect(channel.status.localVideoEnabled).toBe(false);
 
         channel.stopLocalMedia('all');
-        expect(peerConnection.stopLocalMedia).toHaveBeenCalledWith('all');
+        expect(audio.readyState).toBe('ended');
+        expect(video.readyState).toBe('ended');
+    });
+
+    it('isolates rejected media callbacks and removes each subscription by public ID', async () => {
+        const { native, channel } = createNativeMediaChannelFixture();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const delivered: string[] = [];
+        channel.onRemoteStreamDo('rejected', async () => {
+            throw new Error('Rejected media observer');
+        });
+        channel.onRemoteStreamDo('accepted', async (stream) => {
+            delivered.push(stream.id);
+        });
+        channel.onTrackDo('removed', async () => {
+            delivered.push('removed');
+        });
+        expect(channel.removeOnTrackCallbackById('removed')).toBe(true);
+        channel.connect();
+        const track = new SimulatedMediaTrack('audio');
+        await native.ontrack?.call(native, new SimulatedRtcTrackEvent(track, new SimulatedMediaStream('first', [track])));
+        expect(delivered).toEqual(['first']);
+        expect(channel.removeOnRemoteStreamCallbackById('accepted')).toBe(true);
+        channel.clearCallbacks();
+        await native.ontrack?.call(native, new SimulatedRtcTrackEvent(track, new SimulatedMediaStream('second', [track])));
+        expect(delivered).toEqual(['first']);
+        expect(channel.getRemoteStreams().map((stream) => stream.id)).toEqual(['first', 'second']);
     });
 });
 
-class FakePeerConnection {
-    public readonly remoteStreamCallbacks = new Map<string, RemoteStreamCallback>();
-    public readonly trackCallbacks = new Map<string, TrackCallback>();
-    public readonly onRemoteStreamDo = vi.fn(
-        (id: string, cb: RemoteStreamCallback) => {
-            this.remoteStreamCallbacks.set(id, cb);
-            return this;
-        }
-    );
-    public readonly onTrackDo = vi.fn((id: string, cb: TrackCallback) => {
-        this.trackCallbacks.set(id, cb);
-        return this;
-    });
-    public readonly removeOnRemoteStreamCallbackById = vi.fn((id: string) => {
-        return this.remoteStreamCallbacks.delete(id);
-    });
-    public readonly removeOnTrackCallbackById = vi.fn((id: string) => {
-        return this.trackCallbacks.delete(id);
-    });
-    public readonly setLocalMediaStream = vi.fn(async () => {
-    });
-    public readonly setLocalAudioEnabled = vi.fn();
-    public readonly setLocalVideoEnabled = vi.fn();
-    public readonly stopLocalMedia = vi.fn();
-    public readonly isOpen = vi.fn(() => this.open);
-
-    private readonly open: boolean;
-
-    constructor(open = false) {
-        this.open = open;
-    }
-
-    async emitRemoteStream(stream: MediaStream, event: RTCTrackEvent): Promise<void> {
-        for (const callback of this.remoteStreamCallbacks.values()) {
-            await callback(stream, event);
-        }
-    }
-
-    async emitTrack(event: RTCTrackEvent): Promise<void> {
-        for (const callback of this.trackCallbacks.values()) {
-            await callback(event);
-        }
-    }
+interface NativeMediaChannelFixture {
+    readonly peerConnection: QRtcPeerConnection;
+    readonly native: SimulatedNativeMediaPeerConnection;
+    readonly channel: QRtcMediaChannel;
 }
 
-type TrackCallback = (event: RTCTrackEvent) => Promise<void>;
-type RemoteStreamCallback = (
-    stream: MediaStream,
-    event: RTCTrackEvent
-) => Promise<void>;
-
-function createMediaStream(id: string): MediaStream {
-    return { id } as MediaStream;
-}
-
-function createTrackEvent(stream: MediaStream): RTCTrackEvent {
-    return {
-        streams: [stream]
-    } as unknown as RTCTrackEvent;
+function createNativeMediaChannelFixture(): NativeMediaChannelFixture {
+    const peerConnection = new QRtcPeerConnection({ send: async () => {} }, {
+        sessionId: 'self',
+        token: 'fixture-token',
+        peerSessionId: 'peer-1',
+        iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
+        isPolite: false
+    });
+    peerConnection.connect();
+    peers.push(peerConnection);
+    const native = peerConnection.status.pc;
+    if (!(native instanceof SimulatedNativeMediaPeerConnection)) {
+        throw new Error('Expected the installed native media fixture');
+    }
+    const channel = new QRtcMediaChannel(peerConnection, { peerId: 'peer-1' });
+    return { peerConnection, native, channel };
 }

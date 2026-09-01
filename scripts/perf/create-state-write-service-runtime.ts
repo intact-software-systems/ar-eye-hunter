@@ -4,7 +4,7 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import {
     createPSqlResourceInboxRepository,
@@ -61,12 +61,12 @@ export interface StateWriteServiceRuntime {
     serviceId: string;
 }
 
-export type CreateStateWriteServiceRuntimeInput = Readonly<{
-    sql: Sql;
-    serviceId: string;
-    context: StateWriteServiceRuntimeContext;
-    timing: RallarTimingSink;
-}>;
+export interface CreateStateWriteServiceRuntimeInput {
+    readonly sql: Sql;
+    readonly serviceId: string;
+    readonly context: StateWriteServiceRuntimeContext;
+    readonly timing: RallarTimingSink;
+}
 
 export function createStateWriteServiceRuntime({
     sql,

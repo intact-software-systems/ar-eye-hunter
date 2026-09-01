@@ -25,7 +25,7 @@ import {
 } from '@shared/crdt/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS, RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 const DOCUMENT: RallarCrdtDocumentRef = {
     applicationId: 'app-1',

@@ -1,28 +1,21 @@
+import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import type { BlackBoxRallarRuntimeInstallationTarget } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
+import { isBlackBoxCommandRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
+import { decodeBlackBoxRallarConnectionConfig } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts';
 import type {
-    RallarBlackBoxBrowserRallarEvent,
     RallarBlackBoxBrowserRallarRuntime,
     RallarBlackBoxBrowserTestRuntime,
-    RallarBlackBoxBrowserWebSocket,
     RallarBlackBoxBrowserWebSocketFactory
 } from './browser-adapter.ts';
 
-type BrowserRallarWindow =
-    & Window
-    & Readonly<{
-        __blackBoxRallar?: RallarBlackBoxBrowserRallarRuntime;
-    }>
-    & {
-        __blackBoxRallarEmit?: (event: RallarBlackBoxBrowserRallarEvent) => void | Promise<void>;
-    };
-
 let runtimeImportPromise: Promise<void> | undefined;
 
-function browserWindow(): BrowserRallarWindow {
+function browserWindow(): BlackBoxRallarRuntimeInstallationTarget {
     if (typeof window === 'undefined') {
         throw new Error('browser-rallar provider requires a browser window.');
     }
 
-    return window as BrowserRallarWindow;
+    return window;
 }
 
 async function loadBrowserRallarRuntime(): Promise<void> {
@@ -32,7 +25,7 @@ async function loadBrowserRallarRuntime(): Promise<void> {
     await runtimeImportPromise;
 }
 
-async function resolveBrowserRallarRuntime(): Promise<RallarBlackBoxBrowserRallarRuntime> {
+async function resolveBrowserRallarRuntime(): Promise<BlackBoxRallarRuntime> {
     const targetWindow = browserWindow();
     if (!targetWindow.__blackBoxRallar) {
         await loadBrowserRallarRuntime();
@@ -60,12 +53,13 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
     return {
         async authenticate(config) {
             const runtime = await resolveBrowserRallarRuntime();
-            return runtime.authenticate
-                ? await runtime.authenticate(config)
-                : await runtime.connect(config);
+            if (!runtime.authenticate) {
+                throw new Error('browser-rallar provider did not expose authenticate.');
+            }
+            return await runtime.authenticate(decodeBlackBoxRallarConnectionConfig(config));
         },
         async connect(config) {
-            return await (await resolveBrowserRallarRuntime()).connect(config);
+            return await (await resolveBrowserRallarRuntime()).connect(decodeBlackBoxRallarConnectionConfig(config));
         },
         async send(input) {
             return await (await resolveBrowserRallarRuntime()).send(input);
@@ -103,17 +97,24 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
             return await (await resolveBrowserRallarRuntime()).close();
         },
         async health(input?: unknown) {
-            return await (await resolveBrowserRallarRuntime()).health(input);
+            return await (await resolveBrowserRallarRuntime()).health({
+                includeRtcDiagnostics: isBlackBoxCommandRecord(input) && input.includeRtcDiagnostics === true
+            });
         }
     };
 }
 
 export function installSpaBrowserRallarEventBridge(
-    runtime: RallarBlackBoxBrowserTestRuntime
+    runtime: Pick<RallarBlackBoxBrowserTestRuntime, 'receiveRallarBrowserEvent'>
 ): () => void {
     const targetWindow = browserWindow();
     const previous = targetWindow.__blackBoxRallarEmit;
-    targetWindow.__blackBoxRallarEmit = (event) => runtime.receiveRallarBrowserEvent(event);
+    targetWindow.__blackBoxRallarEmit = (event) =>
+        runtime.receiveRallarBrowserEvent({
+            ...event,
+            roomRef: event.roomRef ? { ...event.roomRef } : undefined,
+            scope: event.scope ? { ...event.scope } : undefined
+        });
     return () => {
         targetWindow.__blackBoxRallarEmit = previous;
     };
@@ -125,9 +126,39 @@ export function createBrowserWebSocketFactory(): RallarBlackBoxBrowserWebSocketF
             throw new Error('WebSocket is not available for browser-rallar WebSocket commands.');
         }
 
-        return new WebSocket(
+        const socket = new WebSocket(
             url,
-            protocols as string | string[] | undefined
-        ) as RallarBlackBoxBrowserWebSocket;
+            typeof protocols === 'string' ? protocols : protocols ? [...protocols] : undefined
+        );
+        return {
+            get readyState() {
+                return socket.readyState;
+            },
+            get protocol() {
+                return socket.protocol;
+            },
+            get url() {
+                return socket.url;
+            },
+            get bufferedAmount() {
+                return socket.bufferedAmount;
+            },
+            send(data) {
+                if (ArrayBuffer.isView(data)) {
+                    socket.send(new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice());
+                    return;
+                }
+                if (
+                    typeof data === 'string' || data instanceof ArrayBuffer || data instanceof Blob
+                ) {
+                    socket.send(data);
+                    return;
+                }
+                throw new TypeError('Browser WebSocket data must be text, Blob, or binary bytes.');
+            },
+            close: (code, reason) => socket.close(code, reason),
+            addEventListener: (type, listener) => socket.addEventListener(type, listener),
+            removeEventListener: (type, listener) => socket.removeEventListener(type, listener)
+        };
     };
 }

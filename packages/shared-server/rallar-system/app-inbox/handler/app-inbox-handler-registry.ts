@@ -1,4 +1,4 @@
-import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { AppInboxType } from '../app-inbox-contracts.ts';
 import type { AppInboxHandlerExecutor } from './app-inbox-handler-executor.ts';

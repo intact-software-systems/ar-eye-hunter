@@ -1,5 +1,18 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { events, facade, loadRuntime, resetFacade, topics } from './browser-rallar-runtime-test-harness.ts';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+import {
+    events,
+    facade,
+    loadRuntime,
+    resetFacade,
+    topics
+} from './browser-rallar-runtime-test-harness.ts';
 
 beforeEach(() => {
     resetFacade();
@@ -153,6 +166,42 @@ it('bridges relevant browser console warnings into structured diagnostics', asyn
     await runtime.close();
     warnSpy.mockRestore();
     expect(console.warn).toBe(originalWarn);
+});
+
+it('keeps warning diagnostics serializable when native console arguments are circular', async () => {
+    const runtime = await loadRuntime();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    onTestFinished(async () => {
+        try {
+            await runtime.close();
+        }
+        finally {
+            warnSpy.mockRestore();
+        }
+    });
+    await runtime.connect({
+        connection: 'aliceRtc',
+        rallar: {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret'
+        }
+    });
+
+    const circularArgument: object[] = [];
+    circularArgument.push(circularArgument);
+    console.warn('Unhandled WS message: circular', circularArgument);
+
+    const nativeWarning = warnSpy.mock.calls.at(-1);
+    expect(nativeWarning?.[0]).toBe('Unhandled WS message: circular');
+    expect(nativeWarning?.[1]).toBe(circularArgument);
+    expect(events.at(-1)).toMatchObject({
+        kind: 'diagnostic',
+        topic: 'rallar.browser.ws.unhandled_message',
+        severity: 'warning',
+        data: { message: 'Unhandled WS message: circular ' }
+    });
+    expect(() => JSON.stringify(events.at(-1))).not.toThrow();
 });
 
 it('emits room join failure diagnostics for permission-style failures', async () => {

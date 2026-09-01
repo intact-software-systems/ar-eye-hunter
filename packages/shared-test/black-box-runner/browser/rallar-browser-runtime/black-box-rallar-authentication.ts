@@ -1,25 +1,25 @@
-import type { AuthSession, LoginResponse } from '@shared/api/api-config.ts';
+import type { AuthSession, LoginRequest, LoginResponse, RegisterRequest } from '@shared/api/api-config.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import {
     toBlackBoxRallarAuthenticationKey,
     toBlackBoxRallarSessionDiagnostic
 } from './black-box-rallar-connection-policy.ts';
 import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
-import { toBlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
-import type { BlackBoxBrowserRallarRuntimeDependency } from './browser-rallar-runtime-composition.ts';
+import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarAuthenticateDiagnostics,
     BlackBoxRallarCloseDiagnostics,
     BlackBoxRallarConnectDiagnostics,
     BlackBoxRallarConnectionConfig
-} from './contracts.ts';
-import type { BlackBoxRallarRuntimeDiagnostics } from './diagnostics.ts';
-import type { BlackBoxRallarLifecycleController } from './lifecycle-controller.ts';
+} from './black-box-rallar-operation-contracts.ts';
 import {
     blackBoxRallarScopeDiagnosticsOf,
     isSameBlackBoxRallarSession,
     mergeBlackBoxRallarAuthenticationConfig
-} from './policy.ts';
+} from './black-box-rallar-operation-policy.ts';
+import { toBlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
+import type { BlackBoxBrowserRallarRuntimeDependency } from './browser-rallar-runtime-composition.ts';
+import type { BlackBoxRallarLifecycleController } from './lifecycle-controller.ts';
 export namespace BlackBoxRallarAuthentication {
     export interface State {
         readonly key: string;
@@ -59,51 +59,71 @@ export class BlackBoxRallarAuthentication {
         config: BlackBoxRallarConnectionConfig,
         signal?: AbortSignal
     ): Promise<LoginResponse | AuthSession> => {
-        const { username, password, displayName, register, timeoutMs } = config.rallar;
-        const operationOptions = signal ? { timeoutMs, signal } : { timeoutMs };
+        const { username, password, displayName, register } = config.rallar;
         if (!username || !password) {
             return this.#restoreRequiredSession(config);
         }
-
         if (register === true || register === 'if-needed') {
-            this.#dependencies.runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.auth.register_started', {
-                username,
-                register
-            });
-            try {
-                const registered = await this.#dependencies.rallar.auth.registerAndLogin(
-                    { username, password, displayName },
-                    operationOptions
-                );
-                this.#dependencies.runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.auth.register_completed', {
-                    session: toBlackBoxRallarSessionDiagnostic(registered)
-                });
+            const registered = await this.#tryRegistration(config, { username, password, displayName }, signal);
+            if (registered) {
                 return registered;
             }
-            catch (caught) {
-                const error = toError(caught);
-                this.#dependencies.runtimeDiagnostics.emitError(config, 'rallar.browser.auth.register_failed', error, {
-                    phase: 'auth-register',
-                    register
-                });
-                if (register !== 'if-needed' || signal?.aborted) {
-                    throw error;
-                }
-                this.#dependencies.runtimeDiagnostics.emitDiagnostic(
-                    config,
-                    'rallar.browser.register_failed_login_fallback',
-                    {
-                        error: toBlackBoxRallarSerializedError(error)
-                    }
-                );
-            }
         }
-
-        this.#dependencies.runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.auth.login_started', {
-            username
+        return this.#login(config, { username, password }, signal);
+    };
+    async #tryRegistration(
+        config: BlackBoxRallarConnectionConfig,
+        credentials: RegisterRequest,
+        signal?: AbortSignal
+    ): Promise<LoginResponse | undefined> {
+        const { register, timeoutMs } = config.rallar;
+        this.#dependencies.runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.auth.register_started', {
+            username: credentials.username,
+            register
         });
         try {
-            const loggedIn = await this.#dependencies.rallar.auth.login({ username, password }, operationOptions);
+            const registered = await this.#dependencies.rallar.auth.registerAndLogin(
+                credentials,
+                signal ? { timeoutMs, signal } : { timeoutMs }
+            );
+            this.#dependencies.runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.auth.register_completed', {
+                session: toBlackBoxRallarSessionDiagnostic(registered)
+            });
+            return registered;
+        }
+        catch (caught) {
+            const error = toError(caught);
+            this.#dependencies.runtimeDiagnostics.emitError({
+                config,
+                topic: 'rallar.browser.auth.register_failed',
+                error,
+                data: { phase: 'auth-register', register }
+            });
+            if (register !== 'if-needed' || signal?.aborted) {
+                throw error;
+            }
+            this.#dependencies.runtimeDiagnostics.emitDiagnostic(
+                config,
+                'rallar.browser.register_failed_login_fallback',
+                { error: toBlackBoxRallarSerializedError(error) }
+            );
+            return undefined;
+        }
+    }
+    async #login(
+        config: BlackBoxRallarConnectionConfig,
+        credentials: LoginRequest,
+        signal?: AbortSignal
+    ): Promise<LoginResponse> {
+        const { timeoutMs } = config.rallar;
+        this.#dependencies.runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.auth.login_started', {
+            username: credentials.username
+        });
+        try {
+            const loggedIn = await this.#dependencies.rallar.auth.login(
+                credentials,
+                signal ? { timeoutMs, signal } : { timeoutMs }
+            );
             this.#dependencies.runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.auth.login_completed', {
                 session: toBlackBoxRallarSessionDiagnostic(loggedIn)
             });
@@ -111,19 +131,27 @@ export class BlackBoxRallarAuthentication {
         }
         catch (caught) {
             const error = toError(caught);
-            this.#dependencies.runtimeDiagnostics.emitError(config, 'rallar.browser.auth.login_failed', error, {
-                phase: 'auth-login'
+            this.#dependencies.runtimeDiagnostics.emitError({
+                config,
+                topic: 'rallar.browser.auth.login_failed',
+                error,
+                data: { phase: 'auth-login' }
             });
             throw error;
         }
-    };
+    }
     #restoreRequiredSession(config: BlackBoxRallarConnectionConfig): AuthSession {
         this.#dependencies.runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.auth.restore_started');
         const restored = this.#dependencies.rallar.auth.restore();
         if (!restored) {
             const error = new Error('Rallar credentials are required when no browser session is restored.');
-            this.#dependencies.runtimeDiagnostics.emitError(config, 'rallar.browser.auth.restore_failed', error, {
-                phase: 'auth-restore'
+            this.#dependencies.runtimeDiagnostics.emitError({
+                config: config,
+                topic: 'rallar.browser.auth.restore_failed',
+                error: error,
+                data: {
+                    phase: 'auth-restore'
+                }
             });
             throw error;
         }
@@ -254,7 +282,11 @@ export class BlackBoxRallarAuthentication {
     ): Promise<BlackBoxRallarAuthenticateDiagnostics> => {
         if (!config.rallar.apiBaseUrl) {
             const error = new Error('rallar.apiBaseUrl is required.');
-            this.#dependencies.runtimeDiagnostics.emitError(config, 'rallar.browser.authenticate_failed', error);
+            this.#dependencies.runtimeDiagnostics.emitError({
+                config: config,
+                topic: 'rallar.browser.authenticate_failed',
+                error: error
+            });
             throw error;
         }
         this.#dependencies.runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.authenticate_started');
@@ -279,7 +311,11 @@ export class BlackBoxRallarAuthentication {
         }
         catch (caught) {
             const error = toError(caught);
-            this.#dependencies.runtimeDiagnostics.emitError(config, 'rallar.browser.authenticate_failed', error);
+            this.#dependencies.runtimeDiagnostics.emitError({
+                config: config,
+                topic: 'rallar.browser.authenticate_failed',
+                error: error
+            });
             throw error;
         }
     };

@@ -21,7 +21,7 @@ import {
     type BootstrapOverlayPolicyInput,
     type GroupSnapshotRtcSyncPort
 } from '@shared/services/group-snapshot-rtc-sync.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { dispatchOverlayTopologyMessage } from './overlay-topology-message-dispatch.ts';
 import {

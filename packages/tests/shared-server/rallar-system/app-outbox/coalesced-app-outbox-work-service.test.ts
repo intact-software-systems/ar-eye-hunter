@@ -5,7 +5,7 @@ import {
     type CoalescedAppOutboxWorkData
 } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
 import { EnqueuedType, EntityStatus, InMemoryQueueBox } from '@shared/mod.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { describe, expect, it } from 'vitest';
 
 type TestWork = Readonly<{

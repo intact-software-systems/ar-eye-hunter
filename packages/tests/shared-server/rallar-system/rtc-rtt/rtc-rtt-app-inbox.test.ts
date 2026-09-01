@@ -9,7 +9,7 @@ import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/m
 import { readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { createTestGroup } from '../../../create-test-group.ts';
 import { createAuthorityHarness, createResilience, SCOPE, type AuthorityHarness } from '../group-state/inbox/group-state-inbox-test-runtime.ts';

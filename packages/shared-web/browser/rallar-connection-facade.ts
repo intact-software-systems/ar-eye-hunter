@@ -14,12 +14,12 @@ import type {
 } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { CommandsOrchestrator, CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
-import type { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
+import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
-import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/services/WebRtcConnectionService.ts';
-import type { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
+import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 
 /** Controls the single active heartbeat for a connected browser session. */
 export interface RallarSessionHeartbeat {

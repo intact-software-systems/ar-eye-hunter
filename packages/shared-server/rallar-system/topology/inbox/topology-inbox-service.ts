@@ -1,6 +1,6 @@
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import {
@@ -35,17 +35,13 @@ import {
     type TopologyAppInboxResult
 } from './topology-app-inbox-handler.ts';
 
-const TOPOLOGY_CONFIG_INBOX_TYPES = [
+const TOPOLOGY_CONFIG_INBOX_TYPES: readonly AppInboxType[] = [
     AppInboxType.TOPOLOGY_CONFIG_PUT,
     AppInboxType.TOPOLOGY_CONFIG_DELETE,
     AppInboxType.TOPOLOGY_OVERRIDE_PUT,
     AppInboxType.TOPOLOGY_OVERRIDE_DELETE,
     AppInboxType.TOPOLOGY_RECONFIGURE
-] as const;
-
-function isTopologyConfigInboxType(type: AppInboxType): boolean {
-    return (TOPOLOGY_CONFIG_INBOX_TYPES as readonly AppInboxType[]).includes(type);
-}
+];
 
 export namespace TopologyInboxService {
     export interface Dependencies {
@@ -135,7 +131,7 @@ export class TopologyInboxService {
         enqueue: AppInboxEnqueueInput,
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, TopologyAppInboxResult>> {
-        if (!isTopologyConfigInboxType(enqueue.type)) {
+        if (!TOPOLOGY_CONFIG_INBOX_TYPES.includes(enqueue.type)) {
             throw new TypeError('Topology AppInbox type is required');
         }
         return await this.commandClient.enqueueAndWaitForResult(

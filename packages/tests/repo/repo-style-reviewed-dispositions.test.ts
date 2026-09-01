@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe('reviewed repository style dispositions', () => {
-    it('freezes exactly the approved path, rule, and symbol triples', () => {
+    it('freezes exactly the reviewed path, rule, symbol, and magnitude contracts', () => {
         expect(Object.isFrozen(reviewedDispositions)).toBe(true);
         expect(reviewedDispositions).toEqual([
             {
@@ -179,6 +179,346 @@ describe('reviewed repository style dispositions', () => {
                     'rtc-rtt-persistence-validation.ts',
                 rule: 'boundary.unknown',
                 symbol: 'validateExpectedRevision'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-crdt-controller.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
+                rule: 'boundary.unknown',
+                symbol: 'consoleWarningPart'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
+                rule: 'boundary.unknown',
+                symbol: 'classifyConsoleWarning'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
+                rule: 'boundary.unknown',
+                symbol: 'ensurePatch'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'isBlackBoxCommandRecord'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeBlackBoxCommandString'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeBlackBoxCommandNumber'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeBlackBoxCommandScope'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeBlackBoxCommandRoomRef'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodePeerIds'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeAck'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeMessageFields'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'isRealtimeSendEnvelope'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeBlackBoxRallarSendInput'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeBlackBoxRallarWsSendInput'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+                rule: 'boundary.unknown',
+                symbol: 'configRecord'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+                rule: 'boundary.unknown',
+                symbol: 'optionalString'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+                rule: 'boundary.unknown',
+                symbol: 'optionalNumber'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+                rule: 'boundary.unknown',
+                symbol: 'optionalBoolean'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+                rule: 'boundary.unknown',
+                symbol: 'stringList'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+                rule: 'boundary.unknown',
+                symbol: 'registration'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+                rule: 'boundary.unknown',
+                symbol: 'messageSelector'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+                rule: 'boundary.unknown',
+                symbol: 'dataChannelInit'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts',
+                rule: 'boundary.unknown',
+                symbol: 'flowControl'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'commandRecord'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'optionalString'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'optionalNumber'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'optionalBoolean'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'stringList'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'numberList'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'isCrdtJsonValue'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'optionalJsonValue'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'transport'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'scope'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'registration'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'connection'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'operationKind'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'pathKind'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'pathSchema'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'validation'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'encryptionKey'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'encryption'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeBlackBoxRallarCrdtHandle'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeBlackBoxRallarCrdtOpenInput'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeBlackBoxRallarCrdtApplyInput'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeBlackBoxRallarCrdtUndoRedoInput'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'syncOptions'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeBlackBoxRallarCrdtSyncInput'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'waitCondition'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeBlackBoxRallarCrdtWaitInput'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/director-controller.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/messaging-controller.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'packages/shared/webrtc/decode-rtc-signaling-message.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeRtcSignalingPayload'
+            },
+            {
+                path: 'packages/shared/webrtc/decode-rtc-signaling-message.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeIceCandidate'
+            },
+            {
+                path: 'packages/tests/shared-server/rallar-system/group-state/presence/group-presence-summary-delta-emission.test.ts',
+                rule: 'boundary.unknown',
+                symbol: 'readEventRowPayload'
+            },
+            {
+                path: 'packages/tests/shared-server/rallar-system/group-state/presence/group-state-delta-envelope.test.ts',
+                rule: 'boundary.unknown',
+                symbol: 'readGroupStateEventRowEnvelope'
+            },
+            {
+                path: 'packages/tests/shared-test/rallar-browser-runtime/director.test.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'packages/tests/shared-test/rallar-browser-runtime/director.test.ts',
+                rule: 'boundary.unknown',
+                symbol: 'configureDirectorRelayScenario'
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-crdt-controller.ts',
+                rule: 'file.cognitive-load',
+                symbol: undefined,
+                maximumMagnitude: 117
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts',
+                rule: 'file.cognitive-load',
+                symbol: undefined,
+                maximumMagnitude: 89
+            },
+            {
+                path: 'packages/shared/services/web-rtc-connection-service.ts',
+                rule: 'file.cognitive-load',
+                symbol: undefined,
+                maximumMagnitude: 105
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime',
+                rule: 'layout.directory-density',
+                symbol: 'rallar-browser-runtime',
+                maximumMagnitude: 21
+            },
+            {
+                path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime',
+                rule: 'layout.feature-prefix-cluster',
+                symbol: 'prefix:black',
+                maximumMagnitude: 12
             }
         ]);
     });
@@ -312,6 +652,89 @@ describe('reviewed repository style dispositions', () => {
         expect(result.status, result.stdout).toBe(1);
         expect(result.stdout).toContain('FAIL: 1 new or worsened repository style finding');
         expect(result.stdout).toContain('boundary.unknown');
+    });
+
+    it.each([
+        { relativeFile: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-crdt-controller.ts', maximumMagnitude: 117 },
+        { relativeFile: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-crdt-input.ts', maximumMagnitude: 89 },
+        { relativeFile: 'packages/shared/services/web-rtc-connection-service.ts', maximumMagnitude: 105 }
+    ])('keeps the reviewed cognitive magnitude bounded for $relativeFile', ({ relativeFile, maximumMagnitude }) => {
+        const finding = {
+            file: path.join(repoRoot, relativeFile),
+            ruleId: 'file.cognitive-load',
+            symbol: undefined,
+            message: `File cognitive load ${maximumMagnitude} reaches the review tier.`
+        };
+        expect(isReviewedDisposition(repoRoot, finding)).toBe(true);
+        expect(isReviewedDisposition(repoRoot, {
+            ...finding,
+            message: `File cognitive load ${maximumMagnitude - 1} reaches the review tier.`
+        })).toBe(true);
+        expect(isReviewedDisposition(repoRoot, {
+            ...finding,
+            message: `File cognitive load ${maximumMagnitude + 1} reaches the review tier.`
+        })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, {
+            ...finding,
+            message: 'File cognitive load 330 reaches the refactor-or-register tier.'
+        })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, file: `${finding.file}.other.ts` })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, ruleId: 'file.length' })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...finding, symbol: 'otherOwner' })).toBe(false);
+    });
+
+    it('bounds directory review and distinguishes checker-owned prefixes at the same path', () => {
+        const directory = 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime';
+        const sources = [
+            ...Array.from({ length: 12 }, (_, index) => `black-owner-${index}.ts`),
+            ...Array.from({ length: 9 }, (_, index) => `other-owner-${index}.ts`)
+        ].map((file) => ({ file: path.join(repoRoot, directory, file), raw: '' }));
+        const findings = scanProductionSources({ repoRoot, sources, options: { layoutOnly: true } }).findings;
+        const density = findings.find(({ ruleId }) => ruleId === 'layout.directory-density');
+        const black = findings.find(({ ruleId, symbol }) => ruleId === 'layout.feature-prefix-cluster' && symbol === 'prefix:black');
+        const other = findings.find(({ ruleId, symbol }) => ruleId === 'layout.feature-prefix-cluster' && symbol === 'prefix:other');
+        expect(density).toBeDefined();
+        expect(black).toBeDefined();
+        expect(other).toBeDefined();
+        if (density === undefined || black === undefined || other === undefined) {
+            throw new Error('Expected density and both independently owned prefix findings.');
+        }
+        expect(isReviewedDisposition(repoRoot, density)).toBe(true);
+        expect(isReviewedDisposition(repoRoot, black)).toBe(true);
+        expect(isReviewedDisposition(repoRoot, other)).toBe(false);
+        expect(isReviewedDisposition(repoRoot, { ...black, symbol: undefined })).toBe(false);
+        // Display wording cannot transfer the exact prefix ownership.
+        expect(isReviewedDisposition(repoRoot, {
+            ...other,
+            message: black.message
+        })).toBe(false);
+        expect(isReviewedDisposition(repoRoot, {
+            ...black,
+            message: black.message.replace('prefix \'black\'', 'A reviewed feature cluster')
+        })).toBe(true);
+        const grown = scanProductionSources({
+            repoRoot,
+            sources: [...sources, { file: path.join(repoRoot, directory, 'black-owner-added.ts'), raw: '' }],
+            options: { layoutOnly: true }
+        }).findings;
+        expect(
+            grown.filter(({ ruleId }) => ruleId === 'layout.directory-density' || ruleId === 'layout.feature-prefix-cluster')
+                .every((finding) => !isReviewedDisposition(repoRoot, finding))
+        ).toBe(true);
+    });
+
+    it('keeps function-owned unknown findings blocking beside a reviewed module owner', () => {
+        const relativeFile = 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/director-controller.ts';
+        const findings = scanProductionSources({
+            repoRoot,
+            sources: [{
+                file: path.join(repoRoot, relativeFile),
+                raw: 'export interface OpaqueData { value: unknown; }\n' +
+                    'export function unreviewedDomain(value: unknown): string { return String(value); }\n'
+            }],
+            options: { layoutOnly: false }
+        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
+        expect(findings.map((finding) => isReviewedDisposition(repoRoot, finding))).toEqual([true, false]);
     });
 
     it('matches a receipt disposition only at exact native magnitude and candidate head', () => {

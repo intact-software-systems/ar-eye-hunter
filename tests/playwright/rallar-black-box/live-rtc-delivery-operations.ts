@@ -1,6 +1,6 @@
 import { expect, type TestInfo } from '@playwright/test';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { BlackBoxRallarSendInput } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
+import type { BlackBoxRallarSendInput } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type {
     RallarBlackBoxTestRtcSendCommand,
     RallarBlackBoxTestWsSendCommand

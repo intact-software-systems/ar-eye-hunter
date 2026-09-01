@@ -16,8 +16,8 @@ interface RoomSnapshotScopeFixture {
 }
 
 const roomWorkflowMocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
-    const ctx = createApiMiddlewareTestDouble();
+    const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
+    const ctx = createDefaultApiMiddlewareTestDouble();
     const operationLog: string[] = [];
     const groupSnapshots: GroupSnapshot[] = [];
 
@@ -280,13 +280,6 @@ export function rejectLeaveWith(error: Error): void {
 export async function publishRoomSnapshots(snapshots: readonly GroupSnapshot[]): Promise<void> {
     seedRoomSnapshots(snapshots);
     await notifyCacheListeners(snapshots);
-}
-
-export function requireRecord(value: unknown, label: string): Record<string, unknown> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        throw new TypeError(`Expected ${label} to be a record`);
-    }
-    return value as Record<string, unknown>;
 }
 
 function upsertGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
