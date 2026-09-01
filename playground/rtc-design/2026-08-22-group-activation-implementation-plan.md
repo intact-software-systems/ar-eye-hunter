@@ -1,7 +1,8 @@
 # Group Activation — Implementation Plan (2026-08-22)
 
-Status: **implementation in progress — PR #390 and PR #391 are merged; Slice 8d PR #396 is reconciling
-their reviewed parent tree before final review and validation, followed by Slice 9a. Re-baselined
+Status: **implementation in progress — PR #390 and PR #391 are merged; Slice 8d PR #396 has completed
+reviewed-parent reconciliation and is in final broad validation and controlled performance review,
+followed by Slice 9a. Re-baselined
 against product decisions 1–42. The product decisions are settled;
 the implementation decisions record current reasoning, while ownership, decomposition, file and
 symbol inventories, dependencies and gates must be refreshed against the actual delivery head before
@@ -1975,16 +1976,17 @@ migration and no agent-owned deployment pause. PR #391 then merged at
 ceilings, complete remote gates, exact-head review and ready-for-main marker. Its merge tree is
 byte-identical to reviewed feature head `adc2863155fd52b0584726ba0cf64657b6459e57`.
 
-PR #396 is now the only unmerged implementation PR in the existing stack. Its local correction
-series is being reconciled first with that exact reviewed #391 feature head, rather than asking Git
-to infer a three-way merge from the later squash commit and the stack's old common ancestor. The
-resolution keeps Slice 8d's exact durable room audience through live delivery, applies #391's
-discriminated authorization and validation cleanup, removes the superseded snapshot-forwarding
-path and retired legacy consumer inventories, and preserves both PRs' executable evidence. After
-this semantic-parent merge is validated and committed, a second ancestry-only merge from current
-`main` will connect the squash history without changing the reviewed tree. PR #396 remains draft and
-unaccepted until that combined head passes complete review, required gates and controlled
-performance evidence.
+PR #396 is now the only unmerged implementation PR in the existing stack. The exact reviewed #391
+feature head was integrated semantically at `b97c44b3e`, then current `main` squash ancestry was
+connected without a tree change at `9798093d5`. Review correction `16e4e88cc` keeps Slice 8d's exact
+durable room audience through live delivery, applies #391's discriminated authorization and
+validation cleanup, removes the superseded snapshot-forwarding path and retired legacy consumer
+inventories, and preserves both PRs' executable evidence. The final integration check then caught a
+real browser-driver overlap: #391's reviewed file split had displaced Slice 8d's new receipt-fenced
+`plan`/`reconfigure` and `connect` route flow. Commit `bd05756b2` restores that flow inside #391's
+typed control-port, membership and initial-pair ownership; its focused lifecycle/delivery tests pass
+7/7 and the maintained 999-file test type gate is clean. PR #396 remains draft and unaccepted until
+the combined head passes complete review, required broad gates and controlled performance evidence.
 
 The server/route cutover and its migrated consumers are committed locally, but are not yet
 published. All eight commands reach the authenticated AppInbox owner; legacy production commands
@@ -2165,16 +2167,11 @@ runtime/consumer cutover atomically only when the evidence supports it, and leav
 to the maintainer one PR at a time. A mergeable stacked base is not synchronization work and does
 not itself mean ready for main; do not rebase merely for a behind status or enable auto-merge.
 
-The fresh oldest-PR check found a real conflict with actual current main. That conflict is repaired
-locally with main's canonical RTT-reporter and transport-boundary corrections preserved alongside
-Slice 8a's planned-RTT/accepted-traffic separation. The subsequent complete #381 review found the
-eight correction areas recorded in its checkpoint. Its single correction wave is committed locally,
-but scoped re-review leaves the browser RTC NACK producer contract and full-file standards closure
-open, and fresh unit validation exposes two fixture integration regressions. All four Important
-findings remain required work. The oldest PR is not accepted; resolve those findings before
-assessing the material dependency change through the remaining stack.
-Earlier green checks do not prove this new combined behavior, and the local repair has not yet
-replaced #381's remote head.
+The ordered predecessor review is complete: PR #381, PR #390 and PR #391 were corrected, reviewed,
+marked ready for main and merged by the maintainer. Their earlier open-finding notes above are
+historical checkpoints, not current blockers. PR #396 alone remains in the existing stack; earlier
+green checks do not prove its final integrated head, so broad and performance evidence is being
+refreshed before it can be marked ready.
 
 ## Slice 9 — In-flight pacing
 
