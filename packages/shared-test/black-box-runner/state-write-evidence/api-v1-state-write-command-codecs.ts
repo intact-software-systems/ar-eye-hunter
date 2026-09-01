@@ -9,13 +9,13 @@ export interface ExactStandaloneCommandIdsInput {
     readonly type: AppInboxType;
     readonly data: unknown;
     readonly authority: unknown;
-    readonly fallback: string;
+    readonly defaultCommandId: string;
 }
 
 export function readExactStandaloneCommandIds(
     input: ExactStandaloneCommandIdsInput
 ): readonly string[] {
-    const { type, data, authority, fallback } = input;
+    const { type, data, authority, defaultCommandId } = input;
     if (type.startsWith('AUTH_')) {
         const intent = decodeAuthMutationIntent(data as JsonWireValue);
         if (intent.kind !== authKind(type)) {
@@ -44,13 +44,13 @@ export function readExactStandaloneCommandIds(
         if (!Number.isSafeInteger(command.atEpochMs)) {
             throw new TypeError('client expiry timestamp is invalid');
         }
-        return [fallback];
+        return [defaultCommandId];
     }
     if (type === AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP) {
         const cleanup = readGroupSessionCleanupCommand(data);
         return [cleanup.sessionId, cleanup.generationId];
     }
-    return [fallback];
+    return [defaultCommandId];
 }
 
 export function readTopologyReconfigureCommand(authority: unknown) {

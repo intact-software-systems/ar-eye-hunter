@@ -267,7 +267,7 @@ async function readStandaloneCommandEvidence(
             type: commandType,
             data: command.data,
             authority: command.authority,
-            fallback: row.ri_resource_id
+            defaultCommandId: row.ri_resource_id
         })
     };
 }

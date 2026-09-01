@@ -290,11 +290,11 @@ export function requireGroup(
 export function auditStamp(
     command: GroupMutationCommand,
     facts: GroupMutationFacts,
-    fallbackPrincipalId: string | undefined
+    defaultPrincipalId: string | undefined
 ): AuditStamp {
     return {
         atEpochMs: facts.nowEpochMs,
-        actor: toGroupMutationActor(command, facts, fallbackPrincipalId),
+        actor: toGroupMutationActor(command, facts, defaultPrincipalId),
         reason: command.input.reason,
         traceId: command.input.traceId,
         requestId: command.requestId
@@ -304,9 +304,9 @@ export function auditStamp(
 function toGroupMutationActor(
     command: GroupMutationCommand,
     facts: GroupMutationFacts,
-    fallbackPrincipalId: string | undefined
+    defaultPrincipalId: string | undefined
 ): MutationActor {
-    const principalId = command.input.actorPrincipalId ?? fallbackPrincipalId;
+    const principalId = command.input.actorPrincipalId ?? defaultPrincipalId;
     if (command.input.actorSessionId !== null) {
         if (!principalId) {
             throw new GroupMutationRejectedError('A session actor requires a principal identity.');

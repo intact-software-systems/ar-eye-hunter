@@ -11,13 +11,17 @@ import { createGroupStateService } from '@shared-server/rallar-system/group-stat
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
-import type { RallarServerWsRoomAuthorizer } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
+import type {
+    RallarServerWsRoomAuthorizationAllowed,
+    RallarServerWsRoomAuthorizer
+} from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { createGroupRoomWsAuthorizer, type GroupRoomWsAuthorizerDependencies } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import {
     newALBroadcastMessage,
     newALEventRoute,
-    newALMulticastMessage
+    newALMulticastMessage,
+    type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type {
@@ -885,7 +889,13 @@ function createGroupSessions(input: CreateGroupSnapshotInput): GroupSnapshot['ac
     }));
 }
 
-function authorizedDecision(snapshot: GroupSnapshot, message: { targets?: unknown; }): object {
+function authorizedDecision(
+    snapshot: GroupSnapshot,
+    message: Pick<ALMessage, 'targets'>
+): RallarServerWsRoomAuthorizationAllowed {
+    if (!message.targets) {
+        throw new TypeError('Authorized room test message requires targets');
+    }
     return {
         authorized: true,
         audience: {
