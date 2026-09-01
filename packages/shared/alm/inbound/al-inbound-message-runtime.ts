@@ -210,14 +210,4 @@ export class ALInboundMessageRuntime {
         await this.ready();
         return await this.delivery.dispatchAdmittedEntry(entry);
     }
-
-    private static toErrorMessage(
-        error: unknown
-    ): string {
-        if (error instanceof Error) {
-            return error.message;
-        }
-
-        return String(error);
-    }
 }

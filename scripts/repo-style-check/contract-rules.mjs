@@ -156,16 +156,26 @@ export function scanPlainObjectTypeAliases(raw) {
 // the magnitude must not move when only the wrapping does.
 export function findUnknownUsages(lines) {
     const codeLines = stripQuotedText(lines);
-    return lines
-        .map((text, index) => ({
-            code: codeLines[index].split('//')[0],
-            line: index + 1,
-            text: text.trim()
-        }))
-        .flatMap((entry) => {
-            const occurrenceCount = entry.code.match(/\bunknown\b/gu)?.length ?? 0;
-            return Array.from({ length: occurrenceCount }, () => entry);
-        });
+    const usages = [];
+    let lineStartOffset = 0;
+
+    for (const [index, text] of lines.entries()) {
+        const code = codeLines[index].split('//')[0];
+        const pattern = /\bunknown\b/gu;
+        let match;
+
+        while ((match = pattern.exec(code)) !== null) {
+            usages.push({
+                column: match.index + 1,
+                line: index + 1,
+                offset: lineStartOffset + match.index,
+                text: text.trim()
+            });
+        }
+        lineStartOffset += text.length + 1;
+    }
+
+    return usages;
 }
 
 function countReturnedObjectFields(body) {

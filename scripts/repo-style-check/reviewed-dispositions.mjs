@@ -33,7 +33,7 @@ export const reviewedDispositions = Object.freeze([
     // erasableSyntaxOnly migration: converting parameter properties to explicit
     // fields duplicates each `unknown`-typed parameter annotation into a field
     // declaration (+1 textual occurrence per file, no new unknown values). These
-    // four module-owner entries accept exactly that; remove them when the
+    // two module-owner entries accept exactly that; remove them when the
     // affected classes gain precise persisted-value types or the boundary rule
     // moves to the metric-based checker.
     Object.freeze({
@@ -42,17 +42,37 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined
     }),
     Object.freeze({
-        path: 'packages/shared/alm/ALInboundAdmissionStore.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared/alm/ALOutboundAdmissionStore.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
         path: 'packages/shared/rallar-ai/rallar-ai-types.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // AL admission owns raw persisted values until a caller-supplied decoder
+    // validates them. These exact owners either hold the opaque storage value,
+    // validate a record before decoding every field, or preserve deliberately
+    // corrupt test input. The checker cannot prove that local data flow without
+    // weakening detection for unknown values that really reach domain logic.
+    Object.freeze({
+        path: 'packages/shared/alm/al-admission-backend.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/al-admission-resource-entry-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeResourceEntryRecord'
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/inbound/al-inbound-durable-effect-codec.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertControlMessage'
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/indexed-db-admission-backend.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared/alm/al-inbound-persistence-validation.test.ts',
         rule: 'boundary.unknown',
         symbol: undefined
     }),
