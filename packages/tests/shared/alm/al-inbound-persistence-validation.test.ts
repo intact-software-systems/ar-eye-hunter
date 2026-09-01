@@ -205,15 +205,13 @@ describe('inbound admission persisted values', () => {
             name: 'message',
             payload: {
                 kind: 'dispatch-local',
-                msg: { ...message, id: { ...message.id, msgId: 'another-message' } },
-                plan: planMessage(message),
                 entry: QueueBoxUtilities.toResourceEntryFromMsg({ ...message, id: { ...message.id, msgId: 'another-message' } }, 'inbox')
             }
         },
         { name: 'non-delivery', payload: { kind: 'forward-message', msg: message, plan: planMessage(message), fromPeerId: 'sender' } },
         {
             name: 'missing-inbox',
-            payload: { kind: 'enqueue-inbox', msg: message, plan: planMessage(message), entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox') }
+            payload: { kind: 'enqueue-inbox', entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox') }
         }
     ])(
         'rejects a structurally valid effect with a mismatched $name delivery owner',
@@ -273,8 +271,6 @@ describe('inbound admission persisted values', () => {
                 ...createStoredEffect(),
                 payload: {
                     kind: 'dispatch-local',
-                    msg: message,
-                    plan: planMessage(message),
                     entry: { ...QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'), ...corruption }
                 }
             });
@@ -308,22 +304,27 @@ describe('inbound admission persisted values', () => {
         expect([...state.data.keys()]).toEqual(['inbound:effect:effect']);
     });
 
-    it('round-trips durable local delivery and rejects mismatched embedded queue message identity', async () => {
+    it('round-trips one canonical local-delivery envelope and rejects a malformed embedded message', async () => {
         const { state, backend, store } = createFixture();
         await store.commitBundle({
             senderId: message.id.senderId,
             mutations: [],
             durableEffects: [{
                 effectId: 'dispatch',
-                payload: { kind: 'dispatch-local', msg: message, entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'), plan: planMessage(message) }
+                payload: { kind: 'dispatch-local', entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox') }
             }]
         });
         const [claimed] = await store.claimReadyEffects({ workerId: 'worker', maxCount: 1, leaseMs: 100, nowMs: Date.now() });
-        expect(claimed?.payload).toMatchObject({ kind: 'dispatch-local', msg: message });
+        expect(claimed?.payload).toMatchObject({
+            kind: 'dispatch-local',
+            entry: { resource: JSON.stringify(message) }
+        });
+        expect(claimed?.payload).not.toHaveProperty('msg');
+        expect(claimed?.payload).not.toHaveProperty('plan');
         const stored = state.data.get('inbound:effect:dispatch')?.value;
         expect(stored).toBeDefined();
         const serialized = JSON.stringify(stored);
-        const corrupt: unknown = JSON.parse(serialized.replace('\\"msgId\\":\\"message\\"', '\\"msgId\\":\\"different\\"'));
+        const corrupt: unknown = JSON.parse(serialized.replace('\\"v\\":2', '\\"v\\":3'));
         await backend.write(async (transaction) => {
             await transaction.set('inbound:effect:dispatch', corrupt);
         });

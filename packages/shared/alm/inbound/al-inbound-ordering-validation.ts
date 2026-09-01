@@ -1,4 +1,7 @@
-import { decodePersistedALMessageValue } from '../../al-contracts/al-message-persistence-validation.ts';
+import {
+    decodePersistedALMessage,
+    decodePersistedALMessageValue
+} from '../../al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey, type ALOrderingTrackSnapshot } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { decodeALAdmissionResourceEntryKey } from '../al-admission-resource-entry-validation.ts';
@@ -91,10 +94,11 @@ export function assertALInboundDeliveryOwner(
     if (effect.kind !== 'dispatch-local' && effect.kind !== 'enqueue-inbox') {
         throw new TypeError('Persisted ordering fence does not name a delivery effect');
     }
+    const effectMessage = decodePersistedALMessage(effect.entry.resource);
     if (
-        effect.msg.id.msgId !== snapshot.msg.id.msgId || effect.msg.id.senderId !== snapshot.msg.id.senderId ||
-        effect.msg.id.v !== snapshot.msg.id.v || effect.msg.id.ts !== snapshot.msg.id.ts ||
-        toALOrderingTrackKey(effect.msg) !== snapshot.trackKey || effect.msg.ordering?.seq !== snapshot.seq
+        effectMessage.id.msgId !== snapshot.msg.id.msgId || effectMessage.id.senderId !== snapshot.msg.id.senderId ||
+        effectMessage.id.v !== snapshot.msg.id.v || effectMessage.id.ts !== snapshot.msg.id.ts ||
+        toALOrderingTrackKey(effectMessage) !== snapshot.trackKey || effectMessage.ordering?.seq !== snapshot.seq
     ) {
         throw new TypeError('Persisted delivery owner does not match its buffered message');
     }

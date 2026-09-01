@@ -42,7 +42,7 @@ function prepareALInboundDurableEffect(
     switch (payload.kind) {
         case 'dispatch-local':
         case 'enqueue-inbox':
-            return { ...payload, entry: dependencies.createInboxEntry(payload.msg) };
+            return { kind: payload.kind, entry: dependencies.createInboxEntry(payload.msg) };
         case 'send-ack':
             return {
                 kind: 'send-control',

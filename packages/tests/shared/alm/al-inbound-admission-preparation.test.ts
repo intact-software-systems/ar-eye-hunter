@@ -126,6 +126,14 @@ describe('inbound admission preparation boundary', () => {
             expireAtTimestamp: 1_800_000_010_000,
             payload: { entry: { resource: JSON.stringify(message), typeId: 'inbox' } }
         });
+        expect(
+            bundle.durableEffects
+                .filter((effect) => effect.payload.kind === 'dispatch-local' || effect.payload.kind === 'enqueue-inbox')
+                .map((effect) => Object.keys(effect.payload).sort())
+        ).toEqual([
+            ['entry', 'kind'],
+            ['entry', 'kind']
+        ]);
         const controls = bundle.durableEffects.flatMap((effect) => effect.payload.kind === 'send-control' ? [parseALControlMessage(effect.payload.msg)] : []);
         expect(controls).toMatchObject([
             {

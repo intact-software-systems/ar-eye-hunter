@@ -201,7 +201,8 @@ describe('ALInboundMessageRuntime', () => {
 
         vi.spyOn(baseAdmission, 'commitBundle').mockImplementation(async (bundle) => {
             const releasesSecondMessage = bundle.durableEffects.some(({ payload }) =>
-                (payload.kind === 'dispatch-local' || payload.kind === 'enqueue-inbox') && payload.msg.id.msgId === seq2.id.msgId
+                (payload.kind === 'dispatch-local' || payload.kind === 'enqueue-inbox') &&
+                decodePersistedALMessage(payload.entry.resource).id.msgId === seq2.id.msgId
             );
             if (!didBlock && releasesSecondMessage) {
                 didBlock = true;

@@ -169,15 +169,11 @@ export interface ALInboundWriteRequest {
 export type ALInboundDurableEffect =
     | Readonly<{
         kind: 'dispatch-local';
-        msg: ALMessage;
         entry: ResourceEntry;
-        plan: ALMessageHandlingPlan;
     }>
     | Readonly<{
         kind: 'enqueue-inbox';
-        msg: ALMessage;
         entry: ResourceEntry;
-        plan: ALMessageHandlingPlan;
     }>
     | Readonly<{
         kind: 'send-control';

@@ -11,12 +11,7 @@ import {
     decodePersistedALMessage,
     decodePersistedALMessageValue
 } from '../../al-contracts/al-message-persistence-validation.ts';
-import type {
-    PersistedALRecord,
-    PersistedALValue
-} from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
-import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
-import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import type { PersistedALValue } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import {
     decodeALAdmissionResourceEntry,
     encodeALAdmissionResourceEntry,
@@ -34,15 +29,11 @@ import { decodeALInboundPlan } from './decode-al-inbound-plan.ts';
 type StoredALInboundDurableEffect =
     | Readonly<{
         kind: 'dispatch-local';
-        msg: ALMessage;
         entry: StoredALAdmissionResourceEntry;
-        plan: ALMessageHandlingPlan;
     }>
     | Readonly<{
         kind: 'enqueue-inbox';
-        msg: ALMessage;
         entry: StoredALAdmissionResourceEntry;
-        plan: ALMessageHandlingPlan;
     }>
     | Extract<ALInboundDurableEffect, Readonly<{ kind: 'send-control'; }>>
     | Extract<ALInboundDurableEffect, Readonly<{ kind: 'forward-message'; }>>
@@ -125,11 +116,16 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
     switch (effect.kind) {
         case 'dispatch-local':
         case 'enqueue-inbox': {
-            decodeALAdmissionRecord(effect, ['kind', 'msg', 'entry', 'plan']);
-            const msg = decodePersistedALMessageValue(effect.msg);
+            decodeALAdmissionRecord(effect, ['kind', 'entry']);
             const entry = decodeALAdmissionResourceEntry(effect.entry);
-            assertEntryMessage(entry, msg);
-            return { kind: effect.kind, msg, entry, plan: decodeALInboundPlan(effect.plan) };
+            const message = decodePersistedALMessage(entry.resource);
+            if (
+                entry.key.topicId !== message.route.topicId || entry.key.resourceId !== message.route.resourceId ||
+                entry.key.contextId !== message.route.contextId
+            ) {
+                throw new TypeError('Persisted inbound queue entry route does not match its embedded message');
+            }
+            return { kind: effect.kind, entry };
         }
         case 'send-control': {
             decodeALAdmissionRecord(effect, ['kind', 'msg']);
@@ -186,42 +182,4 @@ function assertControlMessage(msg: ALMessage): void {
     ) {
         throw new TypeError('Persisted inbound control routing does not match its envelope');
     }
-}
-
-function assertEntryMessage(entry: ResourceEntry, msg: ALMessage): void {
-    const embedded = decodePersistedALMessage(entry.resource);
-    if (
-        entry.key.topicId !== msg.route.topicId || entry.key.resourceId !== msg.route.resourceId ||
-        entry.key.contextId !== msg.route.contextId || !areMessageValuesEqual(embedded, msg)
-    ) {
-        throw new TypeError('Persisted inbound queue entry does not match its message');
-    }
-}
-
-function areMessageValuesEqual(left: ALMessage, right: ALMessage): boolean {
-    // JSON normalizes optional undefined fields exactly as the stored queue envelope does.
-    const leftValue: PersistedALValue = JSON.parse(JSON.stringify(left));
-    const rightValue: PersistedALValue = JSON.parse(JSON.stringify(right));
-    return arePersistedValuesEqual(leftValue, rightValue);
-}
-
-function arePersistedValuesEqual(left: PersistedALValue, right: PersistedALValue): boolean {
-    if (left === right) {
-        return true;
-    }
-    if (Array.isArray(left) && Array.isArray(right)) {
-        return left.length === right.length &&
-            left.every((entry, index) => arePersistedValuesEqual(entry, right[index]));
-    }
-    if (
-        !left || !right || typeof left !== 'object' || typeof right !== 'object' || Array.isArray(left) ||
-        Array.isArray(right)
-    ) {
-        return false;
-    }
-    const leftRecord = left as PersistedALRecord;
-    const rightRecord = right as PersistedALRecord;
-    const keys = Object.keys(leftRecord);
-    return keys.length === Object.keys(rightRecord).length &&
-        keys.every((key) => arePersistedValuesEqual(leftRecord[key], rightRecord[key]));
 }

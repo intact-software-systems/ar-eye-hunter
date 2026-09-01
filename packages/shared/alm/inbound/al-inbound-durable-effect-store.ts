@@ -1,3 +1,4 @@
+import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import type { ALAdmissionBackend, ALAdmissionWriteContext } from '../al-admission-backend.ts';
@@ -242,8 +243,19 @@ export class ALInboundDurableEffectStore {
         ) {
             return;
         }
-        const trackKey = payload.kind === 'release-buffered' ? payload.trackKey : toALOrderingTrackKey(payload.msg);
-        const seq = payload.kind === 'release-buffered' ? payload.seq : payload.msg.ordering?.seq;
+        let trackKey: string | undefined;
+        let seq: number | undefined;
+        let deliveryMsgId: string | undefined;
+        if (payload.kind === 'release-buffered') {
+            trackKey = payload.trackKey;
+            seq = payload.seq;
+        }
+        else {
+            const deliveryMessage = decodePersistedALMessage(payload.entry.resource);
+            trackKey = toALOrderingTrackKey(deliveryMessage);
+            seq = deliveryMessage.ordering?.seq;
+            deliveryMsgId = deliveryMessage.id.msgId;
+        }
         if (trackKey === undefined || seq === undefined) {
             return;
         }
@@ -253,7 +265,7 @@ export class ALInboundDurableEffectStore {
             key,
             (value, key) => decodeALInboundBufferedSnapshot(value, { trackKey, prefix, key })
         );
-        if (!snapshot || (payload.kind !== 'release-buffered' && snapshot.msg.id.msgId !== payload.msg.id.msgId)) {
+        if (!snapshot || (deliveryMsgId !== undefined && snapshot.msg.id.msgId !== deliveryMsgId)) {
             return;
         }
         // Once admission has scheduled delivery, its real owner sets the fence lifetime.
@@ -278,6 +290,7 @@ export class ALInboundDurableEffectStore {
         switch (effect.kind) {
             case 'dispatch-local':
             case 'enqueue-inbox':
+                return toExpireAtTimestampFromNow(this.retention.durableEffectTtlMs, this.nowMs());
             case 'forward-message':
                 return resolveExpireAtTimestampWithFallback(
                     resolveALMessageExpireAtMs(effect.msg, effect.plan.effective),

@@ -51,7 +51,7 @@ export class ALInboundAdmittedDelivery {
     ): Promise<'completed' | 'retry'> {
         if (effect.expireAtTimestamp <= this.dependencies.clock.nowMs()) {
             if (effect.payload.kind === 'dispatch-local' || effect.payload.kind === 'enqueue-inbox') {
-                await this.completeOrderedDelivery(effect.payload.msg);
+                await this.completeOrderedDelivery(this.dependencies.readStoredEntry(effect.payload.entry));
             }
             return 'completed';
         }
