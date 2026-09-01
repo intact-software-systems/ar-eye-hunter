@@ -11,7 +11,6 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     createDefaultWsQueueBoxClientService,
     DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
-    type WsQueueBoxClientReconnectOptions,
     type WsQueueBoxClientService
 } from '@shared/services/ws-queue-box-client-service.ts';
 import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
@@ -20,7 +19,7 @@ import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 interface ReconnectTestConfig {
     readonly newConnectionRequestId?: () => string;
-    readonly reconnect?: Partial<WsQueueBoxClientReconnectOptions>;
+    readonly reconnect?: Partial<WsQueueBoxClientService.ReconnectOptions>;
 }
 
 describe('WsQueueBoxClientService reconnect lifecycle', () => {

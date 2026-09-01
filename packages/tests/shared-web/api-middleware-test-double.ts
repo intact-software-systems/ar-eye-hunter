@@ -8,7 +8,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import {
     DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
     type QRtcPeerDto,
-    type WebRtcPeerConnectionLeft
+    type WebRtcConnectionService
 } from '@shared/services/web-rtc-connection-service.ts';
 
 export type MiddlewareTestOverrides = {
@@ -132,7 +132,7 @@ function createWebRtcConnectionServiceDouble(
         activePeerIds: vi.fn((): readonly string[] => []),
         readyPeerIdsForLane: vi.fn((): readonly string[] => []),
         ensurePeerConnectionStarted: vi.fn((peerId: string) =>
-            Either.ofLeft<WebRtcPeerConnectionLeft, QRtcPeerDto>({
+            Either.ofLeft<WebRtcConnectionService.PeerConnectionLeft, QRtcPeerDto>({
                 kind: 'connect-failed',
                 peerId,
                 error: new Error('connect not mocked')
