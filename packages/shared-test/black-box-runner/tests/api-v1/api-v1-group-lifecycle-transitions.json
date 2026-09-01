@@ -708,6 +708,7 @@
         "body": {
           "type": "api-mutation-failure",
           "version": "canonical.v2",
+          "code": "api-mutation-request-invalid",
           "status": 400,
           "message": "Group reconfigureGroup request has unexpected key: expectedFormationEpoch"
         }

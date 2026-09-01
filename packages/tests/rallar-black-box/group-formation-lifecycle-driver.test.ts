@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 import {
     createGroupFormationLifecycleDriver,
     type LiveRtcControlPort
 } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
+import type { LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 
 function createAgent(prefix: LiveRtcControlClient.FormationAgent['prefix']): LiveRtcControlClient.FormationAgent {
     return {
@@ -23,7 +23,7 @@ function lifecycleOperation(command: LiveRtcControlClient.ExecuteInput): string 
 
 function successfulResult(
     input: LiveRtcControlClient.ExecuteInput,
-    value: RtcBaselineJson
+    value: LiveRtcJsonRecord
 ): LiveRtcControlClient.Result {
     return {
         agentId: input.agentId,
@@ -35,7 +35,7 @@ function successfulResult(
 
 function readResultValue(
     result: LiveRtcControlClient.Result
-): { [key: string]: RtcBaselineJson; } {
+): LiveRtcJsonRecord {
     const value = result.result?.value;
     return typeof value === 'object' && value !== null && !Array.isArray(value)
         ? value
