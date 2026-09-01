@@ -143,7 +143,8 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
 
         const admission = new PSqlAdmissionMutationCollector(
             runtime,
-            'al-admission-rollback'
+            'al-admission-rollback',
+            () => nowEpochMs
         );
         await runtime.insertIfAbsent(
             'al-admission-rollback',

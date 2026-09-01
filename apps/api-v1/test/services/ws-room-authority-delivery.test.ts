@@ -10,7 +10,10 @@ import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/g
 import type { GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import {
+    createDefaultWsQueueBoxServerService,
+    type WsQueueBoxServerService
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
@@ -270,7 +273,7 @@ function createRoomDeliveryHarness(nowEpochMs?: () => number): RoomDeliveryHarne
     };
     const server = new JsonWebSocketServer();
     const outbox = new InMemoryQueueBox();
-    const service = new WsQueueBoxServerService({
+    const service = createDefaultWsQueueBoxServerService({
         inbox: new InMemoryQueueBox(),
         outbox,
         socket: server,

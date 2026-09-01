@@ -125,6 +125,7 @@ Deno.test(
             );
 
             await fixture.send(SESSION_B, message(SESSION_B, 'transport-3', update('update-2')));
+            await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
             await fixture.revokeAuthSession(SESSION_B);
             await drain(fixture, sql, 3);
             const revoked = (await readResults(sql)).at(-1);
