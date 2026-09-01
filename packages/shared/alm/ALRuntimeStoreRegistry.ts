@@ -1,8 +1,8 @@
 import { defaultRepositoryManager } from '../cache/defaultRepositoryManager.ts';
 import { RepositoryManager } from '../cache/RepositoryManager.ts';
 import { RepositoryToken } from '../cache/RepositoryToken.ts';
-import type { ALInboundRuntimeStores } from './ALInboundMessageRuntime.ts';
-import type { ALOutboundRuntimeStores } from './ALOutboundMessageRuntime.ts';
+import type { ALInboundRuntimeStores } from './inbound/al-inbound-message-runtime.ts';
+import type { ALOutboundRuntimeStores } from './outbound/al-outbound-message-runtime.ts';
 
 export type ALRuntimeStoreFactories = Readonly<{
     createInboundStores?: () => ALInboundRuntimeStores;

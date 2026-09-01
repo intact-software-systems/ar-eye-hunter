@@ -21,6 +21,7 @@ import {
     AppTopics,
     CircuitBreakerPolicy,
     ConnectionContext,
+    createDefaultWsQueueBoxServerService,
     InMemoryQueueBox,
     JsonWebSocketServer,
     newALBroadcastMessage,
@@ -46,7 +47,7 @@ describe('RTC topology websocket publication', () => {
         const outsideSocket = new FakeSocket();
         server.addConnection(new ConnectionContext('session-1', recordedSocket));
         server.addConnection(new ConnectionContext('session-2', outsideSocket));
-        const service = new WsQueueBoxServerService({
+        const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
@@ -92,7 +93,7 @@ describe('RTC topology websocket publication', () => {
         server.addConnection(new ConnectionContext('session-b', peerSocket));
         server.addConnection(new ConnectionContext('session-c', outsideSocket));
 
-        const service = new WsQueueBoxServerService({
+        const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
@@ -140,7 +141,7 @@ describe('RTC topology websocket publication', () => {
             server.addConnection(new ConnectionContext(sessionId, socket));
         }
 
-        const service = new WsQueueBoxServerService({
+        const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
@@ -245,7 +246,7 @@ describe('RTC topology websocket publication', () => {
         const appOutbox = new InMemoryQueueBox(new Map());
         const runtimeRepository = new FakeRuntimeStateRepository();
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
-        const service = new WsQueueBoxServerService({
+        const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
@@ -293,7 +294,7 @@ describe('RTC topology websocket publication', () => {
         const appOutbox = new InMemoryQueueBox(new Map());
         const runtimeRepository = new FakeRuntimeStateRepository();
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
-        const service = new WsQueueBoxServerService({
+        const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(new Map()),
             outbox: wsOutbox,
             socket: server,

@@ -1,5 +1,5 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 // dprint-ignore

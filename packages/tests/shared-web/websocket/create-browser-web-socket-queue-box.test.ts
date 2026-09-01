@@ -1,212 +1,197 @@
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toResilienceDto } from '@shared-web/browser/resilience-config.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
-import { type ClientInfo } from '@shared/api/api-config.ts';
+import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ClientInfo } from '@shared/api/api-config.ts';
 import { CommandTimedOutError } from '@shared/cache/Command.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { type WebSocketConnectOptions } from '@shared/websocket/JsonWebSocketClient.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+
+import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
+
+const clientData: ClientInfo = {
+    clientId: 'client-1',
+    sessionId: 'session-1',
+    isOnline: true
+};
 
 describe('createBrowserWebSocketQueueBox', () => {
-    afterEach(() => {
-        vi.useRealTimers();
-        vi.restoreAllMocks();
-    });
-
-    it('connects the socket once and returns the queuebox service after connect resolves', async () => {
-        const socket = new TestJsonWebSocketClient();
-        const qboxEngine = new InboxOutboxEngine();
-
-        const service = await createBrowserWebSocketQueueBox({
-            qboxEngine,
-            socket: socket.asJsonWebSocketClient(),
-            clientData: testClientInfo(),
-            resilience: toResilienceDto(),
-            connectTimeoutMs: 25
-        });
-
-        expect(service.socket).toBe(socket);
-        expect(socket.connectCalls).toHaveLength(1);
-        expect(socket.connectCalls[0].signal).toBeInstanceOf(AbortSignal);
-        expect(socket.webSocketCallbackIds).toEqual(['session-1']);
-        expect(socket.messageCallbackIds).toEqual(['session-1-inbox']);
-    });
-
-    it('rejects a hanging socket connect with CommandTimedOutError and aborts the connect signal', async () => {
+    beforeEach(() => {
         vi.useFakeTimers();
-        const socket = new TestJsonWebSocketClient({
-            hangConnect: true
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        onTestFinished(() => {
+            vi.clearAllTimers();
+            vi.useRealTimers();
+            vi.unstubAllGlobals();
+            TestWebSocket.instances.length = 0;
         });
+        configureBrowserALRuntimeStores(clientData.sessionId);
+    });
+
+    it('returns an open service for the session after the initial socket opens', async () => {
+        const socket = new JsonWebSocketClient('ws://test');
+        onTestFinished(() => socket.close(1000, 'test-finished'));
         const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+        const controller = new AbortController();
+        onTestFinished(() => controller.abort());
 
-        const initPromise = createBrowserWebSocketQueueBox({
+        const initialized = createBrowserWebSocketQueueBox({
             qboxEngine,
-            socket: socket.asJsonWebSocketClient(),
-            clientData: testClientInfo(),
+            socket,
+            clientData,
             resilience: toResilienceDto(),
-            connectTimeoutMs: 25
+            connectTimeoutMs: 25,
+            signal: controller.signal
         });
-        await Promise.resolve();
+        onTestFinished(async () => {
+            controller.abort();
+            await initialized.catch(() => undefined);
+        });
+        await vi.advanceTimersByTimeAsync(0);
+        const native = readCreatedSocket();
+        expect(native.readyState).toBe(WebSocket.CONNECTING);
 
-        expect(socket.connectCalls).toHaveLength(1);
-        expect(socket.connectCalls[0].signal?.aborted).toBe(false);
+        native.open();
+        const service = await initialized;
+        onTestFinished(() => service.close(1000, 'test-finished'));
 
-        const rejected = expect(initPromise).rejects.toBeInstanceOf(CommandTimedOutError);
+        expect(service.sessionId).toBe('session-1');
+        expect(service.readHealth()).toMatchObject({
+            sessionId: 'session-1',
+            url: 'ws://test',
+            isOpen: true,
+            readyState: 'open',
+            reconnectEnabled: true
+        });
+        expect(TestWebSocket.instances).toHaveLength(1);
         await vi.advanceTimersByTimeAsync(25);
-
-        await rejected;
-        expect(socket.connectCalls[0].signal?.aborted).toBe(true);
-        expect(socket.connectCalls[0].signal?.reason).toBeInstanceOf(CommandTimedOutError);
+        expect(service.readHealth().isOpen).toBe(true);
+        expect(native.closedWith).toBeUndefined();
     });
 
-    it('uses the default websocket connect timeout when no timeout is provided', async () => {
-        vi.useFakeTimers();
-        const socket = new TestJsonWebSocketClient({
-            hangConnect: true
-        });
+    it.each([
+        { label: 'configured', connectTimeoutMs: 25, deadlineMs: 25 },
+        { label: 'default', connectTimeoutMs: undefined, deadlineMs: 10_000 }
+    ])('aborts a pending real socket at the $label connect timeout', async ({ connectTimeoutMs, deadlineMs }) => {
+        const socket = new JsonWebSocketClient('ws://test');
+        onTestFinished(() => socket.close(1000, 'test-finished'));
         const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+        const controller = new AbortController();
+        onTestFinished(() => controller.abort());
 
-        const initPromise = createBrowserWebSocketQueueBox({
+        const initialized = createBrowserWebSocketQueueBox({
             qboxEngine,
-            socket: socket.asJsonWebSocketClient(),
-            clientData: testClientInfo(),
-            resilience: toResilienceDto()
+            socket,
+            clientData,
+            resilience: toResilienceDto(),
+            connectTimeoutMs,
+            signal: controller.signal
         });
-        await Promise.resolve();
+        onTestFinished(async () => {
+            controller.abort();
+            await initialized.catch(() => undefined);
+        });
+        const rejected = expect(initialized).rejects.toBeInstanceOf(CommandTimedOutError);
+        await vi.advanceTimersByTimeAsync(deadlineMs - 1);
+        const native = readCreatedSocket();
+        expect(native.readyState).toBe(WebSocket.CONNECTING);
+        expect(native.closedWith).toBeUndefined();
 
-        await vi.advanceTimersByTimeAsync(9_999);
-        expect(socket.connectCalls[0].signal?.aborted).toBe(false);
-
-        const rejected = expect(initPromise).rejects.toBeInstanceOf(CommandTimedOutError);
         await vi.advanceTimersByTimeAsync(1);
-
         await rejected;
-        expect(socket.connectCalls[0].signal?.aborted).toBe(true);
+
+        expect(native.readyState).toBe(WebSocket.CLOSED);
+        expect(native.closedWith).toEqual({ code: 1000, reason: 'connect-aborted' });
+        expect(socket.ws).toBeUndefined();
     });
 
-    it('enables websocket callbacks only after the initial connect succeeds', async () => {
-        const socket = new TestJsonWebSocketClient({
-            hangConnect: true
-        });
+    it('ignores incoming data before connect and delivers it after the service is ready', async () => {
+        const socket = new JsonWebSocketClient('ws://test');
+        onTestFinished(() => socket.close(1000, 'test-finished'));
         const qboxEngine = new InboxOutboxEngine();
-
-        const initPromise = createBrowserWebSocketQueueBox({
+        onTestFinished(() => qboxEngine.stop());
+        const controller = new AbortController();
+        onTestFinished(() => controller.abort());
+        const initialized = createBrowserWebSocketQueueBox({
             qboxEngine,
-            socket: socket.asJsonWebSocketClient(),
-            clientData: testClientInfo(),
+            socket,
+            clientData,
             resilience: toResilienceDto(),
-            connectTimeoutMs: 0
+            connectTimeoutMs: 0,
+            signal: controller.signal
         });
-        await Promise.resolve();
-
-        expect(socket.connectCalls).toHaveLength(1);
-        expect(socket.webSocketCallbackIds).toEqual([]);
-        expect(socket.messageCallbackIds).toEqual([]);
-
-        socket.resolveConnect();
-        await initPromise;
-
-        expect(socket.webSocketCallbackIds).toEqual(['session-1']);
-        expect(socket.messageCallbackIds).toEqual(['session-1-inbox']);
-    });
-
-    it('allows unbounded connect when connectTimeoutMs is zero or negative', async () => {
-        vi.useFakeTimers();
-        const socket = new TestJsonWebSocketClient({
-            hangConnect: true
+        onTestFinished(async () => {
+            controller.abort();
+            await initialized.catch(() => undefined);
         });
-        const qboxEngine = new InboxOutboxEngine();
+        await vi.advanceTimersByTimeAsync(0);
+        const native = readCreatedSocket();
+        const msg = newALUnicastMessage(
+            'server',
+            { topicId: 'chat', resourceId: 'early-delivery', contextId: 'conversation' },
+            'session-1',
+            'chat.message.v1',
+            { text: 'hello' }
+        );
 
-        const initPromise = createBrowserWebSocketQueueBox({
-            qboxEngine,
-            socket: socket.asJsonWebSocketClient(),
-            clientData: testClientInfo(),
-            resilience: toResilienceDto(),
-            connectTimeoutMs: 0
-        });
-        await Promise.resolve();
-
-        expect(socket.connectCalls).toHaveLength(1);
-        expect(socket.connectCalls[0].signal).toBeUndefined();
-
-        await vi.advanceTimersByTimeAsync(1_000);
-        expect(socket.connectCalls[0].signal).toBeUndefined();
-
-        socket.resolveConnect();
-        await expect(initPromise).resolves.toMatchObject({
-            input: {
-                sessionId: 'session-1'
+        native.receive(JSON.stringify(msg));
+        await vi.advanceTimersByTimeAsync(0);
+        native.open();
+        const service = await initialized;
+        onTestFinished(() => service.close(1000, 'test-finished'));
+        const received: string[] = [];
+        service.onInboxMessageDo('chat.message.v1', {
+            onMessage: async (message) => {
+                received.push(message.id.msgId);
             }
         });
+
+        // Reusing the same message also catches premature admission that consumed its dedup identity.
+        native.receive(JSON.stringify(msg));
+        await vi.waitFor(() => expect(received).toEqual([msg.id.msgId]));
+        expect(service.readHealth().isOpen).toBe(true);
+    });
+
+    it.each([0, -1])('allows a pending connection with connectTimeoutMs=%i until its socket opens', async (connectTimeoutMs) => {
+        const socket = new JsonWebSocketClient('ws://test');
+        onTestFinished(() => socket.close(1000, 'test-finished'));
+        const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+        const controller = new AbortController();
+        onTestFinished(() => controller.abort());
+        const initialized = createBrowserWebSocketQueueBox({
+            qboxEngine,
+            socket,
+            clientData,
+            resilience: toResilienceDto(),
+            connectTimeoutMs,
+            signal: controller.signal
+        });
+        onTestFinished(async () => {
+            controller.abort();
+            await initialized.catch(() => undefined);
+        });
+        await vi.advanceTimersByTimeAsync(20_000);
+        const native = readCreatedSocket();
+        expect(native.readyState).toBe(WebSocket.CONNECTING);
+        expect(native.closedWith).toBeUndefined();
+
+        native.open();
+        const service = await initialized;
+        onTestFinished(() => service.close(1000, 'test-finished'));
+
+        expect(service.sessionId).toBe('session-1');
+        expect(service.readHealth()).toMatchObject({ isOpen: true, reconnectEnabled: true });
     });
 });
 
-type TestJsonWebSocketClientOptions = Readonly<{
-    hangConnect?: boolean;
-}>;
-
-type ConnectCall = Readonly<{
-    signal?: AbortSignal;
-}>;
-
-class TestJsonWebSocketClient {
-    readonly connectCalls: ConnectCall[] = [];
-    readonly webSocketCallbackIds: string[] = [];
-    readonly messageCallbackIds: string[] = [];
-    readonly url = 'ws://test';
-    readonly ws = {
-        readyState: 1
-    };
-
-    private resolvePendingConnect: (() => void) | undefined;
-
-    private readonly options: TestJsonWebSocketClientOptions;
-
-    constructor(options: TestJsonWebSocketClientOptions = {}) {
-        this.options = options;
+function readCreatedSocket(): TestWebSocket {
+    const socket = TestWebSocket.instances.at(-1);
+    if (!socket) {
+        throw new Error('Connecting the client must create a WebSocket');
     }
-
-    connect(options: WebSocketConnectOptions = {}): Promise<void> {
-        this.connectCalls.push({
-            signal: options.signal
-        });
-        if (!this.options.hangConnect) {
-            return Promise.resolve();
-        }
-
-        return new Promise<void>((resolve) => {
-            this.resolvePendingConnect = resolve;
-        });
-    }
-
-    resolveConnect(): void {
-        this.resolvePendingConnect?.();
-    }
-
-    onWebsocketCallbacksDo(id: string): this {
-        this.webSocketCallbackIds.push(id);
-        return this;
-    }
-
-    onWebSocketMessageDo(id: string): this {
-        this.messageCallbackIds.push(id);
-        return this;
-    }
-
-    sendAsJsonString(): void {
-    }
-
-    asJsonWebSocketClient() {
-        return this as never;
-    }
-}
-
-function testClientInfo(): ClientInfo {
-    configureBrowserALRuntimeStores('session-1');
-
-    return {
-        clientId: 'client-1',
-        sessionId: 'session-1',
-        isOnline: true
-    };
+    return socket;
 }

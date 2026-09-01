@@ -27,7 +27,7 @@ export class InboxOutboxEngine {
     private readonly circuitBreaker: CircuitBreaker = CircuitBreaker.create(InboxOutboxEngine.circuitBreakerPolicy);
 
     private running = false;
-    private timer: number = NOT_SET;
+    private timer: ReturnType<typeof setTimeout> | typeof NOT_SET = NOT_SET;
     private executing = false;
     private wakeAfterExecution = false;
     private successiveIdleExecutions = 0;
@@ -93,7 +93,7 @@ export class InboxOutboxEngine {
         if (this.timer !== NOT_SET) {
             clearTimeout(this.timer);
         }
-        this.timer = setTimeout(() => void this.selfSchedulingTaskEngine(), delayMs) as unknown as number;
+        this.timer = setTimeout(() => void this.selfSchedulingTaskEngine(), delayMs);
     }
 
     private async selfSchedulingTaskEngine(): Promise<void> {

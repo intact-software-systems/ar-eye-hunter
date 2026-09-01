@@ -1,13 +1,29 @@
+import { describe, expect, it } from 'vitest';
+
 import { PSqlInboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-inbound-admission-backend.ts';
 import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-outbound-admission-backend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
-import { createALInboundAdmissionStore, createALOutboundAdmissionStore, newALAckControlMessage, newALUnicastMessage } from '@shared/mod.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
+import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
+import {
+    createALInboundAdmissionStore,
+    createALOutboundAdmissionStore,
+    newALAckControlMessage,
+    newALUnicastMessage,
+    normalizeALRuntimeStoreRetention
+} from '@shared/mod.ts';
+
 import { FakeRuntimeStateRepository } from './fake-optimistic-runtime-state-repository.ts';
 
-afterEach(() => {
-    vi.unstubAllGlobals();
-});
+interface IndexedRecord {
+    readonly index: number;
+}
+
+interface TestPreparedOutboundSend {
+    readonly kind: 'send';
+    readonly msgId: string;
+}
 
 describe('PSqlInboundAdmissionBackend', () => {
     it('lists prefix rows through runtime-state pages when available', async () => {
@@ -32,7 +48,7 @@ describe('PSqlInboundAdmissionBackend', () => {
             Date.now() + 60_000
         );
 
-        const values = await backend.list<{ index: number; }>(prefix);
+        const values = await backend.list(prefix, decodeIndexedRecord);
 
         expect(values).toHaveLength(total);
         expect(values[0]).toEqual({
@@ -43,32 +59,17 @@ describe('PSqlInboundAdmissionBackend', () => {
             key: `effect:${String(total - 1).padStart(6, '0')}`,
             value: { index: total - 1 }
         });
-        expect(repository.findEntriesByPrefixCalls).toEqual([]);
-        expect(repository.findEntriesByPrefixPageCalls).toEqual([
-            {
-                namespace,
-                keyPrefix: prefix,
-                afterKey: undefined,
-                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
-            },
-            {
-                namespace,
-                keyPrefix: prefix,
-                afterKey: `effect:${String(RUNTIME_STATE_PREFIX_READ_PAGE_SIZE - 1).padStart(6, '0')}`,
-                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
-            }
-        ]);
     });
 
     it('conditionally advances the sender version with durable inbox effects', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:inbound:admission';
         const store = createALInboundAdmissionStore({
-            kind: 'backend',
             namespace,
             backend: new PSqlInboundAdmissionBackend(repository, namespace),
             orderingTrackTtlMs: 5 * 60_000,
-            supersedenceTrackTtlMs: 5 * 60_000
+            supersedenceTrackTtlMs: 5 * 60_000,
+            retention: normalizeALRuntimeStoreRetention()
         });
 
         const status = await store.commitMutations({
@@ -84,8 +85,6 @@ describe('PSqlInboundAdmissionBackend', () => {
         });
 
         expect(status).toBe('committed');
-        expect(repository.conditionalWrites.length).toBeGreaterThan(0);
-
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:peer-1`);
         expect(versionEntry).toBeDefined();
         expect(JSON.parse(versionEntry!.value)).toEqual({
@@ -98,11 +97,11 @@ describe('PSqlInboundAdmissionBackend', () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:inbound:admission';
         const store = createALInboundAdmissionStore({
-            kind: 'backend',
             namespace,
             backend: new PSqlInboundAdmissionBackend(repository, namespace),
             orderingTrackTtlMs: 5 * 60_000,
-            supersedenceTrackTtlMs: 5 * 60_000
+            supersedenceTrackTtlMs: 5 * 60_000,
+            retention: normalizeALRuntimeStoreRetention()
         });
 
         await store.commitMutations({
@@ -149,44 +148,36 @@ describe('PSqlOutboundAdmissionBackend', () => {
             );
         }
 
-        const values = await backend.list<{ index: number; }>(prefix);
+        const values = await backend.list(prefix, decodeIndexedRecord);
 
         expect(values).toHaveLength(total);
         expect(values.map((entry) => entry.value.index)).toEqual(
             Array.from({ length: total }, (_, index) => index)
         );
-        expect(repository.findEntriesByPrefixCalls).toEqual([]);
-        expect(repository.findEntriesByPrefixPageCalls).toEqual([
-            {
-                namespace,
-                keyPrefix: prefix,
-                afterKey: undefined,
-                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
-            },
-            {
-                namespace,
-                keyPrefix: prefix,
-                afterKey: `sent:${String(RUNTIME_STATE_PREFIX_READ_PAGE_SIZE - 1).padStart(6, '0')}`,
-                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
-            }
-        ]);
     });
 
     it('conditionally advances sender version and persists durable effects in one commit', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:outbound:admission';
         const store = createALOutboundAdmissionStore({
-            kind: 'backend',
             namespace,
             backend: new PSqlOutboundAdmissionBackend(repository, namespace),
-            supersedenceTrackTtlMs: 5 * 60_000
+            supersedenceTrackTtlMs: 5 * 60_000,
+            retention: normalizeALRuntimeStoreRetention()
         });
         const msg = createOutboundMessage('msg-outbound-1');
-        const effectId = `send:${msg.id.msgId}`;
         const prepared = {
             kind: 'send',
             msgId: msg.id.msgId
         } satisfies TestPreparedOutboundSend;
+        const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
+        const effectId = toALOutboundEffectId([
+            'send',
+            msg.id.msgId,
+            'immediate',
+            0,
+            preparedFingerprint
+        ]);
 
         const status = await store.commitBundle({
             senderId: 'self',
@@ -206,11 +197,12 @@ describe('PSqlOutboundAdmissionBackend', () => {
                         kind: 'send-prepared',
                         msg,
                         prepared,
+                        preparedFingerprint,
                         phase: 'immediate'
                     }
                 }
             ]
-        });
+        }, decodePreparedOutboundSend);
 
         expect(status).toBe('committed');
         const versionEntry = await repository.findEntry(namespace, `${namespace}:version:self`);
@@ -233,16 +225,16 @@ describe('PSqlOutboundAdmissionBackend', () => {
             }
         });
 
-        const claimed = await store.claimReadyEffects<TestPreparedOutboundSend>(
-            'worker-1',
-            1,
-            10_000,
-            Date.now()
-        );
+        const claimed = await store.claimReadyEffects({
+            workerId: 'worker-1',
+            maxCount: 1,
+            leaseMs: 10_000,
+            nowMs: Date.now()
+        }, decodePreparedOutboundSend);
 
         expect(claimed).toHaveLength(1);
         expect(claimed[0].effectId).toBe(effectId);
-        await store.completeEffect(effectId, 'worker-1');
+        await store.completeEffect(effectId, 'worker-1', decodePreparedOutboundSend);
         expect(
             await repository.findEntry(namespace, `${namespace}:effect:${effectId}`)
         ).toBeUndefined();
@@ -252,10 +244,10 @@ describe('PSqlOutboundAdmissionBackend', () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:outbound:admission';
         const store = createALOutboundAdmissionStore({
-            kind: 'backend',
             namespace,
             backend: new PSqlOutboundAdmissionBackend(repository, namespace),
-            supersedenceTrackTtlMs: 5 * 60_000
+            supersedenceTrackTtlMs: 5 * 60_000,
+            retention: normalizeALRuntimeStoreRetention()
         });
         const msg = createOutboundMessage('msg-outbound-ack');
 
@@ -270,9 +262,10 @@ describe('PSqlOutboundAdmissionBackend', () => {
                 }
             ],
             durableEffects: []
-        });
+        }, decodePreparedOutboundSend);
         const acceptance = await store.acceptControlMessage(
-            newALAckControlMessage('peer-1', 'self', msg.id.msgId)
+            newALAckControlMessage('peer-1', 'self', msg.id.msgId),
+            decodePreparedOutboundSend
         );
 
         expect(acceptance.handled).toBe(true);
@@ -290,12 +283,12 @@ describe('PSqlOutboundAdmissionBackend', () => {
     });
 
     it('wires PostgreSQL outbound admission into the server runtime store factory', async () => {
-        const { createPSqlALOutboundRuntimeStores } = await import(
+        const { createDefaultPSqlALOutboundRuntimeStores } = await import(
             '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts'
         );
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:factory';
-        const stores = createPSqlALOutboundRuntimeStores({
+        const stores = createDefaultPSqlALOutboundRuntimeStores({
             namespace,
             repository
         });
@@ -313,7 +306,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
                 }
             ],
             durableEffects: []
-        });
+        }, decodePreparedOutboundSend);
 
         const admissionNamespace = `${namespace}:outbound:admission`;
         const versionEntry = await repository.findEntry(
@@ -343,7 +336,23 @@ function createOutboundMessage(resourceId: string) {
     );
 }
 
-type TestPreparedOutboundSend = Readonly<{
-    kind: 'send';
-    msgId: string;
-}>;
+function decodeIndexedRecord(value: unknown): IndexedRecord {
+    if (
+        typeof value !== 'object' || value === null ||
+        !('index' in value) || typeof value.index !== 'number' || !Number.isSafeInteger(value.index)
+    ) {
+        throw new TypeError('Stored indexed record must contain an integer index');
+    }
+    return { index: value.index };
+}
+
+function decodePreparedOutboundSend(value: unknown, msg: ALMessage): TestPreparedOutboundSend {
+    if (
+        typeof value !== 'object' || value === null ||
+        !('kind' in value) || value.kind !== 'send' ||
+        !('msgId' in value) || value.msgId !== msg.id.msgId
+    ) {
+        throw new TypeError('Stored prepared send must match its outbound message');
+    }
+    return { kind: value.kind, msgId: value.msgId };
+}

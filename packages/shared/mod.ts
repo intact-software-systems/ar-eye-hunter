@@ -50,14 +50,26 @@ export * from './resilience/TryWith.ts';
 export * from './websocket/JsonWebSocketClient.ts';
 export * from './websocket/JsonWebSocketServer.ts';
 
-export * from './alm/ALInboundAdmissionStore.ts';
-export * from './alm/ALInboundMessageRuntime.ts';
-export * from './alm/ALOutboundAdmissionStore.ts';
-export * from './alm/ALOutboundMessageRuntime.ts';
-export * from './alm/ALRuntimeStateStores.ts';
+export {
+    type ALAdmissionBackend,
+    type ALAdmissionMemoryState,
+    type ALAdmissionWriteContext,
+    createInMemoryALAdmissionState
+} from './alm/al-admission-backend.ts';
+export { ALAdmissionCorruptionError, type ALAdmissionDecoder } from './alm/al-admission-decoder.ts';
+export * from './alm/al-runtime-state-stores.ts';
+export * from './alm/al-runtime-stores.ts';
 export * from './alm/ALRuntimeStoreRegistry.ts';
-export * from './alm/ALRuntimeStores.ts';
 export * from './alm/ALStoreRetention.ts';
+export * from './alm/compute-al-ordering-observation.ts';
+export * from './alm/compute-al-supersedence-observation.ts';
+export * from './alm/inbound/al-inbound-admission-store.ts';
+export * from './alm/inbound/al-inbound-message-runtime.ts';
+export * from './alm/inbound/transition-al-pending-ack.ts';
+
+export * from './alm/outbound/al-outbound-admission-store.ts';
+export * from './alm/outbound/al-outbound-message-runtime.ts';
+export * from './alm/outbound/create-default-al-outbound-message-runtime.ts';
 export * from './services/inbox-queue-reader.ts';
 export * from './services/InboxOutboxEngine.ts';
 export * from './services/outbox-queue-reader.ts';

@@ -1,10 +1,16 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import {
     AL_CONTROL_NACK_TYPE_ID,
+    createDefaultWsQueueBoxServerService,
     InMemoryQueueBox,
     JsonWebSocketServer,
     newALBroadcastMessage,
@@ -16,7 +22,6 @@ import {
     RALLAR_CRDT_PROTOCOL_VERSION,
     RALLAR_CRDT_ROOM_TOPIC_ID,
     RALLAR_CRDT_UPDATE_TYPE_ID,
-    WsQueueBoxServerService,
     type ALMessage,
     type EncodedJsonWebSocketMessage,
     type RallarCrdtCatchUpResponseEnvelope,
@@ -504,7 +509,7 @@ function createRouter(options?: ConstructorParameters<typeof RallarServerWsRoute
     const socket = new RecordingJsonWebSocketServer();
     const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
-    const service = new WsQueueBoxServerService({
+    const service = createDefaultWsQueueBoxServerService({
         inbox: inbox,
         outbox: outbox,
         socket: socket,

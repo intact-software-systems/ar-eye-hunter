@@ -1,7 +1,15 @@
-import { configureALRuntimeStoreFactories, resolveALInboundRuntimeStores, resolveALOutboundRuntimeStores } from '@shared/alm/ALRuntimeStoreRegistry.ts';
-import { createInMemoryALInboundRuntimeStores, createInMemoryALOutboundRuntimeStores } from '@shared/alm/ALRuntimeStores.ts';
+import {
+    configureALRuntimeStoreFactories,
+    resolveALInboundRuntimeStores,
+    resolveALOutboundRuntimeStores
+} from '@shared/alm/ALRuntimeStoreRegistry.ts';
+import { createDefaultInMemoryALInboundRuntimeStores, createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 describe('AL runtime store registry', () => {
     it('requires explicit configuration before stores can be resolved', () => {
@@ -17,8 +25,8 @@ describe('AL runtime store registry', () => {
         configureALRuntimeStoreFactories(
             'runtime-a',
             {
-                createInboundStores: () => createInMemoryALInboundRuntimeStores(),
-                createOutboundStores: () => createInMemoryALOutboundRuntimeStores()
+                createInboundStores: () => createDefaultInMemoryALInboundRuntimeStores(),
+                createOutboundStores: () => createDefaultInMemoryALOutboundRuntimeStores()
             },
             manager
         );
@@ -36,7 +44,7 @@ describe('AL runtime store registry', () => {
         configureALRuntimeStoreFactories(
             'runtime-b',
             {
-                createInboundStores: () => createInMemoryALInboundRuntimeStores()
+                createInboundStores: () => createDefaultInMemoryALInboundRuntimeStores()
             },
             isolatedManager
         );

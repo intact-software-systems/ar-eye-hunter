@@ -20,7 +20,7 @@ import {
 } from '@shared/crdt/mod.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import {
     describe,
     expect,
@@ -52,7 +52,7 @@ describe('CRDT principal fanout from a cold cache', () => {
             webSocketServer.addConnection(new ConnectionContext(id, new RecordingWebSocket(sent)));
         }
         const queue = new InMemoryQueueBox();
-        const service = new WsQueueBoxServerService({
+        const service = createDefaultWsQueueBoxServerService({
             inbox: queue,
             outbox: queue,
             socket: webSocketServer,

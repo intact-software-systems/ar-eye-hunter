@@ -1,14 +1,25 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { ConnectionContext, InMemoryQueueBox, JsonWebSocketServer, newALRoute, newALUntargetedMessage } from '@shared/mod.ts';
-import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    ConnectionContext,
+    InMemoryQueueBox,
+    JsonWebSocketServer,
+    newALRoute,
+    newALUntargetedMessage
+} from '@shared/mod.ts';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 describe('WS server inbound identity', () => {
     it('rejects a forged sender and preserves an exact matching non-CRDT message', async () => {
         const server = new JsonWebSocketServer();
         const socket = new FakeSocket();
         server.addConnection(new ConnectionContext('session-attacker', socket));
-        const service = new WsQueueBoxServerService({
+        const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(),
             outbox: new InMemoryQueueBox(),
             socket: server,
@@ -42,7 +53,7 @@ describe('WS server inbound identity', () => {
         const socket = new FakeSocket();
         server.addConnection(new ConnectionContext('session-1', socket));
         const admittedMessages: ALMessage[] = [];
-        new WsQueueBoxServerService({
+        createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(),
             outbox: new InMemoryQueueBox(),
             socket: server,

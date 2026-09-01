@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { installRtcRttSystemTopic, type InstallRtcRttSystemTopicOptions } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
@@ -6,11 +11,11 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     AppTopics,
     ConnectionContext,
+    createDefaultWsQueueBoxServerService,
     InMemoryQueueBox,
     JsonWebSocketServer,
     newALBroadcastMessage,
     newALEventRoute,
-    WsQueueBoxServerService,
     type ALMessage
 } from '@shared/mod.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -95,7 +100,7 @@ function createHarness(options: InstallRtcRttSystemTopicOptions): FakeSocket {
     const socket = new FakeSocket();
     server.addConnection(new ConnectionContext('session-a', socket));
     installRtcRttSystemTopic(
-        new WsQueueBoxServerService({
+        createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,

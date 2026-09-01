@@ -3,11 +3,11 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import {
     AppTopics,
     ConnectionContext,
+    createDefaultWsQueueBoxServerService,
     InMemoryQueueBox,
     JsonWebSocketServer,
     newALBroadcastMessage,
     newALEventRoute,
-    WsQueueBoxServerService,
     type ALMessage
 } from '@shared/mod.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -147,7 +147,7 @@ const senderSocket = new RtcRttTrafficWebSocket();
 const server = new JsonWebSocketServer();
 server.addConnection(new ConnectionContext(senderSessionId, senderSocket));
 
-const service = new WsQueueBoxServerService({
+const service = createDefaultWsQueueBoxServerService({
     inbox: new InMemoryQueueBox(new Map()),
     outbox: new InMemoryQueueBox(new Map()),
     socket: server,

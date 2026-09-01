@@ -1,5 +1,5 @@
-import type { ALInboundRuntimeStores } from '@shared/alm/ALInboundMessageRuntime.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     configureALRuntimeStoreScopes,
     resolveALInboundRuntimeStores,
@@ -7,14 +7,14 @@ import {
     type ALRuntimeStoreFactories,
     type ALRuntimeStoreScope
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
-import type { ALRuntimeStoreFactoryOptions } from '@shared/alm/ALRuntimeStores.ts';
+import type { CreateDefaultALRuntimeStoresInput } from '@shared/alm/al-runtime-stores.ts';
 import {
-    createIndexedDbALInboundRuntimeStores,
-    createIndexedDbALOutboundRuntimeStores,
-    createInMemoryALInboundRuntimeStores,
-    createInMemoryALOutboundRuntimeStores,
+    createDefaultIndexedDbALInboundRuntimeStores,
+    createDefaultIndexedDbALOutboundRuntimeStores,
+    createDefaultInMemoryALInboundRuntimeStores,
+    createDefaultInMemoryALOutboundRuntimeStores,
     isIndexedDbALRuntimeStoreSupported
-} from '@shared/alm/ALRuntimeStores.ts';
+} from '@shared/alm/al-runtime-stores.ts';
 
 import {
     BROWSER_AL_RUNTIME_DB_NAME,
@@ -23,7 +23,7 @@ import {
     toBrowserWsClientALRuntimeStoreId
 } from './browser-al-runtime-identity.ts';
 
-type BrowserALRuntimeOptions = Omit<ALRuntimeStoreFactoryOptions, 'dbName' | 'namespace'>;
+type BrowserALRuntimeOptions = Omit<CreateDefaultALRuntimeStoresInput, 'dbName' | 'namespace'>;
 
 type RuntimeStoreDirection = 'inbound' | 'outbound';
 
@@ -44,8 +44,8 @@ function createBrowserALRuntimeStores(
 ): ALInboundRuntimeStores | ALOutboundRuntimeStores {
     if (!isIndexedDbALRuntimeStoreSupported()) {
         return direction === 'inbound'
-            ? createInMemoryALInboundRuntimeStores(options)
-            : createInMemoryALOutboundRuntimeStores(options);
+            ? createDefaultInMemoryALInboundRuntimeStores(options)
+            : createDefaultInMemoryALOutboundRuntimeStores(options);
     }
 
     const persistentOptions = {
@@ -55,8 +55,8 @@ function createBrowserALRuntimeStores(
     };
 
     return direction === 'inbound'
-        ? createIndexedDbALInboundRuntimeStores(persistentOptions)
-        : createIndexedDbALOutboundRuntimeStores(persistentOptions);
+        ? createDefaultIndexedDbALInboundRuntimeStores(persistentOptions)
+        : createDefaultIndexedDbALOutboundRuntimeStores(persistentOptions);
 }
 
 function createBrowserRuntimeStoreFactories(

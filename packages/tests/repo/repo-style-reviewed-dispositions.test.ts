@@ -62,17 +62,32 @@ describe('reviewed repository style dispositions', () => {
                 symbol: undefined
             },
             {
-                path: 'packages/shared/alm/ALInboundAdmissionStore.ts',
-                rule: 'boundary.unknown',
-                symbol: undefined
-            },
-            {
-                path: 'packages/shared/alm/ALOutboundAdmissionStore.ts',
-                rule: 'boundary.unknown',
-                symbol: undefined
-            },
-            {
                 path: 'packages/shared/rallar-ai/rallar-ai-types.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'packages/shared/alm/al-admission-backend.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'packages/shared/alm/al-admission-resource-entry-validation.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeResourceEntryRecord'
+            },
+            {
+                path: 'packages/shared/alm/inbound/al-inbound-durable-effect-codec.ts',
+                rule: 'boundary.unknown',
+                symbol: 'assertControlMessage'
+            },
+            {
+                path: 'packages/shared/alm/indexed-db-admission-backend.ts',
+                rule: 'boundary.unknown',
+                symbol: undefined
+            },
+            {
+                path: 'packages/tests/shared/alm/al-inbound-persistence-validation.test.ts',
                 rule: 'boundary.unknown',
                 symbol: undefined
             },

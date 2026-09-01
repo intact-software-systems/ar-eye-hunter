@@ -3,15 +3,15 @@ import {
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { createBrowserQueueBox } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
-import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { Command } from '@shared/cache/Command.ts';
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import {
-    DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
-    WsQueueBoxClientService
+import WsQueueBoxClientService, {
+    createDefaultWsQueueBoxClientService,
+    DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
 } from '@shared/services/ws-queue-box-client-service.ts';
 import type { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 
@@ -51,27 +51,20 @@ function createBrowserWebSocketQueueBoxService(
     input: CreateBrowserWebSocketQueueBox.Input
 ): WsQueueBoxClientService {
     const { clientData, socket } = input;
-    const wsQueueBox = new WsQueueBoxClientService(
-        {
-            inbox: createBrowserQueueBox(`ws-inbox-${clientData.sessionId}`),
-            outbox: createBrowserQueueBox(`ws-outbox-${clientData.sessionId}`),
-            socket: socket
-        },
-        {
-            sessionId: clientData.sessionId
-        },
-        {
-            inboundStores: resolveBrowserWsClientALInboundRuntimeStores(clientData.sessionId),
-            outboundStores: resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId),
-            outboundDiagnostics: input.outboundDiagnostics,
-            newConnectionRequestId: input.newConnectionRequestId,
-            reconnect: {
-                ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
-                canReconnect: () => readSession()?.sessionId === clientData.sessionId
-            }
+    return createDefaultWsQueueBoxClientService({
+        inbox: createBrowserQueueBox(`ws-inbox-${clientData.sessionId}`),
+        outbox: createBrowserQueueBox(`ws-outbox-${clientData.sessionId}`),
+        socket,
+        sessionId: clientData.sessionId,
+        inboundStores: resolveBrowserWsClientALInboundRuntimeStores(clientData.sessionId),
+        outboundStores: resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId),
+        outboundDiagnostics: input.outboundDiagnostics,
+        newConnectionRequestId: input.newConnectionRequestId,
+        reconnect: {
+            ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
+            canReconnect: () => readSession()?.sessionId === clientData.sessionId
         }
-    );
-    return wsQueueBox;
+    });
 }
 
 interface RegisterBrowserWebSocketQueueTaskInput {

@@ -4,8 +4,11 @@ import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { requeueRemoteWsOutboxDeliveryFailure } from '@shared-server/rallar-system/queue-pubsub/requeue-remote-ws-outbox-delivery-failure.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
-import { createALOutboundAdmissionStore, createInMemoryALOutboundAdmissionState, type ALOutboundAdmissionStore } from '@shared/alm/ALOutboundAdmissionStore.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -13,9 +16,23 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import type { WsOutboxDeliveryOutcome, WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { ConnectionContext, JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
-import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import {
+    ConnectionContext,
+    JsonWebSocketServer,
+    type EncodedJsonWebSocketMessage
+} from '@shared/websocket/JsonWebSocketServer.ts';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi,
+    type MockInstance
+} from 'vitest';
+
+import { createFlakyOutboundAdmissionStore } from './alm/outbound-runtime-test-fixture.ts';
+import { TestWebSocket } from './websocket/test-web-socket.ts';
 
 interface WsOutboxTestSocket {
     readonly socket: JsonWebSocketServer;
@@ -33,6 +50,8 @@ interface CreateWsOutboxServiceInput {
 describe('durable WS outbox owner misses', () => {
     afterEach(() => {
         vi.useRealTimers();
+        vi.restoreAllMocks();
+        TestWebSocket.instances.length = 0;
     });
 
     it('retries a non-owner miss so the process with the target socket can deliver', async () => {
@@ -46,7 +65,7 @@ describe('durable WS outbox owner misses', () => {
         await outbox.enqueue(entry);
         const ownerSocket = createSocket();
         const misses: WsOutboxDeliveryOutcome[] = [];
-        const nonOwner = new WsQueueBoxServerService({
+        const nonOwner = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: createSocket().socket,
@@ -54,7 +73,7 @@ describe('durable WS outbox owner misses', () => {
             targetResolver: { resolvePeerRecipients: () => [] },
             outboundDeliveryOutcome: (outcome) => misses.push(outcome)
         });
-        const owner = new WsQueueBoxServerService({
+        const owner = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: ownerSocket.socket,
@@ -90,20 +109,22 @@ describe('durable WS outbox owner misses', () => {
         ));
         const ownerSocket = createSocket();
         const base = createALOutboundAdmissionStore({
-            kind: 'memory',
             namespace: 'ws-owner-claim-conflict',
             supersedenceTrackTtlMs: 60_000,
-            state: createInMemoryALOutboundAdmissionState()
+            backend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now),
+            retention: normalizeALRuntimeStoreRetention()
         });
         let claimCalls = 0;
-        const admissionStore = proxyAdmissionStore(base, async (...args) => {
-            claimCalls += 1;
-            if (claimCalls === 2) {
-                throw new ALAdmissionBackendConflictError('simulated shared claim race');
+        const admissionStore = createFlakyOutboundAdmissionStore(base, {
+            claimReadyEffects: async (input, decodePrepared) => {
+                claimCalls += 1;
+                if (claimCalls === 2) {
+                    throw new ALAdmissionBackendConflictError('simulated shared claim race');
+                }
+                return await base.claimReadyEffects(input, decodePrepared);
             }
-            return await base.claimReadyEffects(...args);
         });
-        const owner = new WsQueueBoxServerService({
+        const owner = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: ownerSocket.socket,
@@ -402,7 +423,7 @@ describe('durable WS outbox owner misses', () => {
             const retry = await readEntry(outbox);
             expect(retry.status).toBe(EntityStatus.RETRY);
             expect(retry.resource).toBe(original.resource);
-            expect((JSON.parse(retry.resource) as ALMessage).id.msgId).toBe('durable-reply-1');
+            expect(decodePersistedALMessage(retry.resource).id.msgId).toBe('durable-reply-1');
             await expect(requeueRemoteWsOutboxDeliveryFailure(outbox, retry, {
                 retryPolicy: remoteRetryPolicy,
                 jitterUnit: () => 0
@@ -443,9 +464,11 @@ function createUnicastMessage(
 
 function createSocket(): WsOutboxTestSocket {
     const socket = new JsonWebSocketServer();
+    const connection = new TestWebSocket('ws://test.invalid');
+    connection.open();
     socket.connections.set(
         'writer-session',
-        new ConnectionContext('writer-session', { readyState: 1 } as WebSocket)
+        new ConnectionContext('writer-session', connection)
     );
     const encodedSends: Array<[string, EncodedJsonWebSocketMessage]> = [];
     const sendEncoded = vi.spyOn(socket, 'sendEncoded').mockImplementation(
@@ -457,7 +480,7 @@ function createSocket(): WsOutboxTestSocket {
 }
 
 function createService(input: CreateWsOutboxServiceInput): WsQueueBoxServerService {
-    return new WsQueueBoxServerService({
+    return createDefaultWsQueueBoxServerService({
         inbox: new InMemoryQueueBox(),
         outbox: input.outbox,
         socket: input.socket.socket,
@@ -551,19 +574,4 @@ async function readEntry(queue: InMemoryQueueBox): Promise<ResourceEntry> {
         throw new Error('Expected queued entry');
     }
     return entry;
-}
-
-function proxyAdmissionStore(
-    inner: ALOutboundAdmissionStore,
-    claimReadyEffects: ALOutboundAdmissionStore['claimReadyEffects']
-): ALOutboundAdmissionStore {
-    return new Proxy(inner, {
-        get(target, property) {
-            if (property === 'claimReadyEffects') {
-                return claimReadyEffects;
-            }
-            const value = Reflect.get(target, property);
-            return typeof value === 'function' ? value.bind(target) : value;
-        }
-    });
 }

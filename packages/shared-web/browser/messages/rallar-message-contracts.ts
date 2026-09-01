@@ -1,6 +1,6 @@
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ALAckMode, ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 

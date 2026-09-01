@@ -12,7 +12,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
-import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import { createGroupSnapshot } from '../../../../packages/tests/shared-server/rallar-system/group-state/snapshot/group-state-snapshot-test-fixtures.ts';
@@ -231,7 +231,7 @@ Deno.test('outbox fanout keeps the original message and uses its existing queue 
 Deno.test('generic custom authorization retains its configured resolver without group storage', async () => {
     const runtime = createLiveRoomRuntime();
     const router = new RallarServerWsRouter(
-        new WsQueueBoxServerService({
+        createDefaultWsQueueBoxServerService({
             name: 'custom-policy-test',
             inbox: new InMemoryQueueBox(),
             outbox: new InMemoryQueueBox(),
@@ -263,7 +263,7 @@ function createLiveRoomRuntime(): LiveRoomTestRuntime {
         };
         socket.addConnection(new ConnectionContext(sessionId, webSocket));
     }
-    const service = new WsQueueBoxServerService({
+    const service = createDefaultWsQueueBoxServerService({
         name: 'api-live-room-test',
         inbox: new InMemoryQueueBox(),
         outbox: new InMemoryQueueBox(),

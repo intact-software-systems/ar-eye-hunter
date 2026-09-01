@@ -2,7 +2,7 @@ import type { ALSupersedencePersistenceValue } from '@shared/al-contracts/al-run
 import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot
-} from '@shared/alm/ALRuntimeStateStores.ts';
+} from '@shared/alm/al-runtime-state-stores.ts';
 import type { JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import {
     createALJsonPersistenceCodec,

@@ -1,4 +1,9 @@
-import { isIndexedDbALRuntimeStoreSupported } from '@shared/alm/ALRuntimeStores.ts';
+import { isIndexedDbALRuntimeStoreSupported } from '@shared/alm/al-runtime-stores.ts';
+import {
+    decodeALAdmissionStoredValue,
+    type ALAdmissionStoredValue
+} from '@shared/alm/al-admission-backend.ts';
+import { decodeALAdmissionValue } from '@shared/alm/al-admission-decoder.ts';
 import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 
@@ -11,15 +16,10 @@ import {
 
 export const BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
 
-type BrowserALRuntimeStoredEntry = Readonly<{
-    key: string;
-    expireAtTimestamp: number;
-}>;
-
 interface BrowserALRuntimeCleanupScan {
     readonly db: IDBDatabase;
     readonly keyPrefixes: readonly string[];
-    readonly shouldDelete: (entry: BrowserALRuntimeStoredEntry) => boolean;
+    readonly shouldDelete: (entry: ALAdmissionStoredValue) => boolean;
 }
 
 export type BrowserALRuntimeCleanupResult = Readonly<{
@@ -104,7 +104,7 @@ export async function initBrowserALRuntimeExpiryEviction(
 async function deleteBrowserALRuntimeEntriesMatching(
     options: Readonly<{
         keyPrefixes: readonly string[];
-        shouldDelete: (entry: BrowserALRuntimeStoredEntry) => boolean;
+        shouldDelete: (entry: ALAdmissionStoredValue) => boolean;
     }>
 ): Promise<BrowserALRuntimeCleanupResult> {
     const keyPrefixes = [...new Set(options.keyPrefixes)].filter((prefix) => prefix.length > 0);
@@ -155,31 +155,40 @@ function scanBrowserALRuntimeEntries(
                 request.error ?? new Error('Browser AL runtime cleanup cursor failed')
             );
         request.onsuccess = () => {
-            const cursor = request.result;
-            if (!cursor) {
-                return;
-            }
+            try {
+                const cursor = request.result;
+                if (!cursor) {
+                    return;
+                }
+                const key = cursor.primaryKey;
+                if (typeof key !== 'string') {
+                    throw new TypeError('Browser AL runtime cleanup row key must be a string');
+                }
+                if (!matchesAnyBrowserALRuntimePrefix(key, input.keyPrefixes)) {
+                    cursor.continue();
+                    return;
+                }
 
-            const entry = cursor.value as BrowserALRuntimeStoredEntry;
-            if (!matchesAnyBrowserALRuntimePrefix(entry.key, input.keyPrefixes)) {
-                cursor.continue();
-                return;
-            }
+                const entry = decodeALAdmissionValue(cursor.value, key, decodeALAdmissionStoredValue);
+                scanned += 1;
+                if (!input.shouldDelete(entry)) {
+                    cursor.continue();
+                    return;
+                }
 
-            scanned += 1;
-            if (!input.shouldDelete(entry)) {
-                cursor.continue();
-                return;
+                deleted += 1;
+                const deleteRequest = cursor.delete();
+                deleteRequest.onerror = () =>
+                    reject(
+                        deleteRequest.error ??
+                            new Error('Browser AL runtime cleanup delete failed')
+                    );
+                deleteRequest.onsuccess = () => cursor.continue();
             }
-
-            deleted += 1;
-            const deleteRequest = cursor.delete();
-            deleteRequest.onerror = () =>
-                reject(
-                    deleteRequest.error ??
-                        new Error('Browser AL runtime cleanup delete failed')
-                );
-            deleteRequest.onsuccess = () => cursor.continue();
+            catch (error) {
+                reject(error);
+                tx.abort();
+            }
         };
     });
 }
@@ -206,9 +215,8 @@ function matchesAnyBrowserALRuntimePrefix(
 }
 
 function isExpiredBrowserALRuntimeEntry(
-    entry: BrowserALRuntimeStoredEntry,
+    entry: ALAdmissionStoredValue,
     nowMs: number
 ): boolean {
-    return !Number.isFinite(entry.expireAtTimestamp) ||
-        entry.expireAtTimestamp <= nowMs;
+    return entry.expireAtTimestamp <= nowMs;
 }

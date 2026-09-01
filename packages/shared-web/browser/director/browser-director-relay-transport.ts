@@ -10,7 +10,7 @@ import type {
     RallarTargetedChannel,
     RallarTargetedChannelDefinition
 } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 export const RALLAR_DIRECTOR_RELAY_PROTOCOL = 'rallar.director.relay.v1';

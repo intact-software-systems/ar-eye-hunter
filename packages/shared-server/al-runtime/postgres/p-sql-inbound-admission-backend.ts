@@ -1,12 +1,18 @@
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type {
+    ALAdmissionBackend,
+    ALAdmissionBackendEntry,
+    ALAdmissionWriteContext
+} from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
-import type { ALInboundAdmissionBackend, ALInboundAdmissionWriteContext } from '@shared/alm/ALInboundAdmissionStore.ts';
+
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlAdmissionMutationCollector } from './p-sql-admission-mutation-collector.ts';
 
-export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
+export class PSqlInboundAdmissionBackend implements ALAdmissionBackend {
     private readonly repository: RuntimeStateOptimisticTransactionalRepositoryLike;
     private readonly namespace: string;
 
@@ -21,33 +27,29 @@ export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
     async ready(): Promise<void> {
     }
 
-    async get<V>(key: string): Promise<V | undefined> {
+    async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
         return await new PSqlAdmissionMutationCollector(
             this.repository,
-            this.namespace
-        ).get<V>(key);
+            this.namespace,
+            Date.now
+        ).read(key, decode);
     }
 
-    async list<V>(prefix: string): Promise<readonly Readonly<{ key: string; value: V; }>[]> {
+    async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
         return await new PSqlAdmissionMutationCollector(
             this.repository,
-            this.namespace
-        ).list<V>(prefix);
+            this.namespace,
+            Date.now
+        ).list(prefix, decode);
     }
 
-    async write<T>(fn: (tx: ALInboundAdmissionWriteContext) => Promise<T>): Promise<T> {
+    async write<T>(fn: (tx: ALAdmissionWriteContext) => Promise<T>): Promise<T> {
         const collector = new PSqlAdmissionMutationCollector(
             this.repository,
-            this.namespace
+            this.namespace,
+            Date.now
         );
-        const result = await fn({
-            get: async (key) => await collector.get(key),
-            list: async (prefix) => await collector.list(prefix),
-            set: async (key, value, expireAtTimestamp) => {
-                await collector.set(key, value, expireAtTimestamp);
-            },
-            remove: async (key) => await collector.remove(key)
-        });
+        const result = await fn(collector);
         try {
             await collector.apply(collector.mutations());
         }

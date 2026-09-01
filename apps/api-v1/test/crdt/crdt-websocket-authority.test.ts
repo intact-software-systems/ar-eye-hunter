@@ -14,7 +14,7 @@ import {
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
@@ -125,6 +125,7 @@ Deno.test(
             );
 
             await fixture.send(SESSION_B, message(SESSION_B, 'transport-3', update('update-2')));
+            await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
             await fixture.revokeAuthSession(SESSION_B);
             await drain(fixture, sql, 3);
             const revoked = (await readResults(sql)).at(-1);
@@ -217,7 +218,7 @@ async function createCrdtWebSocketAuthorityFixture(
     const queue = new InMemoryQueueBox();
     const socketServer = new JsonWebSocketServer();
     const sockets = new Map<string, FakeSocket>();
-    const wsService = new WsQueueBoxServerService({
+    const wsService = createDefaultWsQueueBoxServerService({
         inbox: queue,
         outbox: queue,
         socket: socketServer,

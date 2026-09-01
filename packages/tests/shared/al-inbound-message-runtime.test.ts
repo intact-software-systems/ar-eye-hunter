@@ -1,26 +1,40 @@
 import {
-    ALInboundMessageRuntime,
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { PersistenceProviderAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
+import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import {
     createALInboundAdmissionStore,
-    createInMemoryALInboundRuntimeStores,
+    createDefaultInMemoryALInboundRuntimeStores,
     InMemoryPersistenceProvider,
     InMemoryQueueBox,
     newALAckControlMessage,
     newALMulticastMessage,
+    normalizeALRuntimeStoreRetention,
     parseALControlMessage,
     planALMessageHandling,
     QueueBoxUtilities,
+    ALAdmissionCorruptionError,
     type ALControlAcceptance,
-    type ALInboundAdmissionStore,
+    type ALInboundMessageRuntime,
     type ALInboundRuntimeStores,
     type ALMessage,
     type ALMessageHandlingPlan,
     type ResourceEntry
 } from '@shared/mod.ts';
-import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('ALInboundMessageRuntime', () => {
     afterEach(() => {
+        vi.restoreAllMocks();
         vi.useRealTimers();
     });
 
@@ -118,56 +132,24 @@ describe('ALInboundMessageRuntime', () => {
     it('retries a stale optimistic write and still releases ordered messages once', async () => {
         vi.useFakeTimers();
 
-        const stores = createInMemoryALInboundRuntimeStores();
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
         const baseAdmission = stores.admissionStore;
-        if (!baseAdmission) {
-            throw new Error('Expected in-memory admission store');
-        }
-
+        const commitBundle = baseAdmission.commitBundle.bind(baseAdmission);
         let rejectedFirstCommit = false;
-
-        const wrappedStores: ALInboundRuntimeStores = {
-            ...stores,
-            admissionStore: {
-                ready: async () => await baseAdmission.ready(),
-                readIncomingMessage: async (msg, fromPeerId, planner) => await baseAdmission.readIncomingMessage(msg, fromPeerId, planner),
-                readBufferedRelease: async (trackKey, seq) => await baseAdmission.readBufferedRelease(trackKey, seq),
-                planStoredEntry: async (msg, planner) => await baseAdmission.planStoredEntry(msg, planner),
-                acceptControlMessage: async (msg) => await baseAdmission.acceptControlMessage(msg),
-                commitMutations: async (request) => await baseAdmission.commitMutations(request),
-                commitBundle: async (bundle) => {
-                    const rejectsGapBuffer = !rejectedFirstCommit &&
-                        bundle.senderId === 'peer-1' &&
-                        bundle.mutations.some((mutation) => mutation.kind === 'set-buffered');
-
-                    if (rejectsGapBuffer) {
-                        rejectedFirstCommit = true;
-                        await baseAdmission.commitBundle({
-                            senderId: 'peer-1',
-                            expectedVersion: bundle.expectedVersion,
-                            mutations: [
-                                {
-                                    kind: 'set-msg-owner',
-                                    msgId: 'external-version-bump',
-                                    senderId: 'peer-1'
-                                }
-                            ],
-                            durableEffects: []
-                        });
-                        return 'conflict';
-                    }
-
-                    return await baseAdmission.commitBundle(bundle);
-                },
-                claimReadyEffects: async (workerId, maxCount, leaseMs, nowMs) => await baseAdmission.claimReadyEffects(workerId, maxCount, leaseMs, nowMs),
-                completeEffect: async (effectId, workerId) => await baseAdmission.completeEffect(effectId, workerId),
-                rescheduleEffect: async (effectId, workerId, retryAtMs, lastError) =>
-                    await baseAdmission.rescheduleEffect(effectId, workerId, retryAtMs, lastError),
-                peekNextEffectReadyAt: async (nowMs) => await baseAdmission.peekNextEffectReadyAt(nowMs)
+        vi.spyOn(baseAdmission, 'commitBundle').mockImplementation(async (bundle) => {
+            if (!rejectedFirstCommit && bundle.senderId === 'peer-1') {
+                rejectedFirstCommit = true;
+                await commitBundle({
+                    senderId: 'peer-1',
+                    expectedVersion: bundle.expectedVersion,
+                    mutations: [{ kind: 'set-msg-owner', msgId: 'external-version-bump', senderId: 'peer-1' }],
+                    durableEffects: []
+                });
             }
-        };
+            return await commitBundle(bundle);
+        });
 
-        const { runtime, dispatchedTexts, forwardedIds } = createInboundHarness(wrappedStores);
+        const { runtime, dispatchedTexts, forwardedIds } = createInboundHarness(stores);
         const seq2 = createOrderedMessage(2, 'two');
         const seq1 = createOrderedMessage(1, 'one');
 
@@ -181,23 +163,76 @@ describe('ALInboundMessageRuntime', () => {
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
     });
 
-    it('retries complete control-message admission after backend conflicts', async () => {
-        vi.useFakeTimers();
-        const stores = createInMemoryALInboundRuntimeStores();
-        const baseAdmission = requireInboundAdmissionStore(stores);
-        let attempts = 0;
-        const wrappedStores = replaceInboundAdmissionStore(stores, {
-            acceptControlMessage: async (msg) => {
-                attempts += 1;
-                if (attempts < 4) {
-                    throw new ALAdmissionBackendConflictError(
-                        'simulated inbound control conflict'
-                    );
+    it('preserves persisted corruption discovered during normal inbound admission', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const corruption = new ALAdmissionCorruptionError(
+            'inbound:client:peer-1',
+            new TypeError('invalid client admission state')
+        );
+        vi.spyOn(stores.admissionStore, 'readIncomingMessage').mockRejectedValue(corruption);
+        const { runtime } = createInboundHarness(stores);
+
+        await expect(runtime.handleIncomingMessage(createOrderedMessage(1, 'one'), 'peer-1'))
+            .rejects.toBe(corruption);
+    });
+
+    it('delivers the same message id once for each sender when sender-scoped dedup is requested', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const firstDeliveryStarted = Promise.withResolvers<void>();
+        const releaseFirstDelivery = Promise.withResolvers<void>();
+        const secondAdmissionCommitted = Promise.withResolvers<void>();
+        const deliveredSenderIds: string[] = [];
+        const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
+        vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
+            const status = await commitBundle(bundle);
+            if (bundle.senderId === 'peer-2') {
+                secondAdmissionCommitted.resolve();
+            }
+            return status;
+        });
+        const { runtime } = createInboundHarness(stores, {
+            dispatchInboxEntry: async (entry) => {
+                const message = decodePersistedALMessage(entry.resource);
+                deliveredSenderIds.push(message.id.senderId);
+                if (message.id.senderId === 'peer-1') {
+                    firstDeliveryStarted.resolve();
+                    await releaseFirstDelivery.promise;
                 }
-                return await baseAdmission.acceptControlMessage(msg);
             }
         });
-        const { runtime, controlAcceptances } = createInboundHarness(wrappedStores);
+        const first = createSenderScopedDedupMessage('peer-1', 'first');
+        const secondOriginal = createSenderScopedDedupMessage('peer-2', 'second');
+        const second = {
+            ...secondOriginal,
+            id: {
+                ...secondOriginal.id,
+                msgId: first.id.msgId
+            }
+        };
+
+        const firstAdmission = runtime.handleIncomingMessage(first, 'peer-1');
+        await firstDeliveryStarted.promise;
+        const secondAdmission = runtime.handleIncomingMessage(second, 'peer-2');
+        await secondAdmissionCommitted.promise;
+        releaseFirstDelivery.resolve();
+        await Promise.all([firstAdmission, secondAdmission]);
+
+        expect(deliveredSenderIds).toEqual(['peer-1', 'peer-2']);
+    });
+
+    it('retries complete control-message admission after backend conflicts', async () => {
+        vi.useFakeTimers();
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const acceptControlMessage = stores.admissionStore.acceptControlMessage.bind(stores.admissionStore);
+        let attempts = 0;
+        vi.spyOn(stores.admissionStore, 'acceptControlMessage').mockImplementation(async (msg) => {
+            attempts += 1;
+            if (attempts < 4) {
+                throw new ALAdmissionBackendConflictError('simulated inbound control conflict');
+            }
+            return await acceptControlMessage(msg);
+        });
+        const { runtime, controlAcceptances } = createInboundHarness(stores);
 
         const pending = runtime.handleIncomingMessage(
             newALAckControlMessage('peer-2', 'self', 'missing-msg', 'delivered'),
@@ -212,80 +247,47 @@ describe('ALInboundMessageRuntime', () => {
     });
 
     it('retries buffered release when a downstream ack updates the sender version', async () => {
-        const stores = createInMemoryALInboundRuntimeStores();
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
         const baseAdmission = stores.admissionStore;
-        if (!baseAdmission) {
-            throw new Error('Expected in-memory admission store');
-        }
-
-        let releaseFirstCommit!: () => void;
-        const releaseCommitBlocked = new Promise<void>((resolve) => {
-            releaseFirstCommit = resolve;
-        });
-        let releaseCommitReached!: () => void;
-        const releaseCommitReady = new Promise<void>((resolve) => {
-            releaseCommitReached = resolve;
-        });
-        let didBlock = false;
-
-        const wrappedStores: ALInboundRuntimeStores = {
-            ...stores,
-            admissionStore: {
-                ready: async () => await baseAdmission.ready(),
-                readIncomingMessage: async (msg, fromPeerId, planner) => await baseAdmission.readIncomingMessage(msg, fromPeerId, planner),
-                readBufferedRelease: async (trackKey, seq) => await baseAdmission.readBufferedRelease(trackKey, seq),
-                planStoredEntry: async (msg, planner) => await baseAdmission.planStoredEntry(msg, planner),
-                acceptControlMessage: async (msg) => await baseAdmission.acceptControlMessage(msg),
-                commitMutations: async (request) => {
-                    const blocksOnBufferedRelease = !didBlock &&
-                        request.senderId === 'peer-1' &&
-                        request.mutations.some((mutation) => mutation.kind === 'delete-buffered');
-
-                    if (blocksOnBufferedRelease) {
-                        didBlock = true;
-                        releaseCommitReached();
-                        await releaseCommitBlocked;
-                    }
-
-                    return await baseAdmission.commitMutations(request);
-                },
-                commitBundle: async (bundle) => {
-                    const blocksOnBufferedRelease = !didBlock &&
-                        bundle.senderId === 'peer-1' &&
-                        bundle.mutations.some((mutation) => mutation.kind === 'delete-buffered');
-
-                    if (blocksOnBufferedRelease) {
-                        didBlock = true;
-                        releaseCommitReached();
-                        await releaseCommitBlocked;
-                    }
-
-                    return await baseAdmission.commitBundle(bundle);
-                },
-                claimReadyEffects: async (workerId, maxCount, leaseMs, nowMs) => await baseAdmission.claimReadyEffects(workerId, maxCount, leaseMs, nowMs),
-                completeEffect: async (effectId, workerId) => await baseAdmission.completeEffect(effectId, workerId),
-                rescheduleEffect: async (effectId, workerId, retryAtMs, lastError) =>
-                    await baseAdmission.rescheduleEffect(effectId, workerId, retryAtMs, lastError),
-                peekNextEffectReadyAt: async (nowMs) => await baseAdmission.peekNextEffectReadyAt(nowMs)
-            }
-        };
-
-        const { runtime, controlMessages, forwardedIds } = createInboundHarness(wrappedStores);
+        const commitBundle = baseAdmission.commitBundle.bind(baseAdmission);
+        const releaseCommitBlocked = Promise.withResolvers<void>();
+        const releaseCommitReady = Promise.withResolvers<void>();
         const seq2 = createOrderedMessage(2, 'two', 'all-logical-recipients');
         const seq1 = createOrderedMessage(1, 'one');
+        let didBlock = false;
+        let releaseConflictObserved = false;
+
+        vi.spyOn(baseAdmission, 'commitBundle').mockImplementation(async (bundle) => {
+            const releasesSecondMessage = bundle.durableEffects.some(({ payload }) =>
+                (payload.kind === 'dispatch-local' || payload.kind === 'enqueue-inbox') &&
+                decodePersistedALMessage(payload.entry.resource).id.msgId === seq2.id.msgId
+            );
+            if (!didBlock && releasesSecondMessage) {
+                didBlock = true;
+                releaseCommitReady.resolve();
+                await releaseCommitBlocked.promise;
+            }
+            const result = await commitBundle(bundle);
+            if (releasesSecondMessage && result === 'conflict') {
+                releaseConflictObserved = true;
+            }
+            return result;
+        });
+
+        const { runtime, controlMessages, forwardedIds } = createInboundHarness(stores);
 
         await runtime.handleIncomingMessage(seq2, 'peer-1');
         expect(forwardedIds).toEqual([seq2.id.msgId]);
 
         const pendingRelease = runtime.handleIncomingMessage(seq1, 'peer-1');
-        await releaseCommitReady;
+        await releaseCommitReady.promise;
 
         await runtime.handleIncomingMessage(
             newALAckControlMessage('peer-2', 'self', seq2.id.msgId, 'delivered'),
             'peer-2'
         );
 
-        releaseFirstCommit();
+        releaseCommitBlocked.resolve();
         await pendingRelease;
 
         const ackPayloads = controlMessages.flatMap((msg) => {
@@ -293,6 +295,7 @@ describe('ALInboundMessageRuntime', () => {
             return parsed?.type === 'ack' ? [parsed.payload] : [];
         });
 
+        expect(releaseConflictObserved).toBe(true);
         expect(ackPayloads).toHaveLength(1);
         expect(ackPayloads[0]).toMatchObject({
             ackedMsgId: seq2.id.msgId,
@@ -350,6 +353,51 @@ describe('ALInboundMessageRuntime', () => {
         });
     });
 
+    it('drains a completed subtree ack accepted while the current drain is finishing', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const { runtime, controlMessages } = createInboundHarness(stores);
+        await runtime.ready();
+        const emptyRead = Promise.withResolvers<void>();
+        const releaseEmptyRead = Promise.withResolvers<void>();
+        const controlStored = Promise.withResolvers<void>();
+        const readNextReadyAt = stores.admissionStore.peekNextEffectReadyAt.bind(stores.admissionStore);
+        const acceptControlMessage = stores.admissionStore.acceptControlMessage.bind(stores.admissionStore);
+        vi.spyOn(stores.admissionStore, 'peekNextEffectReadyAt').mockImplementation(async (nowMs) => {
+            const readyAt = await readNextReadyAt(nowMs);
+            emptyRead.resolve();
+            await releaseEmptyRead.promise;
+            return readyAt;
+        });
+        vi.spyOn(stores.admissionStore, 'acceptControlMessage').mockImplementation(async (message) => {
+            const acceptance = await acceptControlMessage(message);
+            controlStored.resolve();
+            return acceptance;
+        });
+        const msg = createOrderedMessage(1, 'one', 'all-logical-recipients');
+
+        const admission = runtime.handleIncomingMessage(msg, 'peer-1');
+        await emptyRead.promise;
+        const acceptControl = runtime.handleIncomingMessage(
+            newALAckControlMessage('peer-2', 'self', msg.id.msgId, 'delivered'),
+            'peer-2'
+        );
+        await controlStored.promise;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        releaseEmptyRead.resolve();
+        await Promise.all([admission, acceptControl]);
+
+        const ackPayloads = controlMessages.flatMap((message) => {
+            const parsed = parseALControlMessage(message);
+            return parsed?.type === 'ack' ? [parsed.payload] : [];
+        });
+        expect(ackPayloads).toHaveLength(1);
+        expect(ackPayloads[0]).toMatchObject({
+            ackedMsgId: msg.id.msgId,
+            toPeerId: 'peer-1',
+            status: 'subtree-complete'
+        });
+    });
+
     it('does not complete deferred subtree ack after the source message expires', async () => {
         vi.useFakeTimers();
 
@@ -401,7 +449,7 @@ describe('ALInboundMessageRuntime', () => {
         let shouldFailFirstNack = true;
         const sentControls: ALMessage[] = [];
         const { runtime } = createInboundHarness(
-            createInMemoryALInboundRuntimeStores(),
+            createDefaultInMemoryALInboundRuntimeStores(),
             {
                 sendControlMessage: async (msg) => {
                     const parsed = parseALControlMessage(msg);
@@ -454,10 +502,10 @@ describe('ALInboundMessageRuntime', () => {
             }
         );
         const { runtime } = createInboundHarness(
-            createInMemoryALInboundRuntimeStores(),
+            createDefaultInMemoryALInboundRuntimeStores(),
             {
                 dispatchInboxEntry: async (entry) => {
-                    const parsed = JSON.parse(entry.resource) as ALMessage;
+                    const parsed = decodePersistedALMessage(entry.resource);
                     if (shouldFailFirstDispatch) {
                         shouldFailFirstDispatch = false;
                         throw new Error('temporary dispatch failure');
@@ -503,10 +551,10 @@ describe('ALInboundMessageRuntime', () => {
             }
         );
         const { runtime } = createInboundHarness(
-            createInMemoryALInboundRuntimeStores(),
+            createDefaultInMemoryALInboundRuntimeStores(),
             {
                 dispatchInboxEntry: async (entry) => {
-                    const parsed = JSON.parse(entry.resource) as ALMessage;
+                    const parsed = decodePersistedALMessage(entry.resource);
                     if (shouldFailFirstDispatch) {
                         shouldFailFirstDispatch = false;
                         throw new Error('temporary dispatch failure');
@@ -553,8 +601,8 @@ describe('ALInboundMessageRuntime', () => {
     it('replays persisted durable effects after runtime restart', async () => {
         vi.useFakeTimers();
 
-        const provider = new InMemoryPersistenceProvider<string, unknown>();
-        const stores = createPersistentInboundStores(provider);
+        const persistence = createInboundPersistenceFixture();
+        const stores = persistence.openStores();
         const runtime1 = createInboundHarness(
             stores,
             {
@@ -568,7 +616,7 @@ describe('ALInboundMessageRuntime', () => {
         runtime1.dispose();
 
         const { runtime: runtime2, controlMessages } = createInboundHarness(
-            createPersistentInboundStores(provider)
+            persistence.openStores()
         );
         await runtime2.ready();
         await vi.advanceTimersByTimeAsync(100);
@@ -582,8 +630,8 @@ describe('ALInboundMessageRuntime', () => {
     it('replays completed pending acks from control-message acceptance after restart', async () => {
         vi.useFakeTimers();
 
-        const provider = new InMemoryPersistenceProvider<string, unknown>();
-        const stores = createPersistentInboundStores(provider);
+        const persistence = createInboundPersistenceFixture();
+        const stores = persistence.openStores();
         const forwardedIds: string[] = [];
         const runtime1 = createInboundHarness(
             stores,
@@ -608,7 +656,7 @@ describe('ALInboundMessageRuntime', () => {
         runtime1.dispose();
 
         const { runtime: runtime2, controlMessages } = createInboundHarness(
-            createPersistentInboundStores(provider)
+            persistence.openStores()
         );
         await runtime2.ready();
         await vi.advanceTimersByTimeAsync(100);
@@ -627,29 +675,39 @@ describe('ALInboundMessageRuntime', () => {
     });
 });
 
+interface InboundHarnessOverrides {
+    readonly dispatchInboxEntry?: (
+        entry: ResourceEntry,
+        plan?: ALMessageHandlingPlan
+    ) => Promise<void>;
+    readonly sendControlMessage?: (msg: ALMessage) => Promise<void>;
+    readonly forwardMessage?: (
+        msg: ALMessage,
+        fromPeerId: string,
+        plan: ALMessageHandlingPlan
+    ) => Promise<void>;
+    readonly canForwardMessage?: (msg: ALMessage) => boolean;
+}
+
+interface InboundHarness {
+    readonly runtime: ALInboundMessageRuntime;
+    readonly dispatchedTexts: string[];
+    readonly controlMessages: ALMessage[];
+    readonly forwardedIds: string[];
+    readonly controlAcceptances: ALControlAcceptance[];
+}
+
 function createInboundHarness(
-    stores = createInMemoryALInboundRuntimeStores(),
-    overrides: Partial<{
-        dispatchInboxEntry: (
-            entry: ResourceEntry,
-            plan?: ALMessageHandlingPlan
-        ) => Promise<void>;
-        sendControlMessage: (msg: ALMessage) => Promise<void>;
-        forwardMessage: (
-            msg: ALMessage,
-            fromPeerId: string,
-            plan: ALMessageHandlingPlan
-        ) => Promise<void>;
-        canForwardMessage: (msg: ALMessage) => boolean;
-    }> = {}
-) {
+    stores = createDefaultInMemoryALInboundRuntimeStores(),
+    overrides: InboundHarnessOverrides = {}
+): InboundHarness {
     const inbox = new InMemoryQueueBox(new Map());
     const dispatchedTexts: string[] = [];
     const controlMessages: ALMessage[] = [];
     const forwardedIds: string[] = [];
     const controlAcceptances: ALControlAcceptance[] = [];
 
-    const runtime = new ALInboundMessageRuntime({
+    const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'self',
         inbox,
         stores,
@@ -664,15 +722,13 @@ function createInboundHarness(
                 orderingStore: runtimeStores.orderingStore,
                 supersedenceStore: runtimeStores.supersedenceStore
             }),
-        readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
+        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
         dispatchInboxEntry: overrides.dispatchInboxEntry ?? (async (
             entry: ResourceEntry,
             _plan?: ALMessageHandlingPlan
         ) => {
-            const msg = JSON.parse(entry.resource) as ALMessage;
-            const payload = JSON.parse(msg.payload.resource) as { text?: string; };
-            dispatchedTexts.push(payload.text ?? msg.id.msgId);
+            dispatchedTexts.push(toDeliveredMessageText(entry));
         }),
         sendControlMessage: overrides.sendControlMessage ?? (async (msg) => {
             controlMessages.push(msg);
@@ -685,15 +741,25 @@ function createInboundHarness(
         }),
         canForwardMessage: overrides.canForwardMessage
     });
+    onTestFinished(() => runtime.dispose());
 
     return {
         runtime,
-        inbox,
         dispatchedTexts,
         controlMessages,
         forwardedIds,
         controlAcceptances
     };
+}
+
+function toDeliveredMessageText(entry: ResourceEntry): string {
+    const msg = decodePersistedALMessage(entry.resource);
+    const payload: unknown = JSON.parse(msg.payload.resource);
+    const text = typeof payload === 'object' && payload !== null && 'text' in payload ? payload.text : undefined;
+    if (text !== undefined && typeof text !== 'string') {
+        throw new TypeError('Test message text must be a string');
+    }
+    return text ?? msg.id.msgId;
 }
 
 function createOrderedMessage(
@@ -726,73 +792,49 @@ function createOrderedMessage(
     );
 }
 
-function createPersistentInboundStores(
-    provider: InMemoryPersistenceProvider<string, unknown>
-) {
-    return {
-        admissionStore: createALInboundAdmissionStore({
-            kind: 'provider',
-            namespace: 'al-inbound-runtime-test:provider',
-            provider,
-            coordinationKey: 'al-inbound-runtime-test:provider',
-            orderingTrackTtlMs: 5 * 60_000,
-            supersedenceTrackTtlMs: 5 * 60_000
-        })
-    };
+function createSenderScopedDedupMessage(senderId: string, text: string): ALMessage {
+    return newALMulticastMessage(
+        senderId,
+        {
+            topicId: 'chat',
+            resourceId: `msg-${senderId}`,
+            contextId: 'group-1'
+        },
+        groupRef('group-1'),
+        'chat.message.v1',
+        { text },
+        {
+            ack: 'none',
+            qos: {
+                dedup: { algo: 'msg-id+sender' },
+                durability: { algo: 'volatile' }
+            }
+        }
+    );
 }
 
-function requireInboundAdmissionStore(
-    stores: ALInboundRuntimeStores
-): ALInboundAdmissionStore {
-    if (!stores.admissionStore) {
-        throw new Error('Expected inbound admission store');
-    }
-    return stores.admissionStore;
-}
-
-function replaceInboundAdmissionStore(
-    stores: ALInboundRuntimeStores,
-    overrides: Partial<ALInboundAdmissionStore>
-): ALInboundRuntimeStores {
-    const base = requireInboundAdmissionStore(stores);
+function createInboundPersistenceFixture() {
+    const provider = new InMemoryPersistenceProvider<string, unknown>();
     return {
-        ...stores,
-        admissionStore: {
-            ready: async () => await base.ready(),
-            readIncomingMessage: async (msg, fromPeerId, planner) =>
-                await base.readIncomingMessage(msg, fromPeerId, planner),
-            readBufferedRelease: async (trackKey, seq) =>
-                await base.readBufferedRelease(trackKey, seq),
-            planStoredEntry: async (msg, planner) =>
-                await base.planStoredEntry(msg, planner),
-            acceptControlMessage: async (msg) =>
-                await base.acceptControlMessage(msg),
-            commitMutations: async (request) =>
-                await base.commitMutations(request),
-            commitBundle: async (bundle) => await base.commitBundle(bundle),
-            claimReadyEffects: async (workerId, maxCount, leaseMs, nowMs) =>
-                await base.claimReadyEffects(workerId, maxCount, leaseMs, nowMs),
-            completeEffect: async (effectId, workerId) =>
-                await base.completeEffect(effectId, workerId),
-            rescheduleEffect: async (
-                effectId,
-                workerId,
-                retryAtMs,
-                lastError
-            ) => await base.rescheduleEffect(
-                effectId,
-                workerId,
-                retryAtMs,
-                lastError
-            ),
-            peekNextEffectReadyAt: async (nowMs) =>
-                await base.peekNextEffectReadyAt(nowMs),
-            ...overrides
+        openStores(): ALInboundRuntimeStores {
+            return {
+                admissionStore: createALInboundAdmissionStore({
+                    namespace: 'al-inbound-runtime-test:provider',
+                    backend: new PersistenceProviderAdmissionBackend(
+                        provider,
+                        'al-inbound-runtime-test:provider',
+                        Date.now
+                    ),
+                    orderingTrackTtlMs: 5 * 60_000,
+                    supersedenceTrackTtlMs: 5 * 60_000,
+                    retention: normalizeALRuntimeStoreRetention()
+                })
+            };
         }
     };
 }
 
-function groupRef(groupId: string) {
+function groupRef(groupId: string): GroupRef {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',

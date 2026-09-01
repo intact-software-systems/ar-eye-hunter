@@ -1,6 +1,6 @@
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
@@ -26,7 +26,7 @@ export function createRallarMiddlewareInfrastructure(
             resolveGroupRef: options.resolveGroupRef,
             now: options.now
         });
-    const wsQBoxServerService = new WsQueueBoxServerService({
+    const wsQBoxServerService = createDefaultWsQueueBoxServerService({
         inbox: options.inbox,
         outbox: options.outbox ?? options.inbox,
         socket: webSocketServer,

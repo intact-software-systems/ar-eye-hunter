@@ -52,9 +52,11 @@ describe('rallar-black-box-headless bundle boundary', () => {
         }
 
         // The room-authority closure measures 208.4658203125 KiB with the
-        // reviewed exclusions and build settings. The maintainer approved the
-        // smallest whole-KiB strict limit that contains that behavior.
-        expect(result.brotliKiB).toBeLessThan(209);
+        // reviewed exclusions and build settings. Canonical inbound persistence,
+        // durable local delivery, and fail-closed corruption handling measure
+        // 215.4443359375 KiB. The maintainer approved the smallest whole-KiB
+        // strict limit containing the combined behavior.
+        expect(result.brotliKiB).toBeLessThan(216);
     });
 });
 

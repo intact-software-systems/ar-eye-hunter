@@ -17,7 +17,8 @@ import {
     decodeRallarServerWsIngress,
     readRallarServerWsRoomId,
     readRallarServerWsRoomRef,
-    toRallarServerWsTopicMetadata
+    toRallarServerWsTopicMetadata,
+    type RallarServerWsAuthorizationResult
 } from './decode-rallar-server-ws-ingress.ts';
 import { publishRallarServerWsMessage } from './publish-rallar-server-ws-message.ts';
 import type {
@@ -61,6 +62,7 @@ export class RallarServerWsRouter {
     private readonly authorizeRoomMessage: RallarServerWsRouterOptions['authorizeRoomMessage'];
     private readonly wakeOutbox: RallarServerWsRouterOptions['wakeOutbox'];
     private readonly service: WsQueueBoxServerService;
+    private readonly authorizedIngressByMessage = new Map<string, RallarServerWsAuthorizationResult>();
     private readonly nowEpochMs: () => number;
     private installed = false;
 
@@ -83,6 +85,12 @@ export class RallarServerWsRouter {
         if (this.installed) {
             throw new Error('Rallar server websocket router is already installed.');
         }
+        this.service.authorizeInboundMessagesWith({
+            authorize: async (message) => await this.authorizeBeforeAdmission(message),
+            complete: (message) => {
+                this.authorizedIngressByMessage.delete(this.toAdmissionKey(message));
+            }
+        });
         this.service.onAnyInboxMessageDo(ROUTER_CALLBACK_ID, {
             onMessage: async (message: ALMessage) => await this.route(message)
         });
@@ -129,11 +137,14 @@ export class RallarServerWsRouter {
             return;
         }
         const { definition } = ingress;
-        const authorization = await authorizeRallarServerWsIngress({
-            message,
-            definition,
-            authorizeRoomMessage: this.authorizeRoomMessage
-        });
+        const admissionKey = this.toAdmissionKey(message);
+        const authorization = this.authorizedIngressByMessage.get(admissionKey) ??
+            await authorizeRallarServerWsIngress({
+                message,
+                definition,
+                authorizeRoomMessage: this.authorizeRoomMessage
+            });
+        this.authorizedIngressByMessage.delete(admissionKey);
         if (!authorization.authorized) {
             this.reject(message, {
                 reason: authorization.reason,
@@ -164,8 +175,37 @@ export class RallarServerWsRouter {
         }
     }
 
+    private async authorizeBeforeAdmission(message: ALMessage) {
+        if (this.isMiddlewareOwnedMessage(message)) {
+            return { authorized: true } as const;
+        }
+        const authorization = await authorizeRallarServerWsIngress({
+            message,
+            definition: this.registry.find(message),
+            authorizeRoomMessage: this.authorizeRoomMessage
+        });
+        if (authorization.authorized) {
+            const admissionKey = this.toAdmissionKey(message);
+            if (!this.authorizedIngressByMessage.has(admissionKey)) {
+                this.authorizedIngressByMessage.set(admissionKey, authorization);
+            }
+            return { authorized: true } as const;
+        }
+        return {
+            authorized: false,
+            reason: authorization.reason,
+            logMessage: authorization.logMessage,
+            sendNack: this.sendNacks,
+            serverSnapshotVersion: authorization.serverSnapshotVersion
+        } as const;
+    }
+
+    private toAdmissionKey(message: ALMessage): string {
+        return JSON.stringify(message);
+    }
+
     private admitIngress(message: ALMessage): RallarServerWsRouter.Ingress | undefined {
-        if (decodeStateSyncMessage(message).kind !== 'unsupported' || this.isSystemMessage(message)) {
+        if (this.isMiddlewareOwnedMessage(message)) {
             return undefined;
         }
         const definition = this.registry.find(message);
@@ -301,6 +341,10 @@ export class RallarServerWsRouter {
         return RESERVED_TOPIC_IDS.has(message.route.topicId) ||
             message.route.topicId === RALLAR_AL_CONTROL_TOPIC_ID ||
             isALControlTypeId(message.payload.typeId);
+    }
+
+    private isMiddlewareOwnedMessage(message: ALMessage): boolean {
+        return decodeStateSyncMessage(message).kind !== 'unsupported' || this.isSystemMessage(message);
     }
 
     private isImplicitUserTopic(topicId: string): boolean {

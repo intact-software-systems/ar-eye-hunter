@@ -1,18 +1,34 @@
 import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
+import { PersistenceProviderAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import {
     ALControlPersistenceValue,
-    ALInboundMessageRuntime,
     ALOrderingTrackSnapshot,
     ALOutboundMessageRuntime,
     ALSupersedencePersistenceValue,
     createALInboundAdmissionStore,
     createALOutboundAdmissionStore,
-    InMemoryALOrderingStore,
     InMemoryPersistenceProvider,
     InMemoryQueueBox,
     newALAckControlMessage,
     newALMulticastMessage,
     newALNackControlMessage,
     newALUnicastMessage,
+    normalizeALRuntimeStoreRetention,
     PersistentALControlTracker,
     PersistentALDedupStore,
     PersistentALOrderingStore,
@@ -23,7 +39,16 @@ import {
     type Key,
     type ResourceEntry
 } from '@shared/mod.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
+
+interface PersistentAdmissionStorage {
+    readonly admissionProvider: InMemoryPersistenceProvider<string, unknown>;
+}
+
+interface PersistentRuntimeStoreSet<TStores> extends PersistentAdmissionStorage {
+    readonly runtimeStores: TStores;
+}
 
 describe('Durable AL runtime stores', () => {
     afterEach(() => {
@@ -131,10 +156,10 @@ describe('Durable AL runtime stores', () => {
     });
 
     it('keeps inbound dedup decisions across runtime restarts when stores are persisted', async () => {
-        const stores = createPersistentInboundStoreSet();
+        const stores = createDefaultPersistentInboundStoreSet();
         const dispatchedMsgIds: string[] = [];
 
-        const runtime1 = createInboundRuntime(stores, dispatchedMsgIds);
+        const runtime1 = createDefaultInboundRuntime(stores, dispatchedMsgIds);
         const msg = newALMulticastMessage(
             'peer-1',
             {
@@ -155,8 +180,8 @@ describe('Durable AL runtime stores', () => {
         await runtime1.handleIncomingMessage(msg, 'peer-1');
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
 
-        const restartedRuntime = createInboundRuntime(
-            createPersistentInboundStoreSet(stores),
+        const restartedRuntime = createDefaultInboundRuntime(
+            createDefaultPersistentInboundStoreSet(stores),
             dispatchedMsgIds
         );
 
@@ -165,19 +190,19 @@ describe('Durable AL runtime stores', () => {
     });
 
     it('releases buffered ordered messages after restart when the missing sequence arrives', async () => {
-        const stores = createPersistentInboundStoreSet();
+        const stores = createDefaultPersistentInboundStoreSet();
         const dispatchedMsgIds: string[] = [];
         const controlMessages: ALMessage[] = [];
 
-        const runtime1 = createInboundRuntime(stores, dispatchedMsgIds, controlMessages);
+        const runtime1 = createDefaultInboundRuntime(stores, dispatchedMsgIds, controlMessages);
         const seq2 = createBufferedOrderedMessage(2, 'two');
         const seq1 = createBufferedOrderedMessage(1, 'one');
 
         await runtime1.handleIncomingMessage(seq2, 'peer-1');
         expect(dispatchedMsgIds).toEqual([]);
 
-        const runtime2 = createInboundRuntime(
-            createPersistentInboundStoreSet(stores),
+        const runtime2 = createDefaultInboundRuntime(
+            createDefaultPersistentInboundStoreSet(stores),
             dispatchedMsgIds,
             controlMessages
         );
@@ -191,11 +216,11 @@ describe('Durable AL runtime stores', () => {
     });
 
     it('retransmits cached ordered messages and reuses supersedence keys across outbound restarts', async () => {
-        const sent: Array<Record<string, unknown>> = [];
+        const sent: Array<OutboundTestPayload> = [];
         const outbox = new InMemoryQueueBox(new Map());
-        const stores = createPersistentOutboundStoreSet();
+        const stores = createDefaultPersistentOutboundStoreSet();
 
-        const runtime1 = createOutboundRuntime(stores, sent, outbox);
+        const runtime1 = createDefaultOutboundRuntime(stores, sent, outbox);
         const firstPresence = newALUnicastMessage(
             'self',
             {
@@ -212,8 +237,8 @@ describe('Durable AL runtime stores', () => {
 
         const [firstEntry] = await enqueueOutboundOrThrow(runtime1, firstPresence);
 
-        const restartedForSupersedence = createOutboundRuntime(
-            createPersistentOutboundStoreSet(stores),
+        const restartedForSupersedence = createDefaultOutboundRuntime(
+            createDefaultPersistentOutboundStoreSet(stores),
             sent,
             outbox
         );
@@ -254,8 +279,8 @@ describe('Durable AL runtime stores', () => {
         await enqueueOutboundOrThrow(restartedForSupersedence, seq1);
         await enqueueOutboundOrThrow(restartedForSupersedence, seq2);
 
-        const restartedForRepair = createOutboundRuntime(
-            createPersistentOutboundStoreSet(stores),
+        const restartedForRepair = createDefaultOutboundRuntime(
+            createDefaultPersistentOutboundStoreSet(stores),
             sent,
             outbox
         );
@@ -263,7 +288,7 @@ describe('Durable AL runtime stores', () => {
         await restartedForRepair.acceptControlMessage(
             newALNackControlMessage('peer-1', 'self', seq2.id.msgId, 'gap', {
                 status: 'gap',
-                trackKey: InMemoryALOrderingStore.toTrackKey(seq1),
+                trackKey: toALOrderingTrackKey(seq1),
                 seq: 2,
                 expectedSeq: 1,
                 lastContiguousSeq: 0,
@@ -279,16 +304,16 @@ describe('Durable AL runtime stores', () => {
     it('continues pending outbound acknowledgement timers after restart', async () => {
         vi.useFakeTimers();
 
-        const sent: Array<Record<string, unknown>> = [];
-        const stores = createPersistentOutboundStoreSet();
-        const runtime1 = createOutboundRuntime(stores, sent);
+        const sent: Array<OutboundTestPayload> = [];
+        const stores = createDefaultPersistentOutboundStoreSet();
+        const runtime1 = createDefaultOutboundRuntime(stores, sent);
         const msg = createOutboundMessage('msg-timeout');
 
         await enqueueOutboundOrThrow(runtime1, msg);
         runtime1.dispose();
 
-        const runtime2 = createOutboundRuntime(
-            createPersistentOutboundStoreSet(stores),
+        const runtime2 = createDefaultOutboundRuntime(
+            createDefaultPersistentOutboundStoreSet(stores),
             sent
         );
         await runtime2.ready();
@@ -304,15 +329,15 @@ describe('Durable AL runtime stores', () => {
     it('claims a shared pending outbound acknowledgement timeout from only one runtime', async () => {
         vi.useFakeTimers();
 
-        const sent: Array<Record<string, unknown>> = [];
-        const stores = createPersistentOutboundStoreSet();
-        const runtime1 = createOutboundRuntime(stores, sent);
+        const sent: Array<OutboundTestPayload> = [];
+        const stores = createDefaultPersistentOutboundStoreSet();
+        const runtime1 = createDefaultOutboundRuntime(stores, sent);
         const msg = createOutboundMessage('msg-shared-timeout');
 
         await enqueueOutboundOrThrow(runtime1, msg);
 
-        const runtime2 = createOutboundRuntime(
-            createPersistentOutboundStoreSet(stores),
+        const runtime2 = createDefaultOutboundRuntime(
+            createDefaultPersistentOutboundStoreSet(stores),
             sent
         );
         await runtime2.ready();
@@ -328,7 +353,7 @@ describe('Durable AL runtime stores', () => {
 });
 
 async function enqueueOutboundOrThrow(
-    runtime: Pick<ALOutboundMessageRuntime<Record<string, unknown>>, 'enqueueIfAbsent'>,
+    runtime: Pick<ALOutboundMessageRuntime<OutboundTestPayload>, 'enqueueIfAbsent'>,
     msg: ALMessage
 ): Promise<readonly ResourceEntry[]> {
     const enqueued = await runtime.enqueueIfAbsent(msg);
@@ -339,9 +364,9 @@ async function enqueueOutboundOrThrow(
     return enqueued.entries;
 }
 
-function createPersistentInboundStoreSet(existing?: {
-    admissionProvider: InMemoryPersistenceProvider<string, unknown>;
-}) {
+function createDefaultPersistentInboundStoreSet(
+    existing?: PersistentAdmissionStorage
+): PersistentRuntimeStoreSet<ALInboundRuntimeStores> {
     const admissionProvider = existing?.admissionProvider ??
         new InMemoryPersistenceProvider<string, unknown>();
 
@@ -349,23 +374,26 @@ function createPersistentInboundStoreSet(existing?: {
         admissionProvider,
         runtimeStores: {
             admissionStore: createALInboundAdmissionStore({
-                kind: 'provider',
                 namespace: 'durable-test:inbound:admission',
-                provider: admissionProvider,
-                coordinationKey: 'durable-test:inbound:admission',
+                backend: new PersistenceProviderAdmissionBackend(
+                    admissionProvider,
+                    'durable-test:inbound:admission',
+                    Date.now
+                ),
                 orderingTrackTtlMs: 5 * 60_000,
-                supersedenceTrackTtlMs: 5 * 60_000
+                supersedenceTrackTtlMs: 5 * 60_000,
+                retention: normalizeALRuntimeStoreRetention()
             })
         }
     };
 }
 
-function createInboundRuntime(
-    stores: ReturnType<typeof createPersistentInboundStoreSet>,
+function createDefaultInboundRuntime(
+    stores: PersistentRuntimeStoreSet<ALInboundRuntimeStores>,
     dispatchedMsgIds: string[],
     controlMessages: ALMessage[] = []
 ) {
-    return new ALInboundMessageRuntime({
+    const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'self',
         inbox: new InMemoryQueueBox(new Map<Key, ResourceEntry>()),
         stores: stores.runtimeStores,
@@ -380,21 +408,23 @@ function createInboundRuntime(
                 orderingStore: runtime.orderingStore,
                 supersedenceStore: runtime.supersedenceStore
             }),
-        readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
+        readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
         dispatchInboxEntry: async (entry: ResourceEntry) => {
-            const msg = JSON.parse(entry.resource) as ALMessage;
+            const msg = decodePersistedALMessage(entry.resource);
             dispatchedMsgIds.push(msg.id.msgId);
         },
         sendControlMessage: async (msg) => {
             controlMessages.push(msg);
         }
     });
+    onTestFinished(() => runtime.dispose());
+    return runtime;
 }
 
-function createPersistentOutboundStoreSet(existing?: {
-    admissionProvider: InMemoryPersistenceProvider<string, unknown>;
-}) {
+function createDefaultPersistentOutboundStoreSet(
+    existing?: PersistentAdmissionStorage
+): PersistentRuntimeStoreSet<ALOutboundRuntimeStores> {
     const admissionProvider = existing?.admissionProvider ??
         new InMemoryPersistenceProvider<string, unknown>();
 
@@ -402,26 +432,30 @@ function createPersistentOutboundStoreSet(existing?: {
         admissionProvider,
         runtimeStores: {
             admissionStore: createALOutboundAdmissionStore({
-                kind: 'provider',
                 namespace: 'durable-test:outbound:admission',
-                provider: admissionProvider,
-                coordinationKey: 'durable-test:outbound:admission',
-                supersedenceTrackTtlMs: 5 * 60_000
+                backend: new PersistenceProviderAdmissionBackend(
+                    admissionProvider,
+                    'durable-test:outbound:admission',
+                    Date.now
+                ),
+                supersedenceTrackTtlMs: 5 * 60_000,
+                retention: normalizeALRuntimeStoreRetention()
             })
         }
     };
 }
 
-function createOutboundRuntime(
-    stores: ReturnType<typeof createPersistentOutboundStoreSet>,
-    sent: Array<Record<string, unknown>>,
+function createDefaultOutboundRuntime(
+    stores: PersistentRuntimeStoreSet<ALOutboundRuntimeStores>,
+    sent: Array<OutboundTestPayload>,
     outbox: InMemoryQueueBox = new InMemoryQueueBox(new Map())
 ) {
-    return new ALOutboundMessageRuntime<Record<string, unknown>>({
+    const runtime = createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
         outbox,
         stores: stores.runtimeStores,
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-        readMessageFromEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
+        decodePreparedMessage: decodeOutboundTestPayload,
+        readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
         planOutgoingMessage: (msg) => ({
             persist: msg.payload.typeId === 'presence.state.v1',
             preparedMessages: msg.payload.typeId === 'presence.state.v1'
@@ -464,9 +498,11 @@ function createOutboundRuntime(
             sent.push({ ...prepared, phase });
         }
     });
+    onTestFinished(() => runtime.dispose());
+    return runtime;
 }
 
-function createOrderedMessage(seq: number) {
+function createOrderedMessage(seq: number): ALMessage {
     return {
         ...newALMulticastMessage(
             'peer-1',
@@ -535,7 +571,7 @@ function createOutboundMessage(resourceId: string) {
     );
 }
 
-function groupRef(groupId: string) {
+function groupRef(groupId: string): GroupRef {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',

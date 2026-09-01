@@ -14,7 +14,7 @@ import {
     toALGroupTargetKey,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
-import type { ALOutboundEnqueueResult } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';

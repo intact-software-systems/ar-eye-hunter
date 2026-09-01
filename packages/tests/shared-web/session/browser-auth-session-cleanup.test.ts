@@ -1,6 +1,12 @@
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime-facade.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { createAuthSessionApiHttpError } from '../auth-session-contract-fixtures.ts';
 import type * as ContractModules from '../auth-session-contract-modules.ts';
 import { createDeferred } from '../browser-lifecycle-fixtures.ts';
@@ -138,7 +144,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         const deferred = createDeferred<RallarBrowserMiddleware>();
         const cleanupState = {
             heartbeatStopped: false,
-            rtcHeartbeatsStopped: false,
+            rtcReceiverDisposed: false,
             knownPeersRead: false,
             queueStopped: false
         };
@@ -146,8 +152,8 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         mocks.heartbeat.stop.mockImplementation(() => {
             cleanupState.heartbeatStopped = true;
         });
-        mocks.rtcRxStreamer.stopAllHeartbeats.mockImplementation(() => {
-            cleanupState.rtcHeartbeatsStopped = true;
+        mocks.rtcRxStreamer.dispose.mockImplementation(() => {
+            cleanupState.rtcReceiverDisposed = true;
         });
         mocks.webRtcConnectionService.knownPeerIds.mockImplementation(() => {
             cleanupState.knownPeersRead = true;
@@ -181,7 +187,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         expect(facade.isConnected()).toBe(false);
         expect({ ...cleanupState, webSocketClose }).toEqual({
             heartbeatStopped: true,
-            rtcHeartbeatsStopped: true,
+            rtcReceiverDisposed: true,
             knownPeersRead: true,
             queueStopped: true,
             webSocketClose: { code: 1000, reason: 'rallar-disconnect' }
@@ -245,7 +251,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         let storedSession: typeof mocks.ctx.session | undefined = mocks.ctx.session;
         const logoutState = {
             heartbeatStopped: false,
-            rtcHeartbeatsStopped: false,
+            rtcReceiverDisposed: false,
             backendRevoked: false
         };
         let webSocketClose: { readonly code: number; readonly reason: string; } | undefined;
@@ -256,8 +262,8 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         mocks.heartbeat.stop.mockImplementation(() => {
             logoutState.heartbeatStopped = true;
         });
-        mocks.rtcRxStreamer.stopAllHeartbeats.mockImplementation(() => {
-            logoutState.rtcHeartbeatsStopped = true;
+        mocks.rtcRxStreamer.dispose.mockImplementation(() => {
+            logoutState.rtcReceiverDisposed = true;
         });
         mocks.logoutFromApi.mockImplementation(async () => {
             logoutState.backendRevoked = true;
@@ -277,7 +283,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
 
         expect({ ...logoutState, webSocketClose }).toEqual({
             heartbeatStopped: true,
-            rtcHeartbeatsStopped: true,
+            rtcReceiverDisposed: true,
             backendRevoked: true,
             webSocketClose: { code: 1000, reason: 'rallar-disconnect' }
         });

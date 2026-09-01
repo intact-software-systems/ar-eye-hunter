@@ -213,6 +213,99 @@ describe('repo style checker', () => {
         expect(runChecker(fixtureRoot)).toContain('[boundary.unknown]');
     });
 
+    it('does not report unknown consumed by a validating decoder boundary', () => {
+        const fixtureRoot = createFixture({
+            'decode-account.ts': [
+                'interface Account { readonly id: string; }',
+                '',
+                'export function decodeAccount(value: unknown): Account {',
+                '  if (typeof value !== \'object\' || value === null || !(\'id\' in value)) {',
+                '    throw new Error(\'Invalid account\');',
+                '  }',
+                '  const id = value.id;',
+                '  if (typeof id !== \'string\') throw new Error(\'Invalid account id\');',
+                '  return { id };',
+                '}'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
+    });
+
+    it('does not report unknown consumed by a delegated decoder boundary', () => {
+        const fixtureRoot = createFixture({
+            'decode-account.ts': [
+                'declare function decodeString(value: unknown): string;',
+                'interface Account { readonly id: string; }',
+                '',
+                'export function decodeAccountId(value: unknown): Account {',
+                '  return { id: decodeString(value) };',
+                '}'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
+    });
+
+    it('does not report unknown in a decoder contract or type-guard parameter', () => {
+        const fixtureRoot = createFixture({
+            'account-decoder.ts': [
+                'interface Account { readonly id: string; }',
+                'export type AccountDecoder = (value: unknown) => Account;',
+                '',
+                'export function isAccount(value: unknown): value is Account {',
+                '  return typeof value === \'object\' && value !== null && \'id\' in value;',
+                '}'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
+    });
+
+    it('does not report unknown in a decoder callback contract', () => {
+        const fixtureRoot = createFixture({
+            'decode-array.ts': [
+                'export function decodeArray<V>(',
+                '  value: readonly unknown[],',
+                '  decode: (entry: unknown) => V',
+                '): readonly V[] {',
+                '  return value.map((entry) => decode(entry));',
+                '}'
+            ].join('\n')
+        });
+
+        const result = runChecker(fixtureRoot);
+        expect(result).toContain('[boundary.unknown]');
+        expect(result).toContain('1 non-blocking issues found');
+    });
+
+    it('still reports unknown when a decoder name disguises coercion', () => {
+        const fixtureRoot = createFixture({
+            'decode-account.ts': [
+                'export function decodeAccountId(value: unknown): string {',
+                '  return String(value);',
+                '}'
+            ].join('\n')
+        });
+
+        expect(runChecker(fixtureRoot)).toContain('[boundary.unknown]');
+    });
+
+    it('still reports unknown returned from an otherwise validating decoder', () => {
+        const fixtureRoot = createFixture({
+            'decode-record.ts': [
+                'export function decodeRecord(value: unknown): Record<string, unknown> {',
+                '  if (typeof value !== \'object\' || value === null) throw new Error(\'Invalid record\');',
+                '  return value as Record<string, unknown>;',
+                '}'
+            ].join('\n')
+        });
+
+        const result = runChecker(fixtureRoot);
+        expect(result).toContain('[boundary.unknown]');
+        expect(result).toContain('2 non-blocking issues found');
+    });
+
     it('counts an else-if branch once in estimated cyclomatic complexity', () => {
         const fixtureRoot = createFixture({
             'route.ts': [

@@ -2,18 +2,33 @@ import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-s
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import {
     AL_CONTROL_NACK_TYPE_ID,
     ALMessage,
+    ConnectionContext,
+    createDefaultInMemoryALInboundRuntimeStores,
+    createDefaultWsQueueBoxServerService,
     InMemoryQueueBox,
+    JsonWebSocketServer,
     newALBroadcastMessage,
     newALRoute,
-    WsQueueBoxServerService,
+    parseALControlMessage,
+    type ALInboundRuntimeStores,
     type ALNackPayload,
     type WsServerTargetResolver
 } from '@shared/mod.ts';
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { createTestGroup } from '../../create-test-group.ts';
 
 describe('RallarServerWsRouter', () => {
@@ -49,12 +64,11 @@ describe('RallarServerWsRouter', () => {
     });
 
     it('rejects repeated router installation before callback replacement', () => {
-        const { router, service } = createRouter();
+        const { router } = createRouter();
 
         router.install();
 
         expect(() => router.install()).toThrow(/already installed/i);
-        expect(service.registeredAnyInboxOwnerIds()).toHaveLength(1);
     });
 
     it('fans out implicit app topics to their declared targets', async () => {
@@ -272,6 +286,158 @@ describe('RallarServerWsRouter', () => {
             expect(nack).not.toHaveProperty('retryAfterMs');
         }
         finally {
+            warn.mockRestore();
+        }
+    });
+
+    it('rejects a stale room snapshot before AL admission without acknowledging the message', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            const snapshot = createGroupSnapshot('room-1', ['peer-1'], 3);
+            const { router, socket } = createIngressRouter({
+                authorizeRoomMessage: createGroupRoomWsAuthorizer({
+                    readGroupSnapshot: () => snapshot,
+                    readPreActivationAppData: () => 'allowed',
+                    nowEpochMs: Date.now
+                })
+            });
+            router.install();
+            const message = newALBroadcastMessage(
+                'peer-1',
+                newALRoute('room.chat', 'room-1', 'msg-pre-admission'),
+                'room',
+                'chat.message.v1',
+                { text: 'too new' },
+                {
+                    groupRef: snapshot.group,
+                    minSnapshotVersion: 4,
+                    reliability: 'at-least-once',
+                    ack: 'receiver'
+                }
+            );
+
+            await socket.receive(message);
+
+            expect(socket.sent).toHaveLength(1);
+            expect(parseALControlMessage(socket.sent[0])).toMatchObject({
+                type: 'nack',
+                payload: {
+                    msgId: message.id.msgId,
+                    reason: 'not-yet-in-sync',
+                    serverSnapshotVersion: 3
+                }
+            });
+        }
+        finally {
+            warn.mockRestore();
+        }
+    });
+
+    it('does not apply the user-topic room authorizer to reserved middleware messages', async () => {
+        const { router, socket } = createIngressRouter({
+            authorizeRoomMessage: () => false
+        });
+        router.install();
+        const group = createGroupSnapshot('room-1', ['peer-1'], 1).group;
+        const message = newALBroadcastMessage(
+            'peer-1',
+            newALRoute(AppTopics.groupStateSnapshot, 'room-1', 'reserved-room-message'),
+            'room',
+            AppTopics.groupStateSnapshot,
+            { snapshot: 'system-owned' },
+            { groupRef: group }
+        );
+
+        await socket.receive(message);
+
+        expect(socket.sent).toEqual([]);
+    });
+
+    it('keeps pre-admission room audiences bound to the first pending decision for each envelope', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const firstAdmissionRead = Promise.withResolvers<void>();
+        const releaseFirstAdmission = Promise.withResolvers<void>();
+        const allAuthorizationsCompleted = Promise.withResolvers<void>();
+        const readIncomingMessage = stores.admissionStore.readIncomingMessage.bind(stores.admissionStore);
+        let firstAdmissionBlocked = false;
+        vi.spyOn(stores.admissionStore, 'readIncomingMessage').mockImplementation(async (
+            message,
+            fromPeerId,
+            planIncomingMessage
+        ) => {
+            if (!firstAdmissionBlocked) {
+                firstAdmissionBlocked = true;
+                firstAdmissionRead.resolve();
+                await releaseFirstAdmission.promise;
+            }
+            return await readIncomingMessage(message, fromPeerId, planIncomingMessage);
+        });
+        const publishedSessionIds: string[][] = [];
+        let authorizationCount = 0;
+        const group = createGroupSnapshot('room-1', ['peer-1'], 1).group;
+        const { router, service, socket } = createIngressRouter({
+            nowEpochMs: () => 1,
+            authorizeRoomMessage: ({ message }) => {
+                if (!message.targets) {
+                    return false;
+                }
+                authorizationCount += 1;
+                if (authorizationCount === 3) {
+                    allAuthorizationsCompleted.resolve();
+                }
+                return {
+                    authorized: true,
+                    audience: {
+                        targets: message.targets,
+                        sessions: [
+                            createGroupPresenceRecord(
+                                'room-1',
+                                `session-${authorizationCount}`,
+                                1
+                            )
+                        ]
+                    }
+                };
+            }
+        }, stores);
+        const sendToTargetsWithResult = service.sendToTargetsWithResult.bind(service);
+        vi.spyOn(service, 'sendToTargetsWithResult').mockImplementation((message, sessionIds) => {
+            publishedSessionIds.push([...sessionIds ?? []]);
+            return sendToTargetsWithResult(message, sessionIds);
+        });
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            router.install();
+            const first = newALBroadcastMessage(
+                'peer-1',
+                newALRoute('room.chat', 'room-1', 'shared-id'),
+                'room',
+                'chat.message.v1',
+                { text: 'first' },
+                { groupRef: group }
+            );
+            const second = {
+                ...newALBroadcastMessage(
+                    'peer-1',
+                    newALRoute('room.chat', 'room-1', 'second-id'),
+                    'room',
+                    'chat.message.v1',
+                    { text: 'second' },
+                    { groupRef: group }
+                ),
+                id: first.id
+            };
+
+            const firstIngress = socket.receive(first);
+            await firstAdmissionRead.promise;
+            const duplicateIngress = socket.receive(first);
+            const alteredIngress = socket.receive(second);
+            await allAuthorizationsCompleted.promise;
+            releaseFirstAdmission.resolve();
+            await Promise.all([firstIngress, duplicateIngress, alteredIngress]);
+
+            expect(publishedSessionIds).toEqual([['session-1']]);
+        } finally {
             warn.mockRestore();
         }
     });
@@ -499,7 +665,7 @@ function createRouter(
     const socket = createFakeWsServer();
     const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
-    const service = new RecordingWsQueueBoxServerService({
+    const service = createDefaultWsQueueBoxServerService({
         inbox: inbox,
         outbox: outbox,
         socket: socket as never,
@@ -517,20 +683,78 @@ function createRouter(
     };
 }
 
-class RecordingWsQueueBoxServerService extends WsQueueBoxServerService {
-    private readonly anyInboxOwners = new Set<string>();
+function createIngressRouter(
+    options: ConstructorParameters<typeof RallarServerWsRouter>[1],
+    inboundStores?: ALInboundRuntimeStores
+) {
+    const server = new JsonWebSocketServer();
+    const socket = new RouterIngressWebSocket();
+    server.addConnection(new ConnectionContext('conn-1', socket));
+    const service = createDefaultWsQueueBoxServerService({
+        inbox: new InMemoryQueueBox(new Map()),
+        outbox: new InMemoryQueueBox(new Map()),
+        socket: server,
+        name: 'server-1',
+        inboundStores,
+        targetResolver: {
+            resolvePeerIdForConnection: () => 'peer-1',
+            resolvePeerRecipients: (peerId) => peerId === 'peer-1'
+                ? [{ peerId, connectionId: 'conn-1' }]
+                : [],
+            resolveBroadcastRecipients: () => []
+        }
+    });
+    return { router: new RallarServerWsRouter(service, options), service, socket };
+}
 
-    override onAnyInboxMessageDo(
-        id: string,
-        callback: Parameters<WsQueueBoxServerService['onAnyInboxMessageDo']>[1]
-    ): this {
-        this.anyInboxOwners.add(id);
-        super.onAnyInboxMessageDo(id, callback);
-        return this;
+class RouterIngressWebSocket extends EventTarget implements WebSocket {
+    readonly CONNECTING = WebSocket.CONNECTING;
+    readonly OPEN = WebSocket.OPEN;
+    readonly CLOSING = WebSocket.CLOSING;
+    readonly CLOSED = WebSocket.CLOSED;
+    readonly binaryType: BinaryType = 'blob';
+    readonly bufferedAmount = 0;
+    readonly extensions = '';
+    readonly protocol = '';
+    readonly readyState = WebSocket.OPEN;
+    readonly url = 'ws://router-ingress-test';
+    onclose = null;
+    onerror = null;
+    onmessage = null;
+    onopen = null;
+    readonly sent: ALMessage[] = [];
+    private readonly messageListeners: EventListenerOrEventListenerObject[] = [];
+
+    override addEventListener(
+        type: string,
+        callback: EventListenerOrEventListenerObject | null,
+        options?: boolean | AddEventListenerOptions
+    ): void {
+        super.addEventListener(type, callback, options);
+        if (type === 'message' && callback !== null) {
+            this.messageListeners.push(callback);
+        }
     }
 
-    registeredAnyInboxOwnerIds(): readonly string[] {
-        return [...this.anyInboxOwners];
+    close(): void {}
+
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+        if (typeof data !== 'string') {
+            throw new TypeError('Router ingress test expects JSON text');
+        }
+        this.sent.push(JSON.parse(data) as ALMessage);
+    }
+
+    async receive(message: ALMessage): Promise<void> {
+        const event = new MessageEvent('message', { data: JSON.stringify(message) });
+        for (const listener of this.messageListeners) {
+            if (typeof listener === 'function') {
+                await listener.call(this, event);
+            }
+            else {
+                await listener.handleEvent(event);
+            }
+        }
     }
 }
 
@@ -545,7 +769,7 @@ function createPublicRouterFixture(
     });
     const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
-    const service = new WsQueueBoxServerService({
+    const service = createDefaultWsQueueBoxServerService({
         inbox: inbox,
         outbox: outbox,
         socket: socket as never,
@@ -646,10 +870,9 @@ function createGroupSnapshot(
     sessionIds: readonly string[],
     snapshotVersion: number
 ): GroupSnapshot {
-    const ownerPrincipalId = sessionIds[0];
-    if (ownerPrincipalId === undefined) {
-        throw new Error('Group fixture requires an owner session');
-    }
+    const ownerPrincipalId = requireGroupOwner(sessionIds);
+    const members = sessionIds.map((sessionId) => createGroupMemberRecord({ groupId, ownerPrincipalId, sessionId, snapshotVersion }));
+    const activeSessions = sessionIds.map((sessionId) => createGroupPresenceRecord(groupId, sessionId, snapshotVersion));
     return {
         causalRevision: {
             groupRevision: snapshotVersion,
@@ -670,38 +893,65 @@ function createGroupSnapshot(
             created: createAuditStamp(1, ownerPrincipalId),
             updated: createAuditStamp(snapshotVersion, ownerPrincipalId)
         }),
-        members: sessionIds.map((sessionId): GroupMember => ({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId,
-            principalId: sessionId,
-            role: sessionId === ownerPrincipalId ? 'owner' : 'member',
-            status: 'active',
-            joined: createAuditStamp(1, ownerPrincipalId),
-            updated: createAuditStamp(snapshotVersion, ownerPrincipalId),
-            invitedByPrincipalId: null,
-            invitationExpiresAtEpochMs: null,
-            left: null,
-            removed: null,
-            banned: null
-        })),
-        activeSessions: sessionIds.map((sessionId): GroupPresenceSession => ({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            generationId: `generation-${sessionId}`,
-            generationVersion: snapshotVersion,
-            status: 'active',
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: snapshotVersion,
-            expiresAtEpochMs: 60_000,
-            disconnectedAtEpochMs: null,
-            disconnectReason: null
-        })),
-        memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length
+        members,
+        activeSessions,
+        memberCount: members.length,
+        onlineMemberCount: activeSessions.length
+    };
+}
+
+function requireGroupOwner(sessionIds: readonly string[]): string {
+    const ownerPrincipalId = sessionIds[0];
+    if (ownerPrincipalId === undefined) {
+        throw new Error('Group fixture requires an owner session');
+    }
+    return ownerPrincipalId;
+}
+
+interface CreateGroupMemberRecordInput {
+    readonly groupId: string;
+    readonly ownerPrincipalId: string;
+    readonly sessionId: string;
+    readonly snapshotVersion: number;
+}
+
+function createGroupMemberRecord(input: CreateGroupMemberRecordInput): GroupMember {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: input.groupId,
+        principalId: input.sessionId,
+        role: input.sessionId === input.ownerPrincipalId ? 'owner' : 'member',
+        status: 'active',
+        joined: createAuditStamp(1, input.ownerPrincipalId),
+        updated: createAuditStamp(input.snapshotVersion, input.ownerPrincipalId),
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null
+    };
+}
+
+function createGroupPresenceRecord(
+    groupId: string,
+    sessionId: string,
+    snapshotVersion: number
+): GroupPresenceSession {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
+        sessionId,
+        principalId: sessionId,
+        generationId: `generation-${sessionId}`,
+        generationVersion: snapshotVersion,
+        status: 'active',
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: snapshotVersion,
+        expiresAtEpochMs: 60_000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
     };
 }
 
