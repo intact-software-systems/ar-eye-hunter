@@ -2,6 +2,7 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type {
     RallarRealtimeHandler,
     RallarRealtimeJsonSendInput,
+    RallarRealtimeSendOptions,
     RallarRealtimeSendResult,
     RallarRoomRealtimeJsonChannel,
     RallarRoomRealtimeJsonDefaults,
@@ -16,6 +17,7 @@ import type {
     RallarRtcRoomLaneWaitResult
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import { isAcceptedRealtimeSendResult } from '@shared-web/browser/realtime/browser-realtime-send-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 export namespace BrowserRoomRealtimeRuntime {
@@ -23,6 +25,7 @@ export namespace BrowserRoomRealtimeRuntime {
         connect(): Promise<ApiMiddleware>;
         readDefaultRoom(): string | GroupRef | undefined;
         readCurrentRoomRef(): GroupRef | undefined;
+        resolveRoomRef(room: string | GroupRef): GroupRef | undefined;
         resolveLaneId(laneId?: string): string;
         readonly rtc: RallarRtcFacade;
         sendJson<T>(input: RallarRealtimeJsonSendInput<T>): Promise<readonly RallarRealtimeSendResult[]>;
@@ -30,14 +33,13 @@ export namespace BrowserRoomRealtimeRuntime {
     }
 
     export interface TargetInput<T> {
-        readonly room: string | GroupRef;
+        readonly roomRef: GroupRef;
         readonly laneId: string;
         readonly defaults: RallarRoomRealtimeJsonDefaults;
         readonly sendOptions: RallarRoomRealtimeJsonSendOptions<T>;
     }
 
     export interface Target {
-        readonly room: string | GroupRef;
         readonly laneId: string;
         readonly desiredPeerIds: readonly string[];
         readonly readyPeerIds: readonly string[];
@@ -90,30 +92,34 @@ export class BrowserRoomRealtimeRuntime {
         if (!room) {
             return noRoomResult(laneId);
         }
-        const target = await this.readTarget({ room, laneId, defaults, sendOptions });
+        const roomRef = this.input.resolveRoomRef(room);
+        if (!roomRef) {
+            return { ...noRoomResult(laneId), reason: 'Cannot resolve room realtime identity.' };
+        }
+        const target = await this.readTarget({ roomRef, laneId, defaults, sendOptions });
         const unavailable = toUnavailableRoomResult(target);
         if (unavailable) {
             return unavailable;
         }
         const results = await this.input.sendJson<T>({
-            ...toRealtimeSendDefaults<T>(defaults),
-            ...toRealtimeSendOptions(sendOptions),
+            ...toRealtimeSendOptions(defaults, sendOptions),
             laneId,
-            roomId: target.transportStatus.roomRef ? undefined : target.transportStatus.roomId,
-            roomRef: target.transportStatus.roomRef,
+            roomRef,
             peerIds: target.readyPeerIds,
             data
         });
+        const transportStatus = this.input.rtc.roomStatus(roomRef, { laneId });
+        const status = toRoomSendStatus(target.desiredPeerIds, target.readyPeerIds, results);
         return {
             transport: 'rtc',
-            status: toRoomSendStatus(target.desiredPeerIds, target.readyPeerIds, results),
+            status: status === 'failed' && transportStatus.rtc.state === 'halted' ? 'halted' : status,
             laneId,
-            roomId: target.transportStatus.roomId,
-            roomRef: target.transportStatus.roomRef,
+            roomId: roomRef.groupId,
+            roomRef,
             peerIds: target.readyPeerIds,
             desiredPeerIds: target.desiredPeerIds,
             readiness: target.readiness,
-            transportStatus: target.transportStatus,
+            transportStatus,
             results
         };
     }
@@ -122,29 +128,33 @@ export class BrowserRoomRealtimeRuntime {
         input: BrowserRoomRealtimeRuntime.TargetInput<T>
     ): Promise<BrowserRoomRealtimeRuntime.Target> {
         await this.input.connect();
-        let transportStatus = this.input.rtc.roomStatus(input.room, {
+        let transportStatus = this.input.rtc.roomStatus(input.roomRef, {
             laneId: input.laneId,
             minReadyPeers: input.sendOptions.minReadyPeers ?? input.defaults.minReadyPeers
         });
         let readiness: RallarRtcRoomLaneWaitResult | undefined;
         let readyPeerIds = transportStatus.rtc.readyPeerIds;
         const waitForReady = input.sendOptions.waitForReady ?? input.defaults.waitForReady ?? true;
-        if (readyPeerIds.length === 0 && waitForReady) {
-            readiness = await this.input.rtc.waitForRoomLane(input.room, input.laneId, {
+        if (
+            transportStatus.rtc.state !== 'halted' &&
+            readyPeerIds.length === 0 &&
+            waitForReady
+        ) {
+            readiness = await this.input.rtc.waitForRoomLane(input.roomRef, input.laneId, {
                 connect: input.sendOptions.connect ?? input.defaults.connect ?? true,
                 timeoutMs: input.sendOptions.waitTimeoutMs ?? input.defaults.waitTimeoutMs ??
                     input.sendOptions.openTimeoutMs ?? input.defaults.openTimeoutMs,
                 signal: input.sendOptions.signal,
-                roomRef: typeof input.room === 'string' ? undefined : input.room
+                roomRef: input.roomRef
             });
             readyPeerIds = uniquePeerIds(readiness.ready.map((ready) => ready.peerId));
-            transportStatus = this.input.rtc.roomStatus(input.room, {
+            transportStatus = this.input.rtc.roomStatus(input.roomRef, {
                 laneId: input.laneId,
                 minReadyPeers: input.sendOptions.minReadyPeers ?? input.defaults.minReadyPeers
             });
+            readyPeerIds = reauthorizeReadyPeerIds(readyPeerIds, transportStatus);
         }
         return {
-            room: input.room,
             laneId: input.laneId,
             desiredPeerIds: transportStatus.rtc.desiredPeerIds,
             readyPeerIds,
@@ -174,6 +184,15 @@ export class BrowserRoomRealtimeRuntime {
     }
 }
 
+function reauthorizeReadyPeerIds(
+    candidatePeerIds: readonly string[],
+    transportStatus: RallarRoomTransportStatus
+): readonly string[] {
+    const desiredPeerIds = new Set(transportStatus.rtc.desiredPeerIds);
+    const readyPeerIds = new Set(transportStatus.rtc.readyPeerIds);
+    return candidatePeerIds.filter((peerId) => desiredPeerIds.has(peerId) && readyPeerIds.has(peerId));
+}
+
 function noRoomResult(laneId: string): RallarRoomRealtimeSendResult {
     return {
         transport: 'rtc',
@@ -189,17 +208,25 @@ function noRoomResult(laneId: string): RallarRoomRealtimeSendResult {
 function toUnavailableRoomResult(
     target: BrowserRoomRealtimeRuntime.Target
 ): RallarRoomRealtimeSendResult | undefined {
-    const common = {
-        transport: 'rtc' as const,
+    const common: Omit<RallarRoomRealtimeSendResult, 'status'> = {
+        transport: 'rtc',
         laneId: target.laneId,
         roomId: target.transportStatus.roomId,
         roomRef: target.transportStatus.roomRef,
-        peerIds: [] as readonly string[],
+        peerIds: [],
         desiredPeerIds: target.desiredPeerIds,
         readiness: target.readiness,
         transportStatus: target.transportStatus,
-        results: [] as readonly RallarRealtimeSendResult[]
+        results: []
     };
+    if (target.transportStatus.rtc.state === 'halted') {
+        return {
+            ...common,
+            status: 'halted',
+            reason: target.transportStatus.rtc.reason ??
+                'Room realtime transport is halted.'
+        };
+    }
     if (target.desiredPeerIds.length === 0) {
         return { ...common, status: 'no-targets', reason: 'Room has no RTC peer targets.' };
     }
@@ -215,31 +242,16 @@ function toUnavailableRoomResult(
     return undefined;
 }
 
-function toRealtimeSendDefaults<T>(
-    defaults: RallarRoomRealtimeJsonDefaults
-): RallarRoomRealtimeJsonSendOptions<T> {
-    const {
-        connect: _connect,
-        minReadyPeers: _minReadyPeers,
-        waitForReady: _waitForReady,
-        waitTimeoutMs: _waitTimeoutMs,
-        ...sendDefaults
-    } = defaults;
-    return sendDefaults;
-}
-
-function toRealtimeSendOptions<T>(
-    options: RallarRoomRealtimeJsonSendOptions<T>
-): RallarRoomRealtimeJsonSendOptions<T> {
-    const {
-        connect: _connect,
-        minReadyPeers: _minReadyPeers,
-        signal: _signal,
-        waitForReady: _waitForReady,
-        waitTimeoutMs: _waitTimeoutMs,
-        ...sendOptions
-    } = options;
-    return sendOptions;
+function toRealtimeSendOptions(
+    defaults: RallarRealtimeSendOptions,
+    options: RallarRealtimeSendOptions
+): RallarRealtimeSendOptions {
+    return {
+        key: options.key ?? defaults.key,
+        maxAgeMs: options.maxAgeMs ?? defaults.maxAgeMs,
+        now: options.now ?? defaults.now,
+        openTimeoutMs: options.openTimeoutMs ?? defaults.openTimeoutMs
+    };
 }
 
 function toRoomSendStatus(
@@ -253,16 +265,11 @@ function toRoomSendStatus(
     if (peerIds.length === 0) {
         return 'not-ready';
     }
-    const sentCount = results.filter((result) => isAccepted(result)).length;
+    const sentCount = results.filter(isAcceptedRealtimeSendResult).length;
     if (sentCount === 0) {
         return 'failed';
     }
     return sentCount >= desiredPeerIds.length ? 'sent' : 'partial';
-}
-
-function isAccepted(result: RallarRealtimeSendResult): boolean {
-    return result.result.status === 'sent' || result.result.status === 'queued' ||
-        result.result.status === 'replaced';
 }
 
 function uniquePeerIds(peerIds: readonly string[]): readonly string[] {

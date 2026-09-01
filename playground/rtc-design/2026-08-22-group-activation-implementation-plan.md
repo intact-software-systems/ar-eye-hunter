@@ -1822,14 +1822,255 @@ connection-service native effects passed (31 tests), and shared/shared-web plus
 These are diagnostic checkpoints; integrated final checks, current-head review and
 remote release evidence are still required before #390 is marked ready.
 
+### Slice 8c start checkpoint — accepted-layout room facade (2026-08-30)
+
+Slice 8c starts from #390's published head `079a02ba9` on
+`codex/group-activation-room-facade`, stacked on the completed Slice 8b browser dial gate. #390 stays
+draft on #381 while its final-head remote checks rerun. This slice owns only the room-facade cutover:
+accepted-layout readiness and progress, the local halt and typed status, browser-owned repair state,
+and the two game consumers named by C10. Slice 8d's HTTP/OpenAPI routes, legacy-route removal, recipe
+cutover, both black-box profiles, state-write gate and public command mounting remain outside this
+branch. Before code changes, the census must recover the current owners for room status, lane
+readiness, local halt, per-peer reconnect state, AR Eye's exhaustive status mapping, and Relic's
+explicit-peer `sendJson` fallback; any owner or contract material change updates this checkpoint before
+implementation continues.
+
+The current-head census changes the implementation owner map without changing Slice 8c's behavior or
+gates. `createBrowserStateComposition` still resolves room peers from active sessions and feeds that
+one callback to both `BrowserRtcWaitRuntime` and `BrowserRtcRoomRuntime`; it is the cutover point for
+an accepted-layout room view. `roomStatus().rtc` already owns the desired/ready/failed arrays, while
+the global RTC status owns each peer's `reconnecting` and `reconnectAttempts`; the room status still
+lacks its accepted-layout identity, room-filtered peer repair view, and typed `halted` state. The
+explicit-peer recovery bypass has moved out of a Relic app file into shared
+`RallarGamePresenceEgressRuntime`, so removing it once closes the affected path for both games. Relic's
+separate per-frame motion sender still needs the I11 snapshot-level `transportState` guard so a halt
+does not spin sends. AR Eye's relevant room-send outcome mapping is now the shared
+`toRallarGameRoomRealtimeSendResult`, not an app-local default arm; it must become total for the new
+halted result. I17 remains authoritative: the public progress shape is the accepted layout identity
+plus the existing peer arrays, never a computed fraction.
+
+The Slice 8c TDD implementation checkpoint is green on the focused surfaces. The browser now derives
+one canonical room transport target from a joined active group snapshot and the matching active,
+server-provenanced accepted overlay; active sessions that are not accepted next hops cannot become
+room RTC targets, and absence of an accepted layout exposes the group transport state but no peer
+targets or layout identity. That target now owns room lane waits, room status and live room-targeted
+channels. `roomStatus().rtc` exposes the accepted layout identity, the existing desired/known/active/
+ready/failed peer arrays, and a room-filtered peer diagnostic view carrying the existing
+`reconnecting`/`reconnectAttempts` pair. An accepted edgeless layout remains open, no accepted layout
+is idle rather than misleadingly open, and authoritative `halted` wins before any wait, dial or send.
+No readiness fraction was added.
+
+The affected game path has one send owner after the cutover. `RallarGamePresenceEgressRuntime` now
+returns the room-facade result directly; its explicit-peer `sendJson` recovery path, associated status
+probe, peer-union helper and input seams were removed rather than retained. The shared room-result
+translation is exhaustive and maps `halted` to the game contract's `stopped`. Relic's per-frame motion
+sender reads `rallar.rooms.state().currentRoom?.group.transportState` before advancing its sequence or
+send gate and records a typed halted diagnostic without sending. Focused validation passes seven
+shared-web files / 64 tests plus the Relic motion file / 9 tests. The all-workspace source typecheck
+and its enforced 972-test-file check pass with zero debt, and the complete shared-web sweep passes 110
+files / 552 tests. The first browser boundary run found a real 164.14 KiB Brotli regression against
+the unchanged `< 164 KiB` facade budget. The budget was not raised: removing the unused internal room
+reference, reusing the accepted-overlay repository's canonical identity predicate, consolidating room
+peer filtering, and keeping one room-send option projection reduced the measured facade to 163.98
+KiB. The public API, browser boundary and headless boundary trio passes 16/16; the package browser-
+bundle command passes; and AR Eye Hunter, Relic Hunters and the headless browser consumer all build.
+Full unit, Deno, repository-wide build, E2E, memory full-stack and live-three-browser gates remain for
+the slice-final checkpoint; their results will be recorded here before publication readiness is
+claimed.
+
+The first stacked publication run exposed one parent-branch release-gate failure rather than a Slice
+8c behavior regression. Because Slice 8b replaced the removed tentative-admission test inside the
+existing `WebRtcConnectionService` suite, the changed-range structure review correctly re-examined
+22 pre-existing mock invocation-count assertions in that touched file. No exception was retained and
+the gate was not weakened: the test doubles now expose direct signal, connection and reset state, and
+the affected tests assert those observable outcomes instead of mock call counts. The focused 25-test
+service suite, formatting, changed repository style and the exact changed-range structure gate pass;
+the latter reports zero current unclassified candidates. Slice 8c is restacked on repaired Slice 8b
+head `b8dae45a8`, and both PRs must complete their refreshed remote checks before the slice-final
+checkpoint is closed.
+
+The Slice 8c final local checkpoint is green on the runtime tree. Root typecheck passes every
+workspace and all 972 enforced test files with zero debt. The complete unit run passes 997 files /
+8,412 tests with four files and nine tests skipped; the complete Deno and all-workspace build commands
+pass. Browser E2E passes 39 core tests with 47 configured skips and 210 Recipe Console tests with one
+configured skip. Memory full-stack passes 7/7, and the enabled live three-browser RTC scenario passes
+with its exhaustive and 100-reconnect variants remaining the two configured skips. The unchanged
+browser facade bundle budget still passes at 163.98 KiB Brotli.
+
+The slice-final changed-range structure review initially re-examined 32 existing mock-call assertions
+across five touched tests. As with the parent repair, no disposition or baseline was added: redundant
+call assertions were removed where typed outcomes already prove the branch, callback assertions now
+use received-envelope collections, halted/stopped tests install fail-fast transport doubles, and the
+two remaining transport counts use explicit fake state. The focused rerun passes 50 shared-web tests
+and nine Relic tests; test typecheck remains 972/0; changed repository style passes; and the exact
+structure gate now reports zero current unclassified candidates. Repository structure passes with its
+review findings, and retained-legacy review adds no registry entry: four findings are benchmark CLI
+default-value vocabulary and the remaining `register=if-needed` login attempt is current configured
+auth behavior, not a compatibility path. Delivery status correctly remains `STOP_WRONG_BASE` while
+#391 is stacked on #390. Refreshed remote checks on final code head `9c89e81b4` and its subsequent
+plan-only checkpoint must pass before review readiness is claimed.
+
+The independent Slice 8c review then found a real authority gap before readiness: the generic room
+channel return type still permits per-send peer selectors, and fixed room membership cached its first
+peer set, so an explicit selector could escape the accepted layout and a fixed channel could survive a
+later authoritative halt. The fail-first review suite reproduced both sends, plus the contradictory
+`empty` reason and `mode: off` state that could mask halt. Room channel creation now marks room scope
+explicitly, every room send intersects its selected peers with the current accepted target, fixed
+membership is re-authorized on every send, and authoritative halt wins in both state and explanation.
+The negative game appointment cases also install a fail-fast appointment double instead of assuming
+non-invocation. The focused correction passes 47/47 tests; the wider all-workspace typecheck passes
+with 972/0 enforced test files; and the unchanged public channel contract is retained rather than
+silently narrowed.
+
+This correction is blocked only on the unchanged browser-facade bundle gate. After removing the
+redundant post-`filter` fallback and the unused internal room field rather than retaining dead data, the
+clean bundle measures **164.0615 KiB Brotli** against the current strict `< 164 KiB` limit. The
+pre-review Slice 8c head had only 24 compressed bytes of margin, so the accepted-layout intersection
+cannot fit without either changing that gate or removing public channel behavior. No budget has been
+raised, no public surface has been removed, and no retained-legacy entry has been added. Maintainer
+direction is required before publication continues; the recommended minimal material change is a
+documented **164.25 KiB** facade budget, followed by the full final-head gate rerun and independent
+re-review. The post-format correction sweep passes six focused files / 58 tests and the root
+all-workspace typecheck with 972/0 enforced test files. #390 is fully green remotely; #391's previously
+published head has all focused remote jobs green while its release gate remains pending, but this
+unpublished correction supersedes that evidence.
+
+The follow-up bundle audit compared the published head and clean correction with identical esbuild
+entry, minification, target and Brotli-quality settings. The published head is 802,234 minified bytes
+and 167,912 Brotli bytes (163.9766 KiB); the correction is 802,327 minified bytes and 167,999 Brotli
+bytes (164.0615 KiB). The correction therefore adds only 93 minified / 87 compressed bytes, while the
+strict `< 164 KiB` ceiling is 167,935 bytes and still requires a 64-byte reduction. This rules out a
+measurement-only anomaly and confirms that further progress now requires the recorded material gate
+decision rather than another compatibility removal or retained dead path.
+
+The maintainer approved the recommended exact **164.25 KiB** browser-facade budget on 2026-08-30.
+Both authoritative budget definitions now carry that value, resolving the material gate decision
+without removing the public channel selector contract or retaining dead compatibility behavior. The
+Slice 8c checkpoint is resumed; publication still requires the complete final-head gate rerun and an
+independent re-review of the authority correction before #391 can be reported ready for its stacked
+base.
+
+The resumed checkpoint first re-proves the corrected ownership boundary: six focused files pass
+58/58 tests, the complete shared-web suite passes 110 files / 554 tests, and root typecheck again
+enforces 972 test files with zero debt. The authoritative browser-boundary test and package bundle
+measurement both pass under the approved strict budget; the facade remains 164.1 KiB Brotli at the
+human-readable reporting precision.
+
+The complete final-head rerun is green locally. Full unit passes 997 files / 8,414 tests with four
+files and nine tests skipped; Deno and every workspace build pass; and the public API, browser
+boundary and headless boundary trio passes 16/16. Browser E2E passes 39 core tests with 47 configured
+skips and 210 Recipe Console tests with one configured skip. Memory full-stack passes 7/7, and the
+enabled live three-browser RTC scenario passes with the exhaustive and 100-reconnect variants
+remaining the two configured skips. Changed repository style reports zero new findings against Slice
+8b head `b8dae45a8`, while repository structure passes with the already-reviewed Relic scene density
+and singleton bundle-measure script subtree findings. Independent re-review and remote validation on
+the resulting published commit remain before the Slice 8c checkpoint closes.
+
+Independent re-review confirms the original room-override, fixed-membership halt, status precedence,
+and appointment-side-effect findings are corrected, but found three manual touched-file function-size
+violations that the changed-range automation does not classify. No exception is retained. Targeted
+channel assembly now delegates its accepted-target resolver; Relic position broadcast delegates
+sample resolution, halted diagnostics, and the room send; and the game fake separates mutable state,
+transport ports, sub-facades, and event emission. Their affected functions are now 39, 56, and 43
+physical lines respectively, with every extracted helper at or below 45 lines. The 56-line Relic
+broadcast remains in the mandatory separation-review tier and is accepted because its remaining
+single responsibility is the ordered position-broadcast lifecycle. Root typecheck remains green at
+972/0. The exact post-closure worktree passes seven focused shared-web files / 62 tests plus Relic
+scene networking 9/9, with the approved browser facade measuring 164.2 KiB Brotli under the exact
+strict **164.25 KiB** budget. Full unit passes 997 files / 8,414 tests with four files and nine tests
+skipped; the complete Deno matrix, every workspace build, and the public API/browser/headless trio
+at 16/16 pass. Browser E2E passes 39 core tests with 47 configured skips and 210 Recipe Console tests
+with one configured skip. Memory full-stack passes 7/7, while the enabled live three-browser RTC
+scenario passes with its exhaustive and 100-reconnect variants remaining the two configured skips.
+Changed repository style reports zero new findings against Slice 8b head `b8dae45a8`, and repository
+structure passes with the already-reviewed Relic scene density and singleton bundle-measure script
+subtree findings. The publication commit, independent re-review of that exact commit, and remote
+validation remain before the Slice 8c checkpoint closes.
+
+Independent review of commit `80b327f41` reopened the checkpoint with one authority defect: a room
+lane wait refreshed transport status but retained ready peers from the pre-wait accepted layout, so
+an accepted-layout change during the asynchronous wait could still send to a removed peer. A new
+fail-fast public room-channel regression first reproduced that send. The runtime now intersects the
+wait result with both the refreshed accepted target and refreshed ready set before any send; the
+regression and existing room/game tests pass 30/30. The same review found that the newly split game
+facade double accepted an untyped `object`. Its partial boundary now accepts `Partial<T>`, and its
+supplied room, people, RTC, realtime, message, WebSocket, and director members are compile-time
+shape-checked with exact state/status returns. The replacement commit, affected and broad gate
+reruns, exact-commit re-review, and remote validation remain open.
+
+The exact post-review replacement tree is green locally. Seven focused shared-web files now pass
+63/63 tests, including the fail-fast stale-layout regression, and Relic scene networking passes 9/9.
+Root typecheck still enforces 972 test files with zero debt; the public API, browser boundary and
+headless boundary trio passes 16/16; and the browser facade passes the exact approved **164.25 KiB**
+budget at 164.1 KiB Brotli reporting precision. Full unit passes 997 files / 8,415 tests with four
+files and nine tests skipped; the complete Deno matrix and every workspace build pass. Browser E2E
+passes 39 core tests with 47 configured skips and 210 Recipe Console tests with one configured skip.
+Memory full-stack passes 7/7, while the enabled live three-browser RTC scenario passes with the
+exhaustive and 100-reconnect variants remaining the two configured skips. Changed repository style
+reports zero new findings against Slice 8b head `b8dae45a8`; repository structure passes with the
+already-reviewed Relic scene density and singleton bundle-measure script subtree findings. The
+replacement implementation is committed at `367cef8af`; its slice-local production legacy scan finds
+no candidates and validates the registry. Delivery status correctly reports `STOP_WRONG_BASE`
+because #391 is stacked on #390 rather than `main`, not because of a merge conflict. Exact-head
+re-review of implementation head `ada7978d3` reports no critical, important or minor findings and
+confirms the authority race is closed, facade test doubles are shape-checked, the public budget is
+exact in both definitions, and no Slice 8d or retained-compatibility work leaked into the slice.
+Publication and remote validation remain before the Slice 8c checkpoint closes.
+
+### Review checkpoint — slice 8c room authority (2026-08-31, PR #391)
+
+The parent review changed native RTC and queue owners, so resolve the actual stack
+conflicts without restoring partial whole-object test casts. A room target must
+intersect the exact accepted layout with the same snapshot's active sessions:
+layout publication may lag presence removal, and a peer connection can remain
+open for another room. Keep accepted identity as the authority; presence alone
+never grants a target.
+
+Pin full room scope before asynchronous connection or lane waits. Reauthorize
+targets immediately before JSON/binary writes and before reporting room-ready
+peers after a wait. Changing default workspace, membership, accepted layout or
+halt state during an await must not redirect an operation or expose stale ready
+peers. Explicit unscoped peer APIs retain their distinct behavior.
+
+Per-send room and peer selectors override channel defaults as a unit; a default
+full room reference must not mask an explicit room ID. Omitted send options keep
+the configured expiry, replacement key and lane-open timeout. A lane that closes
+while another peer is still opening must also leave the final ready set.
+
+Derive room failure progress from actual requested-lane or connection failure,
+not the connection service's retry-eligibility query, which can include healthy
+open or connecting peers. Prove these paths with native RTC boundaries and real
+room-facade consumers. The game cleanup also checks receive scope independently
+of the shared realtime lane; a dungeon room ID alone cannot identify a game room.
+Relic motion therefore uses the app-private `relic.motion.v2` payload with a
+mandatory full `GroupRef`. Reject old or missing-scope packets, and remove the
+older world-coordinate receive fallback. All Relic clients must update together;
+there is no retained dual-protocol reader.
+Game match configuration must also choose a coherent room ID/reference pair:
+an explicit room ID cannot inherit the current reference of another room, and an
+explicit full reference determines its own room ID.
+
+The final room-authority closure measures the browser facade at **168,399 bytes /
+164.4521484375 KiB** and the headless consumer at **213,469 bytes /
+208.4658203125 KiB**. Those are 208 and 478 bytes above the previous strict
+allowed maxima. Independent deletion and consolidation review found no meaningful
+safe reduction without obscuring the asynchronous lifecycle guards. The maintainer
+approved strict **165 KiB** and **209 KiB** limits on 2026-09-01. Keep the existing
+entry points, dependency exclusions, minification target and Brotli quality; the
+decision changes only the two reviewed ceilings. Both authoritative facade budget
+definitions and the headless boundary must carry the approved values before the
+final-head gates can close.
+
 **Next two PRs (I5, I20):**
 
-- **Finish existing #390 / slice 8b.** Close the reviewed admission and signaling
-  defects, recursive standards/legacy cleanup, actual main conflict and integrated
-  validation; publish corrections and mark ready for the maintainer's manual merge.
-- **Review existing #391 / slice 8c.** Carry the reviewed #390 changes into the room
-  facade, then review its accepted-layout/status behavior and consumer tests. Review
-  #396 next; resume Slice 9 only after the newest existing PR completes review.
+- **Finish existing #390 / slice 8b.** Source and independent review, local validation,
+  native release checks and the ready-for-main marker are complete. Await the
+  maintainer's manual merge and chosen clean-database cutover. No agent database
+  reset or deployment pause.
+- **Finish existing #391 / slice 8c.** Apply the approved bundle ceilings, rerun the
+  final-head gates, then retarget after #390 merges and publish its ready-for-main
+  marker. Review #396 next; resume Slice 9 only after the newest existing PR
+  completes review.
 
 ## Slice 9 — In-flight pacing
 

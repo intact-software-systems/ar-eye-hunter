@@ -11,6 +11,7 @@ type RoomMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room
 type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
 type ClientRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
+type OverlaysRepositoryModule = typeof import('@shared/repository/overlays-repository.ts');
 
 interface BrowserLifecycleMocks {
     readonly clearSession: Mock<() => void>;
@@ -42,6 +43,7 @@ interface BrowserRepositoryMocks {
     readonly findFirstGroupStateSnapshotRefSessionIdIsIn: Mock<GroupRepositoryModule['findFirstGroupStateSnapshotRefSessionIdIsIn']>;
     readonly findGroupStateSnapshotByRef: Mock<GroupRepositoryModule['findGroupStateSnapshotByRef']>;
     readonly getAllGroupStateSnapshots: Mock<GroupRepositoryModule['getAllGroupStateSnapshots']>;
+    readonly findAcceptedOverlayById: Mock<OverlaysRepositoryModule['findAcceptedOverlayById']>;
 }
 
 export interface LightweightBrowserFacadeTestMocks extends BrowserLifecycleMocks, BrowserWorkflowMocks, BrowserRepositoryMocks {
@@ -129,7 +131,10 @@ function createRepositoryMocks(): BrowserRepositoryMocks {
         findGroupStateSnapshotByRef: vi.fn<GroupRepositoryModule['findGroupStateSnapshotByRef']>(() =>
             missingRepository('shared.repository.group-state-snapshots')
         ),
-        getAllGroupStateSnapshots: vi.fn<GroupRepositoryModule['getAllGroupStateSnapshots']>(() => missingRepository('shared.repository.group-state-snapshots'))
+        getAllGroupStateSnapshots: vi.fn<GroupRepositoryModule['getAllGroupStateSnapshots']>(() =>
+            missingRepository('shared.repository.group-state-snapshots')
+        ),
+        findAcceptedOverlayById: vi.fn<OverlaysRepositoryModule['findAcceptedOverlayById']>(() => missingRepository('shared.repository.accepted-overlays'))
     };
 }
 

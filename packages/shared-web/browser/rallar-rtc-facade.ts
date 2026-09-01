@@ -8,6 +8,7 @@ import type {
     RallarRtcPeerStatus,
     RallarRtcStatus
 } from '@shared-web/browser/rtc-diagnostics/rallar-rtc-diagnostics-contracts.ts';
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 export type {
@@ -63,6 +64,7 @@ export type RallarRtcRoomMode = 'off' | 'lazy' | 'warm' | 'eager';
 
 export type RallarRoomTransportState =
     | 'off'
+    | 'halted'
     | 'idle'
     | 'connecting'
     | 'partial'
@@ -81,11 +83,13 @@ export interface RallarRtcRoomTransportStatus {
     readonly desired: boolean;
     readonly mode: RallarRtcRoomMode;
     readonly state: RallarRoomTransportState;
+    readonly acceptedLayoutIdentity?: GroupLayoutIdentity;
     readonly desiredPeerIds: readonly string[];
     readonly knownPeerIds: readonly string[];
     readonly activePeerIds: readonly string[];
     readonly readyPeerIds: readonly string[];
     readonly failedPeerIds: readonly string[];
+    readonly peers: readonly RallarRtcPeerStatus[];
     readonly laneId: string;
     readonly lastChangedAtEpochMs?: number;
     readonly reason?: string;
@@ -102,9 +106,7 @@ export interface RallarRtcStatusOptions {
     readonly laneId?: string;
 }
 
-export type RallarRtcStatusSubscriptionOptions =
-    & RallarRtcStatusOptions
-    & RallarOnChangeOptions;
+export interface RallarRtcStatusSubscriptionOptions extends RallarRtcStatusOptions, RallarOnChangeOptions {}
 
 export type RallarRtcStatusListener = (
     status: RallarRtcStatus

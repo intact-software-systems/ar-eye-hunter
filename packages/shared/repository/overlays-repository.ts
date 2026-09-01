@@ -26,9 +26,10 @@ import type { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 
 import { emitOverlayAdoption, type OverlayAdoptionOutcome } from './overlay-adoption-diagnostics.ts';
 
-export type OverlayRepositoryOptions =
-    & Omit<ObservableLatestRepositoryOptions<string, OverlayInfo>, 'ttlMs' | 'equals'>
-    & { ttlMs: number; };
+export interface OverlayRepositoryOptions
+    extends Omit<ObservableLatestRepositoryOptions<string, OverlayInfo>, 'ttlMs' | 'equals'> {
+    readonly ttlMs: number;
+}
 
 export interface OverlayRepositoryCacheConfiguration {
     readonly plannedOverlays: OverlayRepositoryOptions;
@@ -485,7 +486,7 @@ function removeMismatchedAcceptedOverlay(
     return removeAcceptedOverlayById(input.overlayId, input.manager);
 }
 
-function isOverlayIdentity(
+export function isOverlayIdentity(
     overlay: OverlayInfo,
     identity: GroupLayoutIdentity
 ): boolean {

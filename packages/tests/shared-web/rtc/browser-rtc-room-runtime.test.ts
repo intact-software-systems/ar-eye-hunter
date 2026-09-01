@@ -1,7 +1,25 @@
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import type { StateCacheChangeListener } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createGroupSnapshot, mockGroupSnapshot, mockGroupSnapshots, readRtcWaitMocks, resetRtcWaitTestRuntime } from './browser-rtc-wait-test-runtime.ts';
+
+import { createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
+import {
+    createGroupSnapshot,
+    mockAcceptedOverlay,
+    mockGroupSnapshot,
+    mockGroupSnapshots,
+    mockOpenRtcLane,
+    readRtcWaitMocks,
+    resetRtcWaitTestRuntime
+} from './browser-rtc-wait-test-runtime.ts';
 
 const mocks = readRtcWaitMocks();
 
@@ -34,11 +52,7 @@ describe('Rallar RTC room wait', () => {
                     timeoutMs: options?.timeoutMs
                 });
                 if (peerId === 'peer-ready') {
-                    return {
-                        status: 'open',
-                        peerId,
-                        laneId
-                    };
+                    return await mockOpenRtcLane(peerId, laneId);
                 }
 
                 return {
@@ -88,18 +102,20 @@ describe('Rallar RTC room wait', () => {
                 }
             ]
         });
-        expect(laneOpenRequests).toEqual([
-            {
-                peerId: 'peer-ready',
-                laneId: 'realtime',
-                timeoutMs: 1_000
-            },
-            {
-                peerId: 'peer-slow',
-                laneId: 'realtime',
-                timeoutMs: 1_000
-            }
-        ]);
+        expect(new Set(laneOpenRequests)).toEqual(
+            new Set([
+                {
+                    peerId: 'peer-ready',
+                    laneId: 'realtime',
+                    timeoutMs: 1_000
+                },
+                {
+                    peerId: 'peer-slow',
+                    laneId: 'realtime',
+                    timeoutMs: 1_000
+                }
+            ])
+        );
     });
 
     it('waits for local room presence with min one for solo rooms', async () => {
@@ -199,11 +215,10 @@ describe('Rallar RTC room wait', () => {
             ])
         );
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
-            async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => ({
-                status: peerId === 'peer-ready' ? 'open' : 'timeout',
-                peerId,
-                laneId
-            })
+            async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) =>
+                peerId === 'peer-ready'
+                    ? await mockOpenRtcLane(peerId, laneId)
+                    : { status: 'timeout', peerId, laneId }
         );
         const facade = createRallarFacade();
 
@@ -271,11 +286,7 @@ describe('Rallar RTC room wait', () => {
             ])
         );
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
-            async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => ({
-                status: 'open',
-                peerId,
-                laneId
-            })
+            async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => await mockOpenRtcLane(peerId, laneId)
         );
         const facade = createRallarFacade();
 
@@ -315,7 +326,7 @@ describe('Rallar RTC room wait', () => {
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => {
                 laneOpenPeerIds.push(peerId);
-                return { status: 'open', peerId, laneId };
+                return await mockOpenRtcLane(peerId, laneId);
             }
         );
 
@@ -371,7 +382,7 @@ describe('Rallar RTC room wait', () => {
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => {
                 laneOpenPeerIds.push(peerId);
-                return { status: 'open', peerId, laneId };
+                return await mockOpenRtcLane(peerId, laneId);
             }
         );
 
@@ -398,6 +409,136 @@ describe('Rallar RTC room wait', () => {
         expect(laneOpenPeerIds).toEqual([]);
     });
 
+    it('reports accepted-layout identity and reconnect progress only for accepted peers', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const snapshot = createGroupSnapshot('room-1', [
+            'session-1',
+            'peer-reconnecting',
+            'active-session-not-in-layout'
+        ]);
+        mockGroupSnapshot(snapshot);
+        mockAcceptedOverlay(snapshot, ['session-1', 'peer-reconnecting']);
+        mocks.webRtcConnectionService.knownPeerIds.mockReturnValue([
+            'peer-reconnecting',
+            'active-session-not-in-layout'
+        ]);
+        mocks.webRtcConnectionService.activePeerIds.mockReturnValue([
+            'peer-reconnecting',
+            'active-session-not-in-layout'
+        ]);
+        const reconnectTimer = setTimeout(() => undefined, 60_000);
+        mocks.webRtcConnectionService.readPeer.mockImplementation((peerId) =>
+            createBrowserRtcPeerTestDouble({
+                peerId,
+                channels: [],
+                status: {
+                    reconnectAttempts: peerId === 'peer-reconnecting' ? 2 : 0,
+                    reconnectTimer: peerId === 'peer-reconnecting'
+                        ? reconnectTimer
+                        : undefined
+                }
+            })
+        );
+
+        const facade = createRallarFacade();
+        await facade.connect();
+        const status = facade.rtc.roomStatus('room-1');
+        clearTimeout(reconnectTimer);
+
+        expect(status.rtc.acceptedLayoutIdentity).toEqual(
+            snapshot.group.acceptedLayoutIdentity
+        );
+        expect(status.rtc.desiredPeerIds).toEqual(['peer-reconnecting']);
+        expect(status.rtc.peers).toMatchObject([
+            {
+                peerId: 'peer-reconnecting',
+                connection: {
+                    reconnectAttempts: 2,
+                    reconnecting: true
+                }
+            }
+        ]);
+    });
+
+    it('keeps a joined room idle when no accepted layout exists', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const snapshot = createGroupSnapshot('room-1', ['session-1', 'peer-a']);
+        mockGroupSnapshot(snapshot);
+        mocks.findAcceptedOverlayById.mockReturnValue(undefined);
+
+        const facade = createRallarFacade();
+        await facade.connect();
+
+        expect(facade.rtc.roomStatus('room-1').rtc).toMatchObject({
+            state: 'idle',
+            desiredPeerIds: [],
+            peers: []
+        });
+        expect(facade.rtc.roomStatus('room-1').rtc.acceptedLayoutIdentity)
+            .toBeUndefined();
+    });
+
+    it('reports an accepted edgeless room as open without inventing progress', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const snapshot = createGroupSnapshot('room-1', ['session-1']);
+        mockGroupSnapshot(snapshot);
+
+        const facade = createRallarFacade();
+        await facade.connect();
+        const status = facade.rtc.roomStatus('room-1').rtc;
+
+        expect(status).toMatchObject({
+            state: 'open',
+            acceptedLayoutIdentity: snapshot.group.acceptedLayoutIdentity,
+            desiredPeerIds: [],
+            readyPeerIds: [],
+            failedPeerIds: [],
+            peers: []
+        });
+        expect(status).not.toHaveProperty('readinessFraction');
+    });
+
+    it('reports halted and never opens accepted peer lanes while transport is halted', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const base = createGroupSnapshot('room-1', ['session-1', 'peer-a']);
+        const snapshot: GroupSnapshot = {
+            ...base,
+            group: { ...base.group, transportState: 'halted' }
+        };
+        mockGroupSnapshot(snapshot);
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+            () => {
+                throw new Error('Halted room readiness cannot open a peer lane.');
+            }
+        );
+        const facade = createRallarFacade();
+        await facade.connect();
+
+        const status = await facade.rtc.waitForRoom('room-1', {
+            laneId: 'realtime',
+            timeoutMs: 250
+        });
+
+        expect(status.rtc).toMatchObject({
+            state: 'halted',
+            desiredPeerIds: ['peer-a'],
+            reason: 'Room RTC is halted by authoritative group state.'
+        });
+        expect(facade.rtc.roomStatus('room-1', { mode: 'off' }).rtc).toMatchObject({
+            mode: 'off',
+            state: 'halted',
+            reason: 'Room RTC is halted by authoritative group state.'
+        });
+    });
+
     it('opens a room RTC transport when mode is warm', async () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
@@ -413,12 +554,9 @@ describe('Rallar RTC room wait', () => {
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => {
                 laneOpenPeerIds.push(peerId);
-                return {
-                    status: peerId === 'peer-ready' ? 'open' : 'timeout',
-                    peerId,
-                    laneId,
-                    error: peerId === 'peer-ready' ? undefined : new Error('timeout')
-                };
+                return peerId === 'peer-ready'
+                    ? await mockOpenRtcLane(peerId, laneId)
+                    : { status: 'timeout', peerId, laneId, error: new Error('timeout') };
             }
         );
         mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([
@@ -437,7 +575,7 @@ describe('Rallar RTC room wait', () => {
 
         expect(result.rtc.state).toBe('partial');
         expect(result.rtc.readyPeerIds).toEqual(['peer-ready']);
-        expect(laneOpenPeerIds).toEqual(['peer-ready', 'peer-slow']);
+        expect(new Set(laneOpenPeerIds)).toEqual(new Set(['peer-ready', 'peer-slow']));
     });
 
     it('waits for room RTC transport readiness with connect by default', async () => {
@@ -449,7 +587,7 @@ describe('Rallar RTC room wait', () => {
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID, options) => {
                 laneOpenRequests.push({ peerId, laneId, timeoutMs: options?.timeoutMs });
-                return { status: 'open', peerId, laneId };
+                return await mockOpenRtcLane(peerId, laneId);
             }
         );
         mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue(['peer-1']);
@@ -463,9 +601,11 @@ describe('Rallar RTC room wait', () => {
         });
 
         expect(result.rtc.state).toBe('open');
-        expect(laneOpenRequests).toEqual([
-            { peerId: 'peer-1', laneId: 'realtime', timeoutMs: 250 }
-        ]);
+        expect(new Set(laneOpenRequests)).toEqual(
+            new Set([
+                { peerId: 'peer-1', laneId: 'realtime', timeoutMs: 250 }
+            ])
+        );
     });
 
     it('returns empty for a room RTC lane when the room has no remote peers', async () => {
@@ -478,7 +618,7 @@ describe('Rallar RTC room wait', () => {
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => {
                 laneOpenPeerIds.push(peerId);
-                return { status: 'open', peerId, laneId };
+                return await mockOpenRtcLane(peerId, laneId);
             }
         );
 
@@ -524,7 +664,7 @@ describe('Rallar RTC room wait', () => {
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => {
                 laneOpenPeerIds.push(peerId);
-                return { status: 'open', peerId, laneId };
+                return await mockOpenRtcLane(peerId, laneId);
             }
         );
 
@@ -576,11 +716,9 @@ describe('Rallar RTC room wait', () => {
             }
         );
         mockGroupSnapshots([workspaceA, workspaceB]);
-        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValue({
-            status: 'open',
-            peerId: 'peer-b',
-            laneId: 'realtime'
-        });
+        mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
+            async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => await mockOpenRtcLane(peerId, laneId)
+        );
         const facade = createRallarFacade();
 
         await facade.connect();

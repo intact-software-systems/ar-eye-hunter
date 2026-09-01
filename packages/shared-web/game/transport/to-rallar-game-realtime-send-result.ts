@@ -1,4 +1,5 @@
 import type { RallarRealtimeSendResult, RallarRoomRealtimeSendResult } from '@shared-web/browser/rallar.ts';
+
 import type { RallarGameSendResult } from './rallar-game-send-result.ts';
 
 /** Translates browser realtime outcomes into the Rallar Game result contract. */
@@ -35,30 +36,40 @@ export function toRallarGameRealtimeSendResult(
 export function toRallarGameRoomRealtimeSendResult(
     realtime: RallarRoomRealtimeSendResult
 ): RallarGameSendResult {
-    if (realtime.status === 'sent') {
-        return {
-            status: 'sent',
-            transport: 'realtime',
-            realtime: realtime.results
-        };
-    }
-
-    if (realtime.status === 'partial') {
-        return {
-            status: 'partial',
-            transport: 'realtime',
-            realtime: realtime.results,
-            reason: realtime.reason ?? 'Some room realtime sends did not succeed.'
-        };
-    }
-
-    const notReady = realtime.status === 'not-ready' || realtime.status === 'no-targets';
-    return {
-        status: notReady ? 'not-ready' : 'failed',
-        transport: 'realtime',
-        realtime: realtime.results,
-        reason: realtime.reason ?? (notReady
-            ? 'Room realtime transport is not ready.'
-            : 'Room realtime send failed.')
+    const common = {
+        transport: 'realtime' as const,
+        realtime: realtime.results
     };
+    const status = realtime.status;
+    switch (status) {
+        case 'sent':
+            return { ...common, status: 'sent' };
+        case 'partial':
+            return {
+                ...common,
+                status: 'partial',
+                reason: realtime.reason ?? 'Some room realtime sends did not succeed.'
+            };
+        case 'halted':
+            return {
+                ...common,
+                status: 'stopped',
+                reason: realtime.reason ?? 'Room realtime transport is halted.'
+            };
+        case 'not-ready':
+        case 'no-targets':
+            return {
+                ...common,
+                status: 'not-ready',
+                reason: realtime.reason ?? 'Room realtime transport is not ready.'
+            };
+        case 'failed':
+            return {
+                ...common,
+                status: 'failed',
+                reason: realtime.reason ?? 'Room realtime send failed.'
+            };
+    }
+    const exhaustiveStatus: never = status;
+    return exhaustiveStatus;
 }

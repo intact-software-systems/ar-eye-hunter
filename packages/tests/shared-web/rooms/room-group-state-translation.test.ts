@@ -1,7 +1,9 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
-import { toRallarRoomState, toRallarRoomSummary } from '@shared-web/browser/rooms/room-group-state-translation.ts';
+import { resolveBrowserRoomTransportTarget, toRallarRoomState, toRallarRoomSummary } from '@shared-web/browser/rooms/room-group-state-translation.ts';
+import type { OverlayInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
@@ -111,6 +113,80 @@ describe('room state projection translation', () => {
         expect([crossScope.currentRoom, crossScope.members]).toEqual([selected, state.members]);
         expectTypeOf(toRallarRoomState).returns.toEqualTypeOf<RallarRoomState>();
     });
+
+    it('resolves transport peers and identity only from the accepted server layout', () => {
+        const base = createRoomSnapshot(
+            'room-1',
+            'Room 1',
+            ['session-1', 'accepted-peer', 'active-session-not-in-layout']
+        );
+        const accepted = acceptedOverlay(base, ['session-1', 'accepted-peer']);
+        const snapshot: GroupSnapshot = {
+            ...base,
+            group: {
+                ...base.group,
+                acceptedLayoutIdentity: {
+                    ...accepted.sourceGroupStateCausalRevision,
+                    version: accepted.overlayVersion,
+                    state: accepted.state
+                },
+                transportState: 'halted'
+            }
+        };
+
+        expect(resolveBrowserRoomTransportTarget({
+            sessionId: 'session-1',
+            snapshot,
+            acceptedOverlay: accepted
+        })).toEqual({
+            transportState: 'halted',
+            acceptedLayoutIdentity: snapshot.group.acceptedLayoutIdentity,
+            peerIds: ['accepted-peer']
+        });
+    });
+
+    it('reports no layout identity or peers when the accepted overlay is absent', () => {
+        const snapshot = createRoomSnapshot(
+            'room-1',
+            'Room 1',
+            ['session-1', 'active-session-not-in-layout']
+        );
+
+        expect(resolveBrowserRoomTransportTarget({
+            sessionId: 'session-1',
+            snapshot,
+            acceptedOverlay: undefined
+        })).toEqual({
+            transportState: 'flowing',
+            peerIds: []
+        });
+    });
+
+    it('excludes a departed session while its accepted layout is still retained', () => {
+        const base = createRoomSnapshot('room-1', 'Room 1', ['session-1', 'remaining-peer']);
+        const accepted = acceptedOverlay(base, ['departed-peer', 'remaining-peer']);
+        const snapshot: GroupSnapshot = {
+            ...base,
+            group: {
+                ...base.group,
+                acceptedLayoutIdentity: {
+                    ...accepted.sourceGroupStateCausalRevision,
+                    version: accepted.overlayVersion,
+                    state: accepted.state
+                }
+            }
+        };
+
+        expect(resolveBrowserRoomTransportTarget({
+            sessionId: 'session-1',
+            snapshot,
+            acceptedOverlay: accepted
+        })).toEqual({
+            transportState: 'flowing',
+            acceptedLayoutIdentity: snapshot.group.acceptedLayoutIdentity,
+            peerIds: ['remaining-peer']
+        });
+    });
 });
 
 function createRoomSnapshot(
@@ -156,5 +232,26 @@ function createClient(
     return {
         ...snapshot,
         principal: { ...snapshot.principal, username, displayName }
+    };
+}
+
+function acceptedOverlay(
+    snapshot: GroupSnapshot,
+    nextHopSessionIds: readonly string[]
+): OverlayInfo {
+    return {
+        sourceGroupStateCausalRevision: snapshot.causalRevision,
+        provenance: 'server',
+        state: 'active',
+        overlayId: toScopedOverlayId(snapshot.group),
+        groupRef: snapshot.group,
+        topology: 'tree',
+        name: snapshot.group.displayName,
+        createdByClientId: 'server',
+        createdAtEpochMs: 1,
+        nextHopSessionIds: [...nextHopSessionIds],
+        degreeLimit: 2,
+        overlayVersion: 3,
+        updatedAtEpochMs: 2
     };
 }

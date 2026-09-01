@@ -1,6 +1,7 @@
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarWsStatus } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import { BrowserRtcDiagnosticsRuntime } from '@shared-web/browser/rtc-diagnostics/browser-rtc-diagnostics-runtime.ts';
 import { BrowserRtcLifecycleRuntime } from '@shared-web/browser/rtc/browser-rtc-lifecycle-runtime.ts';
 import { BrowserRtcRecoveryRuntime } from '@shared-web/browser/rtc/browser-rtc-recovery-runtime.ts';
@@ -11,19 +12,6 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
 
-export namespace BrowserRallarRtcController {
-    export interface Input {
-        readMiddleware(): ApiMiddleware | undefined;
-        readSession(): AuthSession | undefined;
-        readWsStatus(): RallarWsStatus;
-        resolveRoomPeerIds(room: string | GroupRef): readonly string[];
-        resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
-        toRoomId(room: string | GroupRef | undefined): string | undefined;
-        resolveRtcWaitTimeoutMs(timeoutMs?: number): number | undefined;
-        resolveRtcConnectOnWait(connect?: boolean): boolean;
-    }
-}
-
 interface BrowserRtcRuntimes {
     readonly status: BrowserRtcStatusRuntime;
     readonly lifecycle: BrowserRtcLifecycleRuntime;
@@ -31,6 +19,19 @@ interface BrowserRtcRuntimes {
     readonly rooms: BrowserRtcRoomRuntime;
     readonly diagnostics: BrowserRtcDiagnosticsRuntime;
     readonly recovery: BrowserRtcRecoveryRuntime;
+}
+
+export namespace BrowserRallarRtcController {
+    export interface Input {
+        readMiddleware(): ApiMiddleware | undefined;
+        readSession(): AuthSession | undefined;
+        readWsStatus(): RallarWsStatus;
+        resolveRoomTransportTarget(room: string | GroupRef): BrowserRoomTransportTarget;
+        resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
+        toRoomId(room: string | GroupRef | undefined): string | undefined;
+        resolveRtcWaitTimeoutMs(timeoutMs?: number): number | undefined;
+        resolveRtcConnectOnWait(connect?: boolean): boolean;
+    }
 }
 
 /** Constructs the public RTC capability from its status, lifecycle, wait, room, diagnostic, and recovery owners. */
@@ -59,14 +60,15 @@ function createBrowserRtcRuntimes(
     const wait = new BrowserRtcWaitRuntime({
         readMiddleware: input.readMiddleware,
         readStatus: (options) => status.read(options),
-        resolveRoomPeerIds: input.resolveRoomPeerIds,
+        resolveRoomTransportTarget: input.resolveRoomTransportTarget,
+        resolveRoomRef: input.resolveRoomRef,
         resolveWaitTimeoutMs: input.resolveRtcWaitTimeoutMs,
         resolveConnectOnWait: input.resolveRtcConnectOnWait
     });
     const rooms = new BrowserRtcRoomRuntime({
         readWsStatus: input.readWsStatus,
         readRtcStatus: (options) => status.read(options),
-        resolveRoomPeerIds: input.resolveRoomPeerIds,
+        resolveRoomTransportTarget: input.resolveRoomTransportTarget,
         resolveRoomRef: input.resolveRoomRef,
         toRoomId: input.toRoomId,
         waitForRoomLane: async (room, laneId, options) => await wait.waitForRoomLane(room, laneId, options)
@@ -103,7 +105,7 @@ function createBrowserRtcOperations(
             ),
         waitForRoomLane: async (room, laneId, options = {}) =>
             await runtimes.wait.waitForRoomLane(
-                options.roomRef ?? room,
+                room,
                 laneId,
                 options
             ),

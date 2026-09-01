@@ -3,7 +3,6 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type {
     RallarRtcRoomLaneWaitOptions,
     RallarRtcRoomLaneWaitResult,
-    RallarRtcRoomLaneWaitStatus,
     RallarRtcStatus,
     RallarRtcStatusOptions,
     RallarRtcWaitForOpenOptions,
@@ -13,18 +12,41 @@ import type {
 import {
     evaluateRallarReadinessExpectation,
     normalizeRallarReadinessExpectation,
-    type RallarNormalizedReadinessExpectation,
-    type RallarReadinessEvaluation
+    type RallarNormalizedReadinessExpectation
 } from '@shared-web/browser/readiness.ts';
+import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
+import {
+    isRtcRoomPeerFailed,
+    resolveRtcRoomLaneWaitStatus
+} from '@shared-web/browser/rtc/rtc-room-transport-status.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
+
+interface RallarRtcLaneTarget {
+    readonly peerId: string;
+    readonly laneId: string;
+}
+
+interface RallarRtcLaneRuntimeInput extends RallarRtcLaneTarget {
+    readonly context: ApiMiddleware;
+    readonly options: RallarRtcWaitForOpenOptions;
+}
+
+interface RallarRtcWaitForOpenResultInput {
+    readonly status: RallarWaitForOpenStatus;
+    readonly peerId: string;
+    readonly laneId: string;
+    readonly reason?: string;
+}
 
 export namespace BrowserRtcWaitRuntime {
     export interface Input {
         readMiddleware(): ApiMiddleware | undefined;
         readStatus(options?: RallarRtcStatusOptions): RallarRtcStatus;
-        resolveRoomPeerIds(room: string | GroupRef): readonly string[];
+        resolveRoomTransportTarget(room: string | GroupRef): BrowserRoomTransportTarget;
+        resolveRoomRef(room: string | GroupRef): GroupRef | undefined;
         resolveWaitTimeoutMs(timeoutMs?: number): number | undefined;
         resolveConnectOnWait(connect?: boolean): boolean;
     }
@@ -39,64 +61,42 @@ export namespace BrowserRtcWaitRuntime {
     }
 }
 
-interface RallarRtcLaneTarget {
-    readonly peerId: string;
-    readonly laneId: string;
-}
-
-interface RallarRtcLaneRuntimeInput extends RallarRtcLaneTarget {
-    readonly ctx: ApiMiddleware;
-    readonly options: RallarRtcWaitForOpenOptions;
-}
-
-interface RallarRtcWaitForOpenResultInput {
-    readonly status: RallarWaitForOpenStatus;
-    readonly peerId: string;
-    readonly laneId: string;
-    readonly reason?: string;
-}
-
-interface RallarRtcExpectationWaitStatusInput {
-    readonly evaluation: RallarReadinessEvaluation;
-    readonly waitStatus: RallarRtcRoomLaneWaitStatus;
-    readonly readyPeerIds: readonly string[];
-    readonly notReady: readonly RallarRtcWaitForOpenResult[];
-    readonly preferUnsatisfiedTerminalStatus: boolean;
-}
-
 /** Owns RTC lane waiting, readiness evaluation, and caller-visible wait results. */
 export class BrowserRtcWaitRuntime {
     private readonly input: BrowserRtcWaitRuntime.Input;
 
-    constructor(input: BrowserRtcWaitRuntime.Input) {
+    public constructor(input: BrowserRtcWaitRuntime.Input) {
         this.input = input;
     }
 
-    async waitForLane(
+    public async waitForLane(
         peerId: string,
         laneId: string,
         options: RallarRtcWaitForOpenOptions = {}
     ): Promise<RallarRtcWaitForOpenResult> {
-        const ctx = this.input.readMiddleware();
+        const context = this.input.readMiddleware();
         if (options.signal?.aborted) {
             return this.toWaitForOpenResult({ status: 'aborted', peerId, laneId });
         }
-        if (!ctx) {
+        if (!context) {
             return this.toWaitForOpenResult({ status: 'not-connected', peerId, laneId });
         }
-        const waitInput = { ctx, peerId, laneId, options };
+        const waitInput = { context, peerId, laneId, options };
         return this.input.resolveConnectOnWait(options.connect)
             ? await this.waitWithConnect(waitInput)
             : await this.waitForExistingLane(waitInput);
     }
 
-    async waitForRoomLane(
+    public async waitForRoomLane(
         room: string | GroupRef,
         laneId: string,
         options: RallarRtcRoomLaneWaitOptions = {}
     ): Promise<RallarRtcRoomLaneWaitResult> {
-        const roomId = typeof room === 'string' ? room : room.groupId;
-        const peerIds = this.input.resolveRoomPeerIds(options.roomRef ?? room);
+        const requestedRoom = options.roomRef ?? room;
+        const pinnedRoom = this.input.resolveRoomRef(requestedRoom) ?? requestedRoom;
+        const roomId = typeof pinnedRoom === 'string' ? pinnedRoom : pinnedRoom.groupId;
+        const target = this.input.resolveRoomTransportTarget(pinnedRoom);
+        const peerIds = target.transportState === 'halted' ? [] : target.peerIds;
         const expectation = normalizeRallarReadinessExpectation(
             options.expect ?? { exact: peerIds.length }
         );
@@ -113,20 +113,52 @@ export class BrowserRtcWaitRuntime {
         const results = await Promise.all(
             peerIds.map(async (peerId) => await this.waitForLane(peerId, laneId, options))
         );
+        const currentTarget = this.input.resolveRoomTransportTarget(pinnedRoom);
+        const currentPeerIds = new Set(currentTarget.transportState === 'halted' ? [] : currentTarget.peerIds);
+        const currentStatus = this.input.readStatus({ laneId });
+        const authorizedResults = results
+            .filter((result) => currentPeerIds.has(result.peerId))
+            .map((result) => this.recheckOpenLaneResult(result, currentStatus));
         return this.toRoomLaneResult({
             roomId,
             laneId,
-            ready: results.filter((result) => result.status === 'open'),
-            notReady: results.filter((result) => result.status !== 'open'),
+            ready: authorizedResults.filter((result) => result.status === 'open'),
+            notReady: authorizedResults.filter((result) => result.status !== 'open'),
             expectation,
             preferUnsatisfiedTerminalStatus: options.expect !== undefined
         });
     }
 
+    private recheckOpenLaneResult(
+        result: RallarRtcWaitForOpenResult,
+        status: RallarRtcStatus
+    ): RallarRtcWaitForOpenResult {
+        if (result.status !== 'open') {
+            return result;
+        }
+        const peer = status.peers.find((candidate) => candidate.peerId === result.peerId);
+        const lane = peer?.lanes.find((candidate) => candidate.laneId === result.laneId);
+        const current = { ...result, rtcStatus: status, peer, lane };
+        if (!peer) {
+            return { ...current, status: 'no-peer' };
+        }
+        if (!lane) {
+            return { ...current, status: 'no-lane' };
+        }
+        if (lane.isOpen && peer.isActive && !isRtcRoomPeerFailed(peer, result.laneId)) {
+            return current;
+        }
+        return {
+            ...current,
+            status: isClosedRtcLaneHealth(lane.channel) ? 'closed' : 'failed',
+            reason: 'RTC lane is no longer ready for the room.'
+        };
+    }
+
     private async waitForExistingLane(
         input: RallarRtcLaneRuntimeInput
     ): Promise<RallarRtcWaitForOpenResult> {
-        const peer = input.ctx.middleware.webRtcConnectionService.readPeer(input.peerId);
+        const peer = input.context.middleware.webRtcConnectionService.readPeer(input.peerId);
         if (!peer) {
             return this.toLaneWaitResult('no-peer', input);
         }
@@ -165,7 +197,7 @@ export class BrowserRtcWaitRuntime {
         input: RallarRtcLaneRuntimeInput
     ): Promise<RallarRtcWaitForOpenResult> {
         try {
-            const result = await input.ctx.middleware.webRtcConnectionService.ensurePeerLaneOpen(
+            const result = await input.context.middleware.webRtcConnectionService.ensurePeerLaneOpen(
                 input.peerId,
                 input.laneId,
                 {
@@ -182,12 +214,12 @@ export class BrowserRtcWaitRuntime {
                 reason: toPeerLaneOpenReason(result)
             });
         }
-        catch (error) {
+        catch (caught) {
             return this.toWaitForOpenResult({
                 status: 'failed',
                 peerId: input.peerId,
                 laneId: input.laneId,
-                reason: toErrorMessage(error)
+                reason: toError(caught).message
             });
         }
     }
@@ -198,15 +230,13 @@ export class BrowserRtcWaitRuntime {
         const readyPeerIds = uniquePeerIds(input.ready.map((result) => result.peerId));
         const notReadyPeerIds = uniquePeerIds(input.notReady.map((result) => result.peerId));
         const evaluation = evaluateRallarReadinessExpectation(readyPeerIds, input.expectation);
-        const waitStatus = toRtcRoomLaneWaitStatus(input.ready, input.notReady);
         return {
             transport: 'rtc',
             roomId: input.roomId,
             laneId: input.laneId,
-            status: toExpectationAwareRtcRoomLaneWaitStatus({
+            status: resolveRtcRoomLaneWaitStatus({
                 evaluation,
-                waitStatus,
-                readyPeerIds,
+                ready: input.ready,
                 notReady: input.notReady,
                 preferUnsatisfiedTerminalStatus: input.preferUnsatisfiedTerminalStatus
             }),
@@ -242,14 +272,12 @@ export class BrowserRtcWaitRuntime {
 
     private toLaneWaitResult(
         status: RallarWaitForOpenStatus,
-        target: RallarRtcLaneTarget,
-        reason?: string
+        target: RallarRtcLaneTarget
     ): RallarRtcWaitForOpenResult {
         return this.toWaitForOpenResult({
             status,
             peerId: target.peerId,
-            laneId: target.laneId,
-            reason
+            laneId: target.laneId
         });
     }
 }
@@ -282,13 +310,9 @@ function waitForRtcChannelOpenOrAbort(
             })
             .catch((error) => {
                 signal.removeEventListener('abort', onAbort);
-                reject(error);
+                reject(toError(error));
             });
     });
-}
-
-function toErrorMessage(error: Error['cause']): string {
-    return error instanceof Error ? error.message : String(error);
 }
 
 function toRallarWaitForOpenStatus(
@@ -310,74 +334,12 @@ function toRallarWaitForOpenStatus(
     }
 }
 
-function toRtcRoomLaneWaitStatus(
-    ready: readonly RallarRtcWaitForOpenResult[],
-    notReady: readonly RallarRtcWaitForOpenResult[]
-): RallarRtcRoomLaneWaitStatus {
-    if (ready.length === 0 && notReady.length === 0) {
-        return 'empty';
-    }
-    if (notReady.length === 0) {
-        return 'open';
-    }
-    if (ready.length > 0) {
-        return 'partial';
-    }
-    if (notReady.every((peer) => peer.status === 'not-connected')) {
-        return 'not-connected';
-    }
-    if (notReady.every((peer) => peer.status === 'timeout')) {
-        return 'timeout';
-    }
-    if (notReady.every((peer) => peer.status === 'aborted')) {
-        return 'aborted';
-    }
-    if (notReady.every((peer) => peer.status === 'failed')) {
-        return 'failed';
-    }
-    return 'not-ready';
-}
-
-function toExpectationAwareRtcRoomLaneWaitStatus(
-    input: RallarRtcExpectationWaitStatusInput
-): RallarRtcRoomLaneWaitStatus {
-    if (input.evaluation.status === 'over-capacity') {
-        return 'over-capacity';
-    }
-    if (input.evaluation.status === 'empty' && input.evaluation.expectedCount === 0) {
-        return 'empty';
-    }
-    if (input.evaluation.status === 'ready') {
-        return input.waitStatus === 'open'
-            ? 'open'
-            : input.readyPeerIds.length > 0
-            ? 'partial'
-            : 'empty';
-    }
-    if (!input.preferUnsatisfiedTerminalStatus) {
-        return input.waitStatus;
-    }
-    if (input.notReady.some((peer) => peer.status === 'failed')) {
-        return 'failed';
-    }
-    if (input.notReady.some((peer) => peer.status === 'aborted')) {
-        return 'aborted';
-    }
-    if (input.notReady.some((peer) => peer.status === 'timeout')) {
-        return 'timeout';
-    }
-    if (input.notReady.some((peer) => peer.status === 'not-connected')) {
-        return 'not-connected';
-    }
-    return input.waitStatus;
-}
-
 function toPeerLaneOpenReason(result: WebRtcConnectionService.PeerLaneOpenResult): string | undefined {
     if (result.status === 'open' || !result.error) {
         return undefined;
     }
     const cause = result.error.cause;
-    return cause !== undefined ? toErrorMessage(cause) : result.error.message;
+    return cause !== undefined ? toError(cause).message : result.error.message;
 }
 
 function uniquePeerIds(peerIds: readonly string[]): readonly string[] {

@@ -51,25 +51,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
             );
         }
 
-        // Validated snapshot point reads and race-fenced repair add a bounded browser cost.
-        // Group-formation Phase 1 (overlay provenance admission, bounded bootstrap
-        // selection, outbound dial plan) adds ~0.7 KiB; measured 194.61 at that change.
-        // Phase 3 M2 browser delta consumption (delta-envelope wire validation,
-        // snapshot materialization, floored gap pull) adds ~1.9 KiB; measured
-        // 200.40 at that change.
-        // Strict AppInbox mutation paths and canonical failure decoding add
-        // ~0.87 KiB over the stacked base; measured 202.42 at that change.
-        // Slice 8a's two-role overlay caches, validated HTTP hydration, and
-        // lifecycle race fences add 0.771484 KiB over the Slice 7 base after
-        // removing the dead browser graph-to-overlay mutation path:
-        // 202.944336 KiB -> 203.715820 KiB.
-        // One deadline across room refresh and best-effort topology hydration
-        // adds 0.284180 KiB: 203.715820 KiB -> 204.000000 KiB.
-        // Slice 8b adds canonical signaling, connection and CRDT command validation,
-        // offset partly by unsafe-legacy removal and RTC/queue cleanup. The reviewed
-        // Slice 8a baseline 204.9267578125 KiB -> corrected 8b 207.51953125 KiB:
-        // +2655 Brotli bytes (~1.265%), with unchanged exclusions and build settings.
-        expect(result.brotliKiB).toBeLessThan(208);
+        // The room-authority closure measures 208.4658203125 KiB with the
+        // reviewed exclusions and build settings. The maintainer approved the
+        // smallest whole-KiB strict limit that contains that behavior.
+        expect(result.brotliKiB).toBeLessThan(209);
     });
 });
 

@@ -1,22 +1,36 @@
-import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import { browserTransportRuntime, type BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarRealtimeHandler, RallarRealtimeMessage } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
 import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as OverlaysRepositoryModule from '@shared/repository/overlays-repository.ts';
+import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+
+import { createRoomTransportFixture, type RoomTransportFixture } from './create-room-transport-fixture.ts';
 import { createNativeRealtimeLaneFixture } from './native-realtime-lane-fixture.ts';
 
 const mocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
-    const ctx = createDefaultApiMiddlewareTestDouble();
+    const context = createDefaultApiMiddlewareTestDouble();
     return {
-        ctx,
+        context,
+        findAcceptedOverlayById: vi.fn<typeof OverlaysRepositoryModule.findAcceptedOverlayById>(),
         hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(async () => {}),
-        initialiseApiMiddleware: vi.fn<BrowserTransportRuntimePort['init']>(async () => ctx),
+        initialiseApiMiddleware: vi.fn<BrowserTransportRuntimePort['init']>(async () => context),
         onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(() => vi.fn()),
-        readSession: vi.fn<typeof AuthModule.readSession>(() => ctx.session),
+        readSession: vi.fn<typeof AuthModule.readSession>(() => context.session),
         findClientStateSnapshotByPrincipalId: vi.fn<typeof ClientStateSnapshotsRepositoryModule.findClientStateSnapshotByPrincipalId>(),
         getAllClientStateSnapshots: vi.fn<typeof ClientStateSnapshotsRepositoryModule.getAllClientStateSnapshots>(() => []),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn>(),
@@ -25,7 +39,7 @@ const mocks = await vi.hoisted(async () => {
     };
 });
 
-const connection = vi.mocked(mocks.ctx.middleware.webRtcConnectionService);
+const connection = vi.mocked(mocks.context.middleware.webRtcConnectionService);
 
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), (): Partial<typeof MiddlewareModule> => ({
     initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
@@ -49,16 +63,26 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), (): Pa
     getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
 }));
 
+vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOriginal) => ({
+    ...await importOriginal(),
+    findAcceptedOverlayById: mocks.findAcceptedOverlayById
+}));
+
+afterEach(() => {
+    browserTransportRuntime.shutdown();
+});
+
 beforeEach(() => {
     vi.clearAllMocks();
+    mocks.findAcceptedOverlayById.mockReturnValue(undefined);
     mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
     mocks.getAllClientStateSnapshots.mockReturnValue([]);
     mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
     mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
     mocks.getAllGroupStateSnapshots.mockReturnValue([]);
     mocks.hydrateStateCache.mockResolvedValue(undefined);
-    mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
-    mocks.readSession.mockReturnValue(mocks.ctx.session);
+    mocks.initialiseApiMiddleware.mockResolvedValue(mocks.context);
+    mocks.readSession.mockReturnValue(mocks.context.session);
     connection.activePeerIds.mockReturnValue([]);
     connection.knownPeerIds.mockReturnValue([]);
     connection.readyPeerIdsForLane.mockReturnValue([]);
@@ -88,6 +112,22 @@ describe('Rallar realtime send and listen', () => {
         expect(sendJson).toHaveBeenCalledWith({ x: 1 }, expect.objectContaining({ key: 'player-1' }));
         expect(lane.native.sent).toEqual([JSON.stringify({ x: 1 })]);
         expect(result).toEqual([{ peerId: 'peer-1', laneId: 'realtime', result: { status: 'sent', bufferedAmount: 0, key: 'player-1' } }]);
+    });
+
+    it('lets a JSON lane send roomId override its default roomRef', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const lane = await createNativeRealtimeLaneFixture('peer-1', 'realtime');
+        const fixture = createRoomTransportFixture({
+            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+            sessionIds: ['session-1', 'peer-1'],
+            acceptedPeerIds: ['peer-1'],
+            version: 1
+        });
+        mockRoomTransport(fixture);
+        connection.ensurePeerLaneOpen.mockResolvedValue({ status: 'open', peerId: 'peer-1', laneId: 'realtime', channel: lane.channel });
+        const json = createRallarFacade().realtime.json<PositionUpdate>({ roomRef: fixture.snapshot.group });
+        await expect(json.send({ x: 1 }, { roomId: 'other-room' })).resolves.toEqual([]);
+        expect(lane.native.sent).toEqual([]);
     });
 
     it('does not send realtime JSON before the requested lane opens', async () => {
@@ -260,4 +300,98 @@ describe('Rallar realtime send and listen', () => {
         }]);
         expect(lane.native.sent).toEqual([JSON.stringify({ x: 1 }), JSON.stringify({ x: 2 })]);
     });
+    it.each([
+        { format: 'JSON', change: 'halt' },
+        { format: 'binary', change: 'halt' },
+        { format: 'JSON', change: 'layout-removal' },
+        { format: 'binary', change: 'layout-removal' }
+    ])('reauthorizes $format room sends after lane opening when authority changes by $change', async ({ format, change }) => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const lane = await createNativeRealtimeLaneFixture('peer-1', 'realtime');
+        const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+        const fixture = createRoomTransportFixture({ roomRef, sessionIds: ['session-1', 'peer-1'], acceptedPeerIds: ['peer-1'], version: 1 });
+        mockRoomTransport(fixture);
+        const laneStarted = Promise.withResolvers<void>();
+        const laneCompletion = Promise.withResolvers<WebRtcConnectionService.PeerLaneOpenResult>();
+        connection.ensurePeerLaneOpen.mockImplementation(async () => {
+            laneStarted.resolve();
+            return await laneCompletion.promise;
+        });
+        const facade = createRallarFacade();
+        const pending = format === 'JSON'
+            ? facade.realtime.sendJson({ roomRef, peerIds: ['peer-1'], data: { x: 1 } })
+            : facade.realtime.sendBinary({ roomRef, peerIds: ['peer-1'], data: new Uint8Array([1, 2]) });
+        await laneStarted.promise;
+        mockRoomTransport(
+            change === 'halt'
+                ? { ...fixture, snapshot: { ...fixture.snapshot, group: { ...fixture.snapshot.group, transportState: 'halted' } } }
+                : createRoomTransportFixture({ roomRef, sessionIds: ['session-1', 'peer-1'], acceptedPeerIds: [], version: 2 })
+        );
+        laneCompletion.resolve({ status: 'open', peerId: 'peer-1', laneId: 'realtime', channel: lane.channel });
+        const results = await pending;
+        expect(results).toMatchObject([{ peerId: 'peer-1', result: { status: 'closed' } }]);
+        expect(lane.native.sent).toEqual([]);
+    });
+
+    it.each(['JSON', 'binary'])('pins a bare room scope before connecting and hydrates targets before the %s send', async (format) => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const lane = await createNativeRealtimeLaneFixture('peer-1', 'realtime');
+        const fixture = createRoomTransportFixture({
+            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+            sessionIds: ['session-1', 'peer-1'],
+            acceptedPeerIds: ['peer-1'],
+            version: 1
+        });
+        const connectStarted = Promise.withResolvers<void>();
+        const connectCompletion = Promise.withResolvers<void>();
+        mocks.initialiseApiMiddleware.mockImplementation(async () => {
+            connectStarted.resolve();
+            await connectCompletion.promise;
+            mockRoomTransport(fixture);
+            return mocks.context;
+        });
+        connection.ensurePeerLaneOpen.mockResolvedValue({ status: 'open', peerId: 'peer-1', laneId: 'realtime', channel: lane.channel });
+        const facade = createRallarFacade();
+        facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
+        const bytes = new Uint8Array([1, 2]);
+        const pending = format === 'JSON'
+            ? facade.realtime.sendJson({ roomId: 'room-1', data: { x: 1 } })
+            : facade.realtime.sendBinary({ roomId: 'room-1', data: bytes });
+        await connectStarted.promise;
+        facade.setDefaults({ applicationId: 'other-app', workspaceId: 'other-workspace' });
+        connectCompletion.resolve();
+        await expect(pending).resolves.toMatchObject([{ peerId: 'peer-1', result: { status: 'sent' } }]);
+        expect(lane.native.sent).toEqual([format === 'JSON' ? JSON.stringify({ x: 1 }) : bytes]);
+    });
+
+    it('does not let explicit peers bypass an unresolved or differently scoped room', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const lane = await createNativeRealtimeLaneFixture('peer-1', 'realtime');
+        const fixture = createRoomTransportFixture({
+            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+            sessionIds: ['session-1', 'peer-1'],
+            acceptedPeerIds: ['peer-1'],
+            version: 1
+        });
+        mockRoomTransport(fixture);
+        connection.ensurePeerLaneOpen.mockResolvedValue({ status: 'open', peerId: 'peer-1', laneId: 'realtime', channel: lane.channel });
+        const facade = createRallarFacade();
+        await expect(facade.realtime.sendJson({ roomId: 'unresolved-room', peerIds: ['peer-1'], data: { x: 1 } })).resolves.toEqual([]);
+        await expect(facade.realtime.sendJson({
+            roomRef: { ...fixture.snapshot.group, applicationId: 'other-app' },
+            peerIds: ['peer-1'],
+            data: { x: 2 }
+        })).resolves.toEqual([]);
+        expect(lane.native.sent).toEqual([]);
+    });
 });
+
+function mockRoomTransport(fixture: RoomTransportFixture): void {
+    const { snapshot, acceptedOverlay } = fixture;
+    mocks.getAllGroupStateSnapshots.mockReturnValue([snapshot]);
+    mocks.findGroupStateSnapshotByRef.mockImplementation((ref) => isSameGroupRef(snapshot.group, ref) ? snapshot : undefined);
+    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation((sessionId) =>
+        snapshot.activeSessions.some((session) => session.sessionId === sessionId) ? snapshot.group : undefined
+    );
+    mocks.findAcceptedOverlayById.mockImplementation((overlayId) => overlayId === acceptedOverlay.overlayId ? acceptedOverlay : undefined);
+}

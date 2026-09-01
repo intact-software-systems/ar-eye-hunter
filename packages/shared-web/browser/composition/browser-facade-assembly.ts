@@ -66,9 +66,6 @@ function createBrowserFacadeChannels(
     return {
         targeted: <T>(definition: RallarTargetedChannelDefinition) => realtimeTargeted.create<T>(definition),
         room: <T>(definition: Omit<RallarTargetedChannelDefinition, 'peerId' | 'peerIds'>) =>
-            realtimeTargeted.create<T>({
-                ...definition,
-                membership: definition.membership ?? 'live'
-            })
+            realtimeTargeted.create<T>(definition, true)
     };
 }

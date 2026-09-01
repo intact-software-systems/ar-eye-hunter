@@ -1,8 +1,19 @@
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDeferred } from '../browser-lifecycle-fixtures.ts';
+
 import { createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
-import { createChannelHealth, readRtcWaitMocks, resetRtcWaitTestRuntime } from './browser-rtc-wait-test-runtime.ts';
+import {
+    createChannelHealth,
+    readRtcWaitMocks,
+    resetRtcWaitTestRuntime
+} from './browser-rtc-wait-test-runtime.ts';
 
 const mocks = readRtcWaitMocks();
 
@@ -166,7 +177,7 @@ describe('Rallar RTC peer wait', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        const deferred = createDeferred<boolean>();
+        const deferred = Promise.withResolvers<boolean>();
         const channel = {
             readHealth: vi.fn(() =>
                 createChannelHealth({

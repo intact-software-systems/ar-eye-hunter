@@ -54,7 +54,7 @@ export interface RallarRealtimeSendResult {
     readonly result: RtcDataChannelSendResult;
 }
 
-export type RallarRealtimeJsonLaneSendOptions<T> = Omit<RallarRealtimeJsonSendInput<T>, 'data'>;
+export interface RallarRealtimeJsonLaneSendOptions<T> extends Omit<RallarRealtimeJsonSendInput<T>, 'data'> {}
 
 export interface RallarRealtimeJsonLane<T> {
     send(data: T, options?: RallarRealtimeJsonLaneSendOptions<T>): Promise<readonly RallarRealtimeSendResult[]>;
@@ -64,6 +64,7 @@ export interface RallarRealtimeJsonLane<T> {
 export type RallarRoomRealtimeSendStatus =
     | 'sent'
     | 'partial'
+    | 'halted'
     | 'not-ready'
     | 'no-targets'
     | 'failed';
@@ -124,9 +125,8 @@ export interface RallarTargetedChannelDefinition extends RallarTargetSelector {
     readonly openTimeoutMs?: number;
 }
 
-export type RallarTargetedChannelSendOptions<T> =
-    & RallarRealtimeJsonLaneSendOptions<T>
-    & RallarTargetSelector;
+export interface RallarTargetedChannelSendOptions<T>
+    extends RallarRealtimeJsonLaneSendOptions<T>, RallarTargetSelector {}
 
 export type RallarTargetedSendStatus =
     | 'sent'

@@ -1,10 +1,19 @@
+import { vi } from 'vitest';
+
+import type { OverlayInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
+import {
+    DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+    type QRtcPeerDto,
+    type WebRtcConnectionService
+} from '@shared/services/web-rtc-connection-service.ts';
 import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
-import { vi } from 'vitest';
+
 import type * as ContractModules from '../auth-session-contract-modules.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createNativeRealtimeLaneFixture } from '../realtime/native-realtime-lane-fixture.ts';
 
 interface ChannelHealthFixtureInput {
     readonly peerId: string;
@@ -20,6 +29,7 @@ interface GroupSnapshotScopeFixture {
 
 const CLIENT_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repository.client-state-snapshots';
 const GROUP_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repository.group-state-snapshots';
+const OVERLAY_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repository.accepted-overlays';
 
 const mocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import(
@@ -27,10 +37,13 @@ const mocks = await vi.hoisted(async () => {
     );
     const ctx = createDefaultApiMiddlewareTestDouble();
     const throwClientRepositoryMissing = (): never => {
-        throw new Error('Repository not found: shared.repository.client-state-snapshots');
+        throw new Error(CLIENT_REPOSITORY_MISSING_MESSAGE);
     };
     const throwGroupRepositoryMissing = (): never => {
-        throw new Error('Repository not found: shared.repository.group-state-snapshots');
+        throw new Error(GROUP_REPOSITORY_MISSING_MESSAGE);
+    };
+    const throwOverlayRepositoryMissing = (): never => {
+        throw new Error(OVERLAY_REPOSITORY_MISSING_MESSAGE);
     };
 
     return {
@@ -41,7 +54,7 @@ const mocks = await vi.hoisted(async () => {
         webSocketClient: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
         clearSession: vi.fn<ContractModules.Auth['clearSession']>(),
         hydrateStateCache: vi.fn<ContractModules.StateCacheLifecycle['browserStateCacheLifecycle']['hydrate']>(() => Promise.resolve()),
-        initialiseApiMiddleware: vi.fn<ContractModules.BrowserTransportRuntime['init']>(() => Promise.resolve(ctx)),
+        initialiseApiMiddleware: vi.fn<ContractModules.BrowserTransportRuntimePort['init']>(() => Promise.resolve(ctx)),
         createAndJoinStateGroup: vi.fn<ContractModules.RoomGroupStateWorkflows['createAndJoinStateGroup']>(
             () => Promise.reject(new Error('create not mocked'))
         ),
@@ -92,20 +105,25 @@ const mocks = await vi.hoisted(async () => {
         ),
         findGroupStateSnapshotByRef: vi.fn<ContractModules.GroupStateSnapshotsRepository['findGroupStateSnapshotByRef']>(throwGroupRepositoryMissing),
         getAllGroupStateSnapshots: vi.fn<ContractModules.GroupStateSnapshotsRepository['getAllGroupStateSnapshots']>(throwGroupRepositoryMissing),
+        findAcceptedOverlayById: vi.fn<ContractModules.OverlaysRepository['findAcceptedOverlayById']>(throwOverlayRepositoryMissing),
         writeSession: vi.fn<ContractModules.Auth['writeSession']>()
     };
 });
 
+const openedPeers = new Map<string, QRtcPeerDto>();
+
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
-    (): Partial<ContractModules.BrowserMiddlewareModule> => ({
+    async (importOriginal) => ({
+        ...await importOriginal(),
         initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
     })
 );
 
 vi.mock(
     import('@shared-web/browser/state-read/state-event-http-api.ts'),
-    (): Partial<ContractModules.StateEventHttpApi> => ({
+    async (importOriginal) => ({
+        ...await importOriginal(),
         listStateClientEventPage: mocks.listStateClientEventPage,
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
@@ -115,28 +133,33 @@ vi.mock(
 
 vi.mock(
     import('@shared-web/browser/auth/session-http-api.ts'),
-    (): Partial<ContractModules.AuthApi> => ({
+    async (importOriginal) => ({
+        ...await importOriginal(),
         loginToApi: mocks.loginToApi,
         logoutFromApi: mocks.logoutFromApi,
         registerWithApi: mocks.registerWithApi
     })
 );
 
-vi.mock(import('@shared-web/browser/rooms/room-group-state-workflows.ts'), (): Partial<ContractModules.RoomGroupStateWorkflows> => ({
+vi.mock(import('@shared-web/browser/rooms/room-group-state-workflows.ts'), async (importOriginal) => ({
+    ...await importOriginal(),
     createAndJoinStateGroup: mocks.createAndJoinStateGroup,
     joinStateGroup: mocks.joinStateGroup,
     leaveStateGroup: mocks.leaveStateGroup
 }));
-vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), (): Partial<ContractModules.RefreshStateSnapshots> => ({
+vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), async (importOriginal) => ({
+    ...await importOriginal(),
     refreshStateSnapshots: mocks.refreshStateSnapshots
 }));
-vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'), (): Partial<ContractModules.RoomMutationWorkflows> => ({
+vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'), async (importOriginal) => ({
+    ...await importOriginal(),
     updateStateGroupMetadata: mocks.updateStateGroupMetadata
 }));
 
 vi.mock(
     import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
-    (): Partial<ContractModules.StateCacheLifecycle> => ({
+    async (importOriginal) => ({
+        ...await importOriginal(),
         browserStateCacheLifecycle: {
             hydrate: mocks.hydrateStateCache,
             onChange: mocks.onCacheChange,
@@ -145,7 +168,8 @@ vi.mock(
     })
 );
 
-vi.mock(import('@shared/api/auth.ts'), (): Partial<ContractModules.Auth> => ({
+vi.mock(import('@shared/api/auth.ts'), async (importOriginal) => ({
+    ...await importOriginal(),
     clearSession: mocks.clearSession,
     isLoggedIn: vi.fn(() => true),
     readSession: mocks.readSession,
@@ -154,7 +178,8 @@ vi.mock(import('@shared/api/auth.ts'), (): Partial<ContractModules.Auth> => ({
 
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
-    (): Partial<ContractModules.ClientStateSnapshotsRepository> => ({
+    async (importOriginal) => ({
+        ...await importOriginal(),
         findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
         getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
     })
@@ -162,12 +187,18 @@ vi.mock(
 
 vi.mock(
     import('@shared/repository/group-state-snapshots-repository.ts'),
-    (): Partial<ContractModules.GroupStateSnapshotsRepository> => ({
+    async (importOriginal) => ({
+        ...await importOriginal(),
         findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
         findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
         getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
     })
 );
+
+vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOriginal) => ({
+    ...await importOriginal(),
+    findAcceptedOverlayById: mocks.findAcceptedOverlayById
+}));
 
 export function readRtcWaitMocks(): typeof mocks {
     return mocks;
@@ -180,6 +211,7 @@ export async function resetRtcWaitTestRuntime(): Promise<void> {
     vi.useRealTimers();
     mockClientRepositoryMissing();
     mockGroupRepositoryMissing();
+    mocks.findAcceptedOverlayById.mockReturnValue(undefined);
     mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
     mocks.initialiseApiMiddleware.mockResolvedValue(mocks.ctx);
     mocks.clearSession.mockImplementation(() => undefined);
@@ -207,10 +239,15 @@ export async function resetRtcWaitTestRuntime(): Promise<void> {
 }
 
 function resetRtcConnectionMocks(): void {
+    openedPeers.clear();
     mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes.mockReturnValue([]);
-    mocks.webRtcConnectionService.knownPeerIds.mockReturnValue([]);
-    mocks.webRtcConnectionService.activePeerIds.mockReturnValue([]);
-    mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
+    mocks.webRtcConnectionService.knownPeerIds.mockImplementation(() => [...openedPeers.keys()]);
+    mocks.webRtcConnectionService.activePeerIds.mockImplementation(() => [...openedPeers.keys()]);
+    mocks.webRtcConnectionService.readyPeerIdsForLane.mockImplementation((laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) =>
+        [...openedPeers.values()]
+            .filter((peer) => peer.channels.get(laneId)?.readHealth().readyState === 'open')
+            .map((peer) => peer.peerId)
+    );
     mocks.webRtcConnectionService.ensurePeerConnectionStarted.mockImplementation(
         (peerId) =>
             Either.ofLeft({
@@ -230,8 +267,14 @@ function resetRtcConnectionMocks(): void {
     mocks.webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(
         () => mocks.webRtcConnectionService
     );
-    mocks.webRtcConnectionService.readPeer.mockReturnValue(undefined);
+    mocks.webRtcConnectionService.readPeer.mockImplementation((peerId) => openedPeers.get(peerId));
     mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
+}
+
+export async function mockOpenRtcLane(peerId: string, laneId: string): Promise<WebRtcConnectionService.PeerLaneOpenResult> {
+    const fixture = await createNativeRealtimeLaneFixture(peerId, laneId);
+    openedPeers.set(peerId, fixture.peer);
+    return { status: 'open', peerId, laneId, peer: fixture.peer, channel: fixture.channel };
 }
 
 function resetRtcTransportMocks(): void {
@@ -266,7 +309,7 @@ export function createChannelHealth(
         state: input.state,
         role: 'Initiator',
         readyState: input.readyState,
-        binaryType: 'arraybuffer' as const,
+        binaryType: 'arraybuffer',
         bufferedAmount: 0,
         bufferedAmountLowThreshold: 0,
         queuedItemCount: 0,
@@ -276,7 +319,7 @@ export function createChannelHealth(
         flowControl: {
             highWatermarkBytes: 64 * 1024,
             lowWatermarkBytes: 16 * 1024,
-            overflow: 'drop-new' as const,
+            overflow: 'drop-new',
             maxQueueItems: 32
         },
         counters: {
@@ -310,7 +353,21 @@ export function mockGroupSnapshot(snapshot: GroupSnapshot): void {
     mockGroupSnapshots([snapshot]);
 }
 
-export function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
+export function mockAcceptedOverlay(
+    snapshot: GroupSnapshot,
+    nextHopSessionIds: readonly string[]
+): void {
+    mocks.findAcceptedOverlayById.mockImplementation((overlayId) =>
+        overlayId === toScopedOverlayId(snapshot.group)
+            ? createAcceptedOverlay(snapshot, nextHopSessionIds)
+            : undefined
+    );
+}
+
+export function mockGroupSnapshots(
+    snapshots: readonly GroupSnapshot[],
+    acceptedOverlays: readonly OverlayInfo[] = snapshots.map((snapshot) => createAcceptedOverlay(snapshot))
+): void {
     mocks.getAllGroupStateSnapshots.mockImplementation(() => [...snapshots]);
     mocks.findGroupStateSnapshotByRef.mockImplementation((ref) =>
         snapshots.find(
@@ -328,6 +385,7 @@ export function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
                 )
             )?.group
     );
+    mocks.findAcceptedOverlayById.mockImplementation((overlayId) => acceptedOverlays.find((overlay) => overlay.overlayId === overlayId));
 }
 
 export function createGroupSnapshot(
@@ -335,10 +393,45 @@ export function createGroupSnapshot(
     sessionIds: readonly string[],
     scope: GroupSnapshotScopeFixture = {}
 ): GroupSnapshot {
-    return createGroupSnapshotFixture({
+    const snapshot = createGroupSnapshotFixture({
         applicationId: scope.applicationId ?? 'app-1',
         workspaceId: scope.workspaceId ?? 'workspace-1',
         groupId,
         sessionIds
     });
+    return {
+        ...snapshot,
+        group: {
+            ...snapshot.group,
+            acceptedLayoutIdentity: {
+                ...snapshot.causalRevision,
+                version: 1,
+                state: 'active'
+            }
+        }
+    };
+}
+
+export function createAcceptedOverlay(
+    snapshot: GroupSnapshot,
+    nextHopSessionIds: readonly string[] = snapshot.activeSessions.map(({ sessionId }) => sessionId)
+): OverlayInfo {
+    const identity = snapshot.group.acceptedLayoutIdentity;
+    return {
+        sourceGroupStateCausalRevision: identity
+            ? { groupRevision: identity.groupRevision, presenceRevision: identity.presenceRevision }
+            : snapshot.causalRevision,
+        provenance: 'server',
+        state: 'active',
+        overlayId: toScopedOverlayId(snapshot.group),
+        groupRef: snapshot.group,
+        topology: 'tree',
+        name: snapshot.group.displayName,
+        createdByClientId: 'server',
+        createdAtEpochMs: 1,
+        nextHopSessionIds: [...nextHopSessionIds],
+        degreeLimit: 2,
+        overlayVersion: identity?.version ?? 1,
+        updatedAtEpochMs: 1
+    };
 }
