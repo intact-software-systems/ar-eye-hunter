@@ -105,6 +105,12 @@ export interface ALOutboundRepairAttemptSnapshot {
     readonly attempts: number;
 }
 
+export interface ALOutboundNotYetInSyncRetrySnapshot {
+    readonly msgId: string;
+    readonly attempts: number;
+    readonly pendingEffectId: string;
+}
+
 async function readAllValues<V>(
     provider: PersistenceProvider<string, V>
 ): Promise<V[]> {

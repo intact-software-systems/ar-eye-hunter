@@ -798,6 +798,49 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
+    it('counts retransmission rounds rather than duplicate not-yet-in-sync nack deliveries', async () => {
+        vi.useFakeTimers();
+
+        const sent: Array<OutboundTestPayload> = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            sendPreparedMessage: async (prepared, phase) => {
+                sent.push({ ...prepared, phase });
+            },
+            planOutgoingMessage: (msg) => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                retryTracking: {
+                    enabled: true,
+                    maxAttempts: 2,
+                    retryDelayMs: 50
+                }
+            })
+        });
+        const msg = createOutboundMessage('msg-duplicate-retry-budget');
+        const nack = () => newALNackControlMessage(
+            'server-1',
+            'self',
+            msg.id.msgId,
+            'not-yet-in-sync'
+        );
+
+        await enqueueOutboundOrThrow(runtime, msg);
+        await runtime.acceptControlMessage(nack());
+        await runtime.acceptControlMessage(nack());
+        await runtime.acceptControlMessage(nack());
+        await vi.advanceTimersByTimeAsync(50);
+
+        await runtime.acceptControlMessage(nack());
+        await vi.advanceTimersByTimeAsync(50);
+
+        expect(sent).toEqual([
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
+        ]);
+        runtime.dispose();
+    });
+
     it('reuses the prior outbox key when supersedence replaces a persisted message', async () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({

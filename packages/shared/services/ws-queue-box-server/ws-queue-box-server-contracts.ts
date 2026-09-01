@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import type { ALNackReason } from '../../al-contracts/al-control.ts';
 
 export interface WsServerResolvedRecipient {
     readonly peerId: string;
@@ -82,3 +83,18 @@ export type WsDeliveryDiagnosticsEvent =
     }>;
 
 export type WsDeliveryDiagnosticsSink = (event: WsDeliveryDiagnosticsEvent) => void;
+
+export type WsServerInboundAuthorization =
+    | Readonly<{ authorized: true; }>
+    | Readonly<{
+        authorized: false;
+        reason: ALNackReason;
+        logMessage: string;
+        sendNack: boolean;
+        serverSnapshotVersion?: number;
+    }>;
+
+export interface WsServerInboundAuthorizer {
+    authorize(message: ALMessage): Promise<WsServerInboundAuthorization>;
+    complete(message: ALMessage): void;
+}

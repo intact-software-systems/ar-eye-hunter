@@ -8,10 +8,12 @@ import {
 import { decodeALAdmissionResourceEntryKey } from '../al-admission-resource-entry-validation.ts';
 import { decodeALAdmissionRecord } from '../al-admission-value-validation.ts';
 import type {
+    ALOutboundNotYetInSyncRetrySnapshot,
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../al-runtime-state-stores.ts';
+import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 
 export function decodeALOutboundSentMessage(value: unknown, expectedMsgId: string): ALOutboundSentMessageSnapshot {
     const snapshot = decodeALAdmissionRecord(value, ['msgId', 'msg'], ['outboxKey', 'supersedenceKey']);
@@ -54,4 +56,27 @@ export function decodeALOutboundRepairAttempt(value: unknown, expectedMsgId: str
     }
     requirePersistedALSafeInteger(snapshot.attempts, 0, 'repair attempts');
     return value as ALOutboundRepairAttemptSnapshot;
+}
+
+export function decodeALOutboundNotYetInSyncRetry(
+    value: unknown,
+    expectedMsgId: string
+): ALOutboundNotYetInSyncRetrySnapshot {
+    const snapshot = decodeALAdmissionRecord(value, ['msgId', 'attempts', 'pendingEffectId']);
+    requirePersistedALNonEmptyString(snapshot.msgId, 'not-yet-in-sync retry message id');
+    if (snapshot.msgId !== expectedMsgId) {
+        throw new TypeError('Persisted AL not-yet-in-sync retry identity does not match its slot');
+    }
+    requirePersistedALSafeInteger(snapshot.attempts, 1, 'not-yet-in-sync retry attempts');
+    requirePersistedALNonEmptyString(snapshot.pendingEffectId, 'not-yet-in-sync retry effect id');
+    const expectedEffectId = toALOutboundEffectId([
+        'nack-retry',
+        expectedMsgId,
+        'not-yet-in-sync',
+        snapshot.attempts as number
+    ]);
+    if (snapshot.pendingEffectId !== expectedEffectId) {
+        throw new TypeError('Persisted AL not-yet-in-sync retry effect identity does not match its snapshot');
+    }
+    return value as ALOutboundNotYetInSyncRetrySnapshot;
 }

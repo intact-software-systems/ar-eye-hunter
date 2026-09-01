@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
+import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
+import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
 import { ALOutboundMessageRuntime, InMemoryQueueBox, newALAckControlMessage, newALNackControlMessage } from '@shared/mod.ts';
 
 import {
@@ -63,6 +65,64 @@ describe('AL outbound durable effect lifecycle', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
         runtime2.dispose();
+    });
+
+    it('drains a repair effect committed while the current drain is finishing', async () => {
+        const sent: Array<OutboundTestPayload> = [];
+        const admissionStore = createDefaultOutboundTestAdmissionStore();
+        const emptyRead = Promise.withResolvers<void>();
+        const releaseEmptyRead = Promise.withResolvers<void>();
+        const controlStored = Promise.withResolvers<void>();
+        const msg = createOutboundMessage('msg-control-during-empty-read');
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: { admissionStore },
+            sendPreparedMessage: async (prepared, phase) => {
+                sent.push({ ...prepared, phase });
+            },
+            planOutgoingMessage: (plannedMsg) => ({
+                persist: false,
+                preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
+                repairTracking: {
+                    enabled: true,
+                    algo: 'retransmit',
+                    maxAttempts: 1
+                }
+            }),
+            planRepairMessage: async (plannedMsg, request) => ({
+                persist: false,
+                preparedMessages: [{ kind: 'repair', msgId: plannedMsg.id.msgId, trigger: request.trigger }]
+            })
+        });
+        await runtime.ready();
+        const readNextReadyAt = admissionStore.peekNextEffectReadyAt.bind(admissionStore);
+        const acceptControlMessage = admissionStore.acceptControlMessage.bind(admissionStore);
+        vi.spyOn(admissionStore, 'peekNextEffectReadyAt').mockImplementation(async (decodePrepared) => {
+            const readyAt = await readNextReadyAt(decodePrepared);
+            emptyRead.resolve();
+            await releaseEmptyRead.promise;
+            return readyAt;
+        });
+        vi.spyOn(admissionStore, 'acceptControlMessage').mockImplementation(async (message, decodePrepared) => {
+            const acceptance = await acceptControlMessage(message, decodePrepared);
+            controlStored.resolve();
+            return acceptance;
+        });
+
+        const enqueue = enqueueOutboundOrThrow(runtime, msg);
+        await emptyRead.promise;
+        const acceptControl = runtime.acceptControlMessage(
+            newALNackControlMessage('peer-1', 'self', msg.id.msgId, 'gap')
+        );
+        await controlStored.promise;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        releaseEmptyRead.resolve();
+        await Promise.all([enqueue, acceptControl]);
+
+        expect(sent).toEqual([
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+            { kind: 'repair', msgId: msg.id.msgId, trigger: 'nack', phase: 'immediate' }
+        ]);
+        runtime.dispose();
     });
 
     it('replays a sent effect when completion fails after transport send', async () => {
@@ -347,16 +407,26 @@ describe('AL outbound durable effect lifecycle', () => {
         const admissionStore = createDefaultOutboundTestAdmissionStore();
         const sent: string[] = [];
         const msg = createOutboundMessage('pending-before-dispose');
+        const prepared = { kind: 'send', msgId: msg.id.msgId } as const;
+        const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
         const payload = {
             kind: 'send-prepared',
             msg,
-            prepared: { kind: 'send', msgId: msg.id.msgId },
+            prepared,
+            preparedFingerprint,
             phase: 'immediate'
         } as const;
+        const effectId = toALOutboundEffectId([
+            'send',
+            msg.id.msgId,
+            'immediate',
+            0,
+            preparedFingerprint
+        ]);
         await admissionStore.commitBundle({
             senderId: 'self',
             mutations: [],
-            durableEffects: [{ effectId: 'pending-before-dispose', payload }]
+            durableEffects: [{ effectId, payload }]
         }, decodeOutboundTestPayload);
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore },

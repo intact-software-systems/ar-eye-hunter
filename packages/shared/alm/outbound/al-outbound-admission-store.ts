@@ -14,11 +14,13 @@ import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-admission-backend.ts';
 import { decodeALAdmissionClientRecord, decodeALAdmissionSupersedenceValue } from '../al-admission-value-validation.ts';
 import type {
+    ALOutboundNotYetInSyncRetrySnapshot,
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../al-runtime-state-stores.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
+import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../ALStoreRetention.ts';
 import { acceptALSupersedenceObservation } from '../compute-al-supersedence-observation.ts';
@@ -29,6 +31,7 @@ import {
     type RescheduleALOutboundEffectInput
 } from './al-outbound-admission-effect-store.ts';
 import {
+    decodeALOutboundNotYetInSyncRetry,
     decodeALOutboundPendingAck,
     decodeALOutboundRepairAttempt,
     decodeALOutboundSentMessage
@@ -170,6 +173,7 @@ export type ALOutboundDurableEffect<TPrepared> =
         kind: 'send-prepared';
         msg: ALMessage;
         prepared: TPrepared;
+        preparedFingerprint: string;
         phase: ALOutboundDispatchPhase;
     }>
     | Readonly<{
@@ -229,6 +233,21 @@ export interface ALOutboundControlAcceptance {
     readonly handled: boolean;
 }
 
+export interface ALOutboundNotYetInSyncRetrySchedule<TPrepared> {
+    readonly senderId: string;
+    readonly expectedVersion: number | undefined;
+    readonly msgId: string;
+    readonly maxAttempts: number;
+    readonly expireAtTimestamp: number | undefined;
+    readonly createEffect: (attempt: number) => ALOutboundDurableEffectWrite<TPrepared>;
+}
+
+export type ALOutboundNotYetInSyncRetryScheduleResult =
+    | Readonly<{ status: 'scheduled'; retryAtMs: number; }>
+    | Readonly<{ status: 'pending'; retryAtMs: number; }>
+    | Readonly<{ status: 'exhausted'; }>
+    | Readonly<{ status: 'conflict'; }>;
+
 export interface ALOutboundAdmissionStore extends ALReadyable {
     readOutgoingMessage<TPrepared>(
         msg: ALMessage,
@@ -255,6 +274,11 @@ export interface ALOutboundAdmissionStore extends ALReadyable {
         msg: ALMessage,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<ALOutboundControlAcceptance>;
+
+    scheduleNotYetInSyncRetry<TPrepared>(
+        schedule: ALOutboundNotYetInSyncRetrySchedule<TPrepared>,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    ): Promise<ALOutboundNotYetInSyncRetryScheduleResult>;
 
     claimReadyEffects<TPrepared>(
         input: ClaimALOutboundEffectsInput,
@@ -473,6 +497,78 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         return await this.controlStore.acceptControlMessage(msg, decodePrepared);
     }
 
+    async scheduleNotYetInSyncRetry<TPrepared>(
+        schedule: ALOutboundNotYetInSyncRetrySchedule<TPrepared>,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    ): Promise<ALOutboundNotYetInSyncRetryScheduleResult> {
+        try {
+            return await this.backend.write(async (tx) => {
+                const current = await tx.read(
+                    this.toVersionKey(schedule.senderId),
+                    (value) => decodeALAdmissionClientRecord(value, schedule.senderId)
+                );
+                if (current?.version !== schedule.expectedVersion) {
+                    return { status: 'conflict' };
+                }
+
+                const retry = await tx.read(
+                    this.toNotYetInSyncRetryKey(schedule.msgId),
+                    (value) => decodeALOutboundNotYetInSyncRetry(value, schedule.msgId)
+                );
+                if (retry) {
+                    const pending = await this.effectStore.readEffect(
+                        tx,
+                        retry.pendingEffectId,
+                        decodePrepared
+                    );
+                    if (pending) {
+                        if (
+                            pending.payload.kind !== 'nack-retry' ||
+                            pending.payload.msgId !== schedule.msgId
+                        ) {
+                            throw new ALAdmissionCorruptionError(
+                                this.toNotYetInSyncRetryKey(schedule.msgId),
+                                new TypeError(
+                                    'Persisted AL not-yet-in-sync retry snapshot points to another effect'
+                                )
+                            );
+                        }
+                        return { status: 'pending', retryAtMs: pending.retryAtMs };
+                    }
+                }
+
+                const attempts = retry?.attempts ?? 0;
+                if (attempts >= schedule.maxAttempts) {
+                    return { status: 'exhausted' };
+                }
+
+                const nextAttempt = attempts + 1;
+                const effect = schedule.createEffect(nextAttempt);
+                await this.effectStore.persistEffect(tx, effect, decodePrepared);
+                await tx.set(
+                    this.toNotYetInSyncRetryKey(schedule.msgId),
+                    {
+                        msgId: schedule.msgId,
+                        attempts: nextAttempt,
+                        pendingEffectId: effect.effectId
+                    } satisfies ALOutboundNotYetInSyncRetrySnapshot,
+                    resolveExpireAtTimestampWithFallback(
+                        schedule.expireAtTimestamp,
+                        this.retention.repairAttemptTtlMs
+                    )
+                );
+                await this.bumpVersion(tx, schedule.senderId, current?.version);
+                return { status: 'scheduled', retryAtMs: effect.retryAtMs ?? Date.now() };
+            });
+        }
+        catch (error) {
+            if (error instanceof ALAdmissionBackendConflictError) {
+                return { status: 'conflict' };
+            }
+            throw error;
+        }
+    }
+
     async claimReadyEffects<TPrepared>(
         input: ClaimALOutboundEffectsInput,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
@@ -618,6 +714,10 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
 
     private toRepairAttemptKey(msgId: string): string {
         return `${this.namespace}:repair-attempt:${msgId}`;
+    }
+
+    private toNotYetInSyncRetryKey(msgId: string): string {
+        return `${this.namespace}:not-yet-in-sync-retry:${msgId}`;
     }
 
     private toSupersedenceLatestKey(key: string): string {

@@ -316,12 +316,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return false;
         }
 
-        if (!this.effectDrain.isRunning) {
-            await this.effectDrain.drain();
-        }
-        else if (acceptance.retryAtMs !== undefined) {
+        if (acceptance.retryAtMs !== undefined) {
             this.effectDrain.scheduleAt(acceptance.retryAtMs);
         }
+        await this.effectDrain.requestCommittedDrain();
         return true;
     }
 

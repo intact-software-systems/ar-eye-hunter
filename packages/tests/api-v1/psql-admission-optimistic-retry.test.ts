@@ -148,6 +148,35 @@ describe('PSql admission optimistic retry', () => {
         }, decodeALOutboundPreparedMessage)).resolves.toBe('conflict');
     });
 
+    it('translates an outbound retry-schedule CAS loss to the owner conflict result', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const namespace = 'psql-test:outbound:retry-apply-conflict';
+        const store = createALOutboundAdmissionStore({
+            namespace,
+            backend: new PSqlOutboundAdmissionBackend(repository, namespace),
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention()
+        });
+        repository.conflictNextConditionalWrite = true;
+
+        await expect(store.scheduleNotYetInSyncRetry({
+            senderId: 'self',
+            expectedVersion: undefined,
+            msgId: 'outbound-retry-conflict',
+            maxAttempts: 1,
+            expireAtTimestamp: Date.now() + 60_000,
+            createEffect: (attempt) => ({
+                effectId: `nack-retry:outbound-retry-conflict:not-yet-in-sync:${attempt}`,
+                expireAtTimestamp: Date.now() + 60_000,
+                payload: {
+                    kind: 'nack-retry',
+                    msgId: 'outbound-retry-conflict',
+                    reason: 'not-yet-in-sync'
+                }
+            })
+        }, decodeALOutboundPreparedMessage)).resolves.toEqual({ status: 'conflict' });
+    });
+
     it('does not translate an unexpected outbound apply failure into a conflict', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:outbound:apply-error';

@@ -4,6 +4,8 @@ import { PSqlInboundAdmissionBackend } from '@shared-server/al-runtime/postgres/
 import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-outbound-admission-backend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
+import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
 import {
     createALInboundAdmissionStore,
     createALOutboundAdmissionStore,
@@ -164,11 +166,18 @@ describe('PSqlOutboundAdmissionBackend', () => {
             retention: normalizeALRuntimeStoreRetention()
         });
         const msg = createOutboundMessage('msg-outbound-1');
-        const effectId = `send:${msg.id.msgId}`;
         const prepared = {
             kind: 'send',
             msgId: msg.id.msgId
         } satisfies TestPreparedOutboundSend;
+        const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
+        const effectId = toALOutboundEffectId([
+            'send',
+            msg.id.msgId,
+            'immediate',
+            0,
+            preparedFingerprint
+        ]);
 
         const status = await store.commitBundle({
             senderId: 'self',
@@ -188,6 +197,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
                         kind: 'send-prepared',
                         msg,
                         prepared,
+                        preparedFingerprint,
                         phase: 'immediate'
                     }
                 }

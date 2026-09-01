@@ -1,4 +1,5 @@
 import { toError } from '../../resilience/to-error.ts';
+import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALInboundAdmissionStore } from './al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
@@ -18,6 +19,7 @@ export class ALInboundDurableEffectWorker {
     private effectDrainPromise: Promise<void> | undefined;
     private cancelEffectDrain: (() => void) | undefined;
     private bootstrappedEffects = false;
+    private effectDrainRequested = false;
     private disposed = false;
 
     constructor(dependencies: ALInboundDurableEffectWorker.Dependencies) {
@@ -32,7 +34,7 @@ export class ALInboundDurableEffectWorker {
         }
     }
 
-    getRunning(): boolean {
+    hasActiveDrain(): boolean {
         return this.effectDrainPromise !== undefined;
     }
 
@@ -52,20 +54,42 @@ export class ALInboundDurableEffectWorker {
         if (this.disposed) {
             return Promise.resolve();
         }
+        this.effectDrainRequested = true;
         if (!this.effectDrainPromise) {
             this.cancelEffectDrain?.();
             this.cancelEffectDrain = undefined;
 
-            this.effectDrainPromise = this.runDurableEffectDrainLoop()
+            this.effectDrainPromise = this.runRequestedEffectDrains()
                 .catch((error) => {
+                    if (error instanceof ALAdmissionCorruptionError) {
+                        throw error;
+                    }
                     console.error('Inbound durable effect drain failed', error);
+                    if (!this.disposed) {
+                        this.scheduleEffectDrainAt(
+                            this.dependencies.clock.nowMs() + this.toEffectRetryDelayMs(0)
+                        );
+                    }
                 })
                 .finally(() => {
                     this.effectDrainPromise = undefined;
                 });
         }
 
-        return this.effectDrainPromise;
+        return this.effectDrainPromise.then(async () => {
+            if (this.effectDrainRequested && !this.disposed) {
+                await this.start();
+            }
+        });
+    }
+
+    private async runRequestedEffectDrains(): Promise<void> {
+        while (!this.disposed && this.effectDrainRequested) {
+            this.effectDrainRequested = false;
+            this.cancelEffectDrain?.();
+            this.cancelEffectDrain = undefined;
+            await this.runDurableEffectDrainLoop();
+        }
     }
 
     private async runDurableEffectDrainLoop(): Promise<void> {

@@ -75,6 +75,17 @@ export class ALOutboundAdmissionEffectStore {
         );
     }
 
+    async readEffect<TPrepared>(
+        tx: ALAdmissionWriteContext,
+        effectId: string,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    ): Promise<ALPersistedOutboundEffect<TPrepared> | undefined> {
+        return await tx.read(
+            this.toEffectKey(effectId),
+            (value) => decodeALOutboundEffect(value, effectId, decodePrepared)
+        );
+    }
+
     async claimReadyEffects<TPrepared>(
         input: ClaimALOutboundEffectsInput,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>

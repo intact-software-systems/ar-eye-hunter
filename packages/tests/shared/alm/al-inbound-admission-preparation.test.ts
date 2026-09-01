@@ -93,7 +93,13 @@ describe('inbound admission preparation boundary', () => {
                 {
                     effectId: 'nack',
                     expireAtTimestamp: undefined,
-                    payload: { kind: 'send-nack' as const, toPeerId: 'sender', msgId: message.id.msgId, reason: 'gap' as const, ordering }
+                    payload: {
+                        kind: 'send-nack' as const,
+                        toPeerId: 'sender',
+                        msgId: message.id.msgId,
+                        reason: 'gap' as const,
+                        ordering
+                    }
                 },
                 {
                     effectId: 'repair',

@@ -22,7 +22,7 @@ export function decodeALAdmissionString(value: unknown): string {
 }
 
 export function decodeALAdmissionNumber(value: unknown): number {
-    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) {
         throw new TypeError('Stored admission counter or timestamp is invalid');
     }
     return value;

@@ -23,6 +23,7 @@ import {
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
+import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import {
     IndexedDbStringPersistenceProvider,
     newALUnicastMessage,
@@ -201,6 +202,27 @@ describe('Browser AL runtime IndexedDB stores', () => {
         expect(await readBrowserALRuntimeEntryKeys('custom:outside-browser-al-runtime')).toEqual([
             'custom:outside-browser-al-runtime:expired'
         ]);
+    });
+
+    it.each([
+        { label: 'missing expiry', expireAtTimestamp: undefined },
+        { label: 'non-finite expiry', expireAtTimestamp: Number.NaN },
+        { label: 'negative expiry', expireAtTimestamp: -1 },
+        { label: 'negative-zero expiry', expireAtTimestamp: -0 }
+    ])('preserves a corrupt browser admission row with $label', async ({ expireAtTimestamp }) => {
+        const sessionId = `corrupt-cleanup-${crypto.randomUUID()}`;
+        configureBrowserALRuntimeStores(sessionId);
+        await resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.ready();
+        const key = `${toBrowserOutboundSentPrefix(toBrowserWsClientALRuntimeStoreId(sessionId))}:corrupt`;
+        await putRawBrowserALRuntimeEntry({
+            key,
+            value: { msgId: 'corrupt' },
+            ...(expireAtTimestamp === undefined ? {} : { expireAtTimestamp })
+        });
+
+        await expect(deleteExpiredBrowserALRuntimeEntriesForSession(sessionId))
+            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        expect(await readBrowserALRuntimeEntryKeys(key)).toEqual([key]);
     });
 
     it('can delete expired rows only for one browser session', async () => {
@@ -466,6 +488,22 @@ async function readBrowserALRuntimeEntryKeys(
 
                 cursor.continue();
             };
+        });
+    }
+    finally {
+        db.close();
+    }
+}
+
+async function putRawBrowserALRuntimeEntry(entry: object): Promise<void> {
+    const db = await openBrowserALRuntimeDatabase();
+    try {
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(BROWSER_AL_RUNTIME_STORE_NAME, 'readwrite');
+            tx.oncomplete = () => resolve();
+            tx.onabort = () => reject(tx.error ?? new Error('IndexedDB raw write aborted'));
+            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB raw write failed'));
+            tx.objectStore(BROWSER_AL_RUNTIME_STORE_NAME).put(entry);
         });
     }
     finally {

@@ -11,10 +11,13 @@ import type {
 import {
     AL_CONTROL_NACK_TYPE_ID,
     ALMessage,
+    ConnectionContext,
     createDefaultWsQueueBoxServerService,
     InMemoryQueueBox,
+    JsonWebSocketServer,
     newALBroadcastMessage,
     newALRoute,
+    parseALControlMessage,
     type ALNackPayload,
     type WsServerTargetResolver
 } from '@shared/mod.ts';
@@ -284,6 +287,49 @@ describe('RallarServerWsRouter', () => {
             warn.mockRestore();
         }
     });
+
+    it('rejects a stale room snapshot before AL admission without acknowledging the message', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            const snapshot = createGroupSnapshot('room-1', ['peer-1'], 3);
+            const { router, socket } = createIngressRouter({
+                authorizeRoomMessage: createGroupRoomWsAuthorizer({
+                    readGroupSnapshot: () => snapshot,
+                    readPreActivationAppData: () => 'allowed',
+                    nowEpochMs: Date.now
+                })
+            });
+            router.install();
+            const message = newALBroadcastMessage(
+                'peer-1',
+                newALRoute('room.chat', 'room-1', 'msg-pre-admission'),
+                'room',
+                'chat.message.v1',
+                { text: 'too new' },
+                {
+                    groupRef: snapshot.group,
+                    minSnapshotVersion: 4,
+                    reliability: 'at-least-once',
+                    ack: 'receiver'
+                }
+            );
+
+            await socket.receive(message);
+
+            expect(socket.sent).toHaveLength(1);
+            expect(parseALControlMessage(socket.sent[0])).toMatchObject({
+                type: 'nack',
+                payload: {
+                    msgId: message.id.msgId,
+                    reason: 'not-yet-in-sync',
+                    serverSnapshotVersion: 3
+                }
+            });
+        }
+        finally {
+            warn.mockRestore();
+        }
+    });
 });
 
 describe('RallarServer.ws.publish current behavior', () => {
@@ -524,6 +570,79 @@ function createRouter(
         inbox,
         outbox
     };
+}
+
+function createIngressRouter(
+    options: ConstructorParameters<typeof RallarServerWsRouter>[1]
+) {
+    const server = new JsonWebSocketServer();
+    const socket = new RouterIngressWebSocket();
+    server.addConnection(new ConnectionContext('conn-1', socket));
+    const service = createDefaultWsQueueBoxServerService({
+        inbox: new InMemoryQueueBox(new Map()),
+        outbox: new InMemoryQueueBox(new Map()),
+        socket: server,
+        name: 'server-1',
+        targetResolver: {
+            resolvePeerIdForConnection: () => 'peer-1',
+            resolvePeerRecipients: (peerId) => peerId === 'peer-1'
+                ? [{ peerId, connectionId: 'conn-1' }]
+                : [],
+            resolveBroadcastRecipients: () => []
+        }
+    });
+    return { router: new RallarServerWsRouter(service, options), socket };
+}
+
+class RouterIngressWebSocket extends EventTarget implements WebSocket {
+    readonly CONNECTING = WebSocket.CONNECTING;
+    readonly OPEN = WebSocket.OPEN;
+    readonly CLOSING = WebSocket.CLOSING;
+    readonly CLOSED = WebSocket.CLOSED;
+    readonly binaryType: BinaryType = 'blob';
+    readonly bufferedAmount = 0;
+    readonly extensions = '';
+    readonly protocol = '';
+    readonly readyState = WebSocket.OPEN;
+    readonly url = 'ws://router-ingress-test';
+    onclose = null;
+    onerror = null;
+    onmessage = null;
+    onopen = null;
+    readonly sent: ALMessage[] = [];
+    private readonly messageListeners: EventListenerOrEventListenerObject[] = [];
+
+    override addEventListener(
+        type: string,
+        callback: EventListenerOrEventListenerObject | null,
+        options?: boolean | AddEventListenerOptions
+    ): void {
+        super.addEventListener(type, callback, options);
+        if (type === 'message' && callback !== null) {
+            this.messageListeners.push(callback);
+        }
+    }
+
+    close(): void {}
+
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+        if (typeof data !== 'string') {
+            throw new TypeError('Router ingress test expects JSON text');
+        }
+        this.sent.push(JSON.parse(data) as ALMessage);
+    }
+
+    async receive(message: ALMessage): Promise<void> {
+        const event = new MessageEvent('message', { data: JSON.stringify(message) });
+        for (const listener of this.messageListeners) {
+            if (typeof listener === 'function') {
+                await listener.call(this, event);
+            }
+            else {
+                await listener.handleEvent(event);
+            }
+        }
+    }
 }
 
 function createPublicRouterFixture(

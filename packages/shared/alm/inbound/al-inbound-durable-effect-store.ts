@@ -2,8 +2,10 @@ import { decodePersistedALMessage } from '../../al-contracts/al-message-persiste
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import type { ALAdmissionBackend, ALAdmissionWriteContext } from '../al-admission-backend.ts';
+import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../ALStoreRetention.ts';
+import { jsonEquals } from '../../repository/state-utils.ts';
 import type {
     ALInboundDeliveryPredecessor,
     ALInboundDurableEffect,
@@ -211,6 +213,12 @@ export class ALInboundDurableEffectStore {
 
         const existing = await tx.read(key, (value) => decodeALPersistedInboundEffect(value, effect.effectId));
         if (existing) {
+            if (!jsonEquals(existing.payload, effect.payload)) {
+                throw new ALAdmissionCorruptionError(
+                    key,
+                    new TypeError('Stored inbound durable effect payload does not match its identity')
+                );
+            }
             return;
         }
 

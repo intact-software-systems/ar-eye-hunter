@@ -27,6 +27,8 @@ import type {
     ALOutboundRepairHint,
     ALPersistedOutboundEffect
 } from './al-outbound-admission-store.ts';
+import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
+import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 
 type StoredALOutboundDurableEffect<TPrepared> =
     | Readonly<{
@@ -41,6 +43,13 @@ type StoredALOutboundDurableEffect<TPrepared> =
         entry: StoredALAdmissionResourceEntry;
     }>
     | Exclude<ALOutboundDurableEffect<TPrepared>, { kind: 'enqueue-outbox' | 'fallback-dispatch'; }>;
+
+interface RequireALOutboundSendEffectIdentityInput {
+    readonly effectId: string;
+    readonly msgId: string;
+    readonly phase: 'dequeue' | 'immediate';
+    readonly preparedFingerprint: string;
+}
 
 export interface StoredALPersistedOutboundEffect<TPrepared>
     extends Omit<ALPersistedOutboundEffect<TPrepared>, 'payload'> {
@@ -96,28 +105,65 @@ export function decodeALOutboundEffect<TPrepared>(
     if (effect.status === 'pending' && (effect.leaseOwner !== undefined || effect.leaseUntilMs !== undefined)) {
         throw new TypeError('Persisted AL pending outbound effect retains a lease');
     }
-    const payload = decodeALOutboundEffectPayload(effect.payload, decodePrepared);
+    const payload = decodeALOutboundEffectPayload(effect.payload, effect.effectId, decodePrepared);
     return { ...effect, payload } as ALPersistedOutboundEffect<TPrepared>;
 }
 
 export function decodeALOutboundPreparedMessage(value: unknown, msg: ALMessage): ALMessage {
     const prepared = decodePersistedALMessageValue(value);
-    if (
-        !jsonEquals(prepared.id, msg.id) || !jsonEquals(prepared.route, msg.route) ||
-        !jsonEquals(prepared.targets, msg.targets) || !jsonEquals(prepared.payload, msg.payload)
-    ) {
+    if (!isPreparedTransportCopy(prepared, msg)) {
         throw new TypeError('Persisted AL prepared message does not match its outbound message');
     }
     return prepared;
 }
 
+function isPreparedTransportCopy(prepared: ALMessage, source: ALMessage): boolean {
+    const sourceAuthority = {
+        ...source,
+        forwarding: undefined,
+        constraints: undefined,
+        diagnostics: undefined
+    };
+    const preparedAuthority = {
+        ...prepared,
+        forwarding: undefined,
+        constraints: undefined,
+        diagnostics: undefined
+    };
+    if (!jsonEquals(preparedAuthority, sourceAuthority)) {
+        return false;
+    }
+    if (prepared.forwarding?.fanoutLimit !== source.forwarding?.fanoutLimit) {
+        return false;
+    }
+    if (
+        source.forwarding?.overlayId !== undefined &&
+        prepared.forwarding?.overlayId !== source.forwarding.overlayId
+    ) {
+        return false;
+    }
+    if (prepared.constraints?.expiresAtMs !== source.constraints?.expiresAtMs) {
+        return false;
+    }
+    const sourceTtl = source.constraints?.ttlHops;
+    const preparedTtl = prepared.constraints?.ttlHops;
+    if (preparedTtl !== sourceTtl && (sourceTtl === undefined || preparedTtl !== sourceTtl - 1)) {
+        return false;
+    }
+    const sourceVisited = source.diagnostics?.visitedPeerIds ?? [];
+    const preparedVisited = prepared.diagnostics?.visitedPeerIds ?? [];
+    return sourceVisited.every((peerId, index) => preparedVisited[index] === peerId);
+}
+
 function decodeALOutboundEffectPayload<TPrepared>(
     value: unknown,
+    effectId: string,
     decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
 ): ALOutboundDurableEffect<TPrepared> {
     const payload = decodeALAdmissionRecord(value, ['kind'], [
         'msg',
         'prepared',
+        'preparedFingerprint',
         'phase',
         'entry',
         'replaceExisting',
@@ -127,15 +173,26 @@ function decodeALOutboundEffectPayload<TPrepared>(
     ]);
     switch (payload.kind) {
         case 'send-prepared': {
-            decodeALAdmissionRecord(value, ['kind', 'msg', 'prepared', 'phase']);
+            decodeALAdmissionRecord(value, ['kind', 'msg', 'prepared', 'preparedFingerprint', 'phase']);
             const msg = decodePersistedALMessageValue(payload.msg);
+            requirePersistedALNonEmptyString(payload.preparedFingerprint, 'prepared message fingerprint');
+            if (payload.preparedFingerprint !== toALOutboundPreparedFingerprint(payload.prepared)) {
+                throw new TypeError('Persisted AL prepared message fingerprint does not match its payload');
+            }
             if (payload.phase !== 'immediate' && payload.phase !== 'dequeue') {
                 throw new TypeError('Persisted AL outbound send phase is invalid');
             }
+            requireALOutboundSendEffectIdentity({
+                effectId,
+                msgId: msg.id.msgId,
+                phase: payload.phase,
+                preparedFingerprint: payload.preparedFingerprint
+            });
             return {
                 kind: 'send-prepared',
                 msg,
                 prepared: decodePrepared(payload.prepared, msg),
+                preparedFingerprint: payload.preparedFingerprint,
                 phase: payload.phase
             };
         }
@@ -157,12 +214,55 @@ function decodeALOutboundEffectPayload<TPrepared>(
         case 'nack-retry':
             decodeALAdmissionRecord(value, ['kind', 'msgId', 'reason']);
             requirePersistedALNonEmptyString(payload.msgId, 'negative acknowledgement retry message id');
+            const msgId = payload.msgId as string;
             if (payload.reason !== 'not-yet-in-sync') {
                 throw new TypeError('Persisted AL negative acknowledgement retry reason is invalid');
             }
+            requireALOutboundNotYetInSyncRetryEffectIdentity(effectId, msgId);
             return value as Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'nack-retry'; }>;
         default:
             throw new TypeError('Persisted AL outbound effect kind is invalid');
+    }
+}
+
+function requireALOutboundNotYetInSyncRetryEffectIdentity(
+    effectId: string,
+    msgId: string
+): void {
+    const prefix = `${toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync'])}:`;
+    if (!effectId.startsWith(prefix)) {
+        throw new TypeError('Persisted AL negative acknowledgement retry identity is invalid');
+    }
+    const encodedAttempt = effectId.slice(prefix.length);
+    const attempt = Number(encodedAttempt);
+    if (
+        !Number.isSafeInteger(attempt) ||
+        attempt < 1 ||
+        String(attempt) !== encodedAttempt ||
+        effectId !== toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync', attempt])
+    ) {
+        throw new TypeError('Persisted AL negative acknowledgement retry identity is invalid');
+    }
+}
+
+function requireALOutboundSendEffectIdentity(
+    input: RequireALOutboundSendEffectIdentityInput
+): void {
+    const { effectId, msgId, phase, preparedFingerprint } = input;
+    const prefix = `${toALOutboundEffectId(['send', msgId, phase])}:`;
+    const suffix = `:${encodeURIComponent(preparedFingerprint)}`;
+    if (!effectId.startsWith(prefix) || !effectId.endsWith(suffix)) {
+        throw new TypeError('Persisted AL prepared message fingerprint does not match its effect identity');
+    }
+    const encodedIndex = effectId.slice(prefix.length, effectId.length - suffix.length);
+    const index = Number(encodedIndex);
+    if (
+        !Number.isSafeInteger(index) ||
+        index < 0 ||
+        String(index) !== encodedIndex ||
+        effectId !== toALOutboundEffectId(['send', msgId, phase, index, preparedFingerprint])
+    ) {
+        throw new TypeError('Persisted AL outbound send effect identity is invalid');
     }
 }
 

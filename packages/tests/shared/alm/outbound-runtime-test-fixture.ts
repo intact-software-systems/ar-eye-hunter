@@ -127,6 +127,8 @@ export function createFlakyOutboundAdmissionStore(
             hooks.acceptControlMessage
                 ? hooks.acceptControlMessage(msg, decodePrepared)
                 : inner.acceptControlMessage(msg, decodePrepared),
+        scheduleNotYetInSyncRetry: (schedule, decodePrepared) =>
+            inner.scheduleNotYetInSyncRetry(schedule, decodePrepared),
         claimReadyEffects: (input, decodePrepared) =>
             hooks.claimReadyEffects
                 ? hooks.claimReadyEffects(input, decodePrepared)

@@ -70,7 +70,9 @@ describe.each([
         { label: 'different point slot', key: 'version:peer-2', revision: 0, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP },
         { label: 'different prefix', key: 'other:peer-1', revision: 0, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP },
         { label: 'invalid revision', key: 'version:peer-1', revision: -1, expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP },
-        { label: 'invalid expiry', key: 'version:peer-1', revision: 0, expireAtTimestamp: Number.NaN }
+        { label: 'invalid expiry', key: 'version:peer-1', revision: 0, expireAtTimestamp: Number.NaN },
+        { label: 'negative expiry', key: 'version:peer-1', revision: 0, expireAtTimestamp: -1 },
+        { label: 'negative-zero expiry', key: 'version:peer-1', revision: 0, expireAtTimestamp: -0 }
     ])('rejects an envelope with $label', async ({ key, revision, expireAtTimestamp }) => {
         const repository = new FakeRuntimeStateRepository();
         const backend = new Backend(repository, 'admission');

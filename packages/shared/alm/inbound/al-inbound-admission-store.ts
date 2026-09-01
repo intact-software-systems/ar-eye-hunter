@@ -25,6 +25,7 @@ import {
     decodeALAdmissionClientRecord,
     decodeALAdmissionControlValue,
     decodeALAdmissionNumber,
+    decodeALAdmissionRecord,
     decodeALAdmissionString,
     decodeALAdmissionSupersedenceValue
 } from '../al-admission-value-validation.ts';
@@ -52,6 +53,11 @@ type RepairsControlValue = Extract<ALControlPersistenceValue, Readonly<{ kind: '
 export interface ALVersionedClientRecord {
     readonly senderId: string;
     readonly version: number;
+}
+
+interface ALInboundMessageOwner {
+    readonly msgId: string;
+    readonly senderId: string;
 }
 
 export type ALInboundPlanner = (
@@ -629,13 +635,17 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         }
         return await this.backend.write(async (tx) => {
             const msgId = parsed.type === 'ack' ? parsed.payload.ackedMsgId : parsed.payload.msgId;
-            const ownerSenderId = await tx.read(this.toMsgOwnerKey(msgId), decodeALAdmissionString);
+            const ownerPrefix = this.toMsgOwnerPrefix(msgId);
+            const owners = await tx.list(
+                ownerPrefix,
+                (value, key) => this.decodeMessageOwner(value, key, ownerPrefix, msgId)
+            );
             const nowMs = this.nowMs();
             const acceptance = parsed.type === 'ack'
                 ? await this.writeAcknowledgement(tx, parsed.payload, nowMs)
                 : await this.writeNegativeControlHistory(tx, parsed, nowMs);
-            if (ownerSenderId) {
-                await this.bumpVersion(tx, ownerSenderId);
+            for (const senderId of new Set(owners.map((owner) => owner.value.senderId))) {
+                await this.bumpVersion(tx, senderId);
             }
             return acceptance;
         });
@@ -733,8 +743,8 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         switch (mutation.kind) {
             case 'set-msg-owner':
                 return await tx.set(
-                    this.toMsgOwnerKey(mutation.msgId),
-                    mutation.senderId,
+                    this.toMsgOwnerKey(mutation.msgId, mutation.senderId),
+                    { msgId: mutation.msgId, senderId: mutation.senderId } satisfies ALInboundMessageOwner,
                     toExpireAtTimestampFromNow(this.retention.msgOwnerTtlMs, this.nowMs())
                 );
             case 'set-dedup':
@@ -849,8 +859,34 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         return `${this.namespace}:version:${senderId}`;
     }
 
-    private toMsgOwnerKey(msgId: string): string {
-        return `${this.namespace}:msg-owner:${msgId}`;
+    private toMsgOwnerKey(msgId: string, senderId: string): string {
+        return `${this.toMsgOwnerPrefix(msgId)}${encodeURIComponent(senderId)}`;
+    }
+
+    private toMsgOwnerPrefix(msgId: string): string {
+        return `${this.namespace}:msg-owner:${encodeURIComponent(msgId)}:`;
+    }
+
+    private decodeMessageOwner(
+        value: unknown,
+        key: string,
+        prefix: string,
+        expectedMsgId: string
+    ): ALInboundMessageOwner {
+        const owner = decodeALAdmissionRecord(value, ['msgId', 'senderId']);
+        const msgId = decodeALAdmissionString(owner.msgId);
+        const senderId = decodeALAdmissionString(owner.senderId);
+        let slotSenderId: string;
+        try {
+            slotSenderId = decodeURIComponent(key.slice(prefix.length));
+        }
+        catch {
+            throw new TypeError('Stored inbound message owner key is invalid');
+        }
+        if (msgId !== expectedMsgId || senderId !== slotSenderId) {
+            throw new TypeError('Stored inbound message owner identity does not match its slot');
+        }
+        return { msgId, senderId };
     }
 
     private toDedupKey(dedupKey: string): string {

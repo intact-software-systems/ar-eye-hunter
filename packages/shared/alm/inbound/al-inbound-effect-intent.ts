@@ -62,7 +62,7 @@ export function toALInboundForwardingEffects(
 ): readonly ALInboundEffectIntent[] {
     if (shouldForward) {
         return [{
-            effectId: toEffectId(['forward', input.msg.id.msgId, input.fromPeerId]),
+            effectId: toEffectId(['forward', input.msg.id.senderId, input.msg.id.msgId, input.fromPeerId]),
             expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
             payload: { kind: 'forward-message', msg: input.msg, fromPeerId: input.fromPeerId, plan: input.plan }
         }];
@@ -90,7 +90,7 @@ export function toALInboundLocalDeliveryEffects(
     }
     const queued = shouldDeferALInboundLocalDelivery(input.plan) || input.plan.localDelivery.persist;
     return [{
-        effectId: toEffectId([queued ? 'inbox' : 'dispatch', input.msg.id.msgId]),
+        effectId: toEffectId([queued ? 'inbox' : 'dispatch', input.msg.id.senderId, input.msg.id.msgId]),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
         payload: {
             kind: queued ? 'enqueue-inbox' : 'dispatch-local',
@@ -109,7 +109,7 @@ export function toALInboundNegativeControlEffects(
     const toPeerId = input.plan.nack.toPeerId ?? input.fromPeerId;
     const reason = toNackReason(input.plan.nack.reason);
     const nack: ALInboundEffectIntent = {
-        effectId: toEffectId(['nack', input.msg.id.msgId, toPeerId, reason]),
+        effectId: toEffectId(['nack', input.msg.id.senderId, input.msg.id.msgId, toPeerId, reason]),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
         payload: {
             kind: 'send-nack',
@@ -132,6 +132,7 @@ function toRepairEffects(
     return [{
         effectId: toEffectId([
             'repair',
+            input.msg.id.senderId,
             input.msg.id.msgId,
             toPeerId,
             input.plan.orderingRuntime.trackKey ?? '-',

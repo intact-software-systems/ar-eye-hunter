@@ -1,4 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
@@ -302,6 +303,59 @@ describe('inbound admission persisted values', () => {
             durableEffects: [{ effectId: 'effect', payload: { kind: 'release-buffered', trackKey: 'track', seq: 2 } }]
         })).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         expect([...state.data.keys()]).toEqual(['inbound:effect:effect']);
+    });
+
+    it('rejects a durable effect identity reused for different payload ownership', async () => {
+        const { store } = createFixture();
+        await store.commitBundle({
+            senderId: message.id.senderId,
+            mutations: [],
+            durableEffects: [{
+                effectId: 'effect',
+                payload: { kind: 'release-buffered', trackKey: 'track', seq: 2 }
+            }]
+        });
+
+        await expect(store.commitBundle({
+            senderId: message.id.senderId,
+            expectedVersion: 1,
+            mutations: [],
+            durableEffects: [{
+                effectId: 'effect',
+                payload: { kind: 'release-buffered', trackKey: 'other-track', seq: 2 }
+            }]
+        })).rejects.toMatchObject({
+            name: 'ALAdmissionCorruptionError',
+            key: 'inbound:effect:effect'
+        });
+    });
+
+    it('fences every sender-qualified owner of the same message id on control acceptance', async () => {
+        const { state, store } = createFixture();
+        const secondMessage = {
+            ...message,
+            id: { ...message.id, senderId: 'second-sender' }
+        };
+        for (const candidate of [message, secondMessage]) {
+            await store.commitBundle({
+                senderId: candidate.id.senderId,
+                mutations: [{
+                    kind: 'set-msg-owner',
+                    msgId: candidate.id.msgId,
+                    senderId: candidate.id.senderId
+                }],
+                durableEffects: []
+            });
+        }
+
+        await store.acceptControlMessage(newALAckControlMessage('receiver', 'self', message.id.msgId));
+
+        expect((await store.readIncomingMessage(message, 'sender', planMessage)).clientRecord?.version).toBe(2);
+        expect((await store.readIncomingMessage(secondMessage, 'sender', planMessage)).clientRecord?.version).toBe(2);
+        expect([...state.data.keys()].filter((key) => key.startsWith('inbound:msg-owner:')).sort()).toEqual([
+            'inbound:msg-owner:message:second-sender',
+            'inbound:msg-owner:message:sender%3Awith%3Adelimiter'
+        ]);
     });
 
     it('round-trips one canonical local-delivery envelope and rejects a malformed embedded message', async () => {

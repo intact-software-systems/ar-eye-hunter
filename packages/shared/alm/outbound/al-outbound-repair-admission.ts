@@ -117,33 +117,32 @@ export class ALOutboundRepairAdmission<TPrepared> {
             return undefined;
         }
 
-        const retryAttempt = read.nacks.filter((nack) => nack.reason === 'not-yet-in-sync').length;
-        if (retryAttempt > retry.maxAttempts) {
-            console.warn(`Not-yet-in-sync retry budget exceeded for message ${msgId}`);
-            return undefined;
-        }
-
         const retryDelayMs = Math.max(
             0,
             retry.retryDelayMs ?? ALOutboundRepairAdmission.NOT_YET_IN_SYNC_RETRY_DELAY_MS
         );
         const retryAtMs = read.nowMs + retryDelayMs;
-        const status = await this.admissionStore.commitBundle<TPrepared>({
+        const result = await this.admissionStore.scheduleNotYetInSyncRetry<TPrepared>({
             senderId: msg.id.senderId,
             expectedVersion: read.clientRecord?.version,
-            mutations: [],
-            durableEffects: [{
-                effectId: toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync']),
+            msgId,
+            maxAttempts: retry.maxAttempts,
+            expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(msg),
+            createEffect: (attempt) => ({
+                effectId: toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync', attempt]),
                 retryAtMs,
                 expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(msg),
                 payload: { kind: 'nack-retry', msgId, reason: 'not-yet-in-sync' }
-            }]
+            })
         }, this.dependencies.decodePreparedMessage);
-        if (status === 'conflict') {
+        if (result.status === 'conflict') {
             throw new RetryableConflictError('Outbound not-yet-in-sync retry commit conflict');
         }
-
-        return retryAtMs;
+        if (result.status === 'exhausted') {
+            console.warn(`Not-yet-in-sync retry budget exceeded for message ${msgId}`);
+            return undefined;
+        }
+        return result.retryAtMs;
     }
 
     async handlePendingAckTimeout(msgId: string): Promise<void> {

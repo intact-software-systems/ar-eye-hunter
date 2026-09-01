@@ -778,6 +778,8 @@ function createFlakyOutboundAdmissionStore(
                 ? hooks.commitBundle(bundle, decode)
                 : inner.commitBundle(bundle, decode),
         acceptControlMessage: (msg, decode) => inner.acceptControlMessage(msg, decode),
+        scheduleNotYetInSyncRetry: (schedule, decode) =>
+            inner.scheduleNotYetInSyncRetry(schedule, decode),
         claimReadyEffects: <TPrepared>(input: ClaimALOutboundEffectsInput, decode: ALOutboundPreparedMessageDecoder<TPrepared>) =>
             hooks.claimReadyEffects
                 ? hooks.claimReadyEffects(input, decode)

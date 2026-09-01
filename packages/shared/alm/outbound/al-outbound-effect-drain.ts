@@ -40,9 +40,9 @@ export class ALOutboundEffectDrain<TPrepared> {
     private static readonly MAX_EFFECT_BATCH = 16;
     private readonly dependencies: ALOutboundEffectDrain.Dependencies<TPrepared>;
     private effectDrainPromise?: Promise<void>;
+    private effectDrainRequested = false;
     private cancelEffectDrain: (() => void) | undefined;
     private bootstrappedEffects = false;
-    private runningEffectDrain = false;
     private disposed = false;
 
     constructor(dependencies: ALOutboundEffectDrain.Dependencies<TPrepared>) {
@@ -62,17 +62,16 @@ export class ALOutboundEffectDrain<TPrepared> {
         this.cancelEffectDrain = undefined;
     }
 
-    get isRunning(): boolean {
-        return this.runningEffectDrain;
+    async drainCommitted(): Promise<void> {
+        await this.drain();
     }
 
-    async drainCommitted(): Promise<void> {
-        const runningDrain = this.effectDrainPromise;
-        if (runningDrain) {
-            await runningDrain;
+    async requestCommittedDrain(): Promise<void> {
+        const waitForDrain = this.effectDrainPromise === undefined;
+        const drain = this.drain();
+        if (waitForDrain) {
+            await drain;
         }
-
-        await this.drain();
     }
 
     private requestEffectDrain(): void {
@@ -88,12 +87,13 @@ export class ALOutboundEffectDrain<TPrepared> {
         if (this.disposed) {
             return Promise.resolve();
         }
+        this.effectDrainRequested = true;
 
         if (!this.effectDrainPromise) {
             this.cancelEffectDrain?.();
             this.cancelEffectDrain = undefined;
 
-            this.effectDrainPromise = this.runDurableEffectDrainLoop()
+            this.effectDrainPromise = this.runRequestedEffectDrains()
                 .catch((error) => {
                     if (error instanceof ALAdmissionCorruptionError) {
                         throw error;
@@ -106,11 +106,23 @@ export class ALOutboundEffectDrain<TPrepared> {
                 });
         }
 
-        return this.effectDrainPromise;
+        return this.effectDrainPromise.then(async () => {
+            if (this.effectDrainRequested && !this.disposed) {
+                await this.drain();
+            }
+        });
+    }
+
+    private async runRequestedEffectDrains(): Promise<void> {
+        while (!this.disposed && this.effectDrainRequested) {
+            this.effectDrainRequested = false;
+            this.cancelEffectDrain?.();
+            this.cancelEffectDrain = undefined;
+            await this.runDurableEffectDrainLoop();
+        }
     }
 
     private async runDurableEffectDrainLoop(): Promise<void> {
-        this.runningEffectDrain = true;
         const startedAtMs = this.readNowMs();
         const counts: ALOutboundDurableEffectDrainCounts = {
             claimedCount: 0,
@@ -152,7 +164,6 @@ export class ALOutboundEffectDrain<TPrepared> {
             }
         }
         finally {
-            this.runningEffectDrain = false;
             this.emitDiagnostics({
                 kind: 'effect-drain',
                 workerId: this.dependencies.effectWorkerId,

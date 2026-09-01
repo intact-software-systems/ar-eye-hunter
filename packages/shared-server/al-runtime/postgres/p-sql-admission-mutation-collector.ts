@@ -237,7 +237,8 @@ function toPSqlAdmissionObservation(
         if (
             entry.key !== key || typeof entry.value !== 'string' ||
             !Number.isSafeInteger(entry.revision) || entry.revision < 0 || Object.is(entry.revision, -0) ||
-            !Number.isSafeInteger(entry.expireAtTimestamp) ||
+            !Number.isSafeInteger(entry.expireAtTimestamp) || entry.expireAtTimestamp < 0 ||
+            Object.is(entry.expireAtTimestamp, -0) ||
             typeof entry.updatedTimestamp !== 'string' || !Number.isFinite(Date.parse(entry.updatedTimestamp))
         ) {
             throw new TypeError('Stored admission row does not match its complete runtime-state slot');

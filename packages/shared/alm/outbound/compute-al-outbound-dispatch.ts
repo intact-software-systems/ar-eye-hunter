@@ -9,6 +9,7 @@ import type {
     ALOutboundMessageReadDto
 } from './al-outbound-admission-store.ts';
 import type { ALOutboundDispatchPhase, ALOutboundEnqueueStatus } from './al-outbound-message-runtime.ts';
+import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     toALOutboundPendingAckExpireAtTimestamp,
@@ -185,13 +186,20 @@ function appendALOutboundDispatchEffects<TPrepared>(
         appendAckTrackingMutationsAndEffects(input.mutations, input.effects, read);
     }
     if (input.strategy.dispatchPrepared) {
-        read.plan.preparedMessages.forEach((prepared, index) =>
+        read.plan.preparedMessages.forEach((prepared, index) => {
+            const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
             input.effects.push({
-                effectId: toALOutboundEffectId(['send', read.msg.id.msgId, phase, index]),
+                effectId: toALOutboundEffectId([
+                    'send',
+                    read.msg.id.msgId,
+                    phase,
+                    index,
+                    preparedFingerprint
+                ]),
                 expireAtTimestamp: resolveExplicitOutboundMessageExpireAtMs(read.msg),
-                payload: { kind: 'send-prepared', msg: read.msg, prepared, phase }
-            })
-        );
+                payload: { kind: 'send-prepared', msg: read.msg, prepared, preparedFingerprint, phase }
+            });
+        });
     }
     else if (input.strategy.fallback) {
         input.effects.push({

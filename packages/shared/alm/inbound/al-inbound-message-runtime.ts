@@ -96,7 +96,8 @@ export class ALInboundMessageRuntime {
 
     async handleIncomingMessage(
         msg: ALMessage,
-        fromPeerId: string
+        fromPeerId: string,
+        planIncomingMessage: ALInboundPlanner = this.dependencies.planIncomingMessage
     ): Promise<void> {
         await this.ready();
 
@@ -106,8 +107,10 @@ export class ALInboundMessageRuntime {
 
         if (isALControlTypeId(msg.payload.typeId)) {
             const acceptance = await this.acceptControlMessageWithRetry(msg);
-            if (!this.effects.getRunning()) {
-                await this.effects.start();
+            const waitForEffects = !this.effects.hasActiveDrain();
+            const effectDrain = this.effects.start();
+            if (waitForEffects) {
+                await effectDrain;
             }
             if (!this.disposed) {
                 await this.dependencies.onControlMessage?.(msg, acceptance);
@@ -117,7 +120,7 @@ export class ALInboundMessageRuntime {
 
         await this.withSenderCommitQueue(
             msg.id.senderId,
-            () => this.admitIncomingMessage(msg, fromPeerId)
+            () => this.admitIncomingMessage(msg, fromPeerId, planIncomingMessage)
         );
     }
 
@@ -145,14 +148,15 @@ export class ALInboundMessageRuntime {
 
     private async admitIncomingMessage(
         msg: ALMessage,
-        fromPeerId: string
+        fromPeerId: string,
+        planIncomingMessage: ALInboundPlanner
     ): Promise<void> {
         if (this.disposed) {
             return;
         }
         try {
             await tryWithPolicy(
-                () => this.commitIncomingMessage(msg, fromPeerId),
+                () => this.commitIncomingMessage(msg, fromPeerId, planIncomingMessage),
                 ALInboundMessageRuntime.COMMIT_RETRY_POLICY
             );
         }
@@ -164,11 +168,15 @@ export class ALInboundMessageRuntime {
         }
     }
 
-    private async commitIncomingMessage(msg: ALMessage, fromPeerId: string): Promise<void> {
+    private async commitIncomingMessage(
+        msg: ALMessage,
+        fromPeerId: string,
+        planIncomingMessage: ALInboundPlanner
+    ): Promise<void> {
         const read = await this.admissionStore.readIncomingMessage(
             msg,
             fromPeerId,
-            this.dependencies.planIncomingMessage
+            planIncomingMessage
         );
         const canForward = !read.plan.dropReason && this.dependencies.forwardMessage !== undefined &&
             (this.dependencies.canForwardMessage?.(msg) ?? true);

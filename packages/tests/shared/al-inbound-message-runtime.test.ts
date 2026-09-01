@@ -162,6 +162,50 @@ describe('ALInboundMessageRuntime', () => {
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
     });
 
+    it('delivers the same message id once for each sender when sender-scoped dedup is requested', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const firstDeliveryStarted = Promise.withResolvers<void>();
+        const releaseFirstDelivery = Promise.withResolvers<void>();
+        const secondAdmissionCommitted = Promise.withResolvers<void>();
+        const deliveredSenderIds: string[] = [];
+        const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
+        vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
+            const status = await commitBundle(bundle);
+            if (bundle.senderId === 'peer-2') {
+                secondAdmissionCommitted.resolve();
+            }
+            return status;
+        });
+        const { runtime } = createInboundHarness(stores, {
+            dispatchInboxEntry: async (entry) => {
+                const message = decodePersistedALMessage(entry.resource);
+                deliveredSenderIds.push(message.id.senderId);
+                if (message.id.senderId === 'peer-1') {
+                    firstDeliveryStarted.resolve();
+                    await releaseFirstDelivery.promise;
+                }
+            }
+        });
+        const first = createSenderScopedDedupMessage('peer-1', 'first');
+        const secondOriginal = createSenderScopedDedupMessage('peer-2', 'second');
+        const second = {
+            ...secondOriginal,
+            id: {
+                ...secondOriginal.id,
+                msgId: first.id.msgId
+            }
+        };
+
+        const firstAdmission = runtime.handleIncomingMessage(first, 'peer-1');
+        await firstDeliveryStarted.promise;
+        const secondAdmission = runtime.handleIncomingMessage(second, 'peer-2');
+        await secondAdmissionCommitted.promise;
+        releaseFirstDelivery.resolve();
+        await Promise.all([firstAdmission, secondAdmission]);
+
+        expect(deliveredSenderIds).toEqual(['peer-1', 'peer-2']);
+    });
+
     it('retries complete control-message admission after backend conflicts', async () => {
         vi.useFakeTimers();
         const stores = createDefaultInMemoryALInboundRuntimeStores();
@@ -289,6 +333,51 @@ describe('ALInboundMessageRuntime', () => {
         const parsed = parseALControlMessage(controlMessages[0]);
         expect(parsed?.type).toBe('ack');
         expect(parsed?.payload).toMatchObject({
+            ackedMsgId: msg.id.msgId,
+            toPeerId: 'peer-1',
+            status: 'subtree-complete'
+        });
+    });
+
+    it('drains a completed subtree ack accepted while the current drain is finishing', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const { runtime, controlMessages } = createInboundHarness(stores);
+        await runtime.ready();
+        const emptyRead = Promise.withResolvers<void>();
+        const releaseEmptyRead = Promise.withResolvers<void>();
+        const controlStored = Promise.withResolvers<void>();
+        const readNextReadyAt = stores.admissionStore.peekNextEffectReadyAt.bind(stores.admissionStore);
+        const acceptControlMessage = stores.admissionStore.acceptControlMessage.bind(stores.admissionStore);
+        vi.spyOn(stores.admissionStore, 'peekNextEffectReadyAt').mockImplementation(async (nowMs) => {
+            const readyAt = await readNextReadyAt(nowMs);
+            emptyRead.resolve();
+            await releaseEmptyRead.promise;
+            return readyAt;
+        });
+        vi.spyOn(stores.admissionStore, 'acceptControlMessage').mockImplementation(async (message) => {
+            const acceptance = await acceptControlMessage(message);
+            controlStored.resolve();
+            return acceptance;
+        });
+        const msg = createOrderedMessage(1, 'one', 'all-logical-recipients');
+
+        const admission = runtime.handleIncomingMessage(msg, 'peer-1');
+        await emptyRead.promise;
+        const acceptControl = runtime.handleIncomingMessage(
+            newALAckControlMessage('peer-2', 'self', msg.id.msgId, 'delivered'),
+            'peer-2'
+        );
+        await controlStored.promise;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        releaseEmptyRead.resolve();
+        await Promise.all([admission, acceptControl]);
+
+        const ackPayloads = controlMessages.flatMap((message) => {
+            const parsed = parseALControlMessage(message);
+            return parsed?.type === 'ack' ? [parsed.payload] : [];
+        });
+        expect(ackPayloads).toHaveLength(1);
+        expect(ackPayloads[0]).toMatchObject({
             ackedMsgId: msg.id.msgId,
             toPeerId: 'peer-1',
             status: 'subtree-complete'
@@ -684,6 +773,27 @@ function createOrderedMessage(
                 durability: {
                     algo: 'volatile'
                 }
+            }
+        }
+    );
+}
+
+function createSenderScopedDedupMessage(senderId: string, text: string): ALMessage {
+    return newALMulticastMessage(
+        senderId,
+        {
+            topicId: 'chat',
+            resourceId: `msg-${senderId}`,
+            contextId: 'group-1'
+        },
+        groupRef('group-1'),
+        'chat.message.v1',
+        { text },
+        {
+            ack: 'none',
+            qos: {
+                dedup: { algo: 'msg-id+sender' },
+                durability: { algo: 'volatile' }
             }
         }
     );
