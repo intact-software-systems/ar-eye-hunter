@@ -272,7 +272,7 @@ import { rallar, type RallarStartOptions } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { createRallarMotionBuffer } from '@shared/rallar-motion/mod.ts';
-import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 
 type PoseUpdate = {
     roomRef: GroupRef;

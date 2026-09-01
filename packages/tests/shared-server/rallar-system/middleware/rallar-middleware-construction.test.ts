@@ -1,19 +1,32 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
+import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
 import type { QueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
-import { InMemoryQueueBox, newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/mod.ts';
+import {
+    InMemoryQueueBox,
+    newALRoute,
+    newALUntargetedMessage,
+    type ALMessage
+} from '@shared/mod.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, type ResourceInboxRetryPolicy } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { describe, expect, it, vi } from 'vitest';
+
 import { createRallarMiddlewareTestRuntime, type RallarMiddlewareInboxConstructionEvent } from './rallar-middleware-test-runtime.ts';
 
 describe('createRallarMiddleware', () => {
@@ -60,8 +73,8 @@ describe('createRallarMiddleware', () => {
     });
 
     it('waits for runtime and queue pubsub subscription readiness', async () => {
-        const runtimeStartup = createDeferred();
-        const queueSubscription = createDeferred();
+        const runtimeStartup = Promise.withResolvers<void>();
+        const queueSubscription = Promise.withResolvers<void>();
         const bridge: QueueBoxPubSubBridge = {
             publish: async () => undefined,
             subscribe: vi.fn(async () => await queueSubscription.promise)
@@ -255,7 +268,7 @@ describe('createRallarMiddleware', () => {
         });
         const runtime = createRallarMiddleware(testRuntime.options);
         const queue = testRuntime.inbox;
-        const outboxBlocked = createDeferred();
+        const outboxBlocked = Promise.withResolvers<void>();
         const receivedInboxMessages: ALMessage[] = [];
         const receivedOutboxMessages: ALMessage[] = [];
         runtime.inboxQueueReader.onInboxMessageDo('group-state.create.v1', {
@@ -318,7 +331,7 @@ function createResilience(
 function createReadinessMiddlewareOptions(
     readiness: Promise<void>,
     bridge: QueueBoxPubSubBridge
-) {
+): CreateRallarMiddlewareOptions {
     return createRallarMiddlewareTestRuntime({
         resilience: {
             inbox: createResilience(),
@@ -331,19 +344,4 @@ function createReadinessMiddlewareOptions(
             publisherId: 'publisher-1'
         }
     }).options;
-}
-
-function createDeferred(): Readonly<{
-    promise: Promise<void>;
-    resolve(): void;
-}> {
-    let resolvePromise: () => void = () => undefined;
-    const promise = new Promise<void>((resolve) => {
-        resolvePromise = resolve;
-    });
-
-    return {
-        promise,
-        resolve: () => resolvePromise()
-    };
 }

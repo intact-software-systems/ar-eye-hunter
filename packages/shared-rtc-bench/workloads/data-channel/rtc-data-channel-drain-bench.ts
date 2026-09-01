@@ -1,4 +1,7 @@
-import { QRtcDataChannel, type RtcDataChannelPayload } from '@shared/webrtc/QRtcDataChannel.ts';
+import { RtcBenchmarkNativeChannel } from '../native-rtc/rtc-benchmark-native-channel.ts';
+import { createRtcBenchmarkPeerConnection } from '../native-rtc/rtc-benchmark-native-peer.ts';
+
+import { QRtcDataChannel, type RtcDataChannelPayload } from '@shared/webrtc/qrtc-data-channel.ts';
 
 import { runRtcBaselineAcceptedWorkerSamples } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 import {
@@ -7,6 +10,7 @@ import {
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import {
     rtcBaselineIssue,
+    type RtcBaselineIssueDto,
     type RtcBaselineResult,
     type RtcBaselineSampleDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
@@ -20,14 +24,16 @@ const frozenDepthByValue: Readonly<Record<string, RtcDataChannelDrainDepth>> = {
 };
 export interface RtcDataChannelDrainDependencies {
     readonly nativeChannel: RtcDataChannelDrainFakeNativeChannel;
-    readonly clock: Readonly<{
-        createdAtEpochMs: (index: number) => number;
-        monotonicNow: () => number;
-    }>;
-    readonly payload: Readonly<{
-        create: (index: number) => string;
-        byteLength: (value: string) => number;
-    }>;
+    readonly clock: RtcDataChannelDrainClock;
+    readonly payload: RtcDataChannelDrainPayload;
+}
+export interface RtcDataChannelDrainClock {
+    createdAtEpochMs(index: number): number;
+    monotonicNow(): number;
+}
+export interface RtcDataChannelDrainPayload {
+    create(index: number): string;
+    byteLength(value: string): number;
 }
 export interface RtcDataChannelDrainResult {
     readonly queueDepth: number;
@@ -49,6 +55,12 @@ interface RtcDataChannelDrainInput {
     readonly queueDepth: RtcDataChannelDrainDepth;
     readonly runs: number;
 }
+interface RtcDataChannelDrainDiagnosticArguments {
+    readonly mode: 'diagnostic';
+    readonly input: RtcDataChannelDrainInput;
+    readonly out: string;
+}
+
 interface RtcDataChannelDrainAcceptedArguments {
     readonly mode: 'accepted';
     readonly input: RtcDataChannelDrainInput;
@@ -71,11 +83,9 @@ export async function runRtcDataChannelDrain(
     queueDepth: RtcDataChannelDrainDepth,
     dependencies: RtcDataChannelDrainDependencies
 ): Promise<RtcDataChannelDrainResult> {
-    const peerConnection = {
-        onDataChannelDo: () => peerConnection,
-        createDataChannel: () => dependencies.nativeChannel
-    };
-    const dataChannel = new QRtcDataChannel(peerConnection as never, {
+    const peerFixture = createRtcBenchmarkPeerConnection('rtc-b02-peer');
+    peerFixture.native.pendingChannels.push(dependencies.nativeChannel);
+    const dataChannel = new QRtcDataChannel(peerFixture.peer, {
         peerId: 'rtc-b02-peer',
         dataChannelName: 'realtime',
         flowControl: {
@@ -85,44 +95,53 @@ export async function runRtcDataChannelDrain(
             maxQueueItems: queueDepth
         }
     });
-    const payloads = createDrainPayloads(queueDepth, dependencies.payload);
-    dataChannel.connect(true);
-    await dependencies.nativeChannel.emitOpen();
-    dependencies.nativeChannel.bufferedAmount = 1;
-    for (let index = 0; index < queueDepth; index += 1) {
-        const offered = dataChannel.sendRaw(payloads[index], {
-            key: `entity-${index}`,
-            now: () => dependencies.clock.createdAtEpochMs(index)
-        });
-        if (offered.status !== 'queued') {
-            throw new Error(`Expected queued fill result, received ${offered.status}.`);
+    try {
+        const payloads = createDrainPayloads(queueDepth, dependencies.payload);
+        dataChannel.connect(true);
+        await dependencies.nativeChannel.emitOpen();
+        dependencies.nativeChannel.bufferedAmount = 1;
+        for (let index = 0; index < queueDepth; index += 1) {
+            const offered = dataChannel.sendRaw(payloads[index], {
+                key: `entity-${index}`,
+                now: () => dependencies.clock.createdAtEpochMs(index)
+            });
+            if (offered.status !== 'queued') {
+                throw new Error(`Expected queued fill result, received ${offered.status}.`);
+            }
         }
+        const beforeDrain = dataChannel.readHealth().queuedItemCount;
+        const sentBeforeDrain = dependencies.nativeChannel.sent.length;
+        dependencies.nativeChannel.bufferedAmount = 0;
+        const startedAtMs = dependencies.clock.monotonicNow();
+        await dependencies.nativeChannel.emitBufferedAmountLow();
+        const completedAtMs = dependencies.clock.monotonicNow();
+        const sentDuringDrain = dependencies.nativeChannel.sent.length - sentBeforeDrain;
+        return {
+            queueDepth,
+            queuedBeforeDrain: beforeDrain,
+            queuedAfterDrain: dataChannel.readHealth().queuedItemCount,
+            maximumQueuedItemCount: beforeDrain,
+            sentBeforeDrain,
+            sentDuringDrain,
+            payloadBytes: 256,
+            sentBytesDuringDrain: sentDuringDrain * 256,
+            intervalStartedAtMs: startedAtMs,
+            intervalCompletedAtMs: completedAtMs,
+            drainDurationMs: completedAtMs - startedAtMs,
+            highWatermarkBytes: 1,
+            lowWatermarkBytes: 0,
+            overflow: 'replace-by-key'
+        };
     }
-    const beforeDrain = dataChannel.readHealth().queuedItemCount;
-    const sentBeforeDrain = dependencies.nativeChannel.sent.length;
-    dependencies.nativeChannel.bufferedAmount = 0;
-    const startedAtMs = dependencies.clock.monotonicNow();
-    await dependencies.nativeChannel.emitBufferedAmountLow();
-    const completedAtMs = dependencies.clock.monotonicNow();
-    const sentDuringDrain = dependencies.nativeChannel.sent.length - sentBeforeDrain;
-    return {
-        queueDepth,
-        queuedBeforeDrain: beforeDrain,
-        queuedAfterDrain: dataChannel.readHealth().queuedItemCount,
-        maximumQueuedItemCount: beforeDrain,
-        sentBeforeDrain,
-        sentDuringDrain,
-        payloadBytes: 256,
-        sentBytesDuringDrain: sentDuringDrain * 256,
-        intervalStartedAtMs: startedAtMs,
-        intervalCompletedAtMs: completedAtMs,
-        drainDurationMs: completedAtMs - startedAtMs,
-        highWatermarkBytes: 1,
-        lowWatermarkBytes: 0,
-        overflow: 'replace-by-key'
-    };
+    finally {
+        dataChannel.reset();
+        peerFixture.dispose();
+    }
 }
-export function parseRtcDataChannelDrainArguments(arguments_: readonly string[]) {
+
+export function parseRtcDataChannelDrainArguments(
+    arguments_: readonly string[]
+): RtcBaselineResult<RtcDataChannelDrainDiagnosticArguments | RtcDataChannelDrainAcceptedArguments> {
     const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
     const parsed = parseRtcBaselineOneTokenOptions(
         arguments_,
@@ -133,10 +152,14 @@ export function parseRtcDataChannelDrainArguments(arguments_: readonly string[])
     }
     return accepted ? parseAcceptedArguments(parsed.value) : parseDiagnosticArguments(parsed.value);
 }
-export async function runRtcDataChannelDrainAcceptedSamples(input: {
+export interface RtcDataChannelDrainAcceptedSamplesInput {
     readonly worker: RtcDataChannelDrainAcceptedArguments;
     readonly run: () => Promise<RtcDataChannelDrainResult>;
-}): Promise<RtcBaselineSampleDto[]> {
+}
+
+export async function runRtcDataChannelDrainAcceptedSamples(
+    input: RtcDataChannelDrainAcceptedSamplesInput
+): Promise<RtcBaselineSampleDto[]> {
     return runRtcBaselineAcceptedWorkerSamples({
         worker: {
             ...input.worker,
@@ -149,7 +172,7 @@ export async function runRtcDataChannelDrainAcceptedSamples(input: {
         createSample: ({ identity, result, issues }) => ({
             schema: 'rallar.rtc-baseline.sample.v1',
             identity,
-            outcome: result === null ? 'not-run' : issues.length === 0 ? 'passed' : 'failed',
+            outcome: classifySampleOutcome(result, issues),
             evidenceClass: 'synthetic-path',
             metrics: result === null
                 ? []
@@ -161,7 +184,9 @@ export async function runRtcDataChannelDrainAcceptedSamples(input: {
         })
     });
 }
-function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
+function parseDiagnosticArguments(
+    options: Readonly<Record<string, string>>
+): RtcBaselineResult<RtcDataChannelDrainDiagnosticArguments> {
     const depth = parseFrozenDepth(options['queue-depth'] ?? '5000', 'queue-depth');
     const runs = parseRtcBaselineBoundedInteger(options.runs ?? '5', 'runs', 1, 5);
     const out = options.out ?? 'tmp/perf/results/rtc-data-channel-drain.json';
@@ -185,7 +210,9 @@ function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
             value: { mode: 'diagnostic' as const, input: { queueDepth, runs: runCount }, out }
         };
 }
-function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
+function parseAcceptedArguments(
+    options: Readonly<Record<string, string>>
+): RtcBaselineResult<RtcDataChannelDrainAcceptedArguments> {
     const depth = parseFrozenDepth(options['rtc-queue-depth'] ?? '', 'rtc-queue-depth');
     const outer = parseRtcBaselineBoundedInteger(
         options['outer-ordinal'] ?? '',
@@ -235,7 +262,7 @@ function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
             value: {
                 mode: 'accepted' as const,
                 input: { queueDepth, runs: 5 },
-                intendedPhase: phase as 'warmup' | 'retained',
+                intendedPhase: phase === 'warmup' ? 'warmup' : 'retained',
                 outerOrdinal: ordinal,
                 sampleIds
             }
@@ -269,7 +296,7 @@ function createExpectedSampleIds(
 }
 function createDrainPayloads(
     queueDepth: RtcDataChannelDrainDepth,
-    payloadDependency: RtcDataChannelDrainDependencies['payload']
+    payloadDependency: RtcDataChannelDrainPayload
 ): string[] {
     return Array.from({ length: queueDepth }, (_value, index) => {
         const payload = payloadDependency.create(index);
@@ -279,8 +306,8 @@ function createDrainPayloads(
         return payload;
     });
 }
-function validateResult(depth: RtcDataChannelDrainDepth, result: RtcDataChannelDrainResult) {
-    const issues = [];
+function validateResult(depth: RtcDataChannelDrainDepth, result: RtcDataChannelDrainResult): RtcBaselineIssueDto[] {
+    const issues: RtcBaselineIssueDto[] = [];
     if (
         result.queueDepth !== depth ||
         result.queuedBeforeDrain !== depth ||
@@ -365,31 +392,28 @@ async function main(): Promise<void> {
     writeLine(`Wrote ${parsed.value.out}`);
 }
 
-export class RtcDataChannelDrainFakeNativeChannel {
-    readonly sent: RtcDataChannelPayload[] = [];
-    readyState: RTCDataChannelState = 'connecting';
-    bufferedAmount = 1;
-    onopen: (() => void | Promise<void>) | null = null;
-    onbufferedamountlow: (() => void | Promise<void>) | null = null;
+export class RtcDataChannelDrainFakeNativeChannel extends RtcBenchmarkNativeChannel {
     private readonly onSend: (data: RtcDataChannelPayload) => void;
     constructor(onSend: (data: RtcDataChannelPayload) => void = () => {}) {
+        super('realtime');
         this.onSend = onSend;
     }
-    send(data: RtcDataChannelPayload): void {
-        this.sent.push(data);
+    override send(data: RtcDataChannelPayload): void {
+        super.send(data);
         this.onSend(data);
     }
-    close(): void {
-        this.readyState = 'closed';
-    }
-    async emitOpen(): Promise<void> {
-        this.readyState = 'open';
-        await this.onopen?.();
-    }
-    async emitBufferedAmountLow(): Promise<void> {
-        await this.onbufferedamountlow?.();
-    }
 }
+
+function classifySampleOutcome(
+    result: RtcDataChannelDrainResult | null,
+    issues: readonly RtcBaselineIssueDto[]
+): RtcBaselineSampleDto['outcome'] {
+    if (result === null) {
+        return 'not-run';
+    }
+    return issues.length === 0 ? 'passed' : 'failed';
+}
+
 if (import.meta.main) {
     await main();
 }

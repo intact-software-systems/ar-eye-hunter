@@ -1,9 +1,9 @@
-import { RtcDataChannelSendQueue } from '@shared/webrtc/RtcDataChannelSendQueue.ts';
+import { RtcDataChannelSendQueue } from '@shared/webrtc/rtc-data-channel-send-queue.ts';
 import { describe, expect, it } from 'vitest';
 
-type TestPayload = Readonly<{
-    seq: number;
-}>;
+interface TestPayload {
+    readonly seq: number;
+}
 
 describe('RtcDataChannelSendQueue', () => {
     it('queues and shifts payloads in FIFO order', () => {
@@ -81,6 +81,17 @@ describe('RtcDataChannelSendQueue', () => {
         expect(queue.shift()).toBeUndefined();
     });
 
+    it('clears keyed entries before accepting the same key in a later queue', () => {
+        const queue = new RtcDataChannelSendQueue<TestPayload>();
+        const policy = replaceByKeyPolicy(2);
+        queue.offer(queued(1, 'same'), policy);
+        queue.clear();
+        expect(queue.size).toBe(0);
+        expect(queue.offer(queued(2, 'same'), policy).status).toBe('queued');
+        expect(queue.shift()?.payload.seq).toBe(2);
+        expect(queue.shift()).toBeUndefined();
+    });
+
     it('updates key lookup after shifting queued payloads', () => {
         const queue = new RtcDataChannelSendQueue<TestPayload>();
         const policy = replaceByKeyPolicy(3);
@@ -104,7 +115,7 @@ describe('RtcDataChannelSendQueue', () => {
 function queued(
     seq: number,
     key?: string
-) {
+): RtcDataChannelSendQueue.QueuedSend<TestPayload> {
     return {
         payload: { seq },
         key,
@@ -112,23 +123,23 @@ function queued(
     };
 }
 
-function queuePolicy(maxQueueItems: number) {
+function queuePolicy(maxQueueItems: number): RtcDataChannelSendQueue.Policy {
     return {
-        overflow: 'queue' as const,
+        overflow: 'queue',
         maxQueueItems
     };
 }
 
-function replaceByKeyPolicy(maxQueueItems: number) {
+function replaceByKeyPolicy(maxQueueItems: number): RtcDataChannelSendQueue.Policy {
     return {
-        overflow: 'replace-by-key' as const,
+        overflow: 'replace-by-key',
         maxQueueItems
     };
 }
 
-function dropOldPolicy(maxQueueItems: number) {
+function dropOldPolicy(maxQueueItems: number): RtcDataChannelSendQueue.Policy {
     return {
-        overflow: 'drop-old' as const,
+        overflow: 'drop-old',
         maxQueueItems
     };
 }

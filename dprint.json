@@ -55,7 +55,7 @@
     "preferHanging": false,
     "preferSingleLine": false,
     "objectExpression.preferSingleLine": false,
-    "importDeclaration.preferSingleLine": true,
+    "importDeclaration.preferSingleLine": false,
     "module.sortImportDeclarations": "caseInsensitive",
     "module.sortExportDeclarations": "caseInsensitive",
     "importDeclaration.sortNamedImports": "caseInsensitive",

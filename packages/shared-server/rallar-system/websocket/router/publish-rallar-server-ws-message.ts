@@ -60,13 +60,27 @@ function resolveAuthorizedRoomSessionIds(
 ): readonly string[] {
     // A handler may change targets after authorization. Never reuse that authority
     // for a different scope or exclusions, or fall back to a cached audience.
-    if (JSON.stringify(message.targets) !== JSON.stringify(audience.targets)) {
+    if (
+        JSON.stringify(message.targets) !== JSON.stringify(audience.targets) ||
+        (message.constraints?.expiresAtMs !== undefined && nowEpochMs > message.constraints.expiresAtMs)
+    ) {
         return [];
     }
-    const excluded = message.targets?.mode === 'broadcast' ? message.targets.exceptPeerIds : undefined;
-    return audience.sessions
-        .filter((session) => isGroupSnapshotSessionLive(session, nowEpochMs) && !excluded?.includes(session.sessionId))
+    const liveSessionIds = audience.sessions
+        .filter((session) => isGroupSnapshotSessionLive(session, nowEpochMs))
         .map((session) => session.sessionId);
+    const targets = audience.targets;
+    switch (targets.mode) {
+        case 'unicast':
+            return liveSessionIds.includes(targets.toPeerId) ? [targets.toPeerId] : [];
+        case 'multicast':
+            return liveSessionIds;
+        case 'broadcast':
+            return liveSessionIds.filter((sessionId) =>
+                !targets.exceptPeerIds?.includes(sessionId) &&
+                (!targets.recipientPeerIds || targets.recipientPeerIds.includes(sessionId))
+            );
+    }
 }
 
 function toLivePublishResult(

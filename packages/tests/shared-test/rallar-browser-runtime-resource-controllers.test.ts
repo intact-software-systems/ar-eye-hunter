@@ -1,23 +1,26 @@
-import { describe, expect, it, vi } from 'vitest';
-import { createBlackBoxRallarCrdtResourceController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/crdt-controller.ts';
-import { createBlackBoxRallarConsoleDiagnostics } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/diagnostics.ts';
-import { createBlackBoxRallarDirectorResourceController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/director-controller.ts';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import { BlackBoxRallarCrdtResourceController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-crdt-resource-controller.ts';
+import { createBlackBoxRallarConsoleDiagnostics } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
+import { BlackBoxRallarDirectorResourceController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/director-controller.ts';
 import { createBlackBoxRallarMessagingResourceController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/messaging-controller.ts';
 
 describe('browser Rallar resource controllers', () => {
     it('reserves CRDT handles before asynchronous creation', async () => {
         let generation = 1;
-        const controller = createBlackBoxRallarCrdtResourceController<object>({
+        const controller = new BlackBoxRallarCrdtResourceController<object>({
             generation: () => generation,
             isCurrent: (candidate) => candidate === generation
         });
-        let resolveOpen!: (document: object) => void;
+        const opening = Promise.withResolvers<object>();
         const first = controller.open(
             'doc',
-            () =>
-                new Promise((resolve) => {
-                    resolveOpen = resolve;
-                })
+            () => opening.promise
         );
 
         await expect(controller.open('doc', async () => ({}))).rejects.toThrow(
@@ -26,18 +29,16 @@ describe('browser Rallar resource controllers', () => {
         expect(controller.pending()).toHaveLength(1);
 
         const document = {};
-        resolveOpen(document);
+        opening.resolve(document);
         await expect(first).resolves.toBe(document);
         expect(controller.require('doc')).toBe(document);
         expect(controller.pending()).toHaveLength(0);
 
         const order: string[] = [];
-        let releaseFirst!: () => void;
+        const firstOperationCompletion = Promise.withResolvers<void>();
         const firstOperation = controller.run('doc', async () => {
             order.push('first-started');
-            await new Promise<void>((resolve) => {
-                releaseFirst = resolve;
-            });
+            await firstOperationCompletion.promise;
             order.push('first-completed');
         });
         const secondOperation = controller.run('doc', async () => {
@@ -46,7 +47,7 @@ describe('browser Rallar resource controllers', () => {
         await vi.waitFor(() => {
             expect(order).toEqual(['first-started']);
         });
-        releaseFirst();
+        firstOperationCompletion.resolve();
         await Promise.all([firstOperation, secondOperation]);
         expect(order).toEqual(['first-started', 'first-completed', 'second-started']);
 
@@ -58,36 +59,35 @@ describe('browser Rallar resource controllers', () => {
     });
 
     it('keeps a CRDT handle reserved until destructive release succeeds', async () => {
-        const controller = createBlackBoxRallarCrdtResourceController<object>({
+        const controller = new BlackBoxRallarCrdtResourceController<object>({
             generation: () => 1,
             isCurrent: (candidate) => candidate === 1
         });
         const document = {};
         await controller.open('doc', async () => document);
-        let resolveRelease!: () => void;
+        const releaseStarted = Promise.withResolvers<void>();
+        const releaseCompletion = Promise.withResolvers<void>();
         const releasing = controller.release(
             'doc',
-            () =>
-                new Promise<void>((resolve) => {
-                    resolveRelease = resolve;
-                })
+            () => {
+                releaseStarted.resolve();
+                return releaseCompletion.promise;
+            }
         );
-        await vi.waitFor(() => {
-            expect(resolveRelease).toBeTypeOf('function');
-        });
+        await releaseStarted.promise;
 
         await expect(controller.open('doc', async () => ({}))).rejects.toThrow(
             'CRDT document handle is already open: doc'
         );
         expect(controller.entries()).toEqual([['doc', document]]);
 
-        resolveRelease();
+        releaseCompletion.resolve();
         await releasing;
         expect(controller.handles()).toEqual([]);
     });
 
     it('retains a CRDT document when destructive release fails', async () => {
-        const controller = createBlackBoxRallarCrdtResourceController<object>({
+        const controller = new BlackBoxRallarCrdtResourceController<object>({
             generation: () => 1,
             isCurrent: (candidate) => candidate === 1
         });
@@ -106,7 +106,7 @@ describe('browser Rallar resource controllers', () => {
 
     it('owns director relay handles synchronously', () => {
         let generation = 1;
-        const controller = createBlackBoxRallarDirectorResourceController<object>({
+        const controller = new BlackBoxRallarDirectorResourceController<object>({
             generation: () => generation,
             isCurrent: (candidate) => candidate === generation
         });

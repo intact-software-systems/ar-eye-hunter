@@ -6,7 +6,7 @@ import type {
     StateScope
 } from '@shared/api/state-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { dirname, normalize } from 'node:path';
 import process from 'node:process';
 import postgres, { type Sql } from 'postgres';

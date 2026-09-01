@@ -3,7 +3,7 @@ import { CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-i
 import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, isExpiredResourceEntry, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';

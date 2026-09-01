@@ -1,23 +1,26 @@
-import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { describe, expect, it, vi } from 'vitest';
-
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-
-import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import type { AppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
 import {
     CLIENT_STATE_TEST_SCOPE as SCOPE,
@@ -27,7 +30,7 @@ import {
     readEntries
 } from './app-client-inbox-mutation-test-harness.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
-import { createDefaultClientStateServiceStub } from './client-state-service-stub.ts';
+import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 
 describe('AppClientInbox authentication', () => {
     it('returns the exact terminal left for a malformed completed client result', async () => {
@@ -41,7 +44,7 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database,
-                clientStateService: createDefaultClientStateServiceStub()
+                clientStateService: createClientStateServiceFixture()
             },
             { serviceId: 'server-12345678' }
         );
@@ -107,7 +110,7 @@ describe('AppClientInbox authentication', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: new TestResourceInboxResults(),
                 database: createAppInboxTestDatabase(queue, new TestResourceInboxResults()),
-                clientStateService: createDefaultClientStateServiceStub()
+                clientStateService: createClientStateServiceFixture()
             },
             { serviceId: 'server-12345678' }
         );
@@ -257,7 +260,17 @@ describe('AppClientInbox authentication', () => {
     });
 });
 
-async function createRevokedAuthorityRetryHarness() {
+interface RevokedAuthorityRetryHarness {
+    readonly alice: IssuedAuthSession;
+    readonly database: AppInboxTestDatabase;
+    readonly queue: TestResourceInbox;
+    readonly reader: InboxQueueReader;
+    readonly runtimeRepository: FakeRuntimeStateRepository;
+    readonly service: AppClientInboxService;
+    wasRevoked(): boolean;
+}
+
+async function createRevokedAuthorityRetryHarness(): Promise<RevokedAuthorityRetryHarness> {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
@@ -304,9 +317,7 @@ async function createRevokedAuthorityRetryHarness() {
                 serviceId: 'server-12345678'
             })
         },
-        {
-            serviceId: 'server-12345678'
-        }
+        { serviceId: 'server-12345678' }
     );
     return {
         alice,
@@ -318,8 +329,6 @@ async function createRevokedAuthorityRetryHarness() {
         wasRevoked: () => revoked
     };
 }
-
-type RevokedAuthorityRetryHarness = Awaited<ReturnType<typeof createRevokedAuthorityRetryHarness>>;
 
 function startRevokedAuthorityMutation(harness: RevokedAuthorityRetryHarness) {
     return processAuthenticatedClientMutation(

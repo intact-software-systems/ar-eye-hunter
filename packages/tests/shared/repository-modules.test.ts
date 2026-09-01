@@ -12,9 +12,11 @@ import type {
     AuditStamp,
     GroupMember,
     GroupPresenceSession,
+    GroupRef,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
+import * as clientSnapshotRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
 import {
     configureClientStateSnapshotRepository,
     findClientStateSnapshotByPrincipalId,
@@ -26,7 +28,7 @@ import {
     toClientStateSnapshotRepositoryKey,
     waitForClientStateSnapshotChangesIdle
 } from '@shared/repository/client-state-snapshots-repository.ts';
-import * as clientSnapshotRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
+import * as groupSnapshotRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import {
     findFirstGroupStateSnapshotRefSessionIdIsIn,
     findGroupStateSnapshotByRef,
@@ -39,7 +41,6 @@ import {
     toGroupStateSnapshotRepositoryKey,
     waitForGroupStateSnapshotChangesIdle
 } from '@shared/repository/group-state-snapshots-repository.ts';
-import * as groupSnapshotRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import { createAndSetBootstrapOverlays } from '@shared/repository/overlay-bootstrap.ts';
 import {
     findPlannedOverlayById,
@@ -65,7 +66,7 @@ import {
     expect,
     it
 } from 'vitest';
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
 interface GroupFixtureScope {
@@ -116,12 +117,6 @@ describe('repository modules', () => {
     });
 
     it('round-trips client snapshot keys with required workspace values', () => {
-        interface SnapshotKeyCodec {
-            readonly fromClientStateSnapshotRepositoryKey?: (
-                key: string
-            ) => Partial<ClientPrincipalRef>;
-        }
-        const codec = clientSnapshotRepositoryModule as SnapshotKeyCodec;
         const refs = [
             {
                 applicationId: 'app|with:delimiters',
@@ -138,7 +133,7 @@ describe('repository modules', () => {
         const keys = refs.map(toClientStateSnapshotRepositoryKey);
         expect(new Set(keys).size).toBe(refs.length);
         expect(
-            keys.map((key) => codec.fromClientStateSnapshotRepositoryKey?.(key) ?? null)
+            keys.map(clientSnapshotRepositoryModule.fromClientStateSnapshotRepositoryKey)
         ).toEqual(refs);
         expect(() =>
             toClientStateSnapshotRepositoryKey({
@@ -239,13 +234,6 @@ describe('repository modules', () => {
     });
 
     it('conditionally removes only the unchanged client snapshot identity', () => {
-        interface ConditionalClientRemoval {
-            readonly removeClientStateSnapshotIfUnchanged?: (
-                ref: ClientPrincipalRef,
-                expected: ClientSnapshot
-            ) => boolean;
-        }
-        const conditionalRemoval = clientSnapshotRepositoryModule as ConditionalClientRemoval;
         const first = createClientSnapshot('client-1', 'session-old', 1);
         const newer = createClientSnapshot('client-1', 'session-new', 2);
 
@@ -253,32 +241,42 @@ describe('repository modules', () => {
         expect(setClientStateSnapshotByPrincipalId('client-1', newer)).toBe(true);
 
         expect(
-            conditionalRemoval.removeClientStateSnapshotIfUnchanged?.(
+            clientSnapshotRepositoryModule.removeClientStateSnapshotIfUnchanged(
                 first.principal,
                 first
-            ) ?? false
+            )
         ).toBe(false);
         expect(findClientStateSnapshotByRef(first.principal)).toBe(newer);
 
         expect(
-            conditionalRemoval.removeClientStateSnapshotIfUnchanged?.(
+            clientSnapshotRepositoryModule.removeClientStateSnapshotIfUnchanged(
                 newer.principal,
                 newer
-            ) ?? false
+            )
         ).toBe(true);
         expect(findClientStateSnapshotByRef(newer.principal)).toBeUndefined();
     });
 
     it('stores group snapshots by scoped ref, keeps newer versions, and finds memberships', () => {
-        const first = createGroupSnapshot('group-1', 'Alpha', 1, [
-            'self',
-            'peer-a'
-        ]);
-        const stale = createGroupSnapshot('group-1', 'Alpha', 0, ['self']);
-        const second = createGroupSnapshot('group-2', 'Beta', 1, [
-            'self',
-            'peer-b'
-        ]);
+        const first = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Alpha',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'self',
+                'peer-a'
+            ]
+        });
+        const stale = createGroupSnapshot({ groupId: 'group-1', displayName: 'Alpha', membershipVersion: 0, memberSessionIds: ['self'] });
+        const second = createGroupSnapshot({
+            groupId: 'group-2',
+            displayName: 'Beta',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'self',
+                'peer-b'
+            ]
+        });
 
         expect(setGroupStateSnapshots([first, second])).toBe(true);
         expect(findGroupStateSnapshotByRef(first.group)).toEqual(first);
@@ -293,18 +291,33 @@ describe('repository modules', () => {
     });
 
     it('finds group snapshots by all active session ids using current memberships', () => {
-        const first = createGroupSnapshot('group-1', 'Alpha', 1, [
-            'self',
-            'peer-a'
-        ]);
-        const second = createGroupSnapshot('group-2', 'Beta', 1, [
-            'self',
-            'peer-b'
-        ]);
-        const updatedFirst = createGroupSnapshot('group-1', 'Alpha', 2, [
-            'self',
-            'peer-c'
-        ]);
+        const first = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Alpha',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'self',
+                'peer-a'
+            ]
+        });
+        const second = createGroupSnapshot({
+            groupId: 'group-2',
+            displayName: 'Beta',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'self',
+                'peer-b'
+            ]
+        });
+        const updatedFirst = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Alpha',
+            membershipVersion: 2,
+            memberSessionIds: [
+                'self',
+                'peer-c'
+            ]
+        });
 
         expect(setGroupStateSnapshots([first, second])).toBe(true);
         expect(findGroupStateSnapshotsBySessionIds(['self', 'peer-a']))
@@ -326,24 +339,24 @@ describe('repository modules', () => {
     });
 
     it('keeps same group id snapshots isolated across workspaces', () => {
-        const workspaceA = createGroupSnapshot(
-            'shared-room',
-            'Workspace A',
-            1,
-            ['session-a'],
-            {
+        const workspaceA = createGroupSnapshot({
+            groupId: 'shared-room',
+            displayName: 'Workspace A',
+            membershipVersion: 1,
+            memberSessionIds: ['session-a'],
+            scope: {
                 workspaceId: 'workspace-a'
             }
-        );
-        const workspaceB = createGroupSnapshot(
-            'shared-room',
-            'Workspace B',
-            1,
-            ['session-b'],
-            {
+        });
+        const workspaceB = createGroupSnapshot({
+            groupId: 'shared-room',
+            displayName: 'Workspace B',
+            membershipVersion: 1,
+            memberSessionIds: ['session-b'],
+            scope: {
                 workspaceId: 'workspace-b'
             }
-        );
+        });
 
         expect(setGroupStateSnapshots([workspaceA, workspaceB])).toBe(true);
 
@@ -372,29 +385,23 @@ describe('repository modules', () => {
     });
 
     it('round-trips group snapshot keys with required workspace values', () => {
-        interface SnapshotKeyCodec {
-            readonly fromGroupStateSnapshotRepositoryKey?: (
-                key: string
-            ) => Partial<GroupSnapshot['group']>;
-        }
-        const codec = groupSnapshotRepositoryModule as SnapshotKeyCodec;
         const refs = [
             {
                 applicationId: 'app|with:delimiters',
                 workspaceId: '_',
                 groupId: 'group%2Fname'
-            } as GroupSnapshot['group'],
+            },
             {
                 applicationId: 'app|with:delimiters',
                 workspaceId: 'workspace:%25',
                 groupId: 'group%2Fname'
-            } as GroupSnapshot['group']
-        ] satisfies readonly GroupSnapshot['group'][];
+            }
+        ] satisfies readonly GroupRef[];
 
         const keys = refs.map(toGroupStateSnapshotRepositoryKey);
         expect(new Set(keys).size).toBe(refs.length);
         expect(
-            keys.map((key) => codec.fromGroupStateSnapshotRepositoryKey?.(key) ?? null)
+            keys.map(groupSnapshotRepositoryModule.fromGroupStateSnapshotRepositoryKey)
         ).toEqual(refs);
         expect(() =>
             toGroupStateSnapshotRepositoryKey({
@@ -406,32 +413,31 @@ describe('repository modules', () => {
     });
 
     it('uses the full group causal tuple for cache ordering', () => {
-        const first = {
-            ...createGroupSnapshot('group-1', 'Alpha', 1, ['self']),
-            group: {
-                ...createGroupSnapshot('group-1', 'Alpha', 1, ['self']).group,
-                snapshotVersion: 10
-            }
-        } satisfies GroupSnapshot;
-        const staleBySnapshotVersion = {
-            ...createGroupSnapshot('group-1', 'Alpha', 99, ['self', 'peer-stale']),
-            causalRevision: { groupRevision: 0, presenceRevision: 0 },
-            group: {
-                ...createGroupSnapshot('group-1', 'Alpha', 99, ['self', 'peer-stale']).group,
-                snapshotVersion: 9
-            }
-        } satisfies GroupSnapshot;
-        const newer = {
-            ...createGroupSnapshot('group-1', 'Alpha', 2, ['self', 'peer-a']),
-            group: {
-                ...createGroupSnapshot('group-1', 'Alpha', 2, ['self', 'peer-a']).group,
-                snapshotVersion: 11
-            }
-        } satisfies GroupSnapshot;
+        const first = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Alpha',
+            membershipVersion: 10,
+            presenceVersion: 1,
+            memberSessionIds: ['self']
+        });
+        const stalePresence = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Alpha',
+            membershipVersion: 10,
+            presenceVersion: 0,
+            memberSessionIds: ['self', 'peer-stale']
+        });
+        const newer = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Alpha',
+            membershipVersion: 10,
+            presenceVersion: 2,
+            memberSessionIds: ['self', 'peer-a']
+        });
 
         expect(readGroupVersion(first)).toBe(10);
         expect(setGroupStateSnapshot(first)).toBe(true);
-        expect(setGroupStateSnapshot(staleBySnapshotVersion)).toBe(false);
+        expect(setGroupStateSnapshot(stalePresence)).toBe(false);
         expect(findGroupStateSnapshotByRef(first.group)).toEqual(first);
         expect(setGroupStateSnapshot(newer)).toBe(true);
         expect(findGroupStateSnapshotByRef(newer.group)).toEqual(newer);
@@ -439,12 +445,14 @@ describe('repository modules', () => {
 
     it('rejects stale and conflicting group causal revisions', () => {
         const accepted = {
-            ...createGroupSnapshot('group-1', 'Alpha', 1, ['session-new'])
+            ...createGroupSnapshot({ groupId: 'group-1', displayName: 'Alpha', membershipVersion: 2, memberSessionIds: ['session-new'] })
         } satisfies GroupSnapshot;
-        const stale = {
-            ...createGroupSnapshot('group-1', 'Stale', 99, ['session-stale']),
-            causalRevision: { groupRevision: 0, presenceRevision: 0 }
-        } satisfies GroupSnapshot;
+        const stale = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Stale',
+            membershipVersion: 1,
+            memberSessionIds: ['session-stale']
+        });
         const conflict = {
             ...accepted,
             onlineMemberCount: 0
@@ -458,40 +466,43 @@ describe('repository modules', () => {
     });
 
     it('conditionally removes only the unchanged group and session-index identity', () => {
-        interface ConditionalGroupRemoval {
-            readonly removeGroupStateSnapshotIfUnchanged?: (
-                ref: GroupSnapshot['group'],
-                expected: GroupSnapshot
-            ) => boolean;
-        }
-        const conditionalRemoval = groupSnapshotRepositoryModule as ConditionalGroupRemoval;
-        const first = createGroupSnapshot('group-1', 'Alpha', 1, [
-            'self',
-            'session-old'
-        ]);
-        const newer = createGroupSnapshot('group-1', 'Alpha', 2, [
-            'self',
-            'session-new'
-        ]);
+        const first = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Alpha',
+            membershipVersion: 1,
+            memberSessionIds: [
+                'self',
+                'session-old'
+            ]
+        });
+        const newer = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Alpha',
+            membershipVersion: 2,
+            memberSessionIds: [
+                'self',
+                'session-new'
+            ]
+        });
 
         expect(setGroupStateSnapshot(first)).toBe(true);
         expect(setGroupStateSnapshot(newer)).toBe(true);
 
         expect(
-            conditionalRemoval.removeGroupStateSnapshotIfUnchanged?.(
+            groupSnapshotRepositoryModule.removeGroupStateSnapshotIfUnchanged(
                 first.group,
                 first
-            ) ?? false
+            )
         ).toBe(false);
         expect(findGroupStateSnapshotByRef(first.group)).toBe(newer);
         expect(findGroupStateSnapshotsBySessionIds(['self', 'session-new']))
             .toEqual([newer]);
 
         expect(
-            conditionalRemoval.removeGroupStateSnapshotIfUnchanged?.(
+            groupSnapshotRepositoryModule.removeGroupStateSnapshotIfUnchanged(
                 newer.group,
                 newer
-            ) ?? false
+            )
         ).toBe(true);
         expect(findGroupStateSnapshotByRef(newer.group)).toBeUndefined();
         expect(findGroupStateSnapshotsBySessionIds(['self', 'session-new']))
@@ -505,7 +516,7 @@ describe('repository modules', () => {
         });
 
         try {
-            const first = createGroupSnapshot('group-1', 'Alpha', 1, ['self']);
+            const first = createGroupSnapshot({ groupId: 'group-1', displayName: 'Alpha', membershipVersion: 1, memberSessionIds: ['self'] });
             const refreshed = {
                 ...first,
                 group: {
@@ -516,11 +527,16 @@ describe('repository modules', () => {
                     }
                 }
             } satisfies GroupSnapshot;
-            const stale = createGroupSnapshot('group-1', 'Alpha', 0, ['self']);
-            const newer = createGroupSnapshot('group-1', 'Alpha', 2, [
-                'self',
-                'peer-a'
-            ]);
+            const stale = createGroupSnapshot({ groupId: 'group-1', displayName: 'Alpha', membershipVersion: 0, memberSessionIds: ['self'] });
+            const newer = createGroupSnapshot({
+                groupId: 'group-1',
+                displayName: 'Alpha',
+                membershipVersion: 2,
+                memberSessionIds: [
+                    'self',
+                    'peer-a'
+                ]
+            });
 
             expect(setGroupStateSnapshot(first)).toBe(true);
             expect(setGroupStateSnapshot(first)).toBe(false);
@@ -539,11 +555,16 @@ describe('repository modules', () => {
     });
 
     it('stores overlays by overlay id and preserves newer versions', () => {
-        const group = createGroupSnapshot('group-1', 'Alpha', 2, [
-            'self',
-            'peer-a',
-            'peer-b'
-        ]);
+        const group = createGroupSnapshot({
+            groupId: 'group-1',
+            displayName: 'Alpha',
+            membershipVersion: 2,
+            memberSessionIds: [
+                'self',
+                'peer-a',
+                'peer-b'
+            ]
+        });
         const overlayId = toScopedOverlayId(group.group);
 
         createAndSetBootstrapOverlays([group], {
@@ -879,8 +900,8 @@ describe('repository modules', () => {
     });
 
     it('normalizes RTT pair keys and keeps only newer measurements', () => {
-        const older = createRttMeasurement('peer-b', 'peer-a', 1, 10);
-        const newer = createRttMeasurement('peer-a', 'peer-b', 2, 20);
+        const older = createRttMeasurement({ sessionIdFrom: 'peer-b', sessionIdTo: 'peer-a', version: 1, rttMs: 10 });
+        const newer = createRttMeasurement({ sessionIdFrom: 'peer-a', sessionIdTo: 'peer-b', version: 2, rttMs: 20 });
 
         expect(pairKey('peer-a', 'peer-b')).toBe(pairKey('peer-b', 'peer-a'));
         expect(setRtt(older)).toBe(true);
@@ -919,27 +940,7 @@ function createClientSnapshot(
 ): ClientSnapshot {
     const applicationId = 'app-1';
     const workspaceId = 'workspace-1';
-    const activeSessions: readonly ClientSession[] = sessionId
-        ? [{
-            applicationId,
-            workspaceId,
-            principalId,
-            clientInstanceId: `${principalId}-instance`,
-            sessionId,
-            generationId: `${sessionId}:generation-1`,
-            generationVersion: version,
-            status: 'active',
-            presenceState: 'online',
-            transport: 'ws',
-            connectionId: null,
-            authenticatedAtEpochMs: version,
-            connectedAtEpochMs: version,
-            lastHeartbeatAtEpochMs: version,
-            expiresAtEpochMs: version + 60_000,
-            disconnectedAtEpochMs: null,
-            disconnectReason: null
-        }]
-        : [];
+    const activeSessions: readonly ClientSession[] = createClientSessions(principalId, sessionId, version);
 
     return {
         stateRevision: version,
@@ -988,13 +989,8 @@ function createClientSnapshot(
     };
 }
 
-function createGroupSnapshot(
-    groupId: string,
-    displayName: string,
-    membershipVersion: number,
-    memberSessionIds: readonly string[],
-    scope: GroupFixtureScope = {}
-): GroupSnapshot {
+function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
+    const { groupId, displayName, membershipVersion, presenceVersion = membershipVersion, memberSessionIds, scope = {} } = input;
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
     const ownerPrincipalId = memberSessionIds[0];
@@ -1005,7 +1001,7 @@ function createGroupSnapshot(
     return {
         causalRevision: {
             groupRevision: membershipVersion,
-            presenceRevision: membershipVersion
+            presenceRevision: presenceVersion
         },
         group: createTestGroup({
             applicationId,
@@ -1016,9 +1012,9 @@ function createGroupSnapshot(
             activeMemberCount: memberSessionIds.length,
             ownerPrincipalId,
             snapshotVersion: membershipVersion,
-            metadataVersion: 0,
+            metadataVersion: 1,
             rosterVersion: membershipVersion,
-            presenceVersion: 0,
+            presenceVersion,
             created: createPrincipalAuditStamp(1, ownerPrincipalId),
             updated: createPrincipalAuditStamp(
                 membershipVersion,
@@ -1043,21 +1039,7 @@ function createGroupSnapshot(
             removed: null,
             banned: null
         })),
-        activeSessions: memberSessionIds.map((sessionId): GroupPresenceSession => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            generationId: `generation-${sessionId}`,
-            generationVersion: 1,
-            status: 'active',
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: membershipVersion,
-            expiresAtEpochMs: membershipVersion + 60_000,
-            disconnectedAtEpochMs: null,
-            disconnectReason: null
-        })),
+        activeSessions: createGroupSessions(input),
         memberCount: memberSessionIds.length,
         onlineMemberCount: memberSessionIds.length
     };
@@ -1076,12 +1058,8 @@ function createPrincipalAuditStamp(
     };
 }
 
-function createRttMeasurement(
-    sessionIdFrom: string,
-    sessionIdTo: string,
-    version: number,
-    rttMs: number
-): RttMeasurementInfo {
+function createRttMeasurement(input: CreateRttMeasurementInput): RttMeasurementInfo {
+    const { sessionIdFrom, sessionIdTo, version, rttMs } = input;
     return {
         sessionIdFrom,
         sessionIdTo,
@@ -1089,4 +1067,63 @@ function createRttMeasurement(
         rttMs,
         createdAtEpochMs: version
     };
+}
+interface CreateGroupSnapshotInput {
+    readonly groupId: string;
+    readonly displayName: string;
+    readonly membershipVersion: number;
+    readonly presenceVersion?: number;
+    readonly memberSessionIds: readonly string[];
+    readonly scope?: GroupFixtureScope;
+}
+interface CreateRttMeasurementInput {
+    readonly sessionIdFrom: string;
+    readonly sessionIdTo: string;
+    readonly version: number;
+    readonly rttMs: number;
+}
+function createGroupSessions(input: CreateGroupSnapshotInput): GroupSnapshot['activeSessions'] {
+    const { groupId, membershipVersion, memberSessionIds, scope = {} } = input;
+    const applicationId = scope.applicationId ?? 'app-1';
+    const workspaceId = scope.workspaceId ?? 'workspace-1';
+    return memberSessionIds.map((sessionId): GroupPresenceSession => ({
+        applicationId,
+        workspaceId,
+        groupId,
+        sessionId,
+        principalId: sessionId,
+        generationId: `generation-${sessionId}`,
+        generationVersion: 1,
+        status: 'active',
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: membershipVersion,
+        expiresAtEpochMs: membershipVersion + 60_000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
+    }));
+}
+function createClientSessions(principalId: string, sessionId: string | undefined, version: number): ClientSnapshot['activeSessions'] {
+    const applicationId = 'app-1';
+    const workspaceId = 'workspace-1';
+    return sessionId
+        ? [{
+            applicationId,
+            workspaceId,
+            principalId,
+            clientInstanceId: `${principalId}-instance`,
+            sessionId,
+            generationId: `${sessionId}:generation-1`,
+            generationVersion: version,
+            status: 'active',
+            presenceState: 'online',
+            transport: 'ws',
+            connectionId: null,
+            authenticatedAtEpochMs: version,
+            connectedAtEpochMs: version,
+            lastHeartbeatAtEpochMs: version,
+            expiresAtEpochMs: version + 60_000,
+            disconnectedAtEpochMs: null,
+            disconnectReason: null
+        }]
+        : [];
 }

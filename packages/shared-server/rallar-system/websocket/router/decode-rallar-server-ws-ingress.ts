@@ -1,5 +1,8 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { isRoomScopedALMessage, readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import {
+    isRoomScopedALMessage,
+    readALTargetGroupRef,
+    type ALMessage
+} from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
@@ -21,13 +24,17 @@ export interface AuthorizeRallarServerWsIngressInput {
     readonly authorizeRoomMessage?: RallarServerWsRoomAuthorizer;
 }
 
-export interface RallarServerWsAuthorizationResult {
-    readonly authorized: boolean;
-    readonly audience?: RallarServerWsRoomAudience;
-    readonly reason?: ALNackReason;
-    readonly logMessage?: string;
-    readonly serverSnapshotVersion?: number;
-}
+export type RallarServerWsAuthorizationResult =
+    | {
+        readonly authorized: true;
+        readonly audience: RallarServerWsRoomAudience | undefined;
+    }
+    | {
+        readonly authorized: false;
+        readonly reason: ALNackReason;
+        readonly logMessage: string;
+        readonly serverSnapshotVersion: number | undefined;
+    };
 
 export function decodeRallarServerWsIngress(
     message: ALMessage
@@ -48,11 +55,16 @@ export async function authorizeRallarServerWsIngress(
     input: AuthorizeRallarServerWsIngressInput
 ): Promise<RallarServerWsAuthorizationResult> {
     if (input.definition?.scope !== 'room' && !isRoomScopedALMessage(input.message)) {
-        return { authorized: true };
+        return { authorized: true, audience: undefined };
     }
     const roomId = readRallarServerWsRoomId(input.message);
     if (!roomId || !input.authorizeRoomMessage) {
-        return { authorized: false };
+        return {
+            authorized: false,
+            reason: 'unauthorized',
+            logMessage: `Rejected unauthorised Rallar server WS topic: ${input.message.route.topicId}`,
+            serverSnapshotVersion: undefined
+        };
     }
     return normalizeRoomAuthorizationDecision(
         await input.authorizeRoomMessage({
@@ -113,17 +125,18 @@ function normalizeRoomAuthorizationDecision(
     decision: RallarServerWsRoomAuthorizationDecision,
     message: ALMessage
 ): RallarServerWsAuthorizationResult {
-    if (typeof decision === 'boolean') {
-        return { authorized: decision };
+    if (decision === true) {
+        return { authorized: true, audience: undefined };
     }
-    if (decision.authorized) {
+    if (decision !== false && decision.authorized) {
         return { authorized: true, audience: decision.audience };
     }
+    const denial = decision === false ? undefined : decision;
     return {
         authorized: false,
-        reason: decision.reason,
-        logMessage: decision.logMessage ??
+        reason: denial?.reason ?? 'unauthorized',
+        logMessage: denial?.logMessage ??
             `Rejected unauthorised Rallar server WS topic: ${message.route.topicId}`,
-        serverSnapshotVersion: decision.serverSnapshotVersion
+        serverSnapshotVersion: denial?.serverSnapshotVersion
     };
 }

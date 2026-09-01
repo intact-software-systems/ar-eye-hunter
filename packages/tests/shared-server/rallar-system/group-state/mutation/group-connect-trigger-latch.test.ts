@@ -9,7 +9,7 @@ import {
     writeGroupConnectTriggerRequests
 } from '@shared-server/rallar-system/topology/replay/work/write-group-connect-trigger-requests.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { describe, expect, it } from 'vitest';
 import { createResilience } from '../inbox/group-state-inbox-test-runtime.ts';
 import { createAuthorityHarness } from '../inbox/group-state-inbox-test-runtime.ts';

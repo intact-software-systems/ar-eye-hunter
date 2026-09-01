@@ -1,5 +1,5 @@
-import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import { toRallarCommandOptions, toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 describe('Rallar operation options compatibility', () => {
@@ -36,4 +36,19 @@ describe('Rallar operation options compatibility', () => {
             rttReportingDegreeLimit: 3
         });
     });
+});
+
+it('normalizes thrown non-errors before invoking the application retry policy', () => {
+    const observed: { error: Error; attempt: number; }[] = [];
+    const options = toRallarCommandOptions({
+        shouldRetry: (error, attempt) => {
+            observed.push({ error, attempt });
+            return false;
+        }
+    });
+    expect(options.shouldRetry?.('disconnected', 2)).toBe(false);
+    expect(observed).toHaveLength(1);
+    expect(observed[0].error).toBeInstanceOf(Error);
+    expect(observed[0].error.message).toBe('disconnected');
+    expect(observed[0].attempt).toBe(2);
 });

@@ -1,11 +1,26 @@
+import type { BlackBoxRallarDirectorOutputRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
-import type { BlackBoxBrowserDirectorDependency } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
-import type { BlackBoxRallarDirectorOutputRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/contracts.ts';
-import type { RallarDirectorRelayMessage, RallarDirectorStatus } from '@shared-web/browser/director/rallar-director-facade.ts';
-import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type {
+    RallarDirectorRelayConfig,
+    RallarDirectorRelayHandle,
+    RallarDirectorRelayMessage,
+    RallarDirectorStatus
+} from '@shared-web/browser/director/rallar-director-facade.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { facade, loadRuntime, resetFacade, topics } from './browser-rallar-runtime-test-harness.ts';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import {
+    facade,
+    loadRuntime,
+    resetFacade,
+    topics
+} from './browser-rallar-runtime-test-harness.ts';
 
 const roomRef: GroupRef = {
     applicationId: 'app-1',
@@ -35,8 +50,9 @@ const directorStatus: RallarDirectorStatus = {
 };
 
 interface DirectorRelayScenario {
-    readonly relay: ReturnType<BlackBoxBrowserDirectorDependency['createRelay']>;
-    config(): Parameters<BlackBoxBrowserDirectorDependency['createRelay']>[0];
+    readonly relay: RallarDirectorRelayHandle<unknown, BlackBoxRallarDirectorOutputRecord, unknown>;
+    readonly creationSnapshots: unknown[];
+    config(): RallarDirectorRelayConfig<unknown, BlackBoxRallarDirectorOutputRecord, unknown>;
 }
 
 beforeEach(() => {
@@ -79,6 +95,21 @@ it('appoints a director and exposes its refreshed room status', async () => {
         outputTypeId: 'app.test.director.output',
         heartbeatIntervalMs: 300,
         snapshotIntervalMs: 500
+    });
+});
+
+it('initializes snapshot observations before handing callbacks to the relay owner', async () => {
+    const scenario = configureDirectorRelayScenario();
+    const runtime = await loadConnectedDirectorRuntime();
+    await startDirectorRelay(runtime);
+    expect(await scenario.creationSnapshots[0]).toMatchObject({
+        handle: 'relay-1',
+        status: directorStatus,
+        acceptedIntents: [],
+        outputs: [],
+        snapshots: [],
+        syncRequests: [],
+        sequence: 0
     });
 });
 
@@ -142,8 +173,9 @@ it('sends relay intent and sync requests before releasing the handle', async () 
 });
 
 function configureDirectorRelayScenario(): DirectorRelayScenario {
-    let config: Parameters<BlackBoxBrowserDirectorDependency['createRelay']>[0] | undefined;
-    const relay: ReturnType<BlackBoxBrowserDirectorDependency['createRelay']> = {
+    const creationSnapshots: unknown[] = [];
+    let config: RallarDirectorRelayConfig<unknown, BlackBoxRallarDirectorOutputRecord, unknown> | undefined;
+    const relay: RallarDirectorRelayHandle<unknown, BlackBoxRallarDirectorOutputRecord, unknown> = {
         status: () => directorStatus,
         sendIntent: async () => ({ status: 'sent' }),
         sendOutput: async () => ({ status: 'sent' }),
@@ -164,10 +196,12 @@ function configureDirectorRelayScenario(): DirectorRelayScenario {
     facade.behavior.directorStatus.mockReturnValue(directorStatus);
     facade.behavior.directorCreateRelay.mockImplementation((createdConfig) => {
         config = createdConfig;
+        creationSnapshots.push(createdConfig.readSnapshot?.());
         return relay;
     });
     return {
         relay,
+        creationSnapshots,
         config: () => {
             if (config === undefined) {
                 throw new Error('The director relay was not created.');
@@ -266,7 +300,7 @@ function relayMessage<T>(data: T, senderId: string, receivedAtEpochMs: number): 
 }
 
 function isDirectorOutput(
-    value: void | RallarMessagePayload | readonly BlackBoxRallarDirectorOutputRecord[]
+    value: void | BlackBoxRallarDirectorOutputRecord | readonly BlackBoxRallarDirectorOutputRecord[]
 ): value is BlackBoxRallarDirectorOutputRecord {
     return typeof value === 'object' && value !== null && 'kind' in value &&
         value.kind === 'black-box-director-output';

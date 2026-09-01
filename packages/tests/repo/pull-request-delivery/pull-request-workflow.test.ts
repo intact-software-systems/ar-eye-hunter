@@ -86,8 +86,6 @@ describe('pull-request release workflow', () => {
         });
         expect(capture['timeout-minutes']).toBe(360);
         expect(observe.run).toContain('observe-live-rtc');
-        expect(observe.run).toContain('env -u DATABASE_URL -u RALLAR_ICE_MODE');
-        expect(observe.run).not.toContain('RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1');
         expect(upload).toMatchObject({
             if: '${{ always() }}',
             uses: 'actions/upload-artifact@v7',

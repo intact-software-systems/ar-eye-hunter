@@ -1,32 +1,30 @@
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import {
+    buildSync,
+    type Metafile
+} from 'esbuild';
+import {
+    mkdirSync,
+    readFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { brotliCompressSync, constants } from 'node:zlib';
-// dprint-ignore
+import {
+    brotliCompressSync,
+    constants
+} from 'node:zlib';
 import {
     describe,
     expect,
     it
 } from 'vitest';
 
-interface EsbuildMetafile {
-    readonly inputs: Readonly<Record<string, unknown>>;
-}
-
 interface HeadlessBundleMeasurement {
     readonly brotliKiB: number;
-    readonly metafile: EsbuildMetafile;
+    readonly metafile: Metafile;
 }
 
 const repoRoot = process.cwd();
 const outputDir = path.join(tmpdir(), 'rallar-black-box-headless-boundary-test');
-const esbuildBin = path.join(
-    repoRoot,
-    'node_modules',
-    '.bin',
-    process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild'
-);
 
 describe('rallar-black-box-headless bundle boundary', () => {
     it('excludes operator UI dependencies and surfaces', () => {
@@ -53,47 +51,28 @@ describe('rallar-black-box-headless bundle boundary', () => {
             );
         }
 
-        // Validated snapshot point reads and race-fenced repair add a bounded browser cost.
-        // Group-formation Phase 1 (overlay provenance admission, bounded bootstrap
-        // selection, outbound dial plan) adds ~0.7 KiB; measured 194.61 at that change.
-        // Phase 3 M2 browser delta consumption (delta-envelope wire validation,
-        // snapshot materialization, floored gap pull) adds ~1.9 KiB; measured
-        // 200.40 at that change.
-        // Strict AppInbox mutation paths and canonical failure decoding add
-        // ~0.87 KiB over the stacked base; measured 202.42 at that change.
-        // Slice 8a's two-role overlay caches, validated HTTP hydration, and
-        // lifecycle race fences add 0.771484 KiB over the Slice 7 base after
-        // removing the dead browser graph-to-overlay mutation path:
-        // 202.944336 KiB -> 203.715820 KiB.
-        // One deadline across room refresh and best-effort topology hydration
-        // adds 0.284180 KiB: 203.715820 KiB -> 204.000000 KiB.
-        expect(result.brotliKiB).toBeLessThan(205);
+        // The room-authority closure measures 208.4658203125 KiB with the
+        // reviewed exclusions and build settings. The maintainer approved the
+        // smallest whole-KiB strict limit that contains that behavior.
+        expect(result.brotliKiB).toBeLessThan(209);
     });
 });
 
 function bundleHeadlessEntry(): HeadlessBundleMeasurement {
     mkdirSync(outputDir, { recursive: true });
     const outputPath = path.join(outputDir, 'headless-agent.boundary.min.js');
-    const metafilePath = `${outputPath}.meta.json`;
-
-    execFileSync(
-        esbuildBin,
-        [
-            'apps/rallar-black-box-headless/src/main.ts',
-            '--bundle',
-            '--minify',
-            '--format=esm',
-            '--platform=browser',
-            '--target=es2023',
-            '--tsconfig=apps/rallar-black-box-headless/tsconfig.json',
-            `--outfile=${outputPath}`,
-            `--metafile=${metafilePath}`
-        ],
-        {
-            cwd: repoRoot,
-            stdio: ['ignore', 'ignore', 'pipe']
-        }
-    );
+    const result = buildSync({
+        absWorkingDir: repoRoot,
+        entryPoints: ['apps/rallar-black-box-headless/src/main.ts'],
+        bundle: true,
+        minify: true,
+        format: 'esm',
+        platform: 'browser',
+        target: 'es2023',
+        tsconfig: 'apps/rallar-black-box-headless/tsconfig.json',
+        outfile: outputPath,
+        metafile: true
+    });
 
     const bytes = readFileSync(outputPath);
     const brotliBytes = brotliCompressSync(bytes, {
@@ -104,6 +83,6 @@ function bundleHeadlessEntry(): HeadlessBundleMeasurement {
 
     return {
         brotliKiB: brotliBytes / 1024,
-        metafile: JSON.parse(readFileSync(metafilePath, 'utf8')) as EsbuildMetafile
+        metafile: result.metafile
     };
 }

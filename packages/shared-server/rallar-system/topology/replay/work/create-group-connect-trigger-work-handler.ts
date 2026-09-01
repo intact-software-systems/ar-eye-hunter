@@ -2,7 +2,7 @@ import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layo
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import {
     decodeGroupConnectTriggerWork,

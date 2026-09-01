@@ -154,7 +154,10 @@ function scanDirectoryDensity(directory, directSources, findings) {
         const prefixMessage = `Review feature ownership: prefix '${prefix}' appears in ${fileNames.length} ` +
             `direct files. Samples: ${sampleFileNames(fileNames)}. This is not an instruction ` +
             'to create folders or pass-through modules mechanically.';
-        findings.push(toFinding(directory, layoutRuleIds.featurePrefixCluster, prefixMessage));
+        findings.push({
+            ...toFinding(directory, layoutRuleIds.featurePrefixCluster, prefixMessage),
+            symbol: `prefix:${prefix}`
+        });
     }
 }
 function addFileGroupFinding(input) {

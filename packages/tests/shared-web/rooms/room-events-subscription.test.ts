@@ -4,7 +4,13 @@ import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 
-import { createRoomEvent, findRoomWsCallback, readRoomEventMocks, resetRoomEventTestRuntime, toRoomEventEnvelopeMessage } from './room-event-test-runtime.ts';
+import {
+    createRoomEvent,
+    dispatchRoomWsMessage,
+    readRoomEventMocks,
+    resetRoomEventTestRuntime,
+    toRoomEventEnvelopeMessage
+} from './room-event-test-runtime.ts';
 
 describe('room event subscriptions', () => {
     beforeEach(resetRoomEventTestRuntime);
@@ -28,18 +34,17 @@ describe('room event subscriptions', () => {
         });
         await facade.connect();
         roomChangeCount = 0;
-        const callback = findRoomWsCallback();
         const matching = createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' });
 
-        await callback?.onMessage?.(toRoomEventEnvelopeMessage(matching));
-        await callback?.onMessage?.(toRoomEventEnvelopeMessage(matching));
-        await callback?.onMessage?.(
+        await dispatchRoomWsMessage(toRoomEventEnvelopeMessage(matching));
+        await dispatchRoomWsMessage(toRoomEventEnvelopeMessage(matching));
+        await dispatchRoomWsMessage(
             toRoomEventEnvelopeMessage(createRoomEvent({ groupId: 'room-2', eventId: 'event-2', eventType: 'member-joined' }))
         );
-        await callback?.onMessage?.(
+        await dispatchRoomWsMessage(
             toRoomEventEnvelopeMessage(createRoomEvent({ groupId: 'room-1', eventId: 'event-3', eventType: 'member-left' }))
         );
-        await callback?.onMessage?.(
+        await dispatchRoomWsMessage(
             toRoomEventEnvelopeMessage(
                 createRoomEvent({
                     groupId: 'room-1',
@@ -85,14 +90,13 @@ describe('room event subscriptions', () => {
             messages.push(message);
         }, { roomId: 'room-1' });
         await facade.connect();
-        const callback = findRoomWsCallback();
         const wrapped = createRoomEvent({ groupId: 'room-1', eventId: 'event-wrapped', eventType: 'member-joined' });
         const duplicated = createRoomEvent({ groupId: 'room-1', eventId: 'event-duplicated', eventType: 'member-left' });
 
-        await callback?.onMessage?.(toRoomEventEnvelopeMessage(wrapped));
-        await callback?.onMessage?.(toRoomEventEnvelopeMessage(duplicated));
-        await callback?.onMessage?.(toRoomEventEnvelopeMessage(duplicated));
-        await callback?.onMessage?.(toRoomEventEnvelopeMessage(wrapped));
+        await dispatchRoomWsMessage(toRoomEventEnvelopeMessage(wrapped));
+        await dispatchRoomWsMessage(toRoomEventEnvelopeMessage(duplicated));
+        await dispatchRoomWsMessage(toRoomEventEnvelopeMessage(duplicated));
+        await dispatchRoomWsMessage(toRoomEventEnvelopeMessage(wrapped));
 
         expect(events.map((event) => event.eventId)).toEqual([
             'event-wrapped',
@@ -116,7 +120,7 @@ describe('room event subscriptions', () => {
             events.push(event);
         }, { roomId: 'room-1' });
         await facade.connect();
-        await findRoomWsCallback()?.onMessage?.(
+        await dispatchRoomWsMessage(
             toRoomEventEnvelopeMessage(event, { omitGroup: true })
         );
 
@@ -132,18 +136,17 @@ describe('room event subscriptions', () => {
             events.push(event);
         }, { roomId: 'room-1' });
         await facade.connect();
-        const callback = findRoomWsCallback();
         const event = createRoomEvent({ groupId: 'room-1', eventId: 'valid-event', eventType: 'member-joined' });
 
-        await callback?.onMessage?.(
+        await dispatchRoomWsMessage(
             toRoomEventEnvelopeMessage({
                 ...event,
                 actor: { kind: 'session', principalId: 'alice', sessionId: '' }
             })
         );
-        await callback?.onMessage?.(toRoomEventEnvelopeMessage(event));
+        await dispatchRoomWsMessage(toRoomEventEnvelopeMessage(event));
         unsubscribe();
-        await callback?.onMessage?.(
+        await dispatchRoomWsMessage(
             toRoomEventEnvelopeMessage(createRoomEvent({ groupId: 'room-1', eventId: 'later-event', eventType: 'member-left' }))
         );
 
@@ -161,7 +164,7 @@ describe('room event subscriptions', () => {
         }, { roomId: 'room-1' });
         await facade.connect();
 
-        await findRoomWsCallback(true)?.onMessage?.(
+        await dispatchRoomWsMessage(
             toRoomEventEnvelopeMessage(createRoomEvent({ groupId: 'room-1', eventId: 'event-1', eventType: 'member-joined' }))
         );
         expect(eventIds).toEqual(['event-1']);
@@ -174,7 +177,7 @@ describe('room event subscriptions', () => {
 
         expect(eventIds).toEqual(['event-1']);
 
-        await findRoomWsCallback(true)?.onMessage?.(
+        await dispatchRoomWsMessage(
             toRoomEventEnvelopeMessage(createRoomEvent({ groupId: 'room-1', eventId: 'event-3', eventType: 'member-left' }))
         );
         expect(eventIds).toEqual(['event-1', 'event-3']);

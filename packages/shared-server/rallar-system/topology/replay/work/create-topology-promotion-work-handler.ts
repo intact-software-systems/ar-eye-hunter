@@ -1,6 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { toApplyPlannedLayoutCommand } from '@shared-server/rallar-system/group-state/to-apply-planned-layout-command.ts';

@@ -20,8 +20,8 @@ import type { GroupLifecyclePolicy, GroupLifecycleState } from '@shared/api/grou
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus, InMemoryQueueBox } from '@shared/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../../../app-inbox/test-support/app-inbox-test-database.ts';
 import { createTopologyTestGroupSnapshot } from '../../config/mutation/group-topology-config-mutation-test-fixtures.ts';

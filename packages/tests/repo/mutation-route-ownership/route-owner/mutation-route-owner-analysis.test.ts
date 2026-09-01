@@ -1,13 +1,50 @@
+import { parse } from '@babel/parser';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-
 import * as boundaryAnalysis from '../boundary/mutation-boundary-analysis.ts';
 import * as routingContract from '../routing/mutation-routing-inventory.ts';
 
+const AUTHORISED_WS_HELPER = 'packages/shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 const CRDT_ADMIN_MUTATIONS = 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts';
 
 describe('Mutation route owner analysis contracts', () => {
+    it('uses one named readonly input object for each authorised websocket enqueue helper', () => {
+        const program = parse(read(AUTHORISED_WS_HELPER), {
+            sourceType: 'module',
+            plugins: ['typescript']
+        }).program;
+        const helpers = program.body
+            .filter(
+                (statement) =>
+                    statement.type === 'ExportNamedDeclaration' &&
+                    statement.declaration?.type === 'FunctionDeclaration' &&
+                    statement.declaration.id?.name.startsWith('toAuthorisedWsClient')
+            )
+            .map((statement) => {
+                if (
+                    statement.type !== 'ExportNamedDeclaration' ||
+                    statement.declaration?.type !== 'FunctionDeclaration'
+                ) {
+                    throw new Error('Unexpected helper declaration');
+                }
+                return statement.declaration;
+            });
+
+        expect(helpers.map((helper) => [helper.id?.name, helper.params.length])).toEqual([
+            ['toAuthorisedWsClientConnectEnqueue', 1],
+            ['toAuthorisedWsClientDisconnectEnqueue', 1],
+            ['toAuthorisedWsClientScope', 1],
+            ['toAuthorisedWsClientConnection', 1]
+        ]);
+        expect(read(AUTHORISED_WS_HELPER)).toContain(
+            'interface ToAuthorisedWsClientConnectEnqueueInput'
+        );
+        expect(read(AUTHORISED_WS_HELPER)).toContain(
+            'interface ToAuthorisedWsClientDisconnectEnqueueInput'
+        );
+    });
+
     it('exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions', () => {
         const analyze = boundaryAnalysis.analyzeMutationBoundarySource;
 
@@ -68,16 +105,16 @@ describe('Mutation route owner analysis contracts', () => {
             routingContract.MUTATION_ROUTE_INVENTORY.map((entry) => `${entry.entrypoint}:${entry.type}`)
         );
 
-        for (const entrypoint of STRICT_HTTP_MUTATION_ENTRYPOINTS) {
+        for (const entrypoint of STRICT_TASK_FOUR_MUTATION_ENTRYPOINTS) {
             expect(auditedEntrypoints, entrypoint).toContain(entrypoint);
         }
     });
 
     it.each([
-        STRICT_HTTP_MUTATION_ENTRYPOINTS[0],
-        STRICT_HTTP_MUTATION_ENTRYPOINTS[5],
-        STRICT_HTTP_MUTATION_ENTRYPOINTS[6],
-        STRICT_HTTP_MUTATION_ENTRYPOINTS[10]
+        STRICT_TASK_FOUR_MUTATION_ENTRYPOINTS[0],
+        STRICT_TASK_FOUR_MUTATION_ENTRYPOINTS[5],
+        STRICT_TASK_FOUR_MUTATION_ENTRYPOINTS[6],
+        STRICT_TASK_FOUR_MUTATION_ENTRYPOINTS[10]
     ])('fails closed when the strict handoff changes for %s', (entrypoint) => {
         const inventory = routingContract.MUTATION_ROUTE_INVENTORY;
         const target = inventory.find((entry) => `${entry.entrypoint}:${entry.type}` === entrypoint);
@@ -121,7 +158,7 @@ function read(filePath: string): string {
 
 const STRICT_TOPOLOGY_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology';
 
-const STRICT_HTTP_MUTATION_ENTRYPOINTS = [
+const STRICT_TASK_FOUR_MUTATION_ENTRYPOINTS = [
     `PUT ${STRICT_TOPOLOGY_PATH}/config/requests/:requestId:TOPOLOGY_CONFIG_PUT`,
     `DELETE ${STRICT_TOPOLOGY_PATH}/config/requests/:requestId:TOPOLOGY_CONFIG_DELETE`,
     `PUT ${STRICT_TOPOLOGY_PATH}/override/requests/:requestId:TOPOLOGY_OVERRIDE_PUT`,

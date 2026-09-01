@@ -2,7 +2,7 @@ import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';

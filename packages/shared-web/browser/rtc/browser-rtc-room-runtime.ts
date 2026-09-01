@@ -10,10 +10,11 @@ import type {
 import type { BrowserRoomTransportTarget } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import {
     describeRtcRoomTransport,
-    resolveRtcRoomTransportState
+    resolveRtcRoomTransportState,
+    selectRtcRoomPeers
 } from '@shared-web/browser/rtc/rtc-room-transport-status.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
 
 export namespace BrowserRtcRoomRuntime {
     export interface Input {
@@ -49,17 +50,7 @@ export class BrowserRtcRoomRuntime {
         const roomId = this.input.toRoomId(room);
         const target = this.input.resolveRoomTransportTarget(roomRef ?? room);
         const desiredPeerIds = target.peerIds;
-        const desiredPeerIdSet = new Set(desiredPeerIds);
-        const filterRoomPeerIds = (peerIds: readonly string[]): readonly string[] =>
-            peerIds.filter((peerId) => desiredPeerIdSet.has(peerId));
-        const rtcStatus = this.input.readRtcStatus({ laneId });
-        const knownPeerIds = filterRoomPeerIds(rtcStatus.knownPeerIds);
-        const activePeerIds = filterRoomPeerIds(rtcStatus.activePeerIds);
-        const readyPeerIds = filterRoomPeerIds(rtcStatus.readyPeerIds);
-        const failedPeerIds = filterRoomPeerIds(
-            rtcStatus.peerIdsWithNoReconnectableLanes
-        );
-        const peers = rtcStatus.peers.filter((peer) => desiredPeerIdSet.has(peer.peerId));
+        const peers = selectRtcRoomPeers(this.input.readRtcStatus({ laneId }), desiredPeerIds, laneId);
         const minReadyPeers = Math.max(
             0,
             options.minReadyPeers ?? desiredPeerIds.length
@@ -69,10 +60,10 @@ export class BrowserRtcRoomRuntime {
             hasAcceptedLayout: target.acceptedLayoutIdentity !== undefined,
             transportState: target.transportState,
             desiredPeerCount: desiredPeerIds.length,
-            knownPeerCount: knownPeerIds.length,
-            activePeerCount: activePeerIds.length,
-            readyPeerCount: readyPeerIds.length,
-            failedPeerCount: failedPeerIds.length,
+            knownPeerCount: peers.knownPeerIds.length,
+            activePeerCount: peers.activePeerIds.length,
+            readyPeerCount: peers.readyPeerIds.length,
+            failedPeerCount: peers.failedPeerIds.length,
             minReadyPeers,
             waitStatus: readiness?.status
         });
@@ -87,11 +78,7 @@ export class BrowserRtcRoomRuntime {
                 state,
                 acceptedLayoutIdentity: target.acceptedLayoutIdentity,
                 desiredPeerIds,
-                knownPeerIds,
-                activePeerIds,
-                readyPeerIds,
-                failedPeerIds,
-                peers,
+                ...peers,
                 laneId,
                 lastChangedAtEpochMs: Date.now(),
                 reason: describeRtcRoomTransport(state, readiness)
@@ -109,12 +96,13 @@ export class BrowserRtcRoomRuntime {
         }
 
         const laneId = options.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID;
-        const readiness = await this.input.waitForRoomLane(room, laneId, {
+        const pinnedRoom = this.input.resolveRoomRef(room) ?? room;
+        const readiness = await this.input.waitForRoomLane(pinnedRoom, laneId, {
             ...options,
             connect: true
         });
 
-        return this.status(room, { ...options, mode, laneId }, readiness);
+        return this.status(pinnedRoom, { ...options, mode, laneId }, readiness);
     }
 
     public async wait(
@@ -122,11 +110,12 @@ export class BrowserRtcRoomRuntime {
         options: RallarRtcRoomTransportOptions = {}
     ): Promise<RallarRoomTransportStatus> {
         const laneId = options.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID;
-        const readiness = await this.input.waitForRoomLane(room, laneId, {
+        const pinnedRoom = this.input.resolveRoomRef(room) ?? room;
+        const readiness = await this.input.waitForRoomLane(pinnedRoom, laneId, {
             ...options,
             connect: options.connect ?? true
         });
 
-        return this.status(room, { ...options, laneId }, readiness);
+        return this.status(pinnedRoom, { ...options, laneId }, readiness);
     }
 }

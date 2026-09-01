@@ -118,7 +118,7 @@ describe('room state projection translation', () => {
         const base = createRoomSnapshot(
             'room-1',
             'Room 1',
-            ['session-1', 'active-session-not-in-layout']
+            ['session-1', 'accepted-peer', 'active-session-not-in-layout']
         );
         const accepted = acceptedOverlay(base, ['session-1', 'accepted-peer']);
         const snapshot: GroupSnapshot = {
@@ -159,6 +159,32 @@ describe('room state projection translation', () => {
         })).toEqual({
             transportState: 'flowing',
             peerIds: []
+        });
+    });
+
+    it('excludes a departed session while its accepted layout is still retained', () => {
+        const base = createRoomSnapshot('room-1', 'Room 1', ['session-1', 'remaining-peer']);
+        const accepted = acceptedOverlay(base, ['departed-peer', 'remaining-peer']);
+        const snapshot: GroupSnapshot = {
+            ...base,
+            group: {
+                ...base.group,
+                acceptedLayoutIdentity: {
+                    ...accepted.sourceGroupStateCausalRevision,
+                    version: accepted.overlayVersion,
+                    state: accepted.state
+                }
+            }
+        };
+
+        expect(resolveBrowserRoomTransportTarget({
+            sessionId: 'session-1',
+            snapshot,
+            acceptedOverlay: accepted
+        })).toEqual({
+            transportState: 'flowing',
+            acceptedLayoutIdentity: snapshot.group.acceptedLayoutIdentity,
+            peerIds: ['remaining-peer']
         });
     });
 });

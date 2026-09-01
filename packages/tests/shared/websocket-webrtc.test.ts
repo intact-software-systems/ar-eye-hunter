@@ -1,29 +1,42 @@
 import { newALEventRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALOutboundEnqueueResult } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
     DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
-    WsQueueBoxClientService,
-    type WsQueueBoxClientReconnectOptions,
-    type WsQueueBoxClientServiceOptions
-} from '@shared/services/WsQueueBoxClientService.ts';
-import { QRtcSignalingChannel, QRtcSignalingMsgType, QRtcSignalingType, type QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
+    WsQueueBoxClientService
+} from '@shared/services/ws-queue-box-client-service.ts';
+import {
+    QRtcSignalingChannel,
+    QRtcSignalingMsgType,
+    QRtcSignalingType,
+    type QRtcSignalingMessage,
+    type QRtcSignalingTransportInputDto
+} from '@shared/webrtc/QRtcSignalingContracts.ts';
+import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
 import { WsRtcSignalingTransport } from '@shared/webrtc/WsRtcSignalingTransport.ts';
-import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/WsRtcSignalingTransportUsingWsQBox.ts';
 import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { openConnectingWebSocket, SimulatedWebSocket } from './native-websocket-fixture.ts';
+
+const services: WsQueueBoxClientService[] = [];
+beforeEach(() => {
+    vi.stubGlobal('WebSocket', SimulatedWebSocket);
+});
+afterEach(() => {
+    for (const service of services.splice(0)) {
+        service.close();
+    }
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    SimulatedWebSocket.instances.length = 0;
+});
 
 describe('JsonWebSocketClient', () => {
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.unstubAllGlobals();
-        FakeWebSocket.instances.length = 0;
-    });
-
     it('reuses a single pending connection and dispatches parsed messages', async () => {
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
 
         const client = new JsonWebSocketClient('ws://test');
         const lifecycle: string[] = [];
@@ -42,18 +55,15 @@ describe('JsonWebSocketClient', () => {
         const second = client.connect();
         await Promise.resolve();
 
-        expect(FakeWebSocket.instances).toHaveLength(1);
+        expect(SimulatedWebSocket.instances).toHaveLength(1);
 
-        const socket = FakeWebSocket.instances[0];
-        socket.readyState = FakeWebSocket.OPEN;
-        await socket.emit('open', { type: 'open' });
+        const socket = SimulatedWebSocket.instances[0];
+        socket.readyState = SimulatedWebSocket.OPEN;
+        await socket.open();
 
         await Promise.all([first, second]);
 
-        await socket.emit('message', {
-            type: 'message',
-            data: JSON.stringify({ ok: 1 })
-        });
+        await socket.receive(JSON.stringify({ ok: 1 }));
 
         client.send({ ping: true });
         client.sendAsJsonString('{"pong":true}');
@@ -64,7 +74,7 @@ describe('JsonWebSocketClient', () => {
     });
 
     it('rejects the initial connection on close before open and supports callback removal', async () => {
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
 
         const client = new JsonWebSocketClient('ws://test');
         let closeNotifications = 0;
@@ -86,23 +96,16 @@ describe('JsonWebSocketClient', () => {
 
         const connectPromise = client.connect();
         await Promise.resolve();
-        const socket = FakeWebSocket.instances[0];
+        const socket = SimulatedWebSocket.instances[0];
 
-        socket.readyState = FakeWebSocket.CLOSED;
-        await socket.emit('close', {
-            type: 'close',
-            code: 1006,
-            reason: 'boom'
-        });
+        socket.readyState = SimulatedWebSocket.CLOSED;
+        await socket.receiveClose(1006, 'boom');
 
         await expect(connectPromise).rejects.toThrow('WebSocket is closed. Code: 1006 Reason boom');
         expect(client.ws).toBeUndefined();
         expect(closeNotifications).toBe(0);
 
-        await socket.emit('message', {
-            type: 'message',
-            data: JSON.stringify({ ignored: true })
-        });
+        await socket.receive(JSON.stringify({ ignored: true }));
         expect(messageNotifications).toBe(0);
         expect(() => client.send({ nope: true })).toThrow(
             'WebSocketClient: cannot send; socket is not open.'
@@ -110,7 +113,7 @@ describe('JsonWebSocketClient', () => {
     });
 
     it('rejects the initial connection on error before open and can reconnect', async () => {
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
 
         const client = new JsonWebSocketClient('ws://test');
         let errorNotifications = 0;
@@ -123,35 +126,35 @@ describe('JsonWebSocketClient', () => {
 
         const firstConnect = client.connect();
         await Promise.resolve();
-        const firstSocket = FakeWebSocket.instances[0];
+        const firstSocket = SimulatedWebSocket.instances[0];
 
-        await firstSocket.emit('error', { type: 'error' });
+        await firstSocket.fail();
 
         await expect(firstConnect).rejects.toThrow('WebSocket error. Type: error');
         expect(errorNotifications).toBe(1);
 
         const secondConnect = client.connect();
         await Promise.resolve();
-        expect(FakeWebSocket.instances).toHaveLength(2);
+        expect(SimulatedWebSocket.instances).toHaveLength(2);
 
-        const secondSocket = FakeWebSocket.instances[1];
-        secondSocket.readyState = FakeWebSocket.OPEN;
-        await secondSocket.emit('open', { type: 'open' });
+        const secondSocket = SimulatedWebSocket.instances[1];
+        secondSocket.readyState = SimulatedWebSocket.OPEN;
+        await secondSocket.open();
 
         await expect(secondConnect).resolves.toBeUndefined();
     });
 
     it('resolves a fresh URL for each new socket connection', async () => {
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
 
         let sequence = 0;
         const client = new JsonWebSocketClient(() => `ws://test?ticket=${++sequence}`);
 
         const firstConnect = client.connect();
         await Promise.resolve();
-        expect(FakeWebSocket.instances[0].url).toBe('ws://test?ticket=1');
-        FakeWebSocket.instances[0].readyState = FakeWebSocket.OPEN;
-        await FakeWebSocket.instances[0].emit('open', { type: 'open' });
+        expect(SimulatedWebSocket.instances[0].url).toBe('ws://test?ticket=1');
+        SimulatedWebSocket.instances[0].readyState = SimulatedWebSocket.OPEN;
+        await SimulatedWebSocket.instances[0].open();
         await expect(firstConnect).resolves.toBeUndefined();
         expect(client.url).toBe('ws://test?ticket=1');
 
@@ -159,15 +162,15 @@ describe('JsonWebSocketClient', () => {
 
         const secondConnect = client.connect();
         await Promise.resolve();
-        expect(FakeWebSocket.instances[1].url).toBe('ws://test?ticket=2');
-        FakeWebSocket.instances[1].readyState = FakeWebSocket.OPEN;
-        await FakeWebSocket.instances[1].emit('open', { type: 'open' });
+        expect(SimulatedWebSocket.instances[1].url).toBe('ws://test?ticket=2');
+        SimulatedWebSocket.instances[1].readyState = SimulatedWebSocket.OPEN;
+        await SimulatedWebSocket.instances[1].open();
         await expect(secondConnect).resolves.toBeUndefined();
         expect(client.url).toBe('ws://test?ticket=2');
     });
 
     it('keeps a reconnect started by a close callback as the active pending connection', async () => {
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
 
         let sequence = 0;
         const client = new JsonWebSocketClient(() => `ws://test?ticket=${++sequence}`);
@@ -181,34 +184,33 @@ describe('JsonWebSocketClient', () => {
 
         const firstConnect = client.connect();
         await Promise.resolve();
-        const firstSocket = FakeWebSocket.instances[0];
-        firstSocket.readyState = FakeWebSocket.OPEN;
-        await firstSocket.emit('open', { type: 'open' });
+        const firstSocket = SimulatedWebSocket.instances[0];
+        firstSocket.readyState = SimulatedWebSocket.OPEN;
+        await firstSocket.open();
         await expect(firstConnect).resolves.toBeUndefined();
 
-        firstSocket.readyState = FakeWebSocket.CLOSED;
-        await firstSocket.emit('close', {
-            type: 'close',
-            code: 1006,
-            reason: 'network-lost'
-        });
+        firstSocket.readyState = SimulatedWebSocket.CLOSED;
+        await firstSocket.receiveClose(1006, 'network-lost');
         const joinedReconnect = client.connect();
         await Promise.resolve();
 
-        expect(FakeWebSocket.instances).toHaveLength(2);
-        const secondSocket = FakeWebSocket.instances[1];
+        expect(SimulatedWebSocket.instances).toHaveLength(2);
+        const secondSocket = SimulatedWebSocket.instances[1];
         expect(secondSocket.url).toBe('ws://test?ticket=2');
-        secondSocket.readyState = FakeWebSocket.OPEN;
-        await secondSocket.emit('open', { type: 'open' });
+        secondSocket.readyState = SimulatedWebSocket.OPEN;
+        await secondSocket.open();
 
         expect(reconnectPromise).toBeDefined();
-        await expect(reconnectPromise!).resolves.toBeUndefined();
+        if (!reconnectPromise) {
+            throw new Error('Expected a reconnect action');
+        }
+        await expect(reconnectPromise).resolves.toBeUndefined();
         await expect(joinedReconnect).resolves.toBeUndefined();
         expect(client.ws).toBe(secondSocket);
     });
 
     it('clears the active socket when a pending connection is aborted', async () => {
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
 
         const controller = new AbortController();
         const client = new JsonWebSocketClient('ws://test');
@@ -218,26 +220,20 @@ describe('JsonWebSocketClient', () => {
         });
         await Promise.resolve();
 
-        const socket = FakeWebSocket.instances[0];
+        const socket = SimulatedWebSocket.instances[0];
         expect(client.ws).toBe(socket);
 
         controller.abort();
 
         await expect(connectPromise).rejects.toThrow('WebSocket connect aborted.');
         expect(client.ws).toBeUndefined();
-        expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
+        expect(socket.readyState).toBe(SimulatedWebSocket.CLOSED);
     });
 });
 
 describe('JsonWebSocketServer', () => {
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.unstubAllGlobals();
-        FakeWebSocket.instances.length = 0;
-    });
-
     it('dispatches lifecycle, parse errors, and decoded messages', async () => {
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
 
         const server = new JsonWebSocketServer();
         const lifecycle: string[] = [];
@@ -257,29 +253,19 @@ describe('JsonWebSocketServer', () => {
             }
         });
 
-        const socket = new FakeWebSocket('server');
-        const ctx = new ConnectionContext('c1', socket as never);
+        const socket = new SimulatedWebSocket('server');
+        const ctx = new ConnectionContext('c1', socket);
         server.addConnection(ctx);
 
-        socket.readyState = FakeWebSocket.OPEN;
-        await socket.emit('open', { type: 'open' });
-        await socket.emit('message', {
-            type: 'message',
-            data: JSON.stringify({ ok: 1 })
-        });
-        await socket.emit('message', {
-            type: 'message',
-            data: 'not-json'
-        });
+        socket.readyState = SimulatedWebSocket.OPEN;
+        await socket.open();
+        await socket.receive(JSON.stringify({ ok: 1 }));
+        await socket.receive('not-json');
 
         expect(server.connections.has('c1')).toBe(true);
 
-        socket.readyState = FakeWebSocket.CLOSED;
-        await socket.emit('close', {
-            type: 'close',
-            code: 1000,
-            reason: 'bye'
-        });
+        socket.readyState = SimulatedWebSocket.CLOSED;
+        await socket.receiveClose(1000, 'bye');
 
         expect(lifecycle).toEqual(['open:c1', 'close:c1']);
         expect(parseErrors).toEqual(['not-json']);
@@ -288,20 +274,20 @@ describe('JsonWebSocketServer', () => {
     });
 
     it('sends directly and broadcasts only to open filtered connections', () => {
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
 
         const server = new JsonWebSocketServer();
-        const first = new FakeWebSocket('first');
-        const second = new FakeWebSocket('second');
-        const closed = new FakeWebSocket('closed');
+        const first = new SimulatedWebSocket('first');
+        const second = new SimulatedWebSocket('second');
+        const closed = new SimulatedWebSocket('closed');
 
-        first.readyState = FakeWebSocket.OPEN;
-        second.readyState = FakeWebSocket.OPEN;
-        closed.readyState = FakeWebSocket.CLOSED;
+        first.readyState = SimulatedWebSocket.OPEN;
+        second.readyState = SimulatedWebSocket.OPEN;
+        closed.readyState = SimulatedWebSocket.CLOSED;
 
-        server.addConnection(new ConnectionContext('one', first as never));
-        server.addConnection(new ConnectionContext('two', second as never));
-        server.addConnection(new ConnectionContext('three', closed as never));
+        server.addConnection(new ConnectionContext('one', first));
+        server.addConnection(new ConnectionContext('two', second));
+        server.addConnection(new ConnectionContext('three', closed));
 
         server.send('one', { hello: true });
 
@@ -319,17 +305,17 @@ describe('JsonWebSocketServer', () => {
     });
 
     it('reuses a pre-encoded payload for direct sends', () => {
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
 
         const server = new JsonWebSocketServer();
-        const first = new FakeWebSocket('first');
-        const second = new FakeWebSocket('second');
+        const first = new SimulatedWebSocket('first');
+        const second = new SimulatedWebSocket('second');
 
-        first.readyState = FakeWebSocket.OPEN;
-        second.readyState = FakeWebSocket.OPEN;
+        first.readyState = SimulatedWebSocket.OPEN;
+        second.readyState = SimulatedWebSocket.OPEN;
 
-        server.addConnection(new ConnectionContext('one', first as never));
-        server.addConnection(new ConnectionContext('two', second as never));
+        server.addConnection(new ConnectionContext('one', first));
+        server.addConnection(new ConnectionContext('two', second));
 
         const encoded = server.encode({ fanout: true });
         server.sendEncoded('one', encoded);
@@ -340,15 +326,15 @@ describe('JsonWebSocketServer', () => {
     });
 
     it('sends an encoded payload only to the captured connection generation', () => {
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
 
         const server = new JsonWebSocketServer();
-        const first = new FakeWebSocket('first');
-        const replacement = new FakeWebSocket('replacement');
-        first.readyState = FakeWebSocket.OPEN;
-        replacement.readyState = FakeWebSocket.OPEN;
-        const captured = new ConnectionContext('session-1', first as never, 'generation-1');
-        const current = new ConnectionContext('session-1', replacement as never, 'generation-2');
+        const first = new SimulatedWebSocket('first');
+        const replacement = new SimulatedWebSocket('replacement');
+        first.readyState = SimulatedWebSocket.OPEN;
+        replacement.readyState = SimulatedWebSocket.OPEN;
+        const captured = new ConnectionContext('session-1', first, 'generation-1');
+        const current = new ConnectionContext('session-1', replacement, 'generation-2');
         server.addConnection(captured);
         const encoded = server.encode({ topology: true });
 
@@ -361,17 +347,17 @@ describe('JsonWebSocketServer', () => {
     });
 
     it('replaces duplicate connection ids without letting stale close remove the current socket', async () => {
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
 
         const server = new JsonWebSocketServer();
         const lifecycle: string[] = [];
-        const first = new FakeWebSocket('first');
-        const second = new FakeWebSocket('second');
+        const first = new SimulatedWebSocket('first');
+        const second = new SimulatedWebSocket('second');
 
-        first.readyState = FakeWebSocket.OPEN;
-        second.readyState = FakeWebSocket.OPEN;
-        const firstContext = new ConnectionContext('session-1', first as never);
-        const secondContext = new ConnectionContext('session-1', second as never);
+        first.readyState = SimulatedWebSocket.OPEN;
+        second.readyState = SimulatedWebSocket.OPEN;
+        const firstContext = new ConnectionContext('session-1', first);
+        const secondContext = new ConnectionContext('session-1', second);
         server.onWebsocketCallbacksDo('lifecycle', {
             onClose: (ctx) => {
                 lifecycle.push(`close:${ctx.id}:${ctx.socket === secondContext.socket}`);
@@ -387,33 +373,25 @@ describe('JsonWebSocketServer', () => {
         });
         expect(server.connections.get('session-1')?.socket).toBe(second);
 
-        await first.emit('close', {
-            type: 'close',
-            code: 1000,
-            reason: 'connection-replaced'
-        });
+        await first.receiveClose(1000, 'connection-replaced');
 
         expect(server.connections.get('session-1')?.socket).toBe(second);
         expect(lifecycle).toEqual(['close:session-1:false']);
 
-        second.readyState = FakeWebSocket.CLOSED;
-        await second.emit('close', {
-            type: 'close',
-            code: 1000,
-            reason: 'done'
-        });
+        second.readyState = SimulatedWebSocket.CLOSED;
+        await second.receiveClose(1000, 'done');
 
         expect(server.connections.has('session-1')).toBe(false);
         expect(lifecycle).toEqual(['close:session-1:false', 'close:session-1:true']);
     });
 
     it('can close a live connection by id for auth logout', () => {
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
 
         const server = new JsonWebSocketServer();
-        const socket = new FakeWebSocket('session');
-        socket.readyState = FakeWebSocket.OPEN;
-        server.addConnection(new ConnectionContext('session-1', socket as never));
+        const socket = new SimulatedWebSocket('session');
+        socket.readyState = SimulatedWebSocket.OPEN;
+        server.addConnection(new ConnectionContext('session-1', socket));
 
         expect(server.closeConnection('missing-session')).toBe(false);
         expect(server.closeConnection('session-1', 1000, 'auth-logout')).toBe(true);
@@ -421,192 +399,88 @@ describe('JsonWebSocketServer', () => {
             code: 1000,
             reason: 'auth-logout'
         });
-        expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
+        expect(socket.readyState).toBe(SimulatedWebSocket.CLOSED);
     });
 });
 
-describe('WsRtcSignalingTransport', () => {
-    afterEach(() => {
-        vi.restoreAllMocks();
-    });
-
-    it('wires socket lifecycle callbacks and forwards only matching message types', async () => {
-        const socket = createSocketHarness();
-        const transport = new WsRtcSignalingTransport(socket.client as never, 'rtc');
+describe('RTC signaling WebSocket transports', () => {
+    it('delivers direct signaling only for the registered type through native events', async () => {
+        const client = new JsonWebSocketClient('ws://test');
+        const transport = new WsRtcSignalingTransport(client, 'rtc');
         const lifecycle: string[] = [];
         const messages: ALMessage[] = [];
-
-        await transport.connect({
-            sessionId: 'session-1',
-            token: 'token-1',
-            callbacks: {
-                onOpen: async (sessionId, token) => {
-                    lifecycle.push(`open:${sessionId}:${token}`);
-                },
-                onClose: async (sessionId, token) => {
-                    lifecycle.push(`close:${sessionId}:${token}`);
-                },
-                onError: async (_sessionId, _token, message) => {
-                    lifecycle.push(`error:${message}`);
-                },
-                onMessage: async (_sessionId, _token, message) => {
-                    messages.push(message);
-                }
-            }
-        });
-
-        expect(socket.connectCount).toBe(1);
-
+        const connecting = transport.connect(signalingConnectionInput(lifecycle, messages));
+        const native = await openConnectingWebSocket(client, connecting);
         const matching = createEnvelope('rtc', { hello: true });
-        const ignored = createEnvelope('other', { ignored: true });
-
-        await socket.webSocketCallbacks?.onOpen?.({ type: 'open' } as Event);
-        await socket.onMessageCallback?.onMessage(ignored, {
-            type: 'message'
-        } as MessageEvent);
-        await socket.onMessageCallback?.onMessage(matching, {
-            type: 'message'
-        } as MessageEvent);
-        await socket.webSocketCallbacks?.onError?.({
-            type: 'error',
-            toString: () => 'socket failed'
-        } as Event);
-        await socket.webSocketCallbacks?.onClose?.({ type: 'close' } as CloseEvent);
+        await native.receive(JSON.stringify(createEnvelope('other', { ignored: true })));
+        await native.receive(JSON.stringify(matching));
+        await native.fail();
+        await native.receiveClose(1006, 'network-lost');
 
         expect(messages).toEqual([matching]);
-        expect(lifecycle).toEqual([
-            'open:session-1:token-1',
-            'error:socket failed',
-            'close:session-1:token-1'
-        ]);
+        expect(lifecycle).toEqual(['open:session-1', 'error', 'close:session-1']);
     });
 
-    it('wraps signaling payloads in an AL message when sending', async () => {
-        const socket = createSocketHarness();
-        const transport = new WsRtcSignalingTransport(socket.client as never, 'rtc');
+    it('serializes direct signaling as a canonical AL envelope at the native socket', async () => {
+        const client = new JsonWebSocketClient('ws://test');
+        const native = await openConnectingWebSocket(client, client.connect());
+        const transport = new WsRtcSignalingTransport(client, 'rtc');
         const payload = createSignalingPayload();
-
         await transport.send(payload);
 
-        expect(socket.sentMessages).toHaveLength(1);
-
-        const sent = socket.sentMessages[0] as ALMessage;
-
-        expect(sent.payload.typeId).toBe('rtc');
-        expect(sent.id.senderId).toBe(payload.fromId);
-        expect(JSON.parse(sent.payload.resource)).toEqual(payload);
-    });
-});
-
-describe('WsRtcSignalingTransportUsingWsQBox', () => {
-    afterEach(() => {
-        vi.restoreAllMocks();
+        expect(native.sent).toHaveLength(1);
+        const envelope = decodePersistedALMessage(native.sent[0]);
+        expect(envelope.payload.typeId).toBe('rtc');
+        expect(envelope.id.senderId).toBe('peer-1');
+        expect(envelope.payload.resource).toBe(JSON.stringify(payload));
     });
 
-    it('wires qbox callbacks and forwards only matching inbox messages', async () => {
-        const consoleErrors: string[] = [];
-        vi.spyOn(console, 'error').mockImplementation((...args) => {
-            consoleErrors.push(args.map(String).join(' '));
-        });
-        const qbox = createQboxHarness();
-        const transport = new WsRtcSignalingTransportUsingWsQBox(qbox.service as never, 'rtc');
+    it('delivers queue-box signaling through the actual WS receive and inbox path', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const client = new JsonWebSocketClient('ws://test');
+        const service = createWsQueueBoxService(client).enableDefaultCallbacks();
+        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc');
         const lifecycle: string[] = [];
         const messages: ALMessage[] = [];
-
-        await transport.connect({
-            sessionId: 'session-1',
-            token: 'token-1',
-            callbacks: {
-                onOpen: async (sessionId, token) => {
-                    lifecycle.push(`open:${sessionId}:${token}`);
-                },
-                onClose: async (sessionId, token) => {
-                    lifecycle.push(`close:${sessionId}:${token}`);
-                },
-                onError: async (_sessionId, _token, message) => {
-                    lifecycle.push(`error:${message}`);
-                },
-                onMessage: async (_sessionId, _token, message) => {
-                    messages.push(message);
-                }
-            }
-        });
-
-        expect(qbox.socket.connectCount).toBe(1);
-
+        const native = await openConnectingWebSocket(client, transport.connect(signalingConnectionInput(lifecycle, messages)));
         const matching = createEnvelope('rtc', { hello: true });
-        const ignored = createEnvelope('other', { ignored: true });
-
-        await qbox.socket.webSocketCallbacks?.onOpen?.({ type: 'open' } as Event);
-        await qbox.inboxCallback?.onMessage(ignored, {} as never);
-        await qbox.inboxCallback?.onMessage(matching, {} as never);
-        await qbox.socket.webSocketCallbacks?.onError?.({
-            type: 'error',
-            toString: () => 'socket failed'
-        } as Event);
-        await qbox.socket.webSocketCallbacks?.onClose?.({
-            type: 'close'
-        } as CloseEvent);
+        await native.receive(JSON.stringify(createEnvelope('other', { ignored: true })));
+        await native.receive(JSON.stringify(matching));
+        await native.fail();
+        await native.receiveClose(1006, 'network-lost');
 
         expect(messages).toEqual([matching]);
-        expect(lifecycle).toEqual([
-            'open:session-1:token-1',
-            'error:socket failed',
-            'close:session-1:token-1'
-        ]);
-        expect(consoleErrors.length).toBeGreaterThan(0);
+        expect(lifecycle).toEqual(['open:session-1', 'error', 'close:session-1']);
     });
 
-    it('enqueues signaling payloads as AL messages', async () => {
-        const qbox = createQboxHarness();
-        const transport = new WsRtcSignalingTransportUsingWsQBox(qbox.service as never, 'rtc');
+    it('queues canonical signaling while offline and wakes the outbox worker', async () => {
+        const client = new JsonWebSocketClient('ws://test');
+        const service = createWsQueueBoxService(client);
+        let wakeCount = 0;
+        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', () => {
+            wakeCount++;
+        });
         const payload = createSignalingPayload();
-
         await transport.send(payload);
 
-        expect(qbox.enqueuedMessages).toHaveLength(1);
-
-        const sent = qbox.enqueuedMessages[0];
-
-        expect(sent.payload.typeId).toBe('rtc');
-        expect(sent.id.senderId).toBe(payload.fromId);
-        expect(JSON.parse(sent.payload.resource)).toEqual(payload);
-    });
-
-    it('wakes the queue-box engine when signaling payloads queue outbox work', async () => {
-        const qbox = createQboxHarness();
-        qbox.enqueueOutboxIfAbsent.mockResolvedValueOnce({
-            status: 'enqueued',
-            message: createEnvelope('rtc', createSignalingPayload()),
-            entries: []
-        });
-        let outboxWakeCount = 0;
-        const wakeOutbox = vi.fn(() => {
-            outboxWakeCount += 1;
-        });
-        const transport = new WsRtcSignalingTransportUsingWsQBox(
-            qbox.service as never,
-            'rtc',
-            wakeOutbox
-        );
-
-        await transport.send(createSignalingPayload());
-
-        expect(outboxWakeCount).toBe(1);
+        const keys = await service.outbox.getAllKeys();
+        expect(keys).toHaveLength(1);
+        const entry = await service.outbox.getItem(keys[0]);
+        if (!entry) {
+            throw new Error('Expected queued signaling');
+        }
+        const envelope = decodePersistedALMessage(entry.resource);
+        expect(envelope.payload.typeId).toBe('rtc');
+        expect(envelope.id.senderId).toBe('peer-1');
+        expect(envelope.payload.resource).toBe(JSON.stringify(payload));
+        expect(wakeCount).toBe(1);
     });
 });
 
 describe('WsQueueBoxClientService reconnect lifecycle', () => {
-    afterEach(() => {
-        vi.useRealTimers();
-        vi.restoreAllMocks();
-        vi.unstubAllGlobals();
-        FakeWebSocket.instances.length = 0;
-    });
-
     it('reuses one ticket identity after a lost response within one reconnect action', async () => {
         vi.useFakeTimers();
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
         const requestIds: Array<string | undefined> = [];
         let loseNextResponse = false;
         const socket = new JsonWebSocketClient(async (options) => {
@@ -629,32 +503,28 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
 
         const initialConnect = socket.connect({ requestId: 'initial-request' });
         await Promise.resolve();
-        const initialSocket = FakeWebSocket.instances[0];
-        initialSocket.readyState = FakeWebSocket.OPEN;
-        await initialSocket.emit('open', { type: 'open' });
+        const initialSocket = SimulatedWebSocket.instances[0];
+        initialSocket.readyState = SimulatedWebSocket.OPEN;
+        await initialSocket.open();
         await initialConnect;
         requestIds.length = 0;
-        FakeWebSocket.instances.length = 0;
+        SimulatedWebSocket.instances.length = 0;
         service.enableReconnect();
         loseNextResponse = true;
-        initialSocket.readyState = FakeWebSocket.CLOSED;
-        await initialSocket.emit('close', {
-            type: 'close',
-            code: 1006,
-            reason: 'network-lost'
-        });
+        initialSocket.readyState = SimulatedWebSocket.CLOSED;
+        await initialSocket.receiveClose(1006, 'network-lost');
         await vi.runAllTimersAsync();
-        await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+        await vi.waitFor(() => expect(SimulatedWebSocket.instances).toHaveLength(1));
 
-        const connected = FakeWebSocket.instances[0];
-        connected.readyState = FakeWebSocket.OPEN;
-        await connected.emit('open', { type: 'open' });
+        const connected = SimulatedWebSocket.instances[0];
+        connected.readyState = SimulatedWebSocket.OPEN;
+        await connected.open();
 
         expect(requestIds).toEqual(['reconnect-request-1', 'reconnect-request-1']);
     });
 
     it('allocates a new ticket request identity for a later reconnect action', async () => {
-        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('WebSocket', SimulatedWebSocket);
         const requestIds: Array<string | undefined> = [];
         let requestSequence = 0;
         const socket = new JsonWebSocketClient((options) => {
@@ -672,138 +542,94 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
 
         const initialConnect = socket.connect({ requestId: 'initial-request' });
         await Promise.resolve();
-        const initialSocket = FakeWebSocket.instances[0];
-        initialSocket.readyState = FakeWebSocket.OPEN;
-        await initialSocket.emit('open', { type: 'open' });
+        const initialSocket = SimulatedWebSocket.instances[0];
+        initialSocket.readyState = SimulatedWebSocket.OPEN;
+        await initialSocket.open();
         await initialConnect;
         requestIds.length = 0;
-        FakeWebSocket.instances.length = 0;
+        SimulatedWebSocket.instances.length = 0;
         service.enableReconnect();
-        initialSocket.readyState = FakeWebSocket.CLOSED;
-        await initialSocket.emit('close', {
-            type: 'close',
-            code: 1006,
-            reason: 'network-lost'
-        });
-        await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
-        const first = FakeWebSocket.instances[0];
-        first.readyState = FakeWebSocket.OPEN;
-        await first.emit('open', { type: 'open' });
+        initialSocket.readyState = SimulatedWebSocket.CLOSED;
+        await initialSocket.receiveClose(1006, 'network-lost');
+        await vi.waitFor(() => expect(SimulatedWebSocket.instances).toHaveLength(1));
+        const first = SimulatedWebSocket.instances[0];
+        first.readyState = SimulatedWebSocket.OPEN;
+        await first.open();
         await vi.waitFor(() => expect(service.readHealth().reconnecting).toBe(false));
 
-        first.readyState = FakeWebSocket.CLOSED;
-        await first.emit('close', {
-            type: 'close',
-            code: 1006,
-            reason: 'network-lost-again'
-        });
-        await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2));
-        const second = FakeWebSocket.instances[1];
-        second.readyState = FakeWebSocket.OPEN;
-        await second.emit('open', { type: 'open' });
+        first.readyState = SimulatedWebSocket.CLOSED;
+        await first.receiveClose(1006, 'network-lost-again');
+        await vi.waitFor(() => expect(SimulatedWebSocket.instances).toHaveLength(2));
+        const second = SimulatedWebSocket.instances[1];
+        second.readyState = SimulatedWebSocket.OPEN;
+        await second.open();
 
         expect(requestIds).toEqual(['reconnect-request-1', 'reconnect-request-2']);
     });
 
-    it('reconnects after an unexpected WebSocket close while reconnect is enabled', async () => {
-        const socket = createReconnectSocketHarness();
-        const service = createWsQueueBoxService(socket.client);
-
-        service.enableReconnect();
-
-        socket.webSocketCallbacks?.onClose?.({
-            type: 'close',
-            code: 1006,
-            reason: 'network-lost'
-        } as CloseEvent);
-        await Promise.resolve();
-
-        expect(socket.connectCount).toBe(1);
-        expect(service.readHealth()).toMatchObject({
-            reconnectEnabled: true
-        });
-    });
-
     it('does not reconnect after an intentional service close', async () => {
-        const socket = createReconnectSocketHarness();
-        const service = createWsQueueBoxService(socket.client);
-
+        const client = new JsonWebSocketClient('ws://test');
+        const native = await openConnectingWebSocket(client, client.connect());
+        const service = createWsQueueBoxService(client);
         service.enableReconnect();
         service.close(1000, 'rallar-disconnect');
+        await native.receiveClose(1000, 'rallar-disconnect');
 
-        socket.webSocketCallbacks?.onClose?.({
-            type: 'close',
-            code: 1000,
-            reason: 'rallar-disconnect'
-        } as CloseEvent);
-        await Promise.resolve();
-
-        expect(socket.closedWith).toEqual({ code: 1000, reason: 'rallar-disconnect' });
-        expect(socket.connectCount).toBe(0);
-        expect(service.readHealth()).toMatchObject({
-            reconnectEnabled: false,
-            reconnecting: false
-        });
+        expect(native.closedWith).toEqual({ code: 1000, reason: 'rallar-disconnect' });
+        expect(SimulatedWebSocket.instances).toEqual([native]);
+        expect(service.readHealth()).toMatchObject({ reconnectEnabled: false, reconnecting: false });
     });
 
-    it('stops a pending reconnect loop when reconnect is disabled', async () => {
+    it('stops an offline reconnect loop when reconnect is disabled', async () => {
         vi.useFakeTimers();
-        const socket = createReconnectSocketHarness({
-            connect: async () => {
+        let offline = false;
+        const attemptedTickets: string[] = [];
+        const client = new JsonWebSocketClient(() => {
+            if (offline) {
+                attemptedTickets.push('attempt');
                 throw new Error('offline');
             }
+            return 'ws://test';
         });
-        const service = createWsQueueBoxService(socket.client);
-
+        const native = await openConnectingWebSocket(client, client.connect());
+        const service = createWsQueueBoxService(client);
         service.enableReconnect();
-        socket.webSocketCallbacks?.onClose?.({
-            type: 'close',
-            code: 1006,
-            reason: 'network-lost'
-        } as CloseEvent);
-
-        expect(socket.connectCount).toBe(1);
-        expect(service.readHealth()).toMatchObject({
-            reconnectEnabled: true,
-            reconnecting: true
-        });
-
+        offline = true;
+        await native.receiveClose(1006, 'network-lost');
+        expect(service.readHealth()).toMatchObject({ reconnectEnabled: true, reconnecting: true });
         service.disableReconnect();
         await vi.advanceTimersByTimeAsync(500);
 
-        expect(socket.connectCount).toBe(1);
-        expect(service.readHealth()).toMatchObject({
-            reconnectEnabled: false,
-            reconnecting: false
-        });
+        expect(attemptedTickets).toEqual(['attempt']);
+        expect(service.readHealth()).toMatchObject({ reconnectEnabled: false, reconnecting: false });
     });
 
-    it('gives up after the configured reconnect attempts', async () => {
+    it('stops after the configured number of failed ticket attempts', async () => {
         vi.useFakeTimers();
-        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        const socket = createReconnectSocketHarness({
-            connect: async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        let offline = false;
+        const attemptedTickets: string[] = [];
+        const client = new JsonWebSocketClient(() => {
+            if (offline) {
+                attemptedTickets.push('attempt');
                 throw new Error('offline');
             }
+            return 'ws://test';
         });
-        const service = createWsQueueBoxService(socket.client, {
+        const native = await openConnectingWebSocket(client, client.connect());
+        const service = createWsQueueBoxService(client, {
             reconnect: {
                 maxAttempts: 3,
                 retryIntervalMsecs: 0,
                 maxRetryIntervalMsecs: 0
             }
         });
-
         service.enableReconnect();
-        socket.webSocketCallbacks?.onClose?.({
-            type: 'close',
-            code: 1006,
-            reason: 'network-lost'
-        } as CloseEvent);
-
+        offline = true;
+        await native.receiveClose(1006, 'network-lost');
         await vi.runAllTimersAsync();
 
-        expect(socket.connectCount).toBe(3);
+        expect(attemptedTickets).toEqual(['attempt', 'attempt', 'attempt']);
         expect(service.readHealth()).toMatchObject({
             reconnectEnabled: false,
             reconnecting: false,
@@ -811,25 +637,14 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
             maxReconnectAttempts: 3,
             reconnectExhausted: true
         });
-        expect(consoleWarn).toHaveBeenCalledWith(
-            expect.stringContaining('WebSocket reconnect exhausted after 3 attempts'),
-            expect.anything()
-        );
     });
 
-    it('times out an individual reconnect attempt', async () => {
+    it('aborts a native connection that exceeds its reconnect timeout', async () => {
         vi.useFakeTimers();
-        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        const signals: AbortSignal[] = [];
-        const socket = createReconnectSocketHarness({
-            connect: async (options?: { signal?: AbortSignal; }) => {
-                if (options?.signal) {
-                    signals.push(options.signal);
-                }
-                return await new Promise<void>(() => {});
-            }
-        });
-        const service = createWsQueueBoxService(socket.client, {
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const client = new JsonWebSocketClient('ws://test');
+        const native = await openConnectingWebSocket(client, client.connect());
+        const service = createWsQueueBoxService(client, {
             reconnect: {
                 maxAttempts: 1,
                 connectTimeoutMsecs: 25,
@@ -837,19 +652,13 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
                 maxRetryIntervalMsecs: 0
             }
         });
-
         service.enableReconnect();
-        socket.webSocketCallbacks?.onClose?.({
-            type: 'close',
-            code: 1006,
-            reason: 'network-lost'
-        } as CloseEvent);
-
-        expect(socket.connectCount).toBe(1);
+        await native.receiveClose(1006, 'network-lost');
         await vi.advanceTimersByTimeAsync(25);
+        const pending = SimulatedWebSocket.instances[1];
 
-        expect(signals).toHaveLength(1);
-        expect(signals[0].aborted).toBe(true);
+        expect(pending.closedWith).toEqual({ code: 1000, reason: 'connect-aborted' });
+        expect(pending.readyState).toBe(SimulatedWebSocket.CLOSED);
         expect(service.readHealth()).toMatchObject({
             reconnectEnabled: false,
             reconnecting: false,
@@ -857,29 +666,16 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
             maxReconnectAttempts: 1,
             reconnectExhausted: true
         });
-        expect(consoleWarn).toHaveBeenCalledWith(
-            expect.stringContaining('WebSocket reconnect exhausted after 1 attempts'),
-            expect.anything()
-        );
     });
 
-    it('does not reconnect when reconnect eligibility is false', async () => {
-        const socket = createReconnectSocketHarness();
-        const service = createWsQueueBoxService(socket.client, {
-            reconnect: {
-                canReconnect: () => false
-            }
-        });
-
+    it('does not reconnect when the current session is ineligible', async () => {
+        const client = new JsonWebSocketClient('ws://test');
+        const native = await openConnectingWebSocket(client, client.connect());
+        const service = createWsQueueBoxService(client, { reconnect: { canReconnect: () => false } });
         service.enableReconnect();
-        socket.webSocketCallbacks?.onClose?.({
-            type: 'close',
-            code: 1006,
-            reason: 'network-lost'
-        } as CloseEvent);
-        await Promise.resolve();
+        await native.receiveClose(1006, 'network-lost');
 
-        expect(socket.connectCount).toBe(0);
+        expect(SimulatedWebSocket.instances).toEqual([native]);
         expect(service.readHealth()).toMatchObject({
             reconnectEnabled: false,
             reconnecting: false,
@@ -889,241 +685,40 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
     });
 });
 
-class FakeWebSocket {
-    static readonly CONNECTING = 0;
-    static readonly OPEN = 1;
-    static readonly CLOSING = 2;
-    static readonly CLOSED = 3;
-    static readonly instances: FakeWebSocket[] = [];
-
-    readonly sent: string[] = [];
-    readyState = FakeWebSocket.CONNECTING;
-
-    private readonly listeners = new Map<string, Array<(event: FakeWebSocketEvent) => void | Promise<void>>>();
-
-    public readonly url: string;
-
-    constructor(url: string) {
-        this.url = url;
-        FakeWebSocket.instances.push(this);
-    }
-
-    addEventListener(
-        type: string,
-        handler: (event: FakeWebSocketEvent) => void | Promise<void>
-    ): void {
-        const listeners = this.listeners.get(type) ?? [];
-        listeners.push(handler);
-        this.listeners.set(type, listeners);
-    }
-
-    async emit(type: string, event: FakeWebSocketEvent): Promise<void> {
-        for (const listener of this.listeners.get(type) ?? []) {
-            await listener(event);
-        }
-    }
-
-    send(data: string): void {
-        this.sent.push(data);
-    }
-
-    closedWith: { code?: number; reason?: string; } | undefined;
-
-    close(code?: number, reason?: string): void {
-        this.closedWith = { code, reason };
-        this.readyState = FakeWebSocket.CLOSED;
-    }
-}
-
-type FakeWebSocketEvent = Readonly<{
-    type: string;
-    data?: string;
-    code?: number;
-    reason?: string;
-    toString?: () => string;
-}>;
-
 type WsQueueBoxClientServiceTestOptions =
-    & Omit<Partial<WsQueueBoxClientServiceOptions>, 'reconnect'>
+    & Omit<Partial<WsQueueBoxClientService.Options>, 'reconnect'>
     & Readonly<{
-        reconnect?: Partial<WsQueueBoxClientReconnectOptions>;
+        reconnect?: Partial<WsQueueBoxClientService.ReconnectOptions>;
     }>;
 
 function createWsQueueBoxService(
-    socket: JsonWebSocketClient | ReturnType<typeof createReconnectSocketHarness>['client'],
+    socket: JsonWebSocketClient,
     options: WsQueueBoxClientServiceTestOptions = {}
 ): WsQueueBoxClientService {
-    const serviceOptions: WsQueueBoxClientServiceOptions = {
-        ...options,
-        reconnect: {
-            ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
-            ...options.reconnect
-        }
-    };
-
-    return new WsQueueBoxClientService(
-        new InMemoryQueueBox(new Map()),
-        new InMemoryQueueBox(new Map()),
-        socket as never,
-        {
-            sessionId: 'session-1'
-        },
-        serviceOptions
-    );
+    const service = new WsQueueBoxClientService({ inbox: new InMemoryQueueBox(), outbox: new InMemoryQueueBox(), socket }, {
+        sessionId: 'session-1'
+    }, { ...options, reconnect: { ...DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS, ...options.reconnect } });
+    services.push(service);
+    return service;
 }
 
-function createReconnectSocketHarness(
-    options: Readonly<{
-        connect?: (options?: { signal?: AbortSignal; }) => Promise<void>;
-    }> = {}
-) {
-    const state: {
-        webSocketCallbacks?: {
-            onOpen?: (ev: Event) => void | Promise<void>;
-            onError?: (ev: Event) => void | Promise<void>;
-            onClose?: (ev: CloseEvent) => void | Promise<void>;
-        };
-        ws?: { readyState: number; };
-        connectCount: number;
-        closedWith?: { code?: number; reason?: string; };
-    } = {
-        ws: { readyState: 1 },
-        connectCount: 0
-    };
-    const connect = options.connect ?? (async (_options?: { signal?: AbortSignal; }) => {});
-
-    const client = {
-        url: 'ws://test',
-        get ws() {
-            return state.ws;
-        },
-        onWebsocketCallbacksDo: vi.fn(function (
-            _id: string,
-            callbacks: typeof state.webSocketCallbacks
-        ) {
-            state.webSocketCallbacks = callbacks;
-            return client;
-        }),
-        connect: vi.fn(async (connectOptions?: { signal?: AbortSignal; }) => {
-            state.connectCount += 1;
-            await connect(connectOptions);
-        }),
-        close: vi.fn((code?: number, reason?: string) => {
-            state.closedWith = { code, reason };
-            state.ws = undefined;
-        }),
-        onWebSocketMessageDo: vi.fn(function () {
-            return client;
-        }),
-        sendAsJsonString: vi.fn()
-    };
-
+function signalingConnectionInput(lifecycle: string[], messages: ALMessage[]): QRtcSignalingTransportInputDto {
     return {
-        client,
-        get webSocketCallbacks() {
-            return state.webSocketCallbacks;
-        },
-        get connectCount() {
-            return state.connectCount;
-        },
-        get closedWith() {
-            return state.closedWith;
-        },
-        connect: client.connect,
-        close: client.close
-    };
-}
-
-function createSocketHarness() {
-    const state: {
-        webSocketCallbacks?: {
-            onOpen?: (ev: Event) => void | Promise<void>;
-            onError?: (ev: Event) => void | Promise<void>;
-            onClose?: (ev: CloseEvent) => void | Promise<void>;
-        };
-        onMessageCallback?: {
-            onMessage: (data: object, ev: MessageEvent) => Promise<void> | void;
-        };
-    } = {};
-
-    let connectCount = 0;
-    const sentMessages: ALMessage[] = [];
-    const connect = vi.fn(async () => {
-        connectCount += 1;
-    });
-    const send = vi.fn((message: ALMessage) => {
-        sentMessages.push(message);
-    });
-
-    const client = {
-        onWebsocketCallbacksDo: vi.fn(function (
-            _id: string,
-            callbacks: typeof state.webSocketCallbacks
-        ) {
-            state.webSocketCallbacks = callbacks;
-            return client;
-        }),
-        onWebSocketMessageDo: vi.fn(function (_id: string, callback: typeof state.onMessageCallback) {
-            state.onMessageCallback = callback;
-            return client;
-        }),
-        connect,
-        send
-    };
-
-    return {
-        client,
-        connect,
-        send,
-        sentMessages,
-        get connectCount() {
-            return connectCount;
-        },
-        get webSocketCallbacks() {
-            return state.webSocketCallbacks;
-        },
-        get onMessageCallback() {
-            return state.onMessageCallback;
-        }
-    };
-}
-
-function createQboxHarness() {
-    let inboxCallback:
-        | {
-            onMessage: (message: ALMessage, entry: ResourceEntry) => Promise<void>;
-        }
-        | undefined;
-
-    const socket = createSocketHarness();
-    const enqueuedMessages: ALMessage[] = [];
-    const enqueueOutboxIfAbsent = vi.fn(
-        async (message: ALMessage): Promise<ALOutboundEnqueueResult> => {
-            enqueuedMessages.push(message);
-            return {
-                status: 'skipped',
-                message,
-                entries: []
-            };
-        }
-    );
-
-    const service = {
-        socket: socket.client,
-        onInboxMessageDo: vi.fn(function (_id: string, callback: typeof inboxCallback) {
-            inboxCallback = callback;
-            return service;
-        }),
-        enqueueOutboxIfAbsent
-    };
-
-    return {
-        service,
-        socket,
-        enqueueOutboxIfAbsent,
-        enqueuedMessages,
-        get inboxCallback() {
-            return inboxCallback;
+        sessionId: 'session-1',
+        token: 'fixture-token',
+        callbacks: {
+            onOpen: async (sessionId) => {
+                lifecycle.push(`open:${sessionId}`);
+            },
+            onClose: async (sessionId) => {
+                lifecycle.push(`close:${sessionId}`);
+            },
+            onError: async () => {
+                lifecycle.push('error');
+            },
+            onMessage: async (_sessionId, _token, message) => {
+                messages.push(message);
+            }
         }
     };
 }
@@ -1135,11 +730,9 @@ function createSignalingPayload(): QRtcSignalingMessage {
         fromId: 'peer-1',
         toId: 'peer-2',
         sessionId: 'session-1',
-        token: 'token-1',
+        token: 'fixture-token',
         signalType: QRtcSignalingType.Offer,
-        payload: {
-            sdp: 'offer'
-        }
+        payload: { description: { type: 'offer', sdp: 'fixture-sdp' }, candidate: null }
     };
 }
 

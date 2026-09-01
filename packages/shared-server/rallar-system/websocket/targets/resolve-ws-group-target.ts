@@ -1,9 +1,10 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { compareGroupCausalRevision, readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+
 import { isGroupSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
 import { decodeStateSyncMessage, type StateSyncDecodeResult } from '../../state-sync/state-sync-payload.ts';
 import type { WsServerTargetResolutionOptions } from './ws-server-target-resolution-options.ts';
@@ -22,7 +23,7 @@ export function resolveWsGroupTargetRecipients(
     if (decoded.kind === 'invalid') {
         return [];
     }
-    const audienceSessionIds = readGroupAudience(input.groupId, decoded);
+    const audienceSessionIds = resolveGroupAudience(input.groupId, decoded);
     if (audienceSessionIds) {
         return audienceSessionIds
             .filter((sessionId) => input.webSocketServer.connections.get(sessionId)?.isOpen)
@@ -33,6 +34,13 @@ export function resolveWsGroupTargetRecipients(
     if (!snapshot) {
         return [];
     }
+    return resolveLiveGroupSessions(input, snapshot);
+}
+
+function resolveLiveGroupSessions(
+    input: ResolveWsGroupTargetInput,
+    snapshot: GroupSnapshot
+): readonly WsServerResolvedRecipient[] {
     const nowEpochMs = input.options.now?.() ?? Date.now();
     return snapshot.activeSessions
         .filter((session) =>
@@ -55,7 +63,7 @@ function resolveGroupSnapshot(
         ? input.options.findGroupSnapshotByRef?.(groupRef, input.message)
         : undefined;
     const knownSnapshot = scopedSnapshot ?? resolveGroupSnapshotById(input, groupRef);
-    const payloadSnapshot = readGroupSnapshot(input.groupId, decoded);
+    const payloadSnapshot = resolvePayloadGroupSnapshot(input.groupId, decoded);
     if (!payloadSnapshot) {
         return knownSnapshot;
     }
@@ -78,12 +86,12 @@ function resolveGroupSnapshotById(
     if (!snapshot) {
         return undefined;
     }
-    return groupRef === undefined || isSameGroupScope(snapshot.group, groupRef)
+    return groupRef === undefined || isSameGroupRef(snapshot.group, groupRef)
         ? snapshot
         : undefined;
 }
 
-function readGroupSnapshot(
+function resolvePayloadGroupSnapshot(
     groupId: string,
     decoded: StateSyncDecodeResult
 ): GroupSnapshot | undefined {
@@ -99,7 +107,7 @@ function readGroupSnapshot(
         : undefined;
 }
 
-function readGroupAudience(
+function resolveGroupAudience(
     groupId: string,
     decoded: StateSyncDecodeResult
 ): readonly string[] | undefined {

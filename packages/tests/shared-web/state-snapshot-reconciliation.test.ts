@@ -1,10 +1,16 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { captureStateSnapshotCollectionObservations, reconcileCompleteStateSnapshotCollections } from '@shared-web/browser/state-read/reconciliation.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as clientSnapshots from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupSnapshots from '@shared/repository/group-state-snapshots-repository.ts';
 
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 import { createClientSnapshotFixture, createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
@@ -20,9 +26,9 @@ describe('browser complete snapshot reconciliation', () => {
         const observations = captureStateSnapshotCollectionObservations(scope);
 
         const newerClient = { ...oldClient, stateRevision: 2 };
-        const newerGroup = {
+        const newerGroup: GroupSnapshot = {
             ...oldGroup,
-            stateRevision: 2,
+            group: { ...oldGroup.group, snapshotVersion: 2 },
             causalRevision: { groupRevision: 2, presenceRevision: 0 }
         };
         clientSnapshots.setClientStateSnapshots([newerClient]);

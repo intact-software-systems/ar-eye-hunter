@@ -103,6 +103,8 @@ export function evaluateSafeOutputTransform(
             return evaluateNumericTransform({ spec, input, details });
         case 'equals':
             return evaluateEqualsTransform(spec, input, details);
+        case 'lexicallyBefore':
+            return evaluateLexicallyBeforeTransform(spec, input, details);
         case 'if':
             return evaluateIfTransform(spec, input, details);
         case 'jsonStringify':
@@ -212,6 +214,22 @@ function evaluateEqualsTransform(
         evaluateTransformValue(values[0], input),
         evaluateTransformValue(values[1], input)
     );
+}
+
+function evaluateLexicallyBeforeTransform(
+    spec: Record<string, any>,
+    input: SafeOutputTransformEvaluationInput,
+    details: SafeOutputTransformDetails
+): boolean {
+    const values = transformValues(spec, 'lexicallyBefore')
+        .map((value) => evaluateTransformValue(value, input));
+    if (values.length !== 2 || values.some((value) => typeof value !== 'string')) {
+        return rejectSafeOutputTransform(
+            'Lexically-before transform requires exactly two string values.',
+            { ...details, input: values }
+        );
+    }
+    return values[0] < values[1];
 }
 
 function evaluateIfTransform(

@@ -4,7 +4,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { PSqlResourceInboxEntryRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';

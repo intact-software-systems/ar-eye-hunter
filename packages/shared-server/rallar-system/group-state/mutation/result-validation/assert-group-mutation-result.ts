@@ -50,8 +50,8 @@ export function assertGroupMutationIdempotencyRecord(
     validateScopedValue(value.aggregateRef, ref, 'Stored group idempotency aggregateRef');
     requireNonEmptyString(value.requestId, 'Stored group idempotency requestId');
     assertCommandHash(value.commandHash, 'Stored group idempotency commandHash');
-    assertMutationReceipt(value.receipt, ref, 'Stored group idempotency receipt');
     const receipt = value.receipt;
+    assertMutationReceipt(receipt, ref, 'Stored group idempotency receipt');
     if (receipt.commandHash !== value.commandHash) {
         throw new TypeError('Stored group idempotency hashes differ');
     }

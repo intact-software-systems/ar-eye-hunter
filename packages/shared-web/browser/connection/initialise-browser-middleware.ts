@@ -1,6 +1,7 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 // dprint-ignore
 import type {
     ApiConfig,
@@ -11,7 +12,7 @@ import type {
 } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
-import type { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
+import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
@@ -21,13 +22,12 @@ import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import type {
     QRtcPeerDto,
     RtcDataChannelLaneConfig,
-    WebRtcConnectionService,
-    WebRtcPeerCreationDecision
-} from '@shared/services/WebRtcConnectionService.ts';
-import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
-import type { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
-import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/WsQueueBoxClientService.ts';
-import type { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
+    WebRtcConnectionService
+} from '@shared/services/web-rtc-connection-service.ts';
+import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
+import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
+import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/ws-queue-box-client-service.ts';
 import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
 
 import { readSession } from '@shared/api/auth.ts';
@@ -64,7 +64,7 @@ export interface MiddlewareInitOptions {
     readonly rttReportingDegreeLimit?: number;
     readonly bootstrapDegree?: number;
     readonly scope?: StateScope;
-    readonly onAuthInvalid?: (error: unknown) => void | Promise<void>;
+    readonly onAuthInvalid?: (error: Error) => void | Promise<void>;
     readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
 }
 
@@ -112,29 +112,16 @@ export function toBrowserRttHeartbeatMessage(
     );
 }
 
-export function toBrowserRtcPeerCreationDecision(
-    isPeerDialAllowedByAnyGroup: boolean
-): WebRtcPeerCreationDecision {
-    return isPeerDialAllowedByAnyGroup ? { decision: 'allow' } : {
-        decision: 'deny',
-        reason: 'stage-layout-mismatch'
-    };
-}
-
 export function configureBrowserRtcPeerCreationPolicies(
     webRtcConnectionService: WebRtcConnectionService,
     webRtcGroupManager: WebRtcGroupManager
 ): void {
-    const peerCreationDecision = (peerId: string): WebRtcPeerCreationDecision =>
-        toBrowserRtcPeerCreationDecision(
-            webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
-        );
-    webRtcConnectionService.setInboundPeerCreationPolicy(
-        ({ peerId }) => peerCreationDecision(peerId)
-    );
-    webRtcConnectionService.setOutboundDialPolicy(
-        ({ peerId }) => peerCreationDecision(peerId)
-    );
+    const peerCreationPolicy: WebRtcConnectionService.OutboundDialPolicy = ({ peerId }) =>
+        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
+            ? { decision: 'allow' }
+            : { decision: 'deny', reason: 'stage-layout-mismatch' };
+    webRtcConnectionService.setInboundPeerCreationPolicy(peerCreationPolicy);
+    webRtcConnectionService.setOutboundDialPolicy(peerCreationPolicy);
 }
 
 interface BrowserWebSocketTransport {
@@ -198,6 +185,8 @@ export async function initialiseMiddleware(
         authSession: session,
         scope: options.scope,
         onAuthInvalid: options.onAuthInvalid
+            ? (caught) => options.onAuthInvalid?.(toError(caught))
+            : undefined
     });
 
     return {
@@ -211,10 +200,10 @@ function initialiseBrowserRuntimeStores(sessionId: string): void {
     initialiseBrowserCacheRepositories();
     configureBrowserALRuntimeStores(sessionId);
     initBrowserALRuntimeExpiryEviction().catch((error) =>
-        console.error('Failed to initialise browser AL runtime expiry eviction:', error)
+        console.error('Failed to initialise browser AL runtime expiry eviction:', toError(error))
     );
     initBrowserQueueBoxExpiryEviction().catch((error) =>
-        console.error('Failed to initialise browser queuebox expiry eviction:', error)
+        console.error('Failed to initialise browser queuebox expiry eviction:', toError(error))
     );
 }
 
@@ -237,7 +226,8 @@ async function initialiseBrowserWebSocketTransport(
             DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
         newConnectionRequestId: () => crypto.randomUUID(),
         outboundDiagnostics: input.options.outboundDiagnostics
-    }).catch((error) => {
+    }).catch((caught) => {
+        const error = toError(caught);
         console.error('Failed to connect WebSocket client:', error);
         throw error;
     });
@@ -341,7 +331,7 @@ function registerBrowserRttEgress(
                     queueBox.qboxEngine.wake();
                 }
             }).catch((error) => {
-                console.error('Failed to enqueue RTT heartbeat', error);
+                console.error('Failed to enqueue RTT heartbeat', toError(error));
             });
             return Promise.resolve();
         }
@@ -377,17 +367,14 @@ function createBrowserRtcGroupManager(
         },
         {
             maxPeerConnections: input.options.maxPeerConnections,
-            onDesiredPeerIdsChanged: refreshRttReportingPeers
+            rttReportingDegreeLimit: input.options.rttReportingDegreeLimit,
+            onDesiredPeerIdsChanged: ({ rttReportingPeerIds }) =>
+                rtcRxStreamer.setRttReportingPeerIds(rttReportingPeerIds)
         }
     );
-    function refreshRttReportingPeers(): void {
-        rtcRxStreamer.setRttReportingPeerIds(
-            webRtcGroupManager.rttReportingPeerIds({
-                degreeLimit: input.options.rttReportingDegreeLimit
-            })
-        );
-    }
-    refreshRttReportingPeers();
+    rtcRxStreamer.setRttReportingPeerIds(
+        webRtcGroupManager.rttReportingPeerIds({ degreeLimit: input.options.rttReportingDegreeLimit })
+    );
     configureBrowserRtcPeerCreationPolicies(
         webRtcConnectionService,
         webRtcGroupManager

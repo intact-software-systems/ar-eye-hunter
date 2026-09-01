@@ -1,7 +1,8 @@
 # Group Activation — Implementation Plan (2026-08-22)
 
-Status: **implementation in progress — Slice 8d is in final-review correction and validation, followed by
-Slice 9a. Re-baselined against product decisions 1–42. The product decisions are settled;
+Status: **implementation in progress — PR #390 and PR #391 are merged; Slice 8d PR #396 is reconciling
+their reviewed parent tree before final review and validation, followed by Slice 9a. Re-baselined
+against product decisions 1–42. The product decisions are settled;
 the implementation decisions record current reasoning, while ownership, decomposition, file and
 symbol inventories, dependencies and gates must be refreshed against the actual delivery head before
 the first implementation PR and whenever later changes to `main` materially affect the plan.**
@@ -1966,6 +1967,24 @@ therefore exercise a genuine subsequent plan/publication/connect progression wit
 retry commands, preserving the existing criterion and deadline assertions.
 
 ### Slice 8d current checkpoint — residual findings and validation
+
+The oldest-first delivery stack advanced on 2026-09-01. PR #390 merged at
+`b9a58ba5adbd4fded68db0b1e9aea7d7f74cf0bd`; its clean-database cutover needs no data-rewrite
+migration and no agent-owned deployment pause. PR #391 then merged at
+`83ae6e49db78642de70663ae522dbf2eedc209af` after its approved strict browser/headless bundle
+ceilings, complete remote gates, exact-head review and ready-for-main marker. Its merge tree is
+byte-identical to reviewed feature head `adc2863155fd52b0584726ba0cf64657b6459e57`.
+
+PR #396 is now the only unmerged implementation PR in the existing stack. Its local correction
+series is being reconciled first with that exact reviewed #391 feature head, rather than asking Git
+to infer a three-way merge from the later squash commit and the stack's old common ancestor. The
+resolution keeps Slice 8d's exact durable room audience through live delivery, applies #391's
+discriminated authorization and validation cleanup, removes the superseded snapshot-forwarding
+path and retired legacy consumer inventories, and preserves both PRs' executable evidence. After
+this semantic-parent merge is validated and committed, a second ancestry-only merge from current
+`main` will connect the squash history without changing the reviewed tree. PR #396 remains draft and
+unaccepted until that combined head passes complete review, required gates and controlled
+performance evidence.
 
 The server/route cutover and its migrated consumers are committed locally, but are not yet
 published. All eight commands reach the authenticated AppInbox owner; legacy production commands

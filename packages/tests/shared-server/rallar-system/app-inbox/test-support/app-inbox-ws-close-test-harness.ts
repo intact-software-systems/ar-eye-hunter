@@ -10,11 +10,11 @@ import { GroupStateInboxService } from '@shared-server/rallar-system/group-state
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-inbox-resource-fixtures.ts';
-import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
+import { createAppInboxTestDatabase, type AppInboxTestDatabase } from './app-inbox-test-database.ts';
 
 // Anchor the seed clock to the real processing clock. The AppInbox stamps and
 // captures messages at Date.now(), so a fixed far-future base would make seeded
@@ -22,15 +22,35 @@ import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 const NOW_EPOCH_MS = Date.now();
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
+interface AuthorisedWsConnectFacts extends StateScope {
+    readonly connectedAtEpochMs: number;
+    readonly expiresAtEpochMs: number;
+}
+export interface AppInboxWsCloseHarness {
+    readonly queue: TestResourceInbox;
+    readonly reader: InboxQueueReader;
+    readonly secondReader: InboxQueueReader;
+    readonly authSession: IssuedAuthSession;
+    readonly client: AppClientInboxService;
+    readonly group: GroupStateInboxService;
+    readonly clientState: ClientStateService;
+    readonly groupState: GroupStateService;
+    readonly clients: ClientStateRepository;
+    readonly groups: GroupStateRepository;
+}
+interface AppInboxWsCloseHarnessOptions {
+    readonly onRollback?: () => void;
+    readonly onConditionalWrite?: FakeRuntimeStateRepository['beforeConditionalWrite'];
+}
+interface PausedLifecycleRead {
+    readonly reached: Promise<void>;
+    resume(): void;
+}
+
 export interface AuthorisedWsCloseFacts {
     readonly authSession: IssuedAuthSession;
     readonly generationId: string;
-    readonly input: Readonly<{
-        applicationId: string;
-        workspaceId: string;
-        connectedAtEpochMs: number;
-        expiresAtEpochMs: number;
-    }>;
+    readonly input: AuthorisedWsConnectFacts;
     readonly disconnectedAtEpochMs: number;
     readonly reason: string;
 }
@@ -55,15 +75,8 @@ export function createAuthorisedWsCloseFacts(
 }
 
 export async function createAppInboxWsCloseHarness(
-    options: Readonly<{
-        onRollback?: () => void;
-        onConditionalWrite?: (
-            operation: 'insertIfAbsent' | 'upsertIfRevision' | 'deleteIfRevision',
-            namespace: string,
-            key: string
-        ) => void;
-    }> = {}
-) {
+    options: AppInboxWsCloseHarnessOptions = {}
+): Promise<AppInboxWsCloseHarness> {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const secondReader = new InboxQueueReader(queue);
@@ -91,54 +104,9 @@ export async function createAppInboxWsCloseHarness(
         clientStateEventStore: database.clientEventStore,
         serviceId: 'server-12345678'
     });
-    const client = new AppClientInboxService(
-        {
-            inboxQueueReader: reader,
-            resourceInboxRepository: queue,
-            resourceInboxResultsRepository: results,
-            database: database,
-            clientStateService: clientState
-        },
-        {
-            serviceId: 'server-12345678'
-        }
-    );
-    const group = new GroupStateInboxService(
-        {
-            inboxQueueReader: reader,
-            resourceInboxRepository: queue,
-            resourceInboxResultsRepository: results,
-            database: database,
-            groupStateService: groupState
-        },
-        {
-            serviceId: 'server-12345678'
-        }
-    );
-    new AppClientInboxService(
-        {
-            inboxQueueReader: secondReader,
-            resourceInboxRepository: queue,
-            resourceInboxResultsRepository: results,
-            database: database,
-            clientStateService: clientState
-        },
-        {
-            serviceId: 'server-12345678'
-        }
-    );
-    new GroupStateInboxService(
-        {
-            inboxQueueReader: secondReader,
-            resourceInboxRepository: queue,
-            resourceInboxResultsRepository: results,
-            database: database,
-            groupStateService: groupState
-        },
-        {
-            serviceId: 'server-12345678'
-        }
-    );
+    const dependencies = { queue, results, database, clientState, groupState };
+    const { client, group } = installWsCloseReader(reader, dependencies);
+    installWsCloseReader(secondReader, dependencies);
     return {
         queue,
         reader,
@@ -153,9 +121,44 @@ export async function createAppInboxWsCloseHarness(
     };
 }
 
+interface WsCloseReaderDependencies {
+    readonly queue: TestResourceInbox;
+    readonly results: TestResourceInboxResults;
+    readonly database: AppInboxTestDatabase;
+    readonly clientState: ClientStateService;
+    readonly groupState: GroupStateService;
+}
+
+interface WsCloseReaderServices {
+    readonly client: AppClientInboxService;
+    readonly group: GroupStateInboxService;
+}
+
+function installWsCloseReader(
+    reader: InboxQueueReader,
+    dependencies: WsCloseReaderDependencies
+): WsCloseReaderServices {
+    const shared = {
+        inboxQueueReader: reader,
+        resourceInboxRepository: dependencies.queue,
+        resourceInboxResultsRepository: dependencies.results,
+        database: dependencies.database
+    };
+    return {
+        client: new AppClientInboxService(
+            { ...shared, clientStateService: dependencies.clientState },
+            { serviceId: 'server-12345678' }
+        ),
+        group: new GroupStateInboxService(
+            { ...shared, groupStateService: dependencies.groupState },
+            { serviceId: 'server-12345678' }
+        )
+    };
+}
+
 export function pauseNextLifecycleRead(
     state: Pick<ClientStateService | GroupStateService, 'sessionGenerationLifecycle'>
-): Readonly<{ reached: Promise<void>; resume(): void; }> {
+): PausedLifecycleRead {
     const lifecycle = state.sessionGenerationLifecycle;
     const originalRead = lifecycle.read.bind(lifecycle);
     const reached = Promise.withResolvers<void>();

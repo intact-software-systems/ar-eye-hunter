@@ -1,5 +1,3 @@
-import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
-import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import assert from 'node:assert/strict';
 
 import {
@@ -10,6 +8,12 @@ import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.t
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import {
+    decodeJsonWireText,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import {
@@ -25,42 +29,40 @@ import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/m
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { materializeRtcOverlayTopologyBroadcastMessage } from '@shared-server/rallar-system/topology/planning/materialize-rtc-overlay-topology-broadcast-message.ts';
+import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/topology/publication/rtc-topology-ws-outbox-entry.ts';
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import {
-    createGroupTopologyRuntimeOwners
+    createGroupTopologyRuntimeOwners,
+    type GroupTopologyRuntimeOwners
 } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-
-import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import type { Group, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    Group,
+    GroupMember,
+    GroupPresenceSession,
+    GroupRef,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-
-import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { readPGliteDatabaseEpochMs } from './pglite-app-inbox-test-runtime.ts';
 import { canonicalAuditStamp, groupFixture } from './pglite-state-mutation-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
-interface ResourceInboxKeyFields {
-    readonly topicId: string;
-    readonly resourceId: string;
-    readonly contextId: string;
-}
-
-interface MutableJsonRecord {
-    [key: string]: JsonWireValue;
-}
-
 interface RtcTopologyDeliveryState {
     readonly headSequence: number;
     readonly sequences: readonly number[];
@@ -150,10 +152,62 @@ export function topologyOverrideCommand(
     };
 }
 
+interface PGliteTopologyWorkSetup {
+    readonly sql: PGliteSql;
+    readonly nowEpochMs: number;
+    readonly groupRef: GroupRef;
+    readonly groupSnapshot: GroupSnapshot;
+    readonly topologyManagement: GroupTopologyRuntimeOwners;
+    readonly executionRepository: RtcTopologyExecutionRepository;
+    readonly resourceInbox: PSqlResourceInboxRepository;
+}
+
+interface ReservedPGliteTopologyWork {
+    readonly workEntry: ResourceEntry;
+    readonly reserved: ResourceEntry;
+    readonly message: ALMessage;
+    readonly workId: string;
+}
+
+interface PlannedPGliteTopologyPublication {
+    readonly topology: RallarOverlayTopologySnapshot;
+    readonly publication: RtcTopologyPublication;
+    readonly publicationEntry: ResourceEntry;
+}
+
+interface PGliteTopologyWorkDelivery {
+    readonly handler: OnMessageCallback;
+    readonly publisherStreamId: string;
+    readAppendCount(): number;
+    readReplayWakeCount(): number;
+}
+
+interface PGliteTopologyWorkFixture
+    extends ReservedPGliteTopologyWork, PlannedPGliteTopologyPublication, PGliteTopologyWorkDelivery {
+    readonly groupRef: GroupRef;
+    readonly resourceInbox: PSqlResourceInboxRepository;
+    readonly executionRepository: RtcTopologyExecutionRepository;
+}
+
 export async function createPGliteTopologyWorkFixture(
     sql: PGliteSql,
     commandId: string
-) {
+): Promise<PGliteTopologyWorkFixture> {
+    const setup = await createPGliteTopologyWorkSetup(sql, commandId);
+    const reserved = await persistAndReserveTopologyWork(setup, commandId);
+    const planned = await planTopologyWorkPublication(setup, reserved.workId);
+    const delivery = await registerTopologyWorkDelivery(setup);
+    return {
+        ...reserved,
+        ...planned,
+        ...delivery,
+        groupRef: setup.groupRef,
+        resourceInbox: setup.resourceInbox,
+        executionRepository: setup.executionRepository
+    };
+}
+
+async function createPGliteTopologyWorkSetup(sql: PGliteSql, commandId: string): Promise<PGliteTopologyWorkSetup> {
     const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
     const groupRef = {
         applicationId: commandId,
@@ -178,6 +232,14 @@ export async function createPGliteTopologyWorkFixture(
         () => nowEpochMs
     );
     const resourceInbox = createPSqlResourceInboxRepository(sql);
+    return { sql, nowEpochMs, groupRef, groupSnapshot, topologyManagement, executionRepository, resourceInbox };
+}
+
+async function persistAndReserveTopologyWork(
+    setup: PGliteTopologyWorkSetup,
+    commandId: string
+): Promise<ReservedPGliteTopologyWork> {
+    const { sql, groupRef, groupSnapshot, nowEpochMs, resourceInbox } = setup;
     const workEntry = await sql.begin((transaction) =>
         new RtcTopologyOutboxWriter({ recordWrite: () => undefined }).write(transaction, {
             commandId,
@@ -204,7 +266,7 @@ export async function createPGliteTopologyWorkFixture(
   `;
     const reserved = await resourceInbox.entries.findAnyByKey(workEntry.key);
     assert.ok(reserved);
-    const message = readALMessage(reserved.resource);
+    const message = decodePersistedALMessage(reserved.resource);
     const envelope = readResourceInboxKeyFields(message.payload.resource);
     const workId = [
         envelope.topicId,
@@ -212,6 +274,14 @@ export async function createPGliteTopologyWorkFixture(
         envelope.resourceId,
         0
     ].join(':');
+    return { workEntry, reserved, message, workId };
+}
+
+async function planTopologyWorkPublication(
+    setup: PGliteTopologyWorkSetup,
+    workId: string
+): Promise<PlannedPGliteTopologyPublication> {
+    const { groupRef, groupSnapshot, topologyManagement, executionRepository, nowEpochMs } = setup;
     const authority = await topologyManagement.planning.readTopologyPlanningAuthority({
         groupRef,
         requestOptions: {},
@@ -225,7 +295,7 @@ export async function createPGliteTopologyWorkFixture(
         })
     ).snapshot;
     const expiresAtEpochMs = executionRepository.publicationExpireAtTimestamp();
-    const publication = {
+    const publication: RtcTopologyPublication = {
         publicationId: toRtcTopologyPublicationId({
             workId,
             sourceGroupStateCausalRevision: topology.sourceGroupStateCausalRevision,
@@ -245,6 +315,11 @@ export async function createPGliteTopologyWorkFixture(
         createdAtEpochMs: nowEpochMs
     };
     const publicationEntry = computeRtcTopologyPublicationOutbox(publication);
+    return { topology, publication, publicationEntry };
+}
+
+async function registerTopologyWorkDelivery(setup: PGliteTopologyWorkSetup): Promise<PGliteTopologyWorkDelivery> {
+    const { sql, resourceInbox, topologyManagement, executionRepository, nowEpochMs } = setup;
     const queue = new PSqlQueueBox(resourceInbox);
     const publisherStreamId = '00000000-0000-4000-8000-000000000001';
     const topologyDelivery = new PSqlRtcTopologyDeliveryRepository(sql);
@@ -281,16 +356,6 @@ export async function createPGliteTopologyWorkFixture(
         }
     });
     return {
-        groupRef,
-        workId,
-        topology,
-        publication,
-        publicationEntry,
-        resourceInbox,
-        executionRepository,
-        workEntry,
-        reserved,
-        message,
         handler,
         publisherStreamId,
         readAppendCount: () => appendCount,
@@ -359,12 +424,14 @@ export function topologyGroupSnapshotWithSessions(
 ): GroupSnapshot {
     const { groupRef, ownerSessionId, peerSessionId, nowEpochMs } = input;
     const base = topologyGroupSnapshot(groupRef);
-    const peer = {
-        ...base.members[0],
+    const owner = base.members[0];
+    assert.ok(owner);
+    const peer: GroupMember = {
+        ...owner,
         principalId: 'peer',
-        role: 'member' as const
+        role: 'member'
     };
-    const session = (sessionId: string, principalId: string) => ({
+    const session = (sessionId: string, principalId: string): GroupPresenceSession => ({
         ...groupRef,
         sessionId,
         principalId,
@@ -373,7 +440,7 @@ export function topologyGroupSnapshotWithSessions(
         connectedAtEpochMs: nowEpochMs - 1_000,
         lastHeartbeatAtEpochMs: nowEpochMs,
         expiresAtEpochMs: nowEpochMs + 60_000,
-        status: 'active' as const,
+        status: 'active',
         disconnectedAtEpochMs: null,
         disconnectReason: null
     });
@@ -386,7 +453,7 @@ export function topologyGroupSnapshotWithSessions(
             rosterVersion: 2,
             presenceVersion: 1
         },
-        members: [base.members[0], peer],
+        members: [owner, peer],
         activeSessions: [
             session(ownerSessionId, 'owner'),
             session(peerSessionId, 'peer')
@@ -402,12 +469,14 @@ export function topologyGroupSnapshotWithSessionIds(
     nowEpochMs: number
 ): GroupSnapshot {
     const base = topologyGroupSnapshot(groupRef);
-    const members = sessionIds.map((_sessionId, index) => ({
-        ...base.members[0],
+    const owner = base.members[0];
+    assert.ok(owner);
+    const members = sessionIds.map((_sessionId, index): GroupMember => ({
+        ...owner,
         principalId: index === 0 ? 'owner' : `member-${index}`,
-        role: index === 0 ? 'owner' as const : 'member' as const
+        role: index === 0 ? 'owner' : 'member'
     }));
-    const activeSessions = sessionIds.map((sessionId, index) => ({
+    const activeSessions = sessionIds.map((sessionId, index): GroupPresenceSession => ({
         ...groupRef,
         sessionId,
         principalId: readMemberPrincipalId(members, index),
@@ -416,7 +485,7 @@ export function topologyGroupSnapshotWithSessionIds(
         connectedAtEpochMs: nowEpochMs - 100,
         lastHeartbeatAtEpochMs: nowEpochMs,
         expiresAtEpochMs: nowEpochMs + 60_000,
-        status: 'active' as const,
+        status: 'active',
         disconnectedAtEpochMs: null,
         disconnectReason: null
     }));
@@ -480,44 +549,25 @@ interface CreatePGliteRemovalPlanningScenarioInput {
     readonly updatedAtEpochMs: number;
 }
 
+interface PGliteRemovalPlanningScenario {
+    readonly authority: GroupTopologyPlanningAuthority;
+    readonly previous: RallarOverlayTopologySnapshot;
+    readonly service: GroupTopologyRuntimeOwners;
+}
+
 export async function createPGliteRemovalPlanningScenario(
     sql: PGliteSql,
     input: CreatePGliteRemovalPlanningScenarioInput
-) {
+): Promise<PGliteRemovalPlanningScenario> {
     const nowEpochMs = 1_000;
     const groupRef = {
         applicationId: `pglite-removal-${input.name}`,
         workspaceId: 'planning',
         groupId: 'room'
     };
-    const base = topologyGroupSnapshot(groupRef);
-    const currentGroup: Group = input.status === 'archived'
-        ? {
-            ...base.group,
-            status: 'archived',
-            expiresAtEpochMs: input.expiresAtEpochMs,
-            updated: canonicalAuditStamp(input.updatedAtEpochMs),
-            archived: canonicalAuditStamp(input.updatedAtEpochMs),
-            deleted: null
-        }
-        : {
-            ...base.group,
-            status: 'active',
-            expiresAtEpochMs: input.expiresAtEpochMs,
-            updated: canonicalAuditStamp(input.updatedAtEpochMs),
-            archived: null,
-            deleted: null
-        };
-    const current: GroupSnapshot = {
-        ...base,
-        group: currentGroup
-    };
     const runtime = new PSqlRuntimeStateRepository(sql);
     const groups = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql));
-    assert.equal((await groups.insertGroup(current.group)).status, 'applied');
-    for (const member of current.members) {
-        await groups.putMember(member);
-    }
+    const current = await seedRemovalPlanningGroup(groups, groupRef, input);
     const durable = await groups.readSnapshot(groupRef);
     assert.ok(durable);
     const staleTerminal: GroupSnapshot = {
@@ -525,6 +575,8 @@ export async function createPGliteRemovalPlanningScenario(
         causalRevision: { groupRevision: 0, presenceRevision: 0 },
         group: {
             ...current.group,
+            snapshotVersion: 0,
+            presenceVersion: 0,
             status: 'archived',
             updated: canonicalAuditStamp(10),
             archived: canonicalAuditStamp(10),
@@ -558,36 +610,66 @@ export async function createPGliteRemovalPlanningScenario(
     return { authority, previous, service };
 }
 
+async function seedRemovalPlanningGroup(
+    groups: GroupStateRepository,
+    groupRef: GroupRef,
+    input: CreatePGliteRemovalPlanningScenarioInput
+): Promise<GroupSnapshot> {
+    const base = topologyGroupSnapshot(groupRef);
+    const currentGroup: Group = input.status === 'archived'
+        ? {
+            ...base.group,
+            status: 'archived',
+            expiresAtEpochMs: input.expiresAtEpochMs,
+            updated: canonicalAuditStamp(input.updatedAtEpochMs),
+            archived: canonicalAuditStamp(input.updatedAtEpochMs),
+            deleted: null
+        }
+        : {
+            ...base.group,
+            status: 'active',
+            expiresAtEpochMs: input.expiresAtEpochMs,
+            updated: canonicalAuditStamp(input.updatedAtEpochMs),
+            archived: null,
+            deleted: null
+        };
+    const current: GroupSnapshot = {
+        ...base,
+        group: currentGroup
+    };
+    assert.equal((await groups.insertGroup(current.group)).status, 'applied');
+    for (const member of current.members) {
+        await groups.putMember(member);
+    }
+    return current;
+}
+
 export function advanceCoalescedGeneration(
     entry: ResourceEntry,
     generation: number
 ): ResourceEntry {
-    const message = readMutableJsonRecord(entry.resource, 'AL message');
-    const payload = readJsonRecord(message.payload, 'AL message payload');
-    if (typeof payload.resource !== 'string') {
-        throw new TypeError('Expected AL message payload resource');
-    }
-    const envelope = readMutableJsonRecord(payload.resource, 'AppInbox envelope');
+    const message = decodePersistedALMessage(entry.resource);
+    const envelope = readJsonRecord(
+        decodeJsonWireText(message.payload.resource, 'AppInbox envelope'),
+        'AppInbox envelope'
+    );
     const data = readJsonRecord(envelope.data, 'AppInbox envelope data');
     const work = readJsonRecord(data.__rallarCoalescedWork, 'coalesced work');
-    work.generation = generation;
-    data.revision = generation;
+    const successor = {
+        ...envelope,
+        data: { ...data, revision: generation, __rallarCoalescedWork: { ...work, generation } }
+    };
     return {
         ...entry,
         resource: JSON.stringify({
             ...message,
-            payload: { ...payload, resource: JSON.stringify(envelope) }
+            payload: { ...message.payload, resource: JSON.stringify(successor) }
         })
     };
 }
 
-function readALMessage(source: string): ALMessage {
-    const value = JSON.parse(source);
-    return decodePersistedALMessageValue(value);
-}
-
-function readResourceInboxKeyFields(source: string): ResourceInboxKeyFields {
-    const value: JsonWireValue = JSON.parse(source);
+function readResourceInboxKeyFields(source: string): Key {
+    const value = decodeJsonWireText(source, 'Resource inbox key');
     if (
         !isJsonRecord(value) ||
         typeof value.topicId !== 'string' ||
@@ -603,19 +685,14 @@ function readResourceInboxKeyFields(source: string): ResourceInboxKeyFields {
     };
 }
 
-function readMutableJsonRecord(source: string, label: string): MutableJsonRecord {
-    const value: JsonWireValue = JSON.parse(source);
-    return readJsonRecord(value, label);
-}
-
-function readJsonRecord(value: JsonWireValue, label: string): MutableJsonRecord {
-    if (!isJsonRecord(value)) {
+function readJsonRecord(value: JsonWireValue | undefined, label: string): JsonWireObject {
+    if (value === undefined || !isJsonRecord(value)) {
         throw new TypeError(`Expected ${label} to be an object`);
     }
     return value;
 }
 
-function isJsonRecord(value: JsonWireValue): value is MutableJsonRecord {
+function isJsonRecord(value: JsonWireValue): value is JsonWireObject {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 

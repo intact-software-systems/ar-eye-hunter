@@ -1,9 +1,13 @@
 import type {
     RallarRoomTransportState,
+    RallarRtcPeerStatus,
     RallarRtcRoomLaneWaitResult,
     RallarRtcRoomLaneWaitStatus,
-    RallarRtcRoomMode
+    RallarRtcRoomMode,
+    RallarRtcStatus,
+    RallarRtcWaitForOpenResult
 } from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { RallarReadinessEvaluation } from '@shared-web/browser/readiness.ts';
 import type { GroupTransportState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 interface RtcRoomTransportStateInput {
@@ -17,6 +21,39 @@ interface RtcRoomTransportStateInput {
     readonly failedPeerCount: number;
     readonly minReadyPeers: number;
     readonly waitStatus?: RallarRtcRoomLaneWaitStatus;
+}
+
+interface RtcRoomLaneWaitStatusInput {
+    readonly evaluation: RallarReadinessEvaluation;
+    readonly ready: readonly RallarRtcWaitForOpenResult[];
+    readonly notReady: readonly RallarRtcWaitForOpenResult[];
+    readonly preferUnsatisfiedTerminalStatus: boolean;
+}
+
+interface RtcRoomPeerSelection {
+    readonly knownPeerIds: readonly string[];
+    readonly activePeerIds: readonly string[];
+    readonly readyPeerIds: readonly string[];
+    readonly failedPeerIds: readonly string[];
+    readonly peers: readonly RallarRtcPeerStatus[];
+}
+
+export function selectRtcRoomPeers(
+    status: RallarRtcStatus,
+    desiredPeerIds: readonly string[],
+    laneId: string
+): RtcRoomPeerSelection {
+    const desired = new Set(desiredPeerIds);
+    const peers = status.peers.filter((peer) => desired.has(peer.peerId));
+    const failedPeerIds = peers.filter((peer) => isRtcRoomPeerFailed(peer, laneId)).map((peer) => peer.peerId);
+    const failed = new Set(failedPeerIds);
+    return {
+        knownPeerIds: status.knownPeerIds.filter((peerId) => desired.has(peerId)),
+        activePeerIds: status.activePeerIds.filter((peerId) => desired.has(peerId)),
+        readyPeerIds: status.readyPeerIds.filter((peerId) => desired.has(peerId) && !failed.has(peerId)),
+        failedPeerIds,
+        peers
+    };
 }
 
 export function resolveRtcRoomTransportState(
@@ -61,6 +98,19 @@ export function resolveRtcRoomTransportState(
     return 'idle';
 }
 
+export function isRtcRoomPeerFailed(peer: RallarRtcPeerStatus, laneId: string): boolean {
+    const connection = peer.connection;
+    if (
+        connection.state === 'Failed' || connection.state === 'Closed' ||
+        connection.connectionState === 'failed' || connection.connectionState === 'closed' ||
+        connection.iceConnectionState === 'failed'
+    ) {
+        return true;
+    }
+    const lane = peer.lanes.find((candidate) => candidate.laneId === laneId)?.channel;
+    return lane?.state === 'Failed' || lane?.state === 'Closed' || lane?.readyState === 'closed';
+}
+
 export function describeRtcRoomTransport(
     state: RallarRoomTransportState,
     readiness?: RallarRtcRoomLaneWaitResult
@@ -93,4 +143,67 @@ export function describeRtcRoomTransport(
     }
 
     return undefined;
+}
+
+export function resolveRtcRoomLaneWaitStatus(
+    input: RtcRoomLaneWaitStatusInput
+): RallarRtcRoomLaneWaitStatus {
+    const waitStatus = toRtcRoomLaneWaitStatus(input.ready, input.notReady);
+    if (input.evaluation.status === 'over-capacity') {
+        return 'over-capacity';
+    }
+    if (input.evaluation.status === 'empty' && input.evaluation.expectedCount === 0) {
+        return 'empty';
+    }
+    if (input.evaluation.status === 'ready') {
+        return waitStatus === 'open'
+            ? 'open'
+            : input.ready.length > 0
+            ? 'partial'
+            : 'empty';
+    }
+    if (!input.preferUnsatisfiedTerminalStatus) {
+        return waitStatus;
+    }
+    if (input.notReady.some((peer) => peer.status === 'failed')) {
+        return 'failed';
+    }
+    if (input.notReady.some((peer) => peer.status === 'aborted')) {
+        return 'aborted';
+    }
+    if (input.notReady.some((peer) => peer.status === 'timeout')) {
+        return 'timeout';
+    }
+    if (input.notReady.some((peer) => peer.status === 'not-connected')) {
+        return 'not-connected';
+    }
+    return waitStatus;
+}
+
+function toRtcRoomLaneWaitStatus(
+    ready: readonly RallarRtcWaitForOpenResult[],
+    notReady: readonly RallarRtcWaitForOpenResult[]
+): RallarRtcRoomLaneWaitStatus {
+    if (ready.length === 0 && notReady.length === 0) {
+        return 'empty';
+    }
+    if (notReady.length === 0) {
+        return 'open';
+    }
+    if (ready.length > 0) {
+        return 'partial';
+    }
+    if (notReady.every((peer) => peer.status === 'not-connected')) {
+        return 'not-connected';
+    }
+    if (notReady.every((peer) => peer.status === 'timeout')) {
+        return 'timeout';
+    }
+    if (notReady.every((peer) => peer.status === 'aborted')) {
+        return 'aborted';
+    }
+    if (notReady.every((peer) => peer.status === 'failed')) {
+        return 'failed';
+    }
+    return 'not-ready';
 }

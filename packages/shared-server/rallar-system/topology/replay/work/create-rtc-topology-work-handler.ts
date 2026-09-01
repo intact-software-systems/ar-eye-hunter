@@ -4,7 +4,7 @@ import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topolog
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import type { GroupFormationAutomationPort } from './create-group-connect-trigger-work-handler.ts';
 import {
     computePublicationConnectTriggerRequests,

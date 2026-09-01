@@ -1,4 +1,7 @@
-import { QRtcDataChannel } from '@shared/webrtc/QRtcDataChannel.ts';
+import { RtcBenchmarkNativeChannel } from '../native-rtc/rtc-benchmark-native-channel.ts';
+import { createRtcBenchmarkPeerConnection } from '../native-rtc/rtc-benchmark-native-peer.ts';
+
+import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 
 import { runRtcBaselineAcceptedWorkerSamples } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 import {
@@ -7,11 +10,19 @@ import {
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import {
     rtcBaselineIssue,
+    type RtcBaselineIssueDto,
     type RtcBaselineJson,
+    type RtcBaselineResult,
     type RtcBaselineSampleDto,
     type RtcBaselineSampleIdentityDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
 import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
+
+interface RtcDataChannelErrorReferenceDiagnosticArguments {
+    readonly mode: 'diagnostic';
+    readonly runs: number;
+    readonly out: string;
+}
 
 interface RtcDataChannelErrorReferenceAcceptedArguments {
     readonly mode: 'accepted';
@@ -40,7 +51,9 @@ const acceptedNames = [
     'rtc-inner-runs'
 ];
 
-export function parseRtcDataChannelErrorReferenceArguments(arguments_: readonly string[]) {
+export function parseRtcDataChannelErrorReferenceArguments(
+    arguments_: readonly string[]
+): RtcBaselineResult<RtcDataChannelErrorReferenceDiagnosticArguments | RtcDataChannelErrorReferenceAcceptedArguments> {
     const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
     const parsed = parseRtcBaselineOneTokenOptions(
         arguments_,
@@ -52,33 +65,40 @@ export function parseRtcDataChannelErrorReferenceArguments(arguments_: readonly 
     return accepted ? parseAcceptedArguments(parsed.value) : parseDiagnosticArguments(parsed.value);
 }
 
-export const runRtcDataChannelErrorReference = async (): Promise<RtcDataChannelErrorReferenceResult> => {
+export async function runRtcDataChannelErrorReference(): Promise<RtcDataChannelErrorReferenceResult> {
+    const peerFixture = createRtcBenchmarkPeerConnection('perf-peer');
     const startedAt = performance.now();
-    const nativeChannel = new FakeRtcDataChannel('realtime');
-    const peerConnection = {
-        isReadyToConnect: () => true,
-        onDataChannelDo: () => peerConnection,
-        createDataChannel: () => nativeChannel
-    };
-    const dataChannel = new QRtcDataChannel(peerConnection as never, {
+    const nativeChannel = new RtcBenchmarkNativeChannel('realtime');
+    peerFixture.native.pendingChannels.push(nativeChannel);
+    const dataChannel = new QRtcDataChannel(peerFixture.peer, {
         peerId: 'perf-peer',
         dataChannelName: 'realtime'
     });
-    dataChannel.connect(true);
-    await nativeChannel.emitOpen();
-    await nativeChannel.emitError();
-    return {
-        durationMs: performance.now() - startedAt,
-        readyStateAfterError: dataChannel.readHealth().readyState,
-        statusHasDataChannelAfterError: dataChannel.status.dc !== undefined,
-        attachedHandlerCountAfterError: nativeChannel.attachedHandlerCount()
-    };
-};
+    try {
+        dataChannel.connect(true);
+        await nativeChannel.emitOpen();
+        await nativeChannel.emitError();
+        return {
+            durationMs: performance.now() - startedAt,
+            readyStateAfterError: dataChannel.readHealth().readyState,
+            statusHasDataChannelAfterError: dataChannel.status.dc !== undefined,
+            attachedHandlerCountAfterError: nativeChannel.attachedHandlerCount()
+        };
+    }
+    finally {
+        dataChannel.reset();
+        peerFixture.dispose();
+    }
+}
 
-export async function runRtcDataChannelErrorReferenceAcceptedSamples(input: {
+export interface RtcDataChannelErrorReferenceAcceptedSamplesInput {
     readonly worker: RtcDataChannelErrorReferenceAcceptedArguments;
     readonly run: () => Promise<RtcDataChannelErrorReferenceResult>;
-}): Promise<RtcBaselineSampleDto[]> {
+}
+
+export async function runRtcDataChannelErrorReferenceAcceptedSamples(
+    input: RtcDataChannelErrorReferenceAcceptedSamplesInput
+): Promise<RtcBaselineSampleDto[]> {
     return runRtcBaselineAcceptedWorkerSamples({
         worker: {
             ...input.worker,
@@ -92,7 +112,9 @@ export async function runRtcDataChannelErrorReferenceAcceptedSamples(input: {
     });
 }
 
-function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
+function parseDiagnosticArguments(
+    options: Readonly<Record<string, string>>
+): RtcBaselineResult<RtcDataChannelErrorReferenceDiagnosticArguments> {
     const runs = parseRtcBaselineBoundedInteger(options.runs ?? '3', 'runs', 1, 5);
     const out = options.out ?? 'tmp/perf/results/rtc-data-channel-error-reference.json';
     const issues = [...(!runs.ok ? runs.issues : [])];
@@ -110,7 +132,9 @@ function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
         };
 }
 
-function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
+function parseAcceptedArguments(
+    options: Readonly<Record<string, string>>
+): RtcBaselineResult<RtcDataChannelErrorReferenceAcceptedArguments> {
     const outer = parseRtcBaselineBoundedInteger(
         options['outer-ordinal'] ?? '',
         'outer-ordinal',
@@ -148,7 +172,7 @@ function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
             value: {
                 mode: 'accepted' as const,
                 runs: 5,
-                intendedPhase: phase as 'warmup' | 'retained',
+                intendedPhase: phase === 'warmup' ? 'warmup' : 'retained',
                 outerOrdinal: ordinal,
                 sampleIds
             }
@@ -171,7 +195,7 @@ function createSample(
     return {
         schema: 'rallar.rtc-baseline.sample.v1',
         identity,
-        outcome: result === null ? 'not-run' : issues.length === 0 ? 'passed' : 'failed',
+        outcome: classifySampleOutcome(result, issues),
         evidenceClass: 'synthetic-path',
         metrics: result === null ? [] : [{ metric: 'durationMs', unit: 'ms', value: result.durationMs }],
         rawEvidence: result === null ? null : toRawEvidence(result),
@@ -181,8 +205,8 @@ function createSample(
     };
 }
 
-function validateResult(result: RtcDataChannelErrorReferenceResult) {
-    const issues = [];
+function validateResult(result: RtcDataChannelErrorReferenceResult): RtcBaselineIssueDto[] {
+    const issues: RtcBaselineIssueDto[] = [];
     if (result.readyStateAfterError !== undefined || result.statusHasDataChannelAfterError) {
         issues.push(
             rtcBaselineIssue(
@@ -248,42 +272,14 @@ async function main(): Promise<void> {
     writeLine(JSON.stringify(output, null, 2));
 }
 
-class FakeRtcDataChannel {
-    readonly label: string;
-    readyState: RTCDataChannelState = 'connecting';
-    bufferedAmount = 0;
-    bufferedAmountLowThreshold = 0;
-    binaryType: BinaryType = 'blob';
-    onmessage: ((event: MessageEvent) => void | Promise<void>) | null = null;
-    onopen: (() => void | Promise<void>) | null = null;
-    onclose: (() => void | Promise<void>) | null = null;
-    onerror: (() => void | Promise<void>) | null = null;
-    onbufferedamountlow: (() => void | Promise<void>) | null = null;
-
-    constructor(label: string) {
-        this.label = label;
+function classifySampleOutcome(
+    result: RtcDataChannelErrorReferenceResult | null,
+    issues: readonly RtcBaselineIssueDto[]
+): RtcBaselineSampleDto['outcome'] {
+    if (result === null) {
+        return 'not-run';
     }
-    send(): void {}
-    close(): void {
-        this.readyState = 'closed';
-    }
-    async emitOpen(): Promise<void> {
-        this.readyState = 'open';
-        await this.onopen?.();
-    }
-    async emitError(): Promise<void> {
-        this.readyState = 'closed';
-        await this.onerror?.();
-    }
-    attachedHandlerCount(): number {
-        return [
-            this.onmessage,
-            this.onopen,
-            this.onclose,
-            this.onerror,
-            this.onbufferedamountlow
-        ].filter((handler) => handler !== null).length;
-    }
+    return issues.length === 0 ? 'passed' : 'failed';
 }
 
 if (import.meta.main) {

@@ -336,7 +336,7 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
         return result;
     }
 
-    async executeGuardedBatch(
+    override async executeGuardedBatch(
         input: RuntimeStateGuardedBatch
     ): Promise<RuntimeStateGuardedBatchResult> {
         if (this.transactionDepth === 0) {

@@ -22,7 +22,7 @@ import type { ResilienceDto } from '../../queuebox/DequeueResourceEntryControlle
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '../../websocket/JsonWebSocketServer.ts';
-import type { OnWebSocketServerMessageCallback } from '../InboxOutboxContracts.ts';
+import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { QueueBoxUtilities } from '../QueueBoxUtilities.ts';
 
 import {

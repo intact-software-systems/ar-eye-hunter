@@ -1,4 +1,5 @@
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+
 import { RallarGameDirectorAppointmentRuntime } from './director/rallar-game-director-appointment-runtime.ts';
 import { RallarGameDirectorRelayRuntime } from './director/rallar-game-director-relay-runtime.ts';
 import { RallarGameHostElectionRuntime } from './director/rallar-game-host-election-runtime.ts';
@@ -234,15 +235,23 @@ class RallarGameMatchRuntime<TInput, TIntent, TSnapshot, TEvent, TPresence> {
     private readRoomTarget(
         directorStatus?: RallarDirectorStatus
     ): RallarGameMatchStatusRuntime.RoomTarget {
+        if (this.config.roomRef) {
+            return { roomId: this.config.roomRef.groupId, roomRef: this.config.roomRef };
+        }
+
         const roomState = this.config.rallar.rooms.state();
-        const roomRef = this.config.roomRef ??
-            directorStatus?.roomRef ??
-            roomState.currentRoomRef;
-        const roomId = this.config.roomId ??
-            roomRef?.groupId ??
-            directorStatus?.roomId ??
-            roomState.currentRoomId;
-        return { roomId, roomRef };
+        const roomRef = directorStatus?.roomRef ?? roomState.currentRoomRef;
+        if (this.config.roomId !== undefined) {
+            return {
+                roomId: this.config.roomId,
+                roomRef: roomRef?.groupId === this.config.roomId ? roomRef : undefined
+            };
+        }
+
+        return {
+            roomId: roomRef?.groupId ?? directorStatus?.roomId ?? roomState.currentRoomId,
+            roomRef
+        };
     }
 
     private readLocalPeerId(): string | undefined {

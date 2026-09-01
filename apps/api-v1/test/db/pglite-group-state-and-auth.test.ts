@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -13,6 +10,7 @@ import { requiresClientWrite } from '@shared-server/rallar-system/client-state/c
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import type { ClientMutationComputedAppliedWrite } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -24,11 +22,11 @@ import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/sta
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { assertGroupPresenceSummaryAppToWsLifecycle } from '../../../../packages/tests/shared-server/rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import { readPGliteAppInboxFailure, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
@@ -404,7 +402,7 @@ Deno.test(
             assertGroupPresenceSummaryAppToWsLifecycle(
                 afterSummary,
                 afterSummary
-                    .filter((row) => row.ri_topic_id === APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC)
+                    .filter((row) => row.ri_topic_id === GROUP_PRESENCE_SUMMARY_TOPIC)
                     .map((row) => row.ri_resource_id)
             );
             assert.equal(
@@ -497,7 +495,7 @@ Deno.test(
             const [summaryKey] = await sql<ResourceInboxForeignKeyRow[]>`
       select ri_topic_id, ri_resource_id, fk_ext_bank_id
       from resource_inbox
-      where ri_topic_id = ${APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC}
+      where ri_topic_id = ${GROUP_PRESENCE_SUMMARY_TOPIC}
     `;
             assert.ok(summaryKey);
             await sql`
@@ -515,7 +513,7 @@ Deno.test(
             };
             const reserved = await resourceInbox.entries.findAnyByKey(key);
             assert.ok(reserved);
-            const message = JSON.parse(reserved.resource) as ALMessage;
+            const message = decodePersistedALMessage(reserved.resource);
             const ref = {
                 applicationId: 'fence-app',
                 workspaceId: 'main',
@@ -551,7 +549,7 @@ Deno.test(
       select ri_topic_id, ri_type_id
       from resource_inbox
       where ri_type_id in ('WS_OUTBOX', 'APP_OUTBOX')
-        and ri_topic_id <> ${APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC}
+        and ri_topic_id <> ${GROUP_PRESENCE_SUMMARY_TOPIC}
     `;
             assert.deepEqual(downstream, []);
         });
@@ -675,7 +673,7 @@ Deno.test(
             });
             const scope = { applicationId: 'pglite-app', workspaceId: 'pglite-workspace' };
 
-            const compute = async (principalId: string, commandId: string) => {
+            const prepareClientWrite = async (principalId: string, commandId: string): Promise<ClientMutationComputedAppliedWrite> => {
                 const authority = {
                     clientId: principalId,
                     accessToken: `${principalId}-token`,
@@ -719,7 +717,7 @@ Deno.test(
                 return computed;
             };
 
-            const committed = await compute('alice', 'pglite-client-commit');
+            const committed = await prepareClientWrite('alice', 'pglite-client-commit');
             await sql.begin(async (transaction) => {
                 await service.write(transaction, committed);
             });
@@ -735,7 +733,7 @@ Deno.test(
                 assert.equal((await outbox.entries.findByKey(entry.key))?.typeId, 'WS_OUTBOX');
             }
 
-            const rolledBack = await compute('bob', 'pglite-client-rollback');
+            const rolledBack = await prepareClientWrite('bob', 'pglite-client-rollback');
             await assert.rejects(
                 async () => {
                     await sql.begin(async (transaction) => {

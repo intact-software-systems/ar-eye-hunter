@@ -15,25 +15,13 @@ import type { RallarSnapshotPresenceClock } from '../presence/snapshot-presence.
 import { isGroupSnapshotSessionLive } from '../presence/snapshot-presence.ts';
 import type {
     RallarServerWsRoomAudience,
+    RallarServerWsRoomAuthorizationDecision,
     RallarServerWsRoomAuthorizationDenied,
-    RallarServerWsRoomAuthorizationInput
+    RallarServerWsRoomAuthorizationInput,
+    RallarServerWsRoomAuthorizer
 } from './router/rallar-server-ws-router-contracts.ts';
 
 type MaybePromise<T> = T | Promise<T>;
-
-export interface GroupRoomWsAuthorizationAllowed {
-    readonly authorized: true;
-    readonly audience: RallarServerWsRoomAudience;
-}
-
-export type GroupRoomWsAuthorizationDecision =
-    | GroupRoomWsAuthorizationAllowed
-    | RallarServerWsRoomAuthorizationDenied
-    | false;
-
-export type GroupRoomWsAuthorizer = (
-    input: RallarServerWsRoomAuthorizationInput
-) => Promise<GroupRoomWsAuthorizationDecision>;
 
 type ReadRoomAuthorizationSnapshotResult =
     | {
@@ -43,7 +31,7 @@ type ReadRoomAuthorizationSnapshotResult =
     }
     | {
         readonly kind: 'denied';
-        readonly decision: RallarServerWsRoomAuthorizationDenied | false;
+        readonly decision: RallarServerWsRoomAuthorizationDecision;
     };
 
 export interface GroupRoomWsAuthorizerDependencies {
@@ -59,14 +47,14 @@ export interface GroupRoomWsAuthorizerDependencies {
 
 export function createGroupRoomWsAuthorizer(
     dependencies: GroupRoomWsAuthorizerDependencies
-): GroupRoomWsAuthorizer {
+): RallarServerWsRoomAuthorizer {
     return (input) => authorizeGroupRoomMessage(dependencies, input);
 }
 
 async function authorizeGroupRoomMessage(
     dependencies: GroupRoomWsAuthorizerDependencies,
     input: RallarServerWsRoomAuthorizationInput
-): Promise<GroupRoomWsAuthorizationDecision> {
+): Promise<RallarServerWsRoomAuthorizationDecision> {
     const targets = input.message.targets && structuredClone(input.message.targets);
     if (!targets) {
         return false;

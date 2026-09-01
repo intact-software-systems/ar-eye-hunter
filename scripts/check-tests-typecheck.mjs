@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+    readdirSync,
+    readFileSync,
+    writeFileSync
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '..');
 const projectPath = 'packages/tests/tsconfig.json';
+const testRoots = ['packages/tests', 'tests/unit'];
 const debtPath = 'packages/tests/typecheck-debt.json';
 const updateCommand = 'npm run typecheck:tests -- --update';
 // The Deno apps are not npm workspaces, so `npm ci` never creates their node_modules and CI never
@@ -73,7 +78,8 @@ function readDebt() {
         return JSON.parse(readFileSync(path.join(repositoryRoot, debtPath), 'utf8')).files ?? {};
     }
     catch (cause) {
-        console.log(`FAIL: could not read ${debtPath}: ${cause.message}. Run \`${updateCommand}\`.`);
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        console.log(`FAIL: could not read ${debtPath}: ${error.message}. Run \`${updateCommand}\`.`);
         process.exit(1);
     }
 }
@@ -138,11 +144,11 @@ function reportComparison(comparison) {
         process.exitCode = 1;
         return;
     }
-    console.log('PASS: no new type errors under packages/tests');
+    console.log('PASS: no new type errors in the maintained test project');
 }
 
 function countEnforcedFiles(debtErrorCounts) {
-    return readProjectTestFiles('packages/tests').filter(
+    return testRoots.flatMap(readProjectTestFiles).filter(
         (file) => debtErrorCounts[file] === undefined
     ).length;
 }

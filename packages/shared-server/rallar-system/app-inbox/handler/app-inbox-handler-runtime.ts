@@ -1,4 +1,4 @@
-import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 
 import type { RallarTimingSink } from '../../observability/timing.ts';

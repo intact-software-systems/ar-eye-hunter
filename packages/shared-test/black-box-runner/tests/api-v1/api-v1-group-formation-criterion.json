@@ -56,6 +56,10 @@
     "wsAlice": {
       "type": "ws",
       "timeoutMs": 10000
+    },
+    "wsBob": {
+      "type": "ws",
+      "timeoutMs": 10000
     }
   },
   "steps": [
@@ -1364,11 +1368,84 @@
       }
     },
     {
+      "name": "createBobWsTicket",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/bb-formation-criterion-bob-ws-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobWsUrl",
+      "type": "set",
+      "output": "bobWsUrl",
+      "secret": true,
+      "redactAs": "bobWsUrl",
+      "transform": {
+        "concat": [
+          { "path": "variables.rallarWsBaseUrl" },
+          "/api/ws/",
+          { "path": "outputs.bobSessionId" },
+          "?ticket=",
+          { "urlEncode": { "path": "outputs.bobWsTicket" } }
+        ]
+      }
+    },
+    {
+      "name": "openBobWs",
+      "type": "ws.open",
+      "connection": "wsBob",
+      "request": {
+        "url": "{bobWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
       "name": "deriveRttCreatedAt",
       "type": "set",
       "output": "rttCreatedAtEpochMs",
       "transform": {
         "timestamp": true
+      }
+    },
+    {
+      "name": "deriveRttReporter",
+      "type": "set",
+      "output": "rttReporter",
+      "transform": {
+        "if": {
+          "condition": {
+            "operator": "lexicallyBefore",
+            "values": [
+              { "path": "outputs.aliceSessionId" },
+              { "path": "outputs.bobSessionId" }
+            ]
+          },
+          "then": {
+            "connection": "wsAlice",
+            "sessionIdFrom": { "path": "outputs.aliceSessionId" },
+            "sessionIdTo": { "path": "outputs.bobSessionId" }
+          },
+          "else": {
+            "connection": "wsBob",
+            "sessionIdFrom": { "path": "outputs.bobSessionId" },
+            "sessionIdTo": { "path": "outputs.aliceSessionId" }
+          }
+        }
       }
     },
     {
@@ -1379,11 +1456,11 @@
         "concat": [
           "{\"sessionIdFrom\":\"",
           {
-            "path": "outputs.aliceSessionId"
+            "path": "outputs.rttReporter.sessionIdFrom"
           },
           "\",\"sessionIdTo\":\"",
           {
-            "path": "outputs.bobSessionId"
+            "path": "outputs.rttReporter.sessionIdTo"
           },
           "\",\"rttMs\":42,\"createdAtEpochMs\":",
           {
@@ -1396,15 +1473,15 @@
     {
       "name": "reportTheObservedEdge",
       "type": "ws.send",
-      "connection": "wsAlice",
+      "connection": "{rttReporter.connection}",
       "request": {
         "send": {
           "id": {
             "v": 2,
             "msgId": "rtt-report-{runId}",
             "ts": 0,
-            "senderId": "{aliceSessionId}",
-            "sessionId": "{aliceSessionId}"
+            "senderId": "{rttReporter.sessionIdFrom}",
+            "sessionId": "{rttReporter.sessionIdFrom}"
           },
           "route": {
             "topicId": "rtt",
@@ -1460,6 +1537,15 @@
       "name": "closeAliceWs",
       "type": "ws.close",
       "connection": "wsAlice",
+      "request": {
+        "code": 1000,
+        "reason": "formation criterion ws checks done"
+      }
+    },
+    {
+      "name": "closeBobWs",
+      "type": "ws.close",
+      "connection": "wsBob",
       "request": {
         "code": 1000,
         "reason": "formation criterion ws checks done"

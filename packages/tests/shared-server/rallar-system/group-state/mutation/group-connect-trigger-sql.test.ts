@@ -22,7 +22,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { readFileSync } from 'node:fs';
 import { vi } from 'vitest';
 import { describe, expect, it } from 'vitest';

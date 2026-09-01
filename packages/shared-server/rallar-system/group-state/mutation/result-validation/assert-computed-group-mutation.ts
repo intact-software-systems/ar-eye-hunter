@@ -22,18 +22,17 @@ export function assertComputedGroupMutation({
     facts,
     computed
 }: AssertComputedGroupMutationInput): void {
-    const value = computed;
     switch (computed.outcome) {
         case 'replay':
         case 'no-op':
         case 'rejected':
-            assertReceiptOutcome({ command, facts, computed, value });
+            assertReceiptOutcome({ command, facts, computed });
             return;
         case 'idempotency-conflict':
-            assertConflictOutcome(facts, computed, value);
+            assertConflictOutcome(facts, computed);
             return;
         case 'write':
-            assertWriteOutcomeKeys(value);
+            assertWriteOutcomeKeys(computed);
             assertComputedGroupMutationWrite({ command, read, facts, computed });
             return;
     }
@@ -43,20 +42,18 @@ interface AssertReceiptOutcomeInput {
     readonly command: GroupMutationCommand;
     readonly facts: GroupMutationFacts;
     readonly computed: Extract<GroupMutationComputed, { outcome: 'replay' | 'no-op' | 'rejected'; }>;
-    readonly value: object;
 }
 
 function assertReceiptOutcome({
     command,
     facts,
-    computed,
-    value
+    computed
 }: AssertReceiptOutcomeInput): void {
     const keys = computed.outcome === 'rejected' && computed.rejectionCode === 'group-policy-denied'
         ? ['outcome', 'rejectionCode', 'receipt', 'policyDenial']
         : ['outcome', 'rejectionCode', 'receipt'];
-    assertExactKeys(value, keys, 'Group mutation computed result');
-    assertRequiredKeys(value, keys, 'Group mutation computed result');
+    assertExactKeys(computed, keys, 'Group mutation computed result');
+    assertRequiredKeys(computed, keys, 'Group mutation computed result');
     assertComputedRejectionCode(computed);
     assertMutationReceipt(
         computed.receipt,
@@ -87,12 +84,11 @@ function assertComputedRejectionCode(
 
 function assertConflictOutcome(
     facts: GroupMutationFacts,
-    computed: Extract<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>,
-    value: object
+    computed: Extract<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>
 ): void {
     const keys = ['outcome', 'existingCommandHash', 'receivedCommandHash'];
-    assertExactKeys(value, keys, 'Group mutation computed result');
-    assertRequiredKeys(value, keys, 'Group mutation computed result');
+    assertExactKeys(computed, keys, 'Group mutation computed result');
+    assertRequiredKeys(computed, keys, 'Group mutation computed result');
     assertCommandHash(computed.existingCommandHash, 'Group mutation existingCommandHash');
     assertCommandHash(computed.receivedCommandHash, 'Group mutation receivedCommandHash');
     if (computed.receivedCommandHash !== facts.commandHash) {
@@ -100,7 +96,7 @@ function assertConflictOutcome(
     }
 }
 
-function assertWriteOutcomeKeys(value: object): void {
+function assertWriteOutcomeKeys(computed: Extract<GroupMutationComputed, { outcome: 'write'; }>): void {
     const keys = [
         'outcome',
         'guard',
@@ -117,6 +113,6 @@ function assertWriteOutcomeKeys(value: object): void {
         'layoutTombstones',
         'connectTriggerLatchEffect'
     ];
-    assertExactKeys(value, keys, 'Group mutation computed result');
-    assertRequiredKeys(value, keys, 'Group mutation computed result');
+    assertExactKeys(computed, keys, 'Group mutation computed result');
+    assertRequiredKeys(computed, keys, 'Group mutation computed result');
 }

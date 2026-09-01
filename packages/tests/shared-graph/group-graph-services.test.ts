@@ -6,16 +6,26 @@ import {
     computeScopedGlobalGraphAndCacheIt,
     GLOBAL_GRAPH_REF
 } from '@shared-graph/group-graphs-create-service.ts';
-import { findGraphByRef, readableGraphCache } from '@shared-graph/repository/graphs-repository.ts';
+import { findGraphByRef } from '@shared-graph/repository/graphs-repository.ts';
 import { clearAllNodes, hasNode } from '@shared-graph/repository/vivaldi-repository.ts';
 import { observeRtt } from '@shared-graph/vivaldi-service.ts';
 import type { ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
-import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
-import { readableClientStateSnapshotCache, setClientStateSnapshotByPrincipalId } from '@shared/repository/client-state-snapshots-repository.ts';
-import { readableGroupStateSnapshotCache, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
+import type {
+    AuditStamp,
+    GroupMember,
+    GroupPresenceSession,
+    GroupSnapshot
+} from '@shared/api/group-types.ts';
+import { setClientStateSnapshotByPrincipalId } from '@shared/repository/client-state-snapshots-repository.ts';
+import { setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
 import { latestRttById, setRtt } from '@shared/repository/rtt-repository.ts';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
+import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../create-test-group.ts';
 import { createRtt } from './helpers.ts';
 
@@ -24,9 +34,6 @@ describe('shared-graph group graph services', () => {
         configureTestCacheRepositories();
         clearAllNodes();
         latestRttById().clearAll();
-        (readableGraphCache() as unknown as { clearAll: () => void; }).clearAll();
-        (readableGroupStateSnapshotCache() as unknown as { clearAll: () => void; }).clearAll();
-        (readableClientStateSnapshotCache() as unknown as { clearAll: () => void; }).clearAll();
     });
 
     it('returns a left value when the requested group does not exist', () => {
@@ -301,21 +308,7 @@ function createGroupStateSnapshot(
     if (ownerPrincipalId === undefined) {
         throw new Error('Group fixture requires an owner session');
     }
-    const activeSessions = sessionIds.map((sessionId): GroupPresenceSession => ({
-        applicationId: 'app',
-        workspaceId: 'ws',
-        groupId,
-        sessionId,
-        principalId: sessionId,
-        generationId: `generation-${sessionId}`,
-        generationVersion: 1,
-        status: 'active',
-        connectedAtEpochMs: 1,
-        lastHeartbeatAtEpochMs: 1,
-        expiresAtEpochMs: 1000,
-        disconnectedAtEpochMs: null,
-        disconnectReason: null
-    }));
+    const activeSessions = createGroupSessions(groupId, sessionIds);
 
     return {
         causalRevision: { groupRevision: 3, presenceRevision: 1 },
@@ -364,4 +357,21 @@ function createAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
         traceId: null,
         requestId: null
     };
+}
+function createGroupSessions(groupId: string, sessionIds: readonly string[]): GroupSnapshot['activeSessions'] {
+    return sessionIds.map((sessionId): GroupPresenceSession => ({
+        applicationId: 'app',
+        workspaceId: 'ws',
+        groupId,
+        sessionId,
+        principalId: sessionId,
+        generationId: `generation-${sessionId}`,
+        generationVersion: 1,
+        status: 'active',
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: 1,
+        expiresAtEpochMs: 1000,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
+    }));
 }

@@ -1,5 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type {
     ClientInstanceUpsertAppInboxPayload,
     ClientPrincipalUpsertAppInboxPayload,
@@ -7,15 +15,10 @@ import type {
     ClientSessionDisconnectAppInboxPayload,
     ClientSessionHeartbeatAppInboxPayload
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { Either } from '@shared/resilience/Either.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
-import type { ClientStateService, ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../app-inbox/test-support/app-inbox-test-database.ts';
@@ -26,7 +29,7 @@ import {
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
-import { createClientStateServiceStub, createDefaultClientStateServiceStub } from './client-state-service-stub.ts';
+import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 
 describe('AppClientInbox operation matrix', () => {
     it('finishes construction only after all eight client handlers are registered', () => {
@@ -45,7 +48,7 @@ function createClientInboxServiceForRegistration(): AppClientInboxService {
             resourceInboxRepository: queue,
             resourceInboxResultsRepository: results,
             database: createAppInboxTestDatabase(queue, results),
-            clientStateService: createDefaultClientStateServiceStub()
+            clientStateService: createClientStateServiceFixture()
         },
         {
             serviceId: 'client-registration-service'
@@ -84,11 +87,12 @@ describe('AppClientInbox mutation processing', () => {
                     resourceInboxRepository: queue,
                     resourceInboxResultsRepository: results,
                     database: createAppInboxTestDatabase(queue, results),
-                    clientStateService: createClientStateServiceStub({
+                    clientStateService: {
+                        ...createClientStateServiceFixture(),
                         read: vi.fn(async () => {
                             throw new NonRetryableException('Client principal update failed');
                         })
-                    })
+                    }
                 },
                 {
                     serviceId: 'server-12345678'
@@ -120,7 +124,13 @@ describe('AppClientInbox mutation processing', () => {
     );
 });
 
-function createMutationProcessingHarness() {
+interface MutationProcessingHarness {
+    readonly connectedAtEpochMs: number;
+    readonly reader: InboxQueueReader;
+    readonly service: AppClientInboxService;
+}
+
+function createMutationProcessingHarness(): MutationProcessingHarness {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
@@ -143,8 +153,6 @@ function createMutationProcessingHarness() {
         )
     };
 }
-
-type MutationProcessingHarness = ReturnType<typeof createMutationProcessingHarness>;
 
 function upsertPrincipal(harness: MutationProcessingHarness) {
     return processAppInbox<ClientPrincipalUpsertAppInboxPayload>(harness.service, harness.reader, {

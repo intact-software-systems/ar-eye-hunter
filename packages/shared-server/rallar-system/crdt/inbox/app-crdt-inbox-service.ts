@@ -1,8 +1,8 @@
 import type { RallarCrdtAuditSink, RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { toAppQueueKey, toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';

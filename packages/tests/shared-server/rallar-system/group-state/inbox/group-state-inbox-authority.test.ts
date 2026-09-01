@@ -2,7 +2,7 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../../app-inbox/test-support/app-inbox-test-database.ts';
 

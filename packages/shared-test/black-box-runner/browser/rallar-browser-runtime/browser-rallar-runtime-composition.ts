@@ -1,6 +1,9 @@
+import { resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import {
     createBrowserMessagingComposition,
-    createBrowserRealtimeCoreComposition
+    createBrowserRealtimeCoreComposition,
+    type BrowserMessagingComposition,
+    type BrowserRealtimeCoreComposition
 } from '@shared-web/browser/composition/browser-communication-composition.ts';
 import {
     registerBrowserStateLifecycle,
@@ -8,16 +11,23 @@ import {
 } from '@shared-web/browser/composition/browser-lifecycle-composition.ts';
 import {
     createBrowserDirectorComposition,
-    createBrowserRoomsComposition
+    createBrowserRoomsComposition,
+    type BrowserDirectorComposition,
+    type BrowserRoomsComposition
 } from '@shared-web/browser/composition/browser-product-composition.ts';
 import {
     createBrowserRuntimeFoundation,
     createBrowserStateComposition,
-    createBrowserStateEventComposition
+    createBrowserStateEventComposition,
+    type BrowserRuntimeFoundation,
+    type BrowserStateComposition,
+    type BrowserStateEventComposition
 } from '@shared-web/browser/composition/browser-runtime-composition.ts';
 import {
     createBrowserCrdtComposition,
-    createBrowserSessionCoreComposition
+    createBrowserSessionCoreComposition,
+    type BrowserCrdtComposition,
+    type BrowserSessionCoreComposition
 } from '@shared-web/browser/composition/browser-session-composition.ts';
 import type {
     RallarDirectorFacade,
@@ -36,11 +46,15 @@ import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
+import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
-import type { BlackBoxRallarDirectorOutputRecord, BlackBoxRallarEvent } from './contracts.ts';
+import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import type {
+    BlackBoxRallarDirectorOutputRecord,
+    BlackBoxRallarEvent
+} from './black-box-rallar-operation-contracts.ts';
 
 interface BlackBoxRoomStateRefreshOptions extends RallarScopedOperationOptions {
     readonly scope: StateScope;
@@ -54,21 +68,23 @@ interface RefreshBlackBoxBrowserRoomStateInput {
     readonly session: BlackBoxRoomStateRefreshSession;
 }
 
+interface BlackBoxRoomStateRefreshRoom {
+    refresh(options: Parameters<RallarRoomSession['refresh']>[0]): Promise<Pick<RallarRoomSession, 'snapshot'>>;
+}
+
 interface BlackBoxRoomStateRefreshRooms {
-    session(roomRef: GroupRef): Readonly<{
-        refresh(
-            options: Parameters<RallarRoomSession['refresh']>[0]
-        ): Promise<Pick<RallarRoomSession, 'snapshot'>>;
-    }>;
+    session(roomRef: GroupRef): BlackBoxRoomStateRefreshRoom;
+}
+
+interface BlackBoxRoomStateRefreshContext {
+    readonly session: AuthSession;
+    readonly middleware: {
+        readonly webRtcGroupManager: Pick<WebRtcGroupManager, 'notifyOverlayTopologyChanged'>;
+    };
 }
 
 interface BlackBoxRoomStateRefreshSession {
-    connect(options: RallarScopedOperationOptions): Promise<
-        Readonly<{
-            session: AuthSession;
-            middleware: Readonly<{ webRtcGroupManager: WebRtcGroupManager; }>;
-        }>
-    >;
+    connect(options: RallarScopedOperationOptions): Promise<BlackBoxRoomStateRefreshContext>;
 }
 
 interface RoomStateRefreshAbortScope {
@@ -81,6 +97,7 @@ interface AbortRejection {
     cleanup(): void;
 }
 
+// The runner awaits these effects but deliberately does not expose browser middleware or room handles.
 export interface BlackBoxBrowserRallarRuntimeDependency extends
     Pick<
         RallarConnectionOperations,
@@ -90,9 +107,10 @@ export interface BlackBoxBrowserRallarRuntimeDependency extends
         | 'isConnected'
         | 'session'
     > {
-    connect(options?: Parameters<RallarConnectionOperations['connect']>[0]): Promise<object>;
+    connect(options?: Parameters<RallarConnectionOperations['connect']>[0]): Promise<void>;
     disconnect(): Promise<void>;
     refreshRoomState(roomRef: GroupRef, options: BlackBoxRoomStateRefreshOptions): Promise<void>;
+    readRtcMessageNacks(messageId: string): Promise<readonly ALNackPayload[]>;
     readonly auth: BlackBoxBrowserAuthDependency;
     readonly rooms: BlackBoxBrowserRoomsDependency;
     readonly messages: BlackBoxBrowserMessagesDependency;
@@ -110,14 +128,9 @@ export interface BlackBoxBrowserRoomsDependency {
     join(
         room: Parameters<BrowserRallarRooms['join']>[0],
         options?: Parameters<BrowserRallarRooms['join']>[1]
-    ): Promise<object>;
-    leave(input?: Parameters<BrowserRallarRooms['leave']>[0]): Promise<object | undefined>;
-    refresh(input?: Parameters<BrowserRallarRooms['refresh']>[0]): Promise<object>;
-    session(room?: Parameters<BrowserRallarRooms['session']>[0]): BlackBoxBrowserRoomSessionDependency;
-}
-
-export interface BlackBoxBrowserRoomSessionDependency {
-    refresh(options?: Parameters<RallarRoomSession['refresh']>[0]): Promise<object>;
+    ): Promise<void>;
+    leave(input?: Parameters<BrowserRallarRooms['leave']>[0]): Promise<void>;
+    refresh(input?: Parameters<BrowserRallarRooms['refresh']>[0]): Promise<void>;
 }
 
 export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOperations, 'rtc' | 'ws'> {}
@@ -125,9 +138,9 @@ export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOp
 export interface BlackBoxBrowserRealtimeDependency
     extends Pick<RallarRealtimeFacade, 'sendJson' | 'onJson' | 'health'> {}
 
-export interface BlackBoxBrowserWsDependency extends Pick<RallarWsFacade, 'status'> {}
+export interface BlackBoxBrowserWsDependency extends Pick<RallarWsFacade, 'status' | 'onLifecycle'> {}
 
-export interface BlackBoxBrowserRtcDependency extends Pick<RallarRtcFacade, 'status' | 'diagnostics'> {}
+export interface BlackBoxBrowserRtcDependency extends Pick<RallarRtcFacade, 'status' | 'diagnostics' | 'onLifecycle'> {}
 
 export interface BlackBoxBrowserCrdtDependency extends Pick<RallarCrdtFacade, 'open'> {}
 
@@ -193,24 +206,25 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         state,
         messaging
     });
-    return {
-        ...session.connection,
-        refreshRoomState: async (roomRef, options) =>
-            await refreshBlackBoxBrowserRoomState({
-                roomRef,
-                options,
-                rooms: rooms.rooms,
-                session: session.session
-            }),
-        auth: session.auth,
-        rooms: rooms.rooms,
-        messages: messaging.messages,
-        realtime: realtime.realtime,
-        ws: realtime.wsController.facade,
-        rtc: realtime.rtc,
-        crdt: crdt.crdt,
-        director: director.director
-    };
+    return toBlackBoxBrowserRuntimeDependency({ session, rooms, messaging, realtime, crdt, director });
+}
+
+export async function readBlackBoxRtcMessageNacks(
+    sessionId: string | undefined,
+    messageId: string
+): Promise<readonly ALNackPayload[]> {
+    if (!sessionId) {
+        throw new Error('RTC message diagnostics require an authenticated session.');
+    }
+    const { admissionStore } = resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId);
+    if (!admissionStore) {
+        throw new Error('RTC outbound admission diagnostics are unavailable.');
+    }
+    const observation = await admissionStore.readRepairMessage(messageId, () => ({
+        persist: false,
+        preparedMessages: []
+    }));
+    return observation.nacks;
 }
 
 export async function refreshBlackBoxBrowserRoomState(
@@ -308,12 +322,12 @@ function throwIfAborted(signal: AbortSignal): void {
 }
 
 interface RegisterBlackBoxBrowserRallarLifecycleInput {
-    readonly foundation: ReturnType<typeof createBrowserRuntimeFoundation>;
-    readonly state: ReturnType<typeof createBrowserStateComposition>;
-    readonly stateEvents: ReturnType<typeof createBrowserStateEventComposition>;
-    readonly messaging: ReturnType<typeof createBrowserMessagingComposition>;
-    readonly realtime: ReturnType<typeof createBrowserRealtimeCoreComposition>;
-    readonly director: ReturnType<typeof createBrowserDirectorComposition>;
+    readonly foundation: BrowserRuntimeFoundation;
+    readonly state: BrowserStateComposition;
+    readonly stateEvents: BrowserStateEventComposition;
+    readonly messaging: BrowserMessagingComposition;
+    readonly realtime: BrowserRealtimeCoreComposition;
+    readonly director: BrowserDirectorComposition;
 }
 
 function registerBlackBoxBrowserRallarLifecycle(
@@ -332,4 +346,51 @@ function registerBlackBoxBrowserRallarLifecycle(
         realtimeReceive: input.realtime.realtimeReceive,
         rtcLifecycle: input.realtime.rtcController.lifecycle
     });
+}
+
+interface BlackBoxBrowserRuntimeComponents {
+    readonly session: BrowserSessionCoreComposition;
+    readonly rooms: BrowserRoomsComposition;
+    readonly messaging: BrowserMessagingComposition;
+    readonly realtime: BrowserRealtimeCoreComposition;
+    readonly crdt: BrowserCrdtComposition;
+    readonly director: BrowserDirectorComposition;
+}
+function toBlackBoxBrowserRuntimeDependency(
+    components: BlackBoxBrowserRuntimeComponents
+): BlackBoxBrowserRallarRuntimeDependency {
+    const { session, rooms, messaging, realtime, crdt, director } = components;
+    return {
+        ...session.connection,
+        connect: async (options) => {
+            await session.connection.connect(options);
+        },
+        readRtcMessageNacks: async (messageId) =>
+            await readBlackBoxRtcMessageNacks(session.connection.session()?.sessionId, messageId),
+        refreshRoomState: async (roomRef, options) =>
+            await refreshBlackBoxBrowserRoomState({
+                roomRef,
+                options,
+                rooms: rooms.rooms,
+                session: session.session
+            }),
+        auth: session.auth,
+        rooms: {
+            join: async (room, options) => {
+                await rooms.rooms.join(room, options);
+            },
+            leave: async (options) => {
+                await rooms.rooms.leave(options);
+            },
+            refresh: async (options) => {
+                await rooms.rooms.refresh(options);
+            }
+        },
+        messages: messaging.messages,
+        realtime: realtime.realtime,
+        ws: realtime.wsController.facade,
+        rtc: realtime.rtc,
+        crdt: crdt.crdt,
+        director: director.director
+    };
 }

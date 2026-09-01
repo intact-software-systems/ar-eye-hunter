@@ -23,7 +23,7 @@ import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/opt
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import { readPGliteDatabaseEpochMs } from './pglite-app-inbox-test-runtime.ts';

@@ -83,6 +83,7 @@ export function resolveBrowserRoomTransportTarget(
         isSameGroupRef(acceptedOverlay.groupRef, input.snapshot.group) &&
         acceptedLayoutIdentity !== null &&
         isOverlayIdentity(acceptedOverlay, acceptedLayoutIdentity);
+    const activeSessionIds = new Set(input.snapshot.activeSessions.map((session) => session.sessionId));
     return {
         transportState: input.snapshot.group.transportState,
         ...(hasAcceptedLayout ? { acceptedLayoutIdentity } : {}),
@@ -90,7 +91,7 @@ export function resolveBrowserRoomTransportTarget(
             ? [
                 ...new Set(
                     acceptedOverlay.nextHopSessionIds.filter(
-                        (peerId) => peerId !== input.sessionId
+                        (peerId) => peerId !== input.sessionId && activeSessionIds.has(peerId)
                     )
                 )
             ]
@@ -98,17 +99,18 @@ export function resolveBrowserRoomTransportTarget(
     };
 }
 
-export type RoomCreateGroupStateFields = Pick<
-    RallarCreateRoomInput,
-    | 'displayName'
-    | 'description'
-    | 'joinMode'
-    | 'maxMembers'
-    | 'maxSessionsPerMember'
-    | 'metadata'
-    | 'expiresAtEpochMs'
-    | 'purgeAfterEpochMs'
->;
+export interface RoomCreateGroupStateFields extends
+    Pick<
+        RallarCreateRoomInput,
+        | 'displayName'
+        | 'description'
+        | 'joinMode'
+        | 'maxMembers'
+        | 'maxSessionsPerMember'
+        | 'metadata'
+        | 'expiresAtEpochMs'
+        | 'purgeAfterEpochMs'
+    > {}
 
 export interface RoomJoinGroupStateFields {
     readonly inviteToken?: string;

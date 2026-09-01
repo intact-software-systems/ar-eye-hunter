@@ -1,7 +1,7 @@
 import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
-import { vi } from 'vitest';
-import { createApiMiddlewareTestDouble } from './api-middleware-test-double.ts';
+import { vi, type Mock, type Mocked } from 'vitest';
+import { createDefaultApiMiddlewareTestDouble } from './api-middleware-test-double.ts';
 
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
@@ -13,8 +13,52 @@ type ClientRepositoryModule = typeof import('@shared/repository/client-state-sna
 type GroupRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 type OverlaysRepositoryModule = typeof import('@shared/repository/overlays-repository.ts');
 
-export function createLightweightBrowserFacadeTestMocks() {
-    const ctx = createApiMiddlewareTestDouble();
+interface BrowserLifecycleMocks {
+    readonly clearSession: Mock<() => void>;
+    readonly hydrateStateCache: Mock<() => Promise<void>>;
+    readonly initialiseApiMiddleware: Mock<(options?: MiddlewareInitOptions) => Promise<ApiMiddleware>>;
+    readonly loginToApi: Mock<AuthApiModule['loginToApi']>;
+    readonly logoutFromApi: Mock<AuthApiModule['logoutFromApi']>;
+    readonly registerWithApi: Mock<AuthApiModule['registerWithApi']>;
+    readonly onCacheChange: Mock<() => () => void>;
+    readonly readSession: Mock<() => ApiMiddleware['session']>;
+    readonly writeSession: Mock<() => void>;
+}
+
+interface BrowserWorkflowMocks {
+    readonly createAndJoinStateGroup: Mock<RoomGroupStateWorkflowsModule['createAndJoinStateGroup']>;
+    readonly joinStateGroup: Mock<RoomGroupStateWorkflowsModule['joinStateGroup']>;
+    readonly leaveStateGroup: Mock<RoomGroupStateWorkflowsModule['leaveStateGroup']>;
+    readonly updateStateGroupMetadata: Mock<RoomMutationWorkflowsModule['updateStateGroupMetadata']>;
+    readonly refreshStateSnapshots: Mock<RefreshStateSnapshotsModule['refreshStateSnapshots']>;
+    readonly listStateClientEvents: Mock<StateEventHttpApiModule['listStateClientEvents']>;
+    readonly listStateClientEventPage: Mock<StateEventHttpApiModule['listStateClientEventPage']>;
+    readonly listStateGroupEvents: Mock<StateEventHttpApiModule['listStateGroupEvents']>;
+    readonly listStateGroupEventPage: Mock<StateEventHttpApiModule['listStateGroupEventPage']>;
+}
+
+interface BrowserRepositoryMocks {
+    readonly findClientStateSnapshotByPrincipalId: Mock<ClientRepositoryModule['findClientStateSnapshotByPrincipalId']>;
+    readonly getAllClientStateSnapshots: Mock<ClientRepositoryModule['getAllClientStateSnapshots']>;
+    readonly findFirstGroupStateSnapshotRefSessionIdIsIn: Mock<GroupRepositoryModule['findFirstGroupStateSnapshotRefSessionIdIsIn']>;
+    readonly findGroupStateSnapshotByRef: Mock<GroupRepositoryModule['findGroupStateSnapshotByRef']>;
+    readonly getAllGroupStateSnapshots: Mock<GroupRepositoryModule['getAllGroupStateSnapshots']>;
+    readonly findAcceptedOverlayById: Mock<OverlaysRepositoryModule['findAcceptedOverlayById']>;
+}
+
+export interface LightweightBrowserFacadeTestMocks extends BrowserLifecycleMocks, BrowserWorkflowMocks, BrowserRepositoryMocks {
+    readonly ctx: ApiMiddleware;
+    readonly heartbeat: Mocked<ApiMiddleware['middleware']['heartbeat']>;
+    readonly qboxEngine: Mocked<ApiMiddleware['middleware']['qboxEngine']>;
+    readonly rtcRxStreamer: Mocked<ApiMiddleware['middleware']['rtcRxStreamer']>;
+    readonly webRtcConnectionService: Mocked<ApiMiddleware['middleware']['webRtcConnectionService']>;
+    readonly webSocketQueueBox: Mocked<ApiMiddleware['middleware']['webSocketQueueBox']>;
+    readonly webSocket: Mocked<ApiMiddleware['middleware']['webSocketQueueBox']['socket']>;
+    readonly appointStateGroupDirector: Mock<AppointRoomDirectorModule['appointStateGroupDirector']>;
+}
+
+export function createLightweightBrowserFacadeTestMocks(): LightweightBrowserFacadeTestMocks {
+    const ctx = createDefaultApiMiddlewareTestDouble();
     return {
         ctx,
         heartbeat: vi.mocked(ctx.middleware.heartbeat),
@@ -23,7 +67,6 @@ export function createLightweightBrowserFacadeTestMocks() {
         webRtcConnectionService: vi.mocked(ctx.middleware.webRtcConnectionService),
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocket: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
-        clientRepositoryMissing: vi.fn((): never => missingRepository('shared.repository.client-state-snapshots')),
         appointStateGroupDirector: rejectedWorkflow<AppointRoomDirectorModule['appointStateGroupDirector']>('director appointment not mocked'),
         ...createLifecycleMocks(ctx),
         ...createWorkflowMocks(),
@@ -31,7 +74,7 @@ export function createLightweightBrowserFacadeTestMocks() {
     };
 }
 
-function createLifecycleMocks(ctx: ApiMiddleware) {
+function createLifecycleMocks(ctx: ApiMiddleware): BrowserLifecycleMocks {
     return {
         clearSession: vi.fn(),
         hydrateStateCache: vi.fn((): Promise<void> => Promise.resolve()),
@@ -52,7 +95,7 @@ function createLifecycleMocks(ctx: ApiMiddleware) {
     };
 }
 
-function createWorkflowMocks() {
+function createWorkflowMocks(): BrowserWorkflowMocks {
     return {
         createAndJoinStateGroup: rejectedWorkflow<RoomGroupStateWorkflowsModule['createAndJoinStateGroup']>(
             'create not mocked'
@@ -74,7 +117,7 @@ function createWorkflowMocks() {
     };
 }
 
-function createRepositoryMocks() {
+function createRepositoryMocks(): BrowserRepositoryMocks {
     return {
         findClientStateSnapshotByPrincipalId: vi.fn<ClientRepositoryModule['findClientStateSnapshotByPrincipalId']>(() =>
             missingRepository('shared.repository.client-state-snapshots')
@@ -97,7 +140,7 @@ function createRepositoryMocks() {
 
 function rejectedWorkflow<T extends (...input: never[]) => Promise<object | undefined>>(
     message: string
-) {
+): Mock<T> {
     return vi.fn<T>().mockRejectedValue(new Error(message));
 }
 

@@ -1,12 +1,12 @@
 import { Either } from '@shared/resilience/Either.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcPeerConnectionLeft } from '@shared/services/WebRtcConnectionService.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { vi } from 'vitest';
 import { installGroupSnapshotRepositoryMocks } from '../auth-session-contract-fixtures.ts';
 import type * as ContractModules from '../auth-session-contract-modules.ts';
 
 const mocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
-    const ctx = createApiMiddlewareTestDouble();
+    const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
+    const ctx = createDefaultApiMiddlewareTestDouble();
     const session = ctx.session;
 
     return {
@@ -167,6 +167,13 @@ export async function resetAuthSessionContractMocks(): Promise<void> {
     ).browserTransportRuntime.shutdown('test-reset');
     vi.clearAllMocks();
     vi.useRealTimers();
+    resetSessionAndRoomMocks();
+    resetRtcTransportMocks();
+    resetWebSocketTransportMocks();
+    resetAuthAndEventHttpMocks();
+}
+
+function resetSessionAndRoomMocks(): void {
     mocks.clientRepositoryMissing.mockReturnValue(undefined);
     mocks.getAllClientStateSnapshots.mockReturnValue([]);
     installGroupSnapshotRepositoryMocks(mocks, []);
@@ -190,6 +197,9 @@ export async function resetAuthSessionContractMocks(): Promise<void> {
     mocks.updateStateGroupMetadata.mockRejectedValue(
         new Error('metadata update not mocked')
     );
+}
+
+function resetRtcTransportMocks(): void {
     mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes.mockReturnValue(
         []
     );
@@ -198,7 +208,7 @@ export async function resetAuthSessionContractMocks(): Promise<void> {
     mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
     mocks.webRtcConnectionService.ensurePeerConnectionStarted.mockImplementation(
         (peerId) =>
-            Either.ofLeft<WebRtcPeerConnectionLeft, QRtcPeerDto>({
+            Either.ofLeft<WebRtcConnectionService.PeerConnectionLeft, QRtcPeerDto>({
                 kind: 'connect-failed',
                 peerId,
                 error: new Error('connect not mocked')
@@ -230,6 +240,9 @@ export async function resetAuthSessionContractMocks(): Promise<void> {
         mocks.ctx.middleware.rtcRxStreamer
     );
     mocks.rtcRxStreamer.removeInboxMessageCallback.mockReturnValue(true);
+}
+
+function resetWebSocketTransportMocks(): void {
     mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
         async (message) => ({
             status: 'enqueued',
@@ -259,6 +272,9 @@ export async function resetAuthSessionContractMocks(): Promise<void> {
         mocks.ctx.middleware.webSocketQueueBox.socket
     );
     mocks.webSocket.removeWebsocketCallbackById.mockReturnValue(true);
+}
+
+function resetAuthAndEventHttpMocks(): void {
     mocks.registerWithApi.mockResolvedValue({
         clientId: 'client-new',
         username: 'new-user',

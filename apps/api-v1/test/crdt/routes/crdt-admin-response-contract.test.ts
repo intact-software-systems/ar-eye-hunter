@@ -1,7 +1,23 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
+import { createCrdtMutationService, type CrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
+import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
+import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
@@ -10,29 +26,12 @@ import {
     type RallarCrdtDocumentRef,
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
-
-import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
-
-import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
-
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-
-import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-
-import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
-
-import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
-
-import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { createCrdtAdminMutations } from '../../../src/crdt/create-crdt-admin-mutations.ts';
 import * as routes from '../../../src/crdt/register-crdt-admin-routes.ts';
+import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
@@ -83,6 +82,36 @@ Deno.test(
     async () => await withPGliteSql(verifyCrdtAdminResponseContract)
 );
 
+interface CrdtMaterializationCounts {
+    readonly clocks: number;
+    readonly ids: number;
+}
+
+interface CrdtMutationCounts {
+    readonly revision: number;
+    readonly snapshots: number;
+    readonly updates: number;
+    readonly outbox: number;
+}
+
+interface StrictAppInboxPersistence {
+    readonly inboxCount: number;
+    readonly inboxStatus: string | null;
+    readonly resultCount: number;
+    readonly resultStatus: string | null;
+}
+
+interface ScopedCrdtInboxRow {
+    readonly ri_topic_id: string;
+    readonly ri_resource_id: string;
+    readonly context_id: string;
+}
+
+interface StrictCrdtRequestIdentity {
+    readonly requestId: string;
+    readonly compactPath: string;
+}
+
 interface CrdtAdminRouteHarness {
     readonly app: Hono;
     readonly audit: readonly RallarCrdtAuditEvent[];
@@ -90,35 +119,26 @@ interface CrdtAdminRouteHarness {
     readonly inbox: InboxQueueReader;
     readonly outbox: OutboxQueueReader;
     readonly readAuditAttempts: () => number;
-    readonly readMaterializationCounts: () => Readonly<{ clocks: number; ids: number; }>;
-    readonly sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0];
-    readonly appForSession: (session: IssuedAdminSession) => Hono;
-}
-
-interface IssuedAdminSession {
-    readonly clientId: string;
-    readonly username: string;
-    readonly sessionId: string;
-    readonly accessToken: string;
-    readonly issuedAtEpochMs: number;
-    readonly expiresAtEpochMs: number;
+    readonly readMaterializationCounts: () => CrdtMaterializationCounts;
+    readonly sql: PGliteSql;
+    readonly appForSession: (session: IssuedAuthSession) => Hono;
 }
 
 interface CreateAdminAppCrdtInput {
     readonly audit: RallarCrdtAuditEvent[];
     readonly inbox: InboxQueueReader;
-    readonly mutationService: ReturnType<typeof createCrdtMutationService>;
+    readonly mutationService: CrdtMutationService;
     readonly now: number;
     readonly outbox: OutboxQueueReader;
     readonly readAuditAttempts: () => number;
     readonly recordAuditAttempt: () => void;
     readonly resourceInbox: PSqlResourceInboxRepository;
     readonly results: ResourceInboxResultsRepository;
-    readonly sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0];
+    readonly sql: PGliteSql;
 }
 
 async function verifyCrdtAdminResponseContract(
-    sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]
+    sql: PGliteSql
 ): Promise<void> {
     const harness = await createCrdtAdminRouteHarness(sql);
     await verifyMissingDocumentResponse(harness);
@@ -130,7 +150,7 @@ async function verifyCrdtAdminResponseContract(
 }
 
 async function createCrdtAdminRouteHarness(
-    sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]
+    sql: PGliteSql
 ): Promise<CrdtAdminRouteHarness> {
     const now = Date.now() + 12 * 60 * 60 * 1_000;
     const resourceInbox = createPSqlResourceInboxRepository(sql);
@@ -180,8 +200,8 @@ async function createCrdtAdminRouteHarness(
 }
 
 function createTestCrdtMutationService(
-    sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]
-): ReturnType<typeof createCrdtMutationService> {
+    sql: PGliteSql
+): CrdtMutationService {
     return createCrdtMutationService({
         repository: new PSqlCrdtMutationRepository(
             { sql, authorize: () => Promise.resolve(true) },
@@ -197,8 +217,8 @@ function createTestCrdtMutationService(
 }
 
 async function seedCrdtAdminDocument(
-    sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
-    mutationService: ReturnType<typeof createCrdtMutationService>,
+    sql: PGliteSql,
+    mutationService: CrdtMutationService,
     now: number
 ): Promise<string> {
     const initial = await createCrdtMutationCommand({
@@ -271,12 +291,12 @@ function createAdminAppCrdt(input: CreateAdminAppCrdtInput): AppCrdtInboxService
 }
 
 interface CreateCrdtAdminAppInput {
-    readonly sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0];
+    readonly sql: PGliteSql;
     readonly appCrdt: AppCrdtInboxService;
     readonly now: number;
     readonly nowEpochMs: () => number;
     readonly createId: () => string;
-    readonly session?: IssuedAdminSession;
+    readonly session?: IssuedAuthSession;
 }
 
 function createCrdtAdminApp(input: CreateCrdtAdminAppInput): Hono {
@@ -372,11 +392,15 @@ async function verifyQuotaRejectionResponse(harness: CrdtAdminRouteHarness): Pro
   `;
 }
 
-async function verifyStrictCrdtHttpIdempotency(
-    harness: CrdtAdminRouteHarness
-): Promise<void> {
+async function verifyStrictCrdtHttpIdempotency(harness: CrdtAdminRouteHarness): Promise<void> {
     await verifyEqualStrictCrdtHttpContenders(harness);
+    const identity = await verifyStrictCrdtReplayAndConflict(harness);
+    await verifyStrictCrdtOperationAndActorIsolation(harness, identity);
+    await verifyStrictCrdtDocumentIsolation(harness);
+    await verifyMalformedStrictCrdtDurableResult(harness);
+}
 
+async function verifyStrictCrdtReplayAndConflict(harness: CrdtAdminRouteHarness): Promise<StrictCrdtRequestIdentity> {
     const requestId = 'strict-crdt-request-0001';
     const compactPath = `/api/crdt/admin/documents/compact/requests/${requestId}`;
     const first = await postAndProcess({
@@ -409,6 +433,14 @@ async function verifyStrictCrdtHttpIdempotency(
     assert.equal(conflict.body.code, 'app-inbox-idempotency-conflict');
     assert.deepEqual(await mutationCounts(harness.sql, harness.documentKey), afterFirst);
 
+    return { requestId, compactPath };
+}
+
+async function verifyStrictCrdtOperationAndActorIsolation(
+    harness: CrdtAdminRouteHarness,
+    identity: StrictCrdtRequestIdentity
+): Promise<void> {
+    const { requestId, compactPath } = identity;
     const operation = await postAndProcess({
         ...harness,
         path: `/api/crdt/admin/documents/rebuild-projection/requests/${requestId}`,
@@ -432,21 +464,7 @@ async function verifyStrictCrdtHttpIdempotency(
     });
     assert.equal(actor.ok, true);
 
-    const missingRequestId = 'strict-missing-document-0001';
-    for (const documentId of ['missing-a', 'missing-b']) {
-        const missing = await postAndProcessRaw({
-            ...harness,
-            path: `/api/crdt/admin/documents/compact/requests/${missingRequestId}`,
-            body: { document: { ...DOCUMENT_WIRE, documentId }, reason: 'document-isolation' }
-        });
-        assert.equal(missing.response.status, 404);
-    }
-
-    const scoped = await harness.sql<Readonly<{
-        ri_topic_id: string;
-        ri_resource_id: string;
-        context_id: string;
-    }>[]>`
+    const scoped = await harness.sql<ScopedCrdtInboxRow[]>`
     select ri_topic_id, ri_resource_id, fk_ext_bank_id as context_id
     from resource_inbox
     where ri_type_id = 'APP_INBOX' and ri_resource_id = ${requestId}
@@ -460,6 +478,18 @@ async function verifyStrictCrdtHttpIdempotency(
         'CRDT_SNAPSHOT_COMPACT'
     ]);
     assert.equal(new Set(scoped.map((row) => row.context_id)).size, 2);
+}
+
+async function verifyStrictCrdtDocumentIsolation(harness: CrdtAdminRouteHarness): Promise<void> {
+    const missingRequestId = 'strict-missing-document-0001';
+    for (const documentId of ['missing-a', 'missing-b']) {
+        const missing = await postAndProcessRaw({
+            ...harness,
+            path: `/api/crdt/admin/documents/compact/requests/${missingRequestId}`,
+            body: { document: { ...DOCUMENT_WIRE, documentId }, reason: 'document-isolation' }
+        });
+        assert.equal(missing.response.status, 404);
+    }
 
     const documents = await harness.sql<Readonly<{ context_id: string; }>[]>`
     select fk_ext_bank_id as context_id from resource_inbox
@@ -467,8 +497,6 @@ async function verifyStrictCrdtHttpIdempotency(
   `;
     assert.equal(documents.length, 2);
     assert.equal(new Set(documents.map((row) => row.context_id)).size, 2);
-
-    await verifyMalformedStrictCrdtDurableResult(harness);
 }
 
 async function verifyEqualStrictCrdtHttpContenders(
@@ -612,7 +640,7 @@ async function verifyEraseResponseAndAuditDelivery(
 }
 
 async function readAuditCount(
-    sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
+    sql: PGliteSql,
     statusPredicate: 'ri_status = \'NEW\'' | 'ri_status = \'COMPLETED\''
 ): Promise<number> {
     const rows = statusPredicate === 'ri_status = \'NEW\''
@@ -706,9 +734,9 @@ function createUnusedCrdtReadRepository(): RallarCrdtAdminReadRepository {
 }
 
 async function mutationCounts(
-    sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
+    sql: PGliteSql,
     documentKey: string
-) {
+): Promise<CrdtMutationCounts> {
     const [counts] = await sql<MutationCountsRow[]>`
       select
         (select document_revision from crdt_documents where document_key = ${documentKey})
@@ -732,16 +760,9 @@ async function mutationCounts(
 }
 
 async function readStrictAppInboxPersistence(
-    sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
+    sql: PGliteSql,
     requestId: string
-): Promise<
-    Readonly<{
-        inboxCount: number;
-        inboxStatus: string | null;
-        resultCount: number;
-        resultStatus: string | null;
-    }>
-> {
+): Promise<StrictAppInboxPersistence> {
     const [persistence] = await sql<AppInboxPersistenceRow[]>`
     select
       (select count(*) from resource_inbox where ri_resource_id = ${requestId})
@@ -767,7 +788,7 @@ async function readStrictAppInboxPersistence(
 interface PostAndProcessInput {
     readonly app: Hono;
     readonly inbox: InboxQueueReader;
-    readonly sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0];
+    readonly sql: PGliteSql;
     readonly path: string;
     readonly body: JsonWireValue;
 }
@@ -820,10 +841,14 @@ async function readJsonRecord(response: Response): Promise<JsonWireObject> {
 }
 
 function decodeJsonWireObject(value: JsonWireValue, label: string): JsonWireObject {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    if (!isJsonWireObject(value)) {
         throw new TypeError(`${label} must be an object`);
     }
-    return value as JsonWireObject;
+    return value;
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function update(now: number): RallarCrdtUpdateEnvelope {

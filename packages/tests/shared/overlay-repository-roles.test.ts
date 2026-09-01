@@ -11,6 +11,7 @@ import {
     removePlannedOverlayById,
     removePlannedOverlayByIdIfUnchanged,
     setAcceptedOverlayById,
+    setCurrentAcceptedServerOverlayById,
     setCurrentPlannedServerOverlayById,
     setPlannedOverlayById,
     waitForAcceptedOverlayChangesIdle,
@@ -117,6 +118,24 @@ describe('overlay repository roles', () => {
             unsubscribePlanned();
             unsubscribeAccepted();
         }
+    });
+
+    it.each([
+        { role: 'planned publication', write: setPlannedOverlayById, read: findPlannedOverlayById },
+        { role: 'accepted publication', write: setAcceptedOverlayById, read: findAcceptedOverlayById },
+        { role: 'planned current', write: setCurrentPlannedServerOverlayById, read: findPlannedOverlayById },
+        { role: 'accepted current', write: setCurrentAcceptedServerOverlayById, read: findAcceptedOverlayById }
+    ])('retires the same layout tuple and rejects reverse delivery in $role', ({ write, read }) => {
+        const active = overlay({ version: 3, nextHopSessionIds: ['peer'] });
+        const removed: OverlayInfo = { ...active, state: 'removed', nextHopSessionIds: [] };
+        expect(write(active.overlayId, active)).toBe('initial-set');
+        expect(write(removed.overlayId, removed)).toBe('adopted');
+        expect(read(active.overlayId)).toBeUndefined();
+        expect(write(active.overlayId, active)).toBe('dominated-dropped');
+        expect(read(active.overlayId)).toBeUndefined();
+        expect(write(removed.overlayId, removed)).toBe('equal');
+        expect(write(removed.overlayId, { ...removed, name: 'divergent' }))
+            .toBe('incomparable-conflict');
     });
 
     it('conditionally removes each role only while its exact observation remains current', () => {

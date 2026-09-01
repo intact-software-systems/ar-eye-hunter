@@ -13,7 +13,7 @@ import {
     type CoalescedAppOutboxWorkMetadata
 } from '@shared/queuebox/coalesced-app-outbox-work-envelope.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryRepository } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';

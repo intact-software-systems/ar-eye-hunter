@@ -1,6 +1,6 @@
 import { GroupId, PeerId } from '../api/api-config.ts';
 
-export type WebRtcGroupManagerState = {
+export interface WebRtcGroupManagerState {
     readonly groupIds: readonly GroupId[];
     readonly desiredPeerIds: readonly PeerId[];
     readonly onlinePeerIds: readonly PeerId[];
@@ -8,22 +8,28 @@ export type WebRtcGroupManagerState = {
     readonly connectablePeerIds: readonly PeerId[];
     readonly peerIdsWithNoReconnectableLanes: readonly PeerId[];
     readonly peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>;
-};
+}
 
-export type WebRtcGroupManagerOptions = Readonly<{
-    maxPeerConnections?: number;
-    overlayTransitionGraceMs?: number;
-    now?: () => number;
-    onDesiredPeerIdsChanged?: () => void;
-}>;
+export interface WebRtcGroupManagerOptions {
+    readonly maxPeerConnections?: number;
+    readonly overlayTransitionGraceMs?: number;
+    readonly now?: () => number;
+    readonly rttReportingDegreeLimit?: number;
+    readonly onDesiredPeerIdsChanged?: (selection: WebRtcGroupPeerSelection) => void;
+}
 
-export type WebRtcGroupManagerDeleteOptions = Readonly<{
-    retainConnections?: boolean;
-}>;
+export interface WebRtcGroupPeerSelection {
+    readonly desiredPeerIds: readonly PeerId[];
+    readonly rttReportingPeerIds: readonly PeerId[];
+}
 
-export type WebRtcRttReportingPeerOptions = Readonly<{
-    degreeLimit?: number;
-}>;
+export interface WebRtcGroupManagerDeleteOptions {
+    readonly retainConnections?: boolean;
+}
+
+export interface WebRtcRttReportingPeerOptions {
+    readonly degreeLimit?: number;
+}
 
 /**
  * `commanded` is reserved for the activation design's commanded-edge
@@ -33,16 +39,16 @@ export type WebRtcRttReportingPeerOptions = Readonly<{
  */
 export type RetainedPeerConnectionReason = 'left-group' | 'overlay-transition' | 'commanded';
 
-export type RetainedPeerConnection = Readonly<{
-    peerId: PeerId;
+export interface RetainedPeerConnection {
+    readonly peerId: PeerId;
     /** Group scope of a `left-group` retention; an overlay transition is not group-scoped. */
-    groupKey: string | null;
-    groupId: GroupId | null;
-    retainedOrder: number;
-    reason: RetainedPeerConnectionReason;
+    readonly groupKey: string | null;
+    readonly groupId: GroupId | null;
+    readonly retainedOrder: number;
+    readonly reason: RetainedPeerConnectionReason;
     /** `null` retains until budget eviction; a timestamp is the grace-window expiry. */
-    expiresAtEpochMs: number | null;
-}>;
+    readonly expiresAtEpochMs: number | null;
+}
 
 export function clonePeerOwners(
     peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>

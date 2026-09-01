@@ -26,6 +26,13 @@ export function normalizeRttReportingDegreeLimit(
         : DEFAULT_RTT_REPORTING_DEGREE_LIMIT;
 }
 
+export function isRtcRttCanonicalReporter(
+    localSessionId: string,
+    peerSessionId: string
+): boolean {
+    return localSessionId < peerSessionId;
+}
+
 export function selectRttReportingPeers(
     input: RttReportingPeerSelectionInput
 ): RttReportingPeerSelection {

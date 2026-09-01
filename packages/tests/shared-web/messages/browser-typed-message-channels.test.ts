@@ -22,10 +22,10 @@ interface GroupSnapshotFixtureScope {
 }
 
 const mocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import(
+    const { createDefaultApiMiddlewareTestDouble } = await import(
         '../api-middleware-test-double.ts'
     );
-    const ctx = createApiMiddlewareTestDouble();
+    const ctx = createDefaultApiMiddlewareTestDouble();
     const clientRepositoryMissing = (): never => {
         throw new Error(
             'Repository not found: shared.repository.client-state-snapshots'

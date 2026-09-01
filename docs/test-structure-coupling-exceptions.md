@@ -80,14 +80,6 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
-      "id": "group-http-translator-guard-reachability",
-      "domain": "Authoritative group mutation route ownership",
-      "owner": "Rallar server maintainers",
-      "summary": "Input rejection guards and statically unreachable throws preserve a reachable authenticated AppInbox command translator; unconditional throws do not.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#accepts legitimate input rejection guards and an unreachable throwing branch",
-      "coverageRelation": "The named test executes the actual route inventory analyzer on the shipped translator and a source mutation adding a false throwing branch. Both must retain the operation connection. Its neighboring parameterized negative executes unconditional throwing guards and requires loss of that connection. Source reads and mutation non-vacuity are inputs to these executable security assertions, not private-name or statement-order requirements."
-    },
-    {
       "id": "api-v1-medium-scale-routing",
       "domain": "API-v1 medium-scale recipe routing",
       "owner": "Rallar server maintainers",
@@ -622,21 +614,6 @@ moved or changed test.
         "observableEffect": "One failure opens the circuit and later calls make no network request.",
         "requiredConstraint": "Fetch remains at one while subsequent requests report circuit-open.",
         "failureRationale": "Extra fetches bypass the circuit; rate-limit diagnostics obscure active policy."
-      }
-    },
-    {
-      "id": "shared-web-remote-media-attachment-lifecycle",
-      "domain": "Shared-web remote media attachment lifecycle",
-      "owner": "Shared Web maintainers",
-      "summary": "Remote-media registration waits for connection attachment. Executable assertion: “owns middleware registration from connection attach through final unsubscribe”.",
-      "semanticCoverage": "packages/tests/shared-web/media/browser-remote-media-stream-runtime.test.ts#owns middleware registration from connection attach through final unsubscribe",
-      "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "RTC remote-stream middleware registration port",
-        "observableEffect": "Subscribing before attachment does not register against an unavailable connection.",
-        "requiredConstraint": "The registration port remains unused until attach supplies middleware.",
-        "failureRationale": "Early registration binds to missing or stale connection state."
       }
     },
     {
@@ -1367,6 +1344,14 @@ moved or changed test.
       "coverageRelation": "The named test mutates the live group registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
     },
     {
+      "id": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
+      "domain": "Authoritative mutation route ownership",
+      "owner": "Rallar server maintainers",
+      "summary": "Every authoritative route resolves to one AppInbox transaction owner without a persistence bypass. Executable assertion: “uses one named readonly input object for each authorised websocket enqueue helper”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper",
+      "coverageRelation": "The named analyzer test executes a concrete route, type, owner, or fallback mutation and requires the security audit to reject it; each source access supplies the exact mutated module or canonical comparison for that scenario."
+    },
+    {
       "id": "mutation-route-owner-crdt-reservation-materialization",
       "domain": "CRDT administrative mutation routing",
       "owner": "Rallar repository maintainers",
@@ -1378,14 +1363,14 @@ moved or changed test.
       "id": "rtc-topology-replay-single-live-send",
       "domain": "RTC topology replay live delivery",
       "owner": "Rallar server maintainers",
-      "summary": "A replayable delivery-log entry produces exactly one live WebSocket send of the immutable outbox message. Executable assertion: \u201cdelivers the exact immutable outbox message when the publication is current\u201d.",
+      "summary": "A replayable delivery-log entry produces exactly one live WebSocket send of the immutable outbox message. Executable assertion: “delivers the exact immutable outbox message when the publication is current”.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#delivers the exact immutable outbox message when the publication is current",
       "coverageRelation": "The named assertion executes the replay entry handler against a current publication and observes its owned live-send port; the single-send count is the exactly-once delivery constraint of the replay protocol.",
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "WS queue-box live sender (sendToTargetsWithResult)",
         "observableEffect": "One handled replay entry emits one live send carrying the durable outbox message bytes.",
-        "requiredConstraint": "Replay emits exactly one live send per handled entry \u2014 never zero, never a duplicate.",
+        "requiredConstraint": "Replay emits exactly one live send per handled entry — never zero, never a duplicate.",
         "failureRationale": "A duplicate send would double-deliver topology to members and a missing send would silently drop replayed history, both breaking the at-most-once live half of the replay protocol."
       }
     },
@@ -1393,7 +1378,7 @@ moved or changed test.
       "id": "rtc-topology-replay-suppressed-send",
       "domain": "RTC topology replay live delivery",
       "owner": "Rallar server maintainers",
-      "summary": "An expired delivery-log entry sends nothing: a retention gap is a typed result the consumer handles, never a stale delivery. Executable assertion: \u201creturns a typed retention gap without attempting a send\u201d.",
+      "summary": "An expired delivery-log entry sends nothing: a retention gap is a typed result the consumer handles, never a stale delivery. Executable assertion: “returns a typed retention gap without attempting a send”.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#returns a typed retention gap without attempting a send",
       "coverageRelation": "The named assertion executes the replay entry handler on an expired entry and observes the owned live-send port; the absence of a send is the constraint that expired history never reaches members.",
       "interactionRequirement": {
@@ -1408,7 +1393,7 @@ moved or changed test.
       "id": "rtc-topology-replay-corruption-suppressed-send",
       "domain": "RTC topology replay live delivery",
       "owner": "Rallar server maintainers",
-      "summary": "A corrupt delivery-log entry sends nothing: corruption propagates to the replay consumer without reaching the socket. Executable assertion: \u201cpropagates corruption for a missing unexpired durable reference\u201d.",
+      "summary": "A corrupt delivery-log entry sends nothing: corruption propagates to the replay consumer without reaching the socket. Executable assertion: “propagates corruption for a missing unexpired durable reference”.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#propagates corruption for a missing unexpired durable reference",
       "coverageRelation": "The named assertion executes the replay entry handler on a corrupt entry and observes the owned live-send port; the absence of a send is the constraint that invalid history never reaches members.",
       "interactionRequirement": {
@@ -1420,45 +1405,105 @@ moved or changed test.
       }
     },
     {
-      "id": "group-mutation-construction-equivalent-import-binding",
-      "domain": "Authoritative group mutation route ownership",
-      "owner": "Rallar repository maintainers",
-      "summary": "An imported alias retains the same source-module family binding into authenticated routing. Executable assertion: “follows an imported family binding renamed locally at the root”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#follows an imported family binding renamed locally at the root",
-      "coverageRelation": "Reads the live construction root, renames the imported presence binding locally, and executes the full route inventory analyzer; genuine module binding, not local spelling, is the invariant."
+      "id": "rtc-connected-observer-delivery",
+      "domain": "Native RTC connection observer delivery",
+      "owner": "Rallar realtime maintainers",
+      "summary": "A native connected transition delivers one established notification while leaving the peer open.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#negotiates offers, forwards ICE candidates, and dispatches remote events",
+      "coverageRelation": "The test drives the native connection event and observes the registered establishment callback together with open state and actual signaling outputs.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "QRtcPeerConnection establishment observer",
+        "observableEffect": "One native connected transition produces one establishment notification.",
+        "requiredConstraint": "The registered onConnected observer runs exactly once for the single connected transition.",
+        "failureRationale": "Duplicate registration or dispatch repeats subscriber connection effects even though the peer open state remains identical."
+      }
     },
     {
-      "id": "group-mutation-construction-equivalent-private-owner-binding",
+      "id": "rtc-ice-restart-backoff-budget",
+      "domain": "Native RTC restart retry budget",
+      "owner": "Rallar realtime maintainers",
+      "summary": "Concurrent reconnect requests share one timer, and exhausted retries stop allocating native ICE restarts.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#ignores offer collisions when impolite and retries with ICE restart on failure",
+      "coverageRelation": "The test advances the retry deadlines, observes the real native restartIce port, and verifies the peer is closed after the configured attempts.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RTCPeerConnection.restartIce",
+        "observableEffect": "The first shared timer produces one restart and the complete retry sequence produces five before reset.",
+        "requiredConstraint": "Two concurrent retry requests produce one restart at the first deadline, with five total restarts before exhaustion.",
+        "failureRationale": "Extra native restarts exceed the retry budget and duplicate negotiation traffic; missing attempts abandon recovery early."
+      }
+    },
+    {
+      "id": "room-send-membership-admission",
+      "domain": "Room realtime membership admission before allocation",
+      "owner": "Rallar realtime maintainers",
+      "summary": "A session outside a room cannot open its peer lanes even when a ready peer is visible.",
+      "semanticCoverage": "packages/tests/shared-web/realtime/browser-room-realtime-runtime.test.ts#does not open or send for a room the current session has not joined",
+      "coverageRelation": "The room facade reads scoped membership, returns no targets, and is observed at both the lane-opening port and native data-channel send boundary.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRtcConnectionService.ensurePeerLaneOpen",
+        "observableEffect": "An unauthorized room send creates no lane-opening attempt and emits no native frame.",
+        "requiredConstraint": "The connection service lane-opening port remains unused when current membership excludes the session.",
+        "failureRationale": "Returning no targets after opening a lane would still allocate unauthorized transport and consume establishment work."
+      }
+    },
+    {
+      "id": "browser-bridge-authentication-capability",
+      "domain": "Browser runtime authentication capability isolation",
+      "owner": "Shared Test maintainers",
+      "summary": "Missing authentication support fails without substituting a full runtime connection.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts#rejects missing authentication capability without starting a full connection",
+      "coverageRelation": "The test calls the public bridge authentication method with a runtime lacking authentication and observes rejection plus the untouched connection port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Installed browser Rallar runtime connect capability",
+        "observableEffect": "An unsupported authentication request rejects without establishing a runtime session.",
+        "requiredConstraint": "The connect capability is never invoked as an authentication fallback.",
+        "failureRationale": "Opening a full connection can join rooms and allocate transports for a request that authorized authentication only."
+      }
+    },
+    {
+      "id": "browser-bridge-invalid-config-admission",
+      "domain": "Browser runtime configuration admission",
+      "owner": "Shared Test maintainers",
+      "summary": "Valid connection input reaches the installed runtime; malformed configuration is rejected before that side-effect boundary.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts#validates connection configuration before calling the native runtime",
+      "coverageRelation": "One valid request and six invalid requests execute the bridge decoder; the forwarded sparse options and only one native connect call prove the boundary.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Installed browser Rallar runtime connect capability",
+        "observableEffect": "Only the valid request reaches native runtime connection; all malformed requests reject beforehand.",
+        "requiredConstraint": "Exactly one connect call occurs across the valid request and all rejected configuration cases.",
+        "failureRationale": "Rejecting after native connection would still trigger authentication, room membership, or transport allocation with invalid options."
+      }
+    },
+    {
+      "id": "browser-ws-subscription-resource-ownership",
+      "domain": "Browser WebSocket subscription resource ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "Repeated requests for one WS subscription share one resource, whose cleanup invokes its disposer once.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime-resource-controllers.test.ts#deduplicates and disposes WS subscriptions while fencing stale leases",
+      "coverageRelation": "The resource controller receives the same subscription key twice, fences a stale lease, and is observed at subscription acquisition and disposal ports.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "WebSocket subscription acquisition and unsubscribe disposer",
+        "observableEffect": "Two ensure requests acquire one subscription, and cleanup releases that subscription once.",
+        "requiredConstraint": "The subscribe callback and its returned unsubscribe callback each run exactly once.",
+        "failureRationale": "Duplicate subscription delivers duplicate messages; skipped or duplicate disposal leaks listeners or repeats teardown side effects."
+      }
+    },
+    {
+      "id": "group-http-translator-guard-reachability",
       "domain": "Authoritative group mutation route ownership",
-      "owner": "Rallar repository maintainers",
-      "summary": "Renaming private route owners and local parameters retains authenticated route and AppInbox reachability. Executable assertion: “follows renamed private owners and independently renamed owner parameters”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#follows renamed private owners and independently renamed owner parameters",
-      "coverageRelation": "Reads the live presence family, independently renames its private owner and app parameter, and executes the full route inventory analyzer; dependency provenance and route ownership remain accepted without pinning private spelling."
+      "owner": "Rallar server maintainers",
+      "summary": "Input rejection guards and statically unreachable throws preserve a reachable authenticated AppInbox command translator; unconditional throws do not.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#accepts legitimate input rejection guards and an unreachable throwing branch",
+      "coverageRelation": "The named test executes the actual route inventory analyzer on the shipped translator and a source mutation adding a false throwing branch. Both must retain the operation connection. Its neighboring parameterized negative executes unconditional throwing guards and requires loss of that connection. Source reads and mutation non-vacuity are inputs to these executable security assertions, not private-name or statement-order requirements."
     }
   ],
   "entries": [
-    {
-      "id": "test-structure-coupling-2587ac15f9ef4b7a",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
-      "kind": "production-source-read",
-      "contract": "group-http-translator-guard-reachability",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Reads the actual translator as executable analyzer input, preserving its real input-validation guards while testing an added statically unreachable throw. The test requires semantic route ownership to survive both inputs.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#accepts legitimate input rejection guards and an unreachable throwing branch"
-    },
-    {
-      "id": "test-structure-coupling-cc1a11e1ef4e42a1",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
-      "kind": "symbol-assertion",
-      "contract": "group-http-translator-guard-reachability",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Asserts only that the source mutation actually changed the analyzer input before the semantic acceptance assertion. This prevents a vacuous passing security regression; it does not require any private symbol spelling, file size, or order.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#accepts legitimate input rejection guards and an unreachable throwing branch"
-    },
     {
       "id": "test-structure-coupling-a5d5fdeb1214727a",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
@@ -2593,17 +2638,6 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#keeps circuit-open diagnostics ahead of the local rate limiter while open"
     },
     {
-      "id": "test-structure-coupling-a90a04906ba9c761",
-      "path": "packages/tests/shared-web/media/browser-remote-media-stream-runtime.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "shared-web-remote-media-attachment-lifecycle",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Shared Web maintainers",
-      "rationale": "The pre-attach registration absence assertion directly proves that registration remains unused until middleware attachment.",
-      "semanticCoverage": "packages/tests/shared-web/media/browser-remote-media-stream-runtime.test.ts#owns middleware registration from connection attach through final unsubscribe"
-    },
-    {
       "id": "test-structure-coupling-b501ba3cfcd7af87",
       "path": "packages/tests/shared-web/rooms/create-and-join-room.test.ts",
       "kind": "mock-invocation-count-or-order",
@@ -2912,7 +2946,51 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#maps all 56 entrypoints and 52 types to real registrations and owners"
     },
     {
-      "id": "test-structure-coupling-ce59f3bf64ba0cda",
+      "id": "test-structure-coupling-5ac40266b15fed40",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
+      "kind": "ast-inspection",
+      "contract": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Uses the parsed parameter nodes to distinguish one object contract from several positional parameters across both helpers.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
+    },
+    {
+      "id": "test-structure-coupling-7c5aa61574c59a94",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Requires the authorised websocket helper to accept its first named readonly input object rather than a positional mutation tuple.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
+    },
+    {
+      "id": "test-structure-coupling-9f3ecb4406f3911a",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads and parses that helper module so parameter declarations are evaluated as syntax, not brittle substring matches.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
+    },
+    {
+      "id": "test-structure-coupling-52beab5de7d2f568",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
+      "kind": "production-source-read",
+      "contract": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Checks the second enqueue helper in the same module for its own named readonly input object.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
+    },
+    {
+      "id": "test-structure-coupling-755638c9349907da",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-canonical-family-name-rebound-to-a-different-imported-",
@@ -2923,7 +3001,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a canonical family name rebound to a different imported family"
     },
     {
-      "id": "test-structure-coupling-503ee8c186f47263",
+      "id": "test-structure-coupling-a953d677a6a4e37d",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-conditional-family-call-in-the-exported-root",
@@ -2934,7 +3012,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a conditional family call in the exported root"
     },
     {
-      "id": "test-structure-coupling-cc694049a6a7199b",
+      "id": "test-structure-coupling-f2014ef62de286a9",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-different-app-passed-from-a-family-to-its-private-owne",
@@ -2945,7 +3023,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a different app passed from a family to its private owner"
     },
     {
-      "id": "test-structure-coupling-56c975daa7221e46",
+      "id": "test-structure-coupling-c7927fc092bac2c7",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-duplicate-family-call-in-the-exported-root",
@@ -2956,7 +3034,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a duplicate family call in the exported root"
     },
     {
-      "id": "test-structure-coupling-c91e07c5b311b838",
+      "id": "test-structure-coupling-503ee8c186f47263",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-family-call-after-an-exported-root-return",
@@ -2967,7 +3045,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call after an exported-root return"
     },
     {
-      "id": "test-structure-coupling-e0660606ecfc700b",
+      "id": "test-structure-coupling-ee9090eba9fc708c",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-family-call-before-authorization-exists",
@@ -2978,7 +3056,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call before authorization exists"
     },
     {
-      "id": "test-structure-coupling-c7927fc092bac2c7",
+      "id": "test-structure-coupling-ce59f3bf64ba0cda",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-family-removed-from-the-exported-root",
@@ -2989,7 +3067,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family removed from the exported root"
     },
     {
-      "id": "test-structure-coupling-8e81af49be0bf713",
+      "id": "test-structure-coupling-cc694049a6a7199b",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-missing-family-to-private-owner-argument",
@@ -3000,7 +3078,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a missing family-to-private-owner argument"
     },
     {
-      "id": "test-structure-coupling-29142dfe723974a7",
+      "id": "test-structure-coupling-0b58d02400285f7d",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-an-extra-family-to-private-owner-argument",
@@ -3011,7 +3089,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra family-to-private-owner argument"
     },
     {
-      "id": "test-structure-coupling-f2014ef62de286a9",
+      "id": "test-structure-coupling-227bc4333000c0c6",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-an-extra-root-to-family-argument",
@@ -3022,7 +3100,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra root-to-family argument"
     },
     {
-      "id": "test-structure-coupling-a953d677a6a4e37d",
+      "id": "test-structure-coupling-8a5a2d44c9bdcb60",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-an-uninventoryed-live-private-owner-and-route-in-a-famil",
@@ -3033,7 +3111,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an uninventoryed live private owner and route in a family"
     },
     {
-      "id": "test-structure-coupling-0b58d02400285f7d",
+      "id": "test-structure-coupling-e0660606ecfc700b",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-reordered-family-to-private-owner-arguments",
@@ -3044,7 +3122,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered family-to-private-owner arguments"
     },
     {
-      "id": "test-structure-coupling-ee9090eba9fc708c",
+      "id": "test-structure-coupling-c91e07c5b311b838",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-reordered-root-to-family-arguments",
@@ -3055,7 +3133,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered root-to-family arguments"
     },
     {
-      "id": "test-structure-coupling-227bc4333000c0c6",
+      "id": "test-structure-coupling-56c975daa7221e46",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-wrong-root-to-family-arguments",
@@ -3374,7 +3452,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#rejects a group registration filter that is always false"
     },
     {
-      "id": "test-structure-coupling-9f3ecb4406f3911a",
+      "id": "test-structure-coupling-c6c21e820b68b8eb",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts",
       "kind": "production-source-read",
       "contract": "mutation-route-owner-crdt-reservation-materialization",
@@ -3418,26 +3496,136 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#propagates corruption for a missing unexpired durable reference"
     },
     {
-      "id": "test-structure-coupling-755638c9349907da",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
-      "kind": "production-source-read",
-      "contract": "group-mutation-construction-equivalent-import-binding",
+      "id": "test-structure-coupling-b3fa661d1e9850cc",
+      "path": "packages/tests/shared/qrtc-peer-connection.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-connected-observer-delivery",
       "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar repository maintainers",
-      "rationale": "Reads the live construction root, renames the imported presence binding locally, and executes the full route inventory analyzer; genuine module binding, not local spelling, is the invariant.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#follows an imported family binding renamed locally at the root"
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "One established callback is required for the one native connection transition; peer open state alone cannot detect duplicate observer effects.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#negotiates offers, forwards ICE candidates, and dispatches remote events"
     },
     {
-      "id": "test-structure-coupling-8a5a2d44c9bdcb60",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "id": "test-structure-coupling-036839b1702a8a0f",
+      "path": "packages/tests/shared/qrtc-peer-connection.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-ice-restart-backoff-budget",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "The first retry deadline must produce one native ICE restart despite concurrent reconnect requests sharing that deadline.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#ignores offer collisions when impolite and retries with ICE restart on failure"
+    },
+    {
+      "id": "test-structure-coupling-97e3c2ebcb7a5abc",
+      "path": "packages/tests/shared/qrtc-peer-connection.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-ice-restart-backoff-budget",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Five native restarts, followed by exhausted reset, proves the externally effective retry budget rather than only an internal attempt counter.",
+      "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#ignores offer collisions when impolite and retries with ICE restart on failure"
+    },
+    {
+      "id": "test-structure-coupling-298c5bb8d8655b3c",
+      "path": "packages/tests/shared-web/realtime/browser-room-realtime-runtime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "room-send-membership-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar realtime maintainers",
+      "rationale": "Absence at the lane-opening port proves membership denial precedes transport work; the empty native send capture independently proves no frame escaped.",
+      "semanticCoverage": "packages/tests/shared-web/realtime/browser-room-realtime-runtime.test.ts#does not open or send for a room the current session has not joined"
+    },
+    {
+      "id": "test-structure-coupling-e0edcf418c196587",
+      "path": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-bridge-authentication-capability",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "A missing authentication capability must not start a full connection as a substitute, even if the bridge later rejects.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts#rejects missing authentication capability without starting a full connection"
+    },
+    {
+      "id": "test-structure-coupling-7efeeba3a2a07e6e",
+      "path": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-bridge-invalid-config-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The one allowed connect call distinguishes validation before side effects from a decoder that connects and then reports malformed input.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts#validates connection configuration before calling the native runtime"
+    },
+    {
+      "id": "test-structure-coupling-9260348f27fc2039",
+      "path": "packages/tests/shared-test/rallar-browser-runtime-resource-controllers.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-ws-subscription-resource-ownership",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "One acquisition for the repeated WS subscription key prevents duplicate message listeners and duplicate delivery.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime-resource-controllers.test.ts#deduplicates and disposes WS subscriptions while fencing stale leases"
+    },
+    {
+      "id": "test-structure-coupling-ab8f03afb1e7940b",
+      "path": "packages/tests/shared-test/rallar-browser-runtime-resource-controllers.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-ws-subscription-resource-ownership",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "One invocation of the acquired unsubscribe disposer proves cleanup releases the shared subscription without repeating its side effect.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime-resource-controllers.test.ts#deduplicates and disposes WS subscriptions while fencing stale leases"
+    },
+    {
+      "id": "test-structure-coupling-2587ac15f9ef4b7a",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
       "kind": "production-source-read",
-      "contract": "group-mutation-construction-equivalent-private-owner-binding",
+      "contract": "group-http-translator-guard-reachability",
       "disposition": "durable-boundary",
       "boundary": "security",
-      "owner": "Rallar repository maintainers",
-      "rationale": "Reads the live presence family, independently renames its private owner and app parameter, and executes the full route inventory analyzer; dependency provenance and route ownership remain accepted without pinning private spelling.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#follows renamed private owners and independently renamed owner parameters"
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the actual translator as executable analyzer input, preserving its real input-validation guards while testing an added statically unreachable throw. The test requires semantic route ownership to survive both inputs.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#accepts legitimate input rejection guards and an unreachable throwing branch"
+    },
+    {
+      "id": "test-structure-coupling-cc1a11e1ef4e42a1",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "symbol-assertion",
+      "contract": "group-http-translator-guard-reachability",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Asserts only that the source mutation actually changed the analyzer input before the semantic acceptance assertion. This prevents a vacuous passing security regression; it does not require any private symbol spelling, file size, or order.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#accepts legitimate input rejection guards and an unreachable throwing branch"
+    },
+    {
+      "id": "test-structure-coupling-8e81af49be0bf713",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-a-missing-family-to-private-owner-argument",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Removes one private-owner argument from a family call, proving the boundary tracks the complete dependency tuple.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a missing family-to-private-owner argument"
+    },
+    {
+      "id": "test-structure-coupling-29142dfe723974a7",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-an-extra-family-to-private-owner-argument",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Adds an unapproved argument at the family/private-owner handoff, catching widened construction that could conceal a second dependency source.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra family-to-private-owner argument"
     }
   ]
 }

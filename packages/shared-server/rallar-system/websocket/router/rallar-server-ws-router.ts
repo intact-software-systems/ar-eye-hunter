@@ -8,9 +8,8 @@ import {
     RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
     RALLAR_USER_WS_TOPIC_PREFIXES
 } from '@shared/api/rallar-validation.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { decodeStateSyncMessage } from '../../state-sync/state-sync-payload.ts';
 import {
@@ -40,15 +39,17 @@ import { RallarServerWsTopicRegistry } from './rallar-server-ws-topic-registry.t
 const ROUTER_CALLBACK_ID = 'rallar-server-ws-router';
 const RESERVED_TOPIC_IDS = new Set<string>(Object.values(AppTopics));
 
-interface AdmittedWsMessage {
-    readonly definition: RallarServerWsTopicDefinition<JsonWireValue> | undefined;
-    readonly payload: JsonWireValue;
-}
+export namespace RallarServerWsRouter {
+    export interface Ingress {
+        readonly definition: RallarServerWsTopicDefinition<JsonWireValue> | undefined;
+        readonly payload: JsonWireValue;
+    }
 
-interface WsMessageRejection {
-    readonly reason: ALNackReason;
-    readonly logMessage: string;
-    readonly serverSnapshotVersion?: number;
+    export interface Rejection {
+        readonly reason: ALNackReason;
+        readonly logMessage: string;
+        readonly serverSnapshotVersion?: number;
+    }
 }
 
 export class RallarServerWsRouter {
@@ -83,11 +84,7 @@ export class RallarServerWsRouter {
             throw new Error('Rallar server websocket router is already installed.');
         }
         this.service.onAnyInboxMessageDo(ROUTER_CALLBACK_ID, {
-            onMessage: async (
-                message: ALMessage,
-                entry: ResourceEntry,
-                webSocketServer: JsonWebSocketServer
-            ) => await this.route(message, entry, webSocketServer)
+            onMessage: async (message: ALMessage) => await this.route(message)
         });
         this.installed = true;
         return this;
@@ -126,32 +123,28 @@ export class RallarServerWsRouter {
         return readRallarServerWsStatus(this.service);
     }
 
-    async route(
-        message: ALMessage,
-        _entry?: ResourceEntry,
-        _webSocketServer?: JsonWebSocketServer
-    ): Promise<void> {
-        const admitted = this.admitMessage(message);
-        if (!admitted) {
+    async route(message: ALMessage): Promise<void> {
+        const ingress = this.admitIngress(message);
+        if (!ingress) {
             return;
         }
+        const { definition } = ingress;
         const authorization = await authorizeRallarServerWsIngress({
             message,
-            definition: admitted.definition,
+            definition,
             authorizeRoomMessage: this.authorizeRoomMessage
         });
         if (!authorization.authorized) {
             this.reject(message, {
-                reason: authorization.reason ?? 'unauthorized',
-                logMessage: authorization.logMessage ??
-                    `Rejected unauthorised Rallar server WS topic: ${message.route.topicId}`,
+                reason: authorization.reason,
+                logMessage: authorization.logMessage,
                 serverSnapshotVersion: authorization.serverSnapshotVersion
             });
             return;
         }
 
-        const context = this.toMessageContext(admitted.definition, message);
-        const serverMessage = await this.authorizeTopicMessage(message, admitted, context);
+        const context = this.toMessageContext(definition, message);
+        const serverMessage = await this.authorizeTopicMessage(message, ingress, context);
         if (!serverMessage) {
             return;
         }
@@ -165,64 +158,64 @@ export class RallarServerWsRouter {
         if (!suppressDefaultFanout) {
             await this.publishToFanout(
                 message,
-                admitted.definition?.fanout ?? this.defaultFanout,
+                definition?.fanout ?? this.defaultFanout,
                 authorization.audience
             );
         }
     }
 
-    private admitMessage(message: ALMessage): AdmittedWsMessage | undefined {
-        if (decodeStateSyncMessage(message).kind !== 'unsupported') {
-            return;
+    private admitIngress(message: ALMessage): RallarServerWsRouter.Ingress | undefined {
+        if (decodeStateSyncMessage(message).kind !== 'unsupported' || this.isSystemMessage(message)) {
+            return undefined;
         }
-        if (this.isSystemMessage(message)) {
-            return;
-        }
-        if (isReservedRallarWsTopicId(message.route.topicId)) {
-            this.reject(message, {
-                reason: 'unauthorized',
-                logMessage: `Rejected reserved Rallar WS topic: ${message.route.topicId}`
-            });
-            return;
-        }
-
         const definition = this.registry.find(message);
-        if (!definition && !this.isImplicitUserTopic(message.route.topicId)) {
-            this.reject(message, {
-                reason: 'no-route',
-                logMessage: `Rejected unknown WS topic: ${message.route.topicId}`
-            });
-            return;
+        const rejection = this.resolveIngressRejection(message, definition);
+        if (rejection) {
+            this.reject(message, rejection);
+            return undefined;
         }
-        if (!message.targets) {
-            this.reject(message, {
-                reason: 'no-route',
-                logMessage: `Rejected Rallar server WS message without targets: ${message.route.topicId}`
-            });
-            return;
-        }
-        if (!this.isPayloadSizeAllowed(message, definition?.maxPayloadBytes ?? this.maxPayloadBytes)) {
-            this.reject(message, {
-                reason: 'overloaded',
-                logMessage: `Rejected oversized Rallar server WS payload: ${message.route.topicId}`
-            });
-            return;
-        }
-
         const decoded = decodeRallarServerWsIngress(message);
         if (decoded.kind === 'invalid-json') {
             this.reject(message, {
                 reason: 'no-route',
                 logMessage: `Rejected Rallar server WS message with invalid JSON payload: ${message.route.topicId}`
             });
-            return;
+            return undefined;
         }
         return { definition, payload: decoded.value };
     }
 
+    private resolveIngressRejection(
+        message: ALMessage,
+        definition: RallarServerWsTopicDefinition<JsonWireValue> | undefined
+    ): RallarServerWsRouter.Rejection | undefined {
+        if (isReservedRallarWsTopicId(message.route.topicId)) {
+            return {
+                reason: 'unauthorized',
+                logMessage: `Rejected reserved Rallar WS topic: ${message.route.topicId}`
+            };
+        }
+        if (!definition && !this.isImplicitUserTopic(message.route.topicId)) {
+            return { reason: 'no-route', logMessage: `Rejected unknown WS topic: ${message.route.topicId}` };
+        }
+        if (!message.targets) {
+            return {
+                reason: 'no-route',
+                logMessage: `Rejected Rallar server WS message without targets: ${message.route.topicId}`
+            };
+        }
+        if (!this.isPayloadSizeAllowed(message, definition?.maxPayloadBytes ?? this.maxPayloadBytes)) {
+            return {
+                reason: 'overloaded',
+                logMessage: `Rejected oversized Rallar server WS payload: ${message.route.topicId}`
+            };
+        }
+        return undefined;
+    }
+
     private async authorizeTopicMessage(
         message: ALMessage,
-        admitted: AdmittedWsMessage,
+        admitted: RallarServerWsRouter.Ingress,
         context: RallarServerWsMessageContext
     ): Promise<RallarServerWsMessage<JsonWireValue> | undefined> {
         const definition = admitted.definition;
@@ -321,7 +314,7 @@ export class RallarServerWsRouter {
 
     private reject(
         message: ALMessage,
-        rejection: WsMessageRejection
+        rejection: RallarServerWsRouter.Rejection
     ): void {
         console.warn(rejection.logMessage);
         if (!this.sendNacks) {
@@ -343,7 +336,7 @@ export class RallarServerWsRouter {
         catch (error) {
             console.warn(
                 `Failed to send WS NACK to ${message.id.senderId} for ${message.id.msgId}`,
-                error
+                toError(error)
             );
         }
     }

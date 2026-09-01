@@ -6,9 +6,9 @@ import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.t
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import assert from 'node:assert/strict';
 import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';

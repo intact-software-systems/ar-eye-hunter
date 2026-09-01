@@ -7,7 +7,7 @@ import { compareGroupCausalRevision, readGroupCausalRevision } from '@shared/api
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,

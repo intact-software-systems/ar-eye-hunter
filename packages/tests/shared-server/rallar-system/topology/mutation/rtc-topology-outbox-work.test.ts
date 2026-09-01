@@ -24,7 +24,8 @@ import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/g
 import type { AuditStamp, GroupPresenceSummary, GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { EntityStatus, InMemoryQueueBox, type ALMessage } from '@shared/mod.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { createAppInboxTestDatabase } from '../../app-inbox/test-support/app-inbox-test-database.ts';
@@ -43,6 +44,32 @@ interface EnqueueAndReserveRttInput {
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('RTC topology APP_OUTBOX work', () => {
+    it('lets ResourceInbox retry the handler-owned write and reservation-fenced completion transaction', () => {
+        const handler = readSource('create-rtc-topology-work-handler.ts');
+        const transaction = readSource('write-rtc-topology-publication-transaction.ts');
+        const completion = readSource('finish-rtc-topology-work.ts');
+
+        const acceptedWrite = handler.slice(handler.indexOf('async function writeAcceptedRtcTopologyWork'));
+        expect(acceptedWrite).not.toMatch(/waitForRuntimeStateWriteRetry/);
+        expect(acceptedWrite).not.toMatch(/\bfor\s*\([^)]*attempt/);
+        expect(acceptedWrite).toMatch(/writeTopologyMutation\(\s*transaction/);
+        expect(acceptedWrite.indexOf('writeTopologyMutation')).toBeLessThan(
+            acceptedWrite.indexOf('writePublicationDelivery')
+        );
+        expect(transaction).toMatch(/runInPSqlTransaction/);
+        expect(transaction).toMatch(/appendOrValidate\(/);
+        expect(transaction.indexOf('await write(transaction)')).toBeGreaterThanOrEqual(0);
+        expect(transaction.indexOf('await write(transaction)')).toBeLessThan(
+            transaction.indexOf('finishRtcTopologyReservation(transaction, entry)')
+        );
+        expect(completion).not.toMatch(/waitForRuntimeStateWriteRetry/);
+        expect(completion).not.toMatch(/\bfor\s*\([^)]*attempt/);
+        expect(completion).toMatch(
+            /new PSqlResourceInboxFinalizationRepository\(\s*transaction\s*,?\s*\)\.finishReserved\(/
+        );
+        expect(completion).toMatch(/throw new RuntimeStateWriteConflictError\(\)/);
+    });
+
     it('keeps each committed group revision as an immutable queue entry', async () => {
         const queue = new InMemoryQueueBox();
         const runtime = createRtcTopologyOutboxPublisher({
@@ -831,6 +858,16 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(observedRttVersions).toEqual([1]);
     });
 });
+
+function readSource(fileName: string): string {
+    return readFileSync(
+        new URL(
+            `../../../../../shared-server/rallar-system/topology/replay/work/${fileName}`,
+            import.meta.url
+        ),
+        'utf8'
+    );
+}
 
 async function entriesIn(queue: InMemoryQueueBox) {
     return await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key))).then(

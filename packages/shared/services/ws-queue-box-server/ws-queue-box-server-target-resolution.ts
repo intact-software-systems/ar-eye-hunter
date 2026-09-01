@@ -111,10 +111,6 @@ export class WsQueueBoxServerTargetResolution {
     private toDefaultBroadcastRecipients(
         exceptPeerIds?: readonly string[]
     ): readonly WsServerResolvedRecipient[] {
-        if (!(this.#socket.connections instanceof Map)) {
-            return [];
-        }
-
         return [...this.#socket.connections.values()]
             .filter((connection) => connection.isOpen && !exceptPeerIds?.includes(connection.id))
             .map((connection) => ({
