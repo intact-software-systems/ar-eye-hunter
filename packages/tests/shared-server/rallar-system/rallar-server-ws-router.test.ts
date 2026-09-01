@@ -12,12 +12,14 @@ import {
     AL_CONTROL_NACK_TYPE_ID,
     ALMessage,
     ConnectionContext,
+    createDefaultInMemoryALInboundRuntimeStores,
     createDefaultWsQueueBoxServerService,
     InMemoryQueueBox,
     JsonWebSocketServer,
     newALBroadcastMessage,
     newALRoute,
     parseALControlMessage,
+    type ALInboundRuntimeStores,
     type ALNackPayload,
     type WsServerTargetResolver
 } from '@shared/mod.ts';
@@ -330,6 +332,115 @@ describe('RallarServerWsRouter', () => {
             warn.mockRestore();
         }
     });
+
+    it('does not apply the user-topic room authorizer to reserved middleware messages', async () => {
+        const { router, socket } = createIngressRouter({
+            authorizeRoomMessage: () => false
+        });
+        router.install();
+        const group = createGroupSnapshot('room-1', ['peer-1'], 1).group;
+        const message = newALBroadcastMessage(
+            'peer-1',
+            newALRoute(AppTopics.groupStateSnapshot, 'room-1', 'reserved-room-message'),
+            'room',
+            AppTopics.groupStateSnapshot,
+            { snapshot: 'system-owned' },
+            { groupRef: group }
+        );
+
+        await socket.receive(message);
+
+        expect(socket.sent).toEqual([]);
+    });
+
+    it('keeps pre-admission room audiences bound to the first pending decision for each envelope', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const firstAdmissionRead = Promise.withResolvers<void>();
+        const releaseFirstAdmission = Promise.withResolvers<void>();
+        const allAuthorizationsCompleted = Promise.withResolvers<void>();
+        const readIncomingMessage = stores.admissionStore.readIncomingMessage.bind(stores.admissionStore);
+        let firstAdmissionBlocked = false;
+        vi.spyOn(stores.admissionStore, 'readIncomingMessage').mockImplementation(async (
+            message,
+            fromPeerId,
+            planIncomingMessage
+        ) => {
+            if (!firstAdmissionBlocked) {
+                firstAdmissionBlocked = true;
+                firstAdmissionRead.resolve();
+                await releaseFirstAdmission.promise;
+            }
+            return await readIncomingMessage(message, fromPeerId, planIncomingMessage);
+        });
+        const publishedSessionIds: string[][] = [];
+        let authorizationCount = 0;
+        const group = createGroupSnapshot('room-1', ['peer-1'], 1).group;
+        const { router, service, socket } = createIngressRouter({
+            nowEpochMs: () => 1,
+            authorizeRoomMessage: ({ message }) => {
+                if (!message.targets) {
+                    return false;
+                }
+                authorizationCount += 1;
+                if (authorizationCount === 3) {
+                    allAuthorizationsCompleted.resolve();
+                }
+                return {
+                    authorized: true,
+                    audience: {
+                        targets: message.targets,
+                        sessions: [
+                            createGroupPresenceRecord(
+                                'room-1',
+                                `session-${authorizationCount}`,
+                                1
+                            )
+                        ]
+                    }
+                };
+            }
+        }, stores);
+        const sendToTargetsWithResult = service.sendToTargetsWithResult.bind(service);
+        vi.spyOn(service, 'sendToTargetsWithResult').mockImplementation((message, sessionIds) => {
+            publishedSessionIds.push([...sessionIds ?? []]);
+            return sendToTargetsWithResult(message, sessionIds);
+        });
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        try {
+            router.install();
+            const first = newALBroadcastMessage(
+                'peer-1',
+                newALRoute('room.chat', 'room-1', 'shared-id'),
+                'room',
+                'chat.message.v1',
+                { text: 'first' },
+                { groupRef: group }
+            );
+            const second = {
+                ...newALBroadcastMessage(
+                    'peer-1',
+                    newALRoute('room.chat', 'room-1', 'second-id'),
+                    'room',
+                    'chat.message.v1',
+                    { text: 'second' },
+                    { groupRef: group }
+                ),
+                id: first.id
+            };
+
+            const firstIngress = socket.receive(first);
+            await firstAdmissionRead.promise;
+            const duplicateIngress = socket.receive(first);
+            const alteredIngress = socket.receive(second);
+            await allAuthorizationsCompleted.promise;
+            releaseFirstAdmission.resolve();
+            await Promise.all([firstIngress, duplicateIngress, alteredIngress]);
+
+            expect(publishedSessionIds).toEqual([['session-1']]);
+        } finally {
+            warn.mockRestore();
+        }
+    });
 });
 
 describe('RallarServer.ws.publish current behavior', () => {
@@ -573,7 +684,8 @@ function createRouter(
 }
 
 function createIngressRouter(
-    options: ConstructorParameters<typeof RallarServerWsRouter>[1]
+    options: ConstructorParameters<typeof RallarServerWsRouter>[1],
+    inboundStores?: ALInboundRuntimeStores
 ) {
     const server = new JsonWebSocketServer();
     const socket = new RouterIngressWebSocket();
@@ -583,6 +695,7 @@ function createIngressRouter(
         outbox: new InMemoryQueueBox(new Map()),
         socket: server,
         name: 'server-1',
+        inboundStores,
         targetResolver: {
             resolvePeerIdForConnection: () => 'peer-1',
             resolvePeerRecipients: (peerId) => peerId === 'peer-1'
@@ -591,7 +704,7 @@ function createIngressRouter(
             resolveBroadcastRecipients: () => []
         }
     });
-    return { router: new RallarServerWsRouter(service, options), socket };
+    return { router: new RallarServerWsRouter(service, options), service, socket };
 }
 
 class RouterIngressWebSocket extends EventTarget implements WebSocket {

@@ -8,6 +8,7 @@ import {
     tryWithPolicy,
     type TryWithPolicy
 } from '../../resilience/TryWith.ts';
+import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALInboundAdmissionStore, ALPersistedInboundEffect } from './al-inbound-admission-store.ts';
 import { shouldDeferALInboundLocalDelivery } from './al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
@@ -116,6 +117,9 @@ export class ALInboundAdmittedDelivery {
             );
         }
         catch (error) {
+            if (error instanceof ALAdmissionCorruptionError) {
+                throw error;
+            }
             throw new Error(
                 `Failed to release buffered inbound message after retries: ${trackKey}:${seq}`,
                 { cause: error }

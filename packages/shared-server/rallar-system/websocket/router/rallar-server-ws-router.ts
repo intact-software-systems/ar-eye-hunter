@@ -176,13 +176,19 @@ export class RallarServerWsRouter {
     }
 
     private async authorizeBeforeAdmission(message: ALMessage) {
+        if (this.isMiddlewareOwnedMessage(message)) {
+            return { authorized: true } as const;
+        }
         const authorization = await authorizeRallarServerWsIngress({
             message,
             definition: this.registry.find(message),
             authorizeRoomMessage: this.authorizeRoomMessage
         });
         if (authorization.authorized) {
-            this.authorizedIngressByMessage.set(this.toAdmissionKey(message), authorization);
+            const admissionKey = this.toAdmissionKey(message);
+            if (!this.authorizedIngressByMessage.has(admissionKey)) {
+                this.authorizedIngressByMessage.set(admissionKey, authorization);
+            }
             return { authorized: true } as const;
         }
         return {
@@ -195,11 +201,11 @@ export class RallarServerWsRouter {
     }
 
     private toAdmissionKey(message: ALMessage): string {
-        return JSON.stringify([message.id.senderId, message.id.msgId]);
+        return JSON.stringify(message);
     }
 
     private admitIngress(message: ALMessage): RallarServerWsRouter.Ingress | undefined {
-        if (decodeStateSyncMessage(message).kind !== 'unsupported' || this.isSystemMessage(message)) {
+        if (this.isMiddlewareOwnedMessage(message)) {
             return undefined;
         }
         const definition = this.registry.find(message);
@@ -335,6 +341,10 @@ export class RallarServerWsRouter {
         return RESERVED_TOPIC_IDS.has(message.route.topicId) ||
             message.route.topicId === RALLAR_AL_CONTROL_TOPIC_ID ||
             isALControlTypeId(message.payload.typeId);
+    }
+
+    private isMiddlewareOwnedMessage(message: ALMessage): boolean {
+        return decodeStateSyncMessage(message).kind !== 'unsupported' || this.isSystemMessage(message);
     }
 
     private isImplicitUserTopic(topicId: string): boolean {

@@ -8,6 +8,7 @@ import {
     RetryPolicies,
     tryWithPolicy
 } from '../../resilience/TryWith.ts';
+import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type {
     ALInboundAdmissionStore,
@@ -161,6 +162,9 @@ export class ALInboundMessageRuntime {
             );
         }
         catch (error) {
+            if (error instanceof ALAdmissionCorruptionError) {
+                throw error;
+            }
             throw new Error(
                 `Failed to commit inbound message after retries: ${msg.id.msgId}`,
                 { cause: error }

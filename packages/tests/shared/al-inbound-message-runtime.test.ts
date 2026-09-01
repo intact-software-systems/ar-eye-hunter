@@ -23,6 +23,7 @@ import {
     parseALControlMessage,
     planALMessageHandling,
     QueueBoxUtilities,
+    ALAdmissionCorruptionError,
     type ALControlAcceptance,
     type ALInboundMessageRuntime,
     type ALInboundRuntimeStores,
@@ -160,6 +161,19 @@ describe('ALInboundMessageRuntime', () => {
         expect(rejectedFirstCommit).toBe(true);
         expect(dispatchedTexts).toEqual(['one', 'two']);
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
+    });
+
+    it('preserves persisted corruption discovered during normal inbound admission', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const corruption = new ALAdmissionCorruptionError(
+            'inbound:client:peer-1',
+            new TypeError('invalid client admission state')
+        );
+        vi.spyOn(stores.admissionStore, 'readIncomingMessage').mockRejectedValue(corruption);
+        const { runtime } = createInboundHarness(stores);
+
+        await expect(runtime.handleIncomingMessage(createOrderedMessage(1, 'one'), 'peer-1'))
+            .rejects.toBe(corruption);
     });
 
     it('delivers the same message id once for each sender when sender-scoped dedup is requested', async () => {

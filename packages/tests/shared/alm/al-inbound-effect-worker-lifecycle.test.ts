@@ -94,6 +94,95 @@ describe('inbound durable effect worker lifecycle', () => {
         }
     });
 
+    it('surfaces corruption discovered during effect delivery without scheduling retries', async () => {
+        vi.useFakeTimers();
+        const resources = createDefaultALInboundRuntimeResources({
+            selfPeerId: 'receiver',
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        });
+        const message = newALUnicastMessage(
+            'sender',
+            { topicId: 'chat', resourceId: 'corrupt-delivery', contextId: 'room' },
+            'receiver',
+            'chat',
+            { text: 'hello' }
+        );
+        await resources.admissionStore.commitBundle({
+            senderId: message.id.senderId,
+            mutations: [],
+            durableEffects: [{
+                effectId: 'corrupt-delivery',
+                payload: {
+                    kind: 'dispatch-local',
+                    entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+                }
+            }]
+        });
+        const runtime = new ALInboundMessageRuntime({
+            ...resources,
+            inbox: new InMemoryQueueBox(new Map()),
+            planIncomingMessage: (plannedMessage, fromPeerId, stores) =>
+                planALMessageHandling(plannedMessage, { ...stores, selfPeerId: 'receiver', fromPeerId }),
+            readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
+            dispatchInboxEntry: async () => {
+                throw new ALAdmissionCorruptionError(
+                    'inbound:effect:corrupt-delivery',
+                    new TypeError('invalid durable delivery')
+                );
+            },
+            sendControlMessage: async () => {}
+        });
+        try {
+            await expect(runtime.ready()).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+            expect(vi.getTimerCount()).toBe(0);
+        }
+        finally {
+            runtime.dispose();
+        }
+    });
+
+    it('preserves buffered-release corruption for the effect worker to fail closed', async () => {
+        vi.useFakeTimers();
+        const resources = createDefaultALInboundRuntimeResources({
+            selfPeerId: 'receiver',
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+        });
+        await resources.admissionStore.commitBundle({
+            senderId: 'sender',
+            mutations: [],
+            durableEffects: [{
+                effectId: 'corrupt-buffered-release',
+                payload: {
+                    kind: 'release-buffered',
+                    trackKey: 'chat:sender',
+                    seq: 1
+                }
+            }]
+        });
+        vi.spyOn(resources.admissionStore, 'readBufferedRelease').mockRejectedValue(
+            new ALAdmissionCorruptionError(
+                'inbound:buffered:chat:sender:1',
+                new TypeError('invalid buffered message')
+            )
+        );
+        const runtime = new ALInboundMessageRuntime({
+            ...resources,
+            inbox: new InMemoryQueueBox(new Map()),
+            planIncomingMessage: (message, fromPeerId, stores) =>
+                planALMessageHandling(message, { ...stores, selfPeerId: 'receiver', fromPeerId }),
+            readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
+            dispatchInboxEntry: async () => {},
+            sendControlMessage: async () => {}
+        });
+        try {
+            await expect(runtime.ready()).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+            expect(vi.getTimerCount()).toBe(0);
+        }
+        finally {
+            runtime.dispose();
+        }
+    });
+
     it('drains an effect committed while the current drain is finishing', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',

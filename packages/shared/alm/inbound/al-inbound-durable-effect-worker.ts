@@ -123,6 +123,9 @@ export class ALInboundDurableEffectWorker {
                     }
                 }
                 catch (error) {
+                    if (error instanceof ALAdmissionCorruptionError) {
+                        throw error;
+                    }
                     await this.admissionStore.rescheduleEffect({
                         effectId: effect.effectId,
                         workerId: this.dependencies.effectWorkerId,
