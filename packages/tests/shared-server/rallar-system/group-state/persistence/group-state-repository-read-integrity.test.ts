@@ -105,7 +105,7 @@ describe('convergent group and presence state', () => {
                 traceId: null,
                 role: 'admin'
             }
-        } as Partial<GroupMutationCommand>);
+        });
         const bob = memberFor('bob');
         const targetRead: GroupMutationRead = {
             ...base,
@@ -146,7 +146,7 @@ describe('convergent group and presence state', () => {
                 traceId: null,
                 heartbeatTtlMs: 5_000
             }
-        } as Partial<GroupMutationCommand>);
+        });
         const directorRead: GroupMutationRead = {
             ...base,
             group: storedEntry(groupStorageKey(), directorGroup),
@@ -175,7 +175,7 @@ describe('convergent group and presence state', () => {
                 lastHeartbeatAtEpochMs: 1_000,
                 expiresAtEpochMs: 10_000
             }
-        } as Partial<GroupMutationCommand>);
+        });
         const bobAdmission = admissionFor('bob', []);
         const presenceRead: GroupMutationRead = {
             ...targetRead,

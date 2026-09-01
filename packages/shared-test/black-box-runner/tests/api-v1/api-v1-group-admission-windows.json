@@ -150,7 +150,10 @@
         }
       },
       "expect": {
-        "statusCode": [201, 409]
+        "statusCode": [
+          201,
+          409
+        ]
       }
     },
     {
@@ -526,7 +529,9 @@
             "formation": "phased",
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": ["{aliceClientId}"],
+              "assignedPrincipalIds": [
+                "{aliceClientId}"
+              ],
               "count": 1
             },
             "initiator": "manager",
@@ -554,24 +559,91 @@
       }
     },
     {
-      "name": "managerEstablishesTheClosedGroup",
+      "name": "managerPlansTheClosedGroup",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{closedGroupId}/lifecycle/establish/requests/establish-closed-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{closedGroupId}/lifecycle/plan/requests/plan-closed-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "managerPlansTheClosedGroupPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "managerPlansTheClosedGroupPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{closedGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "managerPlansTheClosedGroupLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "managerPlansTheClosedGroupLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "managerPlansTheClosedGroupLayoutVersion": "body.snapshot.version",
+          "managerPlansTheClosedGroupLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "managerPlansTheClosedGroupConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{closedGroupId}/lifecycle/connect/requests/connect-plan-closed-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{managerPlansTheClosedGroupPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{managerPlansTheClosedGroupLayoutGroupRevision}",
+            "presenceRevision": "{managerPlansTheClosedGroupLayoutPresenceRevision}",
+            "version": "{managerPlansTheClosedGroupLayoutVersion}",
+            "state": "{managerPlansTheClosedGroupLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1
+            "formationEpoch": 2
           }
         }
       }
@@ -621,7 +693,7 @@
         "status": 200,
         "body": {
           "lifecycleState": "active",
-          "formationEpoch": 2
+          "formationEpoch": 3
         }
       }
     },
@@ -669,7 +741,9 @@
             "formation": "phased",
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": ["{aliceClientId}"],
+              "assignedPrincipalIds": [
+                "{aliceClientId}"
+              ],
               "count": 1
             },
             "initiator": "manager",
@@ -762,25 +836,95 @@
       }
     },
     {
-      "name": "managerEstablishesTheReopenGroup",
+      "name": "managerPlansTheReopenGroup",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/lifecycle/establish/requests/establish-reopen-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/lifecycle/plan/requests/plan-reopen-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "managerPlansTheReopenGroupPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1,
+            "formationElectorate": [
+              "{aliceClientId}",
+              "{bobClientId}"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "managerPlansTheReopenGroupPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "managerPlansTheReopenGroupLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "managerPlansTheReopenGroupLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "managerPlansTheReopenGroupLayoutVersion": "body.snapshot.version",
+          "managerPlansTheReopenGroupLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "managerPlansTheReopenGroupConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/lifecycle/connect/requests/connect-plan-reopen-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{managerPlansTheReopenGroupPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{managerPlansTheReopenGroupLayoutGroupRevision}",
+            "presenceRevision": "{managerPlansTheReopenGroupLayoutPresenceRevision}",
+            "version": "{managerPlansTheReopenGroupLayoutVersion}",
+            "state": "{managerPlansTheReopenGroupLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1,
-            "formationElectorate": ["{aliceClientId}", "{bobClientId}"]
+            "formationEpoch": 2
           }
         }
       }
@@ -807,7 +951,7 @@
         "status": 200,
         "body": {
           "lifecycleState": "forming",
-          "formationEpoch": 2,
+          "formationEpoch": 3,
           "lastFormationOutcome": {
             "outcome": "below-floor"
           }

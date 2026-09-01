@@ -1,5 +1,4 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type {
     WsServerResolvedRecipient,
     WsServerTargetResolver
@@ -15,7 +14,6 @@ import type { WsServerTargetResolutionOptions } from './ws-server-target-resolut
 interface ResolveBroadcastRecipientsInput {
     readonly scope: 'room' | 'world' | 'all' | 'principal';
     readonly message: ALMessage;
-    readonly authorizedRoomSnapshot: GroupSnapshot | undefined;
     readonly webSocketServer: JsonWebSocketServer;
     readonly options: WsServerTargetResolutionOptions;
 }
@@ -26,15 +24,13 @@ export function createWsServerTargetResolver(
 ): WsServerTargetResolver {
     const resolveGroupRecipients = (
         groupId: string,
-        message: ALMessage,
-        authorizedRoomSnapshot?: GroupSnapshot
+        message: ALMessage
     ): readonly WsServerResolvedRecipient[] =>
         resolveWsGroupTargetRecipients({
             groupId,
             message,
             webSocketServer,
-            options,
-            authorizedRoomSnapshot
+            options
         });
 
     return {
@@ -52,14 +48,14 @@ export function createWsServerTargetResolver(
             return connection?.isOpen ? [{ peerId, connectionId: peerId }] : [];
         },
         resolveGroupRecipients,
-        resolveBroadcastRecipients: (scope, message, authorizedRoomSnapshot) =>
-            resolveBroadcastRecipients({ scope, message, authorizedRoomSnapshot, webSocketServer, options }),
+        resolveBroadcastRecipients: (scope, message) =>
+            resolveBroadcastRecipients({ scope, message, webSocketServer, options }),
         resolvePeerIdForConnection: (connectionId) => connectionId
     };
 }
 
 function resolveBroadcastRecipients(input: ResolveBroadcastRecipientsInput): readonly WsServerResolvedRecipient[] {
-    const { scope, message, webSocketServer, options, authorizedRoomSnapshot } = input;
+    const { scope, message, webSocketServer, options } = input;
     const fixedRecipients = resolveWsFixedTopologyTargetRecipients(webSocketServer, message);
     if (fixedRecipients !== undefined) {
         return fixedRecipients;
@@ -69,8 +65,7 @@ function resolveBroadcastRecipients(input: ResolveBroadcastRecipientsInput): rea
             groupId: readALTargetGroupRef(message)?.groupId ?? message.route.contextId,
             message,
             webSocketServer,
-            options,
-            authorizedRoomSnapshot
+            options
         });
     }
     const clientRecipients = resolveWsClientTargetRecipients({ message, webSocketServer, options });

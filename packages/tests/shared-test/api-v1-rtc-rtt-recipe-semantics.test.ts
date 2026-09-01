@@ -33,7 +33,8 @@ const CASES = [
         recipe: `api-v1-group-formation-managed-burst-${size}.json`,
         steps: ['captureRttReportedAt', 'deriveRtt1x2Reporter', 'deriveRtt1x2Resource', 'reportRtt1x2'],
         sessions: ['client1SessionId', 'client2SessionId'],
-        connections: ['ws-client-1', 'ws-client-2']
+        connections: ['ws-client-1', 'ws-client-2'],
+        adjacencyOutput: 'managerPlansLayoutNextHopsBySessionId'
     }))
 ];
 
@@ -81,10 +82,13 @@ describe('API-v1 RTC RTT recipe execution', () => {
         try {
             for (const sessionIds of [['a-session', 'z-session'], ['z-session', 'a-session']]) {
                 reports.length = 0;
-                const setup = testCase.sessions.map((output, index) => ({
-                    SET: { request: { output, value: sessionIds[index] }, response: {} },
-                    [`seed-${output}`]: { type: 'set' }
-                }));
+                const setup = testCase.sessions.map((output, index) => toSeededOutputInteraction(output, sessionIds[index]));
+                if ('adjacencyOutput' in testCase) {
+                    setup.push(toSeededOutputInteraction(testCase.adjacencyOutput, {
+                        [sessionIds[0]]: [sessionIds[1]],
+                        [sessionIds[1]]: [sessionIds[0]]
+                    }));
+                }
                 const opens = testCase.connections.map((connection) => ({
                     WS: { request: { action: 'open', connection, url: `ws://127.0.0.1:${address.port}/${connection}` }, response: {} },
                     [`open-${connection}`]: { type: 'ws.open' }
@@ -134,6 +138,14 @@ function toRecipeObject(value: JsonWireValue | undefined, label: string): JsonWi
         throw new Error(`Expected ${label} to be an object`);
     }
     return value as JsonWireObject;
+}
+
+function toSeededOutputInteraction(output: string, value: JsonWireValue): JsonWireObject {
+    const interaction: Record<string, JsonWireValue> = {
+        SET: { request: { output, value }, response: {} }
+    };
+    interaction[`seed-${output}`] = { type: 'set' };
+    return interaction;
 }
 
 function runRecipeCli(recipe: string, args: readonly string[]) {

@@ -14,7 +14,6 @@ For the general recipe contract and provider boundary, start with
 | `rallar-stub`           | Simple fake RTC provider                       | No                       | Useful for parser/runner smoke tests.                                                                                              |
 | `rallar-memory`         | Deterministic multi-peer in-memory RTC runtime | No                       | Useful for direct, broadcast, close, reconnect, and routing tests.                                                                 |
 | `rallar-signaling`      | Rallar signaling provider                      | WebSocket signaling only | Opens WebSocket signaling and waits for open by default. Does not create `RTCPeerConnection` or `RTCDataChannel` yet.              |
-| `rallar`                | Compatibility alias                            | WebSocket signaling only | Kept for existing recipes; prefer `rallar-signaling` in new recipes.                                                               |
 | `rallar-browser`        | Browser-backed Rallar provider                 | Yes                      | Opt-in Playwright/Vite provider that loads the browser harness and delegates RTC behavior to the existing browser `rallar` facade. |
 | `rallar-remote-browser` | Control-server-backed browser provider         | Yes                      | Runs the same generic RTC recipe through `rallar-bb-test` and maps remote browser events into the normal runner report stores.     |
 
@@ -23,8 +22,6 @@ The CLI provider named `rallar-signaling` currently maps to:
 ```ts
 createRallarWebRtcWebSocketSignalingProvider();
 ```
-
-The legacy provider name `rallar` maps to the same provider for backward compatibility.
 
 The `rallar-browser` provider currently maps to:
 

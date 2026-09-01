@@ -1511,7 +1511,7 @@
           }
         ]
       },
-      "description": "Managed threshold burst medium tier (N=20): 20 clients join a preset:managed phased group, the creator-manager establishes, readiness holds at zero observed edges, an all-pairs RTT burst covers the planned mesh, and activation fires only at threshold (outcome activated, observedRate 1)."
+      "description": "Managed threshold burst medium tier (N=20): 20 clients join a preset:managed phased group, the creator-manager connects the published layout, readiness holds at zero observed edges, a planned-edge RTT burst covers the mesh, and activation fires only at threshold (outcome activated, observedRate 1)."
     },
     {
       "id": "api-v1-group-formation-burst-large",
@@ -1561,7 +1561,7 @@
           }
         ]
       },
-      "description": "Managed threshold burst large tier (N=50): 50 clients join a preset:managed phased group, the creator-manager establishes, readiness holds at zero observed edges, an all-pairs RTT burst covers the planned mesh, and activation fires only at threshold (outcome activated, observedRate 1)."
+      "description": "Managed threshold burst large tier (N=50): 50 clients join a preset:managed phased group, the creator-manager connects the published layout, readiness holds at zero observed edges, a planned-edge RTT burst covers the mesh, and activation fires only at threshold (outcome activated, observedRate 1)."
     },
     {
       "id": "api-v1-group-formation-churn-large",

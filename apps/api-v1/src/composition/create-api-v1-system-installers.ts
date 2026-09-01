@@ -3,6 +3,7 @@ import type { RallarServerApplicationSystemInstallers } from '@shared-server/ral
 import { installRtcSignalingWsTopic } from '@shared-server/rallar-system/communication/install-rtc-signaling-ws-topic.ts';
 import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+import { GroupConnectTriggerLatchRepository } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
 import { installRtcRttSystemTopic } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
 import {
     installTopologyAppOutbox,
@@ -13,6 +14,7 @@ import {
     initWsLifecycle,
     scheduleWsLifecycleRetry
 } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
@@ -82,7 +84,24 @@ function createTopologyAppOutboxOptions(
         rttRefinementService: topology.rttRefinementService,
         topologyDelivery: runtime.rtcTopologyDelivery,
         nowEpochMs: topology.rtcTopologyOptions.now ?? Date.now,
+        formationAutomation: {
+            latches: new GroupConnectTriggerLatchRepository(new PSqlRuntimeStateRepository(input.database)),
+            readGroup: async (ref) => (await topology.groupStateRepository.readSnapshot(ref))?.group ?? null,
+            readPlanned: async (ref) => await topology.topologySnapshotRepository.findSnapshot(ref) ?? null,
+            submitCommand: (command, atEpochMs) =>
+                runtime.groupStateInboxService.enqueueFormationAutomationCommand(command, atEpochMs),
+            nowEpochMs: topology.rtcTopologyOptions.now ?? Date.now
+        },
         formationCriterion: {
+            deferred: {
+                minIntervalMs: 1_000,
+                nowEpochMs: input.nowEpochMs,
+                schedule: (delayMs, callback) => {
+                    setTimeout(() => {
+                        void callback();
+                    }, delayMs);
+                }
+            },
             readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
             submitCommand: (command, atEpochMs) =>
                 runtime.groupStateInboxService.enqueueFormationCriterionCommand(command, atEpochMs)

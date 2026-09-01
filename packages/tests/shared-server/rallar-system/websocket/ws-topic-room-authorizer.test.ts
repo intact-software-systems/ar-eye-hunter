@@ -11,13 +11,17 @@ import { createGroupStateService } from '@shared-server/rallar-system/group-stat
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
-import type { RallarServerWsRoomAuthorizer } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
+import type {
+    RallarServerWsRoomAuthorizationAllowed,
+    RallarServerWsRoomAuthorizer
+} from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { createGroupRoomWsAuthorizer, type GroupRoomWsAuthorizerDependencies } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import {
     newALBroadcastMessage,
     newALEventRoute,
-    newALMulticastMessage
+    newALMulticastMessage,
+    type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type {
@@ -67,7 +71,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             typeId: 'chat.message.v1'
         }));
 
-        expect(decision).toEqual({ authorized: true, authorizedRoomSnapshot: workspaceB });
+        expect(decision).toEqual(authorizedDecision(workspaceB, message));
     });
 
     it('authorizes room broadcasts using target groupRef without an external resolver', async () => {
@@ -100,7 +104,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             typeId: 'chat.message.v1'
         }));
 
-        expect(decision).toEqual({ authorized: true, authorizedRoomSnapshot: workspaceB });
+        expect(decision).toEqual(authorizedDecision(workspaceB, message));
     });
 
     it('hydrates a cold group snapshot cache from durable state before authorizing', async () => {
@@ -149,7 +153,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             minSnapshotVersion: 3
         }));
 
-        expect(decision).toEqual({ authorized: true, authorizedRoomSnapshot: group });
+        expect(decision).toEqual(authorizedDecision(group, message));
         expect(findGroupStateSnapshotByRef(group.group)?.group.snapshotVersion).toBe(3);
     });
 
@@ -213,7 +217,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             minSnapshotVersion: 4
         }));
 
-        expect(decision).toEqual({ authorized: true, authorizedRoomSnapshot: currentGroup });
+        expect(decision).toEqual(authorizedDecision(currentGroup, message));
         expect(
             findGroupStateSnapshotByRef(currentGroup.group)?.group.snapshotVersion
         ).toBe(4);
@@ -434,7 +438,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             senderId: 'session-b',
             topicId: 'room.crdt',
             typeId: 'crdt.update.v1'
-        }))).resolves.toEqual({ authorized: true, authorizedRoomSnapshot: haltedSnapshot });
+        }))).resolves.toEqual(authorizedDecision(haltedSnapshot, message));
     });
 
     it('rejects archived and deleted room messages with lifecycle policy details', async () => {
@@ -883,4 +887,20 @@ function createGroupSessions(input: CreateGroupSnapshotInput): GroupSnapshot['ac
         lastHeartbeatAtEpochMs: snapshotVersion,
         expiresAtEpochMs
     }));
+}
+
+function authorizedDecision(
+    snapshot: GroupSnapshot,
+    message: Pick<ALMessage, 'targets'>
+): RallarServerWsRoomAuthorizationAllowed {
+    if (!message.targets) {
+        throw new TypeError('Authorized room test message requires targets');
+    }
+    return {
+        authorized: true,
+        audience: {
+            targets: message.targets,
+            sessions: snapshot.activeSessions
+        }
+    };
 }

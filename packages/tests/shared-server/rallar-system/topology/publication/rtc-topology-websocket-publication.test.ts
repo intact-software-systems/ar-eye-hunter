@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
+import { GroupConnectTriggerLatchRepository } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyGroupSnapshotReader } from '@shared-server/rallar-system/topology/planning/group-topology-planning-contracts.ts';
@@ -31,11 +32,7 @@ import {
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -101,7 +98,6 @@ describe('RTC topology websocket publication', () => {
             socket: server,
             name: 'server-1'
         });
-
         const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
         clientStateSnapshotsRepository.setClientStateSnapshots([
             createClientSnapshot('session-a'),
@@ -195,7 +191,10 @@ describe('RTC topology websocket publication', () => {
         });
         const activeEntry = await appOutbox.getItem(activeKey!);
         const activeMessage = decodePersistedALMessage(activeEntry!.resource);
-        const activeEnvelope = readRtcTopologyWorkEnvelope(activeMessage, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE);
+        const activeEnvelope = readRtcTopologyWorkEnvelope(
+            activeMessage,
+            AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
+        );
         expect(activeMessage.route).toEqual(activeKey);
         expect(activeEnvelope).toMatchObject({
             resourceId: expect.stringContaining(
@@ -363,7 +362,10 @@ describe('RTC topology websocket publication', () => {
         expect(await appOutboxQueue.getAllKeys()).toHaveLength(1);
         const entry = await appOutboxQueue.getItem(key!);
         const message = decodePersistedALMessage(entry!.resource);
-        const envelope = readRtcTopologyWorkEnvelope(message, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE);
+        const envelope = readRtcTopologyWorkEnvelope(
+            message,
+            AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
+        );
         expect(message.route).toEqual(key);
         expect(envelope).toMatchObject({
             resourceId: deliveryId,
@@ -443,14 +445,18 @@ function countSentTopologyMessages(sockets: ReadonlyMap<string, FakeSocket>): nu
         .filter((sent) => sent.payload.typeId === AppTopics.overlayTopology).length;
 }
 
-interface TopologyExecutionDependencies {
-    readonly database: PSqlSql;
-    readonly executionRepository: RtcTopologyExecutionRepository;
-}
-
-function createTopologyExecutionDependencies(runtimeRepository: FakeRuntimeStateRepository): TopologyExecutionDependencies {
+function createTopologyExecutionDependencies(runtimeRepository: FakeRuntimeStateRepository) {
     return {
         database: createUnusedDatabase(),
+        formationAutomation: {
+            latches: new GroupConnectTriggerLatchRepository(runtimeRepository),
+            readGroup: async () => null,
+            readPlanned: async () => null,
+            submitCommand: async () => {
+                throw new Error('Unexpected formation automation');
+            },
+            nowEpochMs: () => 1000
+        },
         executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
     };
 }

@@ -174,7 +174,10 @@
             },
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": ["{aliceClientId}", "{bobClientId}"],
+              "assignedPrincipalIds": [
+                "{aliceClientId}",
+                "{bobClientId}"
+              ],
               "count": 1
             },
             "admission": {
@@ -190,7 +193,9 @@
             "groupId": "{managerGroupId}",
             "lifecycleState": "forming",
             "formationEpoch": 0,
-            "formationElectorate": ["{bobClientId}"]
+            "formationElectorate": [
+              "{bobClientId}"
+            ]
           }
         }
       }
@@ -228,17 +233,19 @@
         "status": 200,
         "body": {
           "lifecycleState": "forming",
-          "managerPrincipalIds": ["{aliceClientId}"]
+          "managerPrincipalIds": [
+            "{aliceClientId}"
+          ]
         }
       }
     },
     {
-      "name": "ownerCannotEstablishPastAssignedManager",
+      "name": "ownerCannotPlansPastAssignedManager",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/establish/requests/establish-bob-denied-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/plan/requests/plan-bob-denied-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -256,25 +263,95 @@
       }
     },
     {
-      "name": "assignedManagerEstablishes",
+      "name": "assignedManagerPlans",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/establish/requests/establish-alice-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/plan/requests/plan-alice-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "assignedManagerPlansPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1,
+            "formationElectorate": [
+              "{aliceClientId}",
+              "{bobClientId}"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "assignedManagerPlansPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "assignedManagerPlansLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "assignedManagerPlansLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "assignedManagerPlansLayoutVersion": "body.snapshot.version",
+          "assignedManagerPlansLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "assignedManagerPlansConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managerGroupId}/lifecycle/connect/requests/connect-plan-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{assignedManagerPlansPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{assignedManagerPlansLayoutGroupRevision}",
+            "presenceRevision": "{assignedManagerPlansLayoutPresenceRevision}",
+            "version": "{assignedManagerPlansLayoutVersion}",
+            "state": "{assignedManagerPlansLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1,
-            "formationElectorate": ["{aliceClientId}", "{bobClientId}"]
+            "formationEpoch": 2
           }
         }
       }
@@ -311,7 +388,9 @@
       "expect": {
         "status": 200,
         "body": {
-          "managerPrincipalIds": ["{bobClientId}"]
+          "managerPrincipalIds": [
+            "{bobClientId}"
+          ]
         }
       }
     },
@@ -333,7 +412,7 @@
         "body": {
           "group": {
             "lifecycleState": "active",
-            "formationEpoch": 2
+            "formationEpoch": 3
           }
         }
       }
@@ -362,7 +441,10 @@
             },
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": ["{aliceClientId}", "{bobClientId}"],
+              "assignedPrincipalIds": [
+                "{aliceClientId}",
+                "{bobClientId}"
+              ],
               "count": 1
             },
             "admission": {
@@ -406,24 +488,91 @@
       }
     },
     {
-      "name": "leaveTwinManagerEstablishes",
+      "name": "leaveTwinManagerPlans",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/lifecycle/establish/requests/establish-leave-twin-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/lifecycle/plan/requests/plan-leave-twin-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "leaveTwinManagerPlansPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "leaveTwinManagerPlansPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "leaveTwinManagerPlansLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "leaveTwinManagerPlansLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "leaveTwinManagerPlansLayoutVersion": "body.snapshot.version",
+          "leaveTwinManagerPlansLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "leaveTwinManagerPlansConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{leaveGroupId}/lifecycle/connect/requests/connect-plan-leave-twin-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{leaveTwinManagerPlansPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{leaveTwinManagerPlansLayoutGroupRevision}",
+            "presenceRevision": "{leaveTwinManagerPlansLayoutPresenceRevision}",
+            "version": "{leaveTwinManagerPlansLayoutVersion}",
+            "state": "{leaveTwinManagerPlansLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1
+            "formationEpoch": 2
           }
         }
       }
@@ -471,7 +620,9 @@
         "status": 200,
         "body": {
           "lifecycleState": "connecting",
-          "managerPrincipalIds": ["{bobClientId}"]
+          "managerPrincipalIds": [
+            "{bobClientId}"
+          ]
         }
       }
     },
@@ -493,7 +644,7 @@
         "body": {
           "group": {
             "lifecycleState": "active",
-            "formationEpoch": 2
+            "formationEpoch": 3
           }
         }
       }
@@ -522,7 +673,9 @@
             },
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": ["{aliceClientId}"],
+              "assignedPrincipalIds": [
+                "{aliceClientId}"
+              ],
               "count": 1
             },
             "admission": {
@@ -566,24 +719,91 @@
       }
     },
     {
-      "name": "soleManagerEstablishes",
+      "name": "soleManagerPlans",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroConnectingGroupId}/lifecycle/establish/requests/establish-zero-connecting-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroConnectingGroupId}/lifecycle/plan/requests/plan-zero-connecting-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "soleManagerPlansPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "soleManagerPlansPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroConnectingGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "soleManagerPlansLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "soleManagerPlansLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "soleManagerPlansLayoutVersion": "body.snapshot.version",
+          "soleManagerPlansLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "soleManagerPlansConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroConnectingGroupId}/lifecycle/connect/requests/connect-plan-zero-connecting-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{soleManagerPlansPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{soleManagerPlansLayoutGroupRevision}",
+            "presenceRevision": "{soleManagerPlansLayoutPresenceRevision}",
+            "version": "{soleManagerPlansLayoutVersion}",
+            "state": "{soleManagerPlansLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1
+            "formationEpoch": 2
           }
         }
       }
@@ -707,7 +927,9 @@
             },
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": ["{aliceClientId}"],
+              "assignedPrincipalIds": [
+                "{aliceClientId}"
+              ],
               "count": 1
             },
             "admission": {
@@ -750,7 +972,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroManagerGroupId}/lifecycle/establish/requests/establish-zero-denied-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{zeroManagerGroupId}/lifecycle/plan/requests/plan-zero-denied-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -799,7 +1021,9 @@
       "expect": {
         "status": 200,
         "body": {
-          "managerPrincipalIds": ["{aliceClientId}"]
+          "managerPrincipalIds": [
+            "{aliceClientId}"
+          ]
         }
       }
     }

@@ -9,6 +9,46 @@ const ROOT_PRESENCE_CALL = '  registerGroupPresenceRoutes(app, dependencies, aut
 const PRIVATE_PRESENCE_CALL = '  registerConnectGroupPresenceRoute(app, dependencies, authorization);';
 
 describe('group HTTP mutation route construction', () => {
+    it('follows an imported family binding renamed locally at the root', () => {
+        const source = readFileSync(ROOT_ROUTES, 'utf8');
+        const renamed = source.replace('import { registerGroupPresenceRoutes }', 'import { registerGroupPresenceRoutes as mountPresence }')
+            .replace('registerGroupPresenceRoutes(app, dependencies, authorization)', 'mountPresence(app, dependencies, authorization)');
+        expect(renamed).not.toBe(source);
+        expect(validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, { sourceOverrides: new Map([[ROOT_ROUTES, renamed]]) })).toEqual([]);
+    });
+
+    it('follows renamed private owners and independently renamed owner parameters', () => {
+        const source = readFileSync(PRESENCE_ROUTES, 'utf8');
+        const start = source.indexOf('function registerConnectGroupPresenceRoute');
+        const renamed = (source.slice(0, start) + source.slice(start).replace(/\bapp\b/g, 'routeApp'))
+            .replace(/\bregisterConnectGroupPresenceRoute\b/g, 'mountPresenceConnect');
+        expect(renamed).not.toBe(source);
+        expect(validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, { sourceOverrides: new Map([[PRESENCE_ROUTES, renamed]]) })).toEqual([]);
+    });
+
+    it.each([ROOT_ROUTES, PRESENCE_ROUTES])('accepts equivalent local bindings in %s', (filePath) => {
+        const source = readFileSync(filePath, 'utf8');
+        const start = source.indexOf('export function');
+        const renamed = source.slice(0, start) + source.slice(start)
+            .replace(/\bapp\b/g, 'router')
+            .replace(/\bdependencies\b/g, 'ports')
+            .replace(/\bauthorization\b/g, 'access');
+        expect(validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
+            sourceOverrides: new Map([[filePath, renamed]])
+        })).toEqual([]);
+    });
+
+    it.each([ROOT_ROUTES, PRESENCE_ROUTES])('accepts reordered independent registrations and inert statements in %s', (filePath) => {
+        const source = readFileSync(filePath, 'utf8');
+        const calls = source.match(/^    register\w+\(.*\);$/gm) ?? [];
+        let next = calls.length;
+        const reordered = source.replace(/^    register\w+\(.*\);$/gm, () => calls[--next]!);
+        const changed = reordered.replace('): void {', '): void {\n    const label = "group routes";');
+        expect(validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
+            sourceOverrides: new Map([[filePath, changed]])
+        })).toEqual([]);
+    });
+
     it('rejects a canonical family name rebound to a different imported family', () => {
         const source = readFileSync(ROOT_ROUTES, 'utf8');
         const mutated = source

@@ -95,7 +95,7 @@ describe('black-box runner recipe matrix', () => {
         expect([...covered].sort()).toEqual(expect.arrayContaining(tests.sort()));
     });
 
-    it('uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture', () => {
+    it('uses rallar-signaling for signaling recipe examples', () => {
         const { entries } = readMatrix();
         const signalingEntries = entries.filter((entry) => entry.category === 'rallar-signaling');
 
@@ -107,11 +107,6 @@ describe('black-box runner recipe matrix', () => {
         signalingEntries.forEach((entry) => {
             expect(rtcProviders(readRecipe(entry.recipe))).toEqual(['rallar-signaling', 'rallar-signaling']);
         });
-
-        const legacyAliasFixture = JSON.parse(
-            readFileSync(path.join(repoRoot, 'packages/tests/shared-test/examples/rtc-rallar-two-peer-chat.json'), 'utf8')
-        );
-        expect(rtcProviders(legacyAliasFixture)).toEqual(['rallar', 'rallar']);
     });
 
     it('classifies profiles and execution modes explicitly', () => {

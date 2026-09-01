@@ -52,62 +52,69 @@ import type {
 } from './mutation/group-mutation-contracts.ts';
 import type { GroupSessionCleanupInput } from './presence/group-session-cleanup.ts';
 
-export type GroupWritten = Readonly<{
-    snapshot: GroupSnapshot;
-    event: GroupEvent;
-}>;
+import type {
+    GroupConnectAppInboxPayload,
+    GroupReconfigureAppInboxPayload
+} from './inbox/group-state-inbox-contracts.ts';
 
-export type GroupMutationWritten = Readonly<{
-    snapshot: GroupSnapshot;
-    event: GroupEvent | null;
-}>;
+export interface GroupWritten {
+    readonly snapshot: GroupSnapshot;
+    readonly event: GroupEvent;
+}
 
-export type GroupStateWritten = Readonly<{
-    status: 'created' | 'ok';
-    result: GroupMutationWritten;
-}>;
+export interface GroupMutationWritten {
+    readonly snapshot: GroupSnapshot;
+    readonly event: GroupEvent | null;
+}
+
+export interface GroupStateWritten {
+    readonly status: 'created' | 'ok';
+    readonly result: GroupMutationWritten;
+}
 
 export type GroupJoinCodeMutationWritten =
     & GroupJoinCodeResponse
     & Readonly<{ event: GroupEvent | null; }>;
 
-export type GroupJoinCodeWritten = Readonly<{
-    status: 'ok';
-    result: GroupJoinCodeMutationWritten;
-}>;
+export interface GroupJoinCodeWritten {
+    readonly status: 'ok';
+    readonly result: GroupJoinCodeMutationWritten;
+}
 
-export type GroupSnapshotPageOptions = Readonly<{
-    afterKey?: string;
-    limit: number;
-}>;
+export interface GroupSnapshotPageOptions {
+    readonly afterKey?: string;
+    readonly limit: number;
+}
 
-export type GroupSnapshotPage = Readonly<{
-    snapshots: readonly GroupSnapshot[];
-    scannedGroupCount: number;
-    hasMore: boolean;
-    nextGroupKey?: string;
-}>;
+export interface GroupSnapshotPage {
+    readonly snapshots: readonly GroupSnapshot[];
+    readonly scannedGroupCount: number;
+    readonly hasMore: boolean;
+    readonly nextGroupKey?: string;
+}
 
-export type GroupMutationAuthorityProof = Readonly<{
-    version: 1;
-    principalId: string;
-    sessionId: string;
-    sessionIssuedAtEpochMs: number;
-    sessionExpiresAtEpochMs: number;
-    commandMac: string;
-}>;
+export interface GroupMutationAuthorityProof {
+    readonly version: 1;
+    readonly principalId: string;
+    readonly sessionId: string;
+    readonly sessionIssuedAtEpochMs: number;
+    readonly sessionExpiresAtEpochMs: number;
+    readonly commandMac: string;
+}
 
 export type GroupMutationAuthority = IssuedAuthSession | GroupMutationAuthorityProof;
 
 export const GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS = 253_402_300_799_999;
 
-export type GroupMutationDescriptor = Readonly<{
-    operation: GroupMutationCommand['operation'];
-    scope: StateScope;
-    groupId: string;
-    targetPrincipalId: string | null;
-    sessionId: string | null;
-    request:
+export interface GroupMutationDescriptor {
+    readonly operation: GroupMutationCommand['operation'];
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly targetPrincipalId: string | null;
+    readonly sessionId: string | null;
+    readonly request:
+        | GroupConnectAppInboxPayload['request']
+        | GroupReconfigureAppInboxPayload['request']
         | CreateGroupRequest
         | UpdateGroupRequest
         | AppointGroupDirectorRequest
@@ -125,30 +132,30 @@ export type GroupMutationDescriptor = Readonly<{
         | ConnectGroupPresenceSessionRequest
         | HeartbeatGroupPresenceSessionRequest
         | DisconnectGroupPresenceSessionRequest;
-}>;
+}
 
-export type GroupMutationPreparation = Readonly<{
-    authorityProof: GroupMutationAuthorityProof | null;
-    descriptor: GroupMutationDescriptor | null;
-    command: GroupMutationCommand;
-    facts: Omit<GroupMutationFacts, 'attemptCount'>;
-    causalToken: string;
-    queueResourceId: string;
-}>;
+export interface GroupMutationPreparation {
+    readonly authorityProof: GroupMutationAuthorityProof | null;
+    readonly descriptor: GroupMutationDescriptor | null;
+    readonly command: GroupMutationCommand;
+    readonly facts: Omit<GroupMutationFacts, 'attemptCount'>;
+    readonly causalToken: string;
+    readonly queueResourceId: string;
+}
 
-export type AuthorizedGroupMutation = Readonly<{
-    authorityProof: GroupMutationAuthorityProof;
-    descriptor: GroupMutationDescriptor;
-}>;
+export interface AuthorizedGroupMutation {
+    readonly authorityProof: GroupMutationAuthorityProof;
+    readonly descriptor: GroupMutationDescriptor;
+}
 
-export type GroupStateMutationCommand = Readonly<{
-    authorityProof: GroupMutationAuthorityProof | null;
-    descriptor: GroupMutationDescriptor | null;
-    command: GroupMutationCommand;
-    facts: GroupMutationFacts;
-}>;
+export interface GroupStateMutationCommand {
+    readonly authorityProof: GroupMutationAuthorityProof | null;
+    readonly descriptor: GroupMutationDescriptor | null;
+    readonly command: GroupMutationCommand;
+    readonly facts: GroupMutationFacts;
+}
 
-export type GroupStateMutationService = Readonly<{
+export interface GroupStateMutationService {
     read(command: GroupStateMutationCommand): Promise<GroupMutationRead>;
     compute(command: GroupStateMutationCommand, read: GroupMutationRead): GroupMutationComputed;
     validate(
@@ -160,7 +167,7 @@ export type GroupStateMutationService = Readonly<{
         transaction: PSqlSql,
         computed: GroupMutationComputedWrite
     ): Promise<GroupMutationReceipt>;
-}>;
+}
 
 export type GroupStateService =
     & GroupStateMutationService
@@ -214,30 +221,30 @@ export type GroupStateService =
         observeSnapshot(snapshot: GroupSnapshot): Promise<GroupSnapshot>;
     }>;
 
-export type GroupStateRuntime = Readonly<{
-    service: GroupStateService;
-}>;
+export interface GroupStateRuntime {
+    readonly service: GroupStateService;
+}
 
-export type GroupStateServiceDependencies = Readonly<{
-    runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
+export interface GroupStateServiceDependencies {
+    readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
     /**
      * Operational capacity defaults from runtime configuration; absent when the
      * runtime configures none, which keeps stored-cap-only admission.
      */
-    capacity?: GroupPolicyCapacityConfig;
-    groupStateEventStore: GroupStateEventStore;
-    now?: () => number;
-    randomId?: () => string;
-    serviceId: string;
-    timing?: RallarTimingSink;
-    authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>;
+    readonly capacity?: GroupPolicyCapacityConfig;
+    readonly groupStateEventStore: GroupStateEventStore;
+    readonly now?: () => number;
+    readonly randomId?: () => string;
+    readonly serviceId: string;
+    readonly timing?: RallarTimingSink;
+    readonly authSessionRepository: Pick<AuthSessionRepository, 'findBySessionId'>;
     /**
      * Reads the stored planned-layout row — snapshot, identity, revision and
      * input fingerprint. Null when no planned row exists. Deployments without
      * a topology subsystem supply a constant null reader, which fences every
      * layout-bound command closed as no-planned-layout.
      */
-    readPlannedLayoutRow: (ref: GroupRef) => Promise<GroupPlannedLayoutRow | null>;
+    readonly readPlannedLayoutRow: (ref: GroupRef) => Promise<GroupPlannedLayoutRow | null>;
     /** Reads the accepted slot's identity and revision; null before promotion. */
-    readAcceptedLayoutRow: (ref: GroupRef) => Promise<GroupAcceptedLayoutRow | null>;
-}>;
+    readonly readAcceptedLayoutRow: (ref: GroupRef) => Promise<GroupAcceptedLayoutRow | null>;
+}

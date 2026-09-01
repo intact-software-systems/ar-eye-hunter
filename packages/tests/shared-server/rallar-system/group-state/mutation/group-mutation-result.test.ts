@@ -5,8 +5,8 @@ import type {
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/validate-group-mutation-result.ts';
-import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
+import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/assert-group-mutation-result.ts';
+import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type {
     AuditStamp,
@@ -91,10 +91,10 @@ function idempotencyRecord(): GroupMutationIdempotencyRecord {
 describe('group mutation receipt causal invariants', () => {
     it('requires receipt snapshotVersion to equal causal groupRevision', () => {
         const valid = idempotencyRecord();
-        expect(() => validateGroupMutationIdempotencyRecord(valid, groupRef)).not.toThrow();
+        expect(() => assertGroupMutationIdempotencyRecord(valid, groupRef)).not.toThrow();
 
         expect(() =>
-            validateGroupMutationIdempotencyRecord(
+            assertGroupMutationIdempotencyRecord(
                 {
                     ...valid,
                     receipt: { ...valid.receipt, snapshotVersion: 2 }
@@ -164,7 +164,7 @@ describe('group mutation receipt causal invariants', () => {
                 }
             });
             expect(() =>
-                validateGroupMutation({
+                assertGroupMutation({
                     command,
                     read: fencedRead,
                     facts,
@@ -213,7 +213,7 @@ describe('group mutation receipt causal invariants', () => {
 
             for (const malformed of cases) {
                 expect(() =>
-                    validateGroupMutation({
+                    assertGroupMutation({
                         command,
                         read,
                         facts,
@@ -281,7 +281,7 @@ describe('group mutation receipt causal invariants', () => {
                 expect
                     .soft(
                         () =>
-                            validateGroupMutation({
+                            assertGroupMutation({
                                 command,
                                 read,
                                 facts,
@@ -361,6 +361,7 @@ function createMutationRead(): GroupMutationRead {
     };
     return {
         idempotency: null,
+        connectTriggerLatch: null,
         group: storedEntry(groupStorageKey(), group),
         expiredGroupEntry: null,
         actorMember,

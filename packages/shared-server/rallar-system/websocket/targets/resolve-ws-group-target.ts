@@ -14,19 +14,11 @@ export interface ResolveWsGroupTargetInput {
     readonly message: ALMessage;
     readonly webSocketServer: JsonWebSocketServer;
     readonly options: WsServerTargetResolutionOptions;
-    readonly authorizedRoomSnapshot?: GroupSnapshot;
 }
 
 export function resolveWsGroupTargetRecipients(
     input: ResolveWsGroupTargetInput
 ): readonly WsServerResolvedRecipient[] {
-    if (input.authorizedRoomSnapshot) {
-        const groupRef = readALTargetGroupRef(input.message);
-        return groupRef && input.groupId === groupRef.groupId &&
-                isSameGroupRef(groupRef, input.authorizedRoomSnapshot.group)
-            ? resolveLiveGroupSessions(input, input.authorizedRoomSnapshot)
-            : [];
-    }
     const decoded = decodeStateSyncMessage(input.message);
     if (decoded.kind === 'invalid') {
         return [];

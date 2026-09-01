@@ -1,7 +1,7 @@
-import type { GroupLifecyclePolicy, GroupTransportState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupTransportState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
-import { canCommandGroupAuthority } from '../../policy/group-lifecycle-policy.ts';
+import { canCommandGroupAuthority, canMutateActiveGroup } from '../../policy/group-lifecycle-policy.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -9,8 +9,14 @@ import type {
     GroupMutationRead,
     GroupTransportOperation
 } from '../group-mutation-contracts.ts';
-import { auditStamp, computeGroupMutationWriteResult, noOp, requireGroup } from '../group-mutation-result.ts';
-import { assertActive, assertAllowed, toGroupAuthorityPolicyInput } from './group-aggregate-mutation-policy.ts';
+import {
+    auditStamp,
+    computeGroupMutationWriteResult,
+    noOp,
+    rejected,
+    rejectedByGroupPolicy
+} from '../group-mutation-result.ts';
+import { toGroupAuthorityPolicyInput } from './group-aggregate-mutation-policy.ts';
 import { resolveGroupAuthorityPolicy, toCorruptPolicyRejection } from './resolve-group-authority-policy.ts';
 
 const TRANSPORT_STATE_BY_OPERATION = {
@@ -32,13 +38,30 @@ export function computeGroupTransportMutation(
     read: GroupMutationRead,
     facts: GroupMutationFacts
 ): GroupMutationComputed {
-    const stored = requireGroup(read, command.aggregateRef);
-    assertActive(stored.value, facts.nowEpochMs);
+    const stored = read.group;
+    if (stored === null) {
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: `Group not found: ${command.aggregateRef.groupId}`
+        });
+    }
+    const active = canMutateActiveGroup({ group: stored.value, nowEpochMs: facts.nowEpochMs });
+    if (!active.allowed) {
+        return rejectedByGroupPolicy({ command, read, facts, denial: active });
+    }
     const resolution = resolveGroupAuthorityPolicy(read);
     if (resolution.status === 'corrupt') {
         return toCorruptPolicyRejection({ command, read, facts, reason: resolution.reason });
     }
-    validateGroupTransportAuthority({ command, read, facts, policy: resolution.policy });
+    const authority = canCommandGroupAuthority(
+        toGroupAuthorityPolicyInput({ command, read, facts, policy: resolution.policy })
+    );
+    if (!authority.allowed) {
+        return rejectedByGroupPolicy({ command, read, facts, denial: authority });
+    }
     const transportState = TRANSPORT_STATE_BY_OPERATION[command.operation];
     // The valve has no repair to perform, so a command that asks for the
     // state the group already holds changes nothing and pushes no delta.
@@ -67,15 +90,4 @@ export function computeGroupTransportMutation(
         eventType: 'group-updated',
         presenceSummaryWork: 'enqueue'
     });
-}
-
-interface GroupTransportAuthorityInput {
-    readonly command: Extract<GroupMutationCommand, { operation: GroupTransportOperation; }>;
-    readonly read: GroupMutationRead;
-    readonly facts: GroupMutationFacts;
-    readonly policy: GroupLifecyclePolicy;
-}
-
-function validateGroupTransportAuthority(input: GroupTransportAuthorityInput): void {
-    assertAllowed(canCommandGroupAuthority(toGroupAuthorityPolicyInput(input)));
 }

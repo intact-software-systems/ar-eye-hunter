@@ -1,0 +1,100 @@
+import type { JsonWireObject } from '../../../protocol/json-wire-identity.ts';
+import {
+    assertRequiredKeys,
+    requireNonNegativeSafeInteger,
+    requireOneOf
+} from '../../group-state-validation-primitives.ts';
+import type { GroupLifecycleTransitionOperation } from '../group-mutation-contracts.ts';
+import { assertExpectedLayoutIdentity } from './assert-expected-layout-identity.ts';
+
+interface AssertLifecycleGroupMutationCommandInput {
+    readonly operation: GroupLifecycleTransitionOperation | 'applyPlannedLayout';
+    readonly input: JsonWireObject;
+    readonly requiredInputKeys: readonly string[];
+}
+
+/**
+ * Lifecycle commands share command-level fence validation but differ from
+ * ordinary aggregate mutations in which fence is mandatory and whether it
+ * must name a layout. Keeping that decision here keeps the generic command
+ * validator focused on envelope, ownership, and exact-key checks.
+ */
+export function assertLifecycleGroupMutationCommandInput({
+    operation,
+    input,
+    requiredInputKeys
+}: AssertLifecycleGroupMutationCommandInput): void {
+    // A wire-decoded criterion command missing its fence keys is malformed
+    // here, never a lying stale-epoch rejection deep in compute.
+    assertRequiredKeys(input, requiredInputKeys, `Group ${operation} input`);
+    if (
+        operation === 'connectGroup' && input.connectTriggerGeneration !== null &&
+        (typeof input.connectTriggerGeneration !== 'string' || input.connectTriggerGeneration.length === 0)
+    ) {
+        throw new TypeError('Group connect trigger generation must be null or a non-empty string');
+    }
+    if (operation === 'connectGroup' || operation === 'applyPlannedLayout') {
+        assertRequiredLayoutFence(input, operation);
+        return;
+    }
+    if (operation === 'reconfigureGroup') {
+        assertNullableFormationEpoch(input, operation);
+        if (input.landing !== null) {
+            requireOneOf(input.landing, ['apply', 'hold'], 'Group reconfigureGroup landing');
+        }
+        return;
+    }
+    if (operation === 'activateGroup') {
+        if (input.observedRate !== null && !isUnitIntervalNumber(input.observedRate)) {
+            throw new TypeError('Group activateGroup observedRate must be null or within [0, 1]');
+        }
+        if (input.degraded !== null && typeof input.degraded !== 'boolean') {
+            throw new TypeError('Group activateGroup degraded must be boolean or null');
+        }
+        assertNullableFormationEpoch(input, operation);
+        assertNullableExpectedLayout(input, operation);
+        return;
+    }
+    if (operation === 'failGroupFormation') {
+        if (!isUnitIntervalNumber(input.observedRate)) {
+            throw new TypeError('Group failGroupFormation observedRate must be within [0, 1]');
+        }
+        assertNullableFormationEpoch(input, operation);
+        assertNullableExpectedLayout(input, operation);
+        return;
+    }
+    assertNullableFormationEpoch(input, operation);
+}
+
+function assertRequiredLayoutFence(input: JsonWireObject, operation: string): void {
+    // The fences are non-null on these operations: null here is as malformed
+    // as an absent key.
+    requireNonNegativeSafeInteger(
+        input.expectedFormationEpoch,
+        `Group ${operation} expectedFormationEpoch`
+    );
+    if (input.expectedLayout === null) {
+        throw new TypeError(`Group ${operation} expectedLayout must not be null`);
+    }
+    assertNullableExpectedLayout(input, operation);
+}
+
+function assertNullableFormationEpoch(input: JsonWireObject, operation: string): void {
+    if (input.expectedFormationEpoch !== null) {
+        requireNonNegativeSafeInteger(
+            input.expectedFormationEpoch,
+            `Group ${operation} expectedFormationEpoch`
+        );
+    }
+}
+
+function assertNullableExpectedLayout(input: JsonWireObject, operation: string): void {
+    if (input.expectedLayout === null) {
+        return;
+    }
+    assertExpectedLayoutIdentity(input, `Group ${operation} expectedLayout`);
+}
+
+function isUnitIntervalNumber(value: JsonWireObject[string]): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+}

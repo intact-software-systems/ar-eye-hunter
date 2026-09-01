@@ -180,7 +180,10 @@
         }
       },
       "expect": {
-        "statusCode": [201, 409]
+        "statusCode": [
+          201,
+          409
+        ]
       }
     },
     {
@@ -236,7 +239,10 @@
         }
       },
       "expect": {
-        "statusCode": [201, 409]
+        "statusCode": [
+          201,
+          409
+        ]
       }
     },
     {
@@ -327,7 +333,9 @@
         "status": 200,
         "body": {
           "lifecycleState": "forming",
-          "managerPrincipalIds": ["{aliceClientId}"]
+          "managerPrincipalIds": [
+            "{aliceClientId}"
+          ]
         }
       }
     },
@@ -555,24 +563,141 @@
       }
     },
     {
-      "name": "managerEstablishesTheLobby",
+      "name": "managerPlansTheLobby",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/lifecycle/establish/requests/establish-match-lobby-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/lifecycle/plan/requests/plan-match-lobby-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "managerPlansTheLobbyPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "readCurrentLobbyManager",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "lobbyManagerPrincipalId": "body.managerPrincipalIds[0]"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "planned",
+          "formationEpoch": 1
+        }
+      }
+    },
+    {
+      "name": "deriveCurrentLobbyManagerAuthHeader",
+      "type": "set",
+      "output": "lobbyManagerAuthHeader",
+      "secret": true,
+      "redactAs": "lobbyManagerAuthHeader",
+      "transform": {
+        "if": {
+          "condition": {
+            "equals": [
+              {
+                "path": "outputs.lobbyManagerPrincipalId"
+              },
+              {
+                "path": "outputs.aliceClientId"
+              }
+            ]
+          },
+          "then": {
+            "path": "outputs.aliceAuthHeader"
+          },
+          "else": {
+            "path": "outputs.bobAuthHeader"
+          }
+        }
+      }
+    },
+    {
+      "name": "managerPlansTheLobbyPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "managerPlansTheLobbyLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "managerPlansTheLobbyLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "managerPlansTheLobbyLayoutVersion": "body.snapshot.version",
+          "managerPlansTheLobbyLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "managerPlansTheLobbyConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/lifecycle/connect/requests/connect-plan-match-lobby-{runId}",
+        "headers": {
+          "Authorization": "{lobbyManagerAuthHeader}",
+          "x-client-id": "{lobbyManagerPrincipalId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{managerPlansTheLobbyPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{managerPlansTheLobbyLayoutGroupRevision}",
+            "presenceRevision": "{managerPlansTheLobbyLayoutPresenceRevision}",
+            "version": "{managerPlansTheLobbyLayoutVersion}",
+            "state": "{managerPlansTheLobbyLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1
+            "formationEpoch": 2
           }
         }
       }
@@ -809,24 +934,141 @@
       }
     },
     {
-      "name": "electedManagerEstablishesTheArena",
+      "name": "electedManagerPlansTheArena",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/lifecycle/establish/requests/establish-match-arena-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/lifecycle/plan/requests/plan-match-arena-{runId}",
         "headers": {
           "Authorization": "{carolAuthHeader}",
           "x-client-id": "{carolClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "electedManagerPlansTheArenaPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "readCurrentArenaManager",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/formation",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "outputs": {
+          "arenaManagerPrincipalId": "body.managerPrincipalIds[0]"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "planned",
+          "formationEpoch": 1
+        }
+      }
+    },
+    {
+      "name": "deriveCurrentArenaManagerAuthHeader",
+      "type": "set",
+      "output": "arenaManagerAuthHeader",
+      "secret": true,
+      "redactAs": "arenaManagerAuthHeader",
+      "transform": {
+        "if": {
+          "condition": {
+            "equals": [
+              {
+                "path": "outputs.arenaManagerPrincipalId"
+              },
+              {
+                "path": "outputs.carolClientId"
+              }
+            ]
+          },
+          "then": {
+            "path": "outputs.carolAuthHeader"
+          },
+          "else": {
+            "path": "outputs.danAuthHeader"
+          }
+        }
+      }
+    },
+    {
+      "name": "electedManagerPlansTheArenaPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/topology",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "electedManagerPlansTheArenaLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "electedManagerPlansTheArenaLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "electedManagerPlansTheArenaLayoutVersion": "body.snapshot.version",
+          "electedManagerPlansTheArenaLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "electedManagerPlansTheArenaConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/lifecycle/connect/requests/connect-plan-match-arena-{runId}",
+        "headers": {
+          "Authorization": "{arenaManagerAuthHeader}",
+          "x-client-id": "{arenaManagerPrincipalId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{electedManagerPlansTheArenaPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{electedManagerPlansTheArenaLayoutGroupRevision}",
+            "presenceRevision": "{electedManagerPlansTheArenaLayoutPresenceRevision}",
+            "version": "{electedManagerPlansTheArenaLayoutVersion}",
+            "state": "{electedManagerPlansTheArenaLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1
+            "formationEpoch": 2
           }
         }
       }

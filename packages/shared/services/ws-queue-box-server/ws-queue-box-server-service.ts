@@ -13,20 +13,18 @@ import type { ALInboundRuntimeStores } from '../../alm/ALInboundMessageRuntime.t
 import { ALInboundMessageRuntime } from '../../alm/ALInboundMessageRuntime.ts';
 import type {
     ALOutboundEnqueueResult,
-    ALOutboundPreparedSendResult,
     ALOutboundRuntimeDiagnosticsSink,
     ALOutboundRuntimeStores
 } from '../../alm/ALOutboundMessageRuntime.ts';
 import { ALOutboundMessageRuntime } from '../../alm/ALOutboundMessageRuntime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
-import type { GroupSnapshot } from '../../api/group-types.ts';
 import type { ResilienceDto } from '../../queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { toError } from '../../resilience/to-error.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '../../websocket/JsonWebSocketServer.ts';
 import type { OnWebSocketServerMessageCallback } from '../queue-message-callbacks.ts';
 import { QueueBoxUtilities } from '../QueueBoxUtilities.ts';
+
 import {
     type WsDeliveryDiagnosticsSink,
     type WsOutboxDeliveryOutcome,
@@ -411,13 +409,13 @@ export class WsQueueBoxServerService {
         return this.liveDelivery.sendToTargets(message);
     }
 
-    sendToTargetsWithResult(message: ALMessage, authorizedRoomSnapshot?: GroupSnapshot): WsServerLiveSendResult {
-        return this.liveDelivery.sendToTargetsWithResult(message, authorizedRoomSnapshot);
+    sendToTargetsWithResult(message: ALMessage, recipientSessionIds?: readonly string[]): WsServerLiveSendResult {
+        return this.liveDelivery.sendToTargetsWithResult(message, recipientSessionIds);
     }
 
     private async sendPreparedMessage(
         prepared: WsQueueBoxServerPreparedMessage
-    ): Promise<ALOutboundPreparedSendResult> {
+    ): Promise<Readonly<{ status: 'sent' | 'no-targets'; }>> {
         if (prepared.kind === 'cluster-local-complete') {
             return { status: 'sent' };
         }
@@ -436,7 +434,7 @@ export class WsQueueBoxServerService {
             return { status: 'sent' };
         }
         catch (error) {
-            const runtimeError = toError(error);
+            const runtimeError = error instanceof Error ? error : new Error(String(error));
             this.deliveryReporting.recordOutcome({
                 status: 'retryable-transport-failure',
                 messageId: prepared.message.id.msgId,
@@ -492,8 +490,8 @@ export class WsQueueBoxServerService {
         try {
             await callback?.onMessage(message, entry, this.socket);
         }
-        catch (error) {
-            console.error('Error calling onMessage callback', toError(error));
+        catch (e) {
+            console.error('Error calling onMessage callback', e);
         }
     }
 }

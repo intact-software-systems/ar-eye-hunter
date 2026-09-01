@@ -3,16 +3,31 @@ import {
     validateGroupPresenceMutationRequest
 } from '@shared-server/rallar-system/group-state/mutation/command-validation/group-mutation-request-validation.ts';
 import { GroupMutationRejectedError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const requestValidationOwner = 'packages/shared-server/rallar-system/group-state/mutation/command-validation/group-mutation-request-validation.ts';
-
 describe('group mutation request validation', () => {
-    it('locates request validation at the canonical mutation owner', () => {
-        expect(existsSync(requestValidationOwner)).toBe(true);
+    it('reports uninspectable values and sparse arrays as input issues without throwing', () => {
+        const request = { requestId: 'request', actorPrincipalId: 'actor', actorSessionId: 'session' };
+        const unreadable = Object.defineProperty({}, 'displayName', {
+            enumerable: true,
+            get() {
+                throw new Error('unreadable');
+            }
+        });
+        for (const metadata of [unreadable, Array(1)]) {
+            expect(validateGroupMutationRequest('updateGroup', { ...request, metadata })).toEqual(expect.arrayContaining([expect.any(TypeError)]));
+        }
     });
-
+    it('returns all independent external-input issues without throwing', () => {
+        const issues = validateGroupMutationRequest('updateGroup', { displayName: '', maxMembers: -1 });
+        expect(issues).toEqual([
+            new TypeError('Group updateGroup requestId must be a non-empty string'),
+            new TypeError('Group updateGroup actorPrincipalId must be a non-empty string'),
+            new TypeError('Group updateGroup actorSessionId must be a non-empty string'),
+            new TypeError('Group updateGroup displayName must be a non-empty string'),
+            new TypeError('Group updateGroup maxMembers must be a positive safe integer')
+        ]);
+    });
     it('rejects missing required and unexpected aggregate request keys with exact TypeErrors', () => {
         const missingRequestId = () =>
             validateGroupMutationRequest('updateGroup', {
@@ -20,8 +35,8 @@ describe('group mutation request validation', () => {
                 actorPrincipalId: 'owner-1',
                 actorSessionId: 'owner-session'
             });
-        expect(missingRequestId).toThrowError(TypeError);
-        expect(missingRequestId).toThrowError('Group updateGroup requestId must be a non-empty string');
+        expect(missingRequestId()).toEqual(expect.arrayContaining([expect.any(TypeError)]));
+        expect(missingRequestId().map((issue) => issue.message)).toContain('Group updateGroup requestId must be a non-empty string');
 
         const missingGroupId = () =>
             validateGroupMutationRequest('createGroup', {
@@ -32,8 +47,8 @@ describe('group mutation request validation', () => {
                 actorSessionId: 'owner-session',
                 requestId: 'create-request'
             });
-        expect(missingGroupId).toThrowError(TypeError);
-        expect(missingGroupId).toThrowError('Group createGroup groupId must be a non-empty string');
+        expect(missingGroupId()).toEqual(expect.arrayContaining([expect.any(TypeError)]));
+        expect(missingGroupId().map((issue) => issue.message)).toContain('Group createGroup groupId must be a non-empty string');
 
         const unexpectedKey = () =>
             validateGroupMutationRequest('updateGroup', {
@@ -43,24 +58,22 @@ describe('group mutation request validation', () => {
                 requestId: 'update-request',
                 unexpected: true
             });
-        expect(unexpectedKey).toThrowError(TypeError);
-        expect(unexpectedKey).toThrowError('Group updateGroup request has unexpected key: unexpected');
+        expect(unexpectedKey()).toEqual(expect.arrayContaining([expect.any(TypeError)]));
+        expect(unexpectedKey().map((issue) => issue.message)).toContain('Group updateGroup request has unexpected key: unexpected');
     });
 
     // The lifecycle request rows exclude the criterion fence keys entirely, so
     // a principal request arrives without them and must validate cleanly.
     it.each([
-        'startGroupEstablishment' as const,
+        'planGroupLayout' as const,
         'activateGroup' as const,
-        'reopenGroupEstablishment' as const
+        'reconfigureGroup' as const
     ])('accepts a fence-less principal %s request', (operation) => {
-        expect(() =>
-            validateGroupMutationRequest(operation, {
-                actorPrincipalId: 'owner-1',
-                actorSessionId: 'owner-session',
-                requestId: `${operation}-request`
-            })
-        ).not.toThrow();
+        expect(validateGroupMutationRequest(operation, {
+            actorPrincipalId: 'owner-1',
+            actorSessionId: 'owner-session',
+            requestId: `${operation}-request`
+        })).toEqual([]);
     });
 
     it('rejects a principal lifecycle request that spells a fence key', () => {
@@ -71,21 +84,17 @@ describe('group mutation request validation', () => {
                 requestId: 'fenced-activate',
                 expectedFormationEpoch: 3
             });
-        expect(fenceKey).toThrowError(TypeError);
-        expect(fenceKey).toThrowError(
-            'Group activateGroup request has unexpected key: expectedFormationEpoch'
-        );
+        expect(fenceKey()).toEqual(expect.arrayContaining([expect.any(TypeError)]));
+        expect(fenceKey().map((issue) => issue.message)).toContain('Group activateGroup request has unexpected key: expectedFormationEpoch');
     });
 
     it('accepts only canonical reconfigure landing values', () => {
-        expect(() =>
-            validateGroupMutationRequest('reconfigureGroup', {
-                actorPrincipalId: 'owner-1',
-                actorSessionId: 'owner-session',
-                requestId: 'reconfigure-apply',
-                landing: 'apply'
-            })
-        ).not.toThrow();
+        expect(validateGroupMutationRequest('reconfigureGroup', {
+            actorPrincipalId: 'owner-1',
+            actorSessionId: 'owner-session',
+            requestId: 'reconfigure-apply',
+            landing: 'apply'
+        })).toEqual([]);
 
         const invalidLanding = () =>
             validateGroupMutationRequest('reconfigureGroup', {
@@ -94,8 +103,8 @@ describe('group mutation request validation', () => {
                 requestId: 'reconfigure-invalid',
                 landing: 'later'
             });
-        expect(invalidLanding).toThrowError(TypeError);
-        expect(invalidLanding).toThrowError('Group reconfigureGroup landing is invalid');
+        expect(invalidLanding()).toEqual(expect.arrayContaining([expect.any(TypeError)]));
+        expect(invalidLanding().map((issue) => issue.message)).toContain('Group reconfigureGroup landing is invalid');
     });
 
     it('requires non-empty authenticated actor identity on group mutation requests', () => {
@@ -105,10 +114,8 @@ describe('group mutation request validation', () => {
                 actorSessionId: 'owner-session',
                 requestId: 'missing-principal'
             });
-        expect(missingPrincipal).toThrowError(TypeError);
-        expect(missingPrincipal).toThrowError(
-            'Group updateGroup actorPrincipalId must be a non-empty string'
-        );
+        expect(missingPrincipal()).toEqual(expect.arrayContaining([expect.any(TypeError)]));
+        expect(missingPrincipal().map((issue) => issue.message)).toContain('Group updateGroup actorPrincipalId must be a non-empty string');
 
         const emptyPrincipal = () =>
             validateGroupMutationRequest('updateGroup', {
@@ -117,10 +124,8 @@ describe('group mutation request validation', () => {
                 actorSessionId: 'owner-session',
                 requestId: 'empty-principal'
             });
-        expect(emptyPrincipal).toThrowError(TypeError);
-        expect(emptyPrincipal).toThrowError(
-            'Group updateGroup actorPrincipalId must be a non-empty string'
-        );
+        expect(emptyPrincipal()).toEqual(expect.arrayContaining([expect.any(TypeError)]));
+        expect(emptyPrincipal().map((issue) => issue.message)).toContain('Group updateGroup actorPrincipalId must be a non-empty string');
 
         const missingSession = () =>
             validateGroupMutationRequest('updateGroup', {
@@ -128,10 +133,8 @@ describe('group mutation request validation', () => {
                 actorPrincipalId: 'owner-1',
                 requestId: 'missing-session'
             });
-        expect(missingSession).toThrowError(TypeError);
-        expect(missingSession).toThrowError(
-            'Group updateGroup actorSessionId must be a non-empty string'
-        );
+        expect(missingSession()).toEqual(expect.arrayContaining([expect.any(TypeError)]));
+        expect(missingSession().map((issue) => issue.message)).toContain('Group updateGroup actorSessionId must be a non-empty string');
 
         const emptySession = () =>
             validateGroupMutationRequest('updateGroup', {
@@ -140,10 +143,8 @@ describe('group mutation request validation', () => {
                 actorSessionId: '',
                 requestId: 'empty-session'
             });
-        expect(emptySession).toThrowError(TypeError);
-        expect(emptySession).toThrowError(
-            'Group updateGroup actorSessionId must be a non-empty string'
-        );
+        expect(emptySession()).toEqual(expect.arrayContaining([expect.any(TypeError)]));
+        expect(emptySession().map((issue) => issue.message)).toContain('Group updateGroup actorSessionId must be a non-empty string');
     });
 
     it('preserves omitted optional fields on accepted group mutation requests', () => {
@@ -154,7 +155,7 @@ describe('group mutation request validation', () => {
             requestId: 'minimal-update'
         });
 
-        expect(() => validateGroupMutationRequest('updateGroup', request)).not.toThrow();
+        expect(validateGroupMutationRequest('updateGroup', request)).toEqual([]);
         expect(request).toEqual({
             displayName: 'After',
             actorPrincipalId: 'owner-1',
@@ -172,10 +173,8 @@ describe('group mutation request validation', () => {
                 actorPrincipalId: 'owner-1',
                 actorSessionId: 'owner-session'
             });
-        expect(missingGeneration).toThrowError(TypeError);
-        expect(missingGeneration).toThrowError(
-            'Group heartbeatPresence generationId must be a non-empty string'
-        );
+        expect(missingGeneration()).toEqual(expect.arrayContaining([expect.any(TypeError)]));
+        expect(missingGeneration().map((issue) => issue.message)).toContain('Group heartbeatPresence generationId must be a non-empty string');
 
         const emptyGeneration = () =>
             validateGroupPresenceMutationRequest('heartbeatPresence', {
@@ -184,13 +183,11 @@ describe('group mutation request validation', () => {
                 actorSessionId: 'owner-session',
                 generationId: ''
             });
-        expect(emptyGeneration).toThrowError(TypeError);
-        expect(emptyGeneration).toThrowError(
-            'Group heartbeatPresence generationId must be a non-empty string'
-        );
+        expect(emptyGeneration()).toEqual(expect.arrayContaining([expect.any(TypeError)]));
+        expect(emptyGeneration().map((issue) => issue.message)).toContain('Group heartbeatPresence generationId must be a non-empty string');
 
         const minimalHeartbeat = Object.freeze({ generationId: 'generation-1' });
-        expect(() => validateGroupPresenceMutationRequest('heartbeatPresence', minimalHeartbeat)).not.toThrow();
+        expect(validateGroupPresenceMutationRequest('heartbeatPresence', minimalHeartbeat)).toEqual([]);
         expect(minimalHeartbeat).toEqual({ generationId: 'generation-1' });
         expect(Object.hasOwn(minimalHeartbeat, 'lastHeartbeatAtEpochMs')).toBe(false);
         expect(Object.hasOwn(minimalHeartbeat, 'expiresAtEpochMs')).toBe(false);
@@ -208,8 +205,8 @@ describe('group mutation request validation', () => {
                 lastHeartbeatAtEpochMs: 1_999,
                 expiresAtEpochMs: 3_000
             });
-        expect(heartbeatBeforeConnect).toThrowError(GroupMutationRejectedError);
-        expect(heartbeatBeforeConnect).toThrowError(
+        expect(heartbeatBeforeConnect()).toEqual(expect.arrayContaining([expect.any(GroupMutationRejectedError)]));
+        expect(heartbeatBeforeConnect().map((issue) => issue.message)).toContain(
             'Group connectPresence lastHeartbeatAtEpochMs must not predate connectedAtEpochMs'
         );
 
@@ -224,8 +221,8 @@ describe('group mutation request validation', () => {
                 lastHeartbeatAtEpochMs: 2_000,
                 expiresAtEpochMs: 1_999
             });
-        expect(expiryBeforeHeartbeat).toThrowError(GroupMutationRejectedError);
-        expect(expiryBeforeHeartbeat).toThrowError(
+        expect(expiryBeforeHeartbeat()).toEqual(expect.arrayContaining([expect.any(GroupMutationRejectedError)]));
+        expect(expiryBeforeHeartbeat().map((issue) => issue.message)).toContain(
             'Group connectPresence expiresAtEpochMs must not predate lastHeartbeatAtEpochMs'
         );
     });
@@ -240,8 +237,8 @@ describe('group mutation request validation', () => {
                 lastHeartbeatAtEpochMs: 2_000,
                 expiresAtEpochMs: 1_999
             });
-        expect(expiryBeforeHeartbeat).toThrowError(GroupMutationRejectedError);
-        expect(expiryBeforeHeartbeat).toThrowError(
+        expect(expiryBeforeHeartbeat()).toEqual(expect.arrayContaining([expect.any(GroupMutationRejectedError)]));
+        expect(expiryBeforeHeartbeat().map((issue) => issue.message)).toContain(
             'Group heartbeatPresence expiresAtEpochMs must not predate lastHeartbeatAtEpochMs'
         );
     });
@@ -257,8 +254,8 @@ describe('group mutation request validation', () => {
                 lastHeartbeatAtEpochMs: 2_000,
                 expiresAtEpochMs: 3_000
             });
-        expect(disconnectBeforeHeartbeat).toThrowError(GroupMutationRejectedError);
-        expect(disconnectBeforeHeartbeat).toThrowError(
+        expect(disconnectBeforeHeartbeat()).toEqual(expect.arrayContaining([expect.any(GroupMutationRejectedError)]));
+        expect(disconnectBeforeHeartbeat().map((issue) => issue.message)).toContain(
             'Group disconnectPresence disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs'
         );
 
@@ -272,8 +269,8 @@ describe('group mutation request validation', () => {
                 lastHeartbeatAtEpochMs: 2_000,
                 expiresAtEpochMs: 1_999
             });
-        expect(expiryBeforeHeartbeat).toThrowError(GroupMutationRejectedError);
-        expect(expiryBeforeHeartbeat).toThrowError(
+        expect(expiryBeforeHeartbeat()).toEqual(expect.arrayContaining([expect.any(GroupMutationRejectedError)]));
+        expect(expiryBeforeHeartbeat().map((issue) => issue.message)).toContain(
             'Group disconnectPresence expiresAtEpochMs must not predate lastHeartbeatAtEpochMs'
         );
     });

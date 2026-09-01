@@ -20,7 +20,7 @@ import {
     type GroupMutationPreparation,
     type GroupStateMutationCommand
 } from './group-state-service-contracts.ts';
-import { validateGroupMutationCommand } from './mutation/command-validation/validate-group-mutation-command.ts';
+import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
 import { type GroupMutationCommand, type GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
 import { constantTimeHexEqual, constantTimeSecretEqual, hmacSha256Hex } from './mutation/group-state-crypto.ts';
 import { isScopedGroupMutationCommandId, toScopedGroupMutationCommandId } from './scoped-group-mutation-command-id.ts';
@@ -96,12 +96,12 @@ async function prepareAuthorizedGroupMutation(
 ): Promise<GroupMutationPreparation> {
     const { dependencies, descriptor, authority, useScopedCommandId } = input;
     const authorized = await authorizeGroupMutation(dependencies, descriptor, authority);
-    const materialized = await materializeAuthenticatedGroupMutationCommand(
-        authorized.descriptor,
-        authorized.authorityProof,
-        dependencies.randomId,
+    const materialized = await materializeAuthenticatedGroupMutationCommand({
+        descriptor: authorized.descriptor,
+        authorityProof: authorized.authorityProof,
+        randomId: dependencies.randomId,
         useScopedCommandId
-    );
+    });
     const { command } = materialized;
     const commandHash = await hashMutationCommand(
         decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
@@ -162,7 +162,7 @@ export async function authorizeGroupMutation(
     const command = toDescriptorCommand(verified.descriptor, () => {
         throw new NonRetryableException('Authenticated group mutation requestId is required.');
     });
-    validateGroupMutationCommand(command);
+    assertGroupMutationCommand(command);
     return {
         authorityProof: await createGroupMutationAuthorityProof(verified.session, verified.descriptor),
         descriptor: verified.descriptor
@@ -187,12 +187,12 @@ export async function verifyPreparedGroupMutationAuthority(
             'Authenticated mutation descriptor changed before execution.'
         );
     }
-    const materialized = await materializeAuthenticatedGroupMutationCommand(
-        verified.descriptor,
-        prepared.authorityProof,
-        dependencies.randomId,
-        isScopedGroupMutationCommandId(prepared.command.commandId)
-    );
+    const materialized = await materializeAuthenticatedGroupMutationCommand({
+        descriptor: verified.descriptor,
+        authorityProof: prepared.authorityProof,
+        randomId: dependencies.randomId,
+        useScopedCommandId: isScopedGroupMutationCommandId(prepared.command.commandId)
+    });
     const { command } = materialized;
     const commandHash = await hashMutationCommand(
         decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
@@ -209,12 +209,21 @@ export async function verifyPreparedGroupMutationAuthority(
     }
 }
 
+interface MaterializeAuthenticatedGroupMutationInput {
+    readonly descriptor: GroupMutationDescriptor;
+    readonly authorityProof: GroupMutationAuthorityProof;
+    readonly randomId: () => string;
+    readonly useScopedCommandId: boolean;
+}
+
+interface MaterializedAuthenticatedGroupMutation {
+    readonly command: GroupMutationCommand;
+    readonly semanticCommand: GroupMutationCommand;
+}
+
 async function materializeAuthenticatedGroupMutationCommand(
-    descriptor: GroupMutationDescriptor,
-    authorityProof: GroupMutationAuthorityProof,
-    randomId: () => string,
-    useScopedCommandId: boolean
-): Promise<Readonly<{ command: GroupMutationCommand; semanticCommand: GroupMutationCommand; }>> {
+    { descriptor, authorityProof, randomId, useScopedCommandId }: MaterializeAuthenticatedGroupMutationInput
+): Promise<MaterializedAuthenticatedGroupMutation> {
     const semanticCommand = toDescriptorCommand(descriptor, randomId);
     return {
         semanticCommand,
@@ -257,14 +266,12 @@ export function toDescriptorCommand(
         case 'appointDirector':
         case 'rotateGroupJoinCode':
             return toAggregateMutationCommand(descriptor, randomId);
-        case 'startGroupEstablishment':
         case 'planGroupLayout':
         case 'connectGroup':
         case 'startGroupFormation':
         case 'resetGroupFormation':
         case 'activateGroup':
         case 'reconfigureGroup':
-        case 'reopenGroupEstablishment':
         case 'failGroupFormation':
             return toLifecycleMutationCommand(descriptor, randomId);
         case 'applyPlannedLayout':
@@ -332,16 +339,9 @@ async function verifyGroupMutationAuthority(
 
 function toTrustedMutationDescriptor(
     descriptor: GroupMutationDescriptor,
-    authority: Readonly<{ principalId: string; sessionId: string; }>
+    authority: Pick<GroupMutationAuthorityProof, 'principalId' | 'sessionId'>
 ): GroupMutationDescriptor {
-    const request = descriptor.request as
-        & GroupMutationDescriptor['request']
-        & Readonly<{
-            actorPrincipalId?: string;
-            actorSessionId?: string;
-            createdByPrincipalId?: string;
-            principalId?: string;
-        }>;
+    const request = descriptor.request;
     if (
         request.actorPrincipalId !== undefined &&
         request.actorPrincipalId !== authority.principalId
@@ -357,7 +357,7 @@ function toTrustedMutationDescriptor(
     }
     if (
         descriptor.operation === 'createGroup' &&
-        request.createdByPrincipalId !== authority.principalId
+        (!('createdByPrincipalId' in request) || request.createdByPrincipalId !== authority.principalId)
     ) {
         throw new GroupMutationAuthorizationError(
             'Group creator does not match authenticated principal.'
@@ -373,7 +373,10 @@ function toTrustedMutationDescriptor(
                 'Presence session does not match authenticated session.'
             );
         }
-        if (request.principalId !== undefined && request.principalId !== authority.principalId) {
+        if (
+            'principalId' in request && request.principalId !== undefined &&
+            request.principalId !== authority.principalId
+        ) {
             throw new GroupMutationAuthorizationError(
                 'Presence principal does not match authenticated principal.'
             );

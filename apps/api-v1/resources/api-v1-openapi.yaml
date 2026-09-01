@@ -1212,19 +1212,15 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/establish/requests/{requestId}:
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/plan/requests/{requestId}:
     post:
       tags: [Group State]
-      summary: Start group establishment
+      summary: Plan group lifecycle
       description: |
-        Moves formation intent from FORMING to CONNECTING and advances the
-        formation epoch.
-
-        Authorization follows the group's lifecycle policy: the establishment
-        initiator decides who may command transitions, with the manager derived
-        from the policy (creator or assigned list) until manager election is
-        available. The transition must be legal from the current lifecycle
-        state; anything else is a typed 403 denial.
+        Plans a layout from FORMING or refreshes the candidate in PLANNED without dialing.
+        The lifecycle initiator policy governs all eight group-authority commands.
+        Server-auto denies principal commands. Actor identity comes from authentication.
+        Policy or stage denial returns 403; malformed requests return 400.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -1239,6 +1235,46 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/GroupLifecycleTransitionRequest'
+      responses:
+        '200':
+          description: Updated group snapshot with the new lifecycle state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '404':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/connect/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Connect group lifecycle
+      description: |
+        Dials exactly the named planned layout from PLANNED or RECONFIGURING. Missing or superseded layouts return typed 409 failures.
+        The lifecycle initiator policy governs all eight group-authority commands.
+        Server-auto denies principal commands. Actor identity comes from authentication.
+        Policy or stage denial returns 403; malformed requests return 400.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupConnectRequest'
       responses:
         '200':
           description: Updated group snapshot with the new lifecycle state.
@@ -1259,16 +1295,12 @@ paths:
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/activate/requests/{requestId}:
     post:
       tags: [Group State]
-      summary: Activate the group
+      summary: Activate group lifecycle
       description: |
-        Moves formation intent from CONNECTING or RECONFIGURING to ACTIVE and
-        advances the formation epoch.
-
-        Authorization follows the group's lifecycle policy: the establishment
-        initiator decides who may command transitions, with the manager derived
-        from the policy (creator or assigned list) until manager election is
-        available. The transition must be legal from the current lifecycle
-        state; anything else is a typed 403 denial.
+        Promotes the planned layout from CONNECTING or RECONNECTING to ACTIVE.
+        The lifecycle initiator policy governs all eight group-authority commands.
+        Server-auto denies principal commands. Actor identity comes from authentication.
+        Policy or stage denial returns 403; malformed requests return 400.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -1300,19 +1332,175 @@ paths:
           $ref: '#/components/responses/ApiMutationFailure'
         '409':
           $ref: '#/components/responses/ApiMutationFailure'
-  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/reopen/requests/{requestId}:
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/reconfigure/requests/{requestId}:
     post:
       tags: [Group State]
-      summary: Reopen group establishment
+      summary: Reconfigure group lifecycle
       description: |
-        Moves formation intent from ACTIVE to RECONFIGURING and advances the
-        formation epoch.
-
-        Authorization follows the group's lifecycle policy: the establishment
-        initiator decides who may command transitions, with the manager derived
-        from the policy (creator or assigned list) until manager election is
-        available. The transition must be legal from the current lifecycle
-        state; anything else is a typed 403 denial.
+        Requests a replacement layout. HOLD enters RECONFIGURING; APPLY keeps ACTIVE while publication promotes the replacement. The transport valve is unchanged.
+        The lifecycle initiator policy governs all eight group-authority commands.
+        Server-auto denies principal commands. Actor identity comes from authentication.
+        Policy or stage denial returns 403; malformed requests return 400.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupReconfigureRequest'
+      responses:
+        '200':
+          description: Updated group snapshot with the new lifecycle state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '404':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/pause/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Pause group lifecycle
+      description: |
+        Halts application transport without changing stage, accepted layout, membership or presence. CRDT topics remain exempt.
+        The lifecycle initiator policy governs all eight group-authority commands.
+        Server-auto denies principal commands. Actor identity comes from authentication.
+        Policy or stage denial returns 403; malformed requests return 400.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupLifecycleTransitionRequest'
+      responses:
+        '200':
+          description: Updated group snapshot with the new lifecycle state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '404':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/resume/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Resume group lifecycle
+      description: |
+        Restores flowing transport without changing stage or accepted layout.
+        The lifecycle initiator policy governs all eight group-authority commands.
+        Server-auto denies principal commands. Actor identity comes from authentication.
+        Policy or stage denial returns 403; malformed requests return 400.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupLifecycleTransitionRequest'
+      responses:
+        '200':
+          description: Updated group snapshot with the new lifecycle state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '404':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/reset/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Reset group lifecycle
+      description: |
+        Returns to DORMANT, clears the attempt series, tombstones layouts, and halts transport.
+        The lifecycle initiator policy governs all eight group-authority commands.
+        Server-auto denies principal commands. Actor identity comes from authentication.
+        Policy or stage denial returns 403; malformed requests return 400.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/ApiMutationRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupLifecycleTransitionRequest'
+      responses:
+        '200':
+          description: Updated group snapshot with the new lifecycle state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '401':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '403':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '404':
+          $ref: '#/components/responses/ApiMutationFailure'
+        '409':
+          $ref: '#/components/responses/ApiMutationFailure'
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/start/requests/{requestId}:
+    post:
+      tags: [Group State]
+      summary: Start group lifecycle
+      description: |
+        Opens a formation series from DORMANT. An exhausted series requires RESET first.
+        The lifecycle initiator policy governs all eight group-authority commands.
+        Server-auto denies principal commands. Actor identity comes from authentication.
+        Policy or stage denial returns 403; malformed requests return 400.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -4597,7 +4785,7 @@ components:
           nullable: true
         lifecycleState:
           type: string
-          enum: [forming, connecting, active, reconfiguring]
+          enum: [dormant, forming, planned, connecting, active, reconfiguring, reconnecting]
         formationEpoch:
           type: integer
           format: int64
@@ -4668,7 +4856,7 @@ components:
           $ref: '#/components/schemas/GroupRef'
         lifecycleState:
           type: string
-          enum: [forming, connecting, active, reconfiguring]
+          enum: [dormant, forming, planned, connecting, active, reconfiguring, reconnecting]
         formationEpoch:
           type: integer
           format: int64
@@ -5355,7 +5543,36 @@ components:
           type: string
     GroupLifecycleTransitionRequest:
       type: object
+      additionalProperties: false
       properties:
+        reason:
+          type: string
+        traceId:
+          type: string
+    GroupConnectRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedFormationEpoch, expectedLayout]
+      properties:
+        expectedFormationEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+        expectedLayout:
+          $ref: '#/components/schemas/GroupLayoutIdentity'
+        reason:
+          type: string
+        traceId:
+          type: string
+    GroupReconfigureRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        landing:
+          type: string
+          enum: [apply, hold]
+          nullable: true
+          description: Omission uses the configured reconfiguration landing.
         reason:
           type: string
         traceId:

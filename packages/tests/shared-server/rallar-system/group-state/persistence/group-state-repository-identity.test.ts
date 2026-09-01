@@ -1,15 +1,10 @@
-import { type GroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type { GroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { groupStateInsertIdempotencyDescriptor } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-write-descriptor.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { Group } from '@shared/api/group-types.ts';
-import {
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createIdentityMutationRead } from './group-state-persistence-mutation-read-fixtures.ts';
 
@@ -134,7 +129,7 @@ describe('GroupStateRepository persistence', () => {
         };
         const { commandHash: _missingCommandHash, ...missingCommandHash } = valid;
         const { aggregateRef: _aggregateRef, ...identityFree } = valid;
-        const invalidRecords: readonly [string, JsonWireValue][] = [
+        const invalidRecords: readonly [string, unknown][] = [
             ['malformed SHA', { ...valid, commandHash: 'sha256:not-a-digest' }],
             ['empty receipt', { ...valid, receipt: {} }],
             ['unexpected top-level field', { ...valid, unexpected: true }],
@@ -303,9 +298,18 @@ describe('GroupStateRepository persistence', () => {
 
         const validRuntime = new FakeRuntimeStateRepository();
         const validRepository = createTestGroupStateRepository(validRuntime);
-        await expect(
-            validRepository.insertIdempotentGroupMutationReceipt(ref, requestId, valid)
-        ).resolves.toMatchObject({ status: 'applied', revision: 0 });
+        const validWrite = groupStateInsertIdempotencyDescriptor({
+            ref,
+            requestId: requestId,
+            record: valid,
+            expireAtTimestamp: Number.MAX_SAFE_INTEGER
+        });
+        await expect(validRuntime.insertIfAbsent(
+            validWrite.namespace,
+            validWrite.key,
+            validWrite.value,
+            validWrite.expireAtTimestamp
+        )).resolves.toMatchObject({ status: 'applied', revision: 0 });
         await expect(
             validRepository.findIdempotentGroupMutationReceipt(ref, requestId)
         ).resolves.toEqual(valid);
@@ -321,13 +325,18 @@ describe('GroupStateRepository persistence', () => {
                 acceptedStorageRevision: 7
             }
         };
-        await expect(
-            validRepository.insertIdempotentGroupMutationReceipt(
-                ref,
-                fencedRequestId,
-                authorityFencedNoOp
-            )
-        ).resolves.toMatchObject({ status: 'applied', revision: 0 });
+        const authorityFencedNoOpWrite = groupStateInsertIdempotencyDescriptor({
+            ref,
+            requestId: fencedRequestId,
+            record: authorityFencedNoOp,
+            expireAtTimestamp: Number.MAX_SAFE_INTEGER
+        });
+        await expect(validRuntime.insertIfAbsent(
+            authorityFencedNoOpWrite.namespace,
+            authorityFencedNoOpWrite.key,
+            authorityFencedNoOpWrite.value,
+            authorityFencedNoOpWrite.expireAtTimestamp
+        )).resolves.toMatchObject({ status: 'applied', revision: 0 });
         await expect(
             validRepository.findIdempotentGroupMutationReceipt(ref, fencedRequestId)
         ).resolves.toEqual(authorityFencedNoOp);
@@ -347,25 +356,30 @@ describe('GroupStateRepository persistence', () => {
                 rejection: 'Group creation rejected'
             }
         };
-        await expect(
-            validRepository.insertIdempotentGroupMutationReceipt(ref, absentRequestId, absentRejected)
-        ).resolves.toMatchObject({ status: 'applied', revision: 0 });
+        const absentRejectedWrite = groupStateInsertIdempotencyDescriptor({
+            ref,
+            requestId: absentRequestId,
+            record: absentRejected,
+            expireAtTimestamp: Number.MAX_SAFE_INTEGER
+        });
+        await expect(validRuntime.insertIfAbsent(
+            absentRejectedWrite.namespace,
+            absentRejectedWrite.key,
+            absentRejectedWrite.value,
+            absentRejectedWrite.expireAtTimestamp
+        )).resolves.toMatchObject({ status: 'applied', revision: 0 });
         await expect(
             validRepository.findIdempotentGroupMutationReceipt(ref, absentRequestId)
         ).resolves.toEqual(absentRejected);
 
         for (const [label, invalid] of invalidRecords) {
-            const insertRepository = createTestGroupStateRepository(new FakeRuntimeStateRepository());
-            await expect(
-                insertRepository.insertIdempotentGroupMutationReceipt(
+            expect(() =>
+                groupStateInsertIdempotencyDescriptor({
                     ref,
                     requestId,
-                    invalid as GroupMutationIdempotencyRecord
-                ),
-                label
-            ).rejects.toMatchObject({
-                code: 'group-state-repository-invariant-corruption'
-            });
+                    record: invalid as GroupMutationIdempotencyRecord,
+                    expireAtTimestamp: Number.MAX_SAFE_INTEGER
+                }), label).toThrow(TypeError);
 
             const readRuntime = new FakeRuntimeStateRepository();
             await readRuntime.upsert(

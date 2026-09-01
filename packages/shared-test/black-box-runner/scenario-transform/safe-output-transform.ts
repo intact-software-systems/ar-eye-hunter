@@ -20,6 +20,9 @@ const DIRECT_TRANSFORM_KEYS = [
     'add',
     'max',
     'equals',
+    'lexicallyBefore',
+    'get',
+    'includes',
     'if',
     'jsonStringify',
     'jsonParse',
@@ -105,6 +108,10 @@ export function evaluateSafeOutputTransform(
             return evaluateEqualsTransform(spec, input, details);
         case 'lexicallyBefore':
             return evaluateLexicallyBeforeTransform(spec, input, details);
+        case 'get':
+            return evaluateGetTransform(spec, input, details);
+        case 'includes':
+            return evaluateIncludesTransform(spec, input, details);
         case 'if':
             return evaluateIfTransform(spec, input, details);
         case 'jsonStringify':
@@ -230,6 +237,60 @@ function evaluateLexicallyBeforeTransform(
         );
     }
     return values[0] < values[1];
+}
+
+function evaluateGetTransform(
+    spec: Record<string, any>,
+    input: SafeOutputTransformEvaluationInput,
+    details: SafeOutputTransformDetails
+): any {
+    const values = transformValues(spec, 'get')
+        .map((value) => evaluateTransformValue(value, input));
+    if (values.length !== 2) {
+        return rejectSafeOutputTransform('Get transform requires a value and a property key.', details);
+    }
+
+    const [value, key] = values;
+    if (
+        (!Array.isArray(value) && !isSafeOutputTransformRecord(value)) ||
+        (typeof key !== 'string' && typeof key !== 'number')
+    ) {
+        return rejectSafeOutputTransform(
+            'Get transform requires an array or object and a string or number property key.',
+            { ...details, input: values }
+        );
+    }
+    if (!Object.hasOwn(value, key)) {
+        return rejectSafeOutputTransform('Get transform property does not exist.', {
+            ...details,
+            input: key
+        });
+    }
+    return (value as Record<string | number, any>)[key];
+}
+
+function evaluateIncludesTransform(
+    spec: Record<string, any>,
+    input: SafeOutputTransformEvaluationInput,
+    details: SafeOutputTransformDetails
+): boolean {
+    const values = transformValues(spec, 'includes')
+        .map((value) => evaluateTransformValue(value, input));
+    if (values.length !== 2) {
+        return rejectSafeOutputTransform('Includes transform requires a collection and a value.', details);
+    }
+
+    const [collection, expected] = values;
+    if (Array.isArray(collection)) {
+        return collection.some((value) => Object.is(value, expected));
+    }
+    if (typeof collection === 'string' && typeof expected === 'string') {
+        return collection.includes(expected);
+    }
+    return rejectSafeOutputTransform(
+        'Includes transform requires an array, or a string with a string value.',
+        { ...details, input: values }
+    );
 }
 
 function evaluateIfTransform(

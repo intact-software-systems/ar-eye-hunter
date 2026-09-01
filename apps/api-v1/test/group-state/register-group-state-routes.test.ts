@@ -147,46 +147,7 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
 ];
 
 Deno.test(
-    'group state route registration retains all 26 Hono handlers in declared order',
-    () => {
-        const runtime = createGroupStateRouteTestRuntime({ installStateAuthentication: false });
-        const registeredRoutes = (runtime.app as unknown as {
-            readonly routes: readonly { readonly method: string; readonly path: string; }[];
-        }).routes.map((route) => `${route.method} ${route.path}`);
-
-        assert.deepEqual(registeredRoutes, [
-            `GET ${GROUP_STATE_ROUTE_BASE}`,
-            `GET ${GROUP_ROUTE_PATH}`,
-            `GET ${GROUP_ROUTE_PATH}/events`,
-            `GET ${GROUP_ROUTE_PATH}/events/page`,
-            `POST ${GROUP_STATE_ROUTE_BASE}/requests/:requestId`,
-            `PUT ${GROUP_ROUTE_PATH}/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/director/appoint/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/lifecycle/establish/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/lifecycle/activate/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/lifecycle/reopen/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/join/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/invites/accept/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/join-code/rotate/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/invites/:principalId/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/invites/:principalId/revoke/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/admissions/:principalId/grant/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/admissions/:principalId/decline/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/members/:principalId/remove/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/members/:principalId/ban/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/members/:principalId/unban/requests/:requestId`,
-            `PUT ${GROUP_ROUTE_PATH}/members/:principalId/role/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/owner/transfer/requests/:requestId`,
-            `PUT ${GROUP_ROUTE_PATH}/members/:principalId/requests/:requestId`,
-            `PUT ${GROUP_ROUTE_PATH}/sessions/:sessionId/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/sessions/:sessionId/heartbeat/requests/:requestId`,
-            `POST ${GROUP_ROUTE_PATH}/sessions/:sessionId/disconnect/requests/:requestId`
-        ]);
-    }
-);
-
-Deno.test(
-    'group state route registration matches all 23 public method and path contracts',
+    'group state route registration matches all public method and path contracts',
     async () => {
         const snapshot = createGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
         const runtime = createGroupStateRouteTestRuntime({

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, it } from 'vitest';
+import { expect } from 'vitest';
 
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from '../../routing/mutation-routing-inventory.ts';
 import { readFlexibleAnchor } from '../mutation-route-owner-anchors.ts';
@@ -278,8 +279,8 @@ describe('group HTTP mutation route source shapes', () => {
         const source = withWrongRemoveTranslatorType();
         const mutated = spliceReplace(
             source,
-            '  const request = withActor(input);\n  validateGroupMutationRequest(\'removeGroupMember\', request);',
-            '  if (false) AppInboxType.GROUP_MEMBER_REMOVE;\n  const request = withActor(input);\n  validateGroupMutationRequest(\'removeGroupMember\', request);'
+            '  const request = withActor(input);\n  const issues = validateGroupMutationRequest(\'removeGroupMember\', request);',
+            '  if (false) AppInboxType.GROUP_MEMBER_REMOVE;\n  const request = withActor(input);\n  const issues = validateGroupMutationRequest(\'removeGroupMember\', request);'
         );
         expect(mutated).not.toBe(source);
 
@@ -292,8 +293,8 @@ describe('group HTTP mutation route source shapes', () => {
         const source = withWrongRemoveTranslatorType();
         const mutated = spliceReplace(
             source,
-            '  const request = withActor(input);\n  validateGroupMutationRequest(\'removeGroupMember\', request);',
-            '  function deadExpectedType() { return AppInboxType.GROUP_MEMBER_REMOVE; }\n  const request = withActor(input);\n  validateGroupMutationRequest(\'removeGroupMember\', request);'
+            '  const request = withActor(input);\n  const issues = validateGroupMutationRequest(\'removeGroupMember\', request);',
+            '  function deadExpectedType() { return AppInboxType.GROUP_MEMBER_REMOVE; }\n  const request = withActor(input);\n  const issues = validateGroupMutationRequest(\'removeGroupMember\', request);'
         );
         expect(mutated).not.toBe(source);
 
@@ -314,6 +315,35 @@ describe('group HTTP mutation route source shapes', () => {
         expect(validateOverride(COMMAND_TRANSLATOR, mutated)).toEqual(
             expect.arrayContaining([expect.stringContaining('operation is not connected')])
         );
+    });
+
+    it.each(['true', '!false', '1', 'true || input.request', 'alwaysReject'])('rejects an unconditional throwing translator guard: %s', (condition) => {
+        const source = readFileSync(COMMAND_TRANSLATOR, 'utf8');
+        const mutated = spliceReplace(
+            source,
+            'const request = withActor(input);\nconst issues = validateGroupMutationRequest(\'removeGroupMember\', request);',
+            `const alwaysReject = true;\nif (${condition}) { throw new Error('unconditional rejection'); }\n` +
+                'const request = withActor(input);\nconst issues = validateGroupMutationRequest(\'removeGroupMember\', request);'
+        );
+
+        expect(mutated).not.toBe(source);
+        expect(validateOverride(COMMAND_TRANSLATOR, mutated)).toEqual(
+            expect.arrayContaining([expect.stringContaining('operation is not connected')])
+        );
+    });
+
+    it('accepts legitimate input rejection guards and an unreachable throwing branch', () => {
+        const source = readFileSync(COMMAND_TRANSLATOR, 'utf8');
+        const mutated = spliceReplace(
+            source,
+            'const request = withActor(input);\nconst issues = validateGroupMutationRequest(\'removeGroupMember\', request);',
+            'if (false) { throw new Error(\'unreachable rejection\'); }\n' +
+                'const request = withActor(input);\nconst issues = validateGroupMutationRequest(\'removeGroupMember\', request);'
+        );
+
+        expect(validateOverride(COMMAND_TRANSLATOR, source)).toEqual([]);
+        expect(mutated).not.toBe(source);
+        expect(validateOverride(COMMAND_TRANSLATOR, mutated)).toEqual([]);
     });
 });
 

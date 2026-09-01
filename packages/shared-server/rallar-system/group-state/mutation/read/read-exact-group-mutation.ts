@@ -89,6 +89,7 @@ function assembleExactGroupMutationRead(
         presenceSummary: read.presenceSummaries[0] ?? null,
         lifecyclePolicy,
         activeMemberPrincipalIds: null,
+        connectTriggerLatch: null,
         plannedLayoutRow: null,
         acceptedLayoutRow: null
     };

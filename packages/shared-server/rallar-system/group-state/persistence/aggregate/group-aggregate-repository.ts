@@ -16,7 +16,7 @@ import { decodeJsonWireValue, type JsonWireValue } from '../../../protocol/json-
 import type { GroupStateEventStore } from '../../../state-events/group-state-event-store.ts';
 import type { StateEventListQuery } from '../../../state-events/state-event-listing.ts';
 import type { GroupMutationIdempotencyRecord } from '../../mutation/group-mutation-contracts.ts';
-import { validateGroupMutationIdempotencyRecord } from '../../mutation/result-validation/validate-group-mutation-result.ts';
+import { assertGroupMutationIdempotencyRecord } from '../../mutation/result-validation/assert-group-mutation-result.ts';
 import { decodePersistedGroup } from '../group-state-persistence-codec.ts';
 import {
     assertGroupRefIdentity,
@@ -26,11 +26,8 @@ import {
     throwGroupStateIdentityCorruption,
     type GroupStateAuthorityGuard
 } from '../group-state-persistence-contracts.ts';
-import { GROUPS_NAMESPACE, IDEMPOTENT_NAMESPACE } from '../group-state-runtime-namespaces.ts';
-import {
-    decodeGroupStateIdempotencyStorageKey,
-    groupStateIdempotencyStorageKey
-} from '../idempotency/group-idempotency-storage-key.ts';
+import { GROUPS_NAMESPACE } from '../group-state-runtime-namespaces.ts';
+import { decodeGroupStateIdempotencyStorageKey } from '../idempotency/group-idempotency-storage-key.ts';
 import { validatePersistedGroup } from '../validate-persisted-group.ts';
 import { decodeGroupStateGroupStorageKey, groupStateGroupStorageKey } from './group-aggregate-storage-keys.ts';
 
@@ -40,17 +37,6 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
     constructor(repository: RuntimeStateRepositoryLike, events: GroupStateEventStore) {
         super(repository);
         this.events = events;
-    }
-
-    async insertIdempotentGroupMutationReceipt(
-        ref: GroupRef,
-        requestId: string,
-        record: GroupMutationIdempotencyRecord,
-        purgeAfterEpochMs: number = NEVER_EXPIRE_AT_TIMESTAMP
-    ): Promise<RuntimeStateConditionalWriteResult> {
-        const key = groupStateIdempotencyStorageKey(ref, requestId);
-        assertIdempotencyIdentity(record, { ...ref, requestId }, key);
-        return await this.putValueIfAbsent(IDEMPOTENT_NAMESPACE, key, record, purgeAfterEpochMs);
     }
 
     async insertGroup(group: Group): Promise<RuntimeStateConditionalWriteResult> {
@@ -141,7 +127,7 @@ export async function advanceGroupStateAuthorityFence(
 export function materializeGroupStateAuthorityGuard(
     guard: GroupStateAuthorityGuard
 ): RuntimeStateGuardedBatchUpdate {
-    const stored = assertGroupStateAuthorityGuard(guard);
+    const stored = decodeGroupStateAuthorityGuard(guard);
     return {
         operation: 'update',
         namespace: GROUPS_NAMESPACE,
@@ -205,7 +191,7 @@ export function toGroupStateAuthorityGuard(
     };
 }
 
-function assertGroupStateAuthorityGuard(
+function decodeGroupStateAuthorityGuard(
     guard: GroupStateAuthorityGuard
 ): RuntimeStateEntryValue<Group> {
     if (!guard || typeof guard !== 'object') {
@@ -278,7 +264,7 @@ function assertIdempotencyIdentity(
     storageKey: string
 ): void {
     try {
-        validateGroupMutationIdempotencyRecord(value, expected);
+        assertGroupMutationIdempotencyRecord(value, expected);
     }
     catch (error) {
         throw new GroupStateRepositoryInvariantCorruptionError(

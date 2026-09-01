@@ -3,8 +3,8 @@
 This document describes how a Rallar group forms: the authoritative formation lifecycle a group
 moves through, the policy document that drives it, how admission, the manager role, the activation
 criterion, and pre-activation data gating enforce that policy server-side, what the read surface
-exposes, and which black-box recipes pin each behaviour. It describes the code as it is on `main`
-today; the design history lives in `playground/rtc-design/`.
+exposes, and which black-box recipes verify each behaviour. The design history lives in
+`playground/rtc-design/`.
 
 The property that makes the whole layer safe to ship is this: **a group created without a
 `lifecyclePolicy` is the `optimistic` preset, which is exactly the behaviour groups had before the
@@ -33,46 +33,26 @@ _petition_ a transition by enqueueing a command. That command goes through AppIn
 the compute re-checks that the transition is legal from the group's current `lifecycleState`, and
 the request id pins the decision to the epoch the petition observed, so a repeated decision is an
 idempotent replay and a petition that lands after the group left the transition's source states is
-a `lifecycle-transition-invalid` rejection. The compute does not compare the petition's epoch with
-the stored one — the epoch only dedupes — so a petition that finds the group back in a legal source
-state at a later epoch is applied as written (see
-[One evaluator, two producers](#one-evaluator-two-producers)). The six-state RTC activation status
-projection from the design documents (`INACTIVE … FAILED`) is not implemented; only the readiness
-fraction exists.
+a `lifecycle-transition-invalid` rejection. Compute checks the formation epoch and exact planned-layout identity again. A stale petition
+cannot advance a later attempt. Readiness remains observation, never authority.
 
 ## Lifecycle States And Transitions
 
-Formation intent has four states and four transitions
-(`packages/shared/api/group-lifecycle/group-lifecycle-transitions.ts`):
+Formation intent has seven states. The eight application commands share one initiator policy:
 
-```text
-create (formation: phased) --> forming
-create (formation: immediate) --> active
+| Command            | From                     | To                                             |
+| ------------------ | ------------------------ | ---------------------------------------------- |
+| `start`            | dormant                  | forming                                        |
+| `plan`             | forming; planned         | planned (replan preserves epoch/electorate)    |
+| `connect`          | planned; reconfiguring   | connecting; reconnecting                       |
+| `activate`         | connecting; reconnecting | active                                         |
+| `reconfigure`      | active                   | reconfiguring when held; active when apply     |
+| `reset`            | any stage                | dormant, halted; clears layouts/attempt series |
+| `pause` / `resume` | any stage                | same stage; halted / flowing transport         |
 
-forming        -- start-establishment -->  connecting
-connecting     -- activate ------------->  active
-active         -- reopen-establishment ->  reconfiguring
-reconfiguring  -- activate ------------->  active
-connecting     -- fail-formation ------->  forming
-reconfiguring  -- fail-formation ------->  forming
-```
-
-| Transition             | From                          | To              |
-| ---------------------- | ----------------------------- | --------------- |
-| `start-establishment`  | `forming`                     | `connecting`    |
-| `activate`             | `connecting`, `reconfiguring` | `active`        |
-| `reopen-establishment` | `active`                      | `reconfiguring` |
-| `fail-formation`       | `connecting`, `reconfiguring` | `forming`       |
-
-`reconfiguring` is a distinct state, not `connecting` with a flag: the read surface tells a group
-that was active and is repairing its overlay apart from one that has never been active. The data
-gate does not read that difference — under `blocked-until-active` both block, because
-`canSendGroupMessage` tests only `lifecycleState !== 'active'` (see
-[Pre-Activation Data Gating](#pre-activation-data-gating)).
-
-A transition from any other state is the typed denial `lifecycle-transition-invalid`
-(`startFromActiveIsDenied` in `api-v1-group-lifecycle-transitions`). There is no terminal failure
-state: a formation that fails returns to `forming`, and the group stays joinable and retryable.
+The internal `fail-formation` command returns initial connecting to forming, but reconnecting to
+active with the accepted layout retained. Only initial forming failures arm bounded automatic retry.
+Other source states produce the typed `lifecycle-transition-invalid` denial.
 
 ### The aggregate fields
 
@@ -81,15 +61,14 @@ response and in every WS delta envelope:
 
 - `lifecycleState` — `phased` formation creates the group `forming`; `immediate` formation creates
   it `active` (`create-initial-group-mutation.ts`).
-- `formationEpoch` — a monotonic counter starting at `0`, advanced by every accepted transition and
-  by nothing else. Joins never advance it. Manager election and the formation timers key on it.
+- `formationEpoch` — a monotonic counter starting at `0`, advanced by stage changes. Idempotent plan, apply reconfigure and transport commands preserve it. Joins never advance it. Manager election and the formation timers key on it.
 - `formationElectorate` — the active member principal ids pinned at the last epoch boundary.
-  Creation pins `[creator]`; every accepted transition re-pins it to the active roster read in the
-  same mutation.
-- `establishmentStartedAtEpochMs` — set by `start-establishment` and `reopen-establishment`,
-  cleared to `null` by `fail-formation`, left alone by `activate`. The deadline half of the
-  criterion measures from it.
-- `formationAttemptCount` — incremented by `fail-formation` only.
+  Creation pins `[creator]`; epoch boundaries re-pin it to the active roster read in the same mutation.
+- `establishmentStartedAtEpochMs` — set on connect into connecting/reconnecting, cleared by
+  failure/reset. Held planning stages do not start clocks or evaluate deadlines.
+- `formationAttemptCount` — incremented by failure; activation and reset clear the series.
+- `transportState` — flowing or halted independently of lifecycle stage.
+- `acceptedLayoutIdentity` — the last accepted layout; reconfiguration preserves it until replacement.
 - `lastFormationOutcome` — `null` until the criterion first decides, then the recorded decision:
   `{ outcome: 'activated' | 'activated-degraded' | 'below-floor', observedRate, atEpochMs,
   formationEpoch }`. Operator activation records nothing; only criterion-commanded transitions do.
@@ -114,30 +93,20 @@ transport valve asks the same two and adds no third.
 | `server-auto` | No principal, ever (`forbidden-role`), owner included. Among the presets only `drop-in-social` uses it, and its `immediate` formation never phases. |
 
 `validateGroupLifecyclePolicy` does not reject a custom `server-auto` policy with
-`formation: 'phased'`. Such a group is created `forming` and nothing can start its establishment:
-the automation's only `start-establishment` is the retry after a `fail-formation`, which never fires
-from `forming`.
+`formation: 'phased'`. Such a group is created forming without a principal who can advance it.
+General automatic planning/connect trigger evaluation is deferred; initial formation retries are the
+narrow existing exception.
 
-`fail-formation` has no HTTP route and is criterion-commanded only; the mutation compute rejects it
-from any principal. The criterion's own commands run under the internal authority
-`formation-criterion`, which `validateTrustedAuthorityMode` limits to `activateGroup`,
-`failGroupFormation`, and `startGroupEstablishment`; the first two must carry an `observedRate`,
-while the retry leg's `startGroupEstablishment` carries none.
+`fail-formation` has no HTTP route. The `formation-criterion` authority permits only activate/fail
+with observed evidence. Retry plan/connect use `formation-automation`; topology publication cannot
+borrow either authority.
 
-### FORMING holds planning
+### Held planning and dialing stages
 
-Only `forming` holds topology planning. `isGroupTopologyPlannableAt`
-(`topology/planning/select-group-topology-planning-snapshot.ts`) is the one gate at the planning
-choke point: a forming group takes the same removed-topology branch as an archived one, so no
-overlay is planned or published and the server commands no dials. The browser is another matter:
-with no server overlay, `WebRtcGroupManager.targetPeerIdsForGroup` falls back to the group's online
-members and `computeOutboundDialPlan` dials up to `maxPeerConnections` of them, so a
-presence-connected forming lobby still makes bounded bootstrap RTC attempts. Holding those is not
-built (see [Not In V1](#not-in-v1)). `connecting`, `active`, and `reconfiguring` all plan.
-`api-v1-group-lifecycle-transitions` pins it: `GET …/topology` is `null` or `state: 'removed'`
-while forming, the `overlay.topology` hydration a forming member receives announces `removed`, and
-a plan exists after `start-establishment`. The admin `reconfigureGroupTopology` path bypasses the
-gate as an operator escape hatch.
+Dormant and forming suppress topology planning; planned and reconfiguring hold the candidate without
+dialing it. Connect freezes that exact candidate in connecting/reconnecting until activation, failure
+or reset. Browser dial gates enforce these distinctions, including cold-cache/bootstrap paths.
+Accepted traffic remains usable during reconfiguration; the separate transport valve can halt it.
 
 The safety baseline is never phase-gated: membership mutations, presence, and WS connectivity work
 in every state, including a group that never leaves `forming` (membership and presence:
@@ -149,24 +118,23 @@ never the ability to be in the group.
 
 ### Recipes
 
-`api-v1-group-lifecycle-transitions` walks a `managed` group with `activation.mode: 'manual'`
-through `forming` → `connecting` (epoch 1) → `active` (2) → `reconfiguring` (3) → `active` (4),
-pins `formationElectorate: [creator]` at creation, the non-manager denial `forbidden-role`, and the
-illegal-transition denial. Manual activation is pinned there because the managed preset's default
-`threshold-or-deadline` would otherwise auto-activate underneath the deterministic walk.
+The lifecycle recipe covers explicit plan, publication, connect and activate, plus reconfiguration
+and initiator denials. Managed scale recipes use the same publication-fenced lifecycle commands.
 
 ## The Policy Document
 
-`GroupLifecyclePolicy` (`packages/shared/api/group-lifecycle/group-lifecycle-policy.ts`) has six
-sections. Every field is required once normalized.
+`GroupLifecyclePolicy` (`packages/shared/api/group-lifecycle/group-lifecycle-policy.ts`) has formation
+and initiator choices plus six policy sections. Every field is required once normalized.
 
 | Section         | Fields                                                                                                 |
 | --------------- | ------------------------------------------------------------------------------------------------------ |
 | `formation`     | `'phased'` \| `'immediate'`                                                                            |
+| `initiator`     | `'manager'` \| `'any-member'` \| `'server-auto'`                                                       |
 | `manager`       | `selection`, `assignedPrincipalIds`, `count`, `succession`                                             |
-| `establishment` | `transports`, `initiator`, `maxConcurrentEdgeSetups`                                                   |
+| `establishment` | `transports`, `maxConcurrentEdgeSetups`, `planTrigger`, `connectTrigger`                               |
 | `activation`    | `mode`, `successRate`, `minimumViableRate`, `deadlineMs`, `maxFormationAttempts`, `strictConfirmation` |
 | `admission`     | `mode`, `untilEpochMs`, `untilMemberCount` (`null` means the window does not apply)                    |
+| `topology`      | `replanning`, `reconfigureLanding`, `debounceWindowMs`, `maxReplanWaitMs`                              |
 | `data`          | `preActivationAppData`: `'allowed'` \| `'blocked-until-active'`                                        |
 
 Two fields are carried but enforced by nothing in v1: `establishment.transports` and
@@ -203,7 +171,7 @@ reads them. Establishment pacing is whatever the browser's existing dial budget 
   not start rather than starting degraded.
 - `drop-in-social`'s `activation.mode: 'threshold'` never evaluates. `immediate` formation creates
   the group `active`, `server-auto` denies every principal-commanded transition, and the criterion
-  only runs in `connecting` or `reconfiguring`. What the preset actually buys is the open-until-50
+  only runs in `connecting` or `reconnecting`. What the preset actually buys is the open-until-50
   admission window, which binds from creation.
 
 ### Absent policy
@@ -387,8 +355,8 @@ principal, the principal accepts, and the manager resolves (`joinParksWithZeroMa
 **A pending admission survives epoch advances by construction.** Transitions write the aggregate and
 never touch member rows, and the pending row records no epoch because it is a consent, not a
 formation fact. Grant authorization is evaluated at grant time against the current electorate and
-epoch. The approval recipe parks a join in `forming`, drives `start-establishment` and an automatic
-single-member activation (epoch 2), asserts the row is still `pending`, then grants it in the later
+epoch. The approval recipe parks a join in `forming`, drives `plan` then `connect` and an automatic
+single-member activation, asserts the row is still `pending`, then grants it in the later
 epoch (`pendingAdmissionSurvivedTwoEpochAdvances`, `grantLandsInTheLaterEpoch`). A join while
 `active` parks too (`joinWhileActiveParksPending`).
 
@@ -484,24 +452,38 @@ at all. A single rate cannot distinguish a group that is usably connected from o
 `activate-degraded` at 5% would declare a group active that cannot carry the application's data.
 Setting the floor equal to the success rate asks for all-or-nothing.
 
-Below the floor, `fail-formation` returns intent to `forming`, records
-`lastFormationOutcome.outcome: 'below-floor'` with the observed rate, increments
-`formationAttemptCount`, and — while `formationAttemptCount < maxFormationAttempts` — schedules the
-next attempt under backoff: `computeFormationRetryBackoffMs(n) = min(5 000 × n, 60 000)`, where `n`
-is the just-incremented `formationAttemptCount`, so the second attempt starts 5 s after the first
-failure and the third 10 s after the second. When the attempts are exhausted the group rests in
-`forming`. That rest is not terminal: the
-transition table has no attempt check, so a manager may `start-establishment` again by hand; only
-the automatic retry is bounded. `api-v1-match-preset` pins a lobby whose edges never confirm
-exhausting both attempts and re-opening as a joinable lobby (`allOrNothingFloorReturnsToForming`,
-`honestFailureReopensTheClosedLobby`).
+Below the floor, initial connecting returns to forming, records the observed outcome, increments
+attempt count, and arms a retry while under the policy budget. Backoff is
+`min(5 000 × attemptCount, 60 000)`. Exhaustion requires a reset to begin another series.
+Reconnecting failure returns active and arms no retry: replanning policy, not failure, decides
+whether a new reconfiguration should begin.
+
+### Durable initial retry handoff
+
+The retry timer submits `planGroupLayout` through the automation AppInbox authority. Its accepted
+transaction writes the group, receipt, and `GroupConnectTriggerLatch` together with immediate
+durable intent work. Latches are server-private in `group-state:connect-trigger-latches`, keyed by
+full GroupRef, formation epoch and deterministic source-command generation. They remain
+`awaiting-publication` until a matching connect commits; submission never consumes them.
+
+If no plan exists, the initial work acknowledges but intent remains. Every accepted planned
+publication atomically writes a group-scoped publication wake. This wake discovers current
+epoch latches after commit, closing the race where publication prepared before latch creation but
+the initial intent check ran before publication committed. Publication work identity includes its
+source work and exact layout, using source audit timestamps so crash replay is immutable.
+
+The worker reads current group, latch and planned identity, then petitions exact connect through
+AppInbox. A superseding publication yields a new command identity. The connect write consumes the
+latch by CAS in the same transaction as the group and planned-layout guards, event, receipt and
+outbox. A failed guard or later write rolls everything back. Reset/epoch movement invalidates old
+latches; an old publication wake cannot revive one. No public request carries trigger authority.
 
 ### One evaluator, two producers
 
 `computeFormationCriterionCommand`
 (`packages/shared-server/rallar-system/topology/replay/work/compute-formation-criterion-command.ts`)
 is the single evaluation function: it returns `null` unless the group is `connecting` or
-`reconfiguring`, reads the policy (corrupt → `null`; absent → optimistic, whose `manual` mode waits),
+`reconnecting`, reads the policy (corrupt → `null`; absent → optimistic, whose `manual` mode waits),
 derives readiness from the supplied plan and evidence, evaluates the criterion, and returns the
 command it asks for — `activateGroup` with `observedRate` and a `degraded` flag, or
 `failGroupFormation` with `observedRate` — or `null`. Two producers call it.
@@ -524,39 +506,28 @@ group with an active stored plan petitions at most once per
 `DEFAULT_DEFERRED_CRITERION_PETITION_MIN_INTERVAL_MS` = 1 000 ms per group, process-locally; damped
 requests arm one trailing timer per group, because the crossing measurement lives at the burst's
 tail by construction. The trailing petition re-reads the stored plan and petitions only if it is
-still active; it is best-effort and only warns on failure. Two bounds are deliberate: it petitions
-for `connecting` only — a `reconfiguring` group under refinement-deferred work waits for the next
-computed plan or the deadline — and a removed stored plan never petitions, since its empty edge set
-would read as trivially complete.
+still active; it is best-effort and only warns on failure. Both dialing stages can petition; held reconfiguring cannot. A removed stored plan never petitions,
+since its empty edge set would read as trivially complete.
 
 **The time leg** exists because deadline expiry generates no evidence. The transitions arm it
 themselves (`computeFormationTimerEntries` in `formation-timer-outbox-entry.ts`), in the same
-AppInbox transaction: entering `connecting` or `reconfiguring` under a deadline mode writes one
+AppInbox transaction: entering `connecting` or `reconnecting` under a deadline mode writes one
 `FORMATION_TIMER` app-outbox entry due at `now + deadlineMs`; a below-floor return with attempts
 remaining writes one `retry` entry due after the backoff. Entries are inserted with
 `dequeueAudit.nextTs` at their due time, so every queue backend holds them invisible until then —
 native scheduling, no polling or requeue loop — and each carries the post-transition
 `formationEpoch`. The consumer (`create-formation-timer-work-handler.ts`) throws if an entry is not
 yet due (clock-skew defence; the retry release walks it forward), drops it if the group is gone or
-its epoch moved on, and then: a `retry` entry for a `forming` group submits `startGroupEstablishment`
-under `formation-criterion` authority; a `deadline` entry for a `connecting` or `reconfiguring`
+its epoch moved on, and then: a `retry` entry for a `forming` group submits `planGroupLayout`
+under `formation-automation` authority; a `deadline` entry for a `connecting` or `reconnecting`
 group reads the planning authority and the stored plan and runs the same evaluation function. If no
 plan is stored at deadline time the handler throws so the durable entry is retried rather than
 acknowledged, until topology publication catches up.
 
-**Racing producers replay instead of double-transitioning.** Criterion command ids are
-deterministic per decision and epoch —
-`formation-criterion:v1:<activate|activate-degraded|fail-formation|retry-establish>:<groupRef+epoch>`
-— and serve as the AppInbox request id, so the evidence leg and the time leg reaching the same
-conclusion produce one transition: the later petition is an idempotent replay when it carries the
-identical `observedRate` (the stored receipt is compared by the hash of the whole command, not only
-its id) and otherwise a typed idempotency-conflict rejection, never a second transition. A petition
-that lands after the group left the transition's source states is a `lifecycle-transition-invalid`
-rejection the mutation compute absorbs. The compute does not compare the petition's epoch with the
-stored one, so the one window left open is a petition that waits in the queue while the group cycles
-back into a legal source state at a later epoch — `connecting` → `forming` → `connecting` under
-the retry backoff, or `active` → `reconfiguring` by operator command — and is then applied with the
-older evidence.
+**Racing producers replay instead of double-transitioning.** Criterion request ids pin decision,
+epoch and exact layout. Compute rejects stale epochs and superseded layouts before a transition;
+matching duplicate commands replay the durable receipt. Retry generation derives from its source
+plan command, and connect identity additionally names the current planned layout.
 
 The deadline is the correctness backstop: whatever the evidence leg misses, the deadline evaluation
 decides. Under bursty evidence the edge-trigger moves activation from "at the next deadline
@@ -566,7 +537,7 @@ evaluation" to "within about a second of crossing the threshold"; it does not re
 
 `api-v1-group-formation-criterion` pins both legs: a single-member `threshold` group auto-activates
 from the trivially ready zero-edge plan its own establishment planning pass produces, with no RTT
-evidence involved (epoch 2, `outcome: 'activated'`, rate 1); a `deadline` group with
+evidence involved (epoch 3 after plan/connect/activate, `outcome: 'activated'`, rate 1); a `deadline` group with
 `minimumViableRate: 1` and two presence-connected members fails below the floor at its 3 s deadline
 (`forming`, attempt count 1, `outcome: 'below-floor'`, rate 0); a `deadline` group with floor 0 and
 two presence-connected members activates degraded at the deadline; and a `threshold-or-deadline`
@@ -601,23 +572,29 @@ default five reporting peers. `docs/rallar-rtc-rtt-reporting.md` owns the wider 
 ## Pre-Activation Data Gating
 
 `data.preActivationAppData: 'blocked-until-active'` gates WS-relayed, room-scoped application data
-until the group's `lifecycleState` is `active`. It is one added denial at the existing per-message
-predicate: `canSendGroupMessage` in `group-state/policy/group-message-policy.ts` denies `group-data-blocked-until-active` when
-the resolved value is `blocked-until-active` and the group is not `active` — so `forming`,
-`connecting`, and `reconfiguring` all block, which is the meaning `reconfiguring` exists to carry.
+until activation has accepted a layout. Accepted traffic can continue through reconfiguration
+while transport is flowing. A halted transport blocks application data under every data policy;
+CRDT remains exempt. Browser send/delivery gates enforce the same authority for RTC traffic.
 
 The room authorizer (`rallar-system/websocket/ws-topic-room-authorizer.ts`, composed in
 `apps/api-v1/src/services/ws-topic-room-authorizer.ts`) supplies the value lazily: it reads the
-policy only when the group is not `active`, so steady-state room traffic pays no policy read. An
+policy only in dormant, forming, planned, or connecting stages while transport is flowing;
+active and accepted-layout reconfiguration stages pay no policy read. An
 absent policy is `allowed` (main parity); a corrupt one is `blocked-until-active` (fail closed).
+
+Successful built-in authorization retains its current durable audience for the unchanged room
+target's live fanout. The router does not reconstruct that audience from the local snapshot cache.
+The publisher rechecks session expiry and target/exclusion identity after awaited handlers, and the
+live transport intersects the result with currently open local sockets. An empty authorized audience
+stays empty; transformed proxy targets use their own target resolution. The frame stays unchanged,
+delivery stays live-only, and no liveness-filtered durable projection is observed in the monotonic
+canonical cache. Generic custom authorizers may instead leave audience ownership with their resolver.
 
 The CRDT live topics `room.crdt` and `app.crdt` are exempt by name at the authorizer. CRDT `update`
 envelopes are never relayed by the topic — they enter the AppInbox append path and fan out from its
 commit — while the peer sync envelopes (`sync-request`, `sync-response`, `catch-up-response`) are
 relayed live, so the exemption lets CRDT sync traffic flow before activation; collaborative documents
-are lobby-phase workspace, not the competitive pre-match traffic the gate exists to hold back. Out of
-scope and unchanged: RTC data-channel traffic (`realtime.room` is peer-to-peer; the server only
-signals), presence (an HTTP mutation, never a WS topic), durable state-sync and
+are lobby-phase workspace, not the competitive pre-match traffic the gate exists to hold back. Unchanged: presence (an HTTP mutation, never a WS topic), durable state-sync and
 `overlay.topology` output, and the signaling and `rtt` ingress topics. API-v1 installs the durable
 topology AppOutbox owner, chat, signaling, RTC-RTT, CRDT, and then the user-topic router; state-sync
 and topology have no WebSocket ingress installers. Recognized state-sync input is rejected before
@@ -635,8 +612,10 @@ only in the authorizer's rejection log line. No HTTP route supplies `preActivati
 `data` section (normalized to `allowed`) relay during `forming`
 (`allowedSendReachesAliceWhileForming`, `defaultDataSendReachesAliceWhileForming`), and a fresh
 `room.match` send flows once the manager activates the blocked group (`activatedSendReachesAlice`).
+The allowed group remains forming throughout pause, presence/membership round trips, and resume:
+relay succeeds before halt, is absent while halted, and succeeds again after resume.
 The authorizer's absent-policy branch has no recipe pin: an absent policy creates the group
-`active`, so the gate reads it only after a `reopen-establishment`. `api-v1-match-preset` pins the
+`active`, and accepted-layout reconfiguration also bypasses that policy read. `api-v1-match-preset` pins the
 lobby NACK and the post-activation flow composed with the rest of the preset;
 `api-v1-drop-in-social-preset` pins data flowing from birth.
 
@@ -645,12 +624,8 @@ lobby NACK and the post-activation flow composed with the rest of the preset;
 ### Group snapshot
 
 Every group response — point reads, lists, mutation responses, and the WS `GroupStateDeltaEnvelope`
-— carries the six formation fields listed under
-[The aggregate fields](#the-aggregate-fields). They are required in the OpenAPI `Group` schema.
-Browser code receives them in every group snapshot and delta envelope it already consumes — the
-shared validators require all six — and exposes them as `GroupSnapshot.group`; nothing in
-`shared-web` reads them beyond validation today, and there is no dedicated browser facade operation
-for the lifecycle.
+— carries the mandatory formation and transport fields. Browser room operations expose all eight
+commands; browser dial/data enforcement uses the authoritative group and layout state.
 
 ### The formation view
 
@@ -681,15 +656,18 @@ admitted member in the payload — and `ownership-transferred` carries `fromPrin
 
 ### Routes and their failures
 
-| Route                                                              | Body                              | Success                                  |
-| ------------------------------------------------------------------ | --------------------------------- | ---------------------------------------- |
-| `POST …/groups/requests/{requestId}` with `lifecyclePolicy`        | `GroupLifecyclePolicyInput`       | `201` snapshot                           |
-| `POST …/groups/{groupId}/lifecycle/establish/requests/{requestId}` | `GroupLifecycleTransitionRequest` | `200` snapshot, `forming → connecting`   |
-| `POST …/lifecycle/activate/requests/{requestId}`                   | same                              | `200` snapshot, `→ active`               |
-| `POST …/lifecycle/reopen/requests/{requestId}`                     | same                              | `200` snapshot, `active → reconfiguring` |
-| `POST …/admissions/{principalId}/grant/requests/{requestId}`       | `GrantGroupAdmissionRequest`      | `200` snapshot, member `active`          |
-| `POST …/admissions/{principalId}/decline/requests/{requestId}`     | `DeclineGroupAdmissionRequest`    | `200` snapshot, member `left`            |
-| `GET …/groups/{groupId}/formation`                                 | —                                 | `200 GroupFormationView`                 |
+| Route                                                              | Body                                                                                   | Success                         |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ------------------------------- |
+| `POST …/groups/requests/{requestId}` with `lifecyclePolicy`        | `GroupLifecyclePolicyInput`                                                            | `201` snapshot                  |
+| `POST …/groups/{groupId}/lifecycle/{command}/requests/{requestId}` | actor/audit fields; connect requires epoch + exact layout; reconfigure accepts landing | `200` snapshot                  |
+| `POST …/admissions/{principalId}/grant/requests/{requestId}`       | `GrantGroupAdmissionRequest`                                                           | `200` snapshot, member `active` |
+| `POST …/admissions/{principalId}/decline/requests/{requestId}`     | `DeclineGroupAdmissionRequest`                                                         | `200` snapshot, member `left`   |
+| `GET …/groups/{groupId}/formation`                                 | —                                                                                      | `200 GroupFormationView`        |
+
+The lifecycle command segment is one of `plan`, `connect`, `activate`, `reconfigure`, `pause`,
+`resume`, `reset`, or `start`. The retired establishment URLs are not mounted.
+Reconfigure accepts omitted or null `landing` as the stored-policy default. It rejects a supplied
+`expectedFormationEpoch`: that nullable fence belongs to the internal command, not the public body.
 
 On the mutation routes, policy denials are typed `403 { type: 'api-mutation-failure', code, status }`
 with the `GroupPolicyReasonCode` (`forbidden-role`, `lifecycle-manager-unavailable`,
@@ -713,8 +691,7 @@ The pure core is pinned in `packages/tests/shared/`: `group-lifecycle-policy.tes
 `group-state/group-lifecycle-safety-baseline.test.ts`,
 `group-state/mutation/group-lifecycle-mutation.test.ts`,
 `group-state/mutation/group-admission-mutation.test.ts`, `rtc-topology-outbox-work.test.ts` (the
-damped edge-trigger; the computed-plan petition and the formation-timer handler have no unit test
-and are pinned by `api-v1-group-formation-criterion`), and
+damped edge-trigger; the criterion, formation timer and durable retry latch have focused semantic tests), and
 `rallar-system/topology/planning/group-topology-planning-service.test.ts` (the FORMING gate). The
 data gate is pinned in `apps/api-v1/test/services/ws-topic-room-authorizer.test.ts`.
 
@@ -725,17 +702,17 @@ recipes live in `packages/shared-test/black-box-runner/tests/api-v1/` and sit in
 `api-v1-black-box` and `api-v1-black-box-recipes` profiles of `recipe-matrix.json`, so the memory
 backend runs them in the fast loop and the Postgres CI job runs them in its base phase:
 
-| Recipe                               | Pins                                                                                                                                                                                                                            |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `api-v1-group-lifecycle-policy`      | a preset with overrides is accepted; absent ≡ explicit `optimistic`; the two validity `400`s                                                                                                                                    |
-| `api-v1-group-lifecycle-transitions` | the three HTTP transition commands through four epoch advances (`fail-formation` is criterion-only and pinned by the criterion, windows, and match recipes), FORMING holds planning, non-manager and illegal-transition denials |
-| `api-v1-group-formation-criterion`   | threshold, deadline, degraded, and evidence-driven activation                                                                                                                                                                   |
-| `api-v1-group-manager-succession`    | assigned managers, succession on removal and on leave, the zero-manager fallback                                                                                                                                                |
-| `api-v1-group-admission-approval`    | parking, grant, decline, re-request, zero-manager recovery, epoch survival, park while active                                                                                                                                   |
-| `api-v1-group-admission-windows`     | the binding phases of capacity, deadline, and `closed`                                                                                                                                                                          |
-| `api-v1-group-data-policy`           | the data gate, the CRDT exemption, `allowed` and absent flows, post-activation flow                                                                                                                                             |
-| `api-v1-match-preset`                | the composed `match` preset, including all-or-nothing failure and lobby re-opening                                                                                                                                              |
-| `api-v1-drop-in-social-preset`       | the composed `drop-in-social` preset                                                                                                                                                                                            |
+| Recipe                               | Pins                                                                                                                                                                                                                           |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `api-v1-group-lifecycle-policy`      | a preset with overrides is accepted; absent ≡ explicit `optimistic`; the two validity `400`s                                                                                                                                   |
+| `api-v1-group-lifecycle-transitions` | the explicit lifecycle HTTP commands and their epoch advances (`fail-formation` is criterion-only and pinned by the criterion, windows, and match recipes), FORMING holds planning, non-manager and illegal-transition denials |
+| `api-v1-group-formation-criterion`   | threshold, deadline, degraded, and evidence-driven activation                                                                                                                                                                  |
+| `api-v1-group-manager-succession`    | assigned managers, succession on removal and on leave, the zero-manager fallback                                                                                                                                               |
+| `api-v1-group-admission-approval`    | parking, grant, decline, re-request, zero-manager recovery, epoch survival, park while active                                                                                                                                  |
+| `api-v1-group-admission-windows`     | the binding phases of capacity, deadline, and `closed`                                                                                                                                                                         |
+| `api-v1-group-data-policy`           | the data gate, the CRDT exemption, `allowed` and default-group flows, post-activation flow, and the forming allowed-group transport valve                                                                                      |
+| `api-v1-match-preset`                | the composed `match` preset, including all-or-nothing failure and lobby re-opening                                                                                                                                             |
+| `api-v1-drop-in-social-preset`       | the composed `drop-in-social` preset                                                                                                                                                                                           |
 
 A recipe sits in exactly one of the profiles a single Postgres CI job runs: the job runs the base
 profile and then the cluster profile against the same servers under one run id, and a recipe in
@@ -807,10 +784,8 @@ writing this document:
 - **Enforcement of `establishment.transports` and `establishment.maxConcurrentEdgeSetups`.** Both
   are recorded and unread; establishment pacing is the browser dial budget.
 - **A pending-admission TTL.** Parked rows persist until granted, declined, withdrawn, or governed.
-- **Bootstrap suppression while `forming`.** The server plans nothing, but the browser's bounded
-  bootstrap still dials online members whenever no server overlay exists, so discovery is not yet
-  dial-free; the product plan in `playground/rtc-design/2026-08-22-group-activation-product-plan.md`
-  records the held-layout stages that close this.
+- **General automatic plan/connect policy evaluation.** Durable initial retry intent is implemented;
+  immediate, timed and presence trigger policies remain separate work.
 - **Distributed (Hetzner) lifecycle artifacts.** The recipes above are api-v1 black-box recipes
   against the real server; the distributed lane carries no lifecycle manifest.
 
@@ -854,7 +829,7 @@ writing this document:
   acceptance and the per-group reporting degree limit.
 - `packages/shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts` and
   `apps/api-v1/src/services/ws-topic-room-authorizer.ts`: the data gate and the CRDT exemption.
-- `apps/api-v1/src/group-state/register-group-state-mutation-routes.ts`,
+- `apps/api-v1/src/group-state/register-group-lifecycle-routes.ts`,
   `register-group-admission-routes.ts`, `apps/api-v1/src/routes/group-formation-view-read.ts`, and
   `apps/api-v1/resources/api-v1-openapi.yaml`: the HTTP surface.
 - `packages/shared-test/black-box-runner/tests/api-v1/`: the recipes named above, with profile

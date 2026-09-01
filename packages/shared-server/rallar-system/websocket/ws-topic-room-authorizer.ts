@@ -3,7 +3,7 @@ import {
     canSendGroupMessage
 } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
 import { denyGroupPolicy } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
-import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import { readALTargetGroupRef, type ALTargets } from '@shared/al-contracts/al-contract.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -12,8 +12,11 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RALLAR_CRDT_APP_TOPIC_ID, RALLAR_CRDT_ROOM_TOPIC_ID } from '@shared/crdt/crdt-types.ts';
 
 import type { RallarSnapshotPresenceClock } from '../presence/snapshot-presence.ts';
+import { isGroupSnapshotSessionLive } from '../presence/snapshot-presence.ts';
 import type {
+    RallarServerWsRoomAudience,
     RallarServerWsRoomAuthorizationDecision,
+    RallarServerWsRoomAuthorizationDenied,
     RallarServerWsRoomAuthorizationInput,
     RallarServerWsRoomAuthorizer
 } from './router/rallar-server-ws-router-contracts.ts';
@@ -45,45 +48,73 @@ export interface GroupRoomWsAuthorizerDependencies {
 export function createGroupRoomWsAuthorizer(
     dependencies: GroupRoomWsAuthorizerDependencies
 ): RallarServerWsRoomAuthorizer {
-    return async (input) => {
-        const snapshotRead = await readRoomAuthorizationSnapshot(dependencies, input);
-        if (snapshotRead.kind === 'denied') {
-            return snapshotRead.decision;
-        }
+    return (input) => authorizeGroupRoomMessage(dependencies, input);
+}
 
-        const { snapshot, serverSnapshotVersion } = snapshotRead;
-        const isCrdtTopic = input.topicId === RALLAR_CRDT_ROOM_TOPIC_ID ||
-            input.topicId === RALLAR_CRDT_APP_TOPIC_ID;
-        const preActivationAppData = await readRoomMessagePreActivationAppData(
-            dependencies,
-            snapshot,
-            isCrdtTopic
+async function authorizeGroupRoomMessage(
+    dependencies: GroupRoomWsAuthorizerDependencies,
+    input: RallarServerWsRoomAuthorizationInput
+): Promise<RallarServerWsRoomAuthorizationDecision> {
+    const targets = input.message.targets && structuredClone(input.message.targets);
+    if (!targets) {
+        return false;
+    }
+    const snapshotRead = await readRoomAuthorizationSnapshot(dependencies, input);
+    if (snapshotRead.kind === 'denied') {
+        return snapshotRead.decision;
+    }
+
+    const { snapshot, serverSnapshotVersion } = snapshotRead;
+    const isCrdtTopic = input.topicId === RALLAR_CRDT_ROOM_TOPIC_ID ||
+        input.topicId === RALLAR_CRDT_APP_TOPIC_ID;
+    const preActivationAppData = await readRoomMessagePreActivationAppData(
+        dependencies,
+        snapshot,
+        isCrdtTopic
+    );
+    const policyResult = canSendGroupMessage({
+        snapshot,
+        actor: {
+            sessionId: input.senderId
+        },
+        senderSessionId: input.senderId,
+        minSnapshotVersion: input.minSnapshotVersion,
+        nowEpochMs: dependencies.nowEpochMs(),
+        ...(preActivationAppData === undefined ? {} : { preActivationAppData })
+    });
+    if (!policyResult.allowed) {
+        return toPolicyDeniedDecision(input.roomId, policyResult, serverSnapshotVersion);
+    }
+    if (!isCrdtTopic && snapshot.group.transportState === 'halted') {
+        return toPolicyDeniedDecision(
+            input.roomId,
+            denyGroupPolicy(
+                'group-policy-denied',
+                'Group transport is halted for room application data.'
+            ),
+            serverSnapshotVersion
         );
-        const policyResult = canSendGroupMessage({
-            snapshot,
-            actor: {
-                sessionId: input.senderId
-            },
-            senderSessionId: input.senderId,
-            minSnapshotVersion: input.minSnapshotVersion,
-            nowEpochMs: dependencies.nowEpochMs(),
-            ...(preActivationAppData === undefined ? {} : { preActivationAppData })
-        });
-        if (!policyResult.allowed) {
-            return toPolicyDeniedDecision(input.roomId, policyResult, serverSnapshotVersion);
-        }
-        if (!isCrdtTopic && snapshot.group.transportState === 'halted') {
-            return toPolicyDeniedDecision(
-                input.roomId,
-                denyGroupPolicy(
-                    'group-policy-denied',
-                    'Group transport is halted for room application data.'
-                ),
-                serverSnapshotVersion
-            );
-        }
+    }
 
-        return { authorized: true, authorizedRoomSnapshot: snapshot };
+    return {
+        authorized: true,
+        audience: toAuthorizedRoomAudience(snapshot, targets, dependencies.nowEpochMs())
+    };
+}
+
+function toAuthorizedRoomAudience(
+    snapshot: GroupSnapshot,
+    targets: ALTargets,
+    nowEpochMs: number
+): RallarServerWsRoomAudience {
+    const activePrincipals = new Set(
+        snapshot.members.filter((member) => member.status === 'active').map((member) => member.principalId)
+    );
+    return {
+        targets,
+        sessions: snapshot.activeSessions.filter((session) =>
+            activePrincipals.has(session.principalId) && isGroupSnapshotSessionLive(session, nowEpochMs)
+        )
     };
 }
 
@@ -170,7 +201,7 @@ function toPolicyDeniedDecision(
     roomId: string,
     denial: GroupPolicyDenied,
     serverSnapshotVersion?: number
-): RallarServerWsRoomAuthorizationDecision {
+): RallarServerWsRoomAuthorizationDenied {
     return {
         authorized: false,
         reason: 'unauthorized',

@@ -8,10 +8,10 @@ import type {
     GroupMutationPreparation
 } from '../group-state-service-contracts.ts';
 import { requireNonNegativeSafeInteger } from '../group-state-validation-primitives.ts';
-import { validateGroupMutationRequest } from '../mutation/command-validation/group-mutation-request-validation.ts';
-import { validateGroupMutationCommand } from '../mutation/command-validation/validate-group-mutation-command.ts';
+import { assertGroupMutationCommand } from '../mutation/command-validation/assert-group-mutation-command.ts';
+import { assertGroupMutationRequest } from '../mutation/command-validation/group-mutation-request-validation.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from '../mutation/group-mutation-contracts.ts';
-import { validateGroupMutationFacts } from '../mutation/state-validation/validate-group-mutation-facts.ts';
+import { assertGroupMutationFacts } from '../mutation/state-validation/assert-group-mutation-facts.ts';
 
 export type DecodedGroupStateInboxAuthority =
     | Readonly<{ kind: 'authorized'; mutation: AuthorizedGroupMutation; }>
@@ -65,9 +65,9 @@ function decodeGroupMutationPreparation(value: JsonWireObject): GroupMutationPre
         if ((authorityProof === null) !== (descriptor === null)) {
             throw new TypeError('Prepared authority proof and descriptor must both be present');
         }
-        validateGroupMutationCommand(value.command);
+        assertGroupMutationCommand(value.command);
         const facts = decodePreparedGroupMutationFacts(value.facts);
-        validatePreparedAuthorityFacts(authorityProof, facts);
+        assertPreparedAuthorityFacts(authorityProof, facts);
         requireString(value.causalToken, 'Prepared group mutation causal token');
         requireString(value.queueResourceId, 'Prepared group mutation queue resource id');
         return {
@@ -142,7 +142,7 @@ function decodeNullableGroupMutationDescriptor(
     return value === null ? null : decodeGroupMutationDescriptor(value);
 }
 
-function decodeGroupMutationDescriptor(
+export function decodeGroupMutationDescriptor(
     value: JsonWireValue | undefined
 ): GroupMutationDescriptor {
     const descriptor = requireJsonWireObject(value, 'Group mutation descriptor');
@@ -169,7 +169,7 @@ function decodeGroupMutationDescriptor(
         descriptor.sessionId,
         'Group mutation descriptor session id'
     );
-    validateGroupMutationRequest(operation, descriptor.request);
+    assertGroupMutationRequest(operation, descriptor.request);
     return {
         operation,
         scope: {
@@ -205,7 +205,7 @@ function decodePreparedGroupMutationFacts(
     });
     const withAttemptCount = { ...facts, attemptCount: 1 };
     const decodedFacts = withAttemptCount as GroupMutationFacts;
-    validateGroupMutationFacts(decodedFacts);
+    assertGroupMutationFacts(decodedFacts);
     return {
         nowEpochMs: decodedFacts.nowEpochMs,
         expireAtEpochMs: decodedFacts.expireAtEpochMs,
@@ -229,7 +229,6 @@ function decodeGroupMutationOperation(
         case 'createGroup':
         case 'updateGroup':
         case 'appointDirector':
-        case 'startGroupEstablishment':
         case 'planGroupLayout':
         case 'connectGroup':
         case 'startGroupFormation':
@@ -238,7 +237,6 @@ function decodeGroupMutationOperation(
         case 'resumeGroupTransport':
         case 'activateGroup':
         case 'reconfigureGroup':
-        case 'reopenGroupEstablishment':
         case 'failGroupFormation':
         case 'applyPlannedLayout':
         case 'joinGroup':
@@ -263,7 +261,7 @@ function decodeGroupMutationOperation(
     }
 }
 
-function validatePreparedAuthorityFacts(
+function assertPreparedAuthorityFacts(
     authorityProof: GroupMutationAuthorityProof | null,
     facts: Omit<GroupMutationFacts, 'attemptCount'>
 ): void {

@@ -240,14 +240,6 @@ moved or changed test.
       "coverageRelation": "The named matrix test loads the published catalog or referenced recipe and asserts the exact uniqueness, coverage, compatibility, or CLI promise represented by this occurrence."
     },
     {
-      "id": "recipe-matrix-public-interface--uses-rallar-signaling-for-signaling-recipe-examples-and-keeps-on",
-      "domain": "Supported recipe matrix",
-      "owner": "Shared Test maintainers",
-      "summary": "Every example and test recipe is uniquely catalogued with explicit profile, execution mode, and compatibility. Executable assertion: “uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture”.",
-      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture",
-      "coverageRelation": "The named matrix test loads the published catalog or referenced recipe and asserts the exact uniqueness, coverage, compatibility, or CLI promise represented by this occurrence."
-    },
-    {
       "id": "repo-style-checker-interface",
       "domain": "Repository style checker interface",
       "owner": "Rallar repository maintainers",
@@ -1493,6 +1485,14 @@ moved or changed test.
         "requiredConstraint": "The subscribe callback and its returned unsubscribe callback each run exactly once.",
         "failureRationale": "Duplicate subscription delivers duplicate messages; skipped or duplicate disposal leaks listeners or repeats teardown side effects."
       }
+    },
+    {
+      "id": "group-http-translator-guard-reachability",
+      "domain": "Authoritative group mutation route ownership",
+      "owner": "Rallar server maintainers",
+      "summary": "Input rejection guards and statically unreachable throws preserve a reachable authenticated AppInbox command translator; unconditional throws do not.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#accepts legitimate input rejection guards and an unreachable throwing branch",
+      "coverageRelation": "The named test executes the actual route inventory analyzer on the shipped translator and a source mutation adding a false throwing branch. Both must retain the operation connection. Its neighboring parameterized negative executes unconditional throwing guards and requires loss of that connection. Source reads and mutation non-vacuity are inputs to these executable security assertions, not private-name or statement-order requirements."
     }
   ],
   "entries": [
@@ -1948,7 +1948,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts#validates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets"
     },
     {
-      "id": "test-structure-coupling-bed585f360e5499b",
+      "id": "test-structure-coupling-fb9c9389cdd8634a",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
       "kind": "production-source-read",
       "contract": "recipe-matrix-public-interface--advertises-the-api-v1-profile-in-recipe-matrix-cli-usage",
@@ -1957,17 +1957,6 @@ moved or changed test.
       "owner": "Shared Test maintainers",
       "rationale": "Reads the executable recipe-matrix CLI module whose help text is the published command-line interface under review.",
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#advertises the API-v1 profile in recipe-matrix CLI usage"
-    },
-    {
-      "id": "test-structure-coupling-fb9c9389cdd8634a",
-      "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "kind": "production-source-read",
-      "contract": "recipe-matrix-public-interface--labels-every-api-v1-entry-with-an-honest-evidence-tier",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Shared Test maintainers",
-      "rationale": "Reads each catalogued API-v1 recipe as shipped so its declared evidence tier is checked against the evidence source the runner will actually execute.",
-      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#labels every api-v1 entry with an honest evidence tier"
     },
     {
       "id": "test-structure-coupling-0f68df9519a8ce12",
@@ -1984,12 +1973,12 @@ moved or changed test.
       "id": "test-structure-coupling-9b899f9dd65c29c0",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
       "kind": "production-source-read",
-      "contract": "recipe-matrix-public-interface--uses-rallar-signaling-for-signaling-recipe-examples-and-keeps-on",
+      "contract": "recipe-matrix-public-interface--labels-every-api-v1-entry-with-an-honest-evidence-tier",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Loads the designated legacy alias fixture separately so the catalog can require rallar-signaling everywhere else without deleting compatibility evidence.",
-      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture"
+      "rationale": "Reads each catalogued API-v1 recipe as shipped so its declared evidence tier is checked against the evidence source the runner will actually execute.",
+      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#labels every api-v1 entry with an honest evidence tier"
     },
     {
       "id": "test-structure-coupling-b31fa92c6a3d7af1",
@@ -3574,6 +3563,50 @@ moved or changed test.
       "owner": "Shared Test maintainers",
       "rationale": "One invocation of the acquired unsubscribe disposer proves cleanup releases the shared subscription without repeating its side effect.",
       "semanticCoverage": "packages/tests/shared-test/rallar-browser-runtime-resource-controllers.test.ts#deduplicates and disposes WS subscriptions while fencing stale leases"
+    },
+    {
+      "id": "test-structure-coupling-2587ac15f9ef4b7a",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-http-translator-guard-reachability",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the actual translator as executable analyzer input, preserving its real input-validation guards while testing an added statically unreachable throw. The test requires semantic route ownership to survive both inputs.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#accepts legitimate input rejection guards and an unreachable throwing branch"
+    },
+    {
+      "id": "test-structure-coupling-cc1a11e1ef4e42a1",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts",
+      "kind": "symbol-assertion",
+      "contract": "group-http-translator-guard-reachability",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Asserts only that the source mutation actually changed the analyzer input before the semantic acceptance assertion. This prevents a vacuous passing security regression; it does not require any private symbol spelling, file size, or order.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#accepts legitimate input rejection guards and an unreachable throwing branch"
+    },
+    {
+      "id": "test-structure-coupling-8e81af49be0bf713",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-a-missing-family-to-private-owner-argument",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Removes one private-owner argument from a family call, proving the boundary tracks the complete dependency tuple.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a missing family-to-private-owner argument"
+    },
+    {
+      "id": "test-structure-coupling-29142dfe723974a7",
+      "path": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts",
+      "kind": "production-source-read",
+      "contract": "group-mutation-construction--rejects-an-extra-family-to-private-owner-argument",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Adds an unapproved argument at the family/private-owner handoff, catching widened construction that could conceal a second dependency source.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra family-to-private-owner argument"
     }
   ]
 }

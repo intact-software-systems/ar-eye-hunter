@@ -1,7 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { consumesFormationDeadlineAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -9,7 +9,7 @@ import {
     decodeFormationTimerWork,
     type GroupFormationTimerWork
 } from '../../../group-state/formation-timer-outbox-entry.ts';
-import { toFormationRetryEstablishCommand } from '../../../group-state/group-formation-mutation-command.ts';
+import { toFormationRetryPlanCommand } from '../../../group-state/group-formation-mutation-command.ts';
 import type { GroupMutationCommand } from '../../../group-state/mutation/group-mutation-contracts.ts';
 import type { GroupLifecyclePolicyRead } from '../../../group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { GroupTopologyGroupSnapshotReader } from '../../planning/group-topology-planning-contracts.ts';
@@ -25,6 +25,7 @@ export interface FormationTimerWorkHandlerOptions {
     readonly readPlannedTopology: (ref: GroupRef) => Promise<RallarOverlayTopologySnapshot | null>;
     readonly topologyPlanning: Pick<GroupTopologyPlanningService, 'readTopologyPlanningAuthority'>;
     readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
+    readonly submitAutomationCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
     readonly submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
     readonly nowEpochMs: () => number;
 }
@@ -32,9 +33,7 @@ export interface FormationTimerWorkHandlerOptions {
 /**
  * A `retry` entry fires only for a `forming` group. The deadline's stages
  * are owned by `consumesFormationDeadlineAt`, shared with the site that
- * arms them so the two cannot disagree; keep that row in lockstep with
- * `CRITERION_EVALUATES` in compute-formation-criterion-command.ts — this
- * gate is that path's entry.
+ * arms them and with criterion evaluation so the stages cannot disagree.
  */
 const RETRY_TIMER_CONSUMES: Readonly<Record<GroupLifecycleState, boolean>> = {
     dormant: false,
@@ -91,8 +90,8 @@ async function processFormationTimerWork(
         if (!RETRY_TIMER_CONSUMES[snapshot.group.lifecycleState]) {
             return;
         }
-        await options.submitCommand(
-            toFormationRetryEstablishCommand({
+        await options.submitAutomationCommand(
+            toFormationRetryPlanCommand({
                 groupRef: work.groupRef,
                 formationEpoch: work.formationEpoch
             }),
@@ -103,13 +102,22 @@ async function processFormationTimerWork(
     if (!consumesFormationDeadlineAt(snapshot.group.lifecycleState)) {
         return;
     }
-    const [authority, planned] = await Promise.all([
+    await processFormationDeadline(options, work, snapshot);
+}
+
+async function processFormationDeadline(
+    options: FormationTimerWorkHandlerOptions,
+    work: GroupFormationTimerWork,
+    snapshot: GroupSnapshot
+): Promise<void> {
+    const [authority, planned, lifecyclePolicy] = await Promise.all([
         options.topologyPlanning.readTopologyPlanningAuthority({
             groupRef: work.groupRef,
             knownGroup: snapshot,
             snapshotSelection: 'prefer-current'
         }),
-        options.readPlannedTopology(work.groupRef)
+        options.readPlannedTopology(work.groupRef),
+        options.readLifecyclePolicy(work.groupRef)
     ]);
     if (planned === null || planned.state !== 'active') {
         // A missing or tombstoned plan retries the durable deadline rather
@@ -117,12 +125,12 @@ async function processFormationTimerWork(
         // removed plan anyway, and a silent return would spend the timer.
         throw new Error('Formation topology plan is not available; retry the deadline evaluation');
     }
-    const command = await computeFormationCriterionCommand({
+    const command = computeFormationCriterionCommand({
         group: authority.group,
         planned,
         rttMeasurements: authority.rttMeasurements,
         nowEpochMs: authority.nowEpochMs,
-        readLifecyclePolicy: options.readLifecyclePolicy
+        lifecyclePolicy
     });
     if (command === null) {
         return;

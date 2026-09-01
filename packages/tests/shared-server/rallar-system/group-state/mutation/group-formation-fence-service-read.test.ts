@@ -1,16 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { toFormationActivateCommand, toFormationRetryEstablishCommand } from '@shared-server/rallar-system/group-state/group-formation-mutation-command.ts';
+import { toFormationActivateCommand, toFormationRetryPlanCommand } from '@shared-server/rallar-system/group-state/group-formation-mutation-command.ts';
 import type { GroupStateMutationCommand } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createTestGroupStateService } from '../group-state-test-runtime.ts';
+import { createTestGroupStateService, type GroupStateTestService } from '../group-state-test-runtime.ts';
 
 const SCOPE = { applicationId: 'fence-read-app', workspaceId: 'fence-read-workspace' } as const;
 const GROUP_REF: GroupRef = { ...SCOPE, groupId: 'fence-read-group' };
@@ -50,7 +49,14 @@ interface FenceReadHarnessOptions {
     readonly readAcceptedLayoutRow?: (ref: GroupRef) => Promise<null>;
 }
 
-async function createFenceReadHarness(options: FenceReadHarnessOptions = {}) {
+interface FenceReadHarness {
+    readonly service: GroupStateTestService;
+    readonly readRefs: readonly GroupRef[];
+    readonly acceptedReadRefs: readonly GroupRef[];
+    prepare(command: GroupMutationCommand): Promise<GroupStateMutationCommand>;
+}
+
+async function createFenceReadHarness(options: FenceReadHarnessOptions = {}): Promise<FenceReadHarness> {
     const readRefs: GroupRef[] = [];
     const acceptedReadRefs: GroupRef[] = [];
     const service = createTestGroupStateService({
@@ -79,7 +85,9 @@ async function createFenceReadHarness(options: FenceReadHarnessOptions = {}) {
         requestId: 'fence-read-seed'
     });
     const prepare = async (command: GroupMutationCommand): Promise<GroupStateMutationCommand> => {
-        const preparation = await service.prepareFormationCriterionMutation(command, 1_000);
+        const preparation = command.operation === 'planGroupLayout'
+            ? await service.prepareFormationAutomationMutation(command, 1_000)
+            : await service.prepareFormationCriterionMutation(command, 1_000);
         return {
             authorityProof: null,
             descriptor: null,
@@ -107,10 +115,10 @@ describe('formation fence through the durable service read', () => {
         expect(read.plannedLayoutRow?.snapshot).toEqual(PLANNED_SNAPSHOT);
     });
 
-    it('never invokes the reader for a criterion command without a layout fence', async () => {
+    it('never invokes the reader for a automatic plan command without a layout fence', async () => {
         const { service, readRefs, prepare } = await createFenceReadHarness();
         const prepared = await prepare(
-            toFormationRetryEstablishCommand({ groupRef: GROUP_REF, formationEpoch: 0 })
+            toFormationRetryPlanCommand({ groupRef: GROUP_REF, formationEpoch: 0 })
         );
 
         const read = await service.read(prepared);
@@ -167,6 +175,11 @@ describe('formation fence through the durable service read', () => {
         // A matching fence passes through to the state machine, which denies
         // activation from the seeded stage — proving the fence consumed and
         // accepted the identity the service read, not a fixture.
-        expect(() => service.compute(matching, read)).toThrow(GroupPolicyDeniedError);
+        expect(service.compute(matching, read)).toMatchObject({
+            outcome: 'rejected',
+            rejectionCode: 'group-policy-denied',
+            policyDenial: { code: 'lifecycle-transition-invalid' },
+            receipt: { eventId: null, outboxIds: [] }
+        });
     });
 });

@@ -65,35 +65,7 @@ export function computeFormationTimerEntry(input: ComputeFormationTimerEntryInpu
         contextId
     });
     const createdBy = toAppQueueCreatedBy(input.senderId);
-    const message: ALMessage = {
-        id: {
-            v: 2,
-            msgId: key.resourceId,
-            ts: input.createdAtEpochMs,
-            senderId: createdBy
-        },
-        route: key,
-        constraints: { expiresAtMs: input.expireAtEpochMs },
-        ordering: {
-            orderingKey: key.contextId,
-            epoch: work.formationEpoch,
-            seq: 0
-        },
-        delivery: {
-            ownership: 'exclusive',
-            reliability: 'at-least-once',
-            ack: 'none'
-        },
-        payload: {
-            typeId: AppOutboxType.FORMATION_TIMER,
-            contentType: 'application/json',
-            resource: JSON.stringify(work)
-        },
-        audit: {
-            createdBy,
-            createdTs: input.createdAtEpochMs
-        }
-    };
+    const message = toFormationTimerMessage({ input, work, key, createdBy });
     const createdTs = Temporal.Instant.fromEpochMilliseconds(input.createdAtEpochMs)
         .toZonedDateTimeISO('UTC')
         .toPlainDateTime();
@@ -176,10 +148,6 @@ export function computeFormationTimerEntries(
 ): readonly ResourceEntry[] {
     const { command, next, policy, facts } = input;
     const deadlineArmed = policy.activation.mode === 'deadline' || policy.activation.mode === 'threshold-or-deadline';
-    // Arm on the stage the transition landed in, and only where the
-    // deadline is actually evaluated: a stage that begins an attempt but
-    // consumes no deadline (reconnecting today) would queue an entry the
-    // timer handler drops, parking the group with no evaluation.
     if (consumesFormationDeadlineAt(next.lifecycleState) && deadlineArmed) {
         return [timerEntry(input, 'deadline', facts.nowEpochMs + policy.activation.deadlineMs)];
     }
@@ -187,7 +155,7 @@ export function computeFormationTimerEntries(
         activation: policy.activation,
         formationAttemptCount: next.formationAttemptCount
     });
-    if (command.operation === 'failGroupFormation' && retryAllowed) {
+    if (command.operation === 'failGroupFormation' && next.lifecycleState === 'forming' && retryAllowed) {
         return [
             timerEntry(
                 input,
@@ -260,4 +228,43 @@ function readNonNegativeSafeInteger(value: JsonWireValue | undefined, label: str
         throw new TypeError(`${label} is invalid`);
     }
     return value;
+}
+
+interface FormationTimerMessageInput {
+    readonly input: ComputeFormationTimerEntryInput;
+    readonly work: GroupFormationTimerWork;
+    readonly key: ResourceEntry['key'];
+    readonly createdBy: string;
+}
+
+function toFormationTimerMessage({ input, work, key, createdBy }: FormationTimerMessageInput): ALMessage {
+    return {
+        id: {
+            v: 2,
+            msgId: key.resourceId,
+            ts: input.createdAtEpochMs,
+            senderId: createdBy
+        },
+        route: key,
+        constraints: { expiresAtMs: input.expireAtEpochMs },
+        ordering: {
+            orderingKey: key.contextId,
+            epoch: work.formationEpoch,
+            seq: 0
+        },
+        delivery: {
+            ownership: 'exclusive',
+            reliability: 'at-least-once',
+            ack: 'none'
+        },
+        payload: {
+            typeId: AppOutboxType.FORMATION_TIMER,
+            contentType: 'application/json',
+            resource: JSON.stringify(work)
+        },
+        audit: {
+            createdBy,
+            createdTs: input.createdAtEpochMs
+        }
+    };
 }

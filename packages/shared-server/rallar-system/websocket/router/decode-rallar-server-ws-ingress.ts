@@ -4,10 +4,10 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
+    RallarServerWsRoomAudience,
     RallarServerWsRoomAuthorizationDecision,
     RallarServerWsRoomAuthorizer,
     RallarServerWsTopicDefinition,
@@ -27,7 +27,7 @@ export interface AuthorizeRallarServerWsIngressInput {
 export type RallarServerWsAuthorizationResult =
     | {
         readonly authorized: true;
-        readonly authorizedRoomSnapshot: GroupSnapshot | undefined;
+        readonly audience: RallarServerWsRoomAudience | undefined;
     }
     | {
         readonly authorized: false;
@@ -55,13 +55,18 @@ export async function authorizeRallarServerWsIngress(
     input: AuthorizeRallarServerWsIngressInput
 ): Promise<RallarServerWsAuthorizationResult> {
     if (input.definition?.scope !== 'room' && !isRoomScopedALMessage(input.message)) {
-        return { authorized: true, authorizedRoomSnapshot: undefined };
+        return { authorized: true, audience: undefined };
     }
     const roomId = readRallarServerWsRoomId(input.message);
     if (!roomId || !input.authorizeRoomMessage) {
-        return toRoomAuthorizationResult(false, input.message);
+        return {
+            authorized: false,
+            reason: 'unauthorized',
+            logMessage: `Rejected unauthorised Rallar server WS topic: ${input.message.route.topicId}`,
+            serverSnapshotVersion: undefined
+        };
     }
-    return toRoomAuthorizationResult(
+    return normalizeRoomAuthorizationDecision(
         await input.authorizeRoomMessage({
             message: input.message,
             definition: input.definition
@@ -72,7 +77,7 @@ export async function authorizeRallarServerWsIngress(
             senderId: input.message.id.senderId,
             topicId: input.message.route.topicId,
             typeId: input.message.payload.typeId,
-            minSnapshotVersion: resolveRallarServerWsMinSnapshotVersion(input.message)
+            minSnapshotVersion: readRallarServerWsMinSnapshotVersion(input.message)
         }),
         input.message
     );
@@ -109,22 +114,22 @@ export function readRallarServerWsRoomRef(message: ALMessage): GroupRef | undefi
         : undefined;
 }
 
-function resolveRallarServerWsMinSnapshotVersion(message: ALMessage): number | undefined {
+function readRallarServerWsMinSnapshotVersion(message: ALMessage): number | undefined {
     const targets = message.targets;
     return targets?.mode === 'multicast' || targets?.mode === 'broadcast'
         ? targets.minSnapshotVersion
         : undefined;
 }
 
-function toRoomAuthorizationResult(
+function normalizeRoomAuthorizationDecision(
     decision: RallarServerWsRoomAuthorizationDecision,
     message: ALMessage
 ): RallarServerWsAuthorizationResult {
     if (decision === true) {
-        return { authorized: true, authorizedRoomSnapshot: undefined };
+        return { authorized: true, audience: undefined };
     }
     if (decision !== false && decision.authorized) {
-        return { authorized: true, authorizedRoomSnapshot: decision.authorizedRoomSnapshot };
+        return { authorized: true, audience: decision.audience };
     }
     const denial = decision === false ? undefined : decision;
     return {

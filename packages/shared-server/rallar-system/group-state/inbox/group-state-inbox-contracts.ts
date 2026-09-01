@@ -25,185 +25,183 @@ import type { GroupTopologyReconfigureLanding } from '@shared/api/group-lifecycl
 
 import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 
-export type GroupCreateAppInboxPayload = Readonly<{
-    scope: StateScope;
-    request: CreateGroupRequest;
-}>;
+export interface GroupCreateAppInboxPayload {
+    readonly scope: StateScope;
+    readonly request: CreateGroupRequest;
+}
 
-export type GroupUpdateAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: UpdateGroupRequest;
-}>;
+export interface GroupUpdateAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly request: UpdateGroupRequest;
+}
 
-export type GroupDirectorAppointAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: AppointGroupDirectorRequest;
-}>;
+export interface GroupDirectorAppointAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly request: AppointGroupDirectorRequest;
+}
 
 /**
  * `connect` names the exact planned layout it means to dial (product
  * decision 32), so its causal fence rides inside `request` (I16) — the
  * payload cannot reuse the bare lifecycle shape.
  */
-export type GroupConnectAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request:
+export interface GroupConnectAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly request:
         & MutationActorInput
         & Readonly<{
             expectedFormationEpoch: number;
             expectedLayout: GroupLayoutIdentity;
         }>;
-}>;
+}
 
-export type GroupLifecycleTransitionAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: MutationActorInput;
-}>;
+export interface GroupLifecycleTransitionAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly request: MutationActorInput;
+}
 
-export type GroupReconfigureAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request:
+export interface GroupReconfigureAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly request:
         & MutationActorInput
         & Readonly<{
             expectedFormationEpoch: number | null;
             landing: GroupTopologyReconfigureLanding | null;
         }>;
-}>;
+}
 
-export type GroupJoinAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: JoinGroupRequest;
-}>;
+export interface GroupJoinAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly request: JoinGroupRequest;
+}
 
-export type GroupInviteCreateAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: CreateGroupInviteRequest;
-}>;
+export interface GroupInviteCreateAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly request: CreateGroupInviteRequest;
+}
 
-export type GroupInviteRevokeAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: RevokeGroupInviteRequest;
-}>;
+export interface GroupInviteRevokeAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly request: RevokeGroupInviteRequest;
+}
 
-export type GroupInviteAcceptAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: AcceptGroupInviteRequest;
-}>;
+export interface GroupInviteAcceptAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly request: AcceptGroupInviteRequest;
+}
 
-export type GroupAdmissionGrantAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: MutationActorInput;
-}>;
+export interface GroupAdmissionGrantAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly request: MutationActorInput;
+}
 
-export type GroupAdmissionDeclineAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: MutationActorInput;
-}>;
+export interface GroupAdmissionDeclineAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly request: MutationActorInput;
+}
 
-export type GroupJoinCodeRotateAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: RotateGroupJoinCodeRequest;
-}>;
+export interface GroupJoinCodeRotateAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly request: RotateGroupJoinCodeRequest;
+}
 
-export type GroupMemberRemoveAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: RemoveGroupMemberRequest;
-}>;
+export interface GroupMemberRemoveAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly request: RemoveGroupMemberRequest;
+}
 
-export type GroupMemberBanAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: BanGroupMemberRequest;
-}>;
+export interface GroupMemberBanAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly request: BanGroupMemberRequest;
+}
 
-export type GroupMemberUnbanAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: UnbanGroupMemberRequest;
-}>;
+export interface GroupMemberUnbanAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly request: UnbanGroupMemberRequest;
+}
 
-export type GroupMemberRoleSetAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: SetGroupMemberRoleRequest;
-}>;
+export interface GroupMemberRoleSetAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly request: SetGroupMemberRoleRequest;
+}
 
-export type GroupOwnershipTransferAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: TransferGroupOwnershipRequest;
-}>;
+export interface GroupOwnershipTransferAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly request: TransferGroupOwnershipRequest;
+}
 
-export type GroupMemberUpsertAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: UpsertGroupMemberRequest;
-}>;
+export interface GroupMemberUpsertAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly principalId: string;
+    readonly request: UpsertGroupMemberRequest;
+}
 
-export type GroupPresenceConnectAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    sessionId: string;
-    request: ConnectGroupPresenceSessionRequest;
-}>;
+export interface GroupPresenceConnectAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly sessionId: string;
+    readonly request: ConnectGroupPresenceSessionRequest;
+}
 
-export type GroupPresenceHeartbeatAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    sessionId: string;
-    request: HeartbeatGroupPresenceSessionRequest;
-}>;
+export interface GroupPresenceHeartbeatAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly sessionId: string;
+    readonly request: HeartbeatGroupPresenceSessionRequest;
+}
 
 /**
  * The transport valve's payload (product decision 25). It carries no
  * operation field: the caller names only the decision and itself — the
  * command's direction is the AppInbox type.
  */
-export type GroupTransportCommandAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    request: MutationActorInput;
-}>;
+export interface GroupTransportCommandAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly request: MutationActorInput;
+}
 
-export type GroupPresenceDisconnectAppInboxPayload = Readonly<{
-    scope: StateScope;
-    groupId: string;
-    sessionId: string;
-    request: DisconnectGroupPresenceSessionRequest;
-}>;
+export interface GroupPresenceDisconnectAppInboxPayload {
+    readonly scope: StateScope;
+    readonly groupId: string;
+    readonly sessionId: string;
+    readonly request: DisconnectGroupPresenceSessionRequest;
+}
 
 export interface AuthenticatedGroupMutationPayloadByType {
     [AppInboxType.GROUP_CREATE]: GroupCreateAppInboxPayload;
     [AppInboxType.GROUP_UPDATE]: GroupUpdateAppInboxPayload;
     [AppInboxType.GROUP_DIRECTOR_APPOINT]: GroupDirectorAppointAppInboxPayload;
-    [AppInboxType.GROUP_ESTABLISHMENT_START]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_PLAN]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_CONNECT]: GroupConnectAppInboxPayload;
     [AppInboxType.GROUP_ACTIVATE]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_RECONFIGURE]: GroupReconfigureAppInboxPayload;
-    [AppInboxType.GROUP_ESTABLISHMENT_REOPEN]: GroupLifecycleTransitionAppInboxPayload;
     [AppInboxType.GROUP_JOIN]: GroupJoinAppInboxPayload;
     [AppInboxType.GROUP_INVITE_CREATE]: GroupInviteCreateAppInboxPayload;
     [AppInboxType.GROUP_INVITE_REVOKE]: GroupInviteRevokeAppInboxPayload;
@@ -247,12 +245,10 @@ export const AUTHENTICATED_GROUP_INBOX_TYPES = [
     AppInboxType.GROUP_CREATE,
     AppInboxType.GROUP_UPDATE,
     AppInboxType.GROUP_DIRECTOR_APPOINT,
-    AppInboxType.GROUP_ESTABLISHMENT_START,
     AppInboxType.GROUP_PLAN,
     AppInboxType.GROUP_CONNECT,
     AppInboxType.GROUP_ACTIVATE,
     AppInboxType.GROUP_RECONFIGURE,
-    AppInboxType.GROUP_ESTABLISHMENT_REOPEN,
     AppInboxType.GROUP_JOIN,
     AppInboxType.GROUP_INVITE_CREATE,
     AppInboxType.GROUP_INVITE_REVOKE,
@@ -279,6 +275,7 @@ export const GROUP_MUTATION_INBOX_TYPES = [
     ...AUTHENTICATED_GROUP_INBOX_TYPES,
     AppInboxType.GROUP_PRESENCE_EXPIRE,
     AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
+    AppInboxType.GROUP_FORMATION_AUTOMATION,
     AppInboxType.GROUP_FORMATION_CRITERION,
     AppInboxType.GROUP_TOPOLOGY_PUBLICATION
 ] as const;

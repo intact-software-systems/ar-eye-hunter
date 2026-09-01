@@ -1,15 +1,15 @@
-import { validateGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-authority.ts';
+import { assertGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/assert-group-mutation-authority.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('group mutation authority validation', () => {
     it('accepts facts whose authenticated authority exactly owns the command actor', () => {
-        expect(() => validateGroupMutationAuthority(updateCommand(), authenticatedFacts())).not.toThrow();
+        expect(() => assertGroupMutationAuthority(updateCommand(), authenticatedFacts())).not.toThrow();
     });
 
     it('rejects facts whose authenticated authority differs from the command actor', () => {
         expect(() =>
-            validateGroupMutationAuthority(updateCommand(), {
+            assertGroupMutationAuthority(updateCommand(), {
                 ...authenticatedFacts(),
                 authenticatedAuthority: {
                     principalId: 'mallory',

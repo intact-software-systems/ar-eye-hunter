@@ -160,7 +160,9 @@
             "formation": "phased",
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": ["{aliceClientId}"],
+              "assignedPrincipalIds": [
+                "{aliceClientId}"
+              ],
               "count": 1
             },
             "initiator": "manager",
@@ -528,7 +530,9 @@
             "formation": "phased",
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": ["{aliceClientId}"],
+              "assignedPrincipalIds": [
+                "{aliceClientId}"
+              ],
               "count": 1
             },
             "initiator": "manager",
@@ -692,7 +696,9 @@
             "formation": "phased",
             "manager": {
               "selection": "assigned",
-              "assignedPrincipalIds": ["{aliceClientId}"],
+              "assignedPrincipalIds": [
+                "{aliceClientId}"
+              ],
               "count": 1
             },
             "initiator": "manager",
@@ -833,24 +839,91 @@
       }
     },
     {
-      "name": "managerEstablishes",
+      "name": "managerPlans",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/establish/requests/establish-data-policy-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/plan/requests/plan-data-policy-{runId}",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "managerPlansPlannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "managerPlansPublication",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "managerPlansLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "managerPlansLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "managerPlansLayoutVersion": "body.snapshot.version",
+          "managerPlansLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "managerPlansConnectsPublishedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/connect/requests/connect-plan-data-policy-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{managerPlansPlannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{managerPlansLayoutGroupRevision}",
+            "presenceRevision": "{managerPlansLayoutPresenceRevision}",
+            "version": "{managerPlansLayoutVersion}",
+            "state": "{managerPlansLayoutState}"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
           "group": {
             "lifecycleState": "connecting",
-            "formationEpoch": 1
+            "formationEpoch": 2
           }
         }
       }
@@ -873,7 +946,7 @@
         "body": {
           "group": {
             "lifecycleState": "active",
-            "formationEpoch": 2
+            "formationEpoch": 3
           }
         }
       }
@@ -930,6 +1003,255 @@
           "payload": {
             "typeId": "room.match.v1",
             "resource": "{\"move\":\"legit\",\"runId\":\"{runId}\"}"
+          }
+        }
+      }
+    },
+    {
+      "name": "pauseAllowedDataGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/lifecycle/pause/requests/pause-data-policy-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{allowedGroupId}",
+            "lifecycleState": "forming",
+            "transportState": "halted"
+          }
+        }
+      }
+    },
+    {
+      "name": "presenceRemainsWritableWhilePaused",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/sessions/{bobSessionId}/requests/presence-bob-paused-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "generation-paused-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "bobLeavesThePausedDataGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/members/{bobClientId}/requests/leave-paused-data-policy-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "left"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobRejoinsThePausedDataGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/join/requests/rejoin-paused-data-policy-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobRestoresPresenceAfterPausedRejoin",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/sessions/{bobSessionId}/requests/presence-bob-paused-rejoin-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "generation-paused-rejoin-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "pausedDataSendDoesNotReachAlice",
+      "type": "ws.send",
+      "connection": "wsBob",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "data-policy-paused-{runId}",
+            "ts": 0,
+            "senderId": "{bobSessionId}",
+            "sessionId": "{bobSessionId}",
+            "traceId": "data-policy-paused-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.match",
+            "resourceId": "data-policy-resource-{runId}",
+            "contextId": "{applicationId}:{workspaceId}"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{allowedGroupId}"
+            }
+          },
+          "delivery": {
+            "reliability": "best-effort",
+            "ack": "none"
+          },
+          "payload": {
+            "typeId": "room.match.v1",
+            "contentType": "application/json",
+            "resource": "{\"move\":\"paused\",\"runId\":\"{runId}\"}"
+          }
+        }
+      }
+    },
+    {
+      "name": "aliceDoesNotReceivePausedData",
+      "type": "ws.wait",
+      "connection": "wsAlice",
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 4000,
+        "absent": {
+          "id": {
+            "msgId": "data-policy-paused-{runId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "resumeAllowedDataGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{allowedGroupId}/lifecycle/resume/requests/resume-data-policy-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "forming",
+            "transportState": "flowing"
+          }
+        }
+      }
+    },
+    {
+      "name": "resumedDataSendReachesAlice",
+      "type": "ws.send",
+      "connection": "wsBob",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "data-policy-resumed-{runId}",
+            "ts": 0,
+            "senderId": "{bobSessionId}",
+            "sessionId": "{bobSessionId}",
+            "traceId": "data-policy-resumed-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.match",
+            "resourceId": "data-policy-resource-{runId}",
+            "contextId": "{applicationId}:{workspaceId}"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{allowedGroupId}"
+            }
+          },
+          "delivery": {
+            "reliability": "best-effort",
+            "ack": "none"
+          },
+          "payload": {
+            "typeId": "room.match.v1",
+            "contentType": "application/json",
+            "resource": "{\"move\":\"resumed\",\"runId\":\"{runId}\"}"
+          }
+        }
+      },
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 10000,
+        "message": {
+          "id": {
+            "msgId": "data-policy-resumed-{runId}"
+          },
+          "route": {
+            "topicId": "room.match"
+          },
+          "payload": {
+            "typeId": "room.match.v1",
+            "resource": "{\"move\":\"resumed\",\"runId\":\"{runId}\"}"
           }
         }
       }

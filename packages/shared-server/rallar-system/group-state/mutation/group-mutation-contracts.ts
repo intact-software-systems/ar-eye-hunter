@@ -3,6 +3,7 @@ import type {
     GroupLifecyclePolicy,
     GroupTopologyReconfigureLanding
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 import type {
     AuditStamp,
     Group,
@@ -19,6 +20,8 @@ import type {
     GroupStatus
 } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { GroupConnectTriggerLatchRow } from '../persistence/group-connect-trigger-latch-repository.ts';
 import type {
     GroupAcceptedLayoutRow,
     GroupPlannedLayoutRow,
@@ -32,18 +35,18 @@ import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-rep
 import type { GroupLifecyclePolicyRead } from '../persistence/group-lifecycle-policy-repository.ts';
 import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
 
-type NullableActorInput = Readonly<{
-    actorPrincipalId: string | null;
-    actorSessionId: string | null;
-    reason: string | null;
-    traceId: string | null;
-}>;
+interface NullableActorInput {
+    readonly actorPrincipalId: string | null;
+    readonly actorSessionId: string | null;
+    readonly reason: string | null;
+    readonly traceId: string | null;
+}
 
-type GroupMutationCommandBase = Readonly<{
-    aggregateRef: GroupRef;
-    commandId: string;
-    requestId: string | null;
-}>;
+interface GroupMutationCommandBase {
+    readonly aggregateRef: GroupRef;
+    readonly commandId: string;
+    readonly requestId: string | null;
+}
 
 export type GroupMutationCommand =
     | (
@@ -100,18 +103,6 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
-            operation: 'startGroupEstablishment' | 'reopenGroupEstablishment';
-            input:
-                & NullableActorInput
-                & Readonly<{
-                    /** Null on principal commands; the retry leg's causal fence when internal. */
-                    expectedFormationEpoch: number | null;
-                }>;
-        }>
-    )
-    | (
-        & GroupMutationCommandBase
-        & Readonly<{
             operation: 'reconfigureGroup';
             input:
                 & NullableActorInput
@@ -126,8 +117,7 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
-            // Dark until slice 8 mounts routes (plan slice 5a): registered
-            // through the full census, emitted by no producer.
+            // Principal planning and durable retry planning share one command.
             operation: 'planGroupLayout';
             input:
                 & NullableActorInput
@@ -140,8 +130,7 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
-            // Dark until slice 8 mounts routes (plan slice 5b). `connect`
-            // names the exact planned layout it means to dial (product
+            // `connect` names the exact planned layout it means to dial (product
             // decision 32), so both fences are required — a manual caller
             // reads them from the formation and topology views.
             operation: 'connectGroup';
@@ -150,14 +139,14 @@ export type GroupMutationCommand =
                 & Readonly<{
                     expectedFormationEpoch: number;
                     expectedLayout: GroupLayoutIdentity;
+                    connectTriggerGeneration: string | null;
                 }>;
         }>
     )
     | (
         & GroupMutationCommandBase
         & Readonly<{
-            // Dark until slice 8 mounts routes (plan slice 5e). `start` opens
-            // a formation series from the clean slate and is denied while the
+            // `start` opens a formation series from the clean slate and is denied while the
             // attempt budget is spent (product decisions 35/37).
             operation: 'startGroupFormation' | 'resetGroupFormation';
             input:
@@ -218,8 +207,7 @@ export type GroupMutationCommand =
     | (
         & GroupMutationCommandBase
         & Readonly<{
-            // Dark until slice 8 mounts routes (plan slice 5c). The valve is
-            // a transport fact, not a stage (product decision 25): these
+            // The valve is a transport fact, not a stage (product decision 25): these
             // carry no fence, land in no transition table cell, and advance
             // neither the formation epoch nor the electorate.
             operation: 'pauseGroupTransport' | 'resumeGroupTransport';
@@ -358,52 +346,52 @@ export type GroupMutationCommand =
         }>
     );
 
-export type GroupMutationReceipt = Readonly<{
-    commandId: string;
-    requestId: string | null;
-    commandHash: string;
-    aggregateRef: GroupRef;
-    outcome: 'applied' | 'no-op' | 'rejected';
-    attemptCount: number;
-    acceptedStorageRevision: number | null;
-    snapshotVersion: number;
-    causalRevision: GroupStateCausalRevision;
-    eventId: string | null;
-    outboxIds: readonly string[];
-    joinCode: string | null;
-    joinCodeExpiresAtEpochMs: number | null;
-    rejection: string | null;
-}>;
+export interface GroupMutationReceipt {
+    readonly commandId: string;
+    readonly requestId: string | null;
+    readonly commandHash: string;
+    readonly aggregateRef: GroupRef;
+    readonly outcome: 'applied' | 'no-op' | 'rejected';
+    readonly attemptCount: number;
+    readonly acceptedStorageRevision: number | null;
+    readonly snapshotVersion: number;
+    readonly causalRevision: GroupStateCausalRevision;
+    readonly eventId: string | null;
+    readonly outboxIds: readonly string[];
+    readonly joinCode: string | null;
+    readonly joinCodeExpiresAtEpochMs: number | null;
+    readonly rejection: string | null;
+}
 
-export type GroupMutationIdempotencyRecord = Readonly<{
-    aggregateRef: GroupRef;
-    requestId: string;
-    commandHash: string;
-    receipt: GroupMutationReceipt;
-}>;
+export interface GroupMutationIdempotencyRecord {
+    readonly aggregateRef: GroupRef;
+    readonly requestId: string;
+    readonly commandHash: string;
+    readonly receipt: GroupMutationReceipt;
+}
 
-export type GroupMutationRead = Readonly<{
-    idempotency: RuntimeStateEntryValue<GroupMutationIdempotencyRecord> | null;
-    group: RuntimeStateEntryValue<Group> | null;
-    expiredGroupEntry: RuntimeStateEntry | null;
-    actorMember: GroupMember | null;
-    targetMember: GroupMember | null;
-    authorityMember: GroupMember | null;
-    directorMember: GroupMember | null;
-    actorMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
-    targetMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
-    authorityMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
-    directorMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
-    targetPresence: RuntimeStateEntryValue<GroupPresenceSession> | null;
-    expiredTargetPresenceEntry: RuntimeStateEntry | null;
-    targetAdmission: RuntimeStateEntryValue<GroupPresenceAdmission> | null;
-    authorityAdmission: RuntimeStateEntryValue<GroupPresenceAdmission> | null;
-    directorAdmission: RuntimeStateEntryValue<GroupPresenceAdmission> | null;
-    authorityPresenceSessions: readonly GroupPresenceSession[];
-    authorityPresenceSessionEntries: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
-    presenceSummary: RuntimeStateEntryValue<GroupPresenceSummary> | null;
+export interface GroupMutationRead {
+    readonly idempotency: RuntimeStateEntryValue<GroupMutationIdempotencyRecord> | null;
+    readonly group: RuntimeStateEntryValue<Group> | null;
+    readonly expiredGroupEntry: RuntimeStateEntry | null;
+    readonly actorMember: GroupMember | null;
+    readonly targetMember: GroupMember | null;
+    readonly authorityMember: GroupMember | null;
+    readonly directorMember: GroupMember | null;
+    readonly actorMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
+    readonly targetMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
+    readonly authorityMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
+    readonly directorMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
+    readonly targetPresence: RuntimeStateEntryValue<GroupPresenceSession> | null;
+    readonly expiredTargetPresenceEntry: RuntimeStateEntry | null;
+    readonly targetAdmission: RuntimeStateEntryValue<GroupPresenceAdmission> | null;
+    readonly authorityAdmission: RuntimeStateEntryValue<GroupPresenceAdmission> | null;
+    readonly directorAdmission: RuntimeStateEntryValue<GroupPresenceAdmission> | null;
+    readonly authorityPresenceSessions: readonly GroupPresenceSession[];
+    readonly authorityPresenceSessionEntries: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
+    readonly presenceSummary: RuntimeStateEntryValue<GroupPresenceSummary> | null;
     /** Loaded only for the operations the read scope's policy rule names. */
-    lifecyclePolicy: GroupLifecyclePolicyRead | null;
+    readonly lifecyclePolicy: GroupLifecyclePolicyRead | null;
     /**
      * The active member principal ids at read time, loaded only for the
      * operations the read scope's roster rule names; the
@@ -411,7 +399,7 @@ export type GroupMutationRead = Readonly<{
      * snapshotVersion) makes the pinned electorate consistent with the
      * transition that records it.
      */
-    activeMemberPrincipalIds: readonly string[] | null;
+    readonly activeMemberPrincipalIds: readonly string[] | null;
     /**
      * The stored planned layout row — identity, snapshot and revision — read
      * for commands whose fence or promotion consumes it (activateGroup
@@ -421,10 +409,11 @@ export type GroupMutationRead = Readonly<{
      * indistinguishable here and both fence layout-bound commands closed as
      * no-planned-layout.
      */
-    plannedLayoutRow: GroupPlannedLayoutRow | null;
+    readonly connectTriggerLatch: GroupConnectTriggerLatchRow | null;
+    readonly plannedLayoutRow: GroupPlannedLayoutRow | null;
     /** The accepted slot, read only by the promotion-capable operations. */
-    acceptedLayoutRow: GroupAcceptedLayoutRow | null;
-}>;
+    readonly acceptedLayoutRow: GroupAcceptedLayoutRow | null;
+}
 
 /**
  * The internal authority mode registry. The facts codec validates against
@@ -441,29 +430,29 @@ export const GROUP_MUTATION_INTERNAL_AUTHORITY_MODES = [
     'activation-status'
 ] as const;
 
-export type GroupMutationFacts = Readonly<{
-    nowEpochMs: number;
-    expireAtEpochMs: number;
-    serviceId: string;
-    eventId: string;
-    commandHash: string;
-    attemptCount: number;
-    resolvedJoinCode: string | null;
-    joinCodeVerifier: string | null;
-    internalAuthority: (typeof GROUP_MUTATION_INTERNAL_AUTHORITY_MODES)[number];
+export interface GroupMutationFacts {
+    readonly nowEpochMs: number;
+    readonly expireAtEpochMs: number;
+    readonly serviceId: string;
+    readonly eventId: string;
+    readonly commandHash: string;
+    readonly attemptCount: number;
+    readonly resolvedJoinCode: string | null;
+    readonly joinCodeVerifier: string | null;
+    readonly internalAuthority: (typeof GROUP_MUTATION_INTERNAL_AUTHORITY_MODES)[number];
     /**
      * Operational capacity defaults captured at preparation time; absent when
      * the runtime configured no defaults, which preserves stored-cap-only
      * admission and keeps pre-existing durable preparations valid.
      */
-    capacity?: GroupPolicyCapacityConfig;
-    authenticatedAuthority:
+    readonly capacity?: GroupPolicyCapacityConfig;
+    readonly authenticatedAuthority:
         | Readonly<{
             principalId: string;
             sessionId: string;
         }>
         | null;
-}>;
+}
 
 export type GroupGuardCandidate =
     | Readonly<{ kind: 'group'; operation: 'insert'; value: Group; }>
@@ -517,7 +506,13 @@ export type GroupMutationComputed =
     }>
     | Readonly<{
         outcome: 'rejected';
-        rejectionCode: GroupMutationRejectionCode;
+        rejectionCode: Exclude<GroupMutationRejectionCode, 'group-policy-denied'>;
+        receipt: GroupMutationReceipt;
+    }>
+    | Readonly<{
+        outcome: 'rejected';
+        rejectionCode: 'group-policy-denied';
+        policyDenial: GroupPolicyDenied;
         receipt: GroupMutationReceipt;
     }>
     | Readonly<{
@@ -545,21 +540,20 @@ export type GroupMutationComputed =
          */
         plannedLayoutFence: GroupPlannedLayoutRow | null;
         layoutTombstones: GroupLayoutTombstones | null;
+        connectTriggerLatchEffect: RuntimeStateGuardedBatchEffect | null;
     }>;
 
-export type GroupLayoutTombstones = Readonly<{
-    planned: GroupPlannedLayoutRow | null;
-    accepted: GroupAcceptedLayoutRow | null;
-}>;
+export interface GroupLayoutTombstones {
+    readonly planned: GroupPlannedLayoutRow | null;
+    readonly accepted: GroupAcceptedLayoutRow | null;
+}
 
 export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcome: 'write'; }>;
 
 export type GroupLifecycleTransitionOperation = Extract<
     GroupMutationCommand['operation'],
-    | 'startGroupEstablishment'
     | 'activateGroup'
     | 'reconfigureGroup'
-    | 'reopenGroupEstablishment'
     | 'failGroupFormation'
     | 'planGroupLayout'
     | 'connectGroup'
@@ -571,10 +565,8 @@ export function isGroupLifecycleTransitionOperation(
     operation: GroupMutationCommand['operation']
 ): operation is GroupLifecycleTransitionOperation {
     return (
-        operation === 'startGroupEstablishment' ||
         operation === 'activateGroup' ||
         operation === 'reconfigureGroup' ||
-        operation === 'reopenGroupEstablishment' ||
         operation === 'failGroupFormation' ||
         operation === 'planGroupLayout' ||
         operation === 'connectGroup' ||

@@ -1,23 +1,27 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
 import { type AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toGroupAppInboxOperation } from '@shared-server/rallar-system/app-inbox/logical-app-inbox-command.ts';
 import { toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
-import type {
-    GroupMutationDescriptor
-} from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import type { GroupMutationDescriptor } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { decodeGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/decode-group-state-inbox-authority.ts';
 import {
     toGroupMutationDescriptorTargetIdentity
 } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
-import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
-import { type GroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/validate-group-mutation-result.ts';
+import { assertGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/assert-group-mutation-command.ts';
+import {
+    type GroupMutationCommand,
+    type GroupMutationIdempotencyRecord
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/assert-group-mutation-result.ts';
 import {
     toScopedGroupMutationCommandIdFromIdentity
 } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
 import {
     decodeJsonWireValue,
+    encodeJsonWireValue,
     hashMutationCommand,
     serializeCanonicalMutationCommand,
     type JsonWireObject,
@@ -123,7 +127,21 @@ export async function readScopedGroupCommandIdentity(
     ) {
         return undefined;
     }
-    const envelope = readJsonWireObject(row.ri_resource);
+    const prepared = decodeScopedGroupPreparation(row.ri_resource, expectation);
+    return prepared ? await resolveScopedGroupCommandIdentity(prepared, expectation) : undefined;
+}
+
+interface ScopedGroupPreparation {
+    readonly command: GroupMutationCommand;
+    readonly descriptor: GroupMutationDescriptor;
+    readonly commandHash: string;
+}
+
+function decodeScopedGroupPreparation(
+    resource: string,
+    expectation: ScopedGroupCommandExpectation
+): ScopedGroupPreparation | undefined {
+    const envelope = readJsonWireObject(resource);
     const payload = asJsonWireObject(envelope?.payload);
     const enqueueResource = typeof payload?.resource === 'string'
         ? readJsonWireObject(payload.resource)
@@ -147,86 +165,85 @@ export async function readScopedGroupCommandIdentity(
         return undefined;
     }
     const authorityProof = asJsonWireObject(preparation.authorityProof);
-    const descriptor = asJsonWireObject(preparation.descriptor);
     const facts = asJsonWireObject(preparation.facts);
-    const command = preparation.command;
+    const descriptor = asJsonWireObject(preparation.descriptor);
+    const descriptorScope = asJsonWireObject(descriptor?.scope);
+    const descriptorRequest = asJsonWireObject(descriptor?.request);
     if (
-        authorityProof?.principalId !== expectation.actorPrincipalId ||
-        !hasExactKeys(descriptor, [
-            'operation',
-            'scope',
-            'groupId',
-            'targetPrincipalId',
-            'sessionId',
-            'request'
-        ])
+        authorityProof?.principalId !== expectation.actorPrincipalId || typeof facts?.commandHash !== 'string' ||
+        !hasExactKeys(descriptor, ['operation', 'scope', 'groupId', 'targetPrincipalId', 'sessionId', 'request']) ||
+        !hasExactKeys(descriptorScope, ['applicationId', 'workspaceId']) ||
+        descriptorRequest === undefined
     ) {
         return undefined;
     }
     try {
-        validateGroupMutationCommand(command);
+        assertGroupMutationCommand(preparation.command);
+        return {
+            command: preparation.command,
+            descriptor: decodeGroupMutationDescriptor(descriptor),
+            commandHash: facts.commandHash
+        };
     }
     catch {
         return undefined;
     }
-    const expectedOperation = toGroupAppInboxOperation(expectation.topicId);
-    let semanticCommand;
-    let commandHash;
+}
+
+async function resolveScopedGroupCommandIdentity(
+    prepared: ScopedGroupPreparation,
+    expectation: ScopedGroupCommandExpectation
+): Promise<ScopedGroupCommandIdentity | undefined> {
+    const { command, descriptor } = prepared;
+    let semanticCommand: GroupMutationCommand;
+    let commandHash: string;
     try {
-        semanticCommand = toDescriptorCommand(
-            descriptor as GroupMutationDescriptor,
-            () => {
-                throw new TypeError('Benchmark group mutation request ID is required');
-            }
-        );
-        commandHash = await hashMutationCommand(semanticCommand as JsonWireValue);
+        semanticCommand = toDescriptorCommand(descriptor, () => {
+            throw new TypeError('Benchmark group mutation request ID is required');
+        });
+        commandHash = await hashMutationCommand(encodeJsonWireValue(semanticCommand));
     }
     catch {
         return undefined;
     }
-    const descriptorScope = asJsonWireObject(descriptor.scope);
-    const descriptorRequest = asJsonWireObject(descriptor.request);
-    const targetIdentity = toGroupMutationDescriptorTargetIdentity(command);
+    const target = toGroupMutationDescriptorTargetIdentity(command);
+    const expectedCommandId = await toScopedGroupMutationCommandIdFromIdentity({
+        operation: command.operation,
+        scope: descriptor.scope,
+        groupId: descriptor.groupId,
+        targetPrincipalId: target.targetPrincipalId,
+        targetSessionId: target.sessionId,
+        callerPrincipalId: expectation.actorPrincipalId,
+        requestId: expectation.requestId
+    });
     if (
-        !hasExactKeys(descriptorScope, ['applicationId', 'workspaceId']) ||
-        descriptorScope.applicationId !== expectation.groupRef.applicationId ||
-        descriptorScope.workspaceId !== expectation.groupRef.workspaceId ||
+        descriptor.scope.applicationId !== expectation.groupRef.applicationId ||
+        descriptor.scope.workspaceId !== expectation.groupRef.workspaceId ||
         descriptor.groupId !== expectation.groupRef.groupId ||
-        descriptor.targetPrincipalId !== targetIdentity.targetPrincipalId ||
-        descriptor.sessionId !== targetIdentity.sessionId ||
-        descriptorRequest?.requestId !== expectation.requestId ||
-        expectedOperation === undefined ||
-        command.operation !== expectedOperation ||
+        descriptor.targetPrincipalId !== target.targetPrincipalId ||
+        descriptor.sessionId !== target.sessionId ||
+        descriptor.request.requestId !== expectation.requestId ||
+        command.operation !== toGroupAppInboxOperation(expectation.topicId) ||
         descriptor.operation !== command.operation ||
-        serializeCanonicalMutationCommand(command) !== serializeCanonicalMutationCommand({
+        serializeCanonicalMutationCommand(encodeJsonWireValue(command)) !==
+            serializeCanonicalMutationCommand(encodeJsonWireValue({
                 ...semanticCommand,
                 commandId: command.commandId
-            } as JsonWireValue) ||
-        facts?.commandHash !== commandHash ||
+            })) ||
+        prepared.commandHash !== commandHash ||
         command.requestId !== expectation.requestId ||
         command.aggregateRef.applicationId !== expectation.groupRef.applicationId ||
         command.aggregateRef.workspaceId !== expectation.groupRef.workspaceId ||
         command.aggregateRef.groupId !== expectation.groupRef.groupId ||
         command.input.actorPrincipalId !== expectation.actorPrincipalId ||
-        command.commandId !== await toScopedGroupMutationCommandIdFromIdentity({
-                operation: command.operation,
-                scope: {
-                    applicationId: command.aggregateRef.applicationId,
-                    workspaceId: command.aggregateRef.workspaceId
-                },
-                groupId: command.aggregateRef.groupId,
-                targetPrincipalId: targetIdentity.targetPrincipalId,
-                targetSessionId: targetIdentity.sessionId,
-                callerPrincipalId: expectation.actorPrincipalId,
-                requestId: expectation.requestId
-            })
+        command.commandId !== expectedCommandId
     ) {
         return undefined;
     }
     return { requestId: expectation.requestId, commandId: command.commandId, commandHash };
 }
 
-function toScopedGroupCommandQueueKey(expectation: ScopedGroupCommandExpectation) {
+function toScopedGroupCommandQueueKey(expectation: ScopedGroupCommandExpectation): Key {
     return toAppQueueKey({
         topicId: expectation.topicId,
         resourceId: expectation.requestId,
@@ -234,8 +251,8 @@ function toScopedGroupCommandQueueKey(expectation: ScopedGroupCommandExpectation
     });
 }
 
-interface IsValidatedGroupReceiptIdentityInput {
-    readonly value: Parameters<typeof validateGroupMutationIdempotencyRecord>[0];
+interface ReadValidatedGroupReceiptIdentityInput {
+    readonly value: unknown;
     readonly ref: GroupRef;
     readonly scopedCommand: ScopedGroupCommandIdentity;
 }
@@ -244,9 +261,9 @@ export function readValidatedGroupReceiptIdentity({
     value,
     ref,
     scopedCommand
-}: IsValidatedGroupReceiptIdentityInput): GroupMutationIdempotencyRecord | undefined {
+}: ReadValidatedGroupReceiptIdentityInput): GroupMutationIdempotencyRecord | undefined {
     try {
-        validateGroupMutationIdempotencyRecord(value, ref);
+        assertGroupMutationIdempotencyRecord(value, ref);
     }
     catch {
         return undefined;
@@ -280,12 +297,6 @@ function hasExactKeys(value: JsonWireObject | undefined, keys: readonly string[]
         Object.keys(value).sort().join('\0') === [...keys].sort().join('\0');
 }
 
-function toPhysicalKey(
-    input: Readonly<{
-        resourceId: string;
-        topicId: string;
-        contextId: string;
-    }>
-): string {
+function toPhysicalKey(input: Key): string {
     return [input.resourceId, input.topicId, input.contextId].join('\0');
 }

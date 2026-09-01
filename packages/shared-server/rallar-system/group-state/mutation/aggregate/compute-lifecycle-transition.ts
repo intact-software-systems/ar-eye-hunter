@@ -8,20 +8,23 @@ import {
 import { beginsGroupEstablishmentAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import type { Group } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { computeGroupConnectTrigger } from './compute-group-connect-trigger.ts';
 
 import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';
-import { canCommandGroupLifecycleTransition } from '../../policy/group-lifecycle-policy.ts';
-import { GroupPolicyDeniedError } from '../../policy/group-policy-result.ts';
-import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
+import { canCommandGroupLifecycleTransition, canMutateActiveGroup } from '../../policy/group-lifecycle-policy.ts';
 import {
     GroupMutationCommand,
     GroupMutationComputed,
     GroupMutationFacts,
     GroupMutationRead,
-    isLayoutFencedGroupMutationCommand,
     type GroupLifecycleTransitionOperation
 } from '../group-mutation-contracts.ts';
-import { auditStamp, computeGroupMutationWriteResult, requireGroup } from '../group-mutation-result.ts';
+import {
+    auditStamp,
+    computeGroupMutationWriteResult,
+    rejected,
+    rejectedByGroupPolicy
+} from '../group-mutation-result.ts';
 import { computeLifecycleFenceRejection } from './compute-lifecycle-fence-rejection.ts';
 import {
     computePlannedLayoutPromotion,
@@ -29,18 +32,16 @@ import {
     type GroupPlannedLayoutRow,
     type PlannedLayoutPromotion
 } from './compute-planned-layout-promotion.ts';
-import { assertActive, assertAllowed, toGroupAuthorityPolicyInput } from './group-aggregate-mutation-policy.ts';
+import { toGroupAuthorityPolicyInput } from './group-aggregate-mutation-policy.ts';
 import { resolveGroupAuthorityPolicy, toCorruptPolicyRejection } from './resolve-group-authority-policy.ts';
 
 const LIFECYCLE_TRANSITION_BY_OPERATION = {
-    startGroupEstablishment: 'start-establishment',
     planGroupLayout: 'plan',
     connectGroup: 'connect',
     startGroupFormation: 'start',
     resetGroupFormation: 'reset',
     activateGroup: 'activate',
     reconfigureGroup: 'reconfigure',
-    reopenGroupEstablishment: 'reopen-establishment',
     failGroupFormation: 'fail-formation'
 } as const satisfies Record<GroupLifecycleTransitionOperation, GroupLifecycleTransition>;
 
@@ -73,8 +74,20 @@ export function computeLifecycleTransition(
     read: GroupMutationRead,
     facts: GroupMutationFacts
 ): GroupMutationComputed {
-    const stored = requireGroup(read, command.aggregateRef);
-    assertActive(stored.value, facts.nowEpochMs);
+    const stored = read.group;
+    if (stored === null) {
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: `Group not found: ${command.aggregateRef.groupId}`
+        });
+    }
+    const active = canMutateActiveGroup({ group: stored.value, nowEpochMs: facts.nowEpochMs });
+    if (!active.allowed) {
+        return rejectedByGroupPolicy({ command, read, facts, denial: active });
+    }
     const resolution = resolveGroupAuthorityPolicy(read);
     if (resolution.status === 'corrupt') {
         return toCorruptPolicyRejection({ command, read, facts, reason: resolution.reason });
@@ -86,61 +99,65 @@ export function computeLifecycleTransition(
     }
     // Authority first: the fence's answer names the stored plan, so a
     // caller who may not command the transition must not read it.
-    validateLifecycleTransitionAuthority({ command, read, facts, policy, transition });
+    const authorityRejection = computeLifecycleAuthorityRejection({ command, read, facts, policy, transition });
+    if (authorityRejection !== null) {
+        return authorityRejection;
+    }
     const fenceRejection = computeLifecycleFenceRejection({ command, read, facts, stored: stored.value });
     if (fenceRejection !== null) {
         return fenceRejection;
     }
-    const outcome = computeAllowedLifecycleTransition(transition, stored.value, policy);
-    const promotion = computeActivationPromotion(command, read, stored.value);
+    return computeAuthorizedLifecycleTransition({
+        command,
+        read,
+        facts,
+        stored: stored.value,
+        policy,
+        transition,
+        formationElectorate: read.activeMemberPrincipalIds
+    });
+}
+
+interface AuthorizedLifecycleTransitionInput extends LifecycleTransitionDecisionInput {
+    readonly stored: Group;
+    readonly policy: GroupLifecyclePolicy;
+    readonly transition: GroupLifecycleTransition;
+    readonly formationElectorate: readonly string[];
+}
+
+/** Authority and fences are settled; decide the transition, promotion and resulting state. */
+function computeAuthorizedLifecycleTransition(
+    { command, read, facts, stored, policy, transition, formationElectorate }: AuthorizedLifecycleTransitionInput
+): GroupMutationComputed {
+    const outcome = computeAllowedLifecycleTransition(transition, stored, policy);
+    if (!outcome.allowed) {
+        return rejectedByGroupPolicy({ command, read, facts, denial: outcome });
+    }
+    const promotion = computeActivationPromotion(command, read, stored);
+    if (promotion !== null && promotion.outcome !== 'apply' && promotion.outcome !== 'already-applied') {
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: `Activation requires canonical planned layout promotion: ${promotion.outcome}`
+        });
+    }
     const reconfigureLanding = command.operation === 'reconfigureGroup'
         ? command.input.landing ?? policy.topology.reconfigureLanding
         : null;
     const next = command.operation === 'reconfigureGroup' &&
             reconfigureLanding === 'apply'
-        ? computeApplyReconfigureLandingGroup(command, facts, stored.value)
+        ? computeApplyReconfigureLandingGroup(command, facts, stored)
         : computeNextLifecycleGroup({
             command,
             facts,
-            stored: stored.value,
+            stored,
             outcome,
-            formationElectorate: read.activeMemberPrincipalIds,
+            formationElectorate,
             promotion
         });
-    return computeGroupMutationWriteResult({
-        acceptedLayoutPromotion: promotion?.outcome === 'apply' ? promotion : null,
-        layoutTombstones: command.operation === 'resetGroupFormation'
-            ? {
-                planned: toLayoutTombstone(read.plannedLayoutRow),
-                accepted: toLayoutTombstone(read.acceptedLayoutRow)
-            }
-            : null,
-        // A promotion already re-asserts the planned row. `connect` dials a
-        // candidate without promoting it (decision 42), so it carries the
-        // guard itself and a replan landing between the read and the commit
-        // conflicts the batch instead of dialing a superseded candidate
-        // (decisions 19/32). A fenced formation failure deliberately keeps
-        // today's behavior: it discards the plan rather than binding to it,
-        // so guarding the row would only make a concurrent replan retry it.
-        plannedLayoutFence: command.operation === 'connectGroup' && command.input.expectedLayout !== null
-            ? read.plannedLayoutRow
-            : null,
-        command,
-        read,
-        facts,
-        guard: {
-            kind: 'group',
-            operation: 'update',
-            value: next,
-            expectedRevision: stored.entry.revision
-        },
-        members: [],
-        initialPresenceSummary: null,
-        presenceAdmission: null,
-        eventType: 'group-updated',
-        presenceSummaryWork: 'enqueue',
-        extraOutboxEntries: computeFormationTimerEntries({ command, next, policy, facts })
-    });
+    return computeLifecycleTransitionWrite({ command, read, facts, next, policy, promotion });
 }
 
 /**
@@ -153,24 +170,21 @@ function computeAllowedLifecycleTransition(
     transition: GroupLifecycleTransition,
     stored: Group,
     policy: GroupLifecyclePolicy
-): Extract<GroupLifecycleTransitionOutcome, { allowed: true; }> {
+): GroupLifecycleTransitionOutcome {
     const outcome = computeGroupLifecycleTransition({
         transition,
         lifecycleState: stored.lifecycleState,
         formationEpoch: stored.formationEpoch
     });
     if (!outcome.allowed) {
-        throw new GroupPolicyDeniedError(outcome);
+        return outcome;
     }
     const exhausted = denyExhaustedFormationSeries({
         transition,
         activation: policy.activation,
         formationAttemptCount: stored.formationAttemptCount
     });
-    if (exhausted) {
-        throw new GroupPolicyDeniedError(exhausted);
-    }
-    return outcome;
+    return exhausted ?? outcome;
 }
 
 function computeNextLifecycleGroup(
@@ -273,11 +287,7 @@ function computeApplyReconfigureLandingGroup(
 /**
  * Activation's atomic promotion (product decisions 24/42): every accepted
  * activation promotes the stored planned layout it was fenced against. A
- * criterion activation's fence already rejected every non-promotable state,
- * so anything but apply/already-applied there is a programmer invariant; an
- * operator activation with no stored plan keeps today's behavior and commits
- * without accepted facts (dark landing — slice 5's connect makes plans
- * universal).
+ * missing or tombstoned plan rejects both principal and criterion activation.
  */
 function computeActivationPromotion(
     command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>,
@@ -295,15 +305,6 @@ function computeActivationPromotion(
         acceptedIdentity: stored.acceptedLayoutIdentity,
         acceptedRow: read.acceptedLayoutRow
     });
-    if (
-        command.input.expectedLayout !== null &&
-        promotion.outcome !== 'apply' &&
-        promotion.outcome !== 'already-applied'
-    ) {
-        throw new TypeError(
-            `Criterion activation fence passed but promotion computed ${promotion.outcome}`
-        );
-    }
     return promotion;
 }
 
@@ -318,24 +319,79 @@ interface LifecycleTransitionDecisionInput {
  * fence and the state machine are its only checks; principal commands answer
  * to the initiator policy, and formation failure has no principal route.
  */
-function validateLifecycleTransitionAuthority(
+function computeLifecycleAuthorityRejection(
     { command, read, facts, policy, transition }:
         & LifecycleTransitionDecisionInput
         & Readonly<{
             policy: GroupLifecyclePolicy;
             transition: GroupLifecycleTransition;
         }>
-): void {
-    if (facts.internalAuthority === 'formation-criterion') {
-        return;
+): GroupMutationComputed | null {
+    if (facts.internalAuthority === 'formation-criterion' || facts.internalAuthority === 'formation-automation') {
+        return null;
     }
     if (command.operation === 'failGroupFormation') {
-        throw new GroupMutationRejectedError('Formation failure is criterion-commanded only');
+        return rejected({
+            command,
+            read,
+            facts,
+            rejectionCode: 'group-mutation-rejected',
+            message: 'Formation failure is criterion-commanded only'
+        });
     }
-    assertAllowed(
-        canCommandGroupLifecycleTransition({
-            ...toGroupAuthorityPolicyInput({ command, read, facts, policy }),
-            transition
-        })
-    );
+    const authority = canCommandGroupLifecycleTransition({
+        ...toGroupAuthorityPolicyInput({ command, read, facts, policy }),
+        transition
+    });
+    return authority.allowed ? null : rejectedByGroupPolicy({ command, read, facts, denial: authority });
+}
+
+interface LifecycleTransitionWriteInput extends LifecycleTransitionDecisionInput {
+    readonly next: Group;
+    readonly policy: GroupLifecyclePolicy;
+    readonly promotion: PlannedLayoutPromotion | null;
+}
+
+function computeLifecycleTransitionWrite(
+    { command, read, facts, next, policy, promotion }: LifecycleTransitionWriteInput
+): GroupMutationComputed {
+    const connectTrigger = computeGroupConnectTrigger({ command, read, facts, next });
+    return computeGroupMutationWriteResult({
+        connectTriggerLatchEffect: connectTrigger.effect,
+        acceptedLayoutPromotion: promotion?.outcome === 'apply' ? promotion : null,
+        layoutTombstones: command.operation === 'resetGroupFormation'
+            ? {
+                planned: toLayoutTombstone(read.plannedLayoutRow),
+                accepted: toLayoutTombstone(read.acceptedLayoutRow)
+            }
+            : null,
+        // A promotion already re-asserts the planned row. `connect` dials a
+        // candidate without promoting it (decision 42), so it carries the
+        // guard itself and a replan landing between the read and the commit
+        // conflicts the batch instead of dialing a superseded candidate
+        // (decisions 19/32). A fenced formation failure deliberately keeps
+        // today's behavior: it discards the plan rather than binding to it,
+        // so guarding the row would only make a concurrent replan retry it.
+        plannedLayoutFence: command.operation === 'connectGroup' && command.input.expectedLayout !== null
+            ? read.plannedLayoutRow
+            : null,
+        command,
+        read,
+        facts,
+        guard: {
+            kind: 'group',
+            operation: 'update',
+            value: next,
+            expectedRevision: read.group!.entry.revision
+        },
+        members: [],
+        initialPresenceSummary: null,
+        presenceAdmission: null,
+        eventType: 'group-updated',
+        presenceSummaryWork: 'enqueue',
+        extraOutboxEntries: [
+            ...computeFormationTimerEntries({ command, next, policy, facts }),
+            ...connectTrigger.outboxEntries
+        ]
+    });
 }

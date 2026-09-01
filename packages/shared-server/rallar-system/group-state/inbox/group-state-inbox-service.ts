@@ -150,6 +150,16 @@ export class GroupStateInboxService {
         });
     }
 
+    async enqueueFormationAutomationCommand(command: GroupMutationCommand, atEpochMs: number): Promise<void> {
+        const preparation = await this.groupStateService.prepareFormationAutomationMutation(command, atEpochMs);
+        await this.queueEntryWriter.enqueue({
+            type: AppInboxType.GROUP_FORMATION_AUTOMATION,
+            resourceId: preparation.queueResourceId,
+            authority: decodeJsonWireValue(preparation, 'Group formation automation authority'),
+            data: { commandId: preparation.command.commandId }
+        });
+    }
+
     async enqueueTopologyPublicationCommand(
         command: GroupMutationCommand,
         atEpochMs: number

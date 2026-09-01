@@ -2,6 +2,7 @@
 export const GROUP_MUTATION_REJECTION_CODES = [
     'group-already-exists',
     'group-mutation-rejected',
+    'group-policy-denied',
     'group-connect-no-planned-layout',
     'group-connect-planned-layout-superseded'
 ] as const;

@@ -1,6 +1,8 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type {
-    AuthenticatedGroupMutationEnqueue
+    AuthenticatedGroupMutationEnqueue,
+    GroupConnectAppInboxPayload,
+    GroupReconfigureAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import type {
     GroupStateInboxDurableResult
@@ -91,9 +93,17 @@ export type GroupStateRouteCommandInput =
     | (
         & GroupStateRouteCommandInputBase
         & Readonly<{
-            operation: 'start-group-establishment';
+            operation: 'plan-group-layout';
             groupId: string;
             request: GroupStateRouteRequestWithId<MutationActorInput>;
+        }>
+    )
+    | (
+        & GroupStateRouteCommandInputBase
+        & Readonly<{
+            operation: 'connect-group';
+            groupId: string;
+            request: GroupStateRouteRequestWithId<GroupConnectAppInboxPayload['request']>;
         }>
     )
     | (
@@ -107,7 +117,39 @@ export type GroupStateRouteCommandInput =
     | (
         & GroupStateRouteCommandInputBase
         & Readonly<{
-            operation: 'reopen-group-establishment';
+            operation: 'reconfigure-group';
+            groupId: string;
+            request: GroupStateRouteRequestWithId<GroupReconfigureAppInboxPayload['request']>;
+        }>
+    )
+    | (
+        & GroupStateRouteCommandInputBase
+        & Readonly<{
+            operation: 'pause-group-transport';
+            groupId: string;
+            request: GroupStateRouteRequestWithId<MutationActorInput>;
+        }>
+    )
+    | (
+        & GroupStateRouteCommandInputBase
+        & Readonly<{
+            operation: 'resume-group-transport';
+            groupId: string;
+            request: GroupStateRouteRequestWithId<MutationActorInput>;
+        }>
+    )
+    | (
+        & GroupStateRouteCommandInputBase
+        & Readonly<{
+            operation: 'reset-group-formation';
+            groupId: string;
+            request: GroupStateRouteRequestWithId<MutationActorInput>;
+        }>
+    )
+    | (
+        & GroupStateRouteCommandInputBase
+        & Readonly<{
+            operation: 'start-group-formation';
             groupId: string;
             request: GroupStateRouteRequestWithId<MutationActorInput>;
         }>

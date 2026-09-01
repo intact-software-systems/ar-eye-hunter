@@ -71,7 +71,7 @@ describe('group lifecycle safety baseline', () => {
     it('computes a presence connect write on a group stuck in FORMING', () => {
         const computed = computeGroupMutation({
             command: connectPresenceCommand(),
-            read: memberRead('forming', 'alice'),
+            read: memberRead('forming'),
             facts: mutationFacts('alice')
         });
         expect(computed.outcome).toBe('write');
@@ -151,8 +151,9 @@ function baseRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
         lifecyclePolicy: null,
         activeMemberPrincipalIds: null,
         plannedLayoutRow: null,
+        connectTriggerLatch: null,
         acceptedLayoutRow: null
-    } as GroupMutationRead;
+    };
 }
 
 function joinRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
@@ -163,16 +164,16 @@ function joinRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
         actorMember: null,
         actorMemberEntry: null,
         lifecyclePolicy: { status: 'absent' }
-    } as GroupMutationRead;
+    };
 }
 
-function memberRead(lifecycleState: GroupLifecycleState, principalId: string): GroupMutationRead {
+function memberRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
     const stored = baseRead(lifecycleState);
     return {
         ...stored,
         targetMember: stored.actorMember,
         targetMemberEntry: stored.actorMemberEntry
-    } as GroupMutationRead;
+    };
 }
 
 function joinCommand(): GroupMutationCommand {
@@ -190,7 +191,7 @@ function joinCommand(): GroupMutationCommand {
             reason: null,
             traceId: null
         }
-    } as GroupMutationCommand;
+    };
 }
 
 function connectPresenceCommand(): GroupMutationCommand {
@@ -211,7 +212,7 @@ function connectPresenceCommand(): GroupMutationCommand {
             lastHeartbeatAtEpochMs: 2_000,
             expiresAtEpochMs: 62_000
         }
-    } as GroupMutationCommand;
+    };
 }
 
 function mutationFacts(principalId: string): GroupMutationFacts {

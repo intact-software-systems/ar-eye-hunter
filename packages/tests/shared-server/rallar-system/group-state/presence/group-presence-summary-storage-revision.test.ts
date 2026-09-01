@@ -181,6 +181,7 @@ function mutationRead(storageRevision: number): GroupMutationRead {
         lifecyclePolicy: { status: 'absent' },
         activeMemberPrincipalIds: null,
         plannedLayoutRow: null,
+        connectTriggerLatch: null,
         acceptedLayoutRow: null
     } as GroupMutationRead;
 }

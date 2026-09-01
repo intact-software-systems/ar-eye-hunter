@@ -68,6 +68,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             request: {
                 metadata: { benchmarkConfigSource: requestId },
                 actorPrincipalId,
+                actorSessionId: 'client-session-7',
                 requestId
             }
         });
@@ -131,6 +132,39 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             ...expectation,
             actorPrincipalId: 'wrong-actor'
         })).resolves.toBeUndefined();
+
+        const sparseDescriptorResource = JSON.parse(resource);
+        const sparseDescriptor = JSON.parse(sparseDescriptorResource.payload.resource).authority.descriptor;
+        delete sparseDescriptor.request.actorPrincipalId;
+        delete sparseDescriptor.request.actorSessionId;
+        sparseDescriptorResource.payload.resource = JSON.stringify({
+            ...JSON.parse(sparseDescriptorResource.payload.resource),
+            authority: {
+                ...JSON.parse(sparseDescriptorResource.payload.resource).authority,
+                descriptor: sparseDescriptor
+            }
+        });
+        await expect(readScopedGroupCommandIdentity({
+            ...row,
+            ri_resource: JSON.stringify(sparseDescriptorResource)
+        }, expectation)).resolves.toBeUndefined();
+
+        const mismatchedDescriptorResource = JSON.parse(resource);
+        const mismatchedDescriptor = JSON.parse(
+            mismatchedDescriptorResource.payload.resource
+        ).authority.descriptor;
+        mismatchedDescriptor.request.actorPrincipalId = 'mismatched-descriptor-actor';
+        mismatchedDescriptorResource.payload.resource = JSON.stringify({
+            ...JSON.parse(mismatchedDescriptorResource.payload.resource),
+            authority: {
+                ...JSON.parse(mismatchedDescriptorResource.payload.resource).authority,
+                descriptor: mismatchedDescriptor
+            }
+        });
+        await expect(readScopedGroupCommandIdentity({
+            ...row,
+            ri_resource: JSON.stringify(mismatchedDescriptorResource)
+        }, expectation)).resolves.toBeUndefined();
 
         const changedHashResource = JSON.parse(resource);
         changedHashResource.payload.resource = JSON.stringify({

@@ -13,19 +13,25 @@ import { toExpiryCommand, toSessionCleanupCommand } from './group-presence-mutat
 import {
     GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
     type GroupMutationPreparation,
+    type GroupStateMutationCommand,
     type GroupStateRuntime,
     type GroupStateService,
     type GroupStateServiceDependencies
 } from './group-state-service-contracts.ts';
 import { createTimedGroupStateService } from './group-state-service-timing.ts';
-import { validateGroupMutationAuthority } from './mutation/command-validation/validate-group-mutation-authority.ts';
-import { validateGroupMutationCommand } from './mutation/command-validation/validate-group-mutation-command.ts';
-import type { GroupMutationCommand, GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
+import { assertGroupMutationAuthority } from './mutation/command-validation/assert-group-mutation-authority.ts';
+import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
+import type {
+    GroupMutationCommand,
+    GroupMutationFacts,
+    GroupMutationRead
+} from './mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
 import { readsAcceptedLayoutRow, readsGroupLayoutRows } from './mutation/read/group-mutation-read-scope.ts';
 import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
-import { validateGroupMutation } from './mutation/state-validation/validate-group-mutation.ts';
+import { assertGroupMutation } from './mutation/state-validation/assert-group-mutation.ts';
 import { writeGroupMutation } from './mutation/write/write-group-mutation.ts';
+import { GroupConnectTriggerLatchRepository } from './persistence/group-connect-trigger-latch-repository.ts';
 import { GroupStateRepository } from './persistence/group-state-repository.ts';
 import { readGroupSessionCleanupCandidates } from './presence/group-session-cleanup.ts';
 
@@ -65,7 +71,7 @@ export function createGroupStateRuntime(
     const owners: GroupStateRuntimeOwners = {
         dependencies,
         repositoryFor,
-        authorityDependencies: createAuthorityDependencies(dependencies, repositoryFor, now, randomId),
+        authorityDependencies: createAuthorityDependencies({ dependencies, repositoryFor, now, randomId }),
         prepareInternalMutation: createInternalMutationPreparer(dependencies)
     };
     const service: GroupStateService = {
@@ -100,11 +106,15 @@ interface GroupStateRuntimeOwners {
     readonly prepareInternalMutation: InternalMutationPreparer;
 }
 
+interface CreateAuthorityDependenciesInput {
+    readonly dependencies: GroupStateServiceDependencies;
+    readonly repositoryFor: GroupStateRepositoryFactory;
+    readonly now: () => number;
+    readonly randomId: () => string;
+}
+
 function createAuthorityDependencies(
-    dependencies: GroupStateServiceDependencies,
-    repositoryFor: GroupStateRepositoryFactory,
-    now: () => number,
-    randomId: () => string
+    { dependencies, repositoryFor, now, randomId }: CreateAuthorityDependenciesInput
 ): GroupMutationAuthorityDependencies {
     return {
         authSessionRepository: dependencies.authSessionRepository,
@@ -120,7 +130,7 @@ function createInternalMutationPreparer(
     dependencies: GroupStateServiceDependencies
 ): InternalMutationPreparer {
     return async (command, internalAuthority, atEpochMs) => {
-        validateGroupMutationCommand(command);
+        assertGroupMutationCommand(command);
         const commandHash = await hashMutationCommand(
             decodeJsonWireValue(command, 'Internal group mutation command')
         );
@@ -140,7 +150,7 @@ function createInternalMutationPreparer(
         // execute fails at the call site, never as a poison row the queue
         // retries into a terminal failure. attemptCount is a placeholder the
         // matrix never reads.
-        validateGroupMutationAuthority(command, { ...facts, attemptCount: 1 });
+        assertGroupMutationAuthority(command, { ...facts, attemptCount: 1 });
         const causalToken = await sha256CanonicalJson({ command, facts });
         return {
             authorityProof: null,
@@ -245,44 +255,11 @@ function createQueryOperations(
 function createMutationOperations(
     owners: GroupStateRuntimeOwners
 ): Pick<GroupStateService, 'read' | 'compute' | 'validate' | 'write'> {
-    const { dependencies, repositoryFor, authorityDependencies } = owners;
-    const runtime = dependencies.runtimeRepository;
     return {
-        read: async (prepared) => {
-            if (prepared.facts.internalAuthority !== 'none') {
-                if (
-                    prepared.authorityProof !== null ||
-                    prepared.descriptor !== null ||
-                    prepared.facts.authenticatedAuthority !== null
-                ) {
-                    throw new GroupMutationAuthorizationError(
-                        'Internal group mutation authority is malformed.'
-                    );
-                }
-            }
-            else {
-                await verifyPreparedGroupMutationAuthority(authorityDependencies, prepared);
-            }
-            const read = await readGroupMutation(repositoryFor(runtime), prepared.command);
-            if (!readsGroupLayoutRows(prepared.command)) {
-                return read;
-            }
-            // Read after the group row so the fence's staleness window ends
-            // close to compute; the write transaction re-asserts the planned
-            // row's revision, so a replan landing after this read conflicts
-            // instead of committing against a stale plan. The accepted row
-            // is read only by the commands that can promote.
-            const [plannedLayoutRow, acceptedLayoutRow] = await Promise.all([
-                dependencies.readPlannedLayoutRow(prepared.command.aggregateRef),
-                readsAcceptedLayoutRow(prepared.command)
-                    ? dependencies.readAcceptedLayoutRow(prepared.command.aggregateRef)
-                    : null
-            ]);
-            return { ...read, plannedLayoutRow, acceptedLayoutRow };
-        },
+        read: async (prepared) => await readPreparedGroupMutation(owners, prepared),
         compute: (prepared, read) => computeGroupMutation({ command: prepared.command, read, facts: prepared.facts }),
         validate: (prepared, read, computed) => {
-            validateGroupMutation({
+            assertGroupMutation({
                 command: prepared.command,
                 read,
                 facts: prepared.facts,
@@ -304,4 +281,51 @@ export function createGroupStateService(
     dependencies: GroupStateServiceDependencies
 ): GroupStateService {
     return createGroupStateRuntime(dependencies).service;
+}
+
+async function readPreparedGroupMutation(
+    owners: GroupStateRuntimeOwners,
+    prepared: GroupStateMutationCommand
+): Promise<GroupMutationRead> {
+    const { dependencies, repositoryFor, authorityDependencies } = owners;
+    const runtime = dependencies.runtimeRepository;
+    if (prepared.facts.internalAuthority !== 'none') {
+        if (
+            prepared.authorityProof !== null ||
+            prepared.descriptor !== null ||
+            prepared.facts.authenticatedAuthority !== null
+        ) {
+            throw new GroupMutationAuthorizationError(
+                'Internal group mutation authority is malformed.'
+            );
+        }
+    }
+    else {
+        await verifyPreparedGroupMutationAuthority(authorityDependencies, prepared);
+    }
+    const initialRead = await readGroupMutation(repositoryFor(runtime), prepared.command);
+    const command = prepared.command;
+    const connectTriggerLatch = command.operation === 'connectGroup' && command.input.connectTriggerGeneration !== null
+        ? await new GroupConnectTriggerLatchRepository(runtime).read({
+            groupRef: command.aggregateRef,
+            formationEpoch: command.input.expectedFormationEpoch,
+            triggerGeneration: command.input.connectTriggerGeneration
+        })
+        : null;
+    const read = { ...initialRead, connectTriggerLatch };
+    if (!readsGroupLayoutRows(prepared.command)) {
+        return read;
+    }
+    // Read after the group row so the fence's staleness window ends
+    // close to compute; the write transaction re-asserts the planned
+    // row's revision, so a replan landing after this read conflicts
+    // instead of committing against a stale plan. The accepted row
+    // is read only by the commands that can promote.
+    const [plannedLayoutRow, acceptedLayoutRow] = await Promise.all([
+        dependencies.readPlannedLayoutRow(prepared.command.aggregateRef),
+        readsAcceptedLayoutRow(prepared.command)
+            ? dependencies.readAcceptedLayoutRow(prepared.command.aggregateRef)
+            : null
+    ]);
+    return { ...read, plannedLayoutRow, acceptedLayoutRow };
 }

@@ -8,7 +8,6 @@ import type {
     GroupRef
 } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
-import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { createTransactionBoundPSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
@@ -19,8 +18,8 @@ import type {
 import type { GroupStateEventStore } from '../../state-events/group-state-event-store.ts';
 import { PSqlGroupStateEventRepository } from '../../state-events/postgres/p-sql-group-state-event-repository.ts';
 import type { StateEventListQuery } from '../../state-events/state-event-listing.ts';
-import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { GroupAggregateRepository } from './aggregate/group-aggregate-repository.ts';
+import { GroupLifecyclePolicyRepository, type GroupLifecyclePolicyRead } from './group-lifecycle-policy-repository.ts';
 import type { GroupStateAuthorityGuard } from './group-state-persistence-contracts.ts';
 import { GroupStateRepositoryReads } from './group-state-repository-reads.ts';
 import { GroupMembershipRepository } from './membership/group-membership-repository.ts';
@@ -34,8 +33,6 @@ export function createTransactionBoundGroupStateRepository(
         new PSqlGroupStateEventRepository(transaction)
     );
 }
-
-import { GroupLifecyclePolicyRepository, type GroupLifecyclePolicyRead } from './group-lifecycle-policy-repository.ts';
 
 export class GroupStateRepository extends GroupStateRepositoryReads {
     private readonly aggregate: GroupAggregateRepository;
@@ -51,20 +48,6 @@ export class GroupStateRepository extends GroupStateRepositoryReads {
 
     async readLifecyclePolicy(ref: GroupRef): Promise<GroupLifecyclePolicyRead> {
         return await new GroupLifecyclePolicyRepository(this.repository).readPolicy(ref);
-    }
-
-    async insertIdempotentGroupMutationReceipt(
-        ref: GroupRef,
-        requestId: string,
-        record: GroupMutationIdempotencyRecord,
-        purgeAfterEpochMs: number = NEVER_EXPIRE_AT_TIMESTAMP
-    ): Promise<RuntimeStateConditionalWriteResult> {
-        return await this.aggregate.insertIdempotentGroupMutationReceipt(
-            ref,
-            requestId,
-            record,
-            purgeAfterEpochMs
-        );
     }
 
     async insertGroup(group: Group): Promise<RuntimeStateConditionalWriteResult> {

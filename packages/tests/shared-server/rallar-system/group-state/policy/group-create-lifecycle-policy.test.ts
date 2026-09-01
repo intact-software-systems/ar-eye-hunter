@@ -1,12 +1,13 @@
 import { toAggregateMutationCommand } from '@shared-server/rallar-system/group-state/group-mutation-command.ts';
-import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
+import { assertGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/assert-group-mutation-command.ts';
+import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { CreateGroupRequest } from '@shared/api/state-types.ts';
 import { describe, expect, it } from 'vitest';
 
 const SCOPE = { applicationId: 'app-1', workspaceId: 'ws-1' } as const;
 
-function toCreateCommand(lifecyclePolicy?: CreateGroupRequest['lifecyclePolicy']) {
+function toCreateCommand(lifecyclePolicy?: CreateGroupRequest['lifecyclePolicy']): Extract<GroupMutationCommand, { operation: 'createGroup'; }> {
     const request: CreateGroupRequest = {
         groupId: 'group-1',
         displayName: 'Group One',
@@ -14,15 +15,17 @@ function toCreateCommand(lifecyclePolicy?: CreateGroupRequest['lifecyclePolicy']
         createdByPrincipalId: 'owner-1',
         actorPrincipalId: 'owner-1',
         ...(lifecyclePolicy === undefined ? {} : { lifecyclePolicy })
-    } as CreateGroupRequest;
+    };
 
     const command = toAggregateMutationCommand(
         {
             operation: 'createGroup',
             scope: SCOPE,
             groupId: 'group-1',
+            targetPrincipalId: null,
+            sessionId: null,
             request
-        } as never,
+        },
         () => 'command-1'
     );
     if (command.operation !== 'createGroup') {
@@ -40,7 +43,7 @@ describe('createGroup lifecycle policy input', () => {
         const command = toCreateCommand();
 
         expect('lifecyclePolicy' in command.input).toBe(false);
-        expect(() => validateGroupMutationCommand(command)).not.toThrow();
+        expect(() => assertGroupMutationCommand(command)).not.toThrow();
     });
 
     it('normalizes a supplied preset into a complete policy', () => {
@@ -68,6 +71,6 @@ describe('createGroup lifecycle policy input', () => {
     it('accepts a normalized policy through the structural validator', () => {
         const command = toCreateCommand({ preset: 'match' });
 
-        expect(() => validateGroupMutationCommand(command)).not.toThrow();
+        expect(() => assertGroupMutationCommand(command)).not.toThrow();
     });
 });

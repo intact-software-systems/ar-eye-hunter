@@ -103,14 +103,15 @@ describe('live RTC delivery owner', () => {
             send: { nextHopPeerIds: ['session-C'], payload: { matrixId: 'reconnect-result' } }
         });
         const beforeC = recording.milestones.slice(0, recording.milestones.indexOf('connect:C'));
-        expect(beforeC).toEqual(expect.arrayContaining(['ready:A', 'ready:B', 'activate:2']));
+        expect(beforeC).toEqual(expect.arrayContaining(['connect-layout:2', 'ready:A', 'ready:B', 'activate:2']));
         const afterC = recording.milestones.slice(recording.milestones.indexOf('connect:C'));
-        expect(afterC.indexOf('reopen')).toBeGreaterThan(afterC.indexOf('presence:3'));
-        expect(afterC.indexOf('planned')).toBeGreaterThan(afterC.indexOf('reopen'));
-        expect(afterC.indexOf('activate:3')).toBeGreaterThan(afterC.indexOf('planned'));
+        expect(afterC.indexOf('reconfigure')).toBeGreaterThan(afterC.indexOf('presence:3'));
+        expect(afterC.indexOf('planned')).toBeGreaterThan(afterC.indexOf('reconfigure'));
+        expect(afterC.indexOf('connect-layout:3')).toBeGreaterThan(afterC.indexOf('planned'));
         for (const prefix of ['A', 'B', 'C']) {
-            expect(afterC.indexOf(`refresh:${prefix}`)).toBeGreaterThan(afterC.indexOf('activate:3'));
+            expect(afterC.indexOf(`refresh:${prefix}`)).toBeGreaterThan(afterC.indexOf('connect-layout:3'));
             expect(afterC.indexOf(`ready:${prefix}`)).toBeGreaterThan(afterC.indexOf(`refresh:${prefix}`));
+            expect(afterC.indexOf('activate:3')).toBeGreaterThan(afterC.indexOf(`ready:${prefix}`));
             expect(afterC.indexOf('send')).toBeGreaterThan(afterC.indexOf(`ready:${prefix}`));
         }
         expect(recording.commands.filter(({ command }) => 'request' in command).map(({ command }) => command))
@@ -148,11 +149,12 @@ describe('live RTC delivery owner', () => {
         });
         expect(formation.sessions).toEqual({ A: 'session-A', B: 'session-B', C: 'session-C' });
         const pair = recording.milestones.slice(0, recording.milestones.indexOf('connect:C'));
-        expect(pair.indexOf('reopen')).toBeGreaterThan(pair.indexOf('presence:2'));
-        expect(pair.indexOf('planned')).toBeGreaterThan(pair.indexOf('reopen'));
-        expect(pair.indexOf('activate:2')).toBeGreaterThan(pair.indexOf('planned'));
+        expect(pair.indexOf('reconfigure')).toBeGreaterThan(pair.indexOf('presence:2'));
+        expect(pair.indexOf('planned')).toBeGreaterThan(pair.indexOf('reconfigure'));
+        expect(pair.indexOf('connect-layout:2')).toBeGreaterThan(pair.indexOf('planned'));
         for (const prefix of ['A', 'B']) {
-            expect(pair.indexOf(`ready:${prefix}`)).toBeGreaterThan(pair.indexOf('activate:2'));
+            expect(pair.indexOf(`ready:${prefix}`)).toBeGreaterThan(pair.indexOf('connect-layout:2'));
+            expect(pair.indexOf('activate:2')).toBeGreaterThan(pair.indexOf(`ready:${prefix}`));
         }
     });
 
@@ -226,6 +228,8 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
     readonly connected = new Set<string>();
     private lifecycleState: 'forming' | 'active' | 'connecting' | 'reconfiguring';
     private acceptedSessions: readonly string[];
+    private formationEpoch = 0;
+    private groupRevision = 0;
     readonly messageObservations: LiveRtcControlClient.WaitForMessageInput[] = [];
     readonly agents: readonly [LiveRtcControlClient.FormationAgent, LiveRtcControlClient.FormationAgent, LiveRtcControlClient.FormationAgent] = [
         this.createAgent('A'),
@@ -290,7 +294,17 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
         }
         else if (('request' in command ? command.request?.path : undefined)?.endsWith('/topology')) {
             this.milestones.push('planned');
-            return { snapshot: { activeSessionIds: [...this.connected].map((id) => `session-${id}`) } };
+            return {
+                snapshot: {
+                    sourceGroupStateCausalRevision: {
+                        groupRevision: this.groupRevision,
+                        presenceRevision: this.connected.size
+                    },
+                    version: 1,
+                    state: 'active',
+                    activeSessionIds: [...this.connected].map((id) => `session-${id}`)
+                }
+            };
         }
         else if (('request' in command ? command.request?.method : undefined) === 'GET') {
             return { group: { lifecycleState: this.lifecycleState } };
@@ -298,13 +312,29 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
         else if (('request' in command ? command.request?.path : undefined)?.includes('/topology/config/')) {
             this.milestones.push('mesh');
         }
-        else if (('request' in command ? command.request?.path : undefined)?.includes('/lifecycle/establish/')) {
+        else if (('request' in command ? command.request?.path : undefined)?.includes('/lifecycle/plan/')) {
+            this.formationEpoch++;
+            this.groupRevision++;
             this.lifecycleState = 'connecting';
-            this.milestones.push('establish');
+            this.milestones.push('plan');
+            return {
+                group: { formationEpoch: this.formationEpoch },
+                causalRevision: { groupRevision: this.groupRevision }
+            };
         }
-        else if (('request' in command ? command.request?.path : undefined)?.includes('/lifecycle/reopen/')) {
+        else if (('request' in command ? command.request?.path : undefined)?.includes('/lifecycle/reconfigure/')) {
+            this.formationEpoch++;
+            this.groupRevision++;
             this.lifecycleState = 'reconfiguring';
-            this.milestones.push('reopen');
+            this.milestones.push('reconfigure');
+            return {
+                group: { formationEpoch: this.formationEpoch },
+                causalRevision: { groupRevision: this.groupRevision }
+            };
+        }
+        else if (('request' in command ? command.request?.path : undefined)?.includes('/lifecycle/connect/')) {
+            this.acceptedSessions = [...this.connected].map((id) => `session-${id}`);
+            this.milestones.push(`connect-layout:${this.connected.size}`);
         }
         else if (('request' in command ? command.request?.path : undefined)?.includes('/lifecycle/activate/')) {
             this.lifecycleState = 'active';

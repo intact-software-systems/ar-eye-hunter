@@ -1,5 +1,4 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type { GroupSnapshot } from '../../api/group-types.ts';
 import type { JsonWebSocketServer } from '../../websocket/JsonWebSocketServer.ts';
 import type { WsServerResolvedRecipient, WsServerTargetResolver } from './ws-queue-box-server-contracts.ts';
 
@@ -24,10 +23,7 @@ export class WsQueueBoxServerTargetResolution {
             connectionId;
     }
 
-    resolveOutboundRecipients(
-        message: ALMessage,
-        authorizedRoomSnapshot?: GroupSnapshot
-    ): readonly WsServerResolvedRecipient[] {
+    resolveOutboundRecipients(message: ALMessage): readonly WsServerResolvedRecipient[] {
         const targets = message.targets;
         if (!targets) {
             return [];
@@ -40,15 +36,13 @@ export class WsQueueBoxServerTargetResolution {
                 return deduplicateRecipients(
                     this.#targetResolver.resolveGroupRecipients?.(
                         targets.groupRef.groupId,
-                        message,
-                        authorizedRoomSnapshot
+                        message
                     ) ?? []
                 );
             case 'broadcast': {
                 const recipients = this.#targetResolver.resolveBroadcastRecipients?.(
                     targets.scope,
-                    message,
-                    authorizedRoomSnapshot
+                    message
                 ) ?? this.toDefaultBroadcastRecipients(targets.exceptPeerIds);
                 return deduplicateRecipients(
                     recipients.filter(

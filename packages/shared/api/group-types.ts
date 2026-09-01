@@ -22,24 +22,20 @@ export type GroupRole = 'owner' | 'admin' | 'member';
 
 export type GroupJoinMode = 'invite-only' | 'code' | 'open';
 
-export type AuditStamp = Readonly<{
-    atEpochMs: number;
-    actor: MutationActor;
-    reason: string | null;
-    traceId: string | null;
-    requestId: string | null;
-}>;
+export interface AuditStamp {
+    readonly atEpochMs: number;
+    readonly actor: MutationActor;
+    readonly reason: string | null;
+    readonly traceId: string | null;
+    readonly requestId: string | null;
+}
 
-export type GroupScope = Readonly<{
-    applicationId: ApplicationId;
-    workspaceId: WorkspaceId;
-}>;
+export interface GroupScope {
+    readonly applicationId: ApplicationId;
+    readonly workspaceId: WorkspaceId;
+}
 
-export type GroupRef =
-    & GroupScope
-    & Readonly<{
-        groupId: GroupId;
-    }>;
+export type GroupRef = Readonly<GroupScope & { groupId: GroupId; }>;
 
 type GroupBase =
     & GroupRef
@@ -90,7 +86,7 @@ type GroupBase =
 
         /**
          * When the current establishment phase began -- set by the
-         * start-establishment and reopen-establishment transitions, because
+         * connect transition into connecting or reconnecting, because
          * `updated` is overwritten by any group write and the epoch is a counter,
          * not a time. Null before the first establishment. The deadline half of
          * the activation criterion measures from here.
@@ -224,10 +220,10 @@ export type GroupPresenceSession =
         }>
     );
 
-export type GroupStateCausalRevision = Readonly<{
-    groupRevision: number;
-    presenceRevision: number;
-}>;
+export interface GroupStateCausalRevision {
+    readonly groupRevision: number;
+    readonly presenceRevision: number;
+}
 
 export type GroupPresenceSummary =
     & GroupRef
@@ -241,16 +237,16 @@ export type GroupPresenceSummary =
         computedAtEpochMs: number;
     }>;
 
-export type GroupPresenceAdmissionSession = Readonly<{
-    sessionId: SessionId;
-    generationId: string;
+export interface GroupPresenceAdmissionSession {
+    readonly sessionId: SessionId;
+    readonly generationId: string;
     /**
      * Deterministic monotonic projection of connectedAtEpochMs. Together with
      * generationId this is the total-order and fencing identity.
      */
-    generationVersion: number;
-    connectedAtEpochMs: number;
-}>;
+    readonly generationVersion: number;
+    readonly connectedAtEpochMs: number;
+}
 
 export type GroupPresenceAdmission =
     & GroupRef
@@ -261,15 +257,15 @@ export type GroupPresenceAdmission =
         updatedAtEpochMs: number;
     }>;
 
-export type GroupSnapshot = Readonly<{
-    causalRevision: GroupStateCausalRevision;
-    group: Group;
-    members: readonly GroupMember[];
-    activeSessions: readonly GroupPresenceSession[];
+export interface GroupSnapshot {
+    readonly causalRevision: GroupStateCausalRevision;
+    readonly group: Group;
+    readonly members: readonly GroupMember[];
+    readonly activeSessions: readonly GroupPresenceSession[];
 
-    memberCount: number;
-    onlineMemberCount: number;
-}>;
+    readonly memberCount: number;
+    readonly onlineMemberCount: number;
+}
 
 export type GroupEventType =
     | 'group-created'

@@ -8,6 +8,7 @@ import {
     newALMulticastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
@@ -102,6 +103,7 @@ Deno.test('API authorized broadcast keeps exclusions and closed connections out 
 Deno.test('authorized room authority requires the exact application, workspace, and room identity', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
     const runtime = createLiveRoomRuntime();
+    await putRoomSnapshot(runtime.repository, snapshot);
     try {
         for (
             const groupRef of [
@@ -111,9 +113,12 @@ Deno.test('authorized room authority requires the exact application, workspace, 
             ]
         ) {
             const message = { ...roomMessage(snapshot), targets: { mode: 'multicast' as const, groupRef } };
-            assert.equal(runtime.service.sendToTargetsWithResult(message, snapshot).status, 'no-recipients');
+            await runtime.router.route(message);
         }
-        assert.deepEqual(runtime.sent, []);
+        assert.deepEqual(
+            runtime.sent.filter((send) => decodePersistedALMessage(send.encoded).route.topicId === 'room.chat'),
+            []
+        );
     }
     finally {
         await runtime.manager.clear();
@@ -272,7 +277,8 @@ function createLiveRoomRuntime(): LiveRoomTestRuntime {
     const router = new RallarServerWsRouter(service, {
         authorizeRoomMessage: createApiV1RoomWsAuthorizer(state.groupStateService, {
             readLifecyclePolicy: async () => ({ status: 'absent' })
-        })
+        }),
+        nowEpochMs: () => deliveryClock.atEpochMs
     });
     return { ...state, service, socket, router, sent, deliveryClock };
 }

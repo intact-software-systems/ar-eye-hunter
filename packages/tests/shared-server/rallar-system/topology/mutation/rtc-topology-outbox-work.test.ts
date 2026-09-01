@@ -45,46 +45,29 @@ import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/
 
 describe('RTC topology APP_OUTBOX work', () => {
     it('lets ResourceInbox retry the handler-owned write and reservation-fenced completion transaction', () => {
-        const source = readFileSync(
-            new URL(
-                '../../../../../shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts',
-                import.meta.url
-            ),
-            'utf8'
-        );
-        const completionSource = readFileSync(
-            new URL(
-                '../../../../../shared-server/rallar-system/topology/replay/work/finish-rtc-topology-work.ts',
-                import.meta.url
-            ),
-            'utf8'
-        );
-        const handlerStart = source.indexOf('export function createRtcTopologyWorkHandler');
-        const handler = source.slice(handlerStart);
+        const handler = readSource('create-rtc-topology-work-handler.ts');
+        const transaction = readSource('write-rtc-topology-publication-transaction.ts');
+        const completion = readSource('finish-rtc-topology-work.ts');
 
-        expect(handlerStart).toBeGreaterThanOrEqual(0);
-        expect(handler).not.toMatch(/waitForRuntimeStateWriteRetry/);
-        expect(handler).not.toMatch(/\bfor\s*\([^)]*attempt/);
-        expect(handler).toMatch(/runInPSqlTransaction/);
-        expect(handler).toMatch(/writeTopologyMutation\(\s*transaction/);
-        expect(handler).toMatch(/appendOrValidate\(\s*transaction/);
-        expect(handler).toMatch(/finishRtcTopologyReservation\(transaction, entry\)/);
-        expect(handler.indexOf('writeTopologyMutation')).toBeLessThan(
-            handler.indexOf('appendOrValidate')
+        const acceptedWrite = handler.slice(handler.indexOf('async function writeAcceptedRtcTopologyWork'));
+        expect(acceptedWrite).not.toMatch(/waitForRuntimeStateWriteRetry/);
+        expect(acceptedWrite).not.toMatch(/\bfor\s*\([^)]*attempt/);
+        expect(acceptedWrite).toMatch(/writeTopologyMutation\(\s*transaction/);
+        expect(acceptedWrite.indexOf('writeTopologyMutation')).toBeLessThan(
+            acceptedWrite.indexOf('writePublicationDelivery')
         );
-        const fencedTransaction = handler.slice(
-            handler.indexOf('async function writeRtcTopologyPublicationTransaction')
+        expect(transaction).toMatch(/runInPSqlTransaction/);
+        expect(transaction).toMatch(/appendOrValidate\(/);
+        expect(transaction.indexOf('await write(transaction)')).toBeGreaterThanOrEqual(0);
+        expect(transaction.indexOf('await write(transaction)')).toBeLessThan(
+            transaction.indexOf('finishRtcTopologyReservation(transaction, entry)')
         );
-        expect(fencedTransaction.indexOf('await write(transaction)')).toBeGreaterThanOrEqual(0);
-        expect(fencedTransaction.indexOf('await write(transaction)')).toBeLessThan(
-            fencedTransaction.indexOf('finishRtcTopologyReservation(transaction, entry)')
-        );
-        expect(completionSource).not.toMatch(/waitForRuntimeStateWriteRetry/);
-        expect(completionSource).not.toMatch(/\bfor\s*\([^)]*attempt/);
-        expect(completionSource).toMatch(
+        expect(completion).not.toMatch(/waitForRuntimeStateWriteRetry/);
+        expect(completion).not.toMatch(/\bfor\s*\([^)]*attempt/);
+        expect(completion).toMatch(
             /new PSqlResourceInboxFinalizationRepository\(\s*transaction\s*,?\s*\)\.finishReserved\(/
         );
-        expect(completionSource).toMatch(/throw new RuntimeStateWriteConflictError\(\)/);
+        expect(completion).toMatch(/throw new RuntimeStateWriteConflictError\(\)/);
     });
 
     it('keeps each committed group revision as an immutable queue entry', async () => {
@@ -748,11 +731,18 @@ describe('RTC topology APP_OUTBOX work', () => {
         await expect(snapshots.commitSnapshot({ candidate: planned })).resolves.toMatchObject({
             status: 'accepted'
         });
-        const authority = {
-            group,
-            rttMeasurements: [rtt('session-a', 'session-b', 1)],
-            nowEpochMs: 1_000
-        };
+        const planning = createGroupTopologyRuntimeOwners({
+            findGroupSnapshotByRef: async () => group,
+            readCurrentGroupSnapshot: async () => group,
+            readRttMeasurements: () => [rtt('session-a', 'session-b', 1)],
+            topologyService: new RallarRtcTopologyService({ now: () => 1_000 }),
+            topologySnapshotRepository: snapshots
+        }).planning;
+        const authority = await planning.readTopologyPlanningAuthority({
+            groupRef: group.group,
+            knownGroup: group,
+            snapshotSelection: 'prefer-current'
+        });
         const submittedCommands: Array<
             Readonly<{
                 command: GroupMutationCommand;
@@ -774,10 +764,17 @@ describe('RTC topology APP_OUTBOX work', () => {
                 recordTopologyPublication: vi.fn(),
                 recordTopologyPlanFrozen: vi.fn(),
                 recordTopologyRebuildSkippedFingerprint: vi.fn()
-            } as never,
+            },
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
             rttRefinementService: refinement,
             formationCriterion: {
+                deferred: {
+                    minIntervalMs: 1_000,
+                    nowEpochMs: () => 1_000,
+                    schedule: () => {
+                        throw new Error('Unexpected trailing criterion petition');
+                    }
+                },
                 readLifecyclePolicy: async () => ({
                     status: 'present',
                     policy: {
@@ -861,6 +858,16 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(observedRttVersions).toEqual([1]);
     });
 });
+
+function readSource(fileName: string): string {
+    return readFileSync(
+        new URL(
+            `../../../../../shared-server/rallar-system/topology/replay/work/${fileName}`,
+            import.meta.url
+        ),
+        'utf8'
+    );
+}
 
 async function entriesIn(queue: InMemoryQueueBox) {
     return await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key))).then(

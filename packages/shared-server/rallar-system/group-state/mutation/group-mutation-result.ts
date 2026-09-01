@@ -1,3 +1,4 @@
+import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 import type {
     AuditStamp,
     Group,
@@ -9,9 +10,12 @@ import type {
 } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
-
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+
+import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import { GroupPolicyDeniedError } from '../policy/group-policy-result.ts';
+
 import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
 import type { GroupPlannedLayoutRow, PlannedLayoutPromotion } from './aggregate/compute-planned-layout-promotion.ts';
 import type {
@@ -47,6 +51,7 @@ export interface GroupMutationWriteInput {
     readonly acceptedLayoutPromotion?: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }> | null;
     /** The planned row a layout fence matched, re-asserted at commit. */
     readonly plannedLayoutFence?: GroupPlannedLayoutRow | null;
+    readonly connectTriggerLatchEffect?: RuntimeStateGuardedBatchEffect | null;
     readonly layoutTombstones?: GroupLayoutTombstones | null;
 }
 
@@ -54,11 +59,11 @@ export interface RejectedGroupMutationInput {
     readonly command: GroupMutationCommand;
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
-    readonly rejectionCode: GroupMutationRejectionCode;
+    readonly rejectionCode: Exclude<GroupMutationRejectionCode, 'group-policy-denied'>;
     readonly message: string;
 }
 
-export interface NewGroupEventInput {
+interface GroupMutationEventInput {
     readonly eventType: GroupEventType;
     readonly group: Group;
     readonly causalRevision: GroupStateCausalRevision;
@@ -67,10 +72,32 @@ export interface NewGroupEventInput {
     readonly members: readonly GroupMember[];
 }
 
+interface MaterializedGroupJoinCode {
+    readonly joinCode: string;
+    readonly expiresAtEpochMs: number;
+}
+
+interface GroupPolicyRejectionInput {
+    readonly command: GroupMutationCommand;
+    readonly read: GroupMutationRead;
+    readonly facts: GroupMutationFacts;
+    readonly denial: GroupPolicyDenied;
+}
+
+interface GroupMutationReceiptInput {
+    readonly outcome: GroupMutationReceipt['outcome'];
+    readonly causalRevision: GroupStateCausalRevision;
+    readonly snapshotVersion: number;
+    readonly acceptedStorageRevision: number | null;
+    readonly eventId: string | null;
+    readonly outboxIds: readonly string[];
+    readonly rejection: string | null;
+}
+
 export function materializedRotateJoinCode(
     command: Extract<GroupMutationCommand, { operation: 'rotateGroupJoinCode'; }>,
     facts: GroupMutationFacts
-): Readonly<{ joinCode: string; expiresAtEpochMs: number; }> {
+): MaterializedGroupJoinCode {
     const joinCode = command.input.joinCode ?? facts.resolvedJoinCode;
     const expiresAtEpochMs = command.input.expiresAtEpochMs ?? facts.nowEpochMs + DEFAULT_GROUP_JOIN_CODE_TTL_MS;
     if (!joinCode || !Number.isSafeInteger(expiresAtEpochMs) || expiresAtEpochMs <= 0) {
@@ -87,7 +114,7 @@ export function computeGroupMutationWriteResult(
         (guard.kind === 'group' ? guard.value : requireGroup(read, command.aggregateRef).value);
     const presenceRevision = read.presenceSummary?.value.causalRevision.presenceRevision ?? 0;
     const causalRevision = { groupRevision: group.snapshotVersion, presenceRevision };
-    const event = newGroupEvent({
+    const event = toGroupMutationEvent({
         eventType: input.eventType,
         group,
         causalRevision,
@@ -95,27 +122,11 @@ export function computeGroupMutationWriteResult(
         facts,
         members: input.members
     });
-    const summaryOutboxEntries = input.presenceSummaryWork === 'none'
-        ? []
-        : [
-            computeGroupPresenceSummaryEntry(
-                {
-                    effectKind: 'group-presence-summary',
-                    aggregateRef: command.aggregateRef,
-                    commandId: command.commandId,
-                    createdAtEpochMs: facts.nowEpochMs,
-                    expireAtEpochMs: facts.expireAtEpochMs,
-                    acceptedCausalRevision: causalRevision,
-                    event
-                },
-                facts.serviceId
-            )
-        ];
-    const outboxEntries = [...summaryOutboxEntries, ...(input.extraOutboxEntries ?? [])];
+    const outboxEntries = computeMutationFollowupEntries(input, causalRevision, event);
     const acceptedLayoutPromotion = input.acceptedLayoutPromotion ?? null;
     const plannedLayoutFence = input.plannedLayoutFence ?? null;
     const layoutTombstones = input.layoutTombstones ?? null;
-    const receipt = receiptFor(command, facts, {
+    const receipt = toGroupMutationReceipt(command, facts, {
         outcome: 'applied',
         causalRevision,
         snapshotVersion: group.snapshotVersion,
@@ -137,7 +148,8 @@ export function computeGroupMutationWriteResult(
         lifecyclePolicy: command.operation === 'createGroup' ? (command.input.lifecyclePolicy ?? null) : null,
         acceptedLayoutPromotion,
         plannedLayoutFence,
-        layoutTombstones
+        layoutTombstones,
+        connectTriggerLatchEffect: input.connectTriggerLatchEffect ?? null
     };
 }
 
@@ -168,7 +180,7 @@ export function noOp(
     return {
         outcome: 'no-op',
         rejectionCode: null,
-        receipt: receiptFor(command, facts, {
+        receipt: toGroupMutationReceipt(command, facts, {
             outcome: 'no-op',
             causalRevision,
             snapshotVersion: stored.value.snapshotVersion,
@@ -180,13 +192,15 @@ export function noOp(
     };
 }
 
-export function rejected(input: RejectedGroupMutationInput): GroupMutationComputed {
+export function rejected(
+    input: RejectedGroupMutationInput
+): Extract<GroupMutationComputed, { rejectionCode: Exclude<GroupMutationRejectionCode, 'group-policy-denied'>; }> {
     const { command, facts, message, read, rejectionCode } = input;
     const causalRevision = currentCausalRevision(read);
     return {
         outcome: 'rejected',
         rejectionCode,
-        receipt: receiptFor(command, facts, {
+        receipt: toGroupMutationReceipt(command, facts, {
             outcome: 'rejected',
             causalRevision,
             snapshotVersion: read.group?.value.snapshotVersion ?? 0,
@@ -198,11 +212,28 @@ export function rejected(input: RejectedGroupMutationInput): GroupMutationComput
     };
 }
 
+export function rejectedByGroupPolicy(
+    input: GroupPolicyRejectionInput
+): GroupMutationComputed {
+    return {
+        ...rejected({ ...input, rejectionCode: 'group-mutation-rejected', message: input.denial.message }),
+        rejectionCode: 'group-policy-denied',
+        policyDenial: {
+            allowed: false,
+            code: input.denial.code,
+            message: input.denial.message,
+            ...(input.denial.details === undefined ? {} : { details: input.denial.details })
+        }
+    };
+}
+
 export function toGroupMutationRejectionError(
     computed: Extract<GroupMutationComputed, { outcome: 'rejected'; }>
-): GroupAlreadyExistsError | GroupConnectDeniedError | GroupMutationRejectedError {
+): GroupAlreadyExistsError | GroupConnectDeniedError | GroupMutationRejectedError | GroupPolicyDeniedError {
     const message = computed.receipt.rejection ?? 'Group mutation rejected';
     switch (computed.rejectionCode) {
+        case 'group-policy-denied':
+            return new GroupPolicyDeniedError(computed.policyDenial);
         case 'group-already-exists':
             return new GroupAlreadyExistsError(message);
         case 'group-connect-no-planned-layout':
@@ -213,18 +244,10 @@ export function toGroupMutationRejectionError(
     }
 }
 
-export function receiptFor(
+function toGroupMutationReceipt(
     command: GroupMutationCommand,
     facts: GroupMutationFacts,
-    input: Readonly<{
-        outcome: GroupMutationReceipt['outcome'];
-        causalRevision: GroupStateCausalRevision;
-        snapshotVersion: number;
-        acceptedStorageRevision: number | null;
-        eventId: string | null;
-        outboxIds: readonly string[];
-        rejection: string | null;
-    }>
+    input: GroupMutationReceiptInput
 ): GroupMutationReceipt {
     const joinCode = command.operation === 'rotateGroupJoinCode' ? materializedRotateJoinCode(command, facts) : null;
     return {
@@ -256,6 +279,8 @@ export function requireGroup(
     read: GroupMutationRead,
     ref: GroupRef
 ): RuntimeStateEntryValue<Group> {
+    // Fresh non-create absence is a typed rejection at computeGroupMutation.
+    // Result assembly reaches this only after that existence decision.
     if (!read.group) {
         throw new GroupMutationRejectedError(`Group not found: ${ref.groupId}`);
     }
@@ -265,23 +290,23 @@ export function requireGroup(
 export function auditStamp(
     command: GroupMutationCommand,
     facts: GroupMutationFacts,
-    fallbackPrincipalId: string | undefined
+    defaultPrincipalId: string | undefined
 ): AuditStamp {
     return {
         atEpochMs: facts.nowEpochMs,
-        actor: mutationActor(command, facts, fallbackPrincipalId),
+        actor: toGroupMutationActor(command, facts, defaultPrincipalId),
         reason: command.input.reason,
         traceId: command.input.traceId,
         requestId: command.requestId
     };
 }
 
-export function mutationActor(
+function toGroupMutationActor(
     command: GroupMutationCommand,
     facts: GroupMutationFacts,
-    fallbackPrincipalId?: string
+    defaultPrincipalId: string | undefined
 ): MutationActor {
-    const principalId = command.input.actorPrincipalId ?? fallbackPrincipalId;
+    const principalId = command.input.actorPrincipalId ?? defaultPrincipalId;
     if (command.input.actorSessionId !== null) {
         if (!principalId) {
             throw new GroupMutationRejectedError('A session actor requires a principal identity.');
@@ -298,7 +323,7 @@ export function mutationActor(
     return { kind: 'service', serviceId: facts.serviceId };
 }
 
-export function newGroupEvent(input: NewGroupEventInput): GroupEvent {
+function toGroupMutationEvent(input: GroupMutationEventInput): GroupEvent {
     const { causalRevision, command, eventType, facts, group } = input;
     return {
         applicationId: group.applicationId,
@@ -309,7 +334,7 @@ export function newGroupEvent(input: NewGroupEventInput): GroupEvent {
         snapshotVersion: group.snapshotVersion,
         causalRevision,
         occurredAtEpochMs: facts.nowEpochMs,
-        actor: mutationActor(command, facts),
+        actor: toGroupMutationActor(command, facts, undefined),
         reason: command.input.reason,
         traceId: command.input.traceId,
         requestId: command.requestId,
@@ -340,4 +365,29 @@ function toGroupEventPayload(
         return { principalId: members[0].principalId };
     }
     return {};
+}
+
+function computeMutationFollowupEntries(
+    input: GroupMutationWriteInput,
+    causalRevision: GroupStateCausalRevision,
+    event: GroupEvent
+): readonly ResourceEntry[] {
+    const { command, facts } = input;
+    const summaryOutboxEntries = input.presenceSummaryWork === 'none'
+        ? []
+        : [
+            computeGroupPresenceSummaryEntry(
+                {
+                    effectKind: 'group-presence-summary',
+                    aggregateRef: command.aggregateRef,
+                    commandId: command.commandId,
+                    createdAtEpochMs: facts.nowEpochMs,
+                    expireAtEpochMs: facts.expireAtEpochMs,
+                    acceptedCausalRevision: causalRevision,
+                    event
+                },
+                facts.serviceId
+            )
+        ];
+    return [...summaryOutboxEntries, ...(input.extraOutboxEntries ?? [])];
 }

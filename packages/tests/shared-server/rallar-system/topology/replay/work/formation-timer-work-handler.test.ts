@@ -1,16 +1,69 @@
 import { describe, expect, it } from 'vitest';
 
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
-import { computeFormationTimerEntry, decodeFormationTimerWork } from '@shared-server/rallar-system/group-state/formation-timer-outbox-entry.ts';
+import {
+    computeFormationTimerEntries,
+    computeFormationTimerEntry,
+    decodeFormationTimerWork
+} from '@shared-server/rallar-system/group-state/formation-timer-outbox-entry.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
+import { computeFormationCriterionCommand } from '@shared-server/rallar-system/topology/replay/work/compute-formation-criterion-command.ts';
 import { createFormationTimerWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-formation-timer-work-handler.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { createGroupAuthorityFacts, transitionCommand } from '../../../group-state/mutation/group-mutation-test-runtime.ts';
 
 import { createTestGroup } from '../../../../../create-test-group.ts';
 import { createTopologyTestGroupSnapshot } from '../../config/mutation/group-topology-config-mutation-test-fixtures.ts';
 
 describe('formation timer work handler', () => {
+    it.each(['reconfiguring', 'reconnecting'] as const)('observes criteria and arms deadlines only while %s is dialing', async (lifecycleState) => {
+        const base = createTopologyTestGroupSnapshot();
+        const group = { ...base, group: createTestGroup({ ...base.group, lifecycleState, formationEpoch: 2, establishmentStartedAtEpochMs: 1000 }) };
+        const command = computeFormationCriterionCommand({
+            group,
+            planned: {
+                groupRef: group.group,
+                overlayId: toScopedOverlayId(group.group),
+                name: 'candidate',
+                topology: 'tree',
+                degreeLimit: 2,
+                activeSessionIds: [],
+                nextHopsBySessionId: {},
+                version: 1,
+                state: 'active',
+                sourceGroupStateCausalRevision: { groupRevision: 4, presenceRevision: 0 },
+                createdByClientId: 'server',
+                createdAtEpochMs: 1000,
+                updatedAtEpochMs: 1000
+            },
+            rttMeasurements: [],
+            nowEpochMs: 2000,
+            lifecyclePolicy: { status: 'present', policy: resolveGroupLifecyclePolicyPreset('managed') }
+        });
+        expect(command?.operation ?? null).toBe(lifecycleState === 'reconnecting' ? 'activateGroup' : null);
+        const entries = computeFormationTimerEntries({
+            command: transitionCommand('connectGroup'),
+            next: group.group,
+            policy: resolveGroupLifecyclePolicyPreset('managed'),
+            facts: createGroupAuthorityFacts()
+        });
+        expect(entries.map((entry) => decodeFormationTimerWork(entry.resource).kind)).toEqual(lifecycleState === 'reconnecting' ? ['deadline'] : []);
+    });
+
+    it.each(['forming', 'active', 'dormant'] as const)('arms automatic retry only for the initial %s failure landing', (lifecycleState) => {
+        const next = createTestGroup({ lifecycleState, formationAttemptCount: 1 });
+        const entries = computeFormationTimerEntries({
+            command: transitionCommand('failGroupFormation'),
+            next,
+            policy: resolveGroupLifecyclePolicyPreset('managed'),
+            facts: createGroupAuthorityFacts()
+        });
+        expect(entries.map((entry) => decodeFormationTimerWork(entry.resource).kind)).toEqual(lifecycleState === 'forming' ? ['retry'] : []);
+    });
+
     it('keeps a due deadline retryable while its planned topology is unavailable', async () => {
         const nowEpochMs = 2_000;
         const base = createTopologyTestGroupSnapshot();
@@ -54,6 +107,9 @@ describe('formation timer work handler', () => {
             submitCommand: async (command) => {
                 submittedCommands.push(command);
             },
+            submitAutomationCommand: async (command) => {
+                submittedCommands.push(command);
+            },
             nowEpochMs: () => nowEpochMs
         });
         const message = newALUntargetedMessage(
@@ -85,6 +141,9 @@ describe('formation timer work handler', () => {
             submitCommand: async (command) => {
                 submittedCommands.push(command);
             },
+            submitAutomationCommand: async (command) => {
+                submittedCommands.push(command);
+            },
             nowEpochMs: () => nowEpochMs
         });
 
@@ -107,7 +166,7 @@ describe('formation timer work handler', () => {
         expect(requestedVersions).toEqual([current.group.snapshotVersion]);
         expect(submittedCommands).toMatchObject([
             {
-                operation: 'startGroupEstablishment',
+                operation: 'planGroupLayout',
                 aggregateRef: {
                     applicationId: current.group.applicationId,
                     workspaceId: current.group.workspaceId,
@@ -125,6 +184,9 @@ describe('formation timer work handler', () => {
             readPlannedTopology: async () => null,
             topologyPlanning: unusedTopologyPlanning(behind, nowEpochMs),
             readLifecyclePolicy: async () => ({ status: 'absent' }),
+            submitAutomationCommand: async () => {
+                throw new Error('Unexpected automation');
+            },
             submitCommand: async () => {
                 throw new Error('A behind snapshot must not submit a command');
             },
@@ -160,6 +222,9 @@ describe('formation timer work handler', () => {
             readLifecyclePolicy: async () => ({ status: 'absent' }),
             submitCommand: async () => {
                 throw new Error('A superseded timer must not submit a command');
+            },
+            submitAutomationCommand: async () => {
+                throw new Error('A superseded timer must not retry');
             },
             nowEpochMs: () => nowEpochMs
         });

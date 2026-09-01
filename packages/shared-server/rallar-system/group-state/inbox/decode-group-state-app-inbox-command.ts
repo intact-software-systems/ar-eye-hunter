@@ -1,7 +1,7 @@
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { requireExactKeys, requireString } from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import { validateGroupMutationRequest } from '../mutation/command-validation/group-mutation-request-validation.ts';
+import { assertGroupMutationRequest } from '../mutation/command-validation/group-mutation-request-validation.ts';
 import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
 import type { AuthenticatedGroupMutationInboxType } from './group-state-inbox-contracts.ts';
 
@@ -29,6 +29,7 @@ export function decodeGroupStateAppInboxCommand(
 ): JsonWireValue {
     if (
         type === AppInboxType.GROUP_PRESENCE_EXPIRE ||
+        type === AppInboxType.GROUP_FORMATION_AUTOMATION ||
         type === AppInboxType.GROUP_FORMATION_CRITERION ||
         type === AppInboxType.GROUP_TOPOLOGY_PUBLICATION
     ) {
@@ -69,16 +70,16 @@ export function decodeGroupStateAppInboxCommand(
     if (type !== AppInboxType.GROUP_CREATE) {
         requireString(command.groupId, `Group ${type} group id`);
     }
-    validatePersistedGroupMutationRequest(operation, command.request);
+    assertPersistedGroupMutationRequest(operation, command.request);
     return value;
 }
 
-function validatePersistedGroupMutationRequest(
+function assertPersistedGroupMutationRequest(
     operation: GroupMutationCommand['operation'],
     value: JsonWireValue | undefined
 ): void {
     const request = requireJsonWireObject(value, `Group ${operation} request`);
-    validateGroupMutationRequest(operation, {
+    assertGroupMutationRequest(operation, {
         ...request,
         actorPrincipalId: request.actorPrincipalId === undefined
             ? 'app-inbox-authority-principal'
@@ -116,6 +117,7 @@ function isAuthenticatedGroupMutationType(
     return type.startsWith('GROUP_') &&
         type !== AppInboxType.GROUP_PRESENCE_EXPIRE &&
         type !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP &&
+        type !== AppInboxType.GROUP_FORMATION_AUTOMATION &&
         type !== AppInboxType.GROUP_FORMATION_CRITERION &&
         type !== AppInboxType.GROUP_TOPOLOGY_PUBLICATION;
 }
@@ -130,8 +132,6 @@ function toGroupMutationOperation(
             return 'updateGroup';
         case AppInboxType.GROUP_DIRECTOR_APPOINT:
             return 'appointDirector';
-        case AppInboxType.GROUP_ESTABLISHMENT_START:
-            return 'startGroupEstablishment';
         case AppInboxType.GROUP_TRANSPORT_PAUSE:
             return 'pauseGroupTransport';
         case AppInboxType.GROUP_TRANSPORT_RESUME:
@@ -148,8 +148,6 @@ function toGroupMutationOperation(
             return 'activateGroup';
         case AppInboxType.GROUP_RECONFIGURE:
             return 'reconfigureGroup';
-        case AppInboxType.GROUP_ESTABLISHMENT_REOPEN:
-            return 'reopenGroupEstablishment';
         case AppInboxType.GROUP_JOIN:
             return 'joinGroup';
         case AppInboxType.GROUP_INVITE_CREATE:

@@ -2,7 +2,6 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { isALControlTypeId, newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     isReservedRallarWsTopicId,
     RALLAR_AL_CONTROL_TOPIC_ID,
@@ -11,7 +10,6 @@ import {
 } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { decodeStateSyncMessage } from '../../state-sync/state-sync-payload.ts';
 import {
@@ -30,6 +28,7 @@ import type {
     RallarServerWsPayload,
     RallarServerWsProxyRule,
     RallarServerWsPublishResult,
+    RallarServerWsRoomAudience,
     RallarServerWsRouterOptions,
     RallarServerWsSelector,
     RallarServerWsTopicDefinition
@@ -62,6 +61,7 @@ export class RallarServerWsRouter {
     private readonly authorizeRoomMessage: RallarServerWsRouterOptions['authorizeRoomMessage'];
     private readonly wakeOutbox: RallarServerWsRouterOptions['wakeOutbox'];
     private readonly service: WsQueueBoxServerService;
+    private readonly nowEpochMs: () => number;
     private installed = false;
 
     constructor(
@@ -76,6 +76,7 @@ export class RallarServerWsRouter {
         this.defaultFanout = options.defaultFanout ?? 'live-only';
         this.authorizeRoomMessage = options.authorizeRoomMessage;
         this.wakeOutbox = options.wakeOutbox;
+        this.nowEpochMs = options.nowEpochMs ?? Date.now;
     }
 
     install(): this {
@@ -127,7 +128,7 @@ export class RallarServerWsRouter {
         if (!ingress) {
             return;
         }
-        const { definition, payload } = ingress;
+        const { definition } = ingress;
         const authorization = await authorizeRallarServerWsIngress({
             message,
             definition,
@@ -141,21 +142,10 @@ export class RallarServerWsRouter {
             });
             return;
         }
+
         const context = this.toMessageContext(definition, message);
-        if (definition?.validate && !await definition.validate(payload, context)) {
-            this.reject(message, {
-                reason: 'no-route',
-                logMessage:
-                    `Rejected schema-invalid Rallar server WS payload: ${message.route.topicId}/${message.payload.typeId}`
-            });
-            return;
-        }
-        const serverMessage = toRallarServerWsMessage(payload, message);
-        if (definition?.authorize && !await definition.authorize(serverMessage, context)) {
-            this.reject(message, {
-                reason: 'unauthorized',
-                logMessage: `Rejected policy-unauthorised Rallar server WS topic: ${message.route.topicId}`
-            });
+        const serverMessage = await this.authorizeTopicMessage(message, ingress, context);
+        if (!serverMessage) {
             return;
         }
         await this.registry.dispatchHandlers(serverMessage, context);
@@ -169,7 +159,7 @@ export class RallarServerWsRouter {
             await this.publishToFanout(
                 message,
                 definition?.fanout ?? this.defaultFanout,
-                authorization.authorizedRoomSnapshot
+                authorization.audience
             );
         }
     }
@@ -223,17 +213,43 @@ export class RallarServerWsRouter {
         return undefined;
     }
 
+    private async authorizeTopicMessage(
+        message: ALMessage,
+        admitted: RallarServerWsRouter.Ingress,
+        context: RallarServerWsMessageContext
+    ): Promise<RallarServerWsMessage<JsonWireValue> | undefined> {
+        const definition = admitted.definition;
+        if (definition?.validate && !await definition.validate(admitted.payload, context)) {
+            this.reject(message, {
+                reason: 'no-route',
+                logMessage:
+                    `Rejected schema-invalid Rallar server WS payload: ${message.route.topicId}/${message.payload.typeId}`
+            });
+            return undefined;
+        }
+        const serverMessage = toRallarServerWsMessage(admitted.payload, message, this.nowEpochMs());
+        if (definition?.authorize && !await definition.authorize(serverMessage, context)) {
+            this.reject(message, {
+                reason: 'unauthorized',
+                logMessage: `Rejected policy-unauthorised Rallar server WS topic: ${message.route.topicId}`
+            });
+            return undefined;
+        }
+        return serverMessage;
+    }
+
     private publishToFanout(
         message: ALMessage,
         fanout: RallarServerWsFanout,
-        authorizedRoomSnapshot?: GroupSnapshot
+        audience?: RallarServerWsRoomAudience
     ): Promise<RallarServerWsPublishResult> {
         return publishRallarServerWsMessage({
             service: this.service,
             message,
             fanout,
-            wakeOutbox: this.wakeOutbox,
-            authorizedRoomSnapshot
+            audience,
+            nowEpochMs: this.nowEpochMs(),
+            wakeOutbox: this.wakeOutbox
         });
     }
 
@@ -328,7 +344,8 @@ export class RallarServerWsRouter {
 
 function toRallarServerWsMessage<T extends RallarServerWsPayload>(
     payload: T,
-    raw: ALMessage
+    raw: ALMessage,
+    receivedAtEpochMs: number
 ): RallarServerWsMessage<T> {
-    return { payload, raw, receivedAtEpochMs: Date.now() };
+    return { payload, raw, receivedAtEpochMs };
 }

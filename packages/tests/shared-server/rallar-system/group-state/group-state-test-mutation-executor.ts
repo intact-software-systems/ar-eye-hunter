@@ -17,7 +17,7 @@ import {
 import { toGroupMutationRejectionError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { readGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
-import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
+import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
 import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
@@ -115,7 +115,7 @@ export class GroupStateTestMutationExecutor {
                 authenticatedAuthority: null
             };
             computed = computeGroupMutation({ command, read, facts });
-            validateGroupMutation({ command, read, facts, computed });
+            assertGroupMutation({ command, read, facts, computed });
             if (computed.outcome === 'idempotency-conflict') {
                 throw new TypeError('Validated idempotency conflict is unreachable');
             }
@@ -158,6 +158,9 @@ export class GroupStateTestMutationExecutor {
         computed: Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>,
         receiptOnly = false
     ): Promise<GroupStateTestMutationResult> {
+        if (computed.outcome === 'rejected') {
+            throw toGroupMutationRejectionError(computed);
+        }
         const repository = this.repository();
         const receipt = computed.receipt;
         if (receiptOnly) {
@@ -168,9 +171,6 @@ export class GroupStateTestMutationExecutor {
             throw new TypeError(`Group snapshot not found: ${receipt.aggregateRef.groupId}`);
         }
         const event = await this.receiptEvent(repository, receipt);
-        if (computed.outcome === 'rejected') {
-            throw toGroupMutationRejectionError(computed);
-        }
         if (operation === 'rotateGroupJoinCode') {
             if (receipt.joinCode === null || receipt.joinCodeExpiresAtEpochMs === null) {
                 throw new TypeError('Rotate join-code receipt requires current join-code values');

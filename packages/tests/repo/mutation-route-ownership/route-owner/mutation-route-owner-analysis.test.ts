@@ -1,8 +1,7 @@
 import { parse } from '@babel/parser';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { EXPECTED_MUTATION_ENTRYPOINT_COUNT, EXPECTED_MUTATION_TYPE_COUNT } from '../routing/mutation-routing-inventory.ts';
-
 import * as boundaryAnalysis from '../boundary/mutation-boundary-analysis.ts';
 import * as routingContract from '../routing/mutation-routing-inventory.ts';
 
@@ -74,8 +73,7 @@ describe('Mutation route owner analysis contracts', () => {
         const inventory = routingContract.MUTATION_ROUTE_INVENTORY;
         const validate = routingContract.validateMutationRouteInventory;
 
-        expect(inventory).toHaveLength(EXPECTED_MUTATION_ENTRYPOINT_COUNT);
-        expect(new Set(inventory.map((entry) => entry.type)).size).toBe(EXPECTED_MUTATION_TYPE_COUNT);
+        expect(new Set(inventory.map((entry) => entry.type))).toEqual(new Set(Object.values(AppInboxType)));
         expect(validate(inventory)).toEqual([]);
     });
 
@@ -107,7 +105,6 @@ describe('Mutation route owner analysis contracts', () => {
             routingContract.MUTATION_ROUTE_INVENTORY.map((entry) => `${entry.entrypoint}:${entry.type}`)
         );
 
-        expect(auditedEntrypoints.size).toBe(EXPECTED_MUTATION_ENTRYPOINT_COUNT);
         for (const entrypoint of STRICT_TASK_FOUR_MUTATION_ENTRYPOINTS) {
             expect(auditedEntrypoints, entrypoint).toContain(entrypoint);
         }

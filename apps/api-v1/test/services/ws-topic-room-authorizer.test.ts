@@ -50,6 +50,7 @@ Deno.test('API room authorization reads the current scoped group snapshot', asyn
     });
 
     assertAuthorized(decision);
+    assert.deepEqual(decision.audience, { targets: message.targets, sessions: snapshot.activeSessions });
     assert.deepEqual(requestedRef, snapshot.group);
 });
 
@@ -364,9 +365,11 @@ function createSnapshot(): GroupSnapshot {
     return createGroupSnapshot(2, ['session-1']);
 }
 
-function assertAuthorized(decision: RallarServerWsRoomAuthorizationDecision): void {
+function assertAuthorized(
+    decision: RallarServerWsRoomAuthorizationDecision
+): asserts decision is Extract<RallarServerWsRoomAuthorizationDecision, { authorized: true; }> {
     assert.ok(typeof decision !== 'boolean' && decision.authorized);
-    assert.ok(decision.authorizedRoomSnapshot);
+    assert.ok(decision.audience);
 }
 
 function assertDenied(decision: RallarServerWsRoomAuthorizationDecision): void {

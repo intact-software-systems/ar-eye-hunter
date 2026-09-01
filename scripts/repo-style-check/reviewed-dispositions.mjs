@@ -542,6 +542,90 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'configureDirectorRelayScenario'
     }),
+    // Group command and persisted-evidence readers narrow raw JSON before any
+    // identity, policy, receipt, or benchmark decision consumes it.
+    Object.freeze({
+        path:
+            'packages/shared-server/rallar-system/group-state/mutation/command-validation/group-input-validation-issues.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isGroupInputRecord'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-server/rallar-system/group-state/mutation/command-validation/group-input-validation-issues.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateGroupInputFields'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-server/rallar-system/group-state/mutation/command-validation/group-input-validation-issues.ts',
+        rule: 'boundary.unknown',
+        symbol: 'resolveGroupInputFieldIssue'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-server/rallar-system/group-state/mutation/command-validation/group-input-validation-issues.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateGroupInputJson'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-server/rallar-system/group-state/mutation/command-validation/group-input-validation-issues.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-lifecycle-policy-input-shape.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateGroupLifecyclePolicyInputShape'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-lifecycle-policy-input-shape.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validatePolicyObject'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-lifecycle-policy-input-shape.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validatePolicyField'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-lifecycle-policy-input-shape.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateTrigger'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-lifecycle-policy-input-shape.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateNumber'
+    }),
+    Object.freeze({
+        path:
+            'packages/shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-operation-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateExpectedLayout'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path:
+            'packages/tests/shared-server/rallar-system/group-state/persistence/group-state-repository-identity.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'scripts/perf/api-v1-state-write-group-receipt-evidence.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // Cohesion review kept these lifecycle/decoder owners and their directory
     // together. Bounds describe only the reviewed signal and never change the
     // global thresholds or authorize a refactor-or-register tier exception.
