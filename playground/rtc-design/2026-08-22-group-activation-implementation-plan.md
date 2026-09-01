@@ -2049,18 +2049,28 @@ there is no retained dual-protocol reader.
 Game match configuration must also choose a coherent room ID/reference pair:
 an explicit room ID cannot inherit the current reference of another room, and an
 explicit full reference determines its own room ID.
-Keep the maintainer-approved browser-facade budget unchanged while reviewing and
-validating these corrections.
+
+The final room-authority closure measures the browser facade at **168,399 bytes /
+164.4521484375 KiB** and the headless consumer at **213,469 bytes /
+208.4658203125 KiB**. Those are 208 and 478 bytes above the previous strict
+allowed maxima. Independent deletion and consolidation review found no meaningful
+safe reduction without obscuring the asynchronous lifecycle guards. The maintainer
+approved strict **165 KiB** and **209 KiB** limits on 2026-09-01. Keep the existing
+entry points, dependency exclusions, minification target and Brotli quality; the
+decision changes only the two reviewed ceilings. Both authoritative facade budget
+definitions and the headless boundary must carry the approved values before the
+final-head gates can close.
 
 **Next two PRs (I5, I20):**
 
-- **Finish existing #390 / slice 8b.** Source review and local validation are complete;
-  await native release checks, then mark ready for the maintainer's manual merge
-  and chosen clean-database cutover. No agent database reset or deployment pause.
-- **Review existing #391 / slice 8c.** Resolve the actual conflicts with the reviewed
-  parent, preserve its native fixtures, and verify accepted-layout room status,
-  waits and sends through their final asynchronous transport boundary. Review
-  #396 next; resume Slice 9 only after the newest existing PR completes review.
+- **Finish existing #390 / slice 8b.** Source and independent review, local validation,
+  native release checks and the ready-for-main marker are complete. Await the
+  maintainer's manual merge and chosen clean-database cutover. No agent database
+  reset or deployment pause.
+- **Finish existing #391 / slice 8c.** Apply the approved bundle ceilings, rerun the
+  final-head gates, then retarget after #390 merges and publish its ready-for-main
+  marker. Review #396 next; resume Slice 9 only after the newest existing PR
+  completes review.
 
 ## Slice 9 — In-flight pacing
 
