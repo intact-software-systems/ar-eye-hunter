@@ -944,6 +944,134 @@ describe('scenario-black-box CLI', () => {
         expect(report.resultsByName.assertTransforms[0].status).toBe('SUCCESS');
     });
 
+    it('executes steps only when their safe transform condition is true', async () => {
+        const workingDirectory = await writeTempConfig({
+            steps: [
+                {
+                    name: 'captureAdjacency',
+                    type: 'set',
+                    output: 'adjacency',
+                    value: {
+                        alice: ['bob'],
+                        bob: ['alice'],
+                        charlie: []
+                    }
+                },
+                {
+                    name: 'skipUnplannedEdge',
+                    type: 'set',
+                    output: 'unplannedEdgeWasExecuted',
+                    transform: {
+                        path: 'outputs.missingValue'
+                    },
+                    request: {
+                        when: {
+                            includes: [
+                                {
+                                    get: [
+                                        { path: 'outputs.adjacency' },
+                                        'alice'
+                                    ]
+                                },
+                                'charlie'
+                            ]
+                        }
+                    }
+                },
+                {
+                    name: 'capturePlannedEdge',
+                    type: 'set',
+                    output: 'plannedEdgeWasExecuted',
+                    value: true,
+                    request: {
+                        when: {
+                            includes: [
+                                {
+                                    get: [
+                                        { path: 'outputs.adjacency' },
+                                        'alice'
+                                    ]
+                                },
+                                'bob'
+                            ]
+                        }
+                    }
+                },
+                {
+                    name: 'skipUnplannedSend',
+                    type: 'ws.send',
+                    connection: '{missingConnection}',
+                    message: {
+                        type: 'not-sent'
+                    },
+                    request: {
+                        when: {
+                            includes: [
+                                {
+                                    get: [
+                                        { path: 'outputs.adjacency' },
+                                        'alice'
+                                    ]
+                                },
+                                'charlie'
+                            ]
+                        }
+                    }
+                },
+                {
+                    name: 'assertConditionalOutputs',
+                    type: 'assert',
+                    actual: {
+                        plannedEdgeWasExecuted: '{plannedEdgeWasExecuted}'
+                    },
+                    expect: {
+                        body: {
+                            plannedEdgeWasExecuted: true
+                        }
+                    }
+                }
+            ]
+        });
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json'
+        ]);
+
+        expect(result.code).toBe(0);
+        expect(result.stderr).toBe('');
+
+        const report = JSON.parse(result.stdout);
+
+        expect(report.summary).toMatchObject({
+            total: 5,
+            success: 5,
+            failure: 0
+        });
+        expect(report.outputs).toMatchObject({
+            plannedEdgeWasExecuted: true
+        });
+        expect(report.outputs.unplannedEdgeWasExecuted).toBeUndefined();
+        expect(report.resultsByName.skipUnplannedEdge[0]).toMatchObject({
+            status: 'SUCCESS',
+            action: 'skip',
+            skipped: true,
+            skippedAction: 'set'
+        });
+        expect(report.resultsByName.skipUnplannedSend[0]).toMatchObject({
+            status: 'SUCCESS',
+            action: 'skip',
+            skipped: true,
+            skippedAction: 'send'
+        });
+        expect(report.resultsByName.capturePlannedEdge[0]).toMatchObject({
+            status: 'SUCCESS',
+            transport: 'SET'
+        });
+    });
+
     it('reports redacted transform failures with operator details', async () => {
         const workingDirectory = await writeTempConfig({
             variables: {

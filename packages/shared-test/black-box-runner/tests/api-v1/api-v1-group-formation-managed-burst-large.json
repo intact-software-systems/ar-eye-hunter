@@ -469,6 +469,19 @@
           "name": "deriveRtt{i}x{j}Reporter",
           "type": "set",
           "output": "rtt{i}x{j}Reporter",
+          "request": {
+            "when": {
+              "includes": [
+                {
+                  "get": [
+                    { "path": "outputs.managerPlansLayoutNextHopsBySessionId" },
+                    { "path": "outputs.client{i}SessionId" }
+                  ]
+                },
+                { "path": "outputs.client{j}SessionId" }
+              ]
+            }
+          },
           "transform": {
             "if": {
               "condition": {
@@ -495,6 +508,19 @@
           "name": "deriveRtt{i}x{j}Resource",
           "type": "set",
           "output": "rtt{i}x{j}Resource",
+          "request": {
+            "when": {
+              "includes": [
+                {
+                  "get": [
+                    { "path": "outputs.managerPlansLayoutNextHopsBySessionId" },
+                    { "path": "outputs.client{i}SessionId" }
+                  ]
+                },
+                { "path": "outputs.client{j}SessionId" }
+              ]
+            }
+          },
           "transform": {
             "concat": [
               "{\"sessionIdFrom\":\"",
@@ -518,6 +544,17 @@
           "type": "ws.send",
           "connection": "{rtt{i}x{j}Reporter.connection}",
           "request": {
+            "when": {
+              "includes": [
+                {
+                  "get": [
+                    { "path": "outputs.managerPlansLayoutNextHopsBySessionId" },
+                    { "path": "outputs.client{i}SessionId" }
+                  ]
+                },
+                { "path": "outputs.client{j}SessionId" }
+              ]
+            },
             "send": {
               "id": {
                 "v": 2,
@@ -653,7 +690,7 @@
       }
     },
     {
-      "name": "liftRttReportingDegreeLimit",
+      "name": "liftTopologyDegreeLimit",
       "type": "http",
       "connection": "api",
       "request": {
@@ -1428,7 +1465,8 @@
           "managerPlansLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
           "managerPlansLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
           "managerPlansLayoutVersion": "body.snapshot.version",
-          "managerPlansLayoutState": "body.snapshot.state"
+          "managerPlansLayoutState": "body.snapshot.state",
+          "managerPlansLayoutNextHopsBySessionId": "body.snapshot.nextHopsBySessionId"
         }
       },
       "expect": {

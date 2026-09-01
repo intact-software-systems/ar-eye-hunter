@@ -1,8 +1,8 @@
 # Group Activation — Implementation Plan (2026-08-22)
 
 Status: **implementation in progress — PR #390 and PR #391 are merged; Slice 8d PR #396 has completed
-reviewed-parent reconciliation and is in final broad validation and controlled performance review,
-followed by Slice 9a. Re-baselined
+reviewed-parent reconciliation, controlled performance review and final local validation. Its review
+correction awaits publication and exact remote gates, followed by Slice 9a. Re-baselined
 against product decisions 1–42. The product decisions are settled;
 the implementation decisions record current reasoning, while ownership, decomposition, file and
 symbol inventories, dependencies and gates must be refreshed against the actual delivery head before
@@ -1985,13 +1985,13 @@ inventories, and preserves both PRs' executable evidence. The final integration 
 real browser-driver overlap: #391's reviewed file split had displaced Slice 8d's new receipt-fenced
 `plan`/`reconfigure` and `connect` route flow. Commit `bd05756b2` restores that flow inside #391's
 typed control-port, membership and initial-pair ownership; its focused lifecycle/delivery tests pass
-7/7 and the maintained 999-file test type gate is clean. PR #396 remains draft and unaccepted until
-the combined head passes complete review, required broad gates and controlled performance evidence.
+7/7 and the maintained 999-file test type gate is clean. The integrated route tree is published
+through `4ff2d326e`; the final recipe-runner correction is locally validated but not yet published.
+PR #396 remains draft and unaccepted until that correction and its exact remote checks complete.
 
-The server/route cutover and its migrated consumers are committed locally, but are not yet
-published. All eight commands reach the authenticated AppInbox owner; legacy production commands
-and temporary retirement inventories are removed. Routes, OpenAPI, recipes and the live browser
-driver will publish atomically. Slice 8d remains unaccepted, with Slice 9a the next outcome.
+All eight commands reach the authenticated AppInbox owner; legacy production commands and temporary
+retirement inventories are removed. Routes, OpenAPI, recipes and the live browser driver are
+published atomically in the current PR. Slice 8d remains unaccepted, with Slice 9a the next outcome.
 
 Independent task reviews support the canonical retry latch/publication handoff and its semantic
 race, rollback and replay coverage. Corrections remove the pre-connect activation fallback, require
@@ -2068,17 +2068,17 @@ must also prove that rejected input caused no mutation.
 
 Current evidence and remaining acceptance are deliberately separate:
 
-| Boundary                             | Supported evidence                                                                                                                                                                                                                                                                                       | Still required                                                                                                                   |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Lifecycle, retry and match consumers | The frozen correction passes lifecycle 37/37 and criterion 52/52 in the full memory profile. Earlier elected-manager match 52/52 and live RTC primary passed, with two configured RTC opt-in skips.                                                                                                      | Refresh remaining affected final-candidate integration.                                                                          |
-| Permissive-policy valve              | A wrong-group receipt failed the new identity assertion; the corrected live recipe passes 45/45. The group remains `forming` through flowing → halted → flowing, membership/presence work while halted, and relay stops then resumes. Blocked-policy and CRDT checks remain.                             | Remaining final-profile coverage.                                                                                                |
-| Formation scale                      | Corrected declared connections pass all four formation-large recipes: managed medium 613/613 and large 3,013/3,013, with no nonblocking failures in either managed tier. Ordinary burst/churn retain configured readiness observations.                                                                  | Final-candidate assessment after remaining assertion/contract changes; this is a precommit correction checkpoint.                |
-| Memory and PostgreSQL profiles       | The additional correction passes memory 32/32 with 108 configured nonblocking observations, and ordinary uninstrumented PostgreSQL 32/32 default plus 6/6 cluster recipes. WebSocket passes 12/12 in both profiles. PostgreSQL default retains 60 configured nonblocking observations; cluster has none. | Refresh affected final-candidate integration after the ordered parent corrections and complete current-PR review.                |
-| Medium-scale and topology replay     | Earlier fixed medium-scale passed all 2,757 interactions. Passive-C polling and replacement-process same-session hydration passed without a new mutation.                                                                                                                                                | Refresh affected final-candidate gates and inspect all process diagnostics.                                                      |
-| Package/application compatibility    | The additional correction passes focused analyzer, shared routing/QoS, native route/authority and affected type checks. Its independent scoped re-review approves all three corrections without new findings. Earlier broad unit, Deno, build, browser E2E and memory full-stack checks passed.          | Refresh remaining broad baseline gates on the final integrated candidate.                                                        |
-| Formatting                           | The original affected TypeScript failures and four residual document/recipe failures are corrected. The refreshed complete formatter reports only the same five byte-identical untouched failures independently reproduced on the base.                                                                  | Full-repository formatting remains red on independent baseline files; no affected formatting finding remains in this correction. |
-| Standards and navigation             | Receipt-boundary cleanup and independent review resolve the sixteen changed-style findings. Whole-slice changed style passes; structure, coupling and legacy observations remain classified, and the cold navigation probe reaches all five landmarks.                                                   | Preserve full-file and recursive-support closure through material parent integration and complete current-PR review.             |
-| State-write performance              | The latest frozen-runtime diagnostic fails the unchanged comparator: shared throughput is 17% lower and transaction duration 57% higher, despite 6,300 accepted commands and no retry-exhaustion, atomic-completion or DBW failures.                                                                     | An exact-commit controlled comparison; the earlier passing candidate no longer establishes acceptance.                           |
+| Boundary                             | Supported evidence                                                                                                                                                                                                                                                                                                                                                                                                                                      | Still required                                                                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Lifecycle, retry and match consumers | The frozen correction passes lifecycle 37/37 and criterion 52/52 in the full memory profile. Earlier elected-manager match 52/52 and live RTC primary passed, with two configured RTC opt-in skips.                                                                                                                                                                                                                                                     | Refresh remaining affected final-candidate integration.                                                                          |
+| Permissive-policy valve              | A wrong-group receipt failed the new identity assertion; the corrected live recipe passes 45/45. The group remains `forming` through flowing → halted → flowing, membership/presence work while halted, and relay stops then resumes. Blocked-policy and CRDT checks remain.                                                                                                                                                                            | Remaining final-profile coverage.                                                                                                |
+| Formation scale                      | The final local profile passes all four recipes with no failures. Managed medium passes 803/803. Managed large passes 4,238/4,238: the RTT burst takes 538 ms, sends exactly the 97 published edges, skips 1,128 non-edges and activates with 97/97 readiness. Ordinary burst records 1,319 successes and 14 configured skips; churn records 2,018 successes and 82 configured skips.                                                                   | Preserve this evidence through the review commit and require the exact remote formation gate.                                    |
+| Memory and PostgreSQL profiles       | The additional correction passes memory 32/32 with 108 configured nonblocking observations, and ordinary uninstrumented PostgreSQL 32/32 default plus 6/6 cluster recipes. WebSocket passes 12/12 in both profiles. PostgreSQL default retains 60 configured nonblocking observations; cluster has none.                                                                                                                                                | Refresh affected final-candidate integration after the ordered parent corrections and complete current-PR review.                |
+| Medium-scale and topology replay     | Earlier fixed medium-scale passed all 2,757 interactions. Passive-C polling and replacement-process same-session hydration passed without a new mutation.                                                                                                                                                                                                                                                                                               | Refresh affected final-candidate gates and inspect all process diagnostics.                                                      |
+| Package/application compatibility    | The final local correction passes the complete root type, unit, Deno and build gates. The focused runner selection passes 83 tests, the complete shared-test suite passes 1,031 tests, and the final Deno RTC selection passes 146 tests. Earlier browser E2E, memory full-stack and ordinary PostgreSQL profiles remain applicable because the runner-only correction changes no application runtime code.                                             | Require the exact remote gates on the published review commit.                                                                   |
+| Formatting                           | The original affected TypeScript failures and four residual document/recipe failures are corrected. The refreshed complete formatter reports only the same five byte-identical untouched failures independently reproduced on the base.                                                                                                                                                                                                                 | Full-repository formatting remains red on independent baseline files; no affected formatting finding remains in this correction. |
+| Standards and navigation             | Final whole-slice changed style passes. The materially touched 3,062-line runner is split by execution owner, leaving its entrypoint at 1,348 lines and clearing the changed-file cognitive and length findings. The obsolete default `rallar` provider alias and its fixture are deleted; only explicit `rallar-signaling` remains. Structure reports only the two reviewed `packages/shared/api` observations, and the coupling registry is complete. | Preserve this closure in the review commit and rerun committed-head legacy review.                                               |
+| State-write performance              | The exact approved-base/candidate A-B-B-A comparison passes. Four fresh pinned PostgreSQL containers ran one warmup plus nine measured runs per position at concurrency 10. Across pooled results each workload accepted 12,600 commands with zero exhaustion, atomic-completion or DBW findings; candidate shared throughput is 203.98/s versus base 204.25/s, and hot throughput is 44.56/s versus 42.52/s.                                           | Closed for runtime head `4ff2d326e`; the later recipe-runner-only correction does not change API runtime code.                   |
 
 The PostgreSQL failure is a room WebSocket echo with no recipients before local group-cache
 updates arrive. The unchanged recipe passes isolated three-process probes on both base and
@@ -2117,20 +2117,35 @@ type-only import separation preserves byte-identical emitted JavaScript and leav
 runtime unchanged. These results close the repeated live-profile failure for this correction,
 without claiming warning-free behavior in other workloads or closing performance acceptance.
 
-The performance diagnostic began before the final server closure commit, so it is not exact-commit
-publication evidence. Neither a code regression nor harmless host noise has been established.
-The prescribed order-balanced comparison requires four fresh pinned PostgreSQL containers, with
-nine measured runs per position and no other running containers. The maintainer has approved
-temporarily stopping only `ar-eye-hunter-postgres` for that controlled benchmark, then restarting
-the same container with its data intact. Keep it running until the measurement window is ready;
-do not reset or delete its database or volumes. No shared development container or database has
-been stopped, reset or deleted at this checkpoint; managed
-recipe runs create and clean up only their own isolated test databases. The benchmark window is
-held while the ordered parent corrections and final candidate review remain incomplete; this keeps
-the performance gate pending, not waived. A newly isolated native-proof database is migrated, but its transaction and
-presence-expiry checks likewise remain unrun at this checkpoint. The independent review accepts
-the benchmark orchestration's scoped cleanup and same-container restoration checks; it has not
-executed the script or claimed a measured performance result.
+The required order-balanced performance comparison is complete at approved base
+`83ae6e49db78642de70663ae522dbf2eedc209af` and runtime candidate `4ff2d326e91bfe8fcc41c383149a6de8d7592ed9`.
+It used four fresh pinned PostgreSQL containers in A-B-B-A order, one warmup plus nine measured runs
+per position and concurrency 10. Every position passed its governed preflight and postflight;
+comparison passed without discarded tail samples. The normal `ar-eye-hunter-postgres` container
+was already stopped and was never stopped, started, reset or removed by this work. All ephemeral
+benchmark and formation-proof containers were removed after their runs.
+
+The final formation-gate investigation also found that the old managed recipes generated RTT setup
+for every candidate pair even though only the published adjacency is authoritative. On a 50-client
+run this expanded the output resolver long enough to cross the WebSocket ping timeout, so successful
+best-effort client sends could still be lost before AppInbox processing and accepted evidence could
+expire before the final poll. The runner now supports safe boolean `when` conditions plus bounded
+`get` and `includes` transforms. Both managed tiers capture the published adjacency and skip reporter,
+resource and send steps for non-edges before resolving their branch-only placeholders. The first live
+attempt exposed and fixed an execution-order defect where a skipped send still resolved its missing
+connection. Focused tests prove false conditions precede all transport/output resolution, and the
+unchanged live profile supplies the scale proof above.
+
+The runner correction closes touched-file ownership rather than adding another condition path to the
+former 3,062-line executor. Transport execution, remote browser control, result/context ownership,
+safe value resolution, redaction, correlation, secrets and local WebSocket lifecycle now live in
+named modules under `black-box-runner/execution`. The entrypoint retains scenario orchestration. The
+same closure removes the unregistered default `rallar` signaling alias, deletes its only legacy recipe
+fixture and rewrites the remaining CLI consumers to the explicit `rallar-signaling` name. Focused and
+complete shared-test gates, the full Deno gate, changed-style, structure, coupling and formatting all
+pass. The exact local formation wrapper wrote a complete four-pass matrix before its locally launched
+API child handles required explicit teardown; the exact remote action remains required to prove the
+published Linux checkout and its normal cleanup path.
 
 Medium-scale coalesced-outbox successor collision diagnostics also reproduce on the unchanged
 pre-cutover base while the same fixed workload passes. That establishes pre-existing behavior,
@@ -2158,8 +2173,9 @@ receipt-boundary cleanup review is complete; next review the planned/accepted ca
 dial-gate PR, room-facade PR and lifecycle-route PR in that order. Each PR is assessed on its own
 changed surface and current dependency contracts, including full-file and recursive-support closure.
 
-Remaining broad/live/native-PostgreSQL and controlled performance gates remain required; earlier
-green checks do not cover unpublished code or later material corrections. No legacy retention or
+The final local broad gates pass after the recipe-runner review correction. Exact remote gates remain
+required because local evidence does not prove the unpublished GitHub checkout or workflow cleanup.
+Controlled performance is closed for the byte-identical API runtime. No legacy retention or
 gate relaxation is authorized. Keep Slice 9a outside the ordered review work itself. After the newest
 PR's review and corrections finish, the maintainer now requests resuming the goal and continuing the
 plan; refresh the next two useful implementation slices at that point. Publish the
@@ -2170,7 +2186,7 @@ not itself mean ready for main; do not rebase merely for a behind status or enab
 The ordered predecessor review is complete: PR #381, PR #390 and PR #391 were corrected, reviewed,
 marked ready for main and merged by the maintainer. Their earlier open-finding notes above are
 historical checkpoints, not current blockers. PR #396 alone remains in the existing stack; earlier
-green checks do not prove its final integrated head, so broad and performance evidence is being
+green checks do not prove its final review commit, so the broad and exact remote evidence must be
 refreshed before it can be marked ready.
 
 ## Slice 9 — In-flight pacing

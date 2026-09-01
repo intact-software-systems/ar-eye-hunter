@@ -555,6 +555,8 @@ Stable operators:
 - `equals`: compare exactly two evaluated values
 - `lexicallyBefore`: compare exactly two strings by deterministic JavaScript
   code-unit ordering
+- `get`: read an existing string or numeric property from an array or object
+- `includes`: test array membership with exact equality, or string containment
 - `if`: evaluate a condition and exactly one of the required `then` or `else` branches
 - `jsonStringify` and `jsonParse`
 - `urlEncode`
@@ -639,6 +641,38 @@ Transform failures mark the step as `FAILURE` and include the failed operator,
 path, message, and redacted input where available. Intentionally unsupported:
 arbitrary JavaScript, filesystem reads, network calls, loops inside transforms,
 regular expression execution, and mutation of variables or prior outputs.
+
+## Conditional Steps
+
+Use `request.when` when a recipe knows at runtime whether a step applies. It accepts a
+boolean or a safe transform that must resolve to a boolean. A false condition
+records a successful result with `action: "skip"`, `skipped: true`, and the
+original action in `skippedAction`; the transport operation and output write do
+not run. A transform error or a non-boolean result fails the step.
+
+This example sends only when the published adjacency contains the peer:
+
+```json
+{
+  "name": "reportPlannedEdge",
+  "type": "ws.send",
+  "connection": "{reporter.connection}",
+  "request": {
+    "when": {
+      "includes": [
+        {
+          "get": [
+            { "path": "outputs.nextHopsBySessionId" },
+            { "path": "outputs.reporter.sessionIdFrom" }
+          ]
+        },
+        { "path": "outputs.reporter.sessionIdTo" }
+      ]
+    },
+    "send": { "type": "example" }
+  }
+}
+```
 
 ## Output Extraction
 

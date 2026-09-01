@@ -240,14 +240,6 @@ moved or changed test.
       "coverageRelation": "The named matrix test loads the published catalog or referenced recipe and asserts the exact uniqueness, coverage, compatibility, or CLI promise represented by this occurrence."
     },
     {
-      "id": "recipe-matrix-public-interface--uses-rallar-signaling-for-signaling-recipe-examples-and-keeps-on",
-      "domain": "Supported recipe matrix",
-      "owner": "Shared Test maintainers",
-      "summary": "Every example and test recipe is uniquely catalogued with explicit profile, execution mode, and compatibility. Executable assertion: “uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture”.",
-      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture",
-      "coverageRelation": "The named matrix test loads the published catalog or referenced recipe and asserts the exact uniqueness, coverage, compatibility, or CLI promise represented by this occurrence."
-    },
-    {
       "id": "repo-style-checker-interface",
       "domain": "Repository style checker interface",
       "owner": "Rallar repository maintainers",
@@ -1956,7 +1948,7 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts#validates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets"
     },
     {
-      "id": "test-structure-coupling-bed585f360e5499b",
+      "id": "test-structure-coupling-fb9c9389cdd8634a",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
       "kind": "production-source-read",
       "contract": "recipe-matrix-public-interface--advertises-the-api-v1-profile-in-recipe-matrix-cli-usage",
@@ -1965,17 +1957,6 @@ moved or changed test.
       "owner": "Shared Test maintainers",
       "rationale": "Reads the executable recipe-matrix CLI module whose help text is the published command-line interface under review.",
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#advertises the API-v1 profile in recipe-matrix CLI usage"
-    },
-    {
-      "id": "test-structure-coupling-fb9c9389cdd8634a",
-      "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "kind": "production-source-read",
-      "contract": "recipe-matrix-public-interface--labels-every-api-v1-entry-with-an-honest-evidence-tier",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Shared Test maintainers",
-      "rationale": "Reads each catalogued API-v1 recipe as shipped so its declared evidence tier is checked against the evidence source the runner will actually execute.",
-      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#labels every api-v1 entry with an honest evidence tier"
     },
     {
       "id": "test-structure-coupling-0f68df9519a8ce12",
@@ -1992,12 +1973,12 @@ moved or changed test.
       "id": "test-structure-coupling-9b899f9dd65c29c0",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
       "kind": "production-source-read",
-      "contract": "recipe-matrix-public-interface--uses-rallar-signaling-for-signaling-recipe-examples-and-keeps-on",
+      "contract": "recipe-matrix-public-interface--labels-every-api-v1-entry-with-an-honest-evidence-tier",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "Loads the designated legacy alias fixture separately so the catalog can require rallar-signaling everywhere else without deleting compatibility evidence.",
-      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture"
+      "rationale": "Reads each catalogued API-v1 recipe as shipped so its declared evidence tier is checked against the evidence source the runner will actually execute.",
+      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#labels every api-v1 entry with an honest evidence tier"
     },
     {
       "id": "test-structure-coupling-b31fa92c6a3d7af1",

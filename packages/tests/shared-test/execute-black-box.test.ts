@@ -61,12 +61,12 @@ function json(response: ServerResponse, statusCode: number, body: unknown): void
 }
 
 describe('executeBlackBox', () => {
-    it('reports the explicit rallar-signaling RTC provider alias', async () => {
+    it('reports only the explicit rallar-signaling RTC provider name', async () => {
         const report = await executeBlackBox([], 0, {
             failFast: true
         });
 
-        expect(report.rtcProviderNames).toContain('rallar');
+        expect(report.rtcProviderNames).not.toContain('rallar');
         expect(report.rtcProviderNames).toContain('rallar-signaling');
     });
 

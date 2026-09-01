@@ -26,9 +26,8 @@ ok | 130 passed | 0 failed
 
 The implementation now supports RTC scenario parsing, dry-run reporting, multiple RTC providers, deterministic in-memory routing, WebSocket signaling-only Rallar integration, rich diagnostics, and CLI/provider-level regression coverage.
 
-`rallar-signaling` and the legacy `rallar` alias are **not full real WebRTC**.
-They are WebSocket signaling-only and wait for signaling transport open by
-default.
+`rallar-signaling` is **not full real WebRTC**. It is WebSocket signaling-only
+and waits for signaling transport open by default.
 
 ## Implemented Provider Layers
 
@@ -37,7 +36,6 @@ default.
 | `rallar-stub`                         | Implemented                    | Simple fake provider for smoke tests and runner validation.                                                                                                                                                                                 |
 | `rallar-memory`                       | Implemented                    | Deterministic multi-peer runtime for direct, broadcast, reconnect, close, and routing tests.                                                                                                                                                |
 | `rallar-signaling`                    | Implemented as signaling-only  | Uses global WebSocket for signaling, requires `signalingUrl`, waits for open by default.                                                                                                                                                    |
-| `rallar`                              | Compatibility alias            | Same implementation as `rallar-signaling`; prefer the explicit provider name in new recipes.                                                                                                                                                |
 | `rallar-browser`                      | Browser-backed Rallar provider | Uses Playwright plus the browser Rallar facade. Provider registration, `rtc.connect`, `rtc.close`, event bridging, realtime sends, `messages.rtc` sends, cleanup, diagnostics, and operational docs are implemented at provider-test level. |
 | Direct non-browser Rallar RTC adapter | Deferred                       | Browser-backed providers are the current real RTC path. Add a direct adapter only if a future runner use case needs it without a browser.                                                                                                   |
 
@@ -48,8 +46,6 @@ The CLI provider named `rallar-signaling` currently maps to:
 ```ts
 createRallarWebRtcWebSocketSignalingProvider();
 ```
-
-The legacy provider name `rallar` is still registered as a compatibility alias.
 
 A successful `rallar-signaling` connect means:
 
@@ -248,7 +244,7 @@ Close events include diagnostics:
 
 ### WebSocket Signaling-only `rallar`
 
-The current `rallar` provider:
+The current `rallar-signaling` provider:
 
 - uses global `WebSocket`
 - requires `signalingUrl`
@@ -265,7 +261,7 @@ Example config:
   "connections": {
     "aliceRtc": {
       "type": "rtc",
-      "provider": "rallar",
+      "provider": "rallar-signaling",
       "actor": "alice",
       "peerId": "alice",
       "roomId": "room-1",

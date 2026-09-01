@@ -465,19 +465,19 @@ Deno.test('scenario-black-box CLI auto-closes unclosed RTC stub connections', as
     assertEquals(report.rtcCloseEvents.aliceRtc[0].stub, true);
 });
 
-Deno.test('scenario-black-box CLI reports clear failure for rallar provider missing signalingUrl', async () => {
+Deno.test('scenario-black-box CLI reports clear failure for rallar-signaling provider missing signalingUrl', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
                 type: 'rtc',
-                provider: 'rallar',
+                provider: 'rallar-signaling',
                 actor: 'alice',
                 roomId: 'room-1'
             }
         },
         steps: [
             {
-                name: 'connectAliceRealRallar',
+                name: 'connectAliceSignaling',
                 type: 'rtc.connect',
                 connection: 'aliceRtc'
             }
@@ -497,24 +497,25 @@ Deno.test('scenario-black-box CLI reports clear failure for rallar provider miss
     const report = JSON.parse(result.stdout);
 
     assertEquals(report.summary.failure, 1);
-    assertEquals(report.summary.firstFailure.name, 'connectAliceRealRallar');
-    assertEquals(report.resultsByName.connectAliceRealRallar[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAliceRealRallar[0].result, 'RTC connect failed');
+    assertEquals(report.summary.firstFailure.name, 'connectAliceSignaling');
+    assertEquals(report.resultsByName.connectAliceSignaling[0].status, 'FAILURE');
+    assertEquals(report.resultsByName.connectAliceSignaling[0].result, 'RTC connect failed');
     assertEquals(
-        report.resultsByName.connectAliceRealRallar[0].actual.exception,
+        report.resultsByName.connectAliceSignaling[0].actual.exception,
         'Rallar WebRTC signalingUrl is required for connection: aliceRtc'
     );
-    assertEquals(report.rtcProviderNames.includes('rallar'), true);
+    assertEquals(report.rtcProviderNames.includes('rallar'), false);
+    assertEquals(report.rtcProviderNames.includes('rallar-signaling'), true);
     assertEquals(report.rtcProviderNames.includes('rallar-stub'), true);
     assertEquals(report.rtcProviderNames.includes('rallar-memory'), true);
 });
 
-Deno.test('scenario-black-box CLI default rallar provider is WebSocket signaling-only', async () => {
+Deno.test('scenario-black-box CLI explicit rallar-signaling provider is WebSocket signaling-only', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
                 type: 'rtc',
-                provider: 'rallar',
+                provider: 'rallar-signaling',
                 actor: 'alice',
                 peerId: 'alice',
                 roomId: 'room-1',
@@ -524,7 +525,7 @@ Deno.test('scenario-black-box CLI default rallar provider is WebSocket signaling
         },
         steps: [
             {
-                name: 'connectAliceDefaultRallar',
+                name: 'connectAliceSignaling',
                 type: 'rtc.connect',
                 connection: 'aliceRtc'
             }
@@ -542,12 +543,12 @@ Deno.test('scenario-black-box CLI default rallar provider is WebSocket signaling
     assertEquals(result.stderr, '');
 
     const report = JSON.parse(result.stdout);
-    const connectResult = report.resultsByName.connectAliceDefaultRallar[0];
+    const connectResult = report.resultsByName.connectAliceSignaling[0];
 
     assertEquals(report.summary.failure, 1);
     assertEquals(connectResult.status, 'FAILURE');
     assertEquals(connectResult.result, 'RTC connect failed');
-    assertEquals(connectResult.provider, 'rallar');
+    assertEquals(connectResult.provider, 'rallar-signaling');
     assertEquals(connectResult.peerId, 'alice');
     assertEquals(connectResult.groupId, 'group-1');
     assertEquals(connectResult.overlayId, 'overlay-1');
@@ -557,12 +558,12 @@ Deno.test('scenario-black-box CLI default rallar provider is WebSocket signaling
     );
 });
 
-Deno.test('scenario-black-box CLI default rallar provider waits for WebSocket open', async () => {
+Deno.test('scenario-black-box CLI explicit rallar-signaling provider waits for WebSocket open', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
                 type: 'rtc',
-                provider: 'rallar',
+                provider: 'rallar-signaling',
                 actor: 'alice',
                 peerId: 'alice',
                 roomId: 'room-1',
@@ -574,7 +575,7 @@ Deno.test('scenario-black-box CLI default rallar provider waits for WebSocket op
         },
         steps: [
             {
-                name: 'connectAliceDefaultRallarWithUrl',
+                name: 'connectAliceSignalingWithUrl',
                 type: 'rtc.connect',
                 connection: 'aliceRtc'
             }
@@ -592,12 +593,12 @@ Deno.test('scenario-black-box CLI default rallar provider waits for WebSocket op
     assertEquals(result.stderr, '');
 
     const report = JSON.parse(result.stdout);
-    const connectResult = report.resultsByName.connectAliceDefaultRallarWithUrl[0];
+    const connectResult = report.resultsByName.connectAliceSignalingWithUrl[0];
 
     assertEquals(report.summary.failure, 1);
     assertEquals(connectResult.status, 'FAILURE');
     assertEquals(connectResult.result, 'RTC connect failed');
-    assertEquals(connectResult.provider, 'rallar');
+    assertEquals(connectResult.provider, 'rallar-signaling');
     assertEquals(connectResult.peerId, 'alice');
     assertEquals(connectResult.groupId, 'group-1');
     assertEquals(connectResult.overlayId, 'overlay-1');
@@ -612,7 +613,7 @@ Deno.test('scenario-black-box CLI dry mode normalizes rallar WebSocket signaling
         connections: {
             aliceRtc: {
                 type: 'rtc',
-                provider: 'rallar',
+                provider: 'rallar-signaling',
                 actor: 'alice',
                 peerId: 'alice',
                 roomId: 'room-1',
@@ -649,7 +650,7 @@ Deno.test('scenario-black-box CLI dry mode normalizes rallar WebSocket signaling
     assertEquals(report.summary.total, 1);
     assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
     assertEquals(report.resultsByName.connectAlice[0].actual.dryRun, true);
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.provider, 'rallar');
+    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.provider, 'rallar-signaling');
     assertEquals(report.resultsByName.connectAlice[0].actual.normalized.signalingUrl, 'ws://localhost:8080/ws');
     assertEquals(report.resultsByName.connectAlice[0].actual.normalized.groupId, 'group-1');
     assertEquals(report.resultsByName.connectAlice[0].actual.normalized.overlayId, 'overlay-1');
@@ -662,7 +663,7 @@ Deno.test('scenario-black-box CLI short dry-run flag normalizes rallar WebSocket
         connections: {
             aliceRtc: {
                 type: 'rtc',
-                provider: 'rallar',
+                provider: 'rallar-signaling',
                 actor: 'alice',
                 peerId: 'alice',
                 roomId: 'room-1',
@@ -699,7 +700,7 @@ Deno.test('scenario-black-box CLI short dry-run flag normalizes rallar WebSocket
     assertEquals(report.summary.total, 1);
     assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
     assertEquals(report.resultsByName.connectAlice[0].actual.dryRun, true);
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.provider, 'rallar');
+    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.provider, 'rallar-signaling');
     assertEquals(report.resultsByName.connectAlice[0].actual.normalized.signalingUrl, 'ws://localhost:8080/ws');
     assertEquals(report.resultsByName.connectAlice[0].actual.normalized.groupId, 'group-1');
     assertEquals(report.resultsByName.connectAlice[0].actual.normalized.overlayId, 'overlay-1');
@@ -806,7 +807,7 @@ Deno.test('scenario-black-box CLI config execution dryRun normalizes rallar WebS
         connections: {
             aliceRtc: {
                 type: 'rtc',
-                provider: 'rallar',
+                provider: 'rallar-signaling',
                 actor: 'alice',
                 peerId: 'alice',
                 roomId: 'room-1',
@@ -842,7 +843,7 @@ Deno.test('scenario-black-box CLI config execution dryRun normalizes rallar WebS
     assertEquals(report.summary.total, 1);
     assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
     assertEquals(report.resultsByName.connectAlice[0].actual.dryRun, true);
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.provider, 'rallar');
+    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.provider, 'rallar-signaling');
     assertEquals(report.resultsByName.connectAlice[0].actual.normalized.signalingUrl, 'ws://localhost:8080/ws');
     assertEquals(report.resultsByName.connectAlice[0].actual.normalized.groupId, 'group-1');
     assertEquals(report.resultsByName.connectAlice[0].actual.normalized.overlayId, 'overlay-1');
@@ -936,7 +937,7 @@ Deno.test('scenario-black-box CLI dry-run normalizes rallar signaling close wait
         connections: {
             aliceRtc: {
                 type: 'rtc',
-                provider: 'rallar',
+                provider: 'rallar-signaling',
                 actor: 'alice',
                 peerId: 'alice',
                 roomId: 'room-1',
@@ -986,7 +987,7 @@ Deno.test('scenario-black-box CLI dry-run normalizes rallar signaling close wait
     assertEquals(report.rtcCloseEvents, {});
     assertEquals(report.resultsByName.waitForSignalingClose[0].status, 'SUCCESS');
     assertEquals(report.resultsByName.waitForSignalingClose[0].actual.dryRun, true);
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.provider, 'rallar');
+    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.provider, 'rallar-signaling');
     assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.connection, 'aliceRtc');
     assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.groupId, 'group-1');
     assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.overlayId, 'overlay-1');
@@ -1004,7 +1005,7 @@ Deno.test('scenario-black-box CLI dry mode normalizes rallar signaling send expe
         connections: {
             aliceRtc: {
                 type: 'rtc',
-                provider: 'rallar',
+                provider: 'rallar-signaling',
                 actor: 'alice',
                 peerId: 'alice',
                 roomId: 'room-1',
@@ -1071,7 +1072,7 @@ Deno.test('scenario-black-box CLI dry mode normalizes rallar signaling send expe
     assertEquals(report.rtcCloseEvents, {});
     assertEquals(report.resultsByName.aliceSendsSignalingOffer[0].status, 'SUCCESS');
     assertEquals(report.resultsByName.aliceSendsSignalingOffer[0].actual.dryRun, true);
-    assertEquals(report.resultsByName.aliceSendsSignalingOffer[0].actual.normalized.provider, 'rallar');
+    assertEquals(report.resultsByName.aliceSendsSignalingOffer[0].actual.normalized.provider, 'rallar-signaling');
     assertEquals(report.resultsByName.aliceSendsSignalingOffer[0].actual.normalized.connection, 'aliceRtc');
     assertEquals(
         report.resultsByName.aliceSendsSignalingOffer[0].actual.normalized.send,
@@ -1108,7 +1109,8 @@ Deno.test('scenario-black-box CLI report includes default RTC provider names', a
     const report = JSON.parse(result.stdout);
 
     assertEquals(report.summary.failure, 0);
-    assertEquals(report.rtcProviderNames.includes('rallar'), true);
+    assertEquals(report.rtcProviderNames.includes('rallar'), false);
+    assertEquals(report.rtcProviderNames.includes('rallar-signaling'), true);
     assertEquals(report.rtcProviderNames.includes('rallar-stub'), true);
     assertEquals(report.rtcProviderNames.includes('rallar-memory'), true);
 });

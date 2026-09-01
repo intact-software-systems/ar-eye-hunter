@@ -277,9 +277,7 @@ function toRequiredSignalingUrl(args: RallarRtcClientArgs): string {
 /**
  * The concrete `rallar-signaling` provider used by signaling-only CLI recipes.
  *
- * The legacy `rallar` provider name maps to this same implementation for
- * backward compatibility. It uses the global WebSocket implementation and is
- * still signaling-only.
+ * It uses the global WebSocket implementation and is still signaling-only.
  * A successful connect means the signaling transport opened; it does not mean
  * a WebRTC peer connection or data channel has been established yet.
  */
