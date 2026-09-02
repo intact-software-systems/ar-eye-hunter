@@ -226,8 +226,9 @@ checker does not substitute for following production symbols.
   allowance is the exact guarded winner materializer, which may construct its
   bounded winner-only row. Outside that allowance, prohibit ordinary domain
   mutation logic, external effects, timers, polling, unbounded work, and
-  arbitrary unresolved operation callbacks. Treat its reported boundary
-  inventory as review evidence, not as a strict pass or an exception.
+  arbitrary unresolved operation callbacks. Treat the checker's explicit file
+  inventory as review evidence, not as a strict pass or an exception. A new
+  file is strict by default until its exact specialized ownership is reviewed.
 - Prefer a functional core with an explicitly owned stateful shell. Model domain
   decisions and conditional-write outcomes as separate typed values.
 - Authoritative persisted and shared contracts use mandatory fields by default.

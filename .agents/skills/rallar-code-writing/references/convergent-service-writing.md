@@ -109,9 +109,9 @@ callbacks; and opening or taking ownership of an unrelated nested transaction.
 Caller-owned mutation and dynamically unresolved behavior fail closed. The
 same external-effect, timer, polling, boundedness, caller-mutation, and nested
 transaction prohibitions apply inside the winner materializer. The checker
-reports specialized ResourceInbox boundaries separately from strict findings.
-That inventory is neither an exception nor proof that the boundary satisfies
-`strict-domain-write`.
+keeps specialized ResourceInbox files in an explicit reviewed inventory and
+analyzes new files by default. Inventory membership is neither an exception nor
+proof that the boundary satisfies `strict-domain-write`.
 
 The one externally supplied operation-callback shape permitted by this policy
 is the exact guarded winner materializer. The ResourceInbox owner must first

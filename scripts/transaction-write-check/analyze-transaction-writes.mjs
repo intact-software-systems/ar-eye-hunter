@@ -17,7 +17,13 @@ const TRANSACTION_TYPE = /(?:PSqlSql|IDBTransaction)/u;
 const DATABASE_RECEIVER_TYPE = /(?:Sql|Database|Repository|Runtime|PGlite)/u;
 const APP_INBOX_TRANSACTION_WRITER_TYPE = /AppInbox(?:Mutation)?TransactionWriter/u;
 const APP_INBOX_WRITE_METHOD = 'writeComputedMutation';
-const SPECIALIZED_RESOURCE_INBOX_ROOT = 'packages/shared-server/queuebox/postgres/';
+const SPECIALIZED_RESOURCE_INBOX_FILES = new Set([
+    'packages/shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts',
+    'packages/shared-server/queuebox/postgres/p-sql-queue-box.ts',
+    'packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts',
+    'packages/shared-server/queuebox/postgres/p-sql-results-queue-box.ts',
+    'packages/shared-server/queuebox/postgres/resource-inbox-results-repository.ts'
+]);
 
 export function analyzeTransactionWrites(project, sourceFiles = project.getSourceFiles()) {
     const findings = new Map();
@@ -28,7 +34,7 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
         if (!isAnalyzedSource(path)) {
             continue;
         }
-        const specialized = path.startsWith(SPECIALIZED_RESOURCE_INBOX_ROOT);
+        const specialized = SPECIALIZED_RESOURCE_INBOX_FILES.has(path);
         for (const declaration of sourceFile.getDescendants().filter(isFunctionDeclaration)) {
             if (!specialized && isTransactionWriteDeclaration(declaration)) {
                 roots.push(analysisRoot(declaration));

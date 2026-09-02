@@ -237,6 +237,18 @@ describe('transaction write check', () => {
             operation: 'JSON.stringify'
         });
     });
+
+    it('does not exempt new files merely because they are in the ResourceInbox directory', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        const source = project.createSourceFile(
+            '/packages/shared-server/queuebox/postgres/unreviewed-domain-write.ts',
+            transactionSource('Date.now()')
+        );
+
+        const findings = analyzeTransactionWrites(project, [source]);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['Date.now']);
+    });
 });
 
 function analyzeFixture(source: string) {
