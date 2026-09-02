@@ -1,6 +1,12 @@
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import { type AppInboxEnqueueInput, type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion,
+    type AppInboxCompletionComputed
+} from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
@@ -30,7 +36,10 @@ import type { TopologyReconfigureAppInboxAuthority } from './topology-app-inbox-
 
 export interface TopologyAppInboxHandlerDependencies {
     readonly groupStateService: Pick<GroupStateService, 'readIssuedAuthSession'>;
-    readonly transactionWriter: Pick<AppInboxMutationTransactionWriter, 'writeMutation'>;
+    readonly transactionWriter: Pick<
+        AppInboxMutationTransactionWriter,
+        'readCompletionFacts' | 'writeComputedMutation'
+    >;
     readonly nowEpochMs: () => number;
     readonly wakeQueue?: () => void;
 }
@@ -193,13 +202,15 @@ export class TopologyAppInboxHandler {
                 computed.receivedCommandHash
             );
         }
-        const result = await this.dependencies.transactionWriter.writeMutation(
+        const durableResult = toTopologyConfigMutationResult(computed);
+        const completion = this.readComputeValidateCompletion(context, durableResult);
+        const result = await this.dependencies.transactionWriter.writeComputedMutation(
             context,
+            completion,
             async (transaction) => {
                 if (computed.outcome === 'write' || computed.outcome === 'claim') {
                     await owners.configMutationService.write(transaction, computed);
                 }
-                return toTopologyConfigMutationResult(computed);
             }
         );
         if (computed.outcome === 'write') {
@@ -230,20 +241,39 @@ export class TopologyAppInboxHandler {
         const read = await mutation.read(command);
         const computed = mutation.compute(command, read);
         mutation.validate(command, read, computed);
-        const result = await this.dependencies.transactionWriter.writeMutation(
+        const durableResult = {
+            status: 'queued',
+            groupRef: command.groupRef,
+            requestId: command.commandId,
+            outboxId: computed.resourceId
+        } as const;
+        const completion = this.readComputeValidateCompletion(context, durableResult);
+        const result = await this.dependencies.transactionWriter.writeComputedMutation(
             context,
+            completion,
             async (transaction) => {
                 await mutation.write(transaction, computed);
-                return {
-                    status: 'queued',
-                    groupRef: command.groupRef,
-                    requestId: command.commandId,
-                    outboxId: computed.resourceId
-                } as const;
             }
         );
         mutation.recordCommittedWrite();
         this.dependencies.wakeQueue?.();
         return result;
+    }
+
+    private readComputeValidateCompletion<Result>(
+        context: AppInboxMessageContext<Result>,
+        durableResult: Result
+    ): AppInboxCompletionComputed<Result> {
+        const input = {
+            ...this.dependencies.transactionWriter.readCompletionFacts(context),
+            durableResult,
+            status: EntityStatus.COMPLETED
+        } as const;
+        const computed = computeAppInboxCompletion(input);
+        const issues = validateAppInboxCompletion(input, computed);
+        if (issues[0] !== undefined) {
+            throw issues[0].cause;
+        }
+        return computed;
     }
 }
