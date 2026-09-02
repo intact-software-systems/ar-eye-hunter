@@ -413,15 +413,27 @@ function reconfigureRead(): GroupTopologyReconfigureRead {
             replanning: 'auto',
             nowEpochMs: NOW_EPOCH_MS
         },
-        authorityGuard: groupAuthorityGuard()
+        authorityGuard: groupAuthorityGuard(),
+        actorIsPlatformAdmin: false
     };
 }
 
 function reconfigureComputed(): GroupTopologyReconfigureComputed {
     const outbox = topologyOutbox('reconfigure-outbox');
+    const authorityGuard = groupAuthorityGuard();
     return {
         ...outbox,
-        authorityGuard: groupAuthorityGuard(),
+        authorityGuard,
+        authorityWrite: {
+            namespace: 'groups',
+            key: authorityGuard.entry.key,
+            value: authorityGuard.entry.value,
+            expireAtIsoTimestamp: new Date(
+                authorityGuard.entry.expireAtTimestamp
+            ).toISOString(),
+            expectedRevision: authorityGuard.entry.revision,
+            expectedResultRevision: authorityGuard.entry.revision + 1
+        },
         outboxWrite: computeRtcTopologyOutboxInsert(outbox)
     };
 }

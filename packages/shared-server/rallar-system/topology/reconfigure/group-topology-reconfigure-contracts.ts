@@ -18,11 +18,22 @@ export interface GroupTopologyReconfigureCommand {
 export interface GroupTopologyReconfigureRead {
     readonly authority: GroupTopologyPlanningAuthority;
     readonly authorityGuard: persistence.GroupStateAuthorityGuard;
+    readonly actorIsPlatformAdmin: boolean;
+}
+
+export interface GroupTopologyReconfigureAuthorityWrite {
+    readonly namespace: string;
+    readonly key: string;
+    readonly value: string;
+    readonly expireAtIsoTimestamp: string;
+    readonly expectedRevision: number;
+    readonly expectedResultRevision: number;
 }
 
 export type GroupTopologyReconfigureComputed =
     & ComputedRtcTopologyOutbox
     & Readonly<{
         authorityGuard: persistence.GroupStateAuthorityGuard;
+        authorityWrite: GroupTopologyReconfigureAuthorityWrite;
         outboxWrite: AppOutboxInsert;
     }>;
