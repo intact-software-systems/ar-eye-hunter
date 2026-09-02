@@ -623,7 +623,6 @@ describe('RTC topology APP_OUTBOX work', () => {
             }),
             topologyPlanning: {
                 readTopologyPlanningAuthority,
-                computeTopologyFromAuthority: vi.fn(),
                 observeCommittedTopology: vi.fn(),
                 recordTopologyPublication: vi.fn(),
                 recordTopologyPlanFrozen: vi.fn(),
@@ -732,7 +731,6 @@ describe('RTC topology APP_OUTBOX work', () => {
             }),
             topologyPlanning: {
                 readTopologyPlanningAuthority: async () => authority,
-                computeTopologyFromAuthority: vi.fn(),
                 observeCommittedTopology: vi.fn(),
                 recordTopologyPublication: vi.fn(),
                 recordTopologyPlanFrozen: vi.fn(),
@@ -807,7 +805,6 @@ describe('RTC topology APP_OUTBOX work', () => {
             }),
             topologyPlanning: {
                 readTopologyPlanningAuthority,
-                computeTopologyFromAuthority: vi.fn(),
                 observeCommittedTopology: vi.fn(),
                 recordTopologyPublication: vi.fn(),
                 recordTopologyPlanFrozen: vi.fn(),

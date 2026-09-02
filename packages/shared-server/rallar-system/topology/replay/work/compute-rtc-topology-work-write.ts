@@ -4,7 +4,9 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import {
+    computeTopologyMutation,
     validateTopologyMutation,
     type RtcTopologyMutationComputed,
     type RtcTopologyMutationInput
@@ -82,6 +84,17 @@ export type AcceptedRtcTopologyWorkWrite =
         transaction: RtcTopologyPublicationTransactionWrite;
     }>;
 
+export interface ComputeRtcTopologyReplayWriteInput {
+    readonly read: RtcTopologyMutationInput['read'];
+    readonly reservationFinish: ResourceInboxReservationFinish;
+    readonly publisherStreamId: string | undefined;
+}
+
+export interface ComputedRtcTopologyReplayWrite {
+    readonly loaded: Extract<RtcTopologyMutationComputed, { outcome: 'loaded'; }>;
+    readonly transaction: RtcTopologyPublicationTransactionWrite;
+}
+
 export interface ComputeRtcTopologyWorkWriteInput {
     readonly accepted: AcceptedRtcTopologyWork;
     readonly entry: ResourceEntry;
@@ -154,6 +167,57 @@ export function validateRtcTopologyWorkWrite(
     }
 }
 
+export function computeRtcTopologyReplayWrite(
+    input: ComputeRtcTopologyReplayWriteInput
+): ComputedRtcTopologyReplayWrite {
+    const mutationInput = toReplayMutationInput(input.read);
+    const computed = computeTopologyMutation(mutationInput);
+    if (computed.outcome !== 'loaded') {
+        throw new RuntimeStateWriteConflictError();
+    }
+    return {
+        loaded: computed,
+        transaction: {
+            mutation: null,
+            promotionRequest: null,
+            connectRequests: [],
+            fingerprint: null,
+            delivery: computeRtcTopologyPublicationDeliveryWrite(
+                computed.publication,
+                input.publisherStreamId
+            ),
+            reservationFinish: input.reservationFinish
+        }
+    };
+}
+
+export function validateRtcTopologyReplayWrite(
+    input: ComputeRtcTopologyReplayWriteInput,
+    computed: ComputedRtcTopologyReplayWrite
+): void {
+    validateTopologyMutation({
+        ...toReplayMutationInput(input.read),
+        computed: computed.loaded
+    });
+    const expected = computeRtcTopologyReplayWrite(input);
+    if (!jsonEquals(toTransactionProjection(computed.transaction), toTransactionProjection(expected.transaction))) {
+        throw new TypeError('RTC topology replay write differs from its canonical computation');
+    }
+}
+
+function toReplayMutationInput(read: RtcTopologyMutationInput['read']): RtcTopologyMutationInput {
+    return {
+        read,
+        candidate: null,
+        publication: null,
+        facts: {
+            publicationExpireAtTimestamp: null,
+            commandHash: null,
+            attemptCount: null
+        }
+    };
+}
+
 function computeFingerprintWrite(
     accepted: Exclude<AcceptedRtcTopologyWork, { decision: 'skipped-rtt-refinement' | 'skipped-fingerprint'; }>
 ) {
@@ -179,31 +243,35 @@ function toValidationProjection(computed: AcceptedRtcTopologyWorkWrite): object 
     const transaction = computed.transaction;
     return {
         kind: computed.kind,
-        transaction: {
-            mutation: transaction.mutation,
-            promotionRequest: toResourceEntryProjection(transaction.promotionRequest),
-            connectRequests: transaction.connectRequests.map(toRequiredResourceEntryProjection),
-            fingerprint: transaction.fingerprint,
-            delivery: transaction.delivery === null
-                ? null
-                : {
-                    outboxWrite: {
-                        ...transaction.delivery.outboxWrite,
-                        entry: toRequiredResourceEntryProjection(
-                            transaction.delivery.outboxWrite.entry
-                        ),
-                        conflict: {
-                            name: transaction.delivery.outboxWrite.conflict.name,
-                            message: transaction.delivery.outboxWrite.conflict.message,
-                            code: transaction.delivery.outboxWrite.conflict.code,
-                            status: transaction.delivery.outboxWrite.conflict.status,
-                            key: transaction.delivery.outboxWrite.conflict.key
-                        }
-                    },
-                    deliveryAppend: transaction.delivery.deliveryAppend
+        transaction: toTransactionProjection(transaction)
+    };
+}
+
+function toTransactionProjection(transaction: RtcTopologyPublicationTransactionWrite): object {
+    return {
+        mutation: transaction.mutation,
+        promotionRequest: toResourceEntryProjection(transaction.promotionRequest),
+        connectRequests: transaction.connectRequests.map(toRequiredResourceEntryProjection),
+        fingerprint: transaction.fingerprint,
+        delivery: transaction.delivery === null
+            ? null
+            : {
+                outboxWrite: {
+                    ...transaction.delivery.outboxWrite,
+                    entry: toRequiredResourceEntryProjection(
+                        transaction.delivery.outboxWrite.entry
+                    ),
+                    conflict: {
+                        name: transaction.delivery.outboxWrite.conflict.name,
+                        message: transaction.delivery.outboxWrite.conflict.message,
+                        code: transaction.delivery.outboxWrite.conflict.code,
+                        status: transaction.delivery.outboxWrite.conflict.status,
+                        key: transaction.delivery.outboxWrite.conflict.key
+                    }
                 },
-            reservationFinish: toReservationFinishProjection(transaction.reservationFinish)
-        }
+                deliveryAppend: transaction.delivery.deliveryAppend
+            },
+        reservationFinish: toReservationFinishProjection(transaction.reservationFinish)
     };
 }
 

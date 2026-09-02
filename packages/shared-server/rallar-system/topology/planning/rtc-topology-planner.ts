@@ -61,8 +61,25 @@ interface CreateMeasuredRoomGraphInput {
 }
 
 export namespace RtcTopologyPlanner {
+    export type Metrics = Pick<
+        RtcTopologyMetrics,
+        | 'recordHysteresisHold'
+        | 'recordIncrementalFallback'
+        | 'recordIncrementalPlan'
+        | 'recordNoRttMeshPlan'
+        | 'recordNoRttTreePlan'
+        | 'recordStarPlan'
+        | 'recordTopologyResult'
+        | 'recordTopologyRttMeasurementCount'
+        | 'recordWeightedPlanAttempt'
+        | 'recordWeightedPlanDuration'
+        | 'recordWeightedRoomGraphAttempt'
+        | 'recordWeightedRoomGraphDuration'
+        | 'recordWeightedRoomGraphSparseFallback'
+    >;
+
     export interface Dependencies {
-        readonly metrics: RtcTopologyMetrics;
+        readonly metrics: Metrics;
         readonly durationNowMs: () => number;
     }
 
@@ -94,6 +111,33 @@ export namespace RtcTopologyPlanner {
         ): RallarRtcTopologyKind;
         readRttReportingDegreeLimit(options: RallarRtcTopologyServiceOptions): number;
     }
+}
+
+const UNOBSERVED_PLANNING_DEPENDENCIES: RtcTopologyPlanner.Dependencies = {
+    metrics: {
+        recordHysteresisHold: () => {},
+        recordIncrementalFallback: () => {},
+        recordIncrementalPlan: () => {},
+        recordNoRttMeshPlan: () => {},
+        recordNoRttTreePlan: () => {},
+        recordStarPlan: () => {},
+        recordTopologyResult: () => {},
+        recordTopologyRttMeasurementCount: () => {},
+        recordWeightedPlanAttempt: () => {},
+        recordWeightedPlanDuration: () => {},
+        recordWeightedRoomGraphAttempt: () => {},
+        recordWeightedRoomGraphDuration: () => {},
+        recordWeightedRoomGraphSparseFallback: () => {}
+    },
+    durationNowMs: () => 0
+};
+
+/** Runs the canonical planner without reading mutable runtime state or emitting observations. */
+export function computeRtcTopologyPlan(
+    serviceOptions: RallarRtcTopologyServiceOptions,
+    input: RtcTopologyPlanner.PlanInput
+): RallarRtcTopologyUpdateResult {
+    return new RtcTopologyPlanner(serviceOptions, UNOBSERVED_PLANNING_DEPENDENCIES).plan(input);
 }
 
 export class RtcTopologyPlanner {
