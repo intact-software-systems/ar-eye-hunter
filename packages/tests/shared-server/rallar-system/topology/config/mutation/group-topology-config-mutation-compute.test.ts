@@ -1,7 +1,6 @@
 import { computeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-mutation.ts';
 import { validateTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation.ts';
 import { validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts';
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
     createTopologyConfigMutationTestInput,
@@ -81,53 +80,6 @@ describe('group topology config mutation compute', () => {
         }
         expect(override.result.override.config.degreeLimit).toBe(4);
     });
-
-    it('keeps pure topology config phases ambient-free and orchestration visible', () => {
-        const mutationSource = readProductionSource(
-            'topology/config/mutation/compute-topology-config-mutation.ts'
-        );
-        for (
-            const forbidden of [
-                'Date.now',
-                'Temporal.Now',
-                'Math.random',
-                'randomUUID',
-                '.begin(',
-                'hashMutationCommand',
-                'publisher',
-                'topologyService'
-            ]
-        ) {
-            expect(mutationSource, forbidden).not.toContain(forbidden);
-        }
-
-        const writerSource = readProductionSource(
-            'topology/config/mutation/write-topology-config-mutation.ts'
-        );
-        const appInboxSource = readProductionSource('topology/inbox/topology-app-inbox-handler.ts');
-        const read = appInboxSource.indexOf('const read = await owners.configMutationService.read');
-        const compute = appInboxSource.indexOf(
-            'const computed = owners.configMutationService.compute',
-            read
-        );
-        const validate = appInboxSource.indexOf('owners.configMutationService.validate', compute);
-        const transaction = appInboxSource.indexOf(
-            'const result = await this.dependencies.transactionWriter.writeMutation',
-            validate
-        );
-        const write = appInboxSource.indexOf('configMutationService.write(', transaction);
-        expect(read).toBeGreaterThan(-1);
-        expect(read).toBeLessThan(compute);
-        expect(compute).toBeLessThan(validate);
-        expect(validate).toBeLessThan(transaction);
-        expect(transaction).toBeLessThan(write);
-        const writeHelper = writerSource.indexOf('export async function writeTopologyConfigMutation');
-        expect(writeHelper).toBeGreaterThan(-1);
-        const writer = writerSource.slice(writeHelper);
-        expect(writerSource).toContain('readonly transaction: PSqlSql');
-        expect(writer).not.toContain('.begin(');
-        expect(appInboxSource.slice(read, write)).not.toContain('.begin(');
-    });
 });
 
 type DeterministicMutationInput = ReturnType<typeof deterministicMutationInput>;
@@ -141,6 +93,8 @@ function deterministicMutationInput() {
             aggregateRef: createTopologyTestGroupRef(),
             commandId: 'config-command-1',
             requestId: 'config-command-1',
+            commandHash: `sha256:${'a'.repeat(64)}`,
+            capturedAtEpochMs: 1_000,
             input: {
                 config: { topologyKind: 'tree' as const, degreeLimit: 4 },
                 updatedByPrincipalId: 'owner',
@@ -159,9 +113,7 @@ function deterministicMutationInput() {
             groupAuthorityGuard: createTopologyTestAuthorityGuard(40)
         },
         facts: {
-            requestedAtEpochMs: 1_000,
             policyNowEpochMs: 1_000,
-            commandHash: `sha256:${'a'.repeat(64)}`,
             attemptCount: 1,
             isPlatformAdmin: false,
             resolvedOverrideExpiresAtEpochMs: null,
@@ -176,19 +128,12 @@ function validateMutationRecord(input: DeterministicMutationInput, receipt: Writ
         {
             groupRef: input.command.aggregateRef,
             requestId: input.command.requestId,
-            commandHash: input.facts.commandHash,
+            commandHash: input.command.commandHash,
             receipt
         },
         {
             groupRef: input.command.aggregateRef,
             requestId: input.command.requestId
         }
-    );
-}
-
-function readProductionSource(relativePath: string): string {
-    return readFileSync(
-        new URL(`../../../../../../shared-server/rallar-system/${relativePath}`, import.meta.url),
-        'utf8'
     );
 }

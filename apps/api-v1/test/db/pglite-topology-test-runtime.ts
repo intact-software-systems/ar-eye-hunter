@@ -124,6 +124,8 @@ export function topologyConfigCommand(
         aggregateRef: groupRef,
         commandId: requestId,
         requestId,
+        commandHash: `sha256:${'a'.repeat(64)}`,
+        capturedAtEpochMs: 1_000,
         input: {
             config: { topologyKind },
             updatedByPrincipalId: 'owner',
@@ -143,6 +145,8 @@ export function topologyOverrideCommand(
         aggregateRef: groupRef,
         commandId: requestId,
         requestId,
+        commandHash: `sha256:${'a'.repeat(64)}`,
+        capturedAtEpochMs: 1_000,
         input: {
             config: { topologyKind },
             updatedByPrincipalId: 'owner',
@@ -221,7 +225,7 @@ async function createPGliteTopologyWorkSetup(sql: PGliteSql, commandId: string):
     );
     const topologyManagement = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: () => groupSnapshot,
-        readCurrentGroupSnapshot: async () => groupSnapshot,
+        readCurrentGroupSnapshot: () => Promise.resolve(groupSnapshot),
         readRttMeasurements: () => [],
         topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
         topologySnapshotRepository

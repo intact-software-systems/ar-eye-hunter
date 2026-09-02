@@ -32,6 +32,8 @@ export function createTopologyConfigMutationTestInput(
         aggregateRef: groupRef,
         commandId: commandId ?? `command-${operation}`,
         requestId,
+        commandHash: `sha256:${'c'.repeat(64)}`,
+        capturedAtEpochMs: 1_000,
         input: {
             config: settings.config ?? { topologyKind: 'tree' },
             updatedByPrincipalId: 'owner',
@@ -40,9 +42,7 @@ export function createTopologyConfigMutationTestInput(
         }
     };
     const facts: GroupTopologyConfigMutationFacts = {
-        requestedAtEpochMs: 1_000,
         policyNowEpochMs: 1_000,
-        commandHash: `sha256:${'c'.repeat(64)}`,
         attemptCount: 1,
         isPlatformAdmin: false,
         resolvedOverrideExpiresAtEpochMs: operation === 'putOverride' ? 6_000 : null

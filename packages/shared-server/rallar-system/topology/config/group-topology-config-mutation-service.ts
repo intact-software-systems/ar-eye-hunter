@@ -2,8 +2,10 @@ import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topol
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
 import type { RtcTopologyOutboxWriter } from '../mutation/rtc-topology-outbox-writer.ts';
-import { resolveOverrideExpiresAtEpochMs } from './group-topology-config.ts';
-import type { GroupTopologyServerOptions } from './group-topology-config.ts';
+import {
+    computeOverrideExpiresAtEpochMs,
+    type GroupTopologyServerOptions
+} from './group-topology-config.ts';
 import { computeTopologyConfigMutation } from './mutation/compute-topology-config-mutation.ts';
 import type * as mutationContracts from './mutation/group-topology-config-mutation-contracts.ts';
 import { readTopologyConfigMutation } from './mutation/read-topology-config-mutation.ts';
@@ -24,14 +26,18 @@ export interface GroupTopologyConfigMutationServiceDependencies {
     readonly outboxWriter: RtcTopologyOutboxWriter;
 }
 
-export interface GroupTopologyConfigMutationPreparation {
-    readonly command: mutationContracts.GroupTopologyConfigMutationCommand;
-    readonly stableFacts: mutationContracts.GroupTopologyConfigMutationStableFacts;
-}
-
 export interface GroupTopologyConfigMutationAttemptRead {
     readonly state: Awaited<ReturnType<typeof readTopologyConfigMutation>>;
     readonly policyNowEpochMs: number;
+    readonly isPlatformAdmin: boolean;
+    readonly serverDefaults: GroupTopologyServerOptions;
+}
+
+export interface GroupTopologyConfigMutationValidation {
+    readonly command: mutationContracts.GroupTopologyConfigMutationCommand;
+    readonly read: GroupTopologyConfigMutationAttemptRead;
+    readonly attemptCount: number;
+    readonly computed: mutationContracts.GroupTopologyConfigMutationComputed;
 }
 
 export class GroupTopologyConfigMutationService {
@@ -39,27 +45,6 @@ export class GroupTopologyConfigMutationService {
 
     constructor(dependencies: GroupTopologyConfigMutationServiceDependencies) {
         this.dependencies = dependencies;
-    }
-
-    async prepare(input: {
-        readonly command: mutationContracts.GroupTopologyConfigMutationCommand;
-        readonly commandHash: string;
-        readonly capturedAtEpochMs: number;
-    }): Promise<GroupTopologyConfigMutationPreparation> {
-        return {
-            command: input.command,
-            stableFacts: {
-                requestedAtEpochMs: input.capturedAtEpochMs,
-                commandHash: input.commandHash,
-                resolvedOverrideExpiresAtEpochMs: input.command.operation === 'putOverride'
-                    ? resolveOverrideExpiresAtEpochMs({
-                        nowEpochMs: input.capturedAtEpochMs,
-                        ttlMs: input.command.input.ttlMs ?? undefined,
-                        expiresAtEpochMs: input.command.input.expiresAtEpochMs ?? undefined
-                    })
-                    : null
-            }
-        };
     }
 
     async read(
@@ -71,56 +56,55 @@ export class GroupTopologyConfigMutationService {
                 this.dependencies.groupStateRepository,
                 command
             ),
-            policyNowEpochMs: this.dependencies.nowEpochMs()
+            policyNowEpochMs: this.dependencies.nowEpochMs(),
+            isPlatformAdmin: this.dependencies.isPlatformAdmin(
+                command.input.updatedByPrincipalId
+            ),
+            serverDefaults: { ...(this.dependencies.serverDefaults ?? {}) }
         };
     }
 
     compute(
-        preparation: GroupTopologyConfigMutationPreparation,
+        command: mutationContracts.GroupTopologyConfigMutationCommand,
         read: GroupTopologyConfigMutationAttemptRead,
         attemptCount: number
     ): mutationContracts.GroupTopologyConfigMutationComputed {
         const idempotency = probeTopologyConfigMutationIdempotency(
-            preparation.command,
+            command,
             read.state,
-            preparation.stableFacts.commandHash
+            command.commandHash
         );
         if (idempotency.outcome !== 'miss') {
             return idempotency;
         }
         return computeTopologyConfigMutation({
-            command: preparation.command,
+            command,
             read: read.state,
-            facts: this.toFacts(preparation, read, attemptCount),
-            serverDefaults: this.dependencies.serverDefaults ?? {}
+            facts: toTopologyConfigMutationFacts(command, read, attemptCount),
+            serverDefaults: read.serverDefaults
         });
     }
 
-    validate(
-        preparation: GroupTopologyConfigMutationPreparation,
-        read: GroupTopologyConfigMutationAttemptRead,
-        attemptCount: number,
-        computed: mutationContracts.GroupTopologyConfigMutationComputed
-    ): void {
+    validate(validation: GroupTopologyConfigMutationValidation): void {
+        const { command, read, attemptCount, computed } = validation;
         if (computed.outcome === 'replay' || computed.outcome === 'idempotency-conflict') {
             validateTopologyConfigMutationIdempotency({
-                command: preparation.command,
+                command,
                 read: read.state,
-                commandHash: preparation.stableFacts.commandHash,
+                commandHash: command.commandHash,
                 authorityFacts: {
-                    isPlatformAdmin: this.dependencies.isPlatformAdmin(
-                        preparation.command.input.updatedByPrincipalId
-                    )
+                    isPlatformAdmin: read.isPlatformAdmin,
+                    policyNowEpochMs: read.policyNowEpochMs
                 },
                 computed
             });
             return;
         }
         validateTopologyConfigMutation({
-            command: preparation.command,
+            command,
             read: read.state,
-            facts: this.toFacts(preparation, read, attemptCount),
-            serverDefaults: this.dependencies.serverDefaults ?? {},
+            facts: toTopologyConfigMutationFacts(command, read, attemptCount),
+            serverDefaults: read.serverDefaults,
             computed
         });
     }
@@ -135,19 +119,23 @@ export class GroupTopologyConfigMutationService {
             outboxWriter: this.dependencies.outboxWriter
         });
     }
+}
 
-    private toFacts(
-        preparation: GroupTopologyConfigMutationPreparation,
-        read: GroupTopologyConfigMutationAttemptRead,
-        attemptCount: number
-    ): mutationContracts.GroupTopologyConfigMutationFacts {
-        return {
-            ...preparation.stableFacts,
-            isPlatformAdmin: this.dependencies.isPlatformAdmin(
-                preparation.command.input.updatedByPrincipalId
-            ),
-            policyNowEpochMs: read.policyNowEpochMs,
-            attemptCount
-        };
-    }
+function toTopologyConfigMutationFacts(
+    command: mutationContracts.GroupTopologyConfigMutationCommand,
+    read: GroupTopologyConfigMutationAttemptRead,
+    attemptCount: number
+): mutationContracts.GroupTopologyConfigMutationFacts {
+    return {
+        resolvedOverrideExpiresAtEpochMs: command.operation === 'putOverride'
+            ? computeOverrideExpiresAtEpochMs({
+                nowEpochMs: command.capturedAtEpochMs,
+                ttlMs: command.input.ttlMs ?? undefined,
+                expiresAtEpochMs: command.input.expiresAtEpochMs ?? undefined
+            })
+            : null,
+        isPlatformAdmin: read.isPlatformAdmin,
+        policyNowEpochMs: read.policyNowEpochMs,
+        attemptCount
+    };
 }

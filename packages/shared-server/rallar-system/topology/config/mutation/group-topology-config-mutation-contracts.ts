@@ -11,18 +11,22 @@ import type * as persistence from '../../../group-state/persistence/group-state-
 import type { ComputedRtcTopologyOutbox } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { GroupTopologyServerOptions } from '../group-topology-config.ts';
 
-export type GroupTopologyConfigMutationCommand = Readonly<{
-    operation: GroupTopologyConfigMutationOperation;
-    aggregateRef: GroupRef;
-    commandId: string;
-    requestId: string | null;
-    input: Readonly<{
-        config: GroupTopologyConfigPatch | null;
-        updatedByPrincipalId: string;
-        ttlMs: number | null;
-        expiresAtEpochMs: number | null;
-    }>;
-}>;
+export interface GroupTopologyConfigMutationCommandInput {
+    readonly config: GroupTopologyConfigPatch | null;
+    readonly updatedByPrincipalId: string;
+    readonly ttlMs: number | null;
+    readonly expiresAtEpochMs: number | null;
+}
+
+export interface GroupTopologyConfigMutationCommand {
+    readonly operation: GroupTopologyConfigMutationOperation;
+    readonly aggregateRef: GroupRef;
+    readonly commandId: string;
+    readonly requestId: string | null;
+    readonly commandHash: string;
+    readonly capturedAtEpochMs: number;
+    readonly input: GroupTopologyConfigMutationCommandInput;
+}
 
 export interface GroupTopologyConfigMutationRecord {
     readonly groupRef: GroupRef;
@@ -62,13 +66,8 @@ export interface GroupTopologyConfigMutationRead {
 
 type TopologyConfigInvariantGenerationEntry = RuntimeStateEntryValue<GroupTopologyConfigInvariantGeneration>;
 
-export interface GroupTopologyConfigMutationStableFacts {
-    readonly requestedAtEpochMs: number;
-    readonly commandHash: string;
+export interface GroupTopologyConfigMutationFacts {
     readonly resolvedOverrideExpiresAtEpochMs: number | null;
-}
-
-export interface GroupTopologyConfigMutationFacts extends GroupTopologyConfigMutationStableFacts {
     readonly isPlatformAdmin: boolean;
     readonly policyNowEpochMs: number;
     readonly attemptCount: number;

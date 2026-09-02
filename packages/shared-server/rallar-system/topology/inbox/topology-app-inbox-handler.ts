@@ -36,10 +36,7 @@ export interface TopologyAppInboxHandlerDependencies {
 }
 
 export interface TopologyAppInboxMutationOwners {
-    readonly configMutationService: Pick<
-        GroupTopologyConfigMutationService,
-        'prepare' | 'read' | 'compute' | 'validate' | 'write'
-    >;
+    readonly configMutationService: Pick<GroupTopologyConfigMutationService, 'read' | 'compute' | 'validate' | 'write'>;
     readonly reconfigureMutation: Pick<GroupTopologyReconfigureMutation, 'read' | 'compute' | 'validate' | 'write'>;
 }
 
@@ -179,15 +176,11 @@ export class TopologyAppInboxHandler {
                 owners.reconfigureMutation
             );
         }
-        const preparation = await owners.configMutationService.prepare({
-            command: toTopologyConfigMutationCommand(authority.command),
-            commandHash: authority.command.commandHash,
-            capturedAtEpochMs: authority.command.capturedAtEpochMs
-        });
-        const read = await owners.configMutationService.read(preparation.command);
+        const command = toTopologyConfigMutationCommand(authority.command);
+        const read = await owners.configMutationService.read(command);
         const attemptCount = context.entry.dequeueAudit.attempts;
-        const computed = owners.configMutationService.compute(preparation, read, attemptCount);
-        owners.configMutationService.validate(preparation, read, attemptCount, computed);
+        const computed = owners.configMutationService.compute(command, read, attemptCount);
+        owners.configMutationService.validate({ command, read, attemptCount, computed });
         if (computed.outcome === 'idempotency-conflict') {
             throw new GroupTopologyConfigIdempotencyConflictError(
                 computed.existingCommandHash,

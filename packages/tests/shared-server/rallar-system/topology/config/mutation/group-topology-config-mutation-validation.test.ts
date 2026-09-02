@@ -30,13 +30,13 @@ describe('topology config mutation validation', () => {
             durableDegreeLimit: 3,
             overrideDegreeLimit: 5
         });
+        const input = {
+            ...mutation,
+            serverDefaults: { degreeLimit: 3, meshParamK: 2 }
+        };
+        const computed = computeTopologyConfigMutation(input);
 
-        expect(() =>
-            computeTopologyConfigMutation({
-                ...mutation,
-                serverDefaults: { degreeLimit: 3, meshParamK: 2 }
-            })
-        ).toThrow(GroupTopologyConfigValidationError);
+        expect(() => validateTopologyConfigMutation({ ...input, computed })).toThrow(GroupTopologyConfigValidationError);
     });
 
     it('revalidates lifecycle authority at explicit attempt time', () => {
@@ -45,14 +45,14 @@ describe('topology config mutation validation', () => {
             ...mutation.read.groupSnapshot,
             group: { ...mutation.read.groupSnapshot.group, expiresAtEpochMs: 1_500 }
         };
+        const input = {
+            ...mutation,
+            read: { ...mutation.read, groupSnapshot: expired },
+            facts: { ...mutation.facts, isPlatformAdmin: true, policyNowEpochMs: 2_000 }
+        };
+        const computed = computeTopologyConfigMutation(input);
 
-        expect(() =>
-            computeTopologyConfigMutation({
-                ...mutation,
-                read: { ...mutation.read, groupSnapshot: expired },
-                facts: { ...mutation.facts, isPlatformAdmin: true, policyNowEpochMs: 2_000 }
-            })
-        ).toThrow(expect.objectContaining({ status: 403 }));
+        expect(() => validateTopologyConfigMutation({ ...input, computed })).toThrow(expect.objectContaining({ status: 403 }));
     });
 
     it('denies expired and terminal lifecycle mutations to platform admins', () => {
@@ -84,13 +84,13 @@ describe('topology config mutation validation', () => {
                 [terminal, 'group-deleted']
             ] as const
         ) {
-            expect(() =>
-                computeTopologyConfigMutation({
-                    ...mutation,
-                    read: { ...mutation.read, groupSnapshot },
-                    facts: { ...mutation.facts, isPlatformAdmin: true, policyNowEpochMs: 2_000 }
-                })
-            ).toThrow(
+            const input = {
+                ...mutation,
+                read: { ...mutation.read, groupSnapshot },
+                facts: { ...mutation.facts, isPlatformAdmin: true, policyNowEpochMs: 2_000 }
+            };
+            const computed = computeTopologyConfigMutation(input);
+            expect(() => validateTopologyConfigMutation({ ...input, computed })).toThrow(
                 expect.objectContaining({
                     status: 403,
                     denial: expect.objectContaining({ code: denialCode })
@@ -105,11 +105,24 @@ describe('topology config mutation validation', () => {
             commandId: 'elapsed-stable-expiry',
             requestId: 'elapsed-stable-expiry'
         });
-        expect(() =>
-            computeTopologyConfigMutation({
-                ...mutation,
-                facts: { ...mutation.facts, policyNowEpochMs: 7_000 }
-            })
-        ).toThrow(GroupTopologyConfigValidationError);
+        const input = {
+            ...mutation,
+            facts: { ...mutation.facts, policyNowEpochMs: 7_000 }
+        };
+        const computed = computeTopologyConfigMutation(input);
+        expect(() => validateTopologyConfigMutation({ ...input, computed })).toThrow(GroupTopologyConfigValidationError);
+    });
+
+    it('rejects a missing computed override expiry during validation', () => {
+        const mutation = createTopologyConfigMutationTestInput({ operation: 'putOverride' });
+        const input = {
+            ...mutation,
+            facts: { ...mutation.facts, resolvedOverrideExpiresAtEpochMs: null }
+        };
+        const computed = computeTopologyConfigMutation(input);
+
+        expect(() => validateTopologyConfigMutation({ ...input, computed })).toThrow(
+            'Topology override expiry fact is required'
+        );
     });
 });

@@ -87,7 +87,6 @@ export function createTopologyConfigWriteResult(
         receipt,
         idempotency: createTopologyConfigMutationRecord(
             topologyWrite.command,
-            topologyWrite.facts,
             receipt
         ),
         outbox,
@@ -116,7 +115,6 @@ export function createTopologyConfigNoOpReceipt(
 
 export function createTopologyConfigMutationRecord(
     command: GroupTopologyConfigMutationCommand,
-    facts: GroupTopologyConfigMutationFacts,
     receipt: GroupTopologyConfigMutationReceipt
 ): GroupTopologyConfigMutationRecord | null {
     return command.requestId === null
@@ -124,7 +122,7 @@ export function createTopologyConfigMutationRecord(
         : {
             groupRef: copyGroupRef(command.aggregateRef),
             requestId: command.requestId,
-            commandHash: facts.commandHash,
+            commandHash: command.commandHash,
             receipt
         };
 }
@@ -181,7 +179,7 @@ function createTopologyConfigOutbox(
     return {
         aggregateRef: copyGroupRef(topologyWrite.command.aggregateRef),
         commandId: topologyWrite.command.commandId,
-        createdAtEpochMs: topologyWrite.facts.requestedAtEpochMs,
+        createdAtEpochMs: topologyWrite.command.capturedAtEpochMs,
         acceptedCausalRevision: acceptedCausalRevision.causalRevision,
         groupSnapshot: topologyWrite.read.groupSnapshot,
         effectKind: 'rtc-topology-recompute',
@@ -225,7 +223,7 @@ function createTopologyConfigReceipt(
     return {
         commandId: receiptFields.command.commandId,
         requestId: receiptFields.command.requestId,
-        commandHash: receiptFields.facts.commandHash,
+        commandHash: receiptFields.command.commandHash,
         operation: receiptFields.command.operation,
         outcome: receiptFields.outcome,
         attemptCount: receiptFields.facts.attemptCount,

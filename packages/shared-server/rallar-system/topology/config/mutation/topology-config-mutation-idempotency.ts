@@ -4,17 +4,13 @@ import type {
     GroupTopologyConfigMutationRead
 } from './group-topology-config-mutation-contracts.ts';
 import { resultFromTopologyConfigReceipt } from './topology-config-mutation-receipt.ts';
-import {
-    requireTopologyConfigRequestId,
-    validateTopologyConfigIdempotencyInput
-} from './validate-topology-config-mutation-input.ts';
-import { validateGroupTopologyConfigMutationRecord } from './validate-topology-config-records.ts';
+import { validateTopologyConfigIdempotencyInput } from './validate-topology-config-mutation-input.ts';
 
 export interface ValidateTopologyConfigMutationIdempotencyInput {
     readonly command: GroupTopologyConfigMutationCommand;
     readonly read: GroupTopologyConfigMutationRead;
     readonly commandHash: string;
-    readonly authorityFacts: Readonly<{ isPlatformAdmin: boolean; }>;
+    readonly authorityFacts: Readonly<{ isPlatformAdmin: boolean; policyNowEpochMs: number; }>;
     readonly computed: Exclude<GroupTopologyConfigMutationComputed, { outcome: 'write' | 'claim' | 'no-op'; }>;
 }
 
@@ -30,20 +26,12 @@ export function probeTopologyConfigMutationIdempotency(
         return { outcome: 'miss' };
     }
     const record = read.idempotency.value;
-    const requestId = requireTopologyConfigRequestId(command);
-    validateGroupTopologyConfigMutationRecord(record, {
-        groupRef: command.aggregateRef,
-        requestId
-    });
     if (record.commandHash !== commandHash) {
         return {
             outcome: 'idempotency-conflict',
             existingCommandHash: record.commandHash,
             receivedCommandHash: commandHash
         };
-    }
-    if (record.receipt.operation !== command.operation) {
-        throw new TypeError('Topology config receipt operation differs from command');
     }
     return {
         outcome: 'replay',
@@ -60,6 +48,12 @@ export function validateTopologyConfigMutationIdempotency(
         idempotencyValidation.read,
         idempotencyValidation.authorityFacts
     );
+    if (
+        idempotencyValidation.read.idempotency?.value.receipt.operation !==
+            idempotencyValidation.command.operation
+    ) {
+        throw new TypeError('Topology config receipt operation differs from command');
+    }
     const canonical = probeTopologyConfigMutationIdempotency(
         idempotencyValidation.command,
         idempotencyValidation.read,

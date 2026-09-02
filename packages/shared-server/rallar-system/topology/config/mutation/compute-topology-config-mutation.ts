@@ -6,7 +6,7 @@ import type {
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
-import { readDefaultGroupTopologyConfig, resolveGroupTopologyConfig } from '../group-topology-config.ts';
+import { readDefaultGroupTopologyConfig } from '../group-topology-config.ts';
 import type {
     GroupTopologyConfigGeneration,
     GroupTopologyConfigMutationComputed,
@@ -19,19 +19,14 @@ import {
     createTopologyConfigNoOpReceipt,
     createTopologyConfigWriteResult
 } from './topology-config-mutation-receipt.ts';
-import {
-    requireTopologyConfigPatch,
-    validateTopologyConfigMutationInput
-} from './validate-topology-config-mutation-input.ts';
 
 export function computeTopologyConfigMutation(
     topologyMutation: TopologyConfigMutationInput
 ): GroupTopologyConfigMutationComputed {
-    validateTopologyConfigMutationInput(topologyMutation);
     const idempotency = probeTopologyConfigMutationIdempotency(
         topologyMutation.command,
         topologyMutation.read,
-        topologyMutation.facts.commandHash
+        topologyMutation.command.commandHash
     );
     if (idempotency.outcome !== 'miss') {
         return idempotency;
@@ -60,25 +55,17 @@ function computePutConfig(
         config: applyGroupTopologyConfigPatch({
             fallback: readDefaultGroupTopologyConfig(topologyMutation.serverDefaults),
             current: current?.value.config,
-            patch: requireTopologyConfigPatch(command)
+            patch: command.input.config ?? {}
         }),
         version: nextTopologyConfigVersion(current?.value.version, generation),
-        createdAtEpochMs: current?.value.createdAtEpochMs ?? facts.requestedAtEpochMs,
+        createdAtEpochMs: current?.value.createdAtEpochMs ?? command.capturedAtEpochMs,
         updatedAtEpochMs: Math.max(
-            facts.requestedAtEpochMs,
-            current?.value.updatedAtEpochMs ?? facts.requestedAtEpochMs
+            command.capturedAtEpochMs,
+            current?.value.updatedAtEpochMs ?? command.capturedAtEpochMs
         ),
         updatedByPrincipalId: command.input.updatedByPrincipalId,
         requestId: command.requestId
     };
-    resolveGroupTopologyConfig({ serverOptions: topologyMutation.serverDefaults, durable: config });
-    if (read.override) {
-        resolveGroupTopologyConfig({
-            serverOptions: topologyMutation.serverDefaults,
-            durable: config,
-            temporary: read.override.value
-        });
-    }
     return createTopologyConfigWriteResult({
         command,
         read,
@@ -101,32 +88,24 @@ function computePutOverride(
     const { command, read, facts } = topologyMutation;
     const current = read.override;
     const generation = read.overrideGeneration;
-    if (facts.resolvedOverrideExpiresAtEpochMs === null) {
-        throw new TypeError('Topology override expiry fact is required');
-    }
     const override: StoredGroupTopologyOverride = {
         groupRef: copyGroupRef(command.aggregateRef),
         config: applyGroupTopologyConfigPatch({
             fallback: read.config?.value.config ??
                 readDefaultGroupTopologyConfig(topologyMutation.serverDefaults),
             current: current?.value.config,
-            patch: requireTopologyConfigPatch(command)
+            patch: command.input.config ?? {}
         }),
         version: nextTopologyConfigVersion(current?.value.version, generation),
-        createdAtEpochMs: current?.value.createdAtEpochMs ?? facts.requestedAtEpochMs,
+        createdAtEpochMs: current?.value.createdAtEpochMs ?? command.capturedAtEpochMs,
         updatedAtEpochMs: Math.max(
-            facts.requestedAtEpochMs,
-            current?.value.updatedAtEpochMs ?? facts.requestedAtEpochMs
+            command.capturedAtEpochMs,
+            current?.value.updatedAtEpochMs ?? command.capturedAtEpochMs
         ),
         updatedByPrincipalId: command.input.updatedByPrincipalId,
         requestId: command.requestId,
-        expiresAtEpochMs: facts.resolvedOverrideExpiresAtEpochMs
+        expiresAtEpochMs: facts.resolvedOverrideExpiresAtEpochMs ?? command.capturedAtEpochMs
     };
-    resolveGroupTopologyConfig({
-        serverOptions: topologyMutation.serverDefaults,
-        durable: read.config?.value,
-        temporary: override
-    });
     return createTopologyConfigWriteResult({
         command,
         read,
@@ -155,11 +134,6 @@ function computeDelete(
         return computeAbsentDelete(topologyMutation, target, generation);
     }
 
-    resolveGroupTopologyConfig({
-        serverOptions: topologyMutation.serverDefaults,
-        durable: target === 'config' ? undefined : topologyMutation.read.config?.value,
-        temporary: target === 'override' ? undefined : topologyMutation.read.override?.value
-    });
     const guard: TopologyConfigWriteGuard = target === 'config'
         ? {
             target: 'config',
@@ -199,7 +173,6 @@ function computeAbsentDelete(
     }
     const idempotency = createTopologyConfigMutationRecord(
         topologyMutation.command,
-        topologyMutation.facts,
         receipt
     );
     if (idempotency === null) {

@@ -26,8 +26,6 @@ import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system
 
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 
-import { toTopologyConfigMutationResult } from '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts';
-
 import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import {
     decodeTopologyAppInboxResult,
@@ -39,21 +37,13 @@ import {
 import type { GroupTopologyConfigMutationComputed } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 
-import type {
-    GroupTopologyConfigMutationAttemptRead,
-    GroupTopologyConfigMutationPreparation
-} from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
+import type { GroupTopologyConfigMutationAttemptRead } from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
 
 import type {
     GroupTopologyReconfigureComputed,
     GroupTopologyReconfigureRead
 } from '@shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-contracts.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
-
-vi.mock(
-    '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts',
-    () => ({ toTopologyConfigMutationResult: vi.fn() })
-);
 
 const NOW_EPOCH_MS = 1_000;
 const GROUP_REF: GroupRef = {
@@ -99,10 +89,6 @@ describe('TopologyAppInboxHandler', () => {
         const expected = { receipt: computed.receipt, config: computed.result.config };
         const owners = {
             configMutationService: {
-                prepare: vi.fn(async () => {
-                    phases.push('prepare');
-                    return configPreparation();
-                }),
                 read: vi.fn(async () => {
                     phases.push('read');
                     return configRead();
@@ -121,9 +107,6 @@ describe('TopologyAppInboxHandler', () => {
             },
             reconfigureMutation: unusedReconfigureMutation()
         } satisfies TopologyAppInboxMutationOwners;
-        vi.mocked(toTopologyConfigMutationResult).mockImplementationOnce(
-            () => (phases.push('result'), expected)
-        );
         const wakeQueue = vi.fn(() => phases.push('wake'));
         const handler = new TopologyAppInboxHandler({
             groupStateService: sessionReader(phases),
@@ -138,16 +121,14 @@ describe('TopologyAppInboxHandler', () => {
                 }
             }
         });
-        await expect(handler.processMutation(context, owners)).resolves.toBe(expected);
+        await expect(handler.processMutation(context, owners)).resolves.toEqual(expected);
         expect(phases).toEqual([
             'verify-authority',
-            'prepare',
             'read',
             'compute',
             'validate',
             'transaction',
             'write',
-            'result',
             'commit',
             'wake'
         ]);
@@ -165,7 +146,6 @@ describe('TopologyAppInboxHandler', () => {
         };
         const owners = {
             configMutationService: {
-                prepare: vi.fn(async () => configPreparation()),
                 read: vi.fn(async () => configRead()),
                 compute: vi.fn(
                     () =>
@@ -359,28 +339,6 @@ async function persistedSession(): Promise<PersistedAuthSession> {
     };
 }
 
-function configPreparation(): GroupTopologyConfigMutationPreparation {
-    return {
-        command: {
-            operation: 'putConfig',
-            aggregateRef: GROUP_REF,
-            commandId: 'handler-request',
-            requestId: 'handler-request',
-            input: {
-                config: { topologyKind: 'tree' },
-                updatedByPrincipalId: 'owner',
-                ttlMs: null,
-                expiresAtEpochMs: null
-            }
-        },
-        stableFacts: {
-            requestedAtEpochMs: NOW_EPOCH_MS,
-            commandHash: `sha256:${'a'.repeat(64)}`,
-            resolvedOverrideExpiresAtEpochMs: null
-        }
-    };
-}
-
 function configRead(): GroupTopologyConfigMutationAttemptRead {
     return {
         state: {
@@ -393,7 +351,9 @@ function configRead(): GroupTopologyConfigMutationAttemptRead {
             groupSnapshot: groupSnapshot(),
             groupAuthorityGuard: groupAuthorityGuard()
         },
-        policyNowEpochMs: NOW_EPOCH_MS
+        policyNowEpochMs: NOW_EPOCH_MS,
+        isPlatformAdmin: false,
+        serverDefaults: {}
     };
 }
 
@@ -454,7 +414,6 @@ function reconfigureComputed(): GroupTopologyReconfigureComputed {
 
 function unusedConfigMutationService(): TopologyAppInboxMutationOwners['configMutationService'] {
     return {
-        prepare: async () => await Promise.reject(new Error('Unexpected config prepare')),
         read: async () => await Promise.reject(new Error('Unexpected config read')),
         compute: () => {
             throw new Error('Unexpected config compute');

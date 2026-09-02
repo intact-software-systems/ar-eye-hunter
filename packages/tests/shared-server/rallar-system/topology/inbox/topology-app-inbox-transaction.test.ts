@@ -346,14 +346,9 @@ describe('topology AppInbox transaction and idempotency', () => {
         const command = await topologyCommand('collision-request', 5);
         const mutationCommand = toTopologyConfigMutationCommand(command);
         const mutation = management.mutationOwners.configMutationService;
-        const preparation = await mutation.prepare({
-            command: mutationCommand,
-            commandHash: command.commandHash,
-            capturedAtEpochMs: command.capturedAtEpochMs
-        });
         const read = await mutation.read(mutationCommand);
-        const computed = mutation.compute(preparation, read, 1);
-        mutation.validate(preparation, read, 1, computed);
+        const computed = mutation.compute(mutationCommand, read, 1);
+        mutation.validate({ command: mutationCommand, read, attemptCount: 1, computed });
         expect(computed.outcome).toBe('write');
         if (computed.outcome !== 'write') {
             throw new Error('Expected a topology config write');
