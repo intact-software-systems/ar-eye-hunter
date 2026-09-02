@@ -1,4 +1,9 @@
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import {
+    GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+    GroupConnectTriggerLatchRepository,
+    toGroupConnectTriggerStorageKey
+} from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
 import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import type { RtcTopologyMutationRead } from '@shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts';
@@ -7,14 +12,23 @@ import { computeFormationCriterionCommand } from '@shared-server/rallar-system/t
 import {
     createDeferredCriterionPetitioner,
     petitionFormationCriterion,
-    type DeferredCriterionPetitionDependencies
+    petitionGroupStageTrigger,
+    type DeferredCriterionPetitionDependencies,
+    type StageTriggerPetitionDependencies
 } from '@shared-server/rallar-system/topology/replay/work/formation-criterion-observer.ts';
 import type { PersistedRtcTopologyWork } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type {
+    GroupLifecyclePolicy,
+    GroupLifecycleState,
+    GroupStageTrigger
+} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it } from 'vitest';
+import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { storedEntry } from '../../../group-state/mutation/group-mutation-test-runtime.ts';
 import { createTopologyTestGroupSnapshot } from '../../config/mutation/group-topology-config-mutation-test-fixtures.ts';
 
@@ -184,5 +198,185 @@ describe('formation criterion read and scheduling owner', () => {
         await harness.scheduled[0].callback();
         expect(harness.calls).toEqual(['authority', 'policy', 'submit', 'plan']);
         expect(harness.submitted).toHaveLength(1);
+    });
+});
+
+const PRESENCE_PLAN: GroupStageTrigger = { kind: 'presence', memberCount: 2, fallbackMs: 5_000 };
+
+function createStageTriggerPolicy(
+    planTrigger: GroupStageTrigger,
+    connectTrigger: GroupStageTrigger
+): GroupLifecyclePolicy {
+    const managed = resolveGroupLifecyclePolicyPreset('managed');
+    return { ...managed, establishment: { ...managed.establishment, planTrigger, connectTrigger } };
+}
+
+interface StageTriggerHarness {
+    readonly dependencies: StageTriggerPetitionDependencies;
+    readonly authority: GroupTopologyPlanningAuthority;
+    readonly commands: GroupMutationCommand[];
+    readonly latches: GroupConnectTriggerLatchRepository;
+}
+
+async function createStageTriggerHarness(
+    input: Readonly<{
+        lifecycleState: GroupLifecycleState;
+        onlineMemberCount: number;
+        policy: GroupLifecyclePolicy | 'corrupt';
+        readonly awaitingLatchNotBeforeEpochMs: number | null;
+    }>
+): Promise<StageTriggerHarness> {
+    const snapshot = {
+        ...base,
+        group: { ...base.group, lifecycleState: input.lifecycleState, formationEpoch: 2 },
+        onlineMemberCount: input.onlineMemberCount
+    };
+    const runtime = new FakeRuntimeStateRepository();
+    const latches = new GroupConnectTriggerLatchRepository(runtime);
+    const identity = {
+        groupRef: {
+            applicationId: snapshot.group.applicationId,
+            workspaceId: snapshot.group.workspaceId,
+            groupId: snapshot.group.groupId
+        },
+        formationEpoch: 2,
+        triggerGeneration: 'plan-1'
+    };
+    if (input.awaitingLatchNotBeforeEpochMs !== null) {
+        await runtime.upsert(
+            GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+            toGroupConnectTriggerStorageKey(identity),
+            JSON.stringify({ ...identity, notBeforeEpochMs: input.awaitingLatchNotBeforeEpochMs, state: 'awaiting-publication' }),
+            NEVER_EXPIRE_AT_TIMESTAMP
+        );
+    }
+    const commands: GroupMutationCommand[] = [];
+    const policyRead: GroupLifecyclePolicyRead = input.policy === 'corrupt'
+        ? { status: 'corrupt', reason: 'not json' }
+        : { status: 'present', policy: input.policy };
+    return {
+        commands,
+        latches,
+        authority: {
+            group: snapshot,
+            config: resolveGroupTopologyConfig({}),
+            kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+            rttMeasurements: [],
+            replanning: 'auto',
+            nowEpochMs: 4_000
+        },
+        dependencies: {
+            formationCriterion: { readLifecyclePolicy: async () => policyRead },
+            formationAutomation: {
+                latches,
+                readGroup: async () => snapshot.group,
+                readPlanned: async () => planned,
+                submitCommand: async (command) => {
+                    commands.push(command);
+                },
+                nowEpochMs: () => 4_000
+            }
+        }
+    };
+}
+
+describe('presence stage trigger petition', () => {
+    it('plans a forming group once its member threshold is met', async () => {
+        const harness = await createStageTriggerHarness({
+            lifecycleState: 'forming',
+            onlineMemberCount: 2,
+            policy: createStageTriggerPolicy(PRESENCE_PLAN, { kind: 'manual' }),
+            awaitingLatchNotBeforeEpochMs: null
+        });
+
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+
+        expect(harness.commands.map((command) => command.operation)).toEqual(['planGroupLayout', 'planGroupLayout']);
+        expect(new Set(harness.commands.map((command) => command.commandId)).size).toBe(1);
+        expect(harness.commands[0]!.commandId).toContain('formation-automation:v2:presence-plan:');
+    });
+
+    it('waits below the threshold', async () => {
+        const harness = await createStageTriggerHarness({
+            lifecycleState: 'forming',
+            onlineMemberCount: 1,
+            policy: createStageTriggerPolicy(PRESENCE_PLAN, { kind: 'manual' }),
+            awaitingLatchNotBeforeEpochMs: null
+        });
+
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+
+        expect(harness.commands).toEqual([]);
+    });
+
+    it('connects a planned group before its fallback once the threshold is met', async () => {
+        const harness = await createStageTriggerHarness({
+            lifecycleState: 'planned',
+            onlineMemberCount: 2,
+            policy: createStageTriggerPolicy({ kind: 'manual' }, PRESENCE_PLAN),
+            awaitingLatchNotBeforeEpochMs: 9_000
+        });
+
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+
+        expect(harness.commands.map((command) => command.operation)).toEqual(['connectGroup']);
+    });
+
+    it.each([
+        ['manual', { kind: 'manual' } as const],
+        ['immediate', { kind: 'immediate' } as const],
+        ['after', { kind: 'after', settleMs: 400 } as const]
+    ])('leaves the %s plan trigger to its timer leg', async (_kind, trigger) => {
+        const harness = await createStageTriggerHarness({
+            lifecycleState: 'forming',
+            onlineMemberCount: 5,
+            policy: createStageTriggerPolicy(trigger, { kind: 'manual' }),
+            awaitingLatchNotBeforeEpochMs: null
+        });
+
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+
+        expect(harness.commands).toEqual([]);
+    });
+
+    it('petitions nothing for a group whose formation is immediate', async () => {
+        const managed = createStageTriggerPolicy(PRESENCE_PLAN, { kind: 'manual' });
+        const harness = await createStageTriggerHarness({
+            lifecycleState: 'forming',
+            onlineMemberCount: 5,
+            policy: { ...managed, formation: 'immediate' },
+            awaitingLatchNotBeforeEpochMs: null
+        });
+
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+
+        expect(harness.commands).toEqual([]);
+    });
+
+    it('petitions nothing on a corrupt stored policy', async () => {
+        const harness = await createStageTriggerHarness({
+            lifecycleState: 'forming',
+            onlineMemberCount: 5,
+            policy: 'corrupt',
+            awaitingLatchNotBeforeEpochMs: null
+        });
+
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+
+        expect(harness.commands).toEqual([]);
+    });
+
+    it('petitions nothing from a stage no trigger governs', async () => {
+        const harness = await createStageTriggerHarness({
+            lifecycleState: 'active',
+            onlineMemberCount: 5,
+            policy: createStageTriggerPolicy(PRESENCE_PLAN, PRESENCE_PLAN),
+            awaitingLatchNotBeforeEpochMs: null
+        });
+
+        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+
+        expect(harness.commands).toEqual([]);
     });
 });

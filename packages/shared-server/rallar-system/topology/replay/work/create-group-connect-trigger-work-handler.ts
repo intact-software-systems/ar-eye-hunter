@@ -38,23 +38,31 @@ async function petitionGroupConnectTriggerWork(
     work: GroupConnectTriggerWork
 ): Promise<void> {
     if (work.kind === 'intent') {
-        await petitionGroupConnectTrigger(port, work, port.nowEpochMs());
+        await petitionGroupConnectTrigger(port, work, { kind: 'clock', atEpochMs: port.nowEpochMs() });
         return;
     }
-    await petitionAwaitingGroupConnectTriggers(port, work.groupRef, port.nowEpochMs());
+    await petitionAwaitingGroupConnectTriggers(port, work.groupRef, { kind: 'clock', atEpochMs: port.nowEpochMs() });
 }
 
 /**
- * Every latch still awaiting publication in the group's current epoch,
- * petitioned in turn. `settledAtEpochMs` is the instant the caller vouches
- * for: this node's clock for a publication, the timer's own due time for the
- * connect timer, so a node whose clock lags the one that latched cannot
- * strand a settle the queue already served.
+ * What satisfied the trigger the latch is waiting on: an instant the caller
+ * vouches for — this node's clock for a publication, the timer's own due
+ * time for the connect timer, so a node whose clock lags the one that
+ * latched cannot strand a settle the queue already served — or the trigger's
+ * own condition, met before any of that (product decision 8's threshold).
+ * Satisfaction names the formation epoch it was observed at, because it
+ * overrides the latch's own instant and must not fire a later series' latch
+ * on an earlier series' evidence.
  */
+export type GroupConnectTriggerSettle =
+    | Readonly<{ kind: 'clock'; atEpochMs: number; }>
+    | Readonly<{ kind: 'satisfied'; observedFormationEpoch: number; }>;
+
+/** Every latch still awaiting publication in the group's current epoch, petitioned in turn. */
 export async function petitionAwaitingGroupConnectTriggers(
     port: GroupFormationAutomationPort,
     groupRef: GroupRef,
-    settledAtEpochMs: number
+    settle: GroupConnectTriggerSettle
 ): Promise<void> {
     const group = await port.readGroup(groupRef);
     if (group === null) {
@@ -62,22 +70,26 @@ export async function petitionAwaitingGroupConnectTriggers(
     }
     const latches = await port.latches.listAwaiting(groupRef, group.formationEpoch);
     for (const { latch } of latches) {
-        await petitionGroupConnectTrigger(port, latch, settledAtEpochMs);
+        await petitionGroupConnectTrigger(port, latch, settle);
     }
 }
 
 export async function petitionGroupConnectTrigger(
     port: GroupFormationAutomationPort,
     identity: GroupConnectTriggerIdentity,
-    settledAtEpochMs: number
+    settle: GroupConnectTriggerSettle
 ): Promise<void> {
     const row = await port.latches.read(identity);
     if (row === null || row.latch.state !== 'awaiting-publication') {
         return;
     }
-    if (settledAtEpochMs < row.latch.notBeforeEpochMs) {
+    if (settle.kind === 'clock' && settle.atEpochMs < row.latch.notBeforeEpochMs) {
         // A publication ahead of the settle leaves the intent latched; the
-        // connect timer petitions again at the settle instant.
+        // connect timer petitions again at the settle instant, and a met
+        // presence threshold petitions sooner still.
+        return;
+    }
+    if (settle.kind === 'satisfied' && settle.observedFormationEpoch !== identity.formationEpoch) {
         return;
     }
     const group = await port.readGroup(identity.groupRef);

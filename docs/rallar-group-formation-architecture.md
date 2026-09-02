@@ -173,12 +173,13 @@ while the group is still at that formation epoch, where it submits the automatio
 `formation-automation`. A plan that lands a candidate in a stage that holds one arms
 the connect trigger's latch (`GroupConnectTriggerLatch`) with its settle
 instant: `immediate` may connect as soon as the layout publishes, `after` from its settle on, when a
-`connect` timer petitions the group's awaiting latches; `manual` and `presence` arm nothing. A
+`connect` timer petitions the group's awaiting latches; `presence` from its fallback on, or sooner when its members hold live presence — the topology cycle
+that every presence change reaches petitions the latch as satisfied — and `manual` arms nothing. A
 re-plan behind a spent attempt latches regardless of trigger or formation mode, because it continues
 a series the application already started. The `reconfigure` that opens `reconfiguring` arms nothing:
 its own replan has not published, so `reconfiguring` still waits for an application `connect`. A deadline that finds no live planned layout in a dialing
-stage fails that attempt at once, with no layout to fence. The `presence` trigger is stored and
-validated but not yet behavioural.
+stage fails that attempt at once, with no layout to fence. A `forming` group's presence trigger plans through the same
+cycle, under `formation-automation`.
 
 Two fields are carried but enforced by nothing in v1: `establishment.transports` and
 `establishment.maxConcurrentEdgeSetups` are normalized, clamped, and persisted, and no server path
@@ -829,8 +830,9 @@ writing this document:
 - **Enforcement of `establishment.transports` and `establishment.maxConcurrentEdgeSetups`.** Both
   are recorded and unread; establishment pacing is the browser dial budget.
 - **A pending-admission TTL.** Parked rows persist until granted, declined, withdrawn, or governed.
-- **General automatic plan/connect policy evaluation.** Durable initial retry intent is implemented;
-  immediate, timed and presence trigger policies remain separate work.
+- **The automatic boundary out of `reconfiguring`.** The plan and connect triggers drive `forming`
+  and `planned`; a hold-landing reconfigure still waits for an application `connect`, because the
+  latch would have to name the publication it waits for rather than the layout it means to replace.
 - **Distributed (Hetzner) lifecycle artifacts.** The recipes above are api-v1 black-box recipes
   against the real server; the distributed lane carries no lifecycle manifest.
 

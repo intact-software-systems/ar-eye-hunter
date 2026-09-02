@@ -5448,9 +5448,7 @@ components:
         settleMs has elapsed; presence fires at memberCount live members or at
         the fallbackMs timer, whichever is first. Each kind accepts exactly its
         own fields — after requires settleMs, presence requires memberCount and
-        fallbackMs, and unknown keys are rejected. manual, immediate and after
-        drive the boundaries; presence is stored and validated, not yet
-        behavioural.
+        fallbackMs, and unknown keys are rejected.
       properties:
         kind:
           type: string

@@ -85,7 +85,10 @@ async function consumeFormationTimer(
             await options.formationAutomation.submitCommand(toFormationTriggerPlanCommand(work), nowEpochMs);
             return;
         case 'connect':
-            await petitionAwaitingGroupConnectTriggers(options.formationAutomation, work.groupRef, work.notBeforeEpochMs);
+            await petitionAwaitingGroupConnectTriggers(options.formationAutomation, work.groupRef, {
+                kind: 'clock',
+                atEpochMs: work.notBeforeEpochMs
+            });
             return;
         case 'deadline':
             await evaluateFormationDeadline(options, work, snapshot);

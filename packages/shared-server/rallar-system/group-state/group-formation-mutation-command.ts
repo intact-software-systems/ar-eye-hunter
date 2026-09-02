@@ -91,18 +91,53 @@ export interface FormationTriggerPlanInput extends FormationAutomationPlanInput 
  * maxFormationAttempts and paced by the backoff that scheduled this.
  */
 export function toFormationRetryPlanCommand(input: FormationAutomationPlanInput): GroupMutationCommand {
-    const identity = serializeCanonicalJson({ groupRef: input.groupRef, formationEpoch: input.formationEpoch });
-    return toAutomationPlanCommand(input, `formation-automation:v2:retry-plan:${identity}`);
+    return toAutomationPlanCommand(input, toAutomationPlanCommandId('retry-plan', input, {}));
 }
 
 /** The plan trigger's command (product decision 8): the automation plan, keyed as the trigger's own. */
 export function toFormationTriggerPlanCommand(input: FormationTriggerPlanInput): GroupMutationCommand {
+    return toAutomationPlanCommand(
+        input,
+        toAutomationPlanCommandId('trigger-plan', input, { groupSnapshotVersion: input.groupSnapshotVersion })
+    );
+}
+
+export interface FormationPresencePlanInput extends FormationAutomationPlanInput {
+    /** The group's presence version when the threshold was observed. */
+    readonly presenceVersion: number;
+}
+
+/**
+ * The plan trigger's command when a met presence threshold fires it rather
+ * than its fallback timer (product decision 8). It is keyed on the presence
+ * version the threshold was observed at, so repeated cycles for one presence
+ * change collapse to one command while a later change can retry a plan that
+ * was rejected; the fallback timer's own command stays distinct and,
+ * whichever lands second, the epoch fence rejects it.
+ */
+export function toFormationPresencePlanCommand(input: FormationPresencePlanInput): GroupMutationCommand {
+    return toAutomationPlanCommand(
+        input,
+        toAutomationPlanCommandId('presence-plan', input, { presenceVersion: input.presenceVersion })
+    );
+}
+
+/**
+ * One id shape for every automation plan leg: the causal identity the leg
+ * deduplicates on, under the leg's own name so two legs never replay each
+ * other.
+ */
+function toAutomationPlanCommandId(
+    leg: 'retry-plan' | 'trigger-plan' | 'presence-plan',
+    input: FormationAutomationPlanInput,
+    causalIdentity: Readonly<Record<string, number>>
+): string {
     const identity = serializeCanonicalJson({
         groupRef: input.groupRef,
         formationEpoch: input.formationEpoch,
-        groupSnapshotVersion: input.groupSnapshotVersion
+        ...causalIdentity
     });
-    return toAutomationPlanCommand(input, `formation-automation:v1:trigger-plan:${identity}`);
+    return `formation-automation:v2:${leg}:${identity}`;
 }
 
 function toAutomationPlanCommand(input: FormationAutomationPlanInput, commandId: string): GroupMutationCommand {
