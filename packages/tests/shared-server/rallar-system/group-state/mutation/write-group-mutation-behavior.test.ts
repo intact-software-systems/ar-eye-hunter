@@ -69,9 +69,13 @@ describe('GroupStateService guarded batch write boundary', () => {
         });
         expect(guardedBatch.effects.map(({ effectId }) => effectId)).toEqual(['receipt']);
         expect(computed.outboxEntries).toHaveLength(1);
-        expect(computed.outboxEntries[0]?.typeId).toBe('APP_OUTBOX');
-        expect(() =>
-            group.durable.validate(command, read, {
+        const outboxEntry = computed.outboxEntries[0];
+        expect(outboxEntry?.typeId).toBe('APP_OUTBOX');
+        if (outboxEntry === undefined) {
+            throw new TypeError('Expected a prepared group outbox entry');
+        }
+        const tampered = [
+            {
                 ...computed,
                 persistence: {
                     ...computed.persistence,
@@ -83,8 +87,25 @@ describe('GroupStateService guarded batch write boundary', () => {
                         }
                     }
                 }
-            })
-        ).toThrow('differs from its canonical deterministic projection');
+            },
+            {
+                ...computed,
+                persistence: {
+                    ...computed.persistence,
+                    eventWrite: {
+                        ...computed.persistence.eventWrite,
+                        eventJson: '{"eventId":"tampered"}'
+                    }
+                }
+            },
+            {
+                ...computed,
+                outboxEntries: [{ ...outboxEntry, resource: '{"kind":"tampered"}' }]
+            }
+        ];
+        for (const candidate of tampered) {
+            expect(() => group.durable.validate(command, read, candidate)).toThrow();
+        }
 
         const stringify = vi.spyOn(JSON, 'stringify').mockImplementation(() => {
             throw new Error('group serialization must finish during compute');
