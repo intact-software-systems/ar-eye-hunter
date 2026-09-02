@@ -2330,19 +2330,46 @@ What 9b lands:
   preset when the request carries no policy, so every group read, delta and hydration carries the
   bound each member enforces on itself. Last in wire order (I4); no persisted-row migration
   because the key lists are exact and the cutover is clean-database, as every earlier aggregate
-  field was.
-- **`computePacedOutboundDialPlan`**, the pure in-flight dial plan over the budgeted plan: known
-  peers pass because their ensure starts nothing; a new dial is admitted only while every owning
-  group is below its bound, counting setups already in flight for that group plus the dials
-  admitted earlier in the same pass; a paced peer waits. Product decision 18's shared-peer rule
-  falls out of `computeInFlightDialAdmission` unchanged.
-- **Wake-on-completion**: the manager registers one lifecycle observer on the connection service
-  and re-reconciles when a setup ends by establishment, timeout or removal — but only while a
-  paced dial is waiting, and never for the endings a pass causes itself. The browser transport
-  shutdown stops the wakes before it tears peers down, because shutdown removes peers their groups
-  still want; without that, every teardown would dial them back.
-- **The completable harness dial**: the simulated connection harness now exposes `establish`, so
-  browser tests drive a setup from in flight to established and observe the bound release.
+  field was. The three validators enforce the normalizer's cap (256) and the OpenAPI schema
+  carries the same maximum, so no row or wire value can exceed what a policy can express.
+- **The dial plan and the dial walk.** `computeOutboundDialPlan` stays the pure ordering and
+  budget: known peers split by native liveness, new candidates server-first, and the connection
+  budget left after the peers already held. `WebRtcOutboundDialing` spends that budget and the
+  in-flight bound at dial time, against what each ensure actually did: an owner is charged only
+  when the ensure reports `setup-started`, a peer paced under product decision 18 holds no
+  connection-budget slot, a dial that starts nothing frees its slot for the next candidate at
+  once, and a known peer whose native connection died is charged as the new setup its re-dial
+  starts. Bounds are keyed by the scoped group key, so two groups sharing a bare id cannot share
+  a bound.
+- **Wake-on-completion** with an explicit lifecycle: the browser composition root calls
+  `startReconcileWakes()` once the service and manager exist, and transport shutdown calls
+  `stopReconcileWakes()` before it tears peers down, because shutdown removes peers their groups
+  still want. A wake runs on a microtask after the lifecycle notice that raised it, so every
+  observer sees the ending before the dials it releases; an ending the pass's own dial loop causes
+  sets the drain latch instead. `whenReconciled()` covers a scheduled wake. Nothing wakes while no
+  dial is waiting.
+- **The harness composes over the native fixture** and exposes `nativePeer(peerId)`: a test
+  establishes a setup with `setConnected()` on the simulated native connection, the path the
+  browser runtime takes. Only a live peer reports lane readiness there, as in the real predicate,
+  which is what lets a dead-but-known peer be re-dialed and charged.
+
+**Review correction (2026-09-02).** The first 9b head paced in the plan (`computePacedOutboundDialPlan`)
+and charged admissions before any ensure ran, so a denied or failed dial kept the slot it never
+used, a paced peer consumed a connection-budget slot, and a wake could re-dial a peer inside the
+deletion notice that freed it, ahead of other observers. The nine-angle review also found the
+bound keyed by bare group id, the wake observer registered in the constructor with no matching
+stop for non-browser owners, and the validators accepting any positive integer while the
+normalizer clamps to 256. All of it is folded into the shape above. Two consequences are
+accepted rather than fixed: a group created without a policy copies the default preset's member
+tier at creation, so a later preset change does not re-aim existing groups (the rule every other
+creation-time policy value already follows); and the member-policy checks stay inline in each
+validator because the changed-style gate counts an `unknown`-typed helper parameter as boundary
+widening.
+
+**Open for 9c.** Inbound setups are not paced: `acceptPeerIfAbsent` starts a setup for any
+signaled peer regardless of the bound, so a member's in-flight count can exceed its bound by the
+offers it accepts; the bound governs what this member starts. RTT-driven peer selection should
+decide whether the acceptor pays for those setups or whether the initiator's bound is enough.
 
 Refreshed next two slices. 9b is this PR. The 6/20/50 sweep manifests (`pacing-sweep`) follow as
 their own PR once 9b's live-RTC evidence exists; Slice 10a is the outcome after that.
