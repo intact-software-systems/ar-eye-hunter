@@ -258,7 +258,7 @@ function createCrdtMutationComputedBase<TDocument extends RallarCrdtDocumentMeta
     };
 }
 
-interface ComputeCrdtMutationWritesInput {
+export interface ComputeCrdtMutationWritesInput {
     readonly read: CrdtMutationRead;
     readonly document: RallarCrdtDocumentMetadata;
     readonly update: CrdtAppendCommand['update'] | null;
@@ -266,7 +266,7 @@ interface ComputeCrdtMutationWritesInput {
     readonly snapshot: CrdtCanonicalSnapshotEnvelope | null;
 }
 
-function computeCrdtMutationWrites(
+export function computeCrdtMutationWrites(
     input: ComputeCrdtMutationWritesInput
 ): Pick<CrdtMutationComputedWrite, 'documentWrite' | 'updateWrite' | 'snapshotWrite' | 'conflict'> {
     const { read, document, update, append, snapshot } = input;

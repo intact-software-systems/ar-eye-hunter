@@ -202,6 +202,86 @@ describe('CRDT mutation service', () => {
         expect(service.validate({ command, read, computed: persistenceMismatch })).toMatchObject([{ code: 'computed-persistence-differs' }]);
     });
 
+    it('rejects prepared CRDT persistence that differs from the computed domain result', async () => {
+        const repository = new MemoryCrdtMutationRepository();
+        const service = createCrdtMutationService({
+            repository,
+            createWriter: () => repository,
+            serviceId: 'server-1'
+        });
+        const command = await createAppendCommand('append-persistence-validation', 'update-persistence-validation');
+        const read = await service.read(command);
+        const computed = service.compute({ command, read });
+        if (computed.outcome !== 'write' || computed.updateWrite === null) {
+            throw new TypeError('Expected an accepted append mutation');
+        }
+        const firstOutboxWrite = computed.outboxWrites[0];
+        if (firstOutboxWrite === undefined) {
+            throw new TypeError('Expected an append outbox write');
+        }
+        const tampered = [
+            {
+                ...computed,
+                documentWrite: { ...computed.documentWrite, retentionJson: '{"kind":"tampered"}' }
+            },
+            {
+                ...computed,
+                updateWrite: { ...computed.updateWrite, updateEnvelopeJson: '{"kind":"tampered"}' }
+            },
+            {
+                ...computed,
+                outboxWrites: [
+                    { ...firstOutboxWrite, createdAt: '2000-01-01T00:00:00.000Z' },
+                    ...computed.outboxWrites.slice(1)
+                ]
+            }
+        ];
+
+        for (const candidate of tampered) {
+            expect(service.validate({ command, read, computed: candidate })).toMatchObject([
+                { code: 'computed-persistence-differs' }
+            ]);
+        }
+    });
+
+    it('rejects a prepared CRDT snapshot row that differs from the computed snapshot', async () => {
+        const repository = new MemoryCrdtMutationRepository();
+        repository.metadata = createMetadata();
+        const service = createCrdtMutationService({
+            repository,
+            createWriter: () => repository,
+            serviceId: 'server-1'
+        });
+        const command = await createCrdtMutationCommand({
+            operation: 'compact',
+            commandId: 'compact-persistence-validation',
+            actor: createActor(),
+            capturedAtEpochMs: 1_000,
+            expireAtEpochMs: 61_000,
+            document: DOCUMENT,
+            snapshotId: 'snapshot-persistence-validation',
+            snapshot: null,
+            reason: 'persistence-validation',
+            responseAudience: createAudience()
+        });
+        const read = await service.read(command);
+        const computed = service.compute({ command, read });
+        if (computed.outcome !== 'write' || computed.snapshotWrite === null) {
+            throw new TypeError('Expected an accepted compact mutation');
+        }
+        const tampered = {
+            ...computed,
+            snapshotWrite: {
+                ...computed.snapshotWrite,
+                snapshotEnvelopeJson: '{"kind":"tampered"}'
+            }
+        };
+
+        expect(service.validate({ command, read, computed: tampered })).toMatchObject([
+            { code: 'computed-persistence-differs' }
+        ]);
+    });
+
     it('returns all ordered validation issues for a malformed compact accepted result', async () => {
         const repository = new MemoryCrdtMutationRepository();
         repository.metadata = createMetadata();
