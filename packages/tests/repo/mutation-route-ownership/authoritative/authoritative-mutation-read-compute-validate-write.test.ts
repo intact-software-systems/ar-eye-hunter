@@ -143,10 +143,11 @@ it.each([
         source: sources.appAdmin,
         owner: 'processCommand',
         calls: [
-            'this.read(command)',
-            'this.compute(read)',
-            'this.validate(computed)',
-            'this.transactionWriter.writeMutation(context'
+            'this.read(command, context)',
+            'computeAdminPruneMutation(read)',
+            'validateAdminPruneMutation(read, computed)',
+            'this.transactionWriter.writeComputedMutation(',
+            'this.write(transaction, computed)'
         ]
     },
     {
