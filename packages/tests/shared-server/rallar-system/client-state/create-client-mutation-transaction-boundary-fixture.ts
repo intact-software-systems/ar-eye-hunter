@@ -79,11 +79,21 @@ export async function createClientMutationTransactionBoundaryFixture(
         },
         transactionWriter: new AppInboxTransactionWriter({ database }, {
             serviceId: 'client-inbox-service',
-            nowEpochMs: () => context.message.id.ts
+            nowEpochMs: () => {
+                actions.push('completion');
+                return context.message.id.ts;
+            }
         }),
         serviceId: 'client-inbox-service'
     });
-    return { actions, computedSnapshots, context, handler, observedSnapshots, results };
+    return {
+        actions,
+        computedSnapshots,
+        context,
+        handler,
+        observedSnapshots,
+        results
+    };
 }
 
 interface ObservedMutationEffects {

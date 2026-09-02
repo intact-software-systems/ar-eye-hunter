@@ -1,6 +1,12 @@
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { AppInboxExecutionMetadata, AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion,
+    type AppInboxCompletionComputed
+} from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import {
     validateWsSessionConnectGuard,
@@ -131,18 +137,17 @@ export class ClientStateInboxHandler {
         const computed = await this.readComputeValidateExpiredSessionMutations(context, atEpochMs);
         const applied = computed.filter((successor) => successor.outcome === 'write');
         const durableResult = applied.map(toClientStateWritten);
-        const result = await this.dependencies.transactionWriter.writeMutationWithAfterCommitResult(
+        const completion = this.readComputeValidateCompletion(context, durableResult);
+        const result = await this.dependencies.transactionWriter.writeComputedMutationWithAfterCommitResult(
             context,
+            completion,
             async (transaction) => {
                 for (const successor of computed) {
                     if (requiresClientWrite(successor)) {
                         await this.dependencies.mutationService.write(transaction, successor);
                     }
                 }
-                return {
-                    durableResult,
-                    afterCommitResult: { committedSnapshots: applied.map((successor) => successor.snapshot) }
-                };
+                return { committedSnapshots: applied.map((successor) => successor.snapshot) };
             }
         );
         await this.observeCommittedSnapshots(result.afterCommitResult);
@@ -167,21 +172,20 @@ export class ClientStateInboxHandler {
             throw new Error('Validated client idempotency conflict is unreachable');
         }
         const durableResult = toClientStateWritten(computed);
-        const result = await this.dependencies.transactionWriter.writeMutationWithAfterCommitResult(
+        const completion = this.readComputeValidateCompletion(context, durableResult);
+        const result = await this.dependencies.transactionWriter.writeComputedMutationWithAfterCommitResult(
             context,
+            completion,
             async (transaction) => {
-                await this.writeComputedMutation(transaction, computed, lifecycleComputed);
-                return {
-                    durableResult,
-                    afterCommitResult: { committedSnapshots: [computed.snapshot] }
-                };
+                await this.writeClientMutation(transaction, computed, lifecycleComputed);
+                return { committedSnapshots: [computed.snapshot] };
             }
         );
         await this.observeCommittedSnapshots(result.afterCommitResult);
         return result.durableResult;
     }
 
-    private async writeComputedMutation(
+    private async writeClientMutation(
         transaction: PSqlSql,
         computed: Exclude<ClientMutationComputed, { outcome: 'idempotency-conflict'; }>,
         lifecycleComputed: WsSessionGenerationLifecycleComputed | undefined
@@ -217,11 +221,17 @@ export class ClientStateInboxHandler {
         context: AppInboxMessageContext<InactiveAuthorisedWsSessionResult>,
         connection: ClientAuthorisedWsSessionConnectAppInboxPayload
     ): Promise<InactiveAuthorisedWsSessionResult> {
-        return await this.dependencies.transactionWriter.writeMutation(context, async () => ({
+        const durableResult = {
             status: 'inactive',
             sessionId: connection.authSession.sessionId,
             generationId: connection.generationId
-        }));
+        } as const;
+        const completion = this.readComputeValidateCompletion(context, durableResult);
+        return await this.dependencies.transactionWriter.writeComputedMutation(
+            context,
+            completion,
+            async () => {}
+        );
     }
 
     private async readComputeValidateAuthorisedWsDisconnectLifecycle(
@@ -254,14 +264,36 @@ export class ClientStateInboxHandler {
         lifecycleComputed
     }: WriteMissingSessionDisconnectInput): Promise<InactiveAuthorisedWsSessionResult> {
         validateClientMutationAuthorityPolicy(command, read);
-        return await this.dependencies.transactionWriter.writeMutation(context, async (transaction) => {
-            await this.dependencies.sessionGenerationLifecycle.write(transaction, lifecycleComputed);
-            return {
-                status: 'inactive',
-                sessionId: disconnect.connection.authSession.sessionId,
-                generationId: disconnect.connection.generationId
-            };
-        });
+        const durableResult = {
+            status: 'inactive',
+            sessionId: disconnect.connection.authSession.sessionId,
+            generationId: disconnect.connection.generationId
+        } as const;
+        const completion = this.readComputeValidateCompletion(context, durableResult);
+        return await this.dependencies.transactionWriter.writeComputedMutation(
+            context,
+            completion,
+            async (transaction) => {
+                await this.dependencies.sessionGenerationLifecycle.write(transaction, lifecycleComputed);
+            }
+        );
+    }
+
+    private readComputeValidateCompletion<Result>(
+        context: AppInboxMessageContext<Result>,
+        durableResult: Result
+    ): AppInboxCompletionComputed<Result> {
+        const input = {
+            ...this.dependencies.transactionWriter.readCompletionFacts(context),
+            durableResult,
+            status: EntityStatus.COMPLETED
+        } as const;
+        const computed = computeAppInboxCompletion(input);
+        const issues = validateAppInboxCompletion(input, computed);
+        if (issues.length > 0) {
+            throw issues[0].cause;
+        }
+        return computed;
     }
 
     private async toAuthorisedWsConnectCommand(

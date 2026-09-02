@@ -29,7 +29,7 @@ import { createClientMutationTransactionBoundaryFixture } from './create-client-
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
 
 describe('client mutation transaction and outbox', () => {
-    it('persists durable JSON bytes before observing the exact committed snapshot', async () => {
+    it('serializes durable completion before the transaction and observes after commit', async () => {
         const harness = await createClientMutationTransactionBoundaryFixture();
 
         const result = await harness.handler.processCommand(
@@ -62,7 +62,7 @@ describe('client mutation transaction and outbox', () => {
             'status',
             'result'
         ]);
-        expect(harness.actions).toEqual(['write', 'commit', 'observe']);
+        expect(harness.actions).toEqual(['completion', 'write', 'commit', 'observe']);
         expect(harness.observedSnapshots).toHaveLength(1);
         expect(harness.observedSnapshots[0]).toBe(harness.computedSnapshots[0]);
         expect(result.result?.snapshot).toBe(harness.computedSnapshots[0]);
@@ -88,7 +88,7 @@ describe('client mutation transaction and outbox', () => {
             )
         ).rejects.toThrow('injected transaction failure');
 
-        expect(harness.actions).toEqual([]);
+        expect(harness.actions).toEqual(['completion']);
         expect(harness.observedSnapshots).toEqual([]);
         expect(await harness.results.findByKey(harness.context.entry.key)).toBeUndefined();
     });
