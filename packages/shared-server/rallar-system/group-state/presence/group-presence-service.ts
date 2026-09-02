@@ -1,8 +1,13 @@
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion
+} from '../../app-inbox/handler/app-inbox-completion-computation.ts';
+import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     validateWsSessionConnectGuard,
@@ -20,10 +25,6 @@ import type {
 } from '../group-state-service-contracts.ts';
 import type { GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
 import type { GroupPresenceSessionCleanupAppInboxPayload } from './group-presence-session-cleanup-app-inbox-payload.ts';
-
-type WriteMutation = <Result>(
-    write: (transaction: PSqlSql) => Promise<Result>
-) => Promise<Result>;
 
 export interface InactiveGroupPresenceResult {
     readonly status: 'inactive';
@@ -123,8 +124,9 @@ export async function processGroupSessionCleanup(
     input: Readonly<{
         facts: GroupPresenceSessionCleanupAppInboxPayload;
         attemptCount: number;
+        context: AppInboxMessageContext<GroupSessionCleanupResult>;
         groupStateService: GroupStateService;
-        writeMutation: WriteMutation;
+        transactionWriter: Pick<AppInboxMutationTransactionWriter, 'readCompletionFacts' | 'writeComputedMutation'>;
         wakeQueue?: () => void;
     }>
 ): Promise<GroupSessionCleanupResult> {
@@ -153,20 +155,34 @@ export async function processGroupSessionCleanup(
             return computed;
         })
     );
-    const result = await input.writeMutation(async (transaction) => {
-        await lifecycle.write(transaction, lifecycleComputed);
-        for (const computed of mutations) {
-            if (computed.outcome === 'write') {
-                await input.groupStateService.write(transaction, computed);
+    const durableResult = {
+        status: 'inactive',
+        sessionId: input.facts.connection.authSession.sessionId,
+        generationId: input.facts.connection.generationId,
+        affectedGroups: mutations.length
+    } as const;
+    const completionInput = {
+        ...input.transactionWriter.readCompletionFacts(input.context),
+        durableResult,
+        status: EntityStatus.COMPLETED
+    } as const;
+    const completion = computeAppInboxCompletion(completionInput);
+    const completionIssues = validateAppInboxCompletion(completionInput, completion);
+    if (completionIssues[0] !== undefined) {
+        throw completionIssues[0].cause;
+    }
+    const result = await input.transactionWriter.writeComputedMutation(
+        input.context,
+        completion,
+        async (transaction) => {
+            await lifecycle.write(transaction, lifecycleComputed);
+            for (const computed of mutations) {
+                if (computed.outcome === 'write') {
+                    await input.groupStateService.write(transaction, computed);
+                }
             }
         }
-        return {
-            status: 'inactive',
-            sessionId: input.facts.connection.authSession.sessionId,
-            generationId: input.facts.connection.generationId,
-            affectedGroups: mutations.length
-        } as const;
-    });
+    );
     input.wakeQueue?.();
     return result;
 }

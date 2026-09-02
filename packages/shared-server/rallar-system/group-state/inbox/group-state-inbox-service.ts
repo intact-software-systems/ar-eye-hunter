@@ -243,8 +243,9 @@ export class GroupStateInboxService {
                 await processGroupSessionCleanup({
                     facts: payload,
                     attemptCount: context.entry.dequeueAudit.attempts,
+                    context,
                     groupStateService: this.groupStateService,
-                    writeMutation: async (write) => await this.transactionWriter.writeMutation(context, write),
+                    transactionWriter: this.transactionWriter,
                     wakeQueue: this.wakeQueue
                 })
         });
