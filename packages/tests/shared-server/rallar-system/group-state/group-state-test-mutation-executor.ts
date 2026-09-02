@@ -23,7 +23,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { decodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { GroupStateEventStore } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 import type { RuntimeStateGuardedBatchTransaction } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
+import { validateComputedRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
 import { RuntimeStateRetryExhaustedError, RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type {
     RuntimeStateGuardedBatchTransactionalRepositoryLike,
@@ -229,9 +229,9 @@ export class GroupStateTestMutationExecutor {
 
 async function writeGuardedBatch(transaction: RuntimeStateGuardedBatchTransaction, computed: GroupMutationComputedWrite): Promise<void> {
     const materialized = computed.persistence.guardedBatch;
-    const result = validateRuntimeStateGuardedBatchResult(
+    const result = validateComputedRuntimeStateGuardedBatchResult(
         materialized,
-        await transaction.executeGuardedBatch(materialized)
+        await transaction.writeGuardedBatch(materialized)
     );
     if (result.guard.status === 'conflict' || result.effects.some((effect) => effect.status !== 'applied')) {
         throw new RuntimeStateWriteConflictError();

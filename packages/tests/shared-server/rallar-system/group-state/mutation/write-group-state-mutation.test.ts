@@ -5,7 +5,7 @@ import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-st
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
-import type { RuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { RuntimeStateGuardedBatchWrite } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -17,7 +17,7 @@ const BATCH_SELECTED = new Error('guarded group batch selected');
 class RejectingGuardedBatchRepository extends FakeRuntimeStateRepository {
     batchCalls = 0;
 
-    executeGuardedBatch(_batch: RuntimeStateGuardedBatch): Promise<never> {
+    writeGuardedBatch(_batch: RuntimeStateGuardedBatchWrite): Promise<never> {
         this.batchCalls += 1;
         return Promise.reject(BATCH_SELECTED);
     }
