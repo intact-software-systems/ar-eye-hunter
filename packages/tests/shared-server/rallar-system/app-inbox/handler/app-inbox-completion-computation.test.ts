@@ -49,6 +49,37 @@ describe('AppInbox successful completion computation', () => {
         expect(harness.database.beginCalls).toBe(0);
     });
 
+    it('rejects completion projections that do not match the durable result', () => {
+        const harness = createAtomicHarness();
+        const writer = new AppInboxTransactionWriter({ database: harness.database.sql }, { serviceId: 'server-1' });
+        const input = {
+            ...writer.readCompletionFacts(harness.context),
+            status: EntityStatus.COMPLETED,
+            durableResult: { status: 'accepted', revision: 2 }
+        } as const;
+        const computed = computeAppInboxCompletion(input);
+
+        const issues = validateAppInboxCompletion(input, {
+            ...computed,
+            encodedResult: { status: 'substituted' },
+            resultReplacement: {
+                ...computed.resultReplacement,
+                resource: JSON.stringify({ status: 'substituted' })
+            },
+            finalizedEntry: {
+                ...computed.finalizedEntry,
+                resource: 'substituted request'
+            }
+        });
+
+        expect(issues.map((issue) => issue.path)).toEqual([
+            'computed.encodedResult',
+            'computed.resultReplacement',
+            'computed.finalizedEntry'
+        ]);
+        expect(harness.database.beginCalls).toBe(0);
+    });
+
     it('validates reservation identity by value rather than object identity', () => {
         const harness = createAtomicHarness();
         const writer = new AppInboxTransactionWriter({ database: harness.database.sql }, { serviceId: 'server-1' });
