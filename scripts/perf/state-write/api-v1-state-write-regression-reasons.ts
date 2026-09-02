@@ -64,6 +64,28 @@ export const PLANNED_LAYOUT_PROMOTION_REASONS = (['uncontended', 'shared', 'hot'
 
 export const PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE = 'planned-layout-promotion' as const;
 
+const MEMBER_POLICY_ROW_WIDTH_REASON = 'Slice 9b widens every persisted group row by one required field ' +
+    '(memberPolicy: the member tier\'s maxConcurrentEdgeSetups and transports), ' +
+    'growing serialized bytes and row work on all group writes; the bench dials ' +
+    'no RTC peers and its mix issues no lifecycle operations, so the residue is ' +
+    'row width plus the documented contention drift.';
+
+export const MEMBER_POLICY_ROW_WIDTH_REASONS = (['uncontended', 'shared', 'hot'] as const).flatMap(
+    (workload) =>
+        [
+            'sql.statements',
+            'sql.rowsRead',
+            'sql.serializedResultBytes',
+            'postgres.transactionDurationMs'
+        ].map((metric) => ({
+            workload,
+            metric,
+            reason: MEMBER_POLICY_ROW_WIDTH_REASON
+        }))
+);
+
+export const MEMBER_POLICY_ROW_WIDTH_REGRESSION_REASON_PROFILE = 'member-policy-row-width' as const;
+
 export function selectStateWriteRegressionReasons(
     profile: string | undefined,
     precommittedReasons: readonly StateWriteBenchmarkRegressionReason[]
@@ -82,6 +104,9 @@ export function selectStateWriteRegressionReasons(
     }
     if (profile === PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE) {
         return PLANNED_LAYOUT_PROMOTION_REASONS;
+    }
+    if (profile === MEMBER_POLICY_ROW_WIDTH_REGRESSION_REASON_PROFILE) {
+        return MEMBER_POLICY_ROW_WIDTH_REASONS;
     }
     throw new Error('State-write regression reason selection is inconsistent');
 }
