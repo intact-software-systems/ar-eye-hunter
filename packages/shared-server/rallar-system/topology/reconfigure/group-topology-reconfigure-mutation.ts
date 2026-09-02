@@ -10,7 +10,12 @@ import type { GroupStateRepository } from '../../group-state/persistence/group-s
 import { canUpdateGroupSnapshot } from '../../group-state/policy/group-governance-policy.ts';
 import { canMutateActiveGroup } from '../../group-state/policy/group-lifecycle-policy.ts';
 import { GroupPolicyDeniedError } from '../../group-state/policy/group-policy-result.ts';
+import {
+    computeRtcTopologyOutboxInsert,
+    type ComputedRtcTopologyOutbox
+} from '../mutation/rtc-topology-outbox-entry.ts';
 import type { RtcTopologyOutboxWriter } from '../mutation/rtc-topology-outbox-writer.ts';
+import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import type {
     GroupTopologyPlanningAuthority,
     ReadGroupTopologyPlanningAuthorityInput
@@ -66,8 +71,7 @@ export class GroupTopologyReconfigureMutation {
         read: GroupTopologyReconfigureRead
     ): GroupTopologyReconfigureComputed {
         const snapshot = read.authority.group;
-        return {
-            authorityGuard: read.authorityGuard,
+        const outbox: ComputedRtcTopologyOutbox = {
             commandId: command.commandId,
             resourceId: `${command.commandId}:rtc-topology-recompute:explicit`,
             aggregateRef: command.groupRef,
@@ -80,6 +84,11 @@ export class GroupTopologyReconfigureMutation {
             senderId: command.actorPrincipalId,
             requestOptions: toCanonicalGroupTopologyConfigPatch(command.requestOptions),
             publish: command.publish
+        };
+        return {
+            ...outbox,
+            authorityGuard: read.authorityGuard,
+            outboxWrite: computeRtcTopologyOutboxInsert(outbox)
         };
     }
 
@@ -96,7 +105,7 @@ export class GroupTopologyReconfigureMutation {
             throw new GroupPolicyDeniedError(lifecycle);
         }
         this.validateActor(command, read);
-        if (!isValidReconfigureComputation(command, read, computed)) {
+        if (!rtcTopologySemanticEqual(computed, this.compute(command, read))) {
             throw new TypeError('Topology reconfigure computation is invalid');
         }
     }
@@ -113,7 +122,11 @@ export class GroupTopologyReconfigureMutation {
         ) {
             throw new RuntimeStateWriteConflictError();
         }
-        await this.dependencies.outboxWriter.write(transaction, computed);
+        await this.dependencies.outboxWriter.write(transaction, computed.outboxWrite);
+    }
+
+    recordCommittedWrite(): void {
+        this.dependencies.outboxWriter.recordCommittedWrites(1);
     }
 
     private validateActor(
@@ -132,19 +145,4 @@ export class GroupTopologyReconfigureMutation {
             throw new GroupPolicyDeniedError(policy);
         }
     }
-}
-
-function isValidReconfigureComputation(
-    command: GroupTopologyReconfigureCommand,
-    read: GroupTopologyReconfigureRead,
-    computed: GroupTopologyReconfigureComputed
-): boolean {
-    return (
-        computed.commandId === command.commandId &&
-        computed.groupSnapshot === read.authority.group &&
-        computed.authorityGuard === read.authorityGuard &&
-        JSON.stringify(computed.requestOptions) ===
-            JSON.stringify(toCanonicalGroupTopologyConfigPatch(command.requestOptions)) &&
-        computed.publish === command.publish
-    );
 }

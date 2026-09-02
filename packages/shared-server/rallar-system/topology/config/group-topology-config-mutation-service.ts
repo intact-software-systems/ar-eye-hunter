@@ -119,6 +119,10 @@ export class GroupTopologyConfigMutationService {
             outboxWriter: this.dependencies.outboxWriter
         });
     }
+
+    recordCommittedWrite(): void {
+        this.dependencies.outboxWriter.recordCommittedWrites(1);
+    }
 }
 
 function toTopologyConfigMutationFacts(

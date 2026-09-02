@@ -6,6 +6,7 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 import {
+    computeRtcTopologyOutboxInsert,
     toRtcTopologyEntryResourceId,
     type ComputedRtcTopologyOutbox
 } from '../../mutation/rtc-topology-outbox-entry.ts';
@@ -89,7 +90,7 @@ export function createTopologyConfigWriteResult(
             topologyWrite.command,
             receipt
         ),
-        outbox,
+        outboxWrite: computeRtcTopologyOutboxInsert(outbox),
         result: resultFromTopologyConfigGuard(topologyWrite.guard)
     };
 }

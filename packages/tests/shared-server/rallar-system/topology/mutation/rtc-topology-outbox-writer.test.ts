@@ -1,75 +1,54 @@
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeRtcTopologyEntry } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createComputedRtcTopologyOutbox } from '../rtc-topology-test-fixtures.ts';
 
-const repository = vi.hoisted(() => ({
-    writeIfAbsentOrMatch: vi.fn<(entry: ResourceEntry) => Promise<void>>()
-}));
-
-vi.mock(
-    '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts',
-    () => ({
-        PSqlResourceInboxEntryRepository: class {
-            writeIfAbsentOrMatch = repository.writeIfAbsentOrMatch;
-        }
-    })
-);
-
 describe('RTC topology outbox writer', () => {
-    beforeEach(() => {
-        repository.writeIfAbsentOrMatch.mockReset();
-        repository.writeIfAbsentOrMatch.mockResolvedValue();
-    });
-
-    it('keeps write observers isolated to their constructed owner', async () => {
+    it('records committed writes only when the transaction owner reports success', async () => {
         const firstObserver = vi.fn();
         const secondObserver = vi.fn();
         const firstWriter = new RtcTopologyOutboxWriter({ recordWrite: firstObserver });
         const secondWriter = new RtcTopologyOutboxWriter({ recordWrite: secondObserver });
-        const transaction = createUnusedTransaction();
+        const transaction = createInsertTransaction();
+        const computed = computeAppOutboxInsert(
+            computeRtcTopologyEntry(createComputedRtcTopologyOutbox())
+        );
 
-        await firstWriter.write(transaction, createComputedRtcTopologyOutbox());
-        await secondWriter.write(transaction, createComputedRtcTopologyOutbox());
+        await firstWriter.write(transaction, computed);
+        expect(firstObserver).not.toHaveBeenCalled();
+        firstWriter.recordCommittedWrites(1);
+        secondWriter.recordCommittedWrites(2);
 
         expect(firstObserver).toHaveBeenCalledTimes(1);
-        expect(secondObserver).toHaveBeenCalledTimes(1);
-        expect(repository.writeIfAbsentOrMatch).toHaveBeenCalledTimes(2);
+        expect(secondObserver).toHaveBeenCalledTimes(2);
     });
 
-    it('returns the durable entry when its observer fails', async () => {
+    it('keeps observer failures outside durable write behavior', () => {
         const writer = new RtcTopologyOutboxWriter({
             recordWrite: () => {
                 throw new Error('observer failed');
             }
         });
-        const computed = createComputedRtcTopologyOutbox();
 
-        const entry = await writer.write(createUnusedTransaction(), computed);
-
-        expect(repository.writeIfAbsentOrMatch).toHaveBeenCalledWith(entry);
-        expect(entry).toEqual(computeRtcTopologyEntry(computed));
+        expect(() => writer.recordCommittedWrites(1)).not.toThrow();
     });
 });
 
-function createUnusedTransaction(): PSqlSql {
+function createInsertTransaction(): PSqlSql {
     function sql<Result>(
         _strings: TemplateStringsArray,
         ..._values: readonly PSqlParameter[]
     ): Promise<Result>;
     function sql(_values: readonly PSqlParameter[]): object;
-    function sql(
-        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[]
-    ): Promise<never> | object {
+    function sql(stringsOrValues: TemplateStringsArray | readonly PSqlParameter[]): Promise<unknown> | object {
         return Array.isArray(stringsOrValues) && !Object.hasOwn(stringsOrValues, 'raw')
             ? {}
-            : Promise.reject(new Error('The mocked repository must not execute SQL'));
+            : Promise.resolve([{ ri_row_id: 1n }]);
     }
     return Object.assign(sql, {
-        begin: async <T>(_write: (transaction: PSqlSql) => Promise<T>): Promise<T> =>
-            await Promise.reject(new Error('The mocked repository must not open a transaction'))
+        begin: async <T>(_write: (transaction: PSqlSql) => Promise<T>): Promise<T> => await Promise.reject(new Error('The writer must not open a transaction'))
     });
 }

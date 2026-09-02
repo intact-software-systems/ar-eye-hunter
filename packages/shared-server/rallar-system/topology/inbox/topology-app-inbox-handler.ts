@@ -36,8 +36,14 @@ export interface TopologyAppInboxHandlerDependencies {
 }
 
 export interface TopologyAppInboxMutationOwners {
-    readonly configMutationService: Pick<GroupTopologyConfigMutationService, 'read' | 'compute' | 'validate' | 'write'>;
-    readonly reconfigureMutation: Pick<GroupTopologyReconfigureMutation, 'read' | 'compute' | 'validate' | 'write'>;
+    readonly configMutationService: Pick<
+        GroupTopologyConfigMutationService,
+        'read' | 'compute' | 'validate' | 'write' | 'recordCommittedWrite'
+    >;
+    readonly reconfigureMutation: Pick<
+        GroupTopologyReconfigureMutation,
+        'read' | 'compute' | 'validate' | 'write' | 'recordCommittedWrite'
+    >;
 }
 
 export type TopologyConfigInboxResult = ReturnType<typeof toTopologyConfigMutationResult>;
@@ -197,6 +203,7 @@ export class TopologyAppInboxHandler {
             }
         );
         if (computed.outcome === 'write') {
+            owners.configMutationService.recordCommittedWrite();
             this.dependencies.wakeQueue?.();
         }
         return result;
@@ -235,6 +242,7 @@ export class TopologyAppInboxHandler {
                 } as const;
             }
         );
+        mutation.recordCommittedWrite();
         this.dependencies.wakeQueue?.();
         return result;
     }

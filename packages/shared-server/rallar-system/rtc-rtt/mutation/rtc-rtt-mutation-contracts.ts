@@ -3,6 +3,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
+import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 
 import type { RtcRttEndpointAdmission, RtcRttMutationReceipt } from '../persistence/rtc-rtt-persistence-contracts.ts';
 import type { RtcRttAcceptanceReason } from '../policy/rtc-rtt-measurement-policy.ts';
@@ -89,4 +90,5 @@ export type RtcRttMutationComputed =
         }>;
         receipt: RtcRttMutationReceipt;
         senderId: string;
+        outboxWrites: readonly AppOutboxInsert[];
     }>;

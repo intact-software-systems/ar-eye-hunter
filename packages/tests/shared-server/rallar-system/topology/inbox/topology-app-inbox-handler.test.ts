@@ -20,7 +20,10 @@ import type { GroupStateAuthorityGuard } from '@shared-server/rallar-system/grou
 
 import { AppInboxType, type AppInboxEnqueueInput, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
-import type { ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import {
+    computeRtcTopologyOutboxInsert,
+    type ComputedRtcTopologyOutbox
+} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 
@@ -103,7 +106,8 @@ describe('TopologyAppInboxHandler', () => {
                 write: vi.fn(async () => {
                     phases.push('write');
                     return computed.receipt;
-                })
+                }),
+                recordCommittedWrite: vi.fn(() => phases.push('observe'))
             },
             reconfigureMutation: unusedReconfigureMutation()
         } satisfies TopologyAppInboxMutationOwners;
@@ -130,6 +134,7 @@ describe('TopologyAppInboxHandler', () => {
             'transaction',
             'write',
             'commit',
+            'observe',
             'wake'
         ]);
     });
@@ -156,7 +161,8 @@ describe('TopologyAppInboxHandler', () => {
                         }) as const
                 ),
                 validate: vi.fn(),
-                write: vi.fn(async () => await Promise.reject(new Error('Unexpected config write')))
+                write: vi.fn(async () => await Promise.reject(new Error('Unexpected config write'))),
+                recordCommittedWrite: vi.fn()
             },
             reconfigureMutation: unusedReconfigureMutation()
         } satisfies TopologyAppInboxMutationOwners;
@@ -192,7 +198,8 @@ describe('TopologyAppInboxHandler', () => {
                 }),
                 write: vi.fn(async () => {
                     phases.push('write');
-                })
+                }),
+                recordCommittedWrite: vi.fn(() => phases.push('observe'))
             }
         } satisfies TopologyAppInboxMutationOwners;
         const wakeQueue = vi.fn(() => phases.push('wake'));
@@ -222,6 +229,7 @@ describe('TopologyAppInboxHandler', () => {
             'transaction',
             'write',
             'commit',
+            'observe',
             'wake'
         ]);
     });
@@ -379,7 +387,9 @@ function configWriteComputed(): Extract<GroupTopologyConfigMutationComputed, { o
         },
         receipt,
         idempotency: null,
-        outbox: topologyOutbox('handler-request:config-outbox'),
+        outboxWrite: computeRtcTopologyOutboxInsert(
+            topologyOutbox('handler-request:config-outbox')
+        ),
         result: { kind: 'config', config }
     };
 }
@@ -406,9 +416,11 @@ function reconfigureRead(): GroupTopologyReconfigureRead {
 }
 
 function reconfigureComputed(): GroupTopologyReconfigureComputed {
+    const outbox = topologyOutbox('reconfigure-outbox');
     return {
-        ...topologyOutbox('reconfigure-outbox'),
-        authorityGuard: groupAuthorityGuard()
+        ...outbox,
+        authorityGuard: groupAuthorityGuard(),
+        outboxWrite: computeRtcTopologyOutboxInsert(outbox)
     };
 }
 
@@ -421,7 +433,8 @@ function unusedConfigMutationService(): TopologyAppInboxMutationOwners['configMu
         validate: () => {
             throw new Error('Unexpected config validation');
         },
-        write: async () => await Promise.reject(new Error('Unexpected config write'))
+        write: async () => await Promise.reject(new Error('Unexpected config write')),
+        recordCommittedWrite: () => undefined
     };
 }
 
@@ -434,7 +447,8 @@ function unusedReconfigureMutation(): TopologyAppInboxMutationOwners['reconfigur
         validate: () => {
             throw new Error('Unexpected reconfigure validation');
         },
-        write: async () => await Promise.reject(new Error('Unexpected reconfigure write'))
+        write: async () => await Promise.reject(new Error('Unexpected reconfigure write')),
+        recordCommittedWrite: () => undefined
     };
 }
 

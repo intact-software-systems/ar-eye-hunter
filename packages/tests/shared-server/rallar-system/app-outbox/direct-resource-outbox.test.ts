@@ -9,6 +9,7 @@ import {
     createPSqlResourceInboxRepository,
     type PSqlResourceInboxRepository
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
 import {
     computeClientStateSyncEntries,
@@ -17,7 +18,11 @@ import {
     type ComputedGroupStateSync
 } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 import { writeClientStateSync, writeGroupStateSync } from '@shared-server/rallar-system/state-sync/state-sync-transaction-writer.ts';
-import { computeRtcTopologyEntry, type ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import {
+    computeRtcTopologyEntry,
+    validateComputedRtcTopologyOutbox,
+    type ComputedRtcTopologyOutbox
+} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
@@ -427,8 +432,9 @@ describe('direct resource outbox writes', () => {
         });
         expect(message.id.msgId).toContain('group-command-1');
         const database = createResourceInboxDatabase();
+        const outboxWrite = computeAppOutboxInsert(first);
         await runInPSqlTransaction(database.sql, async (transaction) => {
-            await topologyOutboxWriter.write(transaction, computed);
+            await topologyOutboxWriter.write(transaction, outboxWrite);
         });
         expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(first.resource);
         expect(database.nestedBeginCalls).toBe(0);
@@ -449,15 +455,9 @@ describe('direct resource outbox writes', () => {
             'Computed RTC topology outbox facts are invalid'
         );
         const database = createResourceInboxDatabase();
-        await expect(
-            runInPSqlTransaction(database.sql, async (transaction) => {
-                await validateAndWriteUntrustedRtcTopologyOutbox(
-                    transaction,
-                    topologyOutboxWriter,
-                    computed
-                );
-            })
-        ).rejects.toThrow('Computed RTC topology outbox facts are invalid');
+        expect(() => validateUntrustedRtcTopologyOutbox(computed)).toThrow(
+            'Computed RTC topology outbox facts are invalid'
+        );
         expect(database.rows.size).toBe(0);
     });
 
@@ -492,24 +492,24 @@ describe('direct resource outbox writes', () => {
         };
         const database = createResourceInboxDatabase();
 
-        await expect(
-            runInPSqlTransaction(database.sql, async (transaction) => {
-                await topologyOutboxWriter.write(transaction, forged);
-            })
-        ).rejects.toThrow('Computed RTC topology outbox facts are invalid');
+        expect(() => validateComputedRtcTopologyOutbox(forged)).toThrow(
+            'Computed RTC topology outbox facts are invalid'
+        );
         expect(database.rows.size).toBe(0);
     });
 
-    it('computes and revalidates RTC topology work inside its public write', async () => {
+    it('executes RTC topology work prepared before its public write', async () => {
         const computed = createComputedRtcTopologyOutbox();
         const database = createResourceInboxDatabase();
+        validateComputedRtcTopologyOutbox(computed);
+        const entry = computeRtcTopologyEntry(computed);
+        const outboxWrite = computeAppOutboxInsert(entry);
 
-        const entry = await runInPSqlTransaction(
+        await runInPSqlTransaction(
             database.sql,
-            async (transaction) => await topologyOutboxWriter.write(transaction, computed)
+            async (transaction) => await topologyOutboxWriter.write(transaction, outboxWrite)
         );
 
-        expect(entry).toEqual(computeRtcTopologyEntry(computed));
         expect(database.rows.get(toRowKey(entry))?.ri_resource).toBe(entry.resource);
         expect(database.nestedBeginCalls).toBe(0);
     });
@@ -1002,15 +1002,7 @@ async function validateAndWriteUntrustedGroupStateSync(
 }
 
 function validateUntrustedRtcTopologyOutbox(computed: object): void {
-    Reflect.apply(computeRtcTopologyEntry, undefined, [computed]);
-}
-
-async function validateAndWriteUntrustedRtcTopologyOutbox(
-    transaction: PSqlSql,
-    writer: RtcTopologyOutboxWriter,
-    computed: object
-): Promise<void> {
-    await Reflect.apply(writer.write, writer, [transaction, computed]);
+    Reflect.apply(validateComputedRtcTopologyOutbox, undefined, [computed]);
 }
 
 interface TestResourceInboxRow {

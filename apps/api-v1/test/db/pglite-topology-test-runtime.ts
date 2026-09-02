@@ -22,6 +22,7 @@ import {
 import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import type { GroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
+import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import {
     createRtcTopologyOutboxPublisher
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
@@ -244,22 +245,27 @@ async function persistAndReserveTopologyWork(
     commandId: string
 ): Promise<ReservedPGliteTopologyWork> {
     const { sql, groupRef, groupSnapshot, nowEpochMs, resourceInbox } = setup;
-    const workEntry = await sql.begin((transaction) =>
-        new RtcTopologyOutboxWriter({ recordWrite: () => undefined }).write(transaction, {
-            commandId,
-            resourceId: `${commandId}:rtc-topology-recompute:explicit`,
-            aggregateRef: groupRef,
-            acceptedCausalRevision: groupSnapshot.causalRevision,
-            groupSnapshot,
-            effectKind: 'rtc-topology-recompute',
-            payloadKind: 'group-revision',
-            createdAtEpochMs: nowEpochMs,
-            expireAtEpochMs: FUTURE_MS,
-            senderId: 'owner',
-            requestOptions: toCanonicalGroupTopologyConfigPatch({}),
-            publish: true
-        })
-    );
+    const outboxWrite = computeRtcTopologyOutboxInsert({
+        commandId,
+        resourceId: `${commandId}:rtc-topology-recompute:explicit`,
+        aggregateRef: groupRef,
+        acceptedCausalRevision: groupSnapshot.causalRevision,
+        groupSnapshot,
+        effectKind: 'rtc-topology-recompute',
+        payloadKind: 'group-revision',
+        createdAtEpochMs: nowEpochMs,
+        expireAtEpochMs: FUTURE_MS,
+        senderId: 'owner',
+        requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+        publish: true
+    });
+    await sql.begin(async (transaction) => {
+        await new RtcTopologyOutboxWriter({ recordWrite: () => undefined }).write(
+            transaction,
+            outboxWrite
+        );
+    });
+    const workEntry = outboxWrite.entry;
     await sql`
     update resource_inbox
     set ri_status = 'RESERVED', ri_attempts = 1,

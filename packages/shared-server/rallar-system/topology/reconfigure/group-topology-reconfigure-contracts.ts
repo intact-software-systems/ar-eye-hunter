@@ -1,6 +1,7 @@
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
+import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type * as persistence from '../../group-state/persistence/group-state-persistence-contracts.ts';
 import type { ComputedRtcTopologyOutbox } from '../mutation/rtc-topology-outbox-entry.ts';
 import type { GroupTopologyPlanningAuthority } from '../planning/group-topology-planning-authority.ts';
@@ -21,4 +22,7 @@ export interface GroupTopologyReconfigureRead {
 
 export type GroupTopologyReconfigureComputed =
     & ComputedRtcTopologyOutbox
-    & Readonly<{ authorityGuard: persistence.GroupStateAuthorityGuard; }>;
+    & Readonly<{
+        authorityGuard: persistence.GroupStateAuthorityGuard;
+        outboxWrite: AppOutboxInsert;
+    }>;

@@ -33,7 +33,7 @@ export async function writeTopologyConfigMutation(
         requireAcceptedTopologyConfigWrite(await repository.insertMutationRecord(computed.idempotency));
     }
     if (computed.outcome === 'write') {
-        await input.outboxWriter.write(transaction, computed.outbox);
+        await input.outboxWriter.write(transaction, computed.outboxWrite);
     }
     return computed.receipt;
 }

@@ -28,7 +28,6 @@ import {
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
-import { computeRtcTopologyEntry } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
@@ -353,11 +352,11 @@ describe('topology AppInbox transaction and idempotency', () => {
         if (computed.outcome !== 'write') {
             throw new Error('Expected a topology config write');
         }
-        const expectedEntry = computeRtcTopologyEntry(computed.outbox);
-        const collisionEntry = computeRtcTopologyEntry({
-            ...computed.outbox,
-            publish: !computed.outbox.publish
-        });
+        const expectedEntry = computed.outboxWrite.entry;
+        const collisionEntry = {
+            ...expectedEntry,
+            resource: `${expectedEntry.resource} `
+        };
         expect(collisionEntry.key).toEqual(expectedEntry.key);
         expect(collisionEntry.resource).not.toBe(expectedEntry.resource);
         await harness.database.begin(async (transaction) => {

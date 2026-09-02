@@ -91,6 +91,7 @@ export class RtcRttAppInboxHandler {
         });
         if (computed.outcome === 'write') {
             rtcRttDependencies.observeCommitted?.(computed.measurementGuard.value);
+            rtcRttDependencies.outboxWriter.recordCommittedWrites(computed.outboxWrites.length);
             this.dependencies.wakeQueue?.();
             try {
                 rtcRttDependencies.formationMetrics?.({

@@ -7,8 +7,8 @@ import type {
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
+import type { AppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import type * as persistence from '../../../group-state/persistence/group-state-persistence-contracts.ts';
-import type { ComputedRtcTopologyOutbox } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { GroupTopologyServerOptions } from '../group-topology-config.ts';
 
 export interface GroupTopologyConfigMutationCommandInput {
@@ -117,7 +117,7 @@ export interface GroupTopologyConfigMutationWriteComputed {
     readonly generationGuard: TopologyConfigGenerationGuard;
     readonly receipt: GroupTopologyConfigMutationReceipt;
     readonly idempotency: GroupTopologyConfigMutationRecord | null;
-    readonly outbox: ComputedRtcTopologyOutbox;
+    readonly outboxWrite: AppOutboxInsert;
     readonly result: GroupTopologyConfigMutationAcceptedResult;
 }
 

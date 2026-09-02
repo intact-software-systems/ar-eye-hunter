@@ -1,4 +1,3 @@
-import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -41,24 +40,8 @@ export async function writeRtcRttMutation(input: WriteRtcRttMutationInput): Prom
     requireAcceptedRttWrite(
         await repository.insertMutationReceipt(computed.receipt, mutationExpireAtTimestamp)
     );
-    for (let index = 0; index < computed.affectedGroups.length; index += 1) {
-        const group = computed.affectedGroups[index]!;
-        await input.outboxWriter.write(transaction, {
-            commandId: computed.receipt.receiptId,
-            resourceId: computed.receipt.outboxIds[index]!,
-            aggregateRef: group.group,
-            acceptedCausalRevision: group.causalRevision,
-            groupSnapshot: group,
-            effectKind: 'rtc-topology-recompute',
-            payloadKind: 'rtt-refresh',
-            rtt: computed.measurementGuard.value,
-            refinementObservationId: computed.receipt.receiptId,
-            createdAtEpochMs: computed.receipt.acceptedAtEpochMs,
-            expireAtEpochMs: mutationExpireAtTimestamp,
-            senderId: computed.senderId,
-            requestOptions: toCanonicalGroupTopologyConfigPatch({}),
-            publish: true
-        });
+    for (const outboxWrite of computed.outboxWrites) {
+        await input.outboxWriter.write(transaction, outboxWrite);
     }
     return 'accepted';
 }
