@@ -109,6 +109,31 @@ export interface TopologyConfigInvariantGenerationGuard {
     readonly value: GroupTopologyConfigInvariantGeneration;
 }
 
+export type TopologyConfigRuntimeWrite =
+    | Readonly<{
+        operation: 'insert';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedResultRevision: number;
+    }>
+    | Readonly<{
+        operation: 'update';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedRevision: number;
+        expectedResultRevision: number;
+    }>
+    | Readonly<{
+        operation: 'delete';
+        namespace: string;
+        key: string;
+        expectedRevision: number;
+    }>;
+
 export interface GroupTopologyConfigMutationWriteComputed {
     readonly outcome: 'write';
     readonly groupAuthorityGuard: persistence.GroupStateAuthorityGuard;
@@ -117,6 +142,7 @@ export interface GroupTopologyConfigMutationWriteComputed {
     readonly generationGuard: TopologyConfigGenerationGuard;
     readonly receipt: GroupTopologyConfigMutationReceipt;
     readonly idempotency: GroupTopologyConfigMutationRecord | null;
+    readonly runtimeWrites: readonly TopologyConfigRuntimeWrite[];
     readonly outboxWrite: AppOutboxInsert;
     readonly result: GroupTopologyConfigMutationAcceptedResult;
 }
@@ -128,6 +154,7 @@ export type GroupTopologyConfigMutationComputed =
         groupAuthorityGuard: persistence.GroupStateAuthorityGuard;
         receipt: GroupTopologyConfigMutationReceipt;
         idempotency: GroupTopologyConfigMutationRecord;
+        runtimeWrites: readonly TopologyConfigRuntimeWrite[];
         result: GroupTopologyConfigMutationAcceptedResult;
     }>
     | Readonly<{

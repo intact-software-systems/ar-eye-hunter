@@ -10,6 +10,7 @@ import {
     toRtcTopologyEntryResourceId,
     type ComputedRtcTopologyOutbox
 } from '../../mutation/rtc-topology-outbox-entry.ts';
+import { computeTopologyConfigRuntimeWrites } from './compute-topology-config-runtime-writes.ts';
 import type {
     GroupTopologyConfigGeneration,
     GroupTopologyConfigMutationAcceptedResult,
@@ -66,7 +67,7 @@ export function createTopologyConfigWriteResult(
     };
     const outbox = createTopologyConfigOutbox(topologyWrite, acceptedCausalRevision);
     const receipt = createAppliedTopologyConfigReceipt(topologyWrite, acceptedCausalRevision, outbox);
-    return {
+    const computed = {
         outcome: 'write',
         groupAuthorityGuard: topologyWrite.read.groupAuthorityGuard,
         guard: topologyWrite.guard,
@@ -92,6 +93,10 @@ export function createTopologyConfigWriteResult(
         ),
         outboxWrite: computeRtcTopologyOutboxInsert(outbox),
         result: resultFromTopologyConfigGuard(topologyWrite.guard)
+    } satisfies Omit<GroupTopologyConfigMutationWriteComputed, 'runtimeWrites'>;
+    return {
+        ...computed,
+        runtimeWrites: computeTopologyConfigRuntimeWrites(computed)
     };
 }
 

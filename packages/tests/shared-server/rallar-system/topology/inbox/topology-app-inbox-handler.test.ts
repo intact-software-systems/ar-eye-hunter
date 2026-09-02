@@ -37,6 +37,7 @@ import {
     type TopologyAppInboxResult
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 
+import { computeTopologyConfigRuntimeWrites } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-runtime-writes.ts';
 import type { GroupTopologyConfigMutationComputed } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 
@@ -368,7 +369,7 @@ function configRead(): GroupTopologyConfigMutationAttemptRead {
 function configWriteComputed(): Extract<GroupTopologyConfigMutationComputed, { outcome: 'write'; }> {
     const config = storedConfig();
     const receipt = configReceipt();
-    return {
+    const computed = {
         outcome: 'write',
         groupAuthorityGuard: groupAuthorityGuard(),
         guard: {
@@ -391,7 +392,8 @@ function configWriteComputed(): Extract<GroupTopologyConfigMutationComputed, { o
             topologyOutbox('handler-request:config-outbox')
         ),
         result: { kind: 'config', config }
-    };
+    } satisfies Omit<Extract<GroupTopologyConfigMutationComputed, { outcome: 'write'; }>, 'runtimeWrites'>;
+    return { ...computed, runtimeWrites: computeTopologyConfigRuntimeWrites(computed) };
 }
 
 function reconfigureRead(): GroupTopologyReconfigureRead {

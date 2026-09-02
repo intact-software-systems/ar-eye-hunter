@@ -1,16 +1,14 @@
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
-import { PSqlRuntimeStateRepository } from '../../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { advanceGroupStateAuthorityFence } from '../../../group-state/persistence/aggregate/group-aggregate-repository.ts';
+import { decodeRuntimeStateRevision } from '../../../../runtime-state/postgres/runtime-state-row-codec.ts';
 import type { RtcTopologyOutboxWriter } from '../../mutation/rtc-topology-outbox-writer.ts';
-import { GroupTopologyConfigRepository } from '../persistence/group-topology-config-repository.ts';
-import type * as mutationContracts from './group-topology-config-mutation-contracts.ts';
+import type {
+    GroupTopologyConfigMutationComputed,
+    TopologyConfigRuntimeWrite
+} from './group-topology-config-mutation-contracts.ts';
 
-type WritableTopologyConfigMutation = Extract<
-    mutationContracts.GroupTopologyConfigMutationComputed,
-    { outcome: 'write' | 'claim'; }
->;
+type WritableTopologyConfigMutation = Extract<GroupTopologyConfigMutationComputed, { outcome: 'write' | 'claim'; }>;
 
 export interface WriteTopologyConfigMutationInput {
     readonly transaction: PSqlSql;
@@ -21,74 +19,93 @@ export interface WriteTopologyConfigMutationInput {
 export async function writeTopologyConfigMutation(
     input: WriteTopologyConfigMutationInput
 ): Promise<GroupTopologyConfigMutationReceipt> {
-    const { transaction, computed } = input;
-    const runtime = new PSqlRuntimeStateRepository(transaction);
-    const repository = new GroupTopologyConfigRepository(runtime);
-    await writeTopologyConfigAuthorityFence(runtime, computed);
-
-    if (computed.outcome === 'write') {
-        await writeTopologyConfigState(repository, computed);
+    for (const write of input.computed.runtimeWrites) {
+        await executeTopologyConfigRuntimeWrite(input.transaction, write);
     }
-    if (computed.idempotency) {
-        requireAcceptedTopologyConfigWrite(await repository.insertMutationRecord(computed.idempotency));
+    if (input.computed.outcome === 'write') {
+        await input.outboxWriter.write(input.transaction, input.computed.outboxWrite);
     }
-    if (computed.outcome === 'write') {
-        await input.outboxWriter.write(transaction, computed.outboxWrite);
-    }
-    return computed.receipt;
+    return input.computed.receipt;
 }
 
-async function writeTopologyConfigAuthorityFence(
-    runtime: PSqlRuntimeStateRepository,
-    computed: WritableTopologyConfigMutation
+async function executeTopologyConfigRuntimeWrite(
+    transaction: PSqlSql,
+    write: TopologyConfigRuntimeWrite
 ): Promise<void> {
-    const authorityFence = await advanceGroupStateAuthorityFence(runtime, computed.groupAuthorityGuard);
-    if (
-        authorityFence.status === 'conflict' ||
-        authorityFence.revision !== computed.groupAuthorityGuard.entry.revision + 1
-    ) {
-        throw new RuntimeStateWriteConflictError();
+    switch (write.operation) {
+        case 'insert':
+            requireExpectedRevision(write, await insertRuntimeState(transaction, write));
+            return;
+        case 'update':
+            requireExpectedRevision(write, await updateRuntimeState(transaction, write));
+            return;
+        case 'delete':
+            if (!await deleteRuntimeState(transaction, write)) {
+                throw new RuntimeStateWriteConflictError();
+            }
     }
 }
 
-async function writeTopologyConfigState(
-    repository: GroupTopologyConfigRepository,
-    computed: Extract<WritableTopologyConfigMutation, { outcome: 'write'; }>
-): Promise<void> {
-    requireAcceptedTopologyConfigWrite(await writeTopologyConfigTarget(repository, computed));
-    requireAcceptedTopologyConfigWrite(
-        await repository.commitInvariantGeneration(
-            computed.invariantGenerationGuard.value,
-            computed.invariantGenerationGuard.expectedRevision
-        )
-    );
-    requireAcceptedTopologyConfigWrite(
-        await repository.commitGeneration(
-            computed.generationGuard.value,
-            computed.generationGuard.expectedRevision
-        )
-    );
+async function insertRuntimeState(
+    transaction: PSqlSql,
+    write: Extract<TopologyConfigRuntimeWrite, { operation: 'insert'; }>
+): Promise<number | null> {
+    const rows = await transaction<readonly { revision: number | string; }[]>`
+        insert into runtime_state_store (store_namespace,
+                                         store_key,
+                                         store_value,
+                                         expire_at_ts,
+                                         updated_ts,
+                                         revision)
+        values (${write.namespace},
+                ${write.key},
+                ${write.value},
+                ${write.expireAtIsoTimestamp},
+                now(),
+                0)
+        on conflict (store_namespace, store_key) do nothing
+        returning revision
+    `;
+    return rows[0] ? decodeRuntimeStateRevision(rows[0].revision) : null;
 }
 
-async function writeTopologyConfigTarget(
-    repository: GroupTopologyConfigRepository,
-    computed: Extract<WritableTopologyConfigMutation, { outcome: 'write'; }>
-): Promise<Readonly<{ status: 'accepted' | 'conflict'; }>> {
-    const guard = computed.guard;
-    if (guard.operation === 'delete') {
-        return guard.target === 'config'
-            ? await repository.deleteConfig(computed.receipt.groupRef, guard.expectedRevision)
-            : await repository.deleteOverride(computed.receipt.groupRef, guard.expectedRevision);
-    }
-    return guard.target === 'config'
-        ? await repository.commitConfig(guard.value, guard.expectedRevision)
-        : await repository.commitOverride(guard.value, guard.expectedRevision);
+async function updateRuntimeState(
+    transaction: PSqlSql,
+    write: Extract<TopologyConfigRuntimeWrite, { operation: 'update'; }>
+): Promise<number | null> {
+    const rows = await transaction<readonly { revision: number | string; }[]>`
+        update runtime_state_store
+        set store_value = ${write.value},
+            expire_at_ts = ${write.expireAtIsoTimestamp},
+            updated_ts = now(),
+            revision = revision + 1
+        where store_namespace = ${write.namespace}
+          and store_key = ${write.key}
+          and revision = ${write.expectedRevision}
+        returning revision
+    `;
+    return rows[0] ? decodeRuntimeStateRevision(rows[0].revision) : null;
 }
 
-function requireAcceptedTopologyConfigWrite(
-    result: Readonly<{ status: 'accepted' | 'conflict'; }>
+async function deleteRuntimeState(
+    transaction: PSqlSql,
+    write: Extract<TopologyConfigRuntimeWrite, { operation: 'delete'; }>
+): Promise<boolean> {
+    const rows = await transaction<readonly { revision: number | string; }[]>`
+        delete from runtime_state_store
+        where store_namespace = ${write.namespace}
+          and store_key = ${write.key}
+          and revision = ${write.expectedRevision}
+        returning revision
+    `;
+    return rows.length === 1;
+}
+
+function requireExpectedRevision(
+    write: Extract<TopologyConfigRuntimeWrite, { operation: 'insert' | 'update'; }>,
+    revision: number | null
 ): void {
-    if (result.status === 'conflict') {
+    if (revision !== write.expectedResultRevision) {
         throw new RuntimeStateWriteConflictError();
     }
 }

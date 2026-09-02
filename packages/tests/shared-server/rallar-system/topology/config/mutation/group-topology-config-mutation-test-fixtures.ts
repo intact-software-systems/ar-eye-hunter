@@ -5,6 +5,7 @@ import type {
 } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { createTestGroup } from '../../../../../create-test-group.ts';
 
 export interface CreateTopologyConfigMutationTestInput {
@@ -61,14 +62,14 @@ export function createTopologyTestGroupRef() {
 export function createTopologyTestGroupSnapshot(): GroupSnapshot {
     const groupRef = createTopologyTestGroupRef();
     return {
-        causalRevision: { groupRevision: 1, presenceRevision: 0 },
+        causalRevision: { groupRevision: 1, presenceRevision: 1 },
         group: createTestGroup({
             ...groupRef,
             displayName: 'Room 1',
             snapshotVersion: 1,
-            metadataVersion: 0,
+            metadataVersion: 1,
             rosterVersion: 1,
-            presenceVersion: 0,
+            presenceVersion: 1,
             activeMemberCount: 1,
             ownerPrincipalId: 'owner',
             created: topologyTestAuditStamp(),
@@ -103,7 +104,7 @@ export function createTopologyTestAuthorityGuard(revision = 0) {
         entry: {
             key: 'group-authority',
             value: JSON.stringify(group),
-            expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+            expireAtTimestamp: group.purgeAfterEpochMs ?? NEVER_EXPIRE_AT_TIMESTAMP,
             updatedTimestamp: new Date(0).toISOString(),
             revision
         }

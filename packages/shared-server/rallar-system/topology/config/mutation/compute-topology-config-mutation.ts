@@ -7,6 +7,7 @@ import type {
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 import { readDefaultGroupTopologyConfig } from '../group-topology-config.ts';
+import { computeTopologyConfigRuntimeWrites } from './compute-topology-config-runtime-writes.ts';
 import type {
     GroupTopologyConfigGeneration,
     GroupTopologyConfigMutationComputed,
@@ -178,12 +179,16 @@ function computeAbsentDelete(
     if (idempotency === null) {
         throw new TypeError('Topology config claim idempotency is required');
     }
-    return {
+    const computed = {
         outcome: 'claim',
         groupAuthorityGuard: topologyMutation.read.groupAuthorityGuard,
         receipt,
         result,
         idempotency
+    } as const;
+    return {
+        ...computed,
+        runtimeWrites: computeTopologyConfigRuntimeWrites(computed)
     };
 }
 
