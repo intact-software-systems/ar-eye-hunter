@@ -190,9 +190,41 @@ checker does not substitute for following production symbols.
 - Follow the complete doctrine in `references/convergent-service-writing.md`.
 - AppInbox is mandatory for incoming database mutations and owns the transaction
   and retry boundary.
-- Keep a visible `read`, pure `compute`, pure `validate`, then
-  `write(transaction, computed)` dataflow. The service never owns transaction
-  lifecycle or retries.
+- Keep the exact dataflow
+  `read -> compute -> validate -> write(transaction, computed)` visible. The
+  service never owns transaction lifecycle or retries. Transaction write code
+  primarily executes persistence-ready data from the prior phase.
+- For both phases, the same explicit input produces the same result. They perform
+  no repository reads, clocks, randomness, mutable dependency lookups, or hidden
+  side effects. Do not add `prepare`, `prepareWrite`, or another deterministic
+  transformation after `compute`; `compute` returns persistence-ready data and
+  `validate` checks that exact result. Adding another service mutation phase
+  requires explicit human approval.
+- Keep clocks, randomness, serialization, hashing, canonicalization,
+  validation, sorting, candidate/event/outbox construction, arbitrary helpers,
+  and other precomputable work before transaction entry. Deterministic work is
+  non-waivable even when cheap or under deadline pressure.
+- Treat transaction timing and value provenance as separate facts. A value
+  desired only for a transaction winner is not thereby database-derived. Only
+  actual database-returned facts justify inside-transaction refinement. One
+  queue delivery performs one mutation attempt. A conflict exits that attempt;
+  queue redelivery starts again from `read` and performs all four phases with
+  fresh data. Never add a handler-local or persistence-helper retry loop.
+- Policy follows the resolved transaction opener and owner, not a source path.
+  AppInbox and domain-owned transactions use `strict-domain-write`. Calling
+  ResourceInbox code from an AppInbox or domain-owned transaction does not
+  transfer the specialized policy. Browser IndexedDB readwrite and
+  upgrade/versionchange transactions remain strict.
+- Use `specialized-resource-inbox` only for an exact resolved PostgreSQL
+  ResourceInbox, Results, or QueueBox transaction owner. Permit bounded
+  middleware-local SQL coordination and deterministic persisted-value
+  transformations. The strict `transaction.precomputable-work` rule does not
+  apply to this proven specialized owner. Its sole externally supplied callback
+  allowance is the exact guarded winner materializer, which may construct its
+  bounded winner-only row. Outside that allowance, prohibit ordinary domain
+  mutation logic, external effects, timers, polling, unbounded work, and
+  arbitrary unresolved operation callbacks. Treat its reported boundary
+  inventory as review evidence, not as a strict pass or an exception.
 - Prefer a functional core with an explicitly owned stateful shell. Model domain
   decisions and conditional-write outcomes as separate typed values.
 - Authoritative persisted and shared contracts use mandatory fields by default.

@@ -20,13 +20,28 @@ Capability cohesion is judged by responsibility, not method count. Several
 methods that own one transaction phase may form one narrow capability; several
 unrelated methods do not become cohesive merely because the count is small.
 
-Keep the control flow visible as direct, named `read`, `compute`, `validate`,
-and `write(transaction, computed)` statements. `read` performs the required
-repository reads. The `compute` and `validate` phases are pure. Computed
-persistence data is not called a plan. The stateful shell records timing around
-each direct phase and around the AppInbox transaction separately; clock access
-never moves into pure `compute` or `validate` functions. Do not hide decisions
-behind manager, coordinator, or pass-through helper chains.
+Keep the control flow visible as the exact direct sequence
+`read -> compute -> validate -> write(transaction, computed)`. `read` performs
+the required repository reads. The `compute` and `validate` phases are pure.
+For both phases, the same explicit input produces the same result. They perform
+no repository reads, clocks, randomness, mutable dependency lookups, or hidden
+side effects. Do not add `prepare`, `prepareWrite`, or another deterministic
+transformation after `compute`; `compute` returns persistence-ready data and
+`validate` checks that exact result.
+Adding another service mutation phase requires explicit human approval.
+Computed persistence data is not called a plan. Transaction write code
+primarily executes persistence-ready data from the prior phase. The stateful
+shell records timing around each direct phase and around the AppInbox
+transaction separately; clock access never moves into pure `compute` or
+`validate` functions. Do not hide decisions behind manager, coordinator, or
+pass-through helper chains.
+
+Before transaction entry, finish clocks, randomness, serialization, hashing,
+canonicalization, validation, sorting, candidate/event/outbox construction,
+and every other precomputable operation. Deterministic work is non-waivable
+even when cheap or under deadline pressure. A value desired only for a
+transaction winner is not thereby database-derived. Only actual
+database-returned facts justify inside-transaction refinement.
 
 Model the domain decision separately from the conditional write outcome:
 
@@ -45,11 +60,73 @@ and WebSocket client, group, topology, authentication/session/ticket, CRDT
 append/admin, and mutating administration path. A synchronous result wait never
 falls back to a direct service mutation.
 
-AppInbox owns the transaction and retry boundary. The service write receives
-the transaction and never opens, commits, replaces, or retries one. A conflict
-starts a fresh `read`, then recomputes and revalidates authorization, policy,
-capacity, lifecycle, invariants, and the complete candidate. Retrying only a
-stale final write is incorrect.
+AppInbox owns the transaction and retry boundary through QueueBox redelivery,
+not through a loop around the handler. One queue delivery performs one mutation
+attempt. A conflict exits that attempt; queue redelivery starts again from
+`read`, then recomputes and revalidates authorization, policy, capacity,
+lifecycle, invariants, and the complete candidate. The service write receives
+the transaction and never opens, commits, replaces, or retries one. Retrying
+only a stale final write is incorrect.
+
+Inside the callback, use a closed grammar: execute or iterate computed writes;
+perform conditional writes, compare-and-set, constraints, savepoints, rollback,
+and conflict handling; select an already computed variant from an actual
+database outcome; project or compare direct database results; apply scalar
+normalization to those results; enforce invariants; attach database-generated
+keys, revisions, sequences, timestamps, or constraint results; and construct
+the typed write outcome. Arbitrary helpers and unknown dynamic or external work
+fail closed. A redelivered attempt repeats
+`read -> compute -> validate -> write(transaction, computed)` with fresh data.
+
+## Specialized ResourceInbox transaction ownership
+
+Policy follows the resolved transaction opener and owner, not a source path.
+AppInbox and domain-owned transactions use `strict-domain-write`, including
+when their callback invokes a ResourceInbox repository. Calling ResourceInbox
+code from an AppInbox or domain-owned transaction does not transfer the
+specialized policy. Browser IndexedDB readwrite and upgrade/versionchange
+transactions remain strict.
+
+Use `specialized-resource-inbox` only when type and API resolution prove an
+exact PostgreSQL ResourceInbox, Results, or QueueBox transaction owner. These
+transactions implement atomic middleware reservation, deduplication, result,
+replacement, and queue coordination semantics in SQL. They may perform bounded
+middleware-local queue coordination; create transaction-bound adapters; bind
+SQL parameters; project and compare database rows; mutate transaction-local
+bounded carriers; perform bounded deterministic persisted-value
+transformations; and invoke resolved bounded local continuations. Exact boundary
+forwarding and resolved bounded local continuations are boundary machinery, not
+arbitrary operation callbacks. Unlike `strict-domain-write`,
+`transaction.precomputable-work` does not apply to a proven
+`specialized-resource-inbox` boundary. Do not move bounded middleware-local
+transformations out merely to mimic the strict grammar when their ownership and
+rollback semantics belong to the specialized SQL transaction.
+
+Outside the exact winner-materializer allowance below, the specialized policy
+prohibits ordinary domain mutation logic, external effects, timers, polling,
+and unbounded work; arbitrary unresolved externally supplied operation
+callbacks; and opening or taking ownership of an unrelated nested transaction.
+Caller-owned mutation and dynamically unresolved behavior fail closed. The
+same external-effect, timer, polling, boundedness, caller-mutation, and nested
+transaction prohibitions apply inside the winner materializer. The checker
+reports specialized ResourceInbox boundaries separately from strict findings.
+That inventory is neither an exception nor proof that the boundary satisfies
+`strict-domain-write`.
+
+The one externally supplied operation-callback shape permitted by this policy
+is the exact guarded winner materializer. The ResourceInbox owner must first
+reserve the exact identity through its conditional SQL write, invoke the
+materializer exactly once only on the winning branch, verify that the
+materialized identity matches the reservation, and replace the placeholder in
+the same transaction. This bounded callback may perform the operation-owned
+clock capture, identifier generation, serialization, and row construction that
+creates the winner's persistence payload. A losing or replay branch never
+invokes it. Any callback or replacement failure relies on PostgreSQL rollback,
+so do not replace this shape with a lease, heartbeat, polling loop, marker row,
+or after-commit repair protocol. Other conditional callbacks such as general
+`enqueueIf` or `enqueueOrUpdate` callbacks are not winner materializers and
+remain fail-closed until their exact behavior is made statically resolved and
+bounded.
 
 Transaction, retry, lifecycle, and after-commit dependencies use a named port
 declared beside the canonical owner. From a consumer, Go to Definition reveals
