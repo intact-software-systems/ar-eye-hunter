@@ -90,7 +90,7 @@ function automaticRead(): GroupMutationRead {
         ...createGroupAuthorityRead({ lifecycleState: 'planned', formationEpoch: 3 }),
         actorMember: null,
         actorMemberEntry: null,
-        plannedLayoutRow: { snapshot: PLANNED, revision: 1, inputFingerprint: null },
+        plannedLayoutRow: { snapshot: PLANNED, revision: 1 },
         connectTriggerLatch: { latch: { ...IDENTITY, state: 'awaiting-publication' }, revision: 1 }
     };
 }
@@ -154,7 +154,7 @@ describe('connect intent handoff', () => {
             plannedLayoutRow: state === 'absent'
                 ? null
                 : state === 'superseded'
-                ? { snapshot: { ...PLANNED, version: 2 }, revision: 2, inputFingerprint: null }
+                ? { snapshot: { ...PLANNED, version: 2 }, revision: 2 }
                 : original.plannedLayoutRow,
             connectTriggerLatch: state === 'consumed' ? { latch: { ...IDENTITY, state: 'consumed' }, revision: 2 } : original.connectTriggerLatch,
             group: state === 'reset' ? createGroupAuthorityRead({ lifecycleState: 'dormant', formationEpoch: 4 }).group : original.group
@@ -191,9 +191,7 @@ describe('connect intent handoff', () => {
 });
 
 async function connectWriteHarness() {
-    const harness = await createAuthorityHarness([], {
-        readPlannedLayoutRow: async () => ({ snapshot: PLANNED, revision: 1, inputFingerprint: null })
-    });
+    const harness = await createAuthorityHarness([], { readPlannedLayoutRow: async () => ({ snapshot: PLANNED, revision: 1 }) });
     const read = automaticRead();
     const computed = computeGroupMutation({
         command: toAutomaticGroupConnectCommand(IDENTITY, LAYOUT),

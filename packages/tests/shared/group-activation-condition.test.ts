@@ -193,19 +193,51 @@ describe('resolveCoverageBasisLayoutIdentity', () => {
 });
 
 describe('computeLayoutStale', () => {
-    it('latches only on a fingerprint that differs from the planning authority', () => {
+    const accepted: GroupLayoutIdentity = { groupRevision: 3, presenceRevision: 4, version: 1, state: 'active' };
+
+    it('is never stale without an accepted layout', () => {
         expect(computeLayoutStale({
-            acceptedFingerprint: 'aa',
+            acceptedIdentity: null,
+            plannedIdentity: { ...accepted, version: 2 },
+            plannedFingerprint: 'aa',
+            planningAuthorityFingerprint: 'bb'
+        })).toBe(false);
+    });
+
+    it('is stale whenever the group does not run on the planned layout', () => {
+        expect(computeLayoutStale({
+            acceptedIdentity: accepted,
+            plannedIdentity: { ...accepted, version: 2 },
+            plannedFingerprint: 'aa',
+            planningAuthorityFingerprint: 'aa'
+        })).toBe(true);
+        expect(computeLayoutStale({
+            acceptedIdentity: accepted,
+            plannedIdentity: null,
+            plannedFingerprint: 'aa',
+            planningAuthorityFingerprint: 'aa'
+        })).toBe(true);
+    });
+
+    it('compares the planned fingerprint with the authority once the identities agree', () => {
+        expect(computeLayoutStale({
+            acceptedIdentity: accepted,
+            plannedIdentity: accepted,
+            plannedFingerprint: 'aa',
             planningAuthorityFingerprint: 'bb'
         })).toBe(true);
         expect(computeLayoutStale({
-            acceptedFingerprint: 'aa',
+            acceptedIdentity: accepted,
+            plannedIdentity: accepted,
+            plannedFingerprint: 'aa',
             planningAuthorityFingerprint: 'aa'
         })).toBe(false);
         expect(computeLayoutStale({
-            acceptedFingerprint: undefined,
+            acceptedIdentity: accepted,
+            plannedIdentity: accepted,
+            plannedFingerprint: null,
             planningAuthorityFingerprint: 'aa'
-        })).toBe(false);
+        })).toBe(true);
     });
 });
 

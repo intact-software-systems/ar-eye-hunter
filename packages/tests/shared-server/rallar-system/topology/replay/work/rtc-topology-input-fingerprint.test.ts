@@ -4,7 +4,6 @@ import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-st
 import { RtcTopologyRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
 import {
     computeRtcTopologyInputFingerprint,
-    RTC_TOPOLOGY_ACCEPTED_INPUT_FINGERPRINTS_NAMESPACE,
     RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
     RtcTopologyInputFingerprintRepository,
     type RtcTopologyInputFingerprintFacts
@@ -24,24 +23,10 @@ const GROUP_REF = {
 const FINGERPRINT = `sha256:${'a'.repeat(64)}`;
 
 describe('RTC topology input fingerprint persistence', () => {
-    it('keeps the planned and accepted slots as separate rows', async () => {
-        const runtime = new FakeRuntimeStateRepository();
-        const planned = new RtcTopologyInputFingerprintRepository(runtime, 'planned');
-        const accepted = new RtcTopologyInputFingerprintRepository(runtime, 'accepted');
-        const acceptedFingerprint = `sha256:${'c'.repeat(64)}`;
-
-        await planned.putFingerprint(GROUP_REF, FINGERPRINT);
-        await accepted.putFingerprint(GROUP_REF, acceptedFingerprint);
-
-        await expect(planned.findFingerprint(GROUP_REF)).resolves.toBe(FINGERPRINT);
-        await expect(accepted.findFingerprint(GROUP_REF)).resolves.toBe(acceptedFingerprint);
-        const key = groupStateGroupStorageKey(GROUP_REF);
-        expect((await runtime.findEntry(RTC_TOPOLOGY_ACCEPTED_INPUT_FINGERPRINTS_NAMESPACE, key))?.value)
-            .toBe(JSON.stringify({ groupRef: GROUP_REF, fingerprint: acceptedFingerprint }));
-    });
-
     it('round-trips the exact current fingerprint row', async () => {
-        const repository = new RtcTopologyInputFingerprintRepository(new FakeRuntimeStateRepository(), 'planned');
+        const repository = new RtcTopologyInputFingerprintRepository(
+            new FakeRuntimeStateRepository()
+        );
 
         await repository.putFingerprint(GROUP_REF, FINGERPRINT);
 
@@ -66,7 +51,7 @@ describe('RTC topology input fingerprint persistence', () => {
         }
     ])('rejects $label at the current fingerprint corruption boundary', async ({ value }) => {
         const runtime = new FakeRuntimeStateRepository();
-        const repository = new RtcTopologyInputFingerprintRepository(runtime, 'planned');
+        const repository = new RtcTopologyInputFingerprintRepository(runtime);
         const key = groupStateGroupStorageKey(GROUP_REF);
         await runtime.upsert(
             RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
@@ -85,7 +70,7 @@ describe('RTC topology input fingerprint persistence', () => {
 
     it('rejects malformed stored JSON at the current fingerprint corruption boundary', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        const repository = new RtcTopologyInputFingerprintRepository(runtime, 'planned');
+        const repository = new RtcTopologyInputFingerprintRepository(runtime);
         const key = groupStateGroupStorageKey(GROUP_REF);
         await runtime.upsert(
             RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
@@ -101,7 +86,7 @@ describe('RTC topology input fingerprint persistence', () => {
 
     it('rejects an invalid fingerprint before writing', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        const repository = new RtcTopologyInputFingerprintRepository(runtime, 'planned');
+        const repository = new RtcTopologyInputFingerprintRepository(runtime);
 
         await expect(repository.putFingerprint(GROUP_REF, 'not-a-digest')).rejects.toThrow(
             'RTC topology input fingerprint is invalid'

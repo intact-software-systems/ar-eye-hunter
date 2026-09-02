@@ -1,6 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { Group, GroupRef } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -14,7 +15,12 @@ import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../..
 import { CoalescedAppOutboxWorkService } from '../../app-outbox/coalesced-app-outbox-work-service.ts';
 import type { GroupFormationPresenceSummarySink } from '../../observability/formation-metrics.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../topology/mutation/rtc-topology-outbox-entry.ts';
+import { RtcTopologyRepositoryInvariantCorruptionError } from '../../topology/persistence/rtc-topology-errors.ts';
 import { RtcTopologySnapshotRepository } from '../../topology/persistence/rtc-topology-snapshot-repository.ts';
+import {
+    consultsTopologyReplanPolicy,
+    type TopologyReplanPolicyFacts
+} from '../../topology/planning/resolve-topology-plan-action.ts';
 import {
     toRtcTopologyCoalescedGroupRevisionResourceId
 } from '../../topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
@@ -25,6 +31,7 @@ import { createTransactionBoundGroupStateRepository } from '../persistence/group
 import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
 import {
     computeGroupPresenceSummaryWork,
+    toTopologyReplanEnqueueFacts,
     validateGroupPresenceSummaryComputedWork,
     type GroupPresenceSummaryComputedWork,
     type GroupPresenceSummaryWorkRead
@@ -60,24 +67,13 @@ export class GroupPresenceSummaryWork {
         work: GroupPresenceSummaryWorkData
     ): Promise<GroupPresenceSummaryWorkRead> {
         const repository = new GroupStateRepositoryReads(this.options.runtimeRepository);
-        const [
-            group,
-            members,
-            admissions,
-            presenceSessions,
-            current,
-            coalescedTopologyEntry,
-            lifecyclePolicy,
-            plannedLayout
-        ] = await Promise.all([
+        const [group, members, admissions, presenceSessions, current, coalescedTopologyEntry] = await Promise.all([
             repository.findGroupEntry(work.aggregateRef),
             repository.listMemberEntries(work.aggregateRef),
             repository.listPresenceAdmissionEntries(work.aggregateRef),
             repository.listPresenceSessionEntries(work.aggregateRef),
             repository.findPresenceSummaryEntry(work.aggregateRef),
-            this.readCoalescedTopologyEntry(work.aggregateRef),
-            new GroupLifecyclePolicyRepository(this.options.runtimeRepository).readPolicy(work.aggregateRef),
-            new RtcTopologySnapshotRepository(this.options.runtimeRepository).findSnapshot(work.aggregateRef)
+            this.readCoalescedTopologyEntry(work.aggregateRef)
         ]);
         if (!group) {
             throw new TypeError(
@@ -93,9 +89,43 @@ export class GroupPresenceSummaryWork {
                 current: current ?? null
             },
             coalescedTopologyEntry,
-            lifecyclePolicy,
-            plannedLayout: plannedLayout ?? null
+            topologyReplanPolicyFacts: await this.readTopologyReplanPolicyFacts(
+                work,
+                group.value,
+                coalescedTopologyEntry
+            )
         };
+    }
+
+    /** The policy and planned slot are read only when the enqueue gate will consult them. */
+    private async readTopologyReplanPolicyFacts(
+        work: GroupPresenceSummaryWorkData,
+        group: Group,
+        coalescedTopologyEntry: ResourceEntry | null
+    ): Promise<TopologyReplanPolicyFacts> {
+        const facts = toTopologyReplanEnqueueFacts(work, group, { coalescedTopologyEntry, nowEpochMs: this.now() });
+        if (!consultsTopologyReplanPolicy(facts)) {
+            return { consulted: false };
+        }
+        const [lifecyclePolicy, plannedLayout] = await Promise.all([
+            new GroupLifecyclePolicyRepository(this.options.runtimeRepository).readPolicy(work.aggregateRef),
+            this.readPlannedLayoutForGate(work.aggregateRef)
+        ]);
+        return { consulted: true, lifecyclePolicy, plannedLayout };
+    }
+
+    private async readPlannedLayoutForGate(ref: GroupRef): Promise<RallarOverlayTopologySnapshot | null> {
+        try {
+            return await new RtcTopologySnapshotRepository(this.options.runtimeRepository).findSnapshot(ref) ?? null;
+        }
+        catch (error) {
+            // A corrupt planned row fails the planner's own cycle, not the presence
+            // summary: the gate sees no planned layout and lets the cycle surface it.
+            if (error instanceof RtcTopologyRepositoryInvariantCorruptionError) {
+                return null;
+            }
+            throw error;
+        }
     }
 
     public compute(
@@ -144,10 +174,10 @@ export class GroupPresenceSummaryWork {
         for (const entry of computed.downstreamOutboxEntries) {
             await outbox.writeIfAbsentOrMatch(entry);
         }
-        if (computed.coalescedTopologyWork) {
+        if (computed.topologyReplan.decision === 'enqueue') {
             await this.coalescedTopologyWorkService.write(
                 transaction,
-                computed.coalescedTopologyWork
+                computed.topologyReplan.work
             );
         }
     }
@@ -193,7 +223,7 @@ export class GroupPresenceSummaryWork {
             this.options.formationMetrics?.({
                 downstreamTopicIds: [
                     ...computed.downstreamOutboxEntries.map((entry) => entry.key.topicId),
-                    ...(computed.coalescedTopologyWork ? [APP_OUTBOX_RTC_TOPOLOGY_TOPIC] : [])
+                    ...(computed.topologyReplan.decision === 'enqueue' ? [APP_OUTBOX_RTC_TOPOLOGY_TOPIC] : [])
                 ]
             });
         }

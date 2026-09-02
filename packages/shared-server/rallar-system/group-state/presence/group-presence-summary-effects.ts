@@ -1,16 +1,19 @@
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type {
+    Group,
     GroupEvent,
     GroupMember,
     GroupPresenceSession,
     GroupSnapshot,
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
-import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
-import type { ComputedCoalescedAppOutboxWork } from '../../app-outbox/coalesced-app-outbox-work-service.ts';
+import {
+    isMutableCoalescedStatus,
+    type ComputedCoalescedAppOutboxWork
+} from '../../app-outbox/coalesced-app-outbox-work-service.ts';
 import {
     computeGroupStateSyncEntries,
     type ComputedGroupStateSyncEffect,
@@ -18,14 +21,14 @@ import {
 } from '../../state-sync/state-sync-entry-computation.ts';
 import {
     resolveTopologyReplanEnqueue,
-    toGroupTopologyReplanningRead,
+    type TopologyReplanEnqueueFacts,
+    type TopologyReplanPolicyFacts,
     type TopologyWorkOrigin
 } from '../../topology/planning/resolve-topology-plan-action.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork
 } from '../../topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { assembleGroupStateSnapshot } from '../persistence/assemble-group-state-snapshot.ts';
-import type { GroupLifecyclePolicyRead } from '../persistence/group-lifecycle-policy-repository.ts';
 import {
     computeGroupPresenceSummary,
     validateGroupPresenceSummary,
@@ -36,19 +39,20 @@ import {
 export interface GroupPresenceSummaryWorkRead {
     readonly presence: GroupPresenceSummaryRead;
     readonly coalescedTopologyEntry: ResourceEntry | null;
-    /** The stored lifecycle policy, whose replanning mode decides whether automatic replans are enqueued. */
-    readonly lifecyclePolicy: GroupLifecyclePolicyRead;
-    /** The stored planned slot; null before the first layout. */
-    readonly plannedLayout: RallarOverlayTopologySnapshot | null;
+    readonly topologyReplanPolicyFacts: TopologyReplanPolicyFacts;
 }
+
+/** The replan decision (product decision 2): queued work, or held by the replanning policy. */
+export type TopologyReplanDecision =
+    | Readonly<{ decision: 'enqueue'; work: ComputedCoalescedAppOutboxWork; }>
+    | Readonly<{ decision: 'held-by-policy'; }>;
 
 export interface GroupPresenceSummaryComputedWork {
     readonly work: GroupPresenceSummaryWorkData;
     readonly summary: GroupPresenceSummaryComputed;
     readonly snapshot: GroupSnapshot;
     readonly downstreamOutboxEntries: readonly ResourceEntry[];
-    /** Null when the group's replanning policy holds this automatic replan (product decision 2). */
-    readonly coalescedTopologyWork: ComputedCoalescedAppOutboxWork | null;
+    readonly topologyReplan: TopologyReplanDecision;
 }
 
 export interface ComputeGroupPresenceSummaryWorkOptions {
@@ -122,36 +126,54 @@ export function computeGroupPresenceSummaryWork(
         summary,
         snapshot,
         downstreamOutboxEntries: computeGroupPresenceSummaryOutboxEntries(outboxInput),
-        coalescedTopologyWork: computeTopologyReplanWork({ work, read, summary, snapshot, options })
+        topologyReplan: computeTopologyReplan({ work, read, summary, snapshot, options })
     };
 }
 
-function computeTopologyReplanWork(
-    input: ToGroupPresenceSummaryOutboxInputInput
-): ComputedCoalescedAppOutboxWork | null {
+/** The facts the enqueue gate reads from the presence-summary command and the group it summarizes. */
+export function toTopologyReplanEnqueueFacts(
+    work: GroupPresenceSummaryWorkData,
+    group: Group,
+    read: Readonly<{ coalescedTopologyEntry: ResourceEntry | null; nowEpochMs: number; }>
+): TopologyReplanEnqueueFacts {
+    return {
+        group,
+        nowEpochMs: read.nowEpochMs,
+        workOrigin: toTopologyReplanOrigin(work),
+        mergeableHeadRow: read.coalescedTopologyEntry !== null &&
+            isMutableCoalescedStatus(read.coalescedTopologyEntry.status)
+    };
+}
+
+function toTopologyReplanOrigin(work: GroupPresenceSummaryWorkData): TopologyWorkOrigin {
+    return work.event.payload.topologyReplanOrigin === 'commanded' ? 'commanded' : 'automatic';
+}
+
+function computeTopologyReplan(input: ToGroupPresenceSummaryOutboxInputInput): TopologyReplanDecision {
     const { work, read, summary, snapshot, options } = input;
-    const origin: TopologyWorkOrigin = work.event.payload.topologyReplanOrigin === 'commanded'
-        ? 'commanded'
-        : 'automatic';
     const enqueue = resolveTopologyReplanEnqueue({
-        lifecycleState: snapshot.group.lifecycleState,
-        replanning: toGroupTopologyReplanningRead(read.lifecyclePolicy),
-        workOrigin: origin,
-        plannedLayoutActive: read.plannedLayout?.state === 'active'
+        ...toTopologyReplanEnqueueFacts(work, snapshot.group, {
+            coalescedTopologyEntry: read.coalescedTopologyEntry,
+            nowEpochMs: options.nowEpochMs
+        }),
+        policyFacts: read.topologyReplanPolicyFacts
     });
     if (enqueue === 'held-by-policy') {
-        return null;
+        return { decision: 'held-by-policy' };
     }
-    return computeCoalescedRtcTopologyGroupRevisionWork({
-        aggregateRef: work.aggregateRef,
-        groupSnapshot: snapshot,
-        requestedAtEpochMs: summary.summary.computedAtEpochMs,
-        expireAtEpochMs: work.expireAtEpochMs,
-        recomputeDebounceMs: options.recomputeDebounceMs,
-        senderId: options.serviceId,
-        origin,
-        previousEntry: read.coalescedTopologyEntry
-    });
+    return {
+        decision: 'enqueue',
+        work: computeCoalescedRtcTopologyGroupRevisionWork({
+            aggregateRef: work.aggregateRef,
+            groupSnapshot: snapshot,
+            requestedAtEpochMs: summary.summary.computedAtEpochMs,
+            expireAtEpochMs: work.expireAtEpochMs,
+            recomputeDebounceMs: options.recomputeDebounceMs,
+            senderId: options.serviceId,
+            origin: toTopologyReplanOrigin(work),
+            previousEntry: read.coalescedTopologyEntry
+        })
+    };
 }
 
 export function validateGroupPresenceSummaryComputedWork(
@@ -185,6 +207,21 @@ export function validateGroupPresenceSummaryComputedWork(
             options: { ...options, nowEpochMs: computed.summary.summary.computedAtEpochMs }
         })
     );
+    validateTopologyReplanDecision(input);
+}
+
+function validateTopologyReplanDecision(input: ValidateGroupPresenceSummaryComputedWorkInput): void {
+    const { work, read, computed } = input;
+    const enqueue = resolveTopologyReplanEnqueue({
+        ...toTopologyReplanEnqueueFacts(work, computed.snapshot.group, {
+            coalescedTopologyEntry: read.coalescedTopologyEntry,
+            nowEpochMs: computed.summary.summary.computedAtEpochMs
+        }),
+        policyFacts: read.topologyReplanPolicyFacts
+    });
+    if ((enqueue === 'enqueue') !== (computed.topologyReplan.decision === 'enqueue')) {
+        throw new TypeError('Presence-summary replan decision differs from the stored policy facts');
+    }
 }
 
 function toGroupPresenceSummaryOutboxInput(

@@ -71,7 +71,7 @@ describe('group formation series computation', () => {
             command: transitionCommand('resetGroupFormation'),
             read: {
                 ...read,
-                plannedLayoutRow: { snapshot, revision: 7, inputFingerprint: null },
+                plannedLayoutRow: { snapshot, revision: 7 },
                 acceptedLayoutRow: { snapshot, revision: 9 }
             },
             facts: createGroupAuthorityFacts()
@@ -84,7 +84,6 @@ describe('group formation series computation', () => {
         expect(computed.layoutTombstones).toEqual({
             planned: {
                 revision: 7,
-                inputFingerprint: null,
                 snapshot: {
                     ...snapshot,
                     state: 'removed',

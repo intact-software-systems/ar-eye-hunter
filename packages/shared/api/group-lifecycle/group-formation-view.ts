@@ -24,11 +24,10 @@ export type GroupFormationView = Readonly<{
      */
     managerPrincipalIds: readonly string[];
     /**
-     * The latched staleness obligation (product decision 11): the accepted
-     * layout's stored topology-input fingerprint differs from the planning
-     * authority's. Under `commanded` replanning it clears only through
-     * `reconfigure`. A temporary topology override is part of the authority,
-     * so its expiry can raise this on wall-clock time alone.
+     * Product decision 11's latched obligation: the accepted layout no longer
+     * matches the planning authority's topology inputs. A temporary topology
+     * override is part of those inputs, so its expiry can raise this on
+     * wall-clock time alone.
      */
     layoutStale: boolean;
     /** The transient half: a replan is queued and due; null when none is. */

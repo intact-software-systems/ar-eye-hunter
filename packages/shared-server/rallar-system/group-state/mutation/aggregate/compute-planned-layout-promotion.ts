@@ -13,8 +13,6 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 export type GroupPlannedLayoutRow = Readonly<{
     snapshot: RallarOverlayTopologySnapshot;
     revision: number;
-    /** The topology-input fingerprint the planning cycle stored beside the row; null before any cycle stored one. */
-    inputFingerprint: string | null;
 }>;
 
 /**
@@ -48,12 +46,6 @@ export type PlannedLayoutPromotion =
          * of promoting a superseded plan (decisions 19/32, PR 3 review).
          */
         plannedExpectedRevision: number;
-        /**
-         * The planned slot's fingerprint, copied so the accepted layout can
-         * be judged stale against the planning authority (product decision
-         * 11). Null carries over when the planned row stored none.
-         */
-        acceptedInputFingerprint: string | null;
     }>
     | Readonly<{ outcome: 'already-applied'; }>
     | Readonly<{ outcome: 'no-planned-layout'; }>
@@ -101,7 +93,6 @@ export function computePlannedLayoutPromotion(
         acceptedSnapshot: input.planned.snapshot,
         acceptedIdentity: plannedIdentity,
         acceptedExpectedRevision: input.acceptedRow?.revision ?? null,
-        plannedExpectedRevision: input.planned.revision,
-        acceptedInputFingerprint: input.planned.inputFingerprint
+        plannedExpectedRevision: input.planned.revision
     };
 }

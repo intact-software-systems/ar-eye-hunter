@@ -122,8 +122,8 @@ function createComputedWorkWithDownstreamTopics(
                 contextId: 'summary-context'
             }
         })),
-        // The write is mocked here, so the coalesced work only has to be present or absent.
-        coalescedTopologyWork: replan === 'enqueued' ? { presentForMetrics: true } : null
+        // The write is mocked here, so only the decision has to be present.
+        topologyReplan: replan === 'enqueued' ? { decision: 'enqueue', work: {} } : { decision: 'held-by-policy' }
     } as never;
 }
 

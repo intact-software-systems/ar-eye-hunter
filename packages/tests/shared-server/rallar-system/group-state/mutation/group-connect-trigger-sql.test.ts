@@ -134,7 +134,7 @@ async function seedConnectWrite(sql: PSqlSql, applicationId: string) {
         group,
         actorMember: null,
         actorMemberEntry: null,
-        plannedLayoutRow: { snapshot: planned, revision: 0, inputFingerprint: null },
+        plannedLayoutRow: { snapshot: planned, revision: 0 },
         connectTriggerLatch: { latch, revision: 0 }
     };
     const computed = computeGroupMutation({

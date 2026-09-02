@@ -779,9 +779,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 runtimeRepository,
                 readPlannedLayoutRow: async (ref) => {
                     const entry = await plannedSnapshots.findSnapshotEntry(ref);
-                    return entry
-                        ? { snapshot: entry.value, revision: entry.entry.revision, inputFingerprint: null }
-                        : null;
+                    return entry ? { snapshot: entry.value, revision: entry.entry.revision } : null;
                 }
             });
             const ownerActor = { actorPrincipalId: 'owner', actorSessionId: 'owner-session' } as const;
