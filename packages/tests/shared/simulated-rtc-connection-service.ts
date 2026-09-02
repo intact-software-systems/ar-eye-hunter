@@ -41,7 +41,6 @@ export function createSimulatedRtcConnections(
     connect: (peerId: string) => boolean = () => true
 ): SimulatedRtcConnections {
     const runtime = installSimulationNativeRuntime();
-    const connectedPeerIds = new Set<string>();
     const fixture = createNativeRtcConnectionFixture({
         sessionId,
         token: 'fixture-token',
@@ -50,6 +49,22 @@ export function createSimulatedRtcConnections(
         rtcSignalingTopicId: 'rtc'
     }, runtime);
     const { service } = fixture;
+    const connectedPeerIds = installSimulatedLaneTransport(service, connect);
+    // Group scenarios control lane readiness independently of the complete native
+    // peer fixture; like the real predicate, only a live peer can report its lanes.
+    service.peerIdsWithNoReconnectableLanes = () => service.activePeerIds().filter((peerId) => connectedPeerIds.has(peerId));
+    return {
+        service,
+        markReconnectable: (peerId) => connectedPeerIds.delete(peerId),
+        nativePeer: fixture.nativePeer
+    };
+}
+
+function installSimulatedLaneTransport(
+    service: WebRtcConnectionService,
+    connect: (peerId: string) => boolean
+): Set<string> {
+    const connectedPeerIds = new Set<string>();
     service.onRtcPeerLifecycleDo('simulated-native-transport', {
         onCreated: (peer) => {
             for (const channel of peer.channels.values()) {
@@ -70,12 +85,5 @@ export function createSimulatedRtcConnections(
             connectedPeerIds.delete(peer.peerId);
         }
     });
-    // Group scenarios control lane readiness independently of the complete native
-    // peer fixture; like the real predicate, only a live peer can report its lanes.
-    service.peerIdsWithNoReconnectableLanes = () => service.activePeerIds().filter((peerId) => connectedPeerIds.has(peerId));
-    return {
-        service,
-        markReconnectable: (peerId) => connectedPeerIds.delete(peerId),
-        nativePeer: fixture.nativePeer
-    };
+    return connectedPeerIds;
 }

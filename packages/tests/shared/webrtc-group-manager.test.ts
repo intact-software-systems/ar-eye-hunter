@@ -1009,6 +1009,87 @@ describe('WebRtcGroupManager', () => {
         manager.stopReconcileWakes();
     });
 
+    it('stands down a wake scheduled before the wakes stop', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcConnectionHarness('self');
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service,
+            { groupCache, clientCache, acceptedOverlayCache },
+            { overlayTransitionGraceMs: 0 }
+        );
+        manager.startReconcileWakes();
+        for (const peerId of ['peer-a', 'peer-b']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+        await acceptActiveLayoutGroup(
+            manager,
+            acceptedOverlayCache,
+            createGroupSnapshot({
+                groupId: 'group-1',
+                membershipVersion: 1,
+                memberSessionIds: ['self', 'peer-a', 'peer-b'],
+                maxConcurrentEdgeSetups: 1
+            })
+        );
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-a']);
+
+        // The removal schedules the wake; shutdown stops the wakes before it runs.
+        rtcQBox.service.disconnectPeer('peer-a');
+        manager.stopReconcileWakes();
+        await manager.whenReconciled();
+
+        expect(rtcQBox.knownPeerIds()).toEqual([]);
+        expect(manager.readDiagnostics()).toMatchObject({ reconcileRunCount: 1 });
+    });
+
+    it('does not re-run a pass for an ending its own dial caused', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        // peer-a's lane refuses on every dial, which resets and removes its native
+        // connection inside the pass; with peer-c paced, a latch on that removal
+        // would re-run the pass forever.
+        const rtcQBox = createRtcConnectionHarness('self', [], (peerId) => {
+            if (peerId === 'peer-a') {
+                throw new Error('lane refused');
+            }
+            return true;
+        });
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service,
+            { groupCache, clientCache, acceptedOverlayCache },
+            { overlayTransitionGraceMs: 0 }
+        );
+        manager.startReconcileWakes();
+        for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+        await acceptActiveLayoutGroup(
+            manager,
+            acceptedOverlayCache,
+            createGroupSnapshot({
+                groupId: 'group-1',
+                membershipVersion: 1,
+                memberSessionIds: ['self', 'peer-a', 'peer-b', 'peer-c'],
+                maxConcurrentEdgeSetups: 1
+            })
+        );
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-b']);
+
+        await manager.ensureAllGroupsConnected();
+        await manager.whenReconciled();
+
+        // Pass two paces both peer-a and peer-c behind peer-b's setup.
+        expect(manager.readDiagnostics()).toMatchObject({
+            reconcileRunCount: 2,
+            reconcileCoalescedRerunCount: 0,
+            connectDeferredPacingCount: 3
+        });
+        manager.stopReconcileWakes();
+    });
+
     it('frees a pacing slot at once when an admitted dial starts nothing', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();

@@ -38,7 +38,7 @@ import {
     readOverlayForGroup
 } from './webrtc-group-overlay-reading.ts';
 import { computeOutboundDialPlan } from './webrtc-outbound-dial-plan.ts';
-import { WebRtcOutboundDialing } from './webrtc-outbound-dialing.ts';
+import { WebRtcOutboundDialing, type OutboundDialsStarted } from './webrtc-outbound-dialing.ts';
 
 export type {
     WebRtcGroupManagerDeleteOptions,
@@ -119,6 +119,8 @@ export class WebRtcGroupManager {
 
     stopReconcileWakes(): void {
         this.rtcQBox.removeRtcPeerLifecycleById(WebRtcGroupManager.SETUP_COMPLETION_CALLBACK_ID);
+        // A wake already on the microtask queue finds nothing waiting and stands down.
+        this.waitingDialCount = 0;
     }
 
     /** Settles after the reconcile that a pending setup-ending wake or an in-flight update will run. */
@@ -352,16 +354,9 @@ export class WebRtcGroupManager {
     }
 
     private wakeAfterSetupEnded(): void {
-        if (this.waitingDialCount === 0) {
-            return;
-        }
-        if (this.reconcilePassRunning) {
-            // The pass ended a setup after its own dial loop; the drain loop
-            // re-plans once more instead of a wake landing mid-pass.
-            this.reconcileRequested = true;
-            return;
-        }
-        if (this.scheduledWake) {
+        // A pass runs synchronously, so an ending observed while it runs is one
+        // the pass caused itself and already accounted for.
+        if (this.waitingDialCount === 0 || this.reconcilePassRunning || this.scheduledWake) {
             return;
         }
         // Deferred past the notification that raised it, so every observer sees
@@ -369,6 +364,9 @@ export class WebRtcGroupManager {
         this.scheduledWake = Promise.resolve()
             .then(() => {
                 this.scheduledWake = undefined;
+                if (this.waitingDialCount === 0) {
+                    return;
+                }
                 return this.reconcileAllGroups();
             })
             .catch((caught) => {
@@ -416,12 +414,9 @@ export class WebRtcGroupManager {
                 this.rtcQBox.input.sessionId
             )
         });
-        const started = new WebRtcOutboundDialing({ rtcQBox: this.rtcQBox, dialPlan, ownership }).start();
-        this.diagnostics.connectAttemptCount += started.attemptCount;
-        this.diagnostics.connectFailureCount += started.failureCount;
-        this.diagnostics.connectDeferredBudgetCount += started.deferredCount;
-        this.diagnostics.connectDeferredPacingCount += started.pacedCount;
-        this.waitingDialCount = started.deferredCount + started.pacedCount;
+        this.recordDialsStarted(
+            new WebRtcOutboundDialing({ rtcQBox: this.rtcQBox, dialPlan, ownership }).start()
+        );
 
         const reconciledKnownPeerIds = new Set(this.rtcQBox.knownPeerIds());
         this.removeUnknownRetainedPeers(reconciledKnownPeerIds);
@@ -433,6 +428,14 @@ export class WebRtcGroupManager {
             desiredPeerIds: [...desiredPeerIds],
             rttReportingPeerIds: this.rttReportingPeerIds({ degreeLimit: this.options.rttReportingDegreeLimit })
         });
+    }
+
+    private recordDialsStarted(started: OutboundDialsStarted): void {
+        this.diagnostics.connectAttemptCount += started.attemptCount;
+        this.diagnostics.connectFailureCount += started.failureCount;
+        this.diagnostics.connectDeferredBudgetCount += started.deferredCount;
+        this.diagnostics.connectDeferredPacingCount += started.pacedCount;
+        this.waitingDialCount = started.deferredCount + started.pacedCount;
     }
 
     private evictRetainedPeers(

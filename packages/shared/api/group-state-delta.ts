@@ -161,6 +161,8 @@ export function validateGroupStateDeltaEnvelope(
     }
 }
 
+type DeltaRecord = Record<string, unknown>;
+
 function validateDeltaGroup(
     value: unknown,
     ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>,
@@ -252,17 +254,20 @@ function validateDeltaGroup(
         enumValue(accepted.state, GROUP_LAYOUT_IDENTITY_STATES, `${label}.acceptedLayoutIdentity.state`);
     }
     enumValue(group.transportState, GROUP_TRANSPORT_STATES, `${label}.transportState`);
-    const memberPolicy = record(group.memberPolicy, `${label}.memberPolicy`);
-    exact(memberPolicy, GROUP_MEMBER_POLICY_KEYS, `${label}.memberPolicy`);
-    positiveInteger(memberPolicy.maxConcurrentEdgeSetups, `${label}.memberPolicy.maxConcurrentEdgeSetups`);
-    if (memberPolicy.maxConcurrentEdgeSetups > MAX_GROUP_CONCURRENT_EDGE_SETUPS) {
-        fail(`${label}.memberPolicy.maxConcurrentEdgeSetups exceeds the policy bound`);
-    }
-    enumValue(memberPolicy.transports, GROUP_ESTABLISHMENT_TRANSPORTS, `${label}.memberPolicy.transports`);
+    validateDeltaGroupMemberPolicy(record(group.memberPolicy, `${label}.memberPolicy`), `${label}.memberPolicy`);
     return { activeMemberCount: group.activeMemberCount, status: group.status };
 }
 
-function validateGroupLifecycle(group: Record<string, unknown>, label: string): void {
+function validateDeltaGroupMemberPolicy(memberPolicy: DeltaRecord, label: string): void {
+    exact(memberPolicy, GROUP_MEMBER_POLICY_KEYS, label);
+    positiveInteger(memberPolicy.maxConcurrentEdgeSetups, `${label}.maxConcurrentEdgeSetups`);
+    if (memberPolicy.maxConcurrentEdgeSetups > MAX_GROUP_CONCURRENT_EDGE_SETUPS) {
+        fail(`${label}.maxConcurrentEdgeSetups exceeds the policy bound`);
+    }
+    enumValue(memberPolicy.transports, GROUP_ESTABLISHMENT_TRANSPORTS, `${label}.transports`);
+}
+
+function validateGroupLifecycle(group: DeltaRecord, label: string): void {
     if (group.status === 'active' && (group.archived !== null || group.deleted !== null)) {
         fail(`${label} lifecycle is invalid`);
     }

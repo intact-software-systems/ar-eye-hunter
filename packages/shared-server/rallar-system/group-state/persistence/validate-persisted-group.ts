@@ -79,6 +79,8 @@ const STORED_MEMBER_KEYS = [
     'invitationExpiresAtEpochMs'
 ] as const;
 
+type StoredGroupRecord = Readonly<Record<string, unknown>>;
+
 export function validateStoredGroup(group: unknown, ref: GroupRef): asserts group is Group {
     const value = requireRecord(group, 'Stored group value');
     assertExactKeys(value, STORED_GROUP_KEYS, 'Stored group value');
@@ -175,7 +177,10 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
         );
     }
     requireOneOf(value.transportState, GROUP_TRANSPORT_STATES, 'Stored group transportState');
-    const memberPolicy = requireRecord(value.memberPolicy, 'Stored group memberPolicy');
+    validateStoredGroupMemberPolicy(requireRecord(value.memberPolicy, 'Stored group memberPolicy'));
+}
+
+function validateStoredGroupMemberPolicy(memberPolicy: StoredGroupRecord): void {
     assertExactKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
     assertRequiredKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
     requirePositiveSafeInteger(
@@ -271,7 +276,7 @@ export function validateScopedValue(
 }
 
 export function validateScopedRecord(
-    value: Readonly<Record<string, unknown>>,
+    value: StoredGroupRecord,
     ref: GroupRef,
     label: string
 ): void {

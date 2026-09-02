@@ -77,15 +77,15 @@ export class WebRtcOutboundDialing {
         if (slot === 'new-connection') {
             this.newDialBudget -= 1;
         }
-        for (const groupKey of requireOwnerGroupKeys(this.ownership, peerId)) {
+        for (const groupKey of getOwnerGroupKeys(this.ownership, peerId)) {
             this.inFlightSetupCounts.set(groupKey, (this.inFlightSetupCounts.get(groupKey) ?? 0) + 1);
         }
     }
 
     private resolveDialAdmission(peerId: PeerId): InFlightDialAdmission {
-        const owningGroupBudgets = requireOwnerGroupKeys(this.ownership, peerId).map((groupKey) => ({
+        const owningGroupBudgets = getOwnerGroupKeys(this.ownership, peerId).map((groupKey) => ({
             inFlightSetupCount: this.inFlightSetupCounts.get(groupKey) ?? 0,
-            maxConcurrentEdgeSetups: requireGroupSetupBound(this.ownership, groupKey)
+            maxConcurrentEdgeSetups: getGroupSetupBound(this.ownership, groupKey)
         }));
         return computeInFlightDialAdmission({ owningGroupBudgets });
     }
@@ -99,23 +99,21 @@ export class WebRtcOutboundDialing {
         }
         if (connected.left) {
             this.started.failureCount += 1;
-            const error = connected.left.kind === 'self' ||
-                    connected.left.kind === 'dial-denied'
-                ? undefined
-                : connected.left.error;
-            console.error(
-                `Failed to connect peer ${peerId}. Owners=${
-                    JSON.stringify(this.ownership.groupsByPeerId.get(peerId) ?? [])
-                }. Cause=${connected.left.kind}`,
-                error
-            );
+            if (connected.left.kind !== 'self' && connected.left.kind !== 'dial-denied') {
+                console.error(
+                    `Failed to connect peer ${peerId}. Owners=${
+                        JSON.stringify(this.ownership.groupsByPeerId.get(peerId) ?? [])
+                    }. Cause=${connected.left.kind}`,
+                    connected.left.error
+                );
+            }
             return undefined;
         }
         return connected.right?.outcome;
     }
 }
 
-function requireOwnerGroupKeys(ownership: WebRtcPeerOwnership, peerId: PeerId): readonly string[] {
+function getOwnerGroupKeys(ownership: WebRtcPeerOwnership, peerId: PeerId): readonly string[] {
     const groupKeys = ownership.groupKeysByPeerId.get(peerId);
     if (!groupKeys) {
         throw new Error(`Desired peer ${peerId} has no owning group`);
@@ -123,7 +121,7 @@ function requireOwnerGroupKeys(ownership: WebRtcPeerOwnership, peerId: PeerId): 
     return groupKeys;
 }
 
-function requireGroupSetupBound(ownership: WebRtcPeerOwnership, groupKey: string): number {
+function getGroupSetupBound(ownership: WebRtcPeerOwnership, groupKey: string): number {
     const bound = ownership.maxConcurrentEdgeSetupsByGroupKey.get(groupKey);
     if (bound === undefined) {
         throw new Error(`Owning group ${groupKey} has no in-flight bound`);

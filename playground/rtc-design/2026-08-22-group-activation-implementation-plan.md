@@ -2362,9 +2362,9 @@ stop for non-browser owners, and the validators accepting any positive integer w
 normalizer clamps to 256. All of it is folded into the shape above. Two consequences are
 accepted rather than fixed: a group created without a policy copies the default preset's member
 tier at creation, so a later preset change does not re-aim existing groups (the rule every other
-creation-time policy value already follows); and the member-policy checks stay inline in each
-validator because the changed-style gate counts an `unknown`-typed helper parameter as boundary
-widening.
+creation-time policy value already follows); and each validator's member-policy helper takes the
+already-narrowed record under one named record type per file, because the changed-style gate
+counts every `unknown` spelling a file gains and an `unknown`-typed helper parameter is one.
 
 **Open for 9c.** Inbound setups are not paced: `acceptPeerIfAbsent` starts a setup for any
 signaled peer regardless of the bound, so a member's in-flight count can exceed its bound by the
