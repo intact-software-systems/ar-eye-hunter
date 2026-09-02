@@ -11,10 +11,6 @@ import {
     type AnyClientPresence,
     type AnyGroupPresence
 } from '../api/group-client-views.ts';
-import {
-    computeInFlightDialAdmission,
-    type InFlightDialAdmission
-} from '../api/group-lifecycle/compute-in-flight-dial-admission.ts';
 import type { GroupRef } from '../api/group-types.ts';
 import type { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import {
@@ -22,7 +18,7 @@ import {
     normalizeRttReportingDegreeLimit,
     selectRttReportingPeers
 } from '../rtc/rtt-reporting-policy.ts';
-import { isPeerSetupStarted, type WebRtcConnectionService } from './web-rtc-connection-service.ts';
+import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
 import { WebRtcGroupService } from './web-rtc-group-service.ts';
 import { selectGroupDialPeerIds } from './webrtc-group-dial-policy.ts';
 import {
@@ -33,6 +29,7 @@ import {
     type WebRtcGroupManagerDiagnostics,
     type WebRtcGroupManagerOptions,
     type WebRtcGroupManagerState,
+    type WebRtcPeerOwnership,
     type WebRtcRttReportingPeerOptions
 } from './webrtc-group-manager-contracts.ts';
 import {
@@ -40,11 +37,8 @@ import {
     computeServerDesiredPeerIds,
     readOverlayForGroup
 } from './webrtc-group-overlay-reading.ts';
-import {
-    computeInFlightSetupCounts,
-    computeOutboundDialPlan,
-    type OutboundDialPlan
-} from './webrtc-outbound-dial-plan.ts';
+import { computeOutboundDialPlan } from './webrtc-outbound-dial-plan.ts';
+import { WebRtcOutboundDialing } from './webrtc-outbound-dialing.ts';
 
 export type {
     WebRtcGroupManagerDeleteOptions,
@@ -57,11 +51,6 @@ export type {
 export const DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS = 10;
 export const MIN_WEBRTC_MAX_PEER_CONNECTIONS = 5;
 export const DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS = 15_000;
-
-interface WaitingDials {
-    readonly pacedCount: number;
-    readonly deferredCount: number;
-}
 
 interface RttReportingGroupPair {
     readonly group: WebRtcGroupService;
@@ -77,14 +66,6 @@ export namespace WebRtcGroupManager {
         readonly plannedOverlayCache?: ReadableKeyedValues<string, OverlayInfo>;
         readonly acceptedOverlayCache?: ReadableKeyedValues<string, OverlayInfo>;
     }
-
-    export interface PeerOwnership {
-        readonly groupsByPeerId: ReadonlyMap<PeerId, readonly GroupId[]>;
-        readonly dialAllowedPeerIds: ReadonlySet<PeerId>;
-        /** The same ownership by the scoped group key, which the bound is keyed on. */
-        readonly groupKeysByPeerId: ReadonlyMap<PeerId, readonly string[]>;
-        readonly maxConcurrentEdgeSetupsByGroupKey: ReadonlyMap<string, number>;
-    }
 }
 
 export class WebRtcGroupManager {
@@ -92,7 +73,7 @@ export class WebRtcGroupManager {
 
     private readonly groupsByKey = new Map<string, WebRtcGroupService>();
     private readonly retainedPeerConnections = new Map<PeerId, RetainedPeerConnection>();
-    private peerOwnershipCache: WebRtcGroupManager.PeerOwnership | undefined;
+    private peerOwnershipCache: WebRtcPeerOwnership | undefined;
     private reconcileInFlight: Promise<void> | undefined;
     private reconcileRequested = false;
     private reconcilePassRunning = false;
@@ -239,7 +220,7 @@ export class WebRtcGroupManager {
         return clonePeerOwners(this.readPeerOwnership().groupsByPeerId);
     }
 
-    private readPeerOwnership(): WebRtcGroupManager.PeerOwnership {
+    private readPeerOwnership(): WebRtcPeerOwnership {
         if (!this.peerOwnershipCache) {
             this.peerOwnershipCache = this.computePeerOwnership();
         }
@@ -247,7 +228,7 @@ export class WebRtcGroupManager {
         return this.peerOwnershipCache;
     }
 
-    private computePeerOwnership(): WebRtcGroupManager.PeerOwnership {
+    private computePeerOwnership(): WebRtcPeerOwnership {
         const owners = new Map<PeerId, GroupId[]>();
         const groupKeysByPeerId = new Map<PeerId, string[]>();
         const dialAllowedPeerIds = new Set<PeerId>();
@@ -435,10 +416,12 @@ export class WebRtcGroupManager {
                 this.rtcQBox.input.sessionId
             )
         });
-        const waiting = this.connectDesiredPeers(dialPlan, ownership);
-        this.diagnostics.connectDeferredBudgetCount += waiting.deferredCount;
-        this.diagnostics.connectDeferredPacingCount += waiting.pacedCount;
-        this.waitingDialCount = waiting.deferredCount + waiting.pacedCount;
+        const started = new WebRtcOutboundDialing({ rtcQBox: this.rtcQBox, dialPlan, ownership }).start();
+        this.diagnostics.connectAttemptCount += started.attemptCount;
+        this.diagnostics.connectFailureCount += started.failureCount;
+        this.diagnostics.connectDeferredBudgetCount += started.deferredCount;
+        this.diagnostics.connectDeferredPacingCount += started.pacedCount;
+        this.waitingDialCount = started.deferredCount + started.pacedCount;
 
         const reconciledKnownPeerIds = new Set(this.rtcQBox.knownPeerIds());
         this.removeUnknownRetainedPeers(reconciledKnownPeerIds);
@@ -450,89 +433,6 @@ export class WebRtcGroupManager {
             desiredPeerIds: [...desiredPeerIds],
             rttReportingPeerIds: this.rttReportingPeerIds({ degreeLimit: this.options.rttReportingDegreeLimit })
         });
-    }
-
-    /**
-     * Spends the connection budget and the in-flight bound as dials start, on
-     * what each ensure actually did: a paced peer holds no slot, and a dial
-     * that started nothing frees its slot for the next candidate at once.
-     */
-    private connectDesiredPeers(
-        dialPlan: OutboundDialPlan,
-        ownership: WebRtcGroupManager.PeerOwnership
-    ): WaitingDials {
-        const inFlightSetupCounts = computeInFlightSetupCounts(
-            this.rtcQBox.inFlightPeerIds(),
-            ownership.groupKeysByPeerId
-        );
-        for (const peerId of dialPlan.livePeerIds) {
-            this.ensureDesiredPeer(peerId, ownership);
-        }
-
-        let newDialBudget = dialPlan.newDialBudget;
-        let pacedCount = 0;
-        let deferredCount = 0;
-        const dials = [
-            ...dialPlan.deadKnownPeerIds.map((peerId) => ({ peerId, onNewConnectionSlot: false })),
-            ...dialPlan.candidatePeerIds.map((peerId) => ({ peerId, onNewConnectionSlot: true }))
-        ];
-        for (const dial of dials) {
-            if (dial.onNewConnectionSlot && newDialBudget === 0) {
-                deferredCount += 1;
-                continue;
-            }
-            if (this.resolveDialAdmission(dial.peerId, inFlightSetupCounts, ownership) === 'wait') {
-                pacedCount += 1;
-                continue;
-            }
-            if (this.ensureDesiredPeer(dial.peerId, ownership) !== 'setup-started') {
-                continue;
-            }
-            if (dial.onNewConnectionSlot) {
-                newDialBudget -= 1;
-            }
-            for (const groupKey of requireOwnerGroupKeys(ownership, dial.peerId)) {
-                inFlightSetupCounts.set(groupKey, (inFlightSetupCounts.get(groupKey) ?? 0) + 1);
-            }
-        }
-        return { pacedCount, deferredCount };
-    }
-
-    private resolveDialAdmission(
-        peerId: PeerId,
-        inFlightSetupCounts: ReadonlyMap<string, number>,
-        ownership: WebRtcGroupManager.PeerOwnership
-    ): InFlightDialAdmission {
-        const owningGroupBudgets = requireOwnerGroupKeys(ownership, peerId).map((groupKey) => ({
-            inFlightSetupCount: inFlightSetupCounts.get(groupKey) ?? 0,
-            maxConcurrentEdgeSetups: requireGroupSetupBound(ownership, groupKey)
-        }));
-        return computeInFlightDialAdmission({ owningGroupBudgets });
-    }
-
-    private ensureDesiredPeer(
-        peerId: PeerId,
-        ownership: WebRtcGroupManager.PeerOwnership
-    ): WebRtcConnectionService.PeerConnectionEnsureOutcome | undefined {
-        const connected = this.rtcQBox.ensurePeerConnectionStarted(peerId);
-        if (isPeerSetupStarted(connected)) {
-            this.diagnostics.connectAttemptCount += 1;
-        }
-        if (connected.left) {
-            this.diagnostics.connectFailureCount += 1;
-            const error = connected.left.kind === 'self' ||
-                    connected.left.kind === 'dial-denied'
-                ? undefined
-                : connected.left.error;
-            console.error(
-                `Failed to connect peer ${peerId}. Owners=${
-                    JSON.stringify(ownership.groupsByPeerId.get(peerId) ?? [])
-                }. Cause=${connected.left.kind}`,
-                error
-            );
-            return undefined;
-        }
-        return connected.right?.outcome;
     }
 
     private evictRetainedPeers(
@@ -862,26 +762,4 @@ export class WebRtcGroupManager {
     private now(): number {
         return this.options.now?.() ?? Date.now();
     }
-}
-
-function requireOwnerGroupKeys(
-    ownership: WebRtcGroupManager.PeerOwnership,
-    peerId: PeerId
-): readonly string[] {
-    const groupKeys = ownership.groupKeysByPeerId.get(peerId);
-    if (!groupKeys) {
-        throw new Error(`Desired peer ${peerId} has no owning group`);
-    }
-    return groupKeys;
-}
-
-function requireGroupSetupBound(
-    ownership: WebRtcGroupManager.PeerOwnership,
-    groupKey: string
-): number {
-    const bound = ownership.maxConcurrentEdgeSetupsByGroupKey.get(groupKey);
-    if (bound === undefined) {
-        throw new Error(`Owning group ${groupKey} has no in-flight bound`);
-    }
-    return bound;
 }

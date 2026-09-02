@@ -175,11 +175,7 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
         );
     }
     requireOneOf(value.transportState, GROUP_TRANSPORT_STATES, 'Stored group transportState');
-    validateStoredGroupMemberPolicy(value.memberPolicy);
-}
-
-function validateStoredGroupMemberPolicy(value: unknown): void {
-    const memberPolicy = requireRecord(value, 'Stored group memberPolicy');
+    const memberPolicy = requireRecord(value.memberPolicy, 'Stored group memberPolicy');
     assertExactKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
     assertRequiredKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
     requirePositiveSafeInteger(

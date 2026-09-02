@@ -252,18 +252,14 @@ function validateDeltaGroup(
         enumValue(accepted.state, GROUP_LAYOUT_IDENTITY_STATES, `${label}.acceptedLayoutIdentity.state`);
     }
     enumValue(group.transportState, GROUP_TRANSPORT_STATES, `${label}.transportState`);
-    validateDeltaGroupMemberPolicy(group.memberPolicy, `${label}.memberPolicy`);
-    return { activeMemberCount: group.activeMemberCount, status: group.status };
-}
-
-function validateDeltaGroupMemberPolicy(value: unknown, label: string): void {
-    const memberPolicy = record(value, label);
-    exact(memberPolicy, GROUP_MEMBER_POLICY_KEYS, label);
-    positiveInteger(memberPolicy.maxConcurrentEdgeSetups, `${label}.maxConcurrentEdgeSetups`);
+    const memberPolicy = record(group.memberPolicy, `${label}.memberPolicy`);
+    exact(memberPolicy, GROUP_MEMBER_POLICY_KEYS, `${label}.memberPolicy`);
+    positiveInteger(memberPolicy.maxConcurrentEdgeSetups, `${label}.memberPolicy.maxConcurrentEdgeSetups`);
     if (memberPolicy.maxConcurrentEdgeSetups > MAX_GROUP_CONCURRENT_EDGE_SETUPS) {
-        fail(`${label}.maxConcurrentEdgeSetups exceeds the policy bound`);
+        fail(`${label}.memberPolicy.maxConcurrentEdgeSetups exceeds the policy bound`);
     }
-    enumValue(memberPolicy.transports, GROUP_ESTABLISHMENT_TRANSPORTS, `${label}.transports`);
+    enumValue(memberPolicy.transports, GROUP_ESTABLISHMENT_TRANSPORTS, `${label}.memberPolicy.transports`);
+    return { activeMemberCount: group.activeMemberCount, status: group.status };
 }
 
 function validateGroupLifecycle(group: Record<string, unknown>, label: string): void {
