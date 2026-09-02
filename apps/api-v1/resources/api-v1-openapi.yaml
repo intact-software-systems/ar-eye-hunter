@@ -5381,8 +5381,7 @@ components:
             replans until `reconfigure`; `debounced` coalesces changes under
             `debounceWindowMs` and replans no later than `maxReplanWaitMs` after
             the first change of a burst; `auto` carries no policy window and
-            replans on the server's first opportunity after a change. Stage
-            triggers take effect in a later release.
+            replans on the server's first opportunity after a change.
           properties:
             replanning:
               type: string
@@ -5449,8 +5448,9 @@ components:
         settleMs has elapsed; presence fires at memberCount live members or at
         the fallbackMs timer, whichever is first. Each kind accepts exactly its
         own fields — after requires settleMs, presence requires memberCount and
-        fallbackMs, and unknown keys are rejected. Stored and validated, not
-        yet behavioural.
+        fallbackMs, and unknown keys are rejected. manual, immediate and after
+        drive the boundaries; presence is stored and validated, not yet
+        behavioural.
       properties:
         kind:
           type: string

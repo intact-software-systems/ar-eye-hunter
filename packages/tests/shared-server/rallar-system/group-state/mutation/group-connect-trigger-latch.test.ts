@@ -43,7 +43,11 @@ describe('automatic retry connect intent', () => {
                 operation: 'planGroupLayout',
                 input: { ...command.input, actorPrincipalId: null, actorSessionId: null, expectedFormationEpoch: 2 }
             },
-            read: { ...createGroupAuthorityRead({ lifecycleState: 'forming', formationEpoch: 2 }), actorMember: null, actorMemberEntry: null },
+            read: {
+                ...createGroupAuthorityRead({ lifecycleState: 'forming', formationEpoch: 2, formationAttemptCount: 1 }),
+                actorMember: null,
+                actorMemberEntry: null
+            },
             facts: { ...createGroupAuthorityFacts(), internalAuthority: 'formation-automation', authenticatedAuthority: null }
         });
         expect(computed.outcome).toBe('write');
@@ -57,6 +61,7 @@ describe('automatic retry connect intent', () => {
             groupRef: command.aggregateRef,
             formationEpoch: 3,
             triggerGeneration: command.commandId,
+            notBeforeEpochMs: 0,
             state: 'awaiting-publication'
         });
         expect(computed.outboxEntries.some((entry) => JSON.parse(entry.resource).payload.typeId === 'GROUP_CONNECT_TRIGGER')).toBe(true);
@@ -91,7 +96,7 @@ function automaticRead(): GroupMutationRead {
         actorMember: null,
         actorMemberEntry: null,
         plannedLayoutRow: { snapshot: PLANNED, revision: 1 },
-        connectTriggerLatch: { latch: { ...IDENTITY, state: 'awaiting-publication' }, revision: 1 }
+        connectTriggerLatch: { latch: { ...IDENTITY, notBeforeEpochMs: 0, state: 'awaiting-publication' }, revision: 1 }
     };
 }
 
@@ -102,7 +107,7 @@ describe('connect intent handoff', () => {
         await runtime.upsert(
             GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
             toGroupConnectTriggerStorageKey(IDENTITY),
-            JSON.stringify({ ...IDENTITY, state: 'awaiting-publication' }),
+            JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, state: 'awaiting-publication' }),
             NEVER_EXPIRE_AT_TIMESTAMP
         );
         const commands: GroupMutationCommand[] = [];
@@ -116,13 +121,13 @@ describe('connect intent handoff', () => {
             },
             nowEpochMs: () => 2000
         };
-        await petitionGroupConnectTrigger(port, IDENTITY);
+        await petitionGroupConnectTrigger(port, IDENTITY, port.nowEpochMs());
         expect(commands).toEqual([]);
         planned = PLANNED;
-        await petitionGroupConnectTrigger(port, IDENTITY);
+        await petitionGroupConnectTrigger(port, IDENTITY, port.nowEpochMs());
         planned = { ...PLANNED, version: 2 };
-        await petitionGroupConnectTrigger(port, IDENTITY);
-        await petitionGroupConnectTrigger(port, IDENTITY);
+        await petitionGroupConnectTrigger(port, IDENTITY, port.nowEpochMs());
+        await petitionGroupConnectTrigger(port, IDENTITY, port.nowEpochMs());
         expect(commands.map((command) => command.operation === 'connectGroup' ? command.input.expectedLayout.version : null)).toEqual([1, 2, 2]);
         expect(commands[0]!.commandId).not.toBe(commands[1]!.commandId);
         expect(commands[1]!.commandId).toBe(commands[2]!.commandId);
@@ -156,7 +161,9 @@ describe('connect intent handoff', () => {
                 : state === 'superseded'
                 ? { snapshot: { ...PLANNED, version: 2 }, revision: 2 }
                 : original.plannedLayoutRow,
-            connectTriggerLatch: state === 'consumed' ? { latch: { ...IDENTITY, state: 'consumed' }, revision: 2 } : original.connectTriggerLatch,
+            connectTriggerLatch: state === 'consumed'
+                ? { latch: { ...IDENTITY, notBeforeEpochMs: 0, state: 'consumed' }, revision: 2 }
+                : original.connectTriggerLatch,
             group: state === 'reset' ? createGroupAuthorityRead({ lifecycleState: 'dormant', formationEpoch: 4 }).group : original.group
         };
         const computed = computeGroupMutation({
@@ -181,7 +188,7 @@ describe('connect intent handoff', () => {
             await runtime.upsert(
                 GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
                 toGroupConnectTriggerStorageKey(IDENTITY),
-                JSON.stringify({ ...IDENTITY, state: 'awaiting-publication', ...patch }),
+                JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, state: 'awaiting-publication', ...patch }),
                 NEVER_EXPIRE_AT_TIMESTAMP
             );
             await expect(latches.read(IDENTITY)).rejects.toBeInstanceOf(GroupConnectTriggerLatchCorruptionError);
@@ -292,7 +299,7 @@ describe('retry handoff commit races and replay', () => {
         await harness.runtimeRepository.upsert(
             GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
             toGroupConnectTriggerStorageKey(IDENTITY),
-            JSON.stringify({ ...IDENTITY, state: 'awaiting-publication' }),
+            JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, state: 'awaiting-publication' }),
             NEVER_EXPIRE_AT_TIMESTAMP
         );
         await createGroupConnectTriggerWorkHandler(port).onMessage(JSON.parse(source.resource) as ALMessage, source);

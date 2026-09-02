@@ -1,3 +1,5 @@
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSummary } from '@shared/api/group-types.ts';
 
 import type { GroupMutationCommand, GroupMutationFacts, GroupMutationRead } from '../group-mutation-contracts.ts';
@@ -37,7 +39,7 @@ export function createInitialGroup({
         expiresAtEpochMs: command.input.expiresAtEpochMs,
         emptySinceEpochMs: null,
         purgeAfterEpochMs: command.input.purgeAfterEpochMs,
-        lifecycleState: command.input.lifecyclePolicy?.formation === 'phased' ? 'forming' : 'active',
+        lifecycleState: resolveCreateGroupLifecyclePolicy(command).formation === 'phased' ? 'forming' : 'active',
         formationEpoch: 0,
         formationAttemptCount: 0,
         lastFormationOutcome: null,
@@ -93,4 +95,11 @@ export function createInitialPresenceSummary({
         activeSessionCount: 0,
         computedAtEpochMs: facts.nowEpochMs
     };
+}
+
+/** The policy a group is created under: the request's, or the default preset when the request carries none. */
+export function resolveCreateGroupLifecyclePolicy(
+    command: Extract<GroupMutationCommand, { operation: 'createGroup'; }>
+): GroupLifecyclePolicy {
+    return command.input.lifecyclePolicy ?? createDefaultGroupLifecyclePolicy();
 }

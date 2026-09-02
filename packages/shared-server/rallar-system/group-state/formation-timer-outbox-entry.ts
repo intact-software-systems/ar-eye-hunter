@@ -1,15 +1,20 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { consumesFormationDeadlineAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
+import {
+    consumesFormationDeadlineAt,
+    holdsPlannedCandidateAt
+} from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { computeFormationRetryBackoffMs } from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
-import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { toStageTriggerSettleMs } from '@shared/api/group-lifecycle/evaluate-group-stage-trigger.ts';
+import type { GroupLifecyclePolicy, GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { isFormationAttemptBudgetExhausted } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { fnv1a64, toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { AppOutboxType } from '../app-outbox/app-outbox-type.ts';
+import { requireOneOf } from '../protocol/exact-object-decoding.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import type {
     GroupLifecycleTransitionOperation,
@@ -21,16 +26,22 @@ import { groupStateGroupStorageKey } from './persistence/aggregate/group-aggrega
 
 export const APP_OUTBOX_FORMATION_TIMER_TOPIC = 'app-outbox.formation-timer';
 
+export const GROUP_FORMATION_TIMER_KINDS = ['deadline', 'retry', 'plan', 'connect'] as const;
+
+export type GroupFormationTimerKind = (typeof GROUP_FORMATION_TIMER_KINDS)[number];
+
 /**
- * The time leg of the activation criterion. `deadline` fires the criterion
- * once the establishment deadline elapses; `retry` re-enters establishment
- * after a below-floor return, under backoff. Entries are inserted with
- * `dequeueAudit.nextTs` at their due time -- the queue's own visibility filter
- * (`next_ts <= now()`) holds them invisible until then, so the consumer never
- * sees an early entry and no polling or requeue loop exists.
+ * The durable time leg of formation. `deadline` fires the activation
+ * criterion once the establishment deadline elapses; `retry` re-enters
+ * establishment after a below-floor return, under backoff; `plan` and
+ * `connect` are the stage triggers' settle (product decision 8). Entries
+ * are inserted with `dequeueAudit.nextTs` at their due time -- the queue's
+ * own visibility filter (`next_ts <= now()`) holds them invisible until
+ * then, so the consumer never sees an early entry and no polling or requeue
+ * loop exists.
  */
 export type GroupFormationTimerWork = Readonly<{
-    kind: 'deadline' | 'retry';
+    kind: GroupFormationTimerKind;
     groupRef: GroupRef;
     /** The formation epoch this timer was armed for; a mismatch is a stale drop. */
     formationEpoch: number;
@@ -58,10 +69,13 @@ export function computeFormationTimerEntry(input: ComputeFormationTimerEntryInpu
     const contextId = groupStateGroupStorageKey(work.groupRef);
     // Queue resource ids cap at 36 chars and lose punctuation when rewritten, so
     // the id is short by construction: the receipt validator matches the ft-
-    // prefix, and the group identity rides the fnv hash of the storage key.
+    // prefix, and the group identity rides the fnv hash. The hash folds in the
+    // arming write's snapshot version: a re-created group restarts its epochs,
+    // and its previous life's rows never expire, so kind and epoch alone would
+    // collide with them at the very first write.
     const key = toAppQueueKey({
         topicId: APP_OUTBOX_FORMATION_TIMER_TOPIC,
-        resourceId: `ft-${work.kind}-${work.formationEpoch}-${fnv1a64(contextId)}`,
+        resourceId: `ft-${work.kind}-${work.formationEpoch}-${fnv1a64(`${contextId}:${work.groupSnapshotVersion}`)}`,
         contextId
     });
     const createdBy = toAppQueueCreatedBy(input.senderId);
@@ -107,11 +121,8 @@ export function decodeFormationTimerWork(resource: string): GroupFormationTimerW
         ['applicationId', 'workspaceId', 'groupId'],
         'Formation timer group identity'
     );
-    if (parsed.kind !== 'deadline' && parsed.kind !== 'retry') {
-        throw new TypeError('Formation timer work payload is invalid');
-    }
     return {
-        kind: parsed.kind,
+        kind: requireOneOf(parsed.kind, GROUP_FORMATION_TIMER_KINDS, 'Formation timer kind'),
         groupRef: {
             applicationId: readNonEmptyString(groupRef.applicationId, 'Formation timer application id'),
             workspaceId: readNonEmptyString(groupRef.workspaceId, 'Formation timer workspace id'),
@@ -130,20 +141,32 @@ export function decodeFormationTimerWork(resource: string): GroupFormationTimerW
 }
 
 export interface ComputeFormationTimerEntriesInput {
-    readonly command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation; }>;
+    readonly command: Extract<GroupMutationCommand, { operation: GroupLifecycleTransitionOperation | 'createGroup'; }>;
+    /** The stage the group held before this write; null when the write creates the group. */
+    readonly previous: GroupLifecycleState | null;
     readonly next: Group;
     readonly policy: GroupLifecyclePolicy;
     readonly facts: GroupMutationFacts;
 }
 
 /**
- * The transitions arm the time leg themselves (plan refinement 2026-08-18):
- * entering an establishment phase schedules the deadline evaluation, and a
- * below-floor return schedules the next attempt under backoff. Both entries
- * carry the post-transition epoch, so a group that moves on before the timer
- * fires turns the entry into a stale drop.
+ * The writes arm the time leg themselves (plan refinement 2026-08-18): a
+ * pure function of the command, the stages, the policy and the facts, which
+ * the outbox validator recomputes byte-exactly. Every entry carries the
+ * post-write epoch, so a group that moves on before the timer fires turns
+ * the entry into a stale drop.
  */
 export function computeFormationTimerEntries(
+    input: ComputeFormationTimerEntriesInput
+): readonly ResourceEntry[] {
+    return [...computeEstablishmentTimerEntries(input), ...computeStageTriggerTimerEntries(input)];
+}
+
+/**
+ * Entering an establishment phase schedules the deadline evaluation, and a
+ * below-floor return schedules the next attempt under backoff.
+ */
+function computeEstablishmentTimerEntries(
     input: ComputeFormationTimerEntriesInput
 ): readonly ResourceEntry[] {
     const { command, next, policy, facts } = input;
@@ -167,9 +190,39 @@ export function computeFormationTimerEntries(
     return [];
 }
 
+/**
+ * The stage triggers' time leg (product decision 8), phased groups only
+ * (product decision 17): the first entry into `forming` — creation or
+ * `start` — arms the plan trigger at its settle, and every entry into a
+ * stage that holds a planned candidate arms an `after` connect trigger's
+ * settle. A below-floor return into `forming` is the retry leg's, and a
+ * repeated `plan` while `planned` is the state machine's idempotent cell,
+ * not an entry.
+ */
+function computeStageTriggerTimerEntries(
+    input: ComputeFormationTimerEntriesInput
+): readonly ResourceEntry[] {
+    const { previous, next, policy, facts } = input;
+    if (policy.formation !== 'phased' || previous === next.lifecycleState) {
+        return [];
+    }
+    if (next.lifecycleState === 'forming' && (previous === null || previous === 'dormant')) {
+        const settleMs = toStageTriggerSettleMs(policy.establishment.planTrigger);
+        return settleMs === null ? [] : [timerEntry(input, 'plan', facts.nowEpochMs + settleMs)];
+    }
+    const { connectTrigger } = policy.establishment;
+    if (
+        input.command.operation === 'planGroupLayout' && holdsPlannedCandidateAt(next.lifecycleState) &&
+        connectTrigger.kind === 'after'
+    ) {
+        return [timerEntry(input, 'connect', facts.nowEpochMs + connectTrigger.settleMs)];
+    }
+    return [];
+}
+
 function timerEntry(
     input: ComputeFormationTimerEntriesInput,
-    kind: 'deadline' | 'retry',
+    kind: GroupFormationTimerKind,
     notBeforeEpochMs: number
 ): ResourceEntry {
     const { next, facts } = input;

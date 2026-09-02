@@ -474,11 +474,17 @@
               "includes": [
                 {
                   "get": [
-                    { "path": "outputs.managerPlansLayoutNextHopsBySessionId" },
-                    { "path": "outputs.client{i}SessionId" }
+                    {
+                      "path": "outputs.managerPlansLayoutNextHopsBySessionId"
+                    },
+                    {
+                      "path": "outputs.client{i}SessionId"
+                    }
                   ]
                 },
-                { "path": "outputs.client{j}SessionId" }
+                {
+                  "path": "outputs.client{j}SessionId"
+                }
               ]
             }
           },
@@ -487,19 +493,31 @@
               "condition": {
                 "operator": "lexicallyBefore",
                 "values": [
-                  { "path": "outputs.client{i}SessionId" },
-                  { "path": "outputs.client{j}SessionId" }
+                  {
+                    "path": "outputs.client{i}SessionId"
+                  },
+                  {
+                    "path": "outputs.client{j}SessionId"
+                  }
                 ]
               },
               "then": {
                 "connection": "ws-client-{i}",
-                "sessionIdFrom": { "path": "outputs.client{i}SessionId" },
-                "sessionIdTo": { "path": "outputs.client{j}SessionId" }
+                "sessionIdFrom": {
+                  "path": "outputs.client{i}SessionId"
+                },
+                "sessionIdTo": {
+                  "path": "outputs.client{j}SessionId"
+                }
               },
               "else": {
                 "connection": "ws-client-{j}",
-                "sessionIdFrom": { "path": "outputs.client{j}SessionId" },
-                "sessionIdTo": { "path": "outputs.client{i}SessionId" }
+                "sessionIdFrom": {
+                  "path": "outputs.client{j}SessionId"
+                },
+                "sessionIdTo": {
+                  "path": "outputs.client{i}SessionId"
+                }
               }
             }
           }
@@ -513,11 +531,17 @@
               "includes": [
                 {
                   "get": [
-                    { "path": "outputs.managerPlansLayoutNextHopsBySessionId" },
-                    { "path": "outputs.client{i}SessionId" }
+                    {
+                      "path": "outputs.managerPlansLayoutNextHopsBySessionId"
+                    },
+                    {
+                      "path": "outputs.client{i}SessionId"
+                    }
                   ]
                 },
-                { "path": "outputs.client{j}SessionId" }
+                {
+                  "path": "outputs.client{j}SessionId"
+                }
               ]
             }
           },
@@ -548,11 +572,17 @@
               "includes": [
                 {
                   "get": [
-                    { "path": "outputs.managerPlansLayoutNextHopsBySessionId" },
-                    { "path": "outputs.client{i}SessionId" }
+                    {
+                      "path": "outputs.managerPlansLayoutNextHopsBySessionId"
+                    },
+                    {
+                      "path": "outputs.client{i}SessionId"
+                    }
                   ]
                 },
-                { "path": "outputs.client{j}SessionId" }
+                {
+                  "path": "outputs.client{j}SessionId"
+                }
               ]
             },
             "send": {
@@ -1483,29 +1513,24 @@
       "type": "http",
       "connection": "api",
       "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/connect/requests/connect-plan-large-{groupId}-{runId}",
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
         "headers": {
           "Authorization": "{creatorAuthHeader}",
           "x-client-id": "{creatorClientId}"
         },
-        "body": {
-          "expectedFormationEpoch": "{managerPlansPlannedEpoch}",
-          "expectedLayout": {
-            "groupRevision": "{managerPlansLayoutGroupRevision}",
-            "presenceRevision": "{managerPlansLayoutPresenceRevision}",
-            "version": "{managerPlansLayoutVersion}",
-            "state": "{managerPlansLayoutState}"
-          }
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 8000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.2
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "group": {
-            "lifecycleState": "connecting",
-            "formationEpoch": 2
-          }
+          "lifecycleState": "connecting",
+          "formationEpoch": 2
         }
       }
     },

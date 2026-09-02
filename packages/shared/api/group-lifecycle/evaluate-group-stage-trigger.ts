@@ -36,3 +36,20 @@ export function evaluateGroupStageTrigger(
             return input.nowEpochMs - input.stageEnteredAtEpochMs >= trigger.fallbackMs ? 'fire' : 'wait';
     }
 }
+
+/**
+ * The settle a stage entry waits before its timer-driven trigger fires:
+ * `immediate` is due at the entry, `after` at its settle; `manual` and
+ * `presence` have no timer leg here.
+ */
+export function toStageTriggerSettleMs(trigger: GroupStageTrigger): number | null {
+    switch (trigger.kind) {
+        case 'immediate':
+            return 0;
+        case 'after':
+            return trigger.settleMs;
+        case 'manual':
+        case 'presence':
+            return null;
+    }
+}

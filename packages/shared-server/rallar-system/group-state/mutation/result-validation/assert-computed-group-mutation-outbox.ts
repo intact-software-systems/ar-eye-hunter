@@ -1,8 +1,9 @@
-import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { computeGroupConnectTrigger } from '../aggregate/compute-group-connect-trigger.ts';
+import { resolveCreateGroupLifecyclePolicy } from '../aggregate/create-initial-group-mutation.ts';
+import { resolveGroupAuthorityPolicy } from '../aggregate/resolve-group-authority-policy.ts';
 
 import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';
 import {
@@ -58,24 +59,34 @@ function computeExpectedFormationFollowupEntries(
     input: AssertComputedGroupMutationWriteInput
 ): readonly ResourceEntry[] {
     const { command, read, facts, computed } = input;
-    if (!isGroupLifecycleTransitionOperation(command.operation)) {
+    if (computed.guard.kind !== 'group') {
         return [];
     }
-    if (computed.guard.kind !== 'group' || read.lifecyclePolicy === null) {
+    if (command.operation === 'createGroup') {
+        return computeFormationTimerEntries({
+            command,
+            previous: null,
+            next: computed.guard.value,
+            policy: resolveCreateGroupLifecyclePolicy(command),
+            facts
+        });
+    }
+    if (!isGroupLifecycleTransitionOperation(command.operation) || read.group === null) {
         return [];
     }
-    if (read.lifecyclePolicy.status === 'corrupt') {
+    const resolution = resolveGroupAuthorityPolicy(read);
+    if (resolution.status === 'corrupt') {
         return [];
     }
-    const policy = read.lifecyclePolicy.status === 'present'
-        ? read.lifecyclePolicy.policy
-        : createDefaultGroupLifecyclePolicy();
-    const trigger = computeGroupConnectTrigger({ command, read, facts, next: computed.guard.value });
+    const policy = resolution.policy;
+    const previous = read.group.value.lifecycleState;
+    const trigger = computeGroupConnectTrigger({ command, read, facts, next: computed.guard.value, policy, previous });
     return [
         ...computeFormationTimerEntries({
             command: command as Extract<GroupMutationCommand, {
                 operation: GroupLifecycleTransitionOperation;
             }>,
+            previous,
             next: computed.guard.value,
             policy,
             facts

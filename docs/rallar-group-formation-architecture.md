@@ -165,6 +165,21 @@ planned layout is floored at the layout's last write plus the minimum layout age
 when the change is queued. RTT refreshes are the machinery's own work and keep the server's
 unbounded window.
 
+The stage triggers (product decision 8, `establishment.planTrigger` and `connectTrigger`) ride the
+durable formation timer, the same epoch-fenced outbox entry the deadline and retry legs use, and only
+for `phased` groups (decision 17). The first entry into `forming` — creation of a phased group, or
+`start` — arms a `plan` timer at the trigger's settle (`immediate` is due at once), consumed only
+while the group is still at that formation epoch, where it submits the automation plan under
+`formation-automation`. A plan that lands a candidate in a stage that holds one arms
+the connect trigger's latch (`GroupConnectTriggerLatch`) with its settle
+instant: `immediate` may connect as soon as the layout publishes, `after` from its settle on, when a
+`connect` timer petitions the group's awaiting latches; `manual` and `presence` arm nothing. A
+re-plan behind a spent attempt latches regardless of trigger or formation mode, because it continues
+a series the application already started. The `reconfigure` that opens `reconfiguring` arms nothing:
+its own replan has not published, so `reconfiguring` still waits for an application `connect`. A deadline that finds no live planned layout in a dialing
+stage fails that attempt at once, with no layout to fence. The `presence` trigger is stored and
+validated but not yet behavioural.
+
 Two fields are carried but enforced by nothing in v1: `establishment.transports` and
 `establishment.maxConcurrentEdgeSetups` are normalized, clamped, and persisted, and no server path
 reads them. Establishment pacing is whatever the browser's existing dial budget provides.

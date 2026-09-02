@@ -43,7 +43,15 @@ describe('live RTC delivery owner', () => {
                             joinMode: 'open',
                             createdByPrincipalId: '{auth.clientId}',
                             metadata: { source: 'rallar-black-box', matrix: 'live-three-browser', suffix: 'try/d' },
-                            lifecyclePolicy: { preset: 'managed', admission: { mode: 'open' }, activation: { mode: 'manual' } }
+                            lifecyclePolicy: {
+                                preset: 'managed',
+                                admission: { mode: 'open' },
+                                activation: { mode: 'manual' },
+                                establishment: {
+                                    planTrigger: { kind: 'manual' },
+                                    connectTrigger: { kind: 'manual' }
+                                }
+                            }
                         }
                     }
                 })

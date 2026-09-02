@@ -84,7 +84,12 @@ function assertFormationCriterionAuthority(command: GroupMutationCommand): void 
             if (command.input.observedRate === null || command.input.observedRate === undefined) {
                 throw new TypeError('Criterion transitions must carry the observed rate');
             }
-            if (command.input.expectedLayout === null || command.input.expectedLayout === undefined) {
+            // A failed attempt may name no layout: the deadline fails a dialing
+            // group whose planned layout is gone, and there is nothing to fence.
+            if (
+                command.input.expectedLayout === undefined ||
+                (command.operation === 'activateGroup' && command.input.expectedLayout === null)
+            ) {
                 throw new TypeError('Criterion transitions must carry the expected layout fence');
             }
             return;
