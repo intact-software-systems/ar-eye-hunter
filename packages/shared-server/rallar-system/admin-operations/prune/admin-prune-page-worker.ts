@@ -1,6 +1,7 @@
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import type { ResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
@@ -8,6 +9,7 @@ import {
     computeAppOutboxInsert,
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { requireAdminPrunePageSize, type AdminPruneAppData } from '../inbox/admin-prune-command-codec.ts';
 import {
     decodeAdminPruneWork,
@@ -18,7 +20,6 @@ import {
 import {
     advanceAdminPruneAggregate,
     toAdminPruneAggregateEntry,
-    toAdminPruneAggregateKey,
     type AdminPruneAggregate
 } from './admin-prune-progress.ts';
 
@@ -165,17 +166,6 @@ export class AdminPrunePageWorker {
         command: ReservedAdminPrunePageWork,
         read: AdminPrunePageRead
     ): AdminPrunePageComputed {
-        if (
-            !read.authority.allowed ||
-            command.expireAtEpochMs <= read.nowEpochMs ||
-            read.aggregate.requestedBy !== command.requestedBy ||
-            read.aggregate.requestedSessionId !== command.requestedSessionId
-        ) {
-            throw Object.assign(new Error('Admin prune current authority is denied'), {
-                code: 'admin-prune-authority-denied',
-                status: 403
-            });
-        }
         const cursor = read.rowIds.at(-1) ?? command.afterCursor;
         const next = read.hasMore && cursor !== null
             ? {
@@ -234,29 +224,22 @@ export class AdminPrunePageWorker {
         read: AdminPrunePageRead,
         computed: AdminPrunePageComputed
     ): void {
-        const aggregateKey = toAdminPruneAggregateKey(command.jobId);
-        if (computed.jobId !== command.jobId || computed.category !== command.category) {
-            throw new TypeError('Admin prune computed identity differs from command');
+        if (
+            !read.authority.allowed ||
+            command.expireAtEpochMs <= read.nowEpochMs ||
+            read.aggregate.requestedBy !== command.requestedBy ||
+            read.aggregate.requestedSessionId !== command.requestedSessionId
+        ) {
+            throw Object.assign(new Error('Admin prune current authority is denied'), {
+                code: 'admin-prune-authority-denied',
+                status: 403
+            });
         }
-        if (read.rowIds.length > command.pageSize || computed.deletedRows !== read.rowIds.length) {
+        if (read.rowIds.length > command.pageSize) {
             throw new TypeError('Admin prune computed page exceeds its command');
         }
-        if (
-            computed.expectedAggregate !== read.expectedAggregate ||
-            computed.aggregateSuccessor.key.topicId !== aggregateKey.topicId ||
-            computed.aggregateSuccessor.key.resourceId !== aggregateKey.resourceId ||
-            computed.aggregateSuccessor.key.contextId !== aggregateKey.contextId
-        ) {
-            throw new TypeError('Admin prune computed aggregate differs from read predecessor');
-        }
-        if (
-            computed.deletion.category !== command.category ||
-            computed.deletion.rowIds.length !== read.rowIds.length ||
-            computed.deletion.capturedAt.getTime() !== command.capturedAtEpochMs ||
-            (computed.next === null) !== (computed.successorOutboxWrite === null) ||
-            computed.reservationFinish.expectedAttempts !== command.reservation.dequeueAudit.attempts ||
-            computed.reservationFinish.completedAt.getTime() !== read.nowEpochMs
-        ) {
+        const expected = this.compute(command, read);
+        if (!jsonEquals(toAdminPrunePagePersistence(computed), toAdminPrunePagePersistence(expected))) {
             throw new TypeError('Admin prune computed persistence differs from read facts');
         }
     }
@@ -288,6 +271,96 @@ export class AdminPrunePageWorker {
         });
         this.options.wakeQueue?.();
     }
+}
+
+function toAdminPrunePagePersistence(computed: AdminPrunePageComputed): JsonWireValue {
+    return {
+        kind: computed.kind,
+        jobId: computed.jobId,
+        category: computed.category,
+        rowIds: computed.rowIds,
+        deletedRows: computed.deletedRows,
+        deletion: {
+            category: computed.deletion.category,
+            rowIds: computed.deletion.rowIds,
+            capturedAtEpochMs: computed.deletion.capturedAt.getTime(),
+            appData: computed.deletion.category === 'app-data' ? computed.deletion.appData : null
+        },
+        next: computed.next === null
+            ? null
+            : {
+                kind: computed.next.kind,
+                jobId: computed.next.jobId,
+                category: computed.next.category,
+                requestedBy: computed.next.requestedBy,
+                requestedSessionId: computed.next.requestedSessionId,
+                capturedAtEpochMs: computed.next.capturedAtEpochMs,
+                expireAtEpochMs: computed.next.expireAtEpochMs,
+                pageSize: computed.next.pageSize,
+                afterCursor: computed.next.afterCursor,
+                pageIndex: computed.next.pageIndex,
+                appData: computed.next.appData === null
+                    ? null
+                    : {
+                        namespace: computed.next.appData.namespace,
+                        storeName: computed.next.appData.storeName
+                    }
+            },
+        successorOutboxWrite: computed.successorOutboxWrite === null
+            ? null
+            : toAppOutboxPersistence(computed.successorOutboxWrite),
+        expectedAggregate: computed.expectedAggregate,
+        aggregateSuccessor: toResourceEntryPersistence(computed.aggregateSuccessor),
+        aggregateSuccessorExpiryAtIsoTimestamp: computed.aggregateSuccessorExpiryAtIsoTimestamp,
+        reservationFinish: {
+            key: computed.reservationFinish.key,
+            expectedAttempts: computed.reservationFinish.expectedAttempts,
+            status: computed.reservationFinish.status,
+            completedAtEpochMs: computed.reservationFinish.completedAt.getTime()
+        }
+    };
+}
+
+function toAppOutboxPersistence(computed: AppOutboxInsert): JsonWireValue {
+    return {
+        entry: toResourceEntryPersistence(computed.entry),
+        systemDate: computed.systemDate,
+        createdAt: computed.createdAt,
+        expiresAt: computed.expiresAt,
+        startedAt: computed.startedAt,
+        finishedAt: computed.finishedAt,
+        nextAt: computed.nextAt,
+        attempts: computed.attempts,
+        conflict: {
+            name: computed.conflict.name,
+            message: computed.conflict.message,
+            code: computed.conflict.code,
+            status: computed.conflict.status,
+            key: computed.conflict.key
+        }
+    };
+}
+
+function toResourceEntryPersistence(entry: Readonly<ResourceEntry>): JsonWireValue {
+    return {
+        key: entry.key,
+        resource: entry.resource,
+        typeId: entry.typeId,
+        status: entry.status,
+        audit: {
+            date: entry.audit.date.toString(),
+            createdBy: entry.audit.createdBy,
+            createdTs: entry.audit.createdTs.toString(),
+            expiryTs: entry.audit.expiryTs.toString()
+        },
+        dequeueAudit: {
+            attempts: entry.dequeueAudit.attempts,
+            startTs: entry.dequeueAudit.startTs?.toString() ?? null,
+            endTs: entry.dequeueAudit.endTs?.toString() ?? null,
+            nextTs: entry.dequeueAudit.nextTs?.toString() ?? null
+        },
+        db: entry.db ?? null
+    };
 }
 
 export function toAdminPrunePageDelete(

@@ -97,6 +97,65 @@ describe('AdminPrunePageWorker', () => {
         expect(computed.next?.expireAtEpochMs).toBe(resourceInboxRetryExpiryAtEpochMs(NOW));
     });
 
+    it('rejects prepared persistence data that differs from the read facts', async () => {
+        const repository = new MemoryPruneRepository(['1', '2', '3']);
+        const work = new AdminPrunePageWorker({
+            database: repository.database,
+            repository,
+            serviceId: 'server-1',
+            pageSize: 2,
+            now: () => NOW,
+            readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' })
+        });
+        const entry = createReservedEntry({
+            kind: 'page',
+            jobId: 'prune-exact-validation',
+            category: 'runtime-state',
+            capturedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            pageSize: 2,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: null
+        });
+        const command = decodeAdminPruneWork(entry);
+        const read = await work.read(command);
+        const computed = work.compute(command, read);
+        if (computed.successorOutboxWrite === null) {
+            throw new Error('Expected successor page work');
+        }
+        const alteredCandidates = [
+            {
+                ...computed,
+                deletion: { ...computed.deletion, rowIds: ['different', '2'] }
+            },
+            {
+                ...computed,
+                aggregateSuccessorExpiryAtIsoTimestamp: '2099-01-01T00:00:00Z'
+            },
+            {
+                ...computed,
+                reservationFinish: {
+                    ...computed.reservationFinish,
+                    key: { ...computed.reservationFinish.key, resourceId: 'different' }
+                }
+            },
+            {
+                ...computed,
+                successorOutboxWrite: {
+                    ...computed.successorOutboxWrite,
+                    entry: { ...computed.successorOutboxWrite.entry, resource: '{}' }
+                }
+            }
+        ];
+
+        for (const altered of alteredCandidates) {
+            expect(() => work.validate(command, read, altered)).toThrow(
+                'Admin prune computed persistence differs from read facts'
+            );
+        }
+    });
+
     it('excludes the currently executing resource-inbox row from its page', async () => {
         const repository = new MemoryPruneRepository(['10', '11', '12']);
         const work = new AdminPrunePageWorker({
@@ -186,6 +245,36 @@ describe('AdminPrunePageWorker', () => {
         expect(repository.finished).toEqual([]);
         expect(repository.progressWrites).toBe(0);
         expect(wakeCount).toBe(0);
+    });
+
+    it('computes denied work as data and rejects it during validation', async () => {
+        const repository = new MemoryPruneRepository(['1', '2', '3']);
+        const work = new AdminPrunePageWorker({
+            database: repository.database,
+            repository,
+            serviceId: 'server-1',
+            pageSize: 2,
+            now: () => NOW,
+            readAuthority: () => Promise.resolve({ allowed: false, code: 'session-revoked' })
+        });
+        const command = decodeAdminPruneWork(createReservedEntry({
+            kind: 'page',
+            jobId: 'prune-denied-validation',
+            category: 'runtime-state',
+            capturedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            pageSize: 2,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: null
+        }));
+        const read = await work.read(command);
+
+        const computed = work.compute(command, read);
+
+        expect(() => work.validate(command, read, computed)).toThrow(
+            expect.objectContaining({ code: 'admin-prune-authority-denied', status: 403 })
+        );
     });
 
     it('rolls aggregate, deletion, successor, and reservation back on outbox collision', async () => {
