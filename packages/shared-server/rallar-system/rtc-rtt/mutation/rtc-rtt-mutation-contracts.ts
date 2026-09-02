@@ -66,6 +66,25 @@ export type RtcRttEndpointGuard = Readonly<{
     value: RtcRttEndpointAdmission;
 }>;
 
+export type RtcRttRuntimeWrite =
+    | Readonly<{
+        operation: 'insert';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedResultRevision: 0;
+    }>
+    | Readonly<{
+        operation: 'update';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedRevision: number;
+        expectedResultRevision: number;
+    }>;
+
 export type RtcRttMutationComputed =
     | Readonly<{
         outcome: 'replay';
@@ -90,5 +109,6 @@ export type RtcRttMutationComputed =
         }>;
         receipt: RtcRttMutationReceipt;
         senderId: string;
+        runtimeWrites: readonly RtcRttRuntimeWrite[];
         outboxWrites: readonly AppOutboxInsert[];
     }>;

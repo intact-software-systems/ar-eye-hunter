@@ -86,7 +86,6 @@ export class RtcRttAppInboxHandler {
             context,
             command: authority.command,
             computed,
-            facts,
             mutationDependencies: rtcRttDependencies
         });
         if (computed.outcome === 'write') {
@@ -106,18 +105,11 @@ export class RtcRttAppInboxHandler {
     }
 
     private async commitMutation(input: CommitRtcRttMutationInput): Promise<RtcRttAppInboxResult> {
-        const { context, command, computed, facts } = input;
+        const { context, command, computed } = input;
         return await this.dependencies.writeMutation(context, async (transaction) => {
             if (computed.outcome === 'write') {
-                if (facts.requestedAtEpochMs === null || facts.purgeAfterEpochMs === null) {
-                    throw new TypeError('RTC RTT write lifecycle facts are missing');
-                }
                 await writeRtcRttMutation({
                     transaction,
-                    repositoryOptions: {
-                        ttlMs: facts.purgeAfterEpochMs - facts.requestedAtEpochMs,
-                        now: () => facts.requestedAtEpochMs
-                    },
                     computed,
                     outboxWriter: input.mutationDependencies.outboxWriter
                 });
@@ -131,6 +123,5 @@ interface CommitRtcRttMutationInput {
     readonly context: AppInboxMessageContext<RtcRttAppInboxResult>;
     readonly command: RtcRttAppInboxCommand;
     readonly computed: ReturnType<typeof computeRtcRttMutation>;
-    readonly facts: Parameters<typeof computeRtcRttMutation>[0]['facts'];
     readonly mutationDependencies: RtcRttAppInboxDependencies;
 }

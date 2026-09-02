@@ -9,12 +9,14 @@ import { RtcTopologyRepositoryInvariantCorruptionError } from '../../topology/pe
 import { compareRtcTopologyIdentifiers } from '../../topology/persistence/rtc-topology-identifiers.ts';
 import type { RtcRttEndpointAdmission } from '../persistence/rtc-rtt-persistence-contracts.ts';
 import type { RtcRttMutationReceipt } from '../persistence/rtc-rtt-persistence-contracts.ts';
+import { RTC_RTT_MUTATION_RETENTION_MS } from '../persistence/rtc-rtt-persistence-validation-primitives.ts';
 import {
     canonicalRtcRttAffectedGroups,
     canonicalRtcRttGroupRef,
     readRtcRttExpiredAuthority
 } from '../policy/read-rtc-rtt-expired-authority.ts';
 import { evaluateRtcRttMeasurement } from '../policy/rtc-rtt-measurement-policy.ts';
+import { computeRtcRttRuntimeWrites } from './compute-rtc-rtt-runtime-writes.ts';
 import {
     assertReceiptOnlyRttInputs,
     requireRttAuthority,
@@ -195,7 +197,7 @@ export function computeRtcRttMutation(
         outboxIds,
         commandHash: input.facts.commandHash
     } as const;
-    return {
+    const writeSource = {
         outcome: 'write',
         reason: 'accepted',
         affectedGroups,
@@ -208,7 +210,14 @@ export function computeRtcRttMutation(
             purgeAfterEpochMs: authority.facts.purgeAfterEpochMs
         },
         receipt,
-        senderId: authority.command.alSenderId,
+        senderId: authority.command.alSenderId
+    } as const;
+    return {
+        ...writeSource,
+        runtimeWrites: computeRtcRttRuntimeWrites(
+            writeSource,
+            receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS
+        ),
         outboxWrites: computeRtcRttOutboxWrites({
             affectedGroups,
             receipt,

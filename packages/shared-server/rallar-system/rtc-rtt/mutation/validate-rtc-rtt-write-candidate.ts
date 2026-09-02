@@ -21,7 +21,11 @@ export function validateRtcRttWriteCandidate(
     value: Extract<RtcRttMutationComputed, { outcome: 'write'; }>,
     mutationExpireAtTimestamp: number
 ): void {
-    const { outboxWrites: _outboxWrites, ...domainCandidate } = value;
+    const {
+        runtimeWrites: _runtimeWrites,
+        outboxWrites: _outboxWrites,
+        ...domainCandidate
+    } = value;
     const candidate = record(
         encodeJsonWireValue(domainCandidate, 'RTC RTT write candidate'),
         'RTC RTT write candidate'
