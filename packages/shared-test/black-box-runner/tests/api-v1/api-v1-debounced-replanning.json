@@ -912,16 +912,38 @@
     {
       "name": "windowExtendsWithTheSecondChange",
       "type": "assert",
-      "path": "outputs.dueAfterChurn2",
-      "operator": "gt",
-      "value": "{dueAfterChurn1}"
+      "actual": {
+        "dueAfterChurn1": "{dueAfterChurn1}",
+        "dueAfterChurn2": "{dueAfterChurn2}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "dueAfterChurn2",
+            "gt": "{dueAfterChurn1}"
+          }
+        ]
+      }
     },
     {
       "name": "maximumWaitStopsTheExtension",
       "type": "assert",
-      "path": "outputs.dueAfterChurn5",
-      "operator": "eq",
-      "value": "{dueAfterChurn4}"
+      "actual": {
+        "dueAfterChurn4": "{dueAfterChurn4}",
+        "dueAfterChurn5": "{dueAfterChurn5}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "dueAfterChurn5",
+            "gte": "{dueAfterChurn4}"
+          },
+          {
+            "path": "dueAfterChurn5",
+            "lte": "{dueAfterChurn4}"
+          }
+        ]
+      }
     },
     {
       "name": "boundedReplanCoversTheWholeBurst",
