@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { AppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import {
     CrdtMutationConflictError,
@@ -194,9 +195,11 @@ describe('CRDT mutation service', () => {
         const computed = service.compute({ command, read });
         const commandMismatch = { ...computed, command: { ...command } };
         const readMismatch = { ...computed, read: { ...read } };
+        const persistenceMismatch = { ...computed, outboxWrites: [] };
 
         expect(service.validate({ command, read, computed: commandMismatch })).toMatchObject([{ code: 'computed-identity-differs' }]);
         expect(service.validate({ command, read, computed: readMismatch })).toMatchObject([{ code: 'computed-identity-differs' }]);
+        expect(service.validate({ command, read, computed: persistenceMismatch })).toMatchObject([{ code: 'computed-persistence-differs' }]);
     });
 
     it('returns all ordered validation issues for a malformed compact accepted result', async () => {
@@ -238,7 +241,8 @@ describe('CRDT mutation service', () => {
             'computed-identity-differs',
             'computed-predecessor-differs',
             'compact-reason-differs',
-            'result-codec-invalid'
+            'result-codec-invalid',
+            'computed-persistence-differs'
         ]);
     });
 });
@@ -370,9 +374,9 @@ class MemoryCrdtMutationRepository implements CrdtMutationRepository {
         return Promise.resolve();
     }
 
-    writeOutbox(entries: readonly ResourceEntry[]): Promise<void> {
+    writeOutbox(writes: readonly AppOutboxInsert[]): Promise<void> {
         this.operations.push('write-final-outbox');
-        this.outbox.push(...entries);
+        this.outbox.push(...writes.map(({ entry }) => entry));
         return Promise.resolve();
     }
 }

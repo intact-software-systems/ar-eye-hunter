@@ -11,7 +11,7 @@ import type { ResourceInboxResultsRepository } from '../../../queuebox/postgres/
 import {
     AppInboxIdempotencyConflictError,
     AppInboxType,
-    type AppInboxMessageContext
+    type AppInboxExecutionMetadata
 } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
@@ -36,6 +36,8 @@ import {
 } from '../mutation/crdt-mutation-contracts.ts';
 import type { CrdtMutationService } from '../mutation/create-crdt-mutation-service.ts';
 import { decodeCrdtMutationResult } from '../mutation/decode-crdt-mutation-result.ts';
+import { writePSqlCrdtMutation } from '../persistence/psql-crdt-mutation-repository.ts';
+import { computeCrdtInboxMutation, validateCrdtInboxMutation } from './compute-crdt-inbox-mutation.ts';
 import { CrdtHttpAdminRejectionError } from './crdt-http-admin-rejection-error.ts';
 import {
     createAndEnqueueAuthenticatedCrdtAppend,
@@ -134,14 +136,41 @@ export class AppCrdtInboxService {
         if (dependencies.auditDelivery !== undefined) {
             registerCrdtAuditDelivery(dependencies.auditDelivery);
         }
-        for (const type of CRDT_MUTATION_INBOX_TYPES) {
-            this.handlers.registerHandler({
-                type,
-                decodeCommand: decodeCrdtMutationCommand,
-                encodeResult: (result) => encodeAppInboxResult(result, 'CRDT AppInbox result'),
-                handle: async (command, context) => await this.processCommand(command, context)
-            });
-        }
+        const processCrdtCommand = async (
+            command: CrdtMutationCommand,
+            context: AppInboxExecutionMetadata
+        ) => await this.processCommand(command, context);
+        const encodeCrdtResult = (result: CrdtMutationResult) => encodeAppInboxResult(result, 'CRDT AppInbox result');
+        this.handlers.registerHandler({
+            type: AppInboxType.CRDT_UPDATE_APPEND,
+            decodeCommand: decodeCrdtMutationCommand,
+            encodeResult: encodeCrdtResult,
+            handle: processCrdtCommand
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.CRDT_PROJECTION_REBUILD,
+            decodeCommand: decodeCrdtMutationCommand,
+            encodeResult: encodeCrdtResult,
+            handle: processCrdtCommand
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.CRDT_SNAPSHOT_COMPACT,
+            decodeCommand: decodeCrdtMutationCommand,
+            encodeResult: encodeCrdtResult,
+            handle: processCrdtCommand
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.CRDT_LIFECYCLE_UPDATE,
+            decodeCommand: decodeCrdtMutationCommand,
+            encodeResult: encodeCrdtResult,
+            handle: processCrdtCommand
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.CRDT_ERASE,
+            decodeCommand: decodeCrdtMutationCommand,
+            encodeResult: encodeCrdtResult,
+            handle: processCrdtCommand
+        });
         this.handlers.assertRegistrationComplete(CRDT_MUTATION_INBOX_TYPES);
     }
 
@@ -270,22 +299,30 @@ export class AppCrdtInboxService {
 
     private async processCommand(
         command: CrdtMutationCommand,
-        appInboxContext: AppInboxMessageContext<CrdtMutationResult>
+        appInboxContext: AppInboxExecutionMetadata
     ): Promise<CrdtMutationResult> {
         assertCrdtAppInboxIdentity({ command, appInboxContext });
 
-        const read = await this.mutationService.read(command);
-        const computed = this.mutationService.compute({ command, read });
-        const issues = this.mutationService.validate({ command, read, computed });
+        const read = {
+            command,
+            read: await this.mutationService.read(command),
+            serviceId: this.serviceId,
+            completionFacts: this.transactionWriter.readCompletionFacts(appInboxContext)
+        };
+        const computed = computeCrdtInboxMutation(read);
+        const issues = validateCrdtInboxMutation(read, computed);
         if (issues[0] !== undefined) {
             throw new TypeError(issues[0].message);
         }
-        if (computed.outcome === 'rejected' && isCrdtHttpAdminIdentity({ command, appInboxContext })) {
-            throw toCrdtHttpAdminRejection(computed.code);
+        if (computed.mutation.outcome === 'rejected' && isCrdtHttpAdminIdentity({ command, appInboxContext })) {
+            throw toCrdtHttpAdminRejection(computed.mutation.code);
         }
-        const result = await this.transactionWriter.writeMutation(
+        const result = await this.transactionWriter.writeComputedMutation(
             appInboxContext,
-            async (transaction) => await this.mutationService.write(transaction, computed)
+            computed.completion,
+            async (transaction) => {
+                await writePSqlCrdtMutation(transaction, computed.mutation);
+            }
         );
         if (result.operation === 'erase' && result.status === 'accepted') {
             this.wakeQueueEngine();
@@ -300,7 +337,7 @@ function toCrdtHttpAdminRejection(reasonCode: string): Error {
 
 interface AssertCrdtAppInboxIdentityInput {
     readonly command: CrdtMutationCommand;
-    readonly appInboxContext: AppInboxMessageContext<CrdtMutationResult>;
+    readonly appInboxContext: AppInboxExecutionMetadata;
 }
 
 function assertCrdtAppInboxIdentity(input: AssertCrdtAppInboxIdentityInput): void {

@@ -66,7 +66,41 @@ export function validateCrdtMutation(
             message: error instanceof Error ? error.message : String(error)
         });
     }
+    if (!hasConsistentCrdtPersistence(computed)) {
+        issues.push({
+            code: 'computed-persistence-differs',
+            message: 'CRDT computed persistence differs from the computed mutation'
+        });
+    }
     return issues;
+}
+
+function hasConsistentCrdtPersistence(computed: CrdtMutationComputed): boolean {
+    const outboxMatches = computed.outboxWrites.length === computed.outboxEntries.length &&
+        computed.outboxWrites.every((write, index) => {
+            const entry = computed.outboxEntries[index];
+            return entry !== undefined && write.entry.key.topicId === entry.key.topicId &&
+                write.entry.key.resourceId === entry.key.resourceId &&
+                write.entry.key.contextId === entry.key.contextId &&
+                write.entry.resource === entry.resource;
+        });
+    if (!outboxMatches || computed.outcome !== 'write') {
+        return outboxMatches;
+    }
+    const documentMatches = computed.documentWrite.documentKey === computed.document.documentKey &&
+        computed.documentWrite.documentRevision === computed.document.documentRevision &&
+        computed.documentWrite.lifecycle === computed.document.lifecycle;
+    const updateMatches = computed.update === null || computed.append === null
+        ? computed.updateWrite === null
+        : computed.updateWrite?.documentKey === computed.documentKey &&
+            computed.updateWrite.updateId === computed.update.updateId &&
+            computed.updateWrite.appendSequence === computed.append.appendSequence;
+    const snapshotMatches = computed.snapshot === null
+        ? computed.snapshotWrite === null
+        : computed.snapshotWrite?.documentKey === computed.documentKey &&
+            computed.snapshotWrite.snapshotId === computed.snapshot.snapshotId &&
+            computed.snapshotWrite.appendSequence === computed.document.lastAppendSequence;
+    return documentMatches && updateMatches && snapshotMatches;
 }
 
 function readSnapshotReason(snapshot: object | null | undefined): string | null {
