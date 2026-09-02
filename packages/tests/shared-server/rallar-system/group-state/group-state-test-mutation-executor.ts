@@ -18,7 +18,6 @@ import { toGroupMutationRejectionError } from '@shared-server/rallar-system/grou
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { readGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
 import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
-import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { decodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -229,7 +228,7 @@ export class GroupStateTestMutationExecutor {
 }
 
 async function writeGuardedBatch(transaction: RuntimeStateGuardedBatchTransaction, computed: GroupMutationComputedWrite): Promise<void> {
-    const materialized = materializeGroupStateGuardedBatch(computed);
+    const materialized = computed.persistence.guardedBatch;
     const result = validateRuntimeStateGuardedBatchResult(
         materialized,
         await transaction.executeGuardedBatch(materialized)

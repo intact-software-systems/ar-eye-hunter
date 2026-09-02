@@ -6,7 +6,7 @@ import type {
 } from '../guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatch } from '../guarded-batch/validate-runtime-state-guarded-batch.ts';
 import {
-    decodeRuntimeStateGuardedBatchRows,
+    decodeComputedRuntimeStateGuardedBatchRows,
     type RuntimeStateGuardedBatchDatabaseRow
 } from './decode-runtime-state-guarded-batch-rows.ts';
 
@@ -25,6 +25,13 @@ export async function executeRuntimeStateGuardedBatch(
     input: RuntimeStateGuardedBatch
 ): Promise<RuntimeStateGuardedBatchResult> {
     const batch = validateRuntimeStateGuardedBatch(input);
+    return await executeComputedRuntimeStateGuardedBatch(sql, batch);
+}
+
+export async function executeComputedRuntimeStateGuardedBatch(
+    sql: PSqlSql,
+    batch: RuntimeStateGuardedBatch
+): Promise<RuntimeStateGuardedBatchResult> {
     const rows = await sql<RuntimeStateGuardedBatchDatabaseRow[]>`
         with guard_input as (
             select descriptor ->> 'operation' as operation,
@@ -262,7 +269,7 @@ export async function executeRuntimeStateGuardedBatch(
         from effect_put_result
     `;
 
-    return decodeRuntimeStateGuardedBatchRows(batch, rows);
+    return decodeComputedRuntimeStateGuardedBatchRows(batch, rows);
 }
 
 function toSqlDescriptor(
