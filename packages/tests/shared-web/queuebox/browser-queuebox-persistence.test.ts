@@ -84,7 +84,9 @@ describe('Browser queuebox expiry eviction', () => {
 
         await vi.advanceTimersByTimeAsync(50);
 
-        expect(await readQueueBoxEntryKeys(storeName)).toEqual([]);
+        await vi.waitFor(async () => {
+            expect(await readQueueBoxEntryKeys(storeName)).toEqual([]);
+        });
     });
 });
 

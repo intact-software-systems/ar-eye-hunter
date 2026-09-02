@@ -2,8 +2,9 @@
 
 import '../setup-browser-indexeddb.ts';
 
-import { IndexedDbStringPersistenceProvider, InMemoryPersistenceProvider } from '@shared/mod.ts';
-import { describe, expect, it } from 'vitest';
+import { IndexedDbStringPersistenceProvider } from '@shared/persistence/IndexedDbStringPersistenceProvider.ts';
+import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('Expiring persistence providers', () => {
     it('lazy-evicts expired entries from InMemoryPersistenceProvider', async () => {
@@ -67,4 +68,57 @@ describe('Expiring persistence providers', () => {
         expect(await outbound.getItem('expired')).toBeUndefined();
         expect(await outbound.getAllKeys()).toEqual([]);
     });
+
+    it.each(['getItem', 'getAllKeys', 'deleteExpired'] as const)(
+        '%s surfaces an expiry conflict without retrying or deleting the refreshed value',
+        async (operation) => {
+            const dbName = `expiry-conflict-${crypto.randomUUID()}`;
+            const storeName = 'entries';
+            const provider = new IndexedDbStringPersistenceProvider<{ value: number; }>({
+                dbName,
+                storeName,
+                keyPrefix: 'inbound'
+            });
+            const now = Date.now();
+            await provider.setItem('expired', { value: 1 }, { expireAtTimestamp: now - 1 });
+
+            const openTransaction = IDBDatabase.prototype.transaction;
+            let cleanupAttempts = 0;
+            const transactions = vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(function (
+                this: IDBDatabase,
+                storeNames,
+                mode,
+                options
+            ) {
+                if (this.name === dbName && mode === 'readwrite') {
+                    cleanupAttempts += 1;
+                    if (cleanupAttempts === 1) {
+                        // Queue a real competing write after the expiry read, before its cleanup transaction.
+                        const refresh = openTransaction.call(this, storeNames, mode, options);
+                        refresh.objectStore(storeName).put({
+                            key: 'inbound:expired',
+                            value: { value: 2 },
+                            expireAtTimestamp: now + 60_000
+                        });
+                    }
+                }
+                return openTransaction.call(this, storeNames, mode, options);
+            });
+            try {
+                const cleanup = operation === 'getItem'
+                    ? provider.getItem('expired')
+                    : operation === 'getAllKeys'
+                    ? provider.getAllKeys()
+                    : provider.deleteExpired();
+
+                await expect(cleanup).rejects.toThrow('IndexedDB persistence cleanup conflicted');
+                expect(cleanupAttempts).toBe(1);
+                expect(await provider.getItem('expired')).toEqual({ value: 2 });
+                expect(await provider.getAllKeys()).toEqual(['expired']);
+            }
+            finally {
+                transactions.mockRestore();
+            }
+        }
+    );
 });

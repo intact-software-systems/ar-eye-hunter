@@ -22,8 +22,8 @@ import {
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
-import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import {
     IndexedDbStringPersistenceProvider,
     newALUnicastMessage,
@@ -366,7 +366,17 @@ describe('Browser AL runtime IndexedDB stores', () => {
     it('initialises repeated browser AL runtime expiry eviction', async () => {
         vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
-        vi.spyOn(console, 'log').mockImplementation(() => undefined);
+        let evictionCount = 0;
+        let resolveSecondEviction!: () => void;
+        const secondEviction = new Promise<void>((resolve) => {
+            resolveSecondEviction = resolve;
+        });
+        vi.spyOn(console, 'log').mockImplementation(() => {
+            evictionCount += 1;
+            if (evictionCount === 2) {
+                resolveSecondEviction();
+            }
+        });
 
         const retention = {
             sentMessageTtlMs: 20
@@ -389,6 +399,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         ]);
 
         await vi.advanceTimersByTimeAsync(29);
+        await secondEviction;
 
         expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
     });
