@@ -46,6 +46,7 @@ Deno.test('PSql group event reads fail closed on a wrong-scope payload', async (
 
         for (
             const read of [
+                () => repository.readGroupEvent(expectedRef, corruptEvent.eventId),
                 () => repository.listGroupEvents(expectedRef),
                 () => repository.listRecentGroupEvents(expectedRef),
                 () => repository.listGroupEventPage(expectedRef, { limit: 10 })
@@ -93,6 +94,7 @@ Deno.test(
 
             for (
                 const read of [
+                    () => repository.readGroupEvent(ref, incompleteEvent.eventId),
                     () => repository.listGroupEvents(ref),
                     () => repository.listRecentGroupEvents(ref),
                     () => repository.listGroupEventPage(ref, { limit: 1 })
