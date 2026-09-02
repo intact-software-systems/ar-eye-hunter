@@ -11,6 +11,10 @@ import {
     type AnyClientPresence,
     type AnyGroupPresence
 } from '../api/group-client-views.ts';
+import {
+    computeInFlightDialAdmission,
+    type InFlightDialAdmission
+} from '../api/group-lifecycle/compute-in-flight-dial-admission.ts';
 import type { GroupRef } from '../api/group-types.ts';
 import type { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import {
@@ -37,9 +41,8 @@ import {
     readOverlayForGroup
 } from './webrtc-group-overlay-reading.ts';
 import {
+    computeInFlightSetupCounts,
     computeOutboundDialPlan,
-    computePacedOutboundDialPlan,
-    type GroupSetupBudget,
     type OutboundDialPlan
 } from './webrtc-outbound-dial-plan.ts';
 
@@ -54,6 +57,11 @@ export type {
 export const DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS = 10;
 export const MIN_WEBRTC_MAX_PEER_CONNECTIONS = 5;
 export const DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS = 15_000;
+
+interface WaitingDials {
+    readonly pacedCount: number;
+    readonly deferredCount: number;
+}
 
 interface RttReportingGroupPair {
     readonly group: WebRtcGroupService;
@@ -73,7 +81,9 @@ export namespace WebRtcGroupManager {
     export interface PeerOwnership {
         readonly groupsByPeerId: ReadonlyMap<PeerId, readonly GroupId[]>;
         readonly dialAllowedPeerIds: ReadonlySet<PeerId>;
-        readonly setupBudgetsByGroupId: ReadonlyMap<GroupId, GroupSetupBudget>;
+        /** The same ownership by the scoped group key, which the bound is keyed on. */
+        readonly groupKeysByPeerId: ReadonlyMap<PeerId, readonly string[]>;
+        readonly maxConcurrentEdgeSetupsByGroupKey: ReadonlyMap<string, number>;
     }
 }
 
@@ -86,7 +96,8 @@ export class WebRtcGroupManager {
     private reconcileInFlight: Promise<void> | undefined;
     private reconcileRequested = false;
     private reconcilePassRunning = false;
-    private pacedPeerCount = 0;
+    private scheduledWake: Promise<void> | undefined;
+    private waitingDialCount = 0;
     private retainedOrder = 0;
     private readonly diagnostics = emptyGroupManagerDiagnostics();
 
@@ -108,27 +119,30 @@ export class WebRtcGroupManager {
         this.plannedOverlayCache = repositories.plannedOverlayCache;
         this.acceptedOverlayCache = repositories.acceptedOverlayCache;
         this.options = options;
-        // Every setup ending frees a slot under the in-flight bound (product
-        // decision 18), so the ending itself wakes the next reconcile.
-        rtcQBox.onRtcPeerLifecycleDo(WebRtcGroupManager.SETUP_COMPLETION_CALLBACK_ID, {
-            onCreated: () => {},
-            onDeleted: () => this.wakeAfterSetupEnded(),
-            onEstablished: () => this.wakeAfterSetupEnded(),
-            onConnectTimeout: () => this.wakeAfterSetupEnded()
-        });
-    }
-
-    /** Settles once the reconcile pass a lifecycle wake or an update started has finished. */
-    whenReconciled(): Promise<void> {
-        return this.reconcileInFlight ?? Promise.resolve();
     }
 
     /**
-     * Shutdown tears peers down while their groups still want them; without
-     * this, every teardown would wake a reconcile that dials them again.
+     * Every setup ending frees a slot under the in-flight bound (product
+     * decision 18), so an ending re-plans the dials that wait for one. The
+     * composition root starts this once the service and manager exist; shutdown
+     * stops it before tearing peers down, because shutdown removes peers their
+     * groups still want and every removal would otherwise dial them back.
      */
+    startReconcileWakes(): void {
+        this.rtcQBox.onRtcPeerLifecycleDo(WebRtcGroupManager.SETUP_COMPLETION_CALLBACK_ID, {
+            onCreated: () => {},
+            onDeleted: () => this.wakeAfterSetupEnded(),
+            onEstablished: () => this.wakeAfterSetupEnded()
+        });
+    }
+
     stopReconcileWakes(): void {
         this.rtcQBox.removeRtcPeerLifecycleById(WebRtcGroupManager.SETUP_COMPLETION_CALLBACK_ID);
+    }
+
+    /** Settles after the reconcile that a pending setup-ending wake or an in-flight update will run. */
+    whenReconciled(): Promise<void> {
+        return this.scheduledWake ?? this.reconcileInFlight ?? Promise.resolve();
     }
 
     readDiagnostics(): WebRtcGroupManagerDiagnostics {
@@ -235,33 +249,27 @@ export class WebRtcGroupManager {
 
     private computePeerOwnership(): WebRtcGroupManager.PeerOwnership {
         const owners = new Map<PeerId, GroupId[]>();
+        const groupKeysByPeerId = new Map<PeerId, string[]>();
         const dialAllowedPeerIds = new Set<PeerId>();
-        const setupBudgetsByGroupId = new Map<GroupId, GroupSetupBudget>();
+        const maxConcurrentEdgeSetupsByGroupKey = new Map<string, number>();
 
         for (const group of this.groupsByKey.values()) {
+            const snapshot = group.readGroup();
+            if (!snapshot) {
+                continue;
+            }
+            maxConcurrentEdgeSetupsByGroupKey.set(group.groupKey, snapshot.group.memberPolicy.maxConcurrentEdgeSetups);
             const groupPresentPeerIds = new Set(group.targetPeerIds());
-            const desiredPeerIds = this.targetPeerIdsForGroup(group);
-            for (const peerId of desiredPeerIds) {
-                let groupIds = owners.get(peerId);
-                if (!groupIds) {
-                    groupIds = [];
-                    owners.set(peerId, groupIds);
-                }
-                groupIds.push(group.groupRef.groupId);
+            for (const peerId of this.dialPeerIdsForSnapshot(snapshot, group.groupRef)) {
+                owners.set(peerId, [...(owners.get(peerId) ?? []), group.groupRef.groupId]);
+                groupKeysByPeerId.set(peerId, [...(groupKeysByPeerId.get(peerId) ?? []), group.groupKey]);
                 if (groupPresentPeerIds.has(peerId)) {
                     dialAllowedPeerIds.add(peerId);
                 }
             }
-            const snapshot = group.readGroup();
-            if (snapshot) {
-                setupBudgetsByGroupId.set(group.groupRef.groupId, {
-                    desiredPeerIds: new Set(desiredPeerIds),
-                    maxConcurrentEdgeSetups: snapshot.group.memberPolicy.maxConcurrentEdgeSetups
-                });
-            }
         }
 
-        return { groupsByPeerId: owners, dialAllowedPeerIds, setupBudgetsByGroupId };
+        return { groupsByPeerId: owners, dialAllowedPeerIds, groupKeysByPeerId, maxConcurrentEdgeSetupsByGroupKey };
     }
 
     ownerGroupsOfPeer(peerId: PeerId): readonly GroupId[] {
@@ -363,59 +371,63 @@ export class WebRtcGroupManager {
     }
 
     private wakeAfterSetupEnded(): void {
-        // A pass ends setups itself while it evicts and sweeps, and an ending
-        // only frees a slot somebody is waiting for while a paced dial exists;
-        // anything else is already covered by the next presence or layout trigger.
-        if (this.reconcilePassRunning || this.pacedPeerCount === 0) {
+        if (this.waitingDialCount === 0) {
             return;
         }
-        this.reconcileAllGroups().catch((caught) => {
-            console.error('Failed to reconcile groups after a setup ended', toError(caught));
-        });
+        if (this.reconcilePassRunning) {
+            // The pass ended a setup after its own dial loop; the drain loop
+            // re-plans once more instead of a wake landing mid-pass.
+            this.reconcileRequested = true;
+            return;
+        }
+        if (this.scheduledWake) {
+            return;
+        }
+        // Deferred past the notification that raised it, so every observer sees
+        // the ending before the dials it releases.
+        this.scheduledWake = Promise.resolve()
+            .then(() => {
+                this.scheduledWake = undefined;
+                return this.reconcileAllGroups();
+            })
+            .catch((caught) => {
+                console.error('Failed to reconcile groups after a setup ended', toError(caught));
+            });
     }
 
     private async drainReconcileRequests(): Promise<void> {
-        while (this.reconcileRequested) {
-            this.reconcileRequested = false;
-            this.runReconcilePass();
-            if (this.reconcileRequested) {
-                this.diagnostics.reconcileCoalescedRerunCount += 1;
-            }
-        }
-    }
-
-    private runReconcilePass(): void {
         this.reconcilePassRunning = true;
         try {
-            this.runReconcilePassNow();
+            while (this.reconcileRequested) {
+                this.reconcileRequested = false;
+                this.runReconcilePass();
+                if (this.reconcileRequested) {
+                    this.diagnostics.reconcileCoalescedRerunCount += 1;
+                }
+            }
         }
         finally {
             this.reconcilePassRunning = false;
         }
     }
 
-    private runReconcilePassNow(): void {
+    private runReconcilePass(): void {
         this.diagnostics.reconcileRunCount += 1;
-        const peerOwners = this.peerOwners();
-        const desiredPeerIds = new Set(peerOwners.keys());
-        const groupPresentDesiredPeerIds = this.readPeerOwnership().dialAllowedPeerIds;
+        const ownership = this.readPeerOwnership();
+        const desiredPeerIds = new Set(ownership.groupsByPeerId.keys());
         const peerIdsWithNoReconnectableLanes = new Set(
             this.rtcQBox.peerIdsWithNoReconnectableLanes()
         );
-        const knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
         this.removeRetainedDesiredPeers(desiredPeerIds);
         this.diagnostics.lastDesiredPeerCount = desiredPeerIds.size;
 
-        const connectablePeerIds = Array.from(desiredPeerIds).filter(
-            (peerId) => groupPresentDesiredPeerIds.has(peerId)
-        );
-
         const dialPlan = computeOutboundDialPlan({
             maxPeerConnections: this.maxPeerConnections(),
-            knownPeerIds,
+            knownPeerIds: new Set(this.rtcQBox.knownPeerIds()),
+            livePeerIds: new Set(this.rtcQBox.activePeerIds()),
             desiredPeerIds,
-            connectablePeerIds: connectablePeerIds.filter(
-                (peerId) => !peerIdsWithNoReconnectableLanes.has(peerId)
+            connectablePeerIds: Array.from(desiredPeerIds).filter(
+                (peerId) => ownership.dialAllowedPeerIds.has(peerId) && !peerIdsWithNoReconnectableLanes.has(peerId)
             ),
             serverDesiredPeerIds: computeServerDesiredPeerIds(
                 this.acceptedOverlayCache,
@@ -423,17 +435,10 @@ export class WebRtcGroupManager {
                 this.rtcQBox.input.sessionId
             )
         });
-        this.diagnostics.connectDeferredBudgetCount += dialPlan.deferredPeerIds.length;
-        const pacedDialPlan = computePacedOutboundDialPlan({
-            peersToConnect: dialPlan.peersToConnect,
-            knownPeerIds,
-            inFlightPeerIds: new Set(this.rtcQBox.inFlightPeerIds()),
-            ownerGroupIdsByPeerId: peerOwners,
-            groupSetupBudgets: this.readPeerOwnership().setupBudgetsByGroupId
-        });
-        this.diagnostics.connectDeferredPacingCount += pacedDialPlan.pacedPeerIds.length;
-        this.pacedPeerCount = pacedDialPlan.pacedPeerIds.length;
-        this.connectDesiredPeers(pacedDialPlan.peersToConnect, peerOwners);
+        const waiting = this.connectDesiredPeers(dialPlan, ownership);
+        this.diagnostics.connectDeferredBudgetCount += waiting.deferredCount;
+        this.diagnostics.connectDeferredPacingCount += waiting.pacedCount;
+        this.waitingDialCount = waiting.deferredCount + waiting.pacedCount;
 
         const reconciledKnownPeerIds = new Set(this.rtcQBox.knownPeerIds());
         this.removeUnknownRetainedPeers(reconciledKnownPeerIds);
@@ -447,29 +452,87 @@ export class WebRtcGroupManager {
         });
     }
 
+    /**
+     * Spends the connection budget and the in-flight bound as dials start, on
+     * what each ensure actually did: a paced peer holds no slot, and a dial
+     * that started nothing frees its slot for the next candidate at once.
+     */
     private connectDesiredPeers(
-        peersToConnect: readonly PeerId[],
-        peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>
-    ): void {
-        for (const peerId of peersToConnect) {
-            const connected = this.rtcQBox.ensurePeerConnectionStarted(peerId);
-            if (isPeerSetupStarted(connected)) {
-                this.diagnostics.connectAttemptCount += 1;
+        dialPlan: OutboundDialPlan,
+        ownership: WebRtcGroupManager.PeerOwnership
+    ): WaitingDials {
+        const inFlightSetupCounts = computeInFlightSetupCounts(
+            this.rtcQBox.inFlightPeerIds(),
+            ownership.groupKeysByPeerId
+        );
+        for (const peerId of dialPlan.livePeerIds) {
+            this.ensureDesiredPeer(peerId, ownership);
+        }
+
+        let newDialBudget = dialPlan.newDialBudget;
+        let pacedCount = 0;
+        let deferredCount = 0;
+        const dials = [
+            ...dialPlan.deadKnownPeerIds.map((peerId) => ({ peerId, onNewConnectionSlot: false })),
+            ...dialPlan.candidatePeerIds.map((peerId) => ({ peerId, onNewConnectionSlot: true }))
+        ];
+        for (const dial of dials) {
+            if (dial.onNewConnectionSlot && newDialBudget === 0) {
+                deferredCount += 1;
+                continue;
             }
-            if (connected.left) {
-                this.diagnostics.connectFailureCount += 1;
-                const error = connected.left.kind === 'self' ||
-                        connected.left.kind === 'dial-denied'
-                    ? undefined
-                    : connected.left.error;
-                console.error(
-                    `Failed to connect peer ${peerId}. Owners=${
-                        JSON.stringify(peerOwners.get(peerId) ?? [])
-                    }. Cause=${connected.left.kind}`,
-                    error
-                );
+            if (this.resolveDialAdmission(dial.peerId, inFlightSetupCounts, ownership) === 'wait') {
+                pacedCount += 1;
+                continue;
+            }
+            if (this.ensureDesiredPeer(dial.peerId, ownership) !== 'setup-started') {
+                continue;
+            }
+            if (dial.onNewConnectionSlot) {
+                newDialBudget -= 1;
+            }
+            for (const groupKey of requireOwnerGroupKeys(ownership, dial.peerId)) {
+                inFlightSetupCounts.set(groupKey, (inFlightSetupCounts.get(groupKey) ?? 0) + 1);
             }
         }
+        return { pacedCount, deferredCount };
+    }
+
+    private resolveDialAdmission(
+        peerId: PeerId,
+        inFlightSetupCounts: ReadonlyMap<string, number>,
+        ownership: WebRtcGroupManager.PeerOwnership
+    ): InFlightDialAdmission {
+        const owningGroupBudgets = requireOwnerGroupKeys(ownership, peerId).map((groupKey) => ({
+            inFlightSetupCount: inFlightSetupCounts.get(groupKey) ?? 0,
+            maxConcurrentEdgeSetups: requireGroupSetupBound(ownership, groupKey)
+        }));
+        return computeInFlightDialAdmission({ owningGroupBudgets });
+    }
+
+    private ensureDesiredPeer(
+        peerId: PeerId,
+        ownership: WebRtcGroupManager.PeerOwnership
+    ): WebRtcConnectionService.PeerConnectionEnsureOutcome | undefined {
+        const connected = this.rtcQBox.ensurePeerConnectionStarted(peerId);
+        if (isPeerSetupStarted(connected)) {
+            this.diagnostics.connectAttemptCount += 1;
+        }
+        if (connected.left) {
+            this.diagnostics.connectFailureCount += 1;
+            const error = connected.left.kind === 'self' ||
+                    connected.left.kind === 'dial-denied'
+                ? undefined
+                : connected.left.error;
+            console.error(
+                `Failed to connect peer ${peerId}. Owners=${
+                    JSON.stringify(ownership.groupsByPeerId.get(peerId) ?? [])
+                }. Cause=${connected.left.kind}`,
+                error
+            );
+            return undefined;
+        }
+        return connected.right?.outcome;
     }
 
     private evictRetainedPeers(
@@ -575,21 +638,15 @@ export class WebRtcGroupManager {
 
     private targetPeerIdsForGroup(group: WebRtcGroupService): readonly PeerId[] {
         const snapshot = group.readGroup();
-        if (!snapshot) {
-            return [];
-        }
+        return snapshot ? this.dialPeerIdsForSnapshot(snapshot, group.groupRef) : [];
+    }
 
+    private dialPeerIdsForSnapshot(snapshot: AnyGroupPresence, groupRef: GroupRef): readonly PeerId[] {
         return selectGroupDialPeerIds({
             lifecycleState: snapshot.group.lifecycleState,
             localSessionId: this.rtcQBox.input.sessionId,
-            planned: readOverlayForGroup(
-                this.plannedOverlayCache,
-                group.groupRef
-            ),
-            accepted: readOverlayForGroup(
-                this.acceptedOverlayCache,
-                group.groupRef
-            )
+            planned: readOverlayForGroup(this.plannedOverlayCache, groupRef),
+            accepted: readOverlayForGroup(this.acceptedOverlayCache, groupRef)
         });
     }
 
@@ -805,4 +862,26 @@ export class WebRtcGroupManager {
     private now(): number {
         return this.options.now?.() ?? Date.now();
     }
+}
+
+function requireOwnerGroupKeys(
+    ownership: WebRtcGroupManager.PeerOwnership,
+    peerId: PeerId
+): readonly string[] {
+    const groupKeys = ownership.groupKeysByPeerId.get(peerId);
+    if (!groupKeys) {
+        throw new Error(`Desired peer ${peerId} has no owning group`);
+    }
+    return groupKeys;
+}
+
+function requireGroupSetupBound(
+    ownership: WebRtcGroupManager.PeerOwnership,
+    groupKey: string
+): number {
+    const bound = ownership.maxConcurrentEdgeSetupsByGroupKey.get(groupKey);
+    if (bound === undefined) {
+        throw new Error(`Owning group ${groupKey} has no in-flight bound`);
+    }
+    return bound;
 }

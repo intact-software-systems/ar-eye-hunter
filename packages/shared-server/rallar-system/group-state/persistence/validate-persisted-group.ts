@@ -8,6 +8,7 @@ import {
     GROUP_MEMBER_POLICY_KEYS,
     GROUP_TRANSPORT_STATES
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 
@@ -174,13 +175,20 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
         );
     }
     requireOneOf(value.transportState, GROUP_TRANSPORT_STATES, 'Stored group transportState');
-    const memberPolicy = requireRecord(value.memberPolicy, 'Stored group memberPolicy');
+    validateStoredGroupMemberPolicy(value.memberPolicy);
+}
+
+function validateStoredGroupMemberPolicy(value: unknown): void {
+    const memberPolicy = requireRecord(value, 'Stored group memberPolicy');
     assertExactKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
     assertRequiredKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
     requirePositiveSafeInteger(
         memberPolicy.maxConcurrentEdgeSetups,
         'Stored group memberPolicy maxConcurrentEdgeSetups'
     );
+    if (memberPolicy.maxConcurrentEdgeSetups > MAX_GROUP_CONCURRENT_EDGE_SETUPS) {
+        throw new TypeError('Stored group memberPolicy maxConcurrentEdgeSetups exceeds the policy bound');
+    }
     requireOneOf(
         memberPolicy.transports,
         GROUP_ESTABLISHMENT_TRANSPORTS,

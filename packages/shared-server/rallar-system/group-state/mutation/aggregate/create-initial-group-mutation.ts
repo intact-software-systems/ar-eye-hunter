@@ -15,6 +15,7 @@ export function createInitialGroup({
     audit,
     snapshotVersion
 }: CreateInitialGroupInput): Group {
+    const lifecyclePolicy = command.input.lifecyclePolicy ?? createDefaultGroupLifecyclePolicy();
     return {
         ...command.aggregateRef,
         slug: command.input.slug,
@@ -39,7 +40,7 @@ export function createInitialGroup({
         expiresAtEpochMs: command.input.expiresAtEpochMs,
         emptySinceEpochMs: null,
         purgeAfterEpochMs: command.input.purgeAfterEpochMs,
-        lifecycleState: command.input.lifecyclePolicy?.formation === 'phased' ? 'forming' : 'active',
+        lifecycleState: lifecyclePolicy.formation === 'phased' ? 'forming' : 'active',
         formationEpoch: 0,
         formationAttemptCount: 0,
         lastFormationOutcome: null,
@@ -47,7 +48,7 @@ export function createInitialGroup({
         formationElectorate: [command.input.createdByPrincipalId],
         acceptedLayoutIdentity: null,
         transportState: 'flowing',
-        memberPolicy: toGroupMemberPolicy(command.input.lifecyclePolicy ?? createDefaultGroupLifecyclePolicy())
+        memberPolicy: toGroupMemberPolicy(lifecyclePolicy)
     };
 }
 

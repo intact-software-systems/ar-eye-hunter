@@ -372,6 +372,7 @@ function createBrowserRtcGroupManager(
                 rtcRxStreamer.setRttReportingPeerIds(rttReportingPeerIds)
         }
     );
+    webRtcGroupManager.startReconcileWakes();
     rtcRxStreamer.setRttReportingPeerIds(
         webRtcGroupManager.rttReportingPeerIds({ degreeLimit: input.options.rttReportingDegreeLimit })
     );

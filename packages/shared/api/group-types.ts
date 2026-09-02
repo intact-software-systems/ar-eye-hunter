@@ -118,12 +118,7 @@ type GroupBase =
          */
         transportState: GroupTransportState;
 
-        /**
-         * The member-tier policy values resolved at creation (product decision
-         * 26, implementation decision I13): the in-flight setup bound each
-         * member enforces on itself, and the declared transports. A group
-         * created without a policy carries the default preset's values.
-         */
+        /** Resolved once at creation and never rewritten, like the policy it comes from. */
         memberPolicy: GroupMemberPolicy;
     }>;
 

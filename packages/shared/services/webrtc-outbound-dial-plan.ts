@@ -1,118 +1,68 @@
-import type { GroupId, PeerId } from '../api/api-config.ts';
-import { computeInFlightDialAdmission } from '../api/group-lifecycle/compute-in-flight-dial-admission.ts';
+import type { PeerId } from '../api/api-config.ts';
 
 export type OutboundDialPlanInput = Readonly<{
     maxPeerConnections: number;
     knownPeerIds: ReadonlySet<PeerId>;
+    /** Known peers whose native connection is still connecting or connected. */
+    livePeerIds: ReadonlySet<PeerId>;
     desiredPeerIds: ReadonlySet<PeerId>;
     connectablePeerIds: readonly PeerId[];
     serverDesiredPeerIds: ReadonlySet<PeerId>;
 }>;
 
 export type OutboundDialPlan = Readonly<{
-    peersToConnect: readonly PeerId[];
-    deferredPeerIds: readonly PeerId[];
-}>;
-
-export interface GroupSetupBudget {
-    readonly desiredPeerIds: ReadonlySet<PeerId>;
-    readonly maxConcurrentEdgeSetups: number;
-}
-
-export interface PacedOutboundDialPlanInput {
-    readonly peersToConnect: readonly PeerId[];
-    readonly knownPeerIds: ReadonlySet<PeerId>;
-    readonly inFlightPeerIds: ReadonlySet<PeerId>;
-    readonly ownerGroupIdsByPeerId: ReadonlyMap<PeerId, readonly GroupId[]>;
-    readonly groupSetupBudgets: ReadonlyMap<GroupId, GroupSetupBudget>;
-}
-
-export type PacedOutboundDialPlan = Readonly<{
-    peersToConnect: readonly PeerId[];
-    pacedPeerIds: readonly PeerId[];
+    /** Their ensure starts nothing, so neither the budget nor the bound applies. */
+    livePeerIds: readonly PeerId[];
+    /** Known peers whose connection died: their ensure starts a new setup under the bound, on a connection slot they already hold. */
+    deadKnownPeerIds: readonly PeerId[];
+    /** New dials, server-overlay-desired first; only `newDialBudget` of them fit the connection budget. */
+    candidatePeerIds: readonly PeerId[];
+    newDialBudget: number;
 }>;
 
 /**
- * Bounds outbound dialing to the same peer-connection budget inbound
- * admission uses. Peers with an existing connection are always ensured (an
- * ensure is idempotent, not a new dial); new dials are admitted
- * server-overlay-desired peers first, then bootstrap-desired peers, until
- * desired connections reach the budget. Only desired known connections count
- * against the budget: retained (grace) connections are governed by the
- * retained-eviction pass, which trims the overflow in the same reconcile —
- * counting them here would let a full retained set starve required dials
- * that the eviction pass would never unblock. Deferred peers are retried by
- * later reconciles as slots free up.
+ * Orders outbound dialing under the same peer-connection budget inbound
+ * admission uses. Only desired known connections count against the budget:
+ * retained (grace) connections are governed by the retained-eviction pass,
+ * which trims the overflow in the same reconcile — counting them here would let
+ * a full retained set starve required dials that the eviction pass would never
+ * unblock. The dial loop spends the budget and the in-flight bound as it goes,
+ * so a paced peer never holds a slot a later candidate could use, and a dial
+ * that starts nothing frees its slot at once.
  */
 export function computeOutboundDialPlan(
     input: OutboundDialPlanInput
 ): OutboundDialPlan {
-    const alreadyKnown = input.connectablePeerIds
-        .filter((peerId) => input.knownPeerIds.has(peerId));
-    const newCandidates = input.connectablePeerIds
-        .filter((peerId) => !input.knownPeerIds.has(peerId));
-    const serverFirstCandidates = [
-        ...newCandidates.filter((peerId) => input.serverDesiredPeerIds.has(peerId)),
-        ...newCandidates.filter((peerId) => !input.serverDesiredPeerIds.has(peerId))
-    ];
-
+    const known = input.connectablePeerIds.filter((peerId) => input.knownPeerIds.has(peerId));
+    const newCandidates = input.connectablePeerIds.filter((peerId) => !input.knownPeerIds.has(peerId));
     const desiredKnownCount = Array.from(input.knownPeerIds)
         .filter((peerId) => input.desiredPeerIds.has(peerId))
         .length;
-    const newDialBudget = Math.max(
-        0,
-        input.maxPeerConnections - desiredKnownCount
-    );
 
     return {
-        peersToConnect: [
-            ...alreadyKnown,
-            ...serverFirstCandidates.slice(0, newDialBudget)
+        livePeerIds: known.filter((peerId) => input.livePeerIds.has(peerId)),
+        deadKnownPeerIds: known.filter((peerId) => !input.livePeerIds.has(peerId)),
+        candidatePeerIds: [
+            ...newCandidates.filter((peerId) => input.serverDesiredPeerIds.has(peerId)),
+            ...newCandidates.filter((peerId) => !input.serverDesiredPeerIds.has(peerId))
         ],
-        deferredPeerIds: serverFirstCandidates.slice(newDialBudget)
+        newDialBudget: Math.max(0, input.maxPeerConnections - desiredKnownCount)
     };
 }
 
 /**
- * The in-flight bound (product decision 18) over a budgeted dial plan. A known
- * peer passes untouched because its ensure starts nothing. A new dial is
- * admitted only while every owning group is below its bound, counting the
- * setups already in flight for that group plus the dials admitted earlier in
- * this pass; a paced peer waits for the next reconcile, which a setup ending
- * wakes.
+ * Setups in flight per owning group (product decision 18): a shared peer is
+ * one connection charged to every group that wants it.
  */
-export function computePacedOutboundDialPlan(
-    input: PacedOutboundDialPlanInput
-): PacedOutboundDialPlan {
-    const inFlightSetupCountByGroupId = new Map<GroupId, number>();
-    for (const [groupId, budget] of input.groupSetupBudgets) {
-        const inFlightSetupCount = Array.from(input.inFlightPeerIds)
-            .filter((peerId) => budget.desiredPeerIds.has(peerId))
-            .length;
-        inFlightSetupCountByGroupId.set(groupId, inFlightSetupCount);
-    }
-
-    const peersToConnect: PeerId[] = [];
-    const pacedPeerIds: PeerId[] = [];
-    for (const peerId of input.peersToConnect) {
-        if (input.knownPeerIds.has(peerId)) {
-            peersToConnect.push(peerId);
-            continue;
-        }
-        const ownerGroupIds = input.ownerGroupIdsByPeerId.get(peerId) ?? [];
-        const owningGroupBudgets = ownerGroupIds.map((groupId) => ({
-            inFlightSetupCount: inFlightSetupCountByGroupId.get(groupId) ?? 0,
-            maxConcurrentEdgeSetups: input.groupSetupBudgets.get(groupId)?.maxConcurrentEdgeSetups ?? 0
-        }));
-        if (computeInFlightDialAdmission({ owningGroupBudgets }) === 'wait') {
-            pacedPeerIds.push(peerId);
-            continue;
-        }
-        peersToConnect.push(peerId);
-        for (const groupId of ownerGroupIds) {
-            inFlightSetupCountByGroupId.set(groupId, (inFlightSetupCountByGroupId.get(groupId) ?? 0) + 1);
+export function computeInFlightSetupCounts(
+    inFlightPeerIds: readonly PeerId[],
+    ownerGroupKeysByPeerId: ReadonlyMap<PeerId, readonly string[]>
+): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const peerId of inFlightPeerIds) {
+        for (const groupKey of ownerGroupKeysByPeerId.get(peerId) ?? []) {
+            counts.set(groupKey, (counts.get(groupKey) ?? 0) + 1);
         }
     }
-
-    return { peersToConnect, pacedPeerIds };
+    return counts;
 }

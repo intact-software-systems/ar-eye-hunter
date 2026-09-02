@@ -16,6 +16,8 @@ import {
     assertRuntimeStateExpectedRevision,
     assertRuntimeStateUpsertExpectedRevision
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
 
 const GROUPS = Number(
@@ -157,7 +159,7 @@ function createGroup(groupId: string, ownerPrincipalId: string): Group {
         formationElectorate: [ownerPrincipalId],
         acceptedLayoutIdentity: null,
         transportState: 'flowing',
-        memberPolicy: { maxConcurrentEdgeSetups: 64, transports: 'rtc-and-ws' },
+        memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy()),
         snapshotVersion: 1,
         metadataVersion: 1,
         rosterVersion: 1,

@@ -4818,11 +4818,8 @@ components:
     GroupMemberPolicy:
       type: object
       description: >-
-        The member tier of the lifecycle policy (product decision 26), resolved
-        at creation and carried on every group read and delta so each member's
-        browser bounds its own concurrent RTC setups from the snapshot it
-        already holds. A group created without a policy carries the default
-        preset's values.
+        The member tier of the group's lifecycle policy, resolved once at
+        creation (product decision 26).
       required:
         - maxConcurrentEdgeSetups
         - transports
@@ -4831,6 +4828,7 @@ components:
           type: integer
           format: int64
           minimum: 1
+          maximum: 256
         transports:
           type: string
           enum: [rtc-and-ws, ws-only, rtc-preferred]
