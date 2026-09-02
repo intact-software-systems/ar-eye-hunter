@@ -1,4 +1,4 @@
-import { computeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import { isExactAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { computeCrdtMutationWrites } from './compute-crdt-mutation-outcome.ts';
 import type {
     CrdtDocumentWrite,
@@ -84,7 +84,7 @@ function hasConsistentCrdtPersistence(computed: CrdtMutationComputed): boolean {
     const outboxMatches = computed.outboxWrites.length === computed.outboxEntries.length &&
         computed.outboxWrites.every((write, index) => {
             const entry = computed.outboxEntries[index];
-            return entry !== undefined && sameAppOutboxInsert(write, computeAppOutboxInsert(entry));
+            return entry !== undefined && isExactAppOutboxInsert(entry, write);
         });
     if (!outboxMatches || computed.outcome !== 'write') {
         return outboxMatches;
@@ -168,23 +168,6 @@ function sameOptionalSnapshotWrite(
         left.snapshotEnvelopeJson === right.snapshotEnvelopeJson &&
         sameDate(left.createdAt, right.createdAt) &&
         left.reason === right.reason;
-}
-
-function sameAppOutboxInsert(left: AppOutboxInsert, right: AppOutboxInsert): boolean {
-    return left.entry.key.topicId === right.entry.key.topicId &&
-        left.entry.key.resourceId === right.entry.key.resourceId &&
-        left.entry.key.contextId === right.entry.key.contextId &&
-        left.entry.resource === right.entry.resource &&
-        left.entry.typeId === right.entry.typeId &&
-        left.entry.status === right.entry.status &&
-        left.entry.audit.createdBy === right.entry.audit.createdBy &&
-        left.systemDate === right.systemDate &&
-        left.createdAt === right.createdAt &&
-        left.expiresAt === right.expiresAt &&
-        left.startedAt === right.startedAt &&
-        left.finishedAt === right.finishedAt &&
-        left.nextAt === right.nextAt &&
-        left.attempts === right.attempts;
 }
 
 function sameDate(left: Date, right: Date): boolean {

@@ -43,6 +43,27 @@ export function computeAppOutboxInsert(entry: ResourceEntry): AppOutboxInsert {
     };
 }
 
+export function isExactAppOutboxInsert(
+    entry: ResourceEntry,
+    computed: AppOutboxInsert
+): boolean {
+    const expected = computeAppOutboxInsert(entry);
+    return computed.entry.key.topicId === expected.entry.key.topicId &&
+        computed.entry.key.resourceId === expected.entry.key.resourceId &&
+        computed.entry.key.contextId === expected.entry.key.contextId &&
+        computed.entry.resource === expected.entry.resource &&
+        computed.entry.typeId === expected.entry.typeId &&
+        computed.entry.status === expected.entry.status &&
+        computed.entry.audit.createdBy === expected.entry.audit.createdBy &&
+        computed.systemDate === expected.systemDate &&
+        computed.createdAt === expected.createdAt &&
+        computed.expiresAt === expected.expiresAt &&
+        computed.startedAt === expected.startedAt &&
+        computed.finishedAt === expected.finishedAt &&
+        computed.nextAt === expected.nextAt &&
+        computed.attempts === expected.attempts;
+}
+
 export async function writeAppOutboxInsert(transaction: PSqlSql, computed: AppOutboxInsert): Promise<void> {
     if (!await insertAppOutboxRow(transaction, computed)) {
         throw computed.conflict;
