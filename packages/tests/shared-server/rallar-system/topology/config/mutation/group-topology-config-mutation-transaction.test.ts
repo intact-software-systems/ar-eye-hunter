@@ -1,5 +1,5 @@
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupTopologyConfigMutationService } from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
@@ -43,7 +43,9 @@ describe('group topology config mutation phases', () => {
     });
 
     it('keeps compute and validate repeatable after explicit read facts are captured', () => {
-        const isPlatformAdmin = vi.fn(() => false);
+        const isPlatformAdmin = () => {
+            throw new Error('Compute and validate must use the captured authority fact');
+        };
         const service = createService(isPlatformAdmin);
         const mutation = createTopologyConfigMutationTestInput();
         const read = deepFreezeTopologyTestValue({
@@ -59,7 +61,6 @@ describe('group topology config mutation phases', () => {
         expect(second).toEqual(first);
         expect(() => service.validate({ command: mutation.command, read, attemptCount: 1, computed: first })).not.toThrow();
         expect(() => service.validate({ command: mutation.command, read, attemptCount: 1, computed: second })).not.toThrow();
-        expect(isPlatformAdmin).not.toHaveBeenCalled();
     });
 });
 
