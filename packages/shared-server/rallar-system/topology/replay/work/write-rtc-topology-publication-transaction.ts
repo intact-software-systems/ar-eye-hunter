@@ -18,10 +18,10 @@ import {
     isRtcTopologyDeliveryRetryableConflict,
     toRtcTopologyDeliveryAppendInput
 } from '../delivery/rtc-topology-delivery-validation.ts';
+import type { RtcTopologyInputFingerprintWrite } from './rtc-topology-input-fingerprint.ts';
 import {
     finishRtcTopologyReservation
-} from './finish-rtc-topology-work.ts';
-import type { RtcTopologyInputFingerprintWrite } from './rtc-topology-input-fingerprint.ts';
+} from './rtc-topology-work-completion.ts';
 import { writeGroupConnectTriggerRequests } from './write-group-connect-trigger-requests.ts';
 import { writeTopologyPromotionRequest } from './write-topology-promotion-request.ts';
 

@@ -17,7 +17,7 @@ import {
 import {
     computeRtcTopologyReservationFinish,
     finishRtcTopologyReservation
-} from '@shared-server/rallar-system/topology/replay/work/finish-rtc-topology-work.ts';
+} from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-completion.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
