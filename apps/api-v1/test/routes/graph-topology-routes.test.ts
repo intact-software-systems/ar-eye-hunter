@@ -945,10 +945,10 @@ Deno.test('formation view latches layoutStale while a newer planned layout await
 Deno.test('formation view carries the queued replan the topology view reports', async () => {
     const app = createRouteApp({
         group: createGroupSnapshot('room-1', ['owner']),
-        topologyQuery: topologyQueryWithPlanned(1, { reconfigureQueued: true, dueAtEpochMs: 4_000 })
+        topologyQuery: topologyQueryWithPlanned(1, { reconfigureQueued: true, dueAtEpochMs: 4_000, generation: 2 })
     });
 
     const view = await readFormationView(app);
 
-    assert.deepEqual(view.pending, { reconfigureQueued: true, dueAtEpochMs: 4_000 });
+    assert.deepEqual(view.pending, { reconfigureQueued: true, dueAtEpochMs: 4_000, generation: 2 });
 });

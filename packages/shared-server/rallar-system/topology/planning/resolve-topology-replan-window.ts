@@ -1,4 +1,5 @@
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
 
@@ -14,29 +15,39 @@ export interface TopologyReplanWindow {
 }
 
 export interface ResolveTopologyReplanWindowInput {
-    /** The stored policy, or null when the stage does not follow the replanning policy. */
-    readonly lifecyclePolicy: GroupLifecyclePolicyRead | null;
+    /** The stored policy of a group whose stage follows the replanning policy. */
+    readonly lifecyclePolicy: GroupLifecyclePolicyRead;
     /** The server-wide window every group coalesced through before per-group windows existed. */
     readonly serverDebounceMs: number;
 }
 
 /**
- * Product decision 31: `debounced` carries the policy's window and maximum
- * wait, `auto` carries no policy window and keeps the server's while its
- * extension is still bounded, and `commanded` coalesces its commanded
- * follow-ups under the policy's window. A stage outside the policy and an
- * unreadable policy keep the server window unbounded, as before.
+ * Product decision 31: `auto` carries no policy window and keeps the server's,
+ * unbounded, so it replans on the first opportunity after a change;
+ * `debounced` carries the policy's window and maximum wait; `commanded`
+ * coalesces its commanded follow-ups under that same policy window. An
+ * unreadable policy offers no window — the planner already holds its
+ * automatic replans closed — so its merges keep the server window.
  */
 export function resolveTopologyReplanWindow(input: ResolveTopologyReplanWindowInput): TopologyReplanWindow {
-    if (input.lifecyclePolicy === null || input.lifecyclePolicy.status === 'corrupt') {
-        return { debounceMs: input.serverDebounceMs, maxWaitMs: null };
+    const serverWindow: TopologyReplanWindow = { debounceMs: input.serverDebounceMs, maxWaitMs: null };
+    switch (input.lifecyclePolicy.status) {
+        case 'corrupt':
+            return serverWindow;
+        case 'absent':
+            return toPolicyWindow(createDefaultGroupLifecyclePolicy(), serverWindow);
+        case 'present':
+            return toPolicyWindow(input.lifecyclePolicy.policy, serverWindow);
     }
-    const policy = input.lifecyclePolicy.status === 'present'
-        ? input.lifecyclePolicy.policy
-        : createDefaultGroupLifecyclePolicy();
-    const topology = policy.topology;
-    return {
-        debounceMs: topology.replanning === 'auto' ? input.serverDebounceMs : topology.debounceWindowMs,
-        maxWaitMs: topology.maxReplanWaitMs
-    };
+}
+
+function toPolicyWindow(policy: GroupLifecyclePolicy, serverWindow: TopologyReplanWindow): TopologyReplanWindow {
+    const { topology } = policy;
+    switch (topology.replanning) {
+        case 'auto':
+            return serverWindow;
+        case 'debounced':
+        case 'commanded':
+            return { debounceMs: topology.debounceWindowMs, maxWaitMs: topology.maxReplanWaitMs };
+    }
 }

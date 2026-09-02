@@ -1,5 +1,5 @@
 {
-  "description": "The debounced-replanning scenario (product decision 31, plan slice 10b): a managed group active on an accepted layout takes a burst of replacing sessions; the queued replan's due time extends with each change, stops extending at the policy's maximum wait, and the one replan the burst yields covers its last change.",
+  "description": "The debounced-replanning scenario (product decision 31, plan slice 10b): a managed group active on an accepted layout takes four replacing sessions about half a second apart under a 4 000 ms window with a 4 500 ms maximum wait; each read of the queued replan sees its own change (generation up by one), the due time extends with the second change, stops extending at the maximum wait, the one replan the burst yields carries its last presence revision, and nothing pends afterwards.",
   "variables": {
     "apiPrimary": {
       "env": "RALLAR_API_BASE_URL",
@@ -172,8 +172,8 @@
             },
             "topology": {
               "replanning": "debounced",
-              "debounceWindowMs": 3000,
-              "maxReplanWaitMs": 4000
+              "debounceWindowMs": 4000,
+              "maxReplanWaitMs": 4500
             }
           }
         }
@@ -450,463 +450,168 @@
       }
     },
     {
-      "name": "aliceLogsInAgain1",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "POST",
-        "path": "/api/auth/login/requests/bb-ad558846a17709ef82eb2ac9-{runId}",
-        "body": {
-          "username": "{aliceUsername}",
-          "password": "{alicePassword}"
+      "name": "replacingSessions",
+      "type": "loop",
+      "count": 4,
+      "steps": [
+        {
+          "name": "aliceLogsInAgain{loop.iteration}",
+          "type": "http",
+          "connection": "primary",
+          "request": {
+            "method": "POST",
+            "path": "/api/auth/login/requests/bb-e03aa2a655271ed46759c847-{loop.iteration}-{runId}",
+            "body": {
+              "username": "{aliceUsername}",
+              "password": "{alicePassword}"
+            },
+            "outputs": {
+              "churnSessionId": "body.sessionId",
+              "churnAccessToken": {
+                "path": "body.accessToken",
+                "secret": true
+              }
+            }
+          },
+          "expect": {
+            "status": 200
+          }
         },
-        "outputs": {
-          "aliceSession1Id": "body.sessionId",
-          "aliceSession1AccessToken": {
-            "path": "body.accessToken",
-            "secret": true
+        {
+          "name": "deriveChurnAuthHeader{loop.iteration}",
+          "type": "set",
+          "output": "churnAuthHeader",
+          "secret": true,
+          "redactAs": "churnAuthHeader",
+          "transform": {
+            "concat": [
+              "Bearer ",
+              {
+                "path": "outputs.churnAccessToken"
+              }
+            ]
+          }
+        },
+        {
+          "name": "aliceConnectsReplacingSession{loop.iteration}",
+          "type": "http",
+          "connection": "primary",
+          "request": {
+            "method": "PUT",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{churnSessionId}/requests/bb-8b12df22e4cd74d34ab56791-{loop.iteration}-{runId}",
+            "headers": {
+              "Authorization": "{churnAuthHeader}",
+              "x-client-id": "{aliceClientId}"
+            },
+            "body": {
+              "generationId": "generation-{loop.iteration}-{runId}",
+              "principalId": "{aliceClientId}"
+            },
+            "outputs": {
+              "churnPresenceRevision": "body.causalRevision.presenceRevision"
+            }
+          },
+          "expect": {
+            "status": 200
+          }
+        },
+        {
+          "name": "churnSettles{loop.iteration}",
+          "type": "set",
+          "output": "churnSettled{loop.iteration}",
+          "value": {
+            "iteration": "{loop.iteration}"
+          },
+          "request": {
+            "delayMs": 500
+          }
+        },
+        {
+          "name": "readDueAfterChurn{loop.iteration}",
+          "type": "http",
+          "connection": "primary",
+          "request": {
+            "method": "GET",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
+            "headers": {
+              "Authorization": "{aliceAuthHeader}",
+              "x-client-id": "{aliceClientId}"
+            },
+            "poll": {
+              "maxAttempts": 10,
+              "maxDurationMs": 2000,
+              "backoffMs": 50,
+              "backoffMultiplier": 1
+            },
+            "outputs": {
+              "dueAfterChurn": "body.pending.dueAtEpochMs",
+              "generationAfterChurn": "body.pending.generation"
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "lifecycleState": "active",
+              "pending": {
+                "reconfigureQueued": true
+              }
+            }
+          }
+        },
+        {
+          "name": "keepDueAfterChurn{loop.iteration}",
+          "type": "set",
+          "output": "dueAfterChurn{loop.iteration}",
+          "transform": {
+            "path": "outputs.dueAfterChurn"
+          }
+        },
+        {
+          "name": "keepGenerationAfterChurn{loop.iteration}",
+          "type": "set",
+          "output": "generationAfterChurn{loop.iteration}",
+          "transform": {
+            "path": "outputs.generationAfterChurn"
+          }
+        },
+        {
+          "name": "keepChurnPresenceRevision{loop.iteration}",
+          "type": "set",
+          "output": "churnPresenceRevision{loop.iteration}",
+          "transform": {
+            "path": "outputs.churnPresenceRevision"
           }
         }
-      },
-      "expect": {
-        "status": 200
-      }
+      ]
     },
     {
-      "name": "deriveAliceSession1AuthHeader",
-      "type": "set",
-      "output": "aliceSession1AuthHeader",
-      "secret": true,
-      "redactAs": "aliceSession1AuthHeader",
-      "transform": {
-        "concat": [
-          "Bearer ",
+      "name": "everyReadSawItsOwnChange",
+      "type": "assert",
+      "actual": {
+        "generationAfterChurn1": "{generationAfterChurn1}",
+        "generationAfterChurn2": "{generationAfterChurn2}",
+        "generationAfterChurn3": "{generationAfterChurn3}",
+        "generationAfterChurn4": "{generationAfterChurn4}"
+      },
+      "expect": {
+        "comparators": [
           {
-            "path": "outputs.aliceSession1AccessToken"
+            "path": "generationAfterChurn1",
+            "gt": 0
+          },
+          {
+            "path": "generationAfterChurn2",
+            "gt": "{generationAfterChurn1}"
+          },
+          {
+            "path": "generationAfterChurn3",
+            "gt": "{generationAfterChurn2}"
+          },
+          {
+            "path": "generationAfterChurn4",
+            "gt": "{generationAfterChurn3}"
           }
         ]
-      }
-    },
-    {
-      "name": "aliceConnectsSession1",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSession1Id}/requests/bb-99816ca377dc32d7beeb9b2e-{runId}",
-        "headers": {
-          "Authorization": "{aliceSession1AuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "generationId": "generation-1-{runId}",
-          "principalId": "{aliceClientId}"
-        },
-        "outputs": {
-          "churn1PresenceRevision": "body.causalRevision.presenceRevision"
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "readDueAfterChurn1",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "poll": {
-          "maxAttempts": 15,
-          "maxDurationMs": 2500,
-          "backoffMs": 50,
-          "backoffMultiplier": 1
-        },
-        "outputs": {
-          "dueAfterChurn1": "body.pending.dueAtEpochMs"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "lifecycleState": "active",
-          "pending": {
-            "reconfigureQueued": true
-          }
-        }
-      }
-    },
-    {
-      "name": "aliceLogsInAgain2",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "POST",
-        "path": "/api/auth/login/requests/bb-98a1f38f823a47edbb97a6f7-{runId}",
-        "body": {
-          "username": "{aliceUsername}",
-          "password": "{alicePassword}"
-        },
-        "outputs": {
-          "aliceSession2Id": "body.sessionId",
-          "aliceSession2AccessToken": {
-            "path": "body.accessToken",
-            "secret": true
-          }
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "deriveAliceSession2AuthHeader",
-      "type": "set",
-      "output": "aliceSession2AuthHeader",
-      "secret": true,
-      "redactAs": "aliceSession2AuthHeader",
-      "transform": {
-        "concat": [
-          "Bearer ",
-          {
-            "path": "outputs.aliceSession2AccessToken"
-          }
-        ]
-      }
-    },
-    {
-      "name": "aliceConnectsSession2",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSession2Id}/requests/bb-1163a52fb4d5e5aa2b064555-{runId}",
-        "headers": {
-          "Authorization": "{aliceSession2AuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "generationId": "generation-2-{runId}",
-          "principalId": "{aliceClientId}"
-        },
-        "outputs": {
-          "churn2PresenceRevision": "body.causalRevision.presenceRevision"
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "readDueAfterChurn2",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "poll": {
-          "maxAttempts": 15,
-          "maxDurationMs": 2500,
-          "backoffMs": 50,
-          "backoffMultiplier": 1
-        },
-        "outputs": {
-          "dueAfterChurn2": "body.pending.dueAtEpochMs"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "lifecycleState": "active",
-          "pending": {
-            "reconfigureQueued": true
-          }
-        }
-      }
-    },
-    {
-      "name": "aliceLogsInAgain3",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "POST",
-        "path": "/api/auth/login/requests/bb-e986f746c312cb614d0aec5a-{runId}",
-        "body": {
-          "username": "{aliceUsername}",
-          "password": "{alicePassword}"
-        },
-        "outputs": {
-          "aliceSession3Id": "body.sessionId",
-          "aliceSession3AccessToken": {
-            "path": "body.accessToken",
-            "secret": true
-          }
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "deriveAliceSession3AuthHeader",
-      "type": "set",
-      "output": "aliceSession3AuthHeader",
-      "secret": true,
-      "redactAs": "aliceSession3AuthHeader",
-      "transform": {
-        "concat": [
-          "Bearer ",
-          {
-            "path": "outputs.aliceSession3AccessToken"
-          }
-        ]
-      }
-    },
-    {
-      "name": "aliceConnectsSession3",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSession3Id}/requests/bb-7ec1956eda99a4f1aeb2838d-{runId}",
-        "headers": {
-          "Authorization": "{aliceSession3AuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "generationId": "generation-3-{runId}",
-          "principalId": "{aliceClientId}"
-        },
-        "outputs": {
-          "churn3PresenceRevision": "body.causalRevision.presenceRevision"
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "readDueAfterChurn3",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "poll": {
-          "maxAttempts": 15,
-          "maxDurationMs": 2500,
-          "backoffMs": 50,
-          "backoffMultiplier": 1
-        },
-        "outputs": {
-          "dueAfterChurn3": "body.pending.dueAtEpochMs"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "lifecycleState": "active",
-          "pending": {
-            "reconfigureQueued": true
-          }
-        }
-      }
-    },
-    {
-      "name": "aliceLogsInAgain4",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "POST",
-        "path": "/api/auth/login/requests/bb-a124aacaa58f59cefd33b594-{runId}",
-        "body": {
-          "username": "{aliceUsername}",
-          "password": "{alicePassword}"
-        },
-        "outputs": {
-          "aliceSession4Id": "body.sessionId",
-          "aliceSession4AccessToken": {
-            "path": "body.accessToken",
-            "secret": true
-          }
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "deriveAliceSession4AuthHeader",
-      "type": "set",
-      "output": "aliceSession4AuthHeader",
-      "secret": true,
-      "redactAs": "aliceSession4AuthHeader",
-      "transform": {
-        "concat": [
-          "Bearer ",
-          {
-            "path": "outputs.aliceSession4AccessToken"
-          }
-        ]
-      }
-    },
-    {
-      "name": "aliceConnectsSession4",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSession4Id}/requests/bb-2e664d58699227abbf500434-{runId}",
-        "headers": {
-          "Authorization": "{aliceSession4AuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "generationId": "generation-4-{runId}",
-          "principalId": "{aliceClientId}"
-        },
-        "outputs": {
-          "churn4PresenceRevision": "body.causalRevision.presenceRevision"
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "readDueAfterChurn4",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "poll": {
-          "maxAttempts": 15,
-          "maxDurationMs": 2500,
-          "backoffMs": 50,
-          "backoffMultiplier": 1
-        },
-        "outputs": {
-          "dueAfterChurn4": "body.pending.dueAtEpochMs"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "lifecycleState": "active",
-          "pending": {
-            "reconfigureQueued": true
-          }
-        }
-      }
-    },
-    {
-      "name": "aliceLogsInAgain5",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "POST",
-        "path": "/api/auth/login/requests/bb-889ed9e38a37c8316f200f28-{runId}",
-        "body": {
-          "username": "{aliceUsername}",
-          "password": "{alicePassword}"
-        },
-        "outputs": {
-          "aliceSession5Id": "body.sessionId",
-          "aliceSession5AccessToken": {
-            "path": "body.accessToken",
-            "secret": true
-          }
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "deriveAliceSession5AuthHeader",
-      "type": "set",
-      "output": "aliceSession5AuthHeader",
-      "secret": true,
-      "redactAs": "aliceSession5AuthHeader",
-      "transform": {
-        "concat": [
-          "Bearer ",
-          {
-            "path": "outputs.aliceSession5AccessToken"
-          }
-        ]
-      }
-    },
-    {
-      "name": "aliceConnectsSession5",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSession5Id}/requests/bb-5014d16f909e284d2db4d4d1-{runId}",
-        "headers": {
-          "Authorization": "{aliceSession5AuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "generationId": "generation-5-{runId}",
-          "principalId": "{aliceClientId}"
-        },
-        "outputs": {
-          "churn5PresenceRevision": "body.causalRevision.presenceRevision"
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "readDueAfterChurn5",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "poll": {
-          "maxAttempts": 15,
-          "maxDurationMs": 2500,
-          "backoffMs": 50,
-          "backoffMultiplier": 1
-        },
-        "outputs": {
-          "dueAfterChurn5": "body.pending.dueAtEpochMs"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "lifecycleState": "active",
-          "pending": {
-            "reconfigureQueued": true
-          }
-        }
       }
     },
     {
@@ -919,6 +624,10 @@
       "expect": {
         "comparators": [
           {
+            "path": "dueAfterChurn1",
+            "gt": 0
+          },
+          {
             "path": "dueAfterChurn2",
             "gt": "{dueAfterChurn1}"
           }
@@ -929,20 +638,12 @@
       "name": "maximumWaitStopsTheExtension",
       "type": "assert",
       "actual": {
-        "dueAfterChurn4": "{dueAfterChurn4}",
-        "dueAfterChurn5": "{dueAfterChurn5}"
+        "dueAfterChurn4": "{dueAfterChurn4}"
       },
       "expect": {
-        "comparators": [
-          {
-            "path": "dueAfterChurn5",
-            "gte": "{dueAfterChurn4}"
-          },
-          {
-            "path": "dueAfterChurn5",
-            "lte": "{dueAfterChurn4}"
-          }
-        ]
+        "body": {
+          "dueAfterChurn4": "{dueAfterChurn3}"
+        }
       }
     },
     {
@@ -969,7 +670,7 @@
           "snapshot": {
             "state": "active",
             "sourceGroupStateCausalRevision": {
-              "presenceRevision": "{churn5PresenceRevision}"
+              "presenceRevision": "{churnPresenceRevision4}"
             }
           }
         }

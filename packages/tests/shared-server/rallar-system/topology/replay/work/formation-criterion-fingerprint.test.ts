@@ -265,7 +265,7 @@ async function reserveGroupRevision(queue: InMemoryQueueBox, input: ProcessGroup
         origin: input.origin,
         requestedAtEpochMs: NOW,
         expireAtEpochMs: 4_000_000_000_000,
-        timing: { window: { debounceMs: 0, maxWaitMs: null }, plannedLayoutUpdatedAtEpochMs: null, minimumLayoutAgeMs: 0 },
+        timing: { window: { debounceMs: 0, maxWaitMs: null }, replanNotBeforeEpochMs: null },
         senderId: 'criterion-server',
         previousEntry: await queue.getItem(toCoalescedGroupRevisionKey(input.group.group)) ?? null
     });

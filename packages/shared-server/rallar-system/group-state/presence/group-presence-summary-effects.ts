@@ -1,4 +1,3 @@
-import { GROUP_MINIMUM_LAYOUT_AGE_MS } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type {
     Group,
@@ -61,7 +60,9 @@ export interface GroupPresenceSummaryComputedWork {
 export interface ComputeGroupPresenceSummaryWorkOptions {
     readonly serviceId: string;
     readonly nowEpochMs: number;
+    /** The server-wide replan window, the one every group coalesced through before per-group windows existed. */
     readonly recomputeDebounceMs: number;
+    readonly minimumLayoutAgeMs: number;
 }
 
 export interface ComputeGroupPresenceSummaryOutboxInput {
@@ -171,7 +172,7 @@ function computeTopologyReplan(input: ToGroupPresenceSummaryOutboxInputInput): T
             groupSnapshot: snapshot,
             requestedAtEpochMs: summary.summary.computedAtEpochMs,
             expireAtEpochMs: work.expireAtEpochMs,
-            timing: toTopologyReplanTiming(read.topologyReplanPolicyFacts, options.recomputeDebounceMs),
+            timing: toTopologyReplanTiming(read.topologyReplanPolicyFacts, options),
             senderId: options.serviceId,
             origin: toTopologyReplanOrigin(work),
             previousEntry: read.coalescedTopologyEntry
@@ -179,20 +180,25 @@ function computeTopologyReplan(input: ToGroupPresenceSummaryOutboxInputInput): T
     };
 }
 
-/** The replan window and layout-age facts, from the policy facts the read consulted for this stage. */
-export function toTopologyReplanTiming(
+/** The replan window and the layout-age floor, from the policy facts the read consulted for this stage. */
+function toTopologyReplanTiming(
     policyFacts: TopologyReplanPolicyFacts,
-    serverDebounceMs: number
+    options: Pick<ComputeGroupPresenceSummaryWorkOptions, 'recomputeDebounceMs' | 'minimumLayoutAgeMs'>
 ): TopologyReplanTiming {
+    if (!policyFacts.consulted) {
+        return { window: { debounceMs: options.recomputeDebounceMs, maxWaitMs: null }, replanNotBeforeEpochMs: null };
+    }
+    const { plannedLayout } = policyFacts;
     return {
         window: resolveTopologyReplanWindow({
-            lifecyclePolicy: policyFacts.consulted ? policyFacts.lifecyclePolicy : null,
-            serverDebounceMs
+            lifecyclePolicy: policyFacts.lifecyclePolicy,
+            serverDebounceMs: options.recomputeDebounceMs
         }),
-        plannedLayoutUpdatedAtEpochMs: policyFacts.consulted
-            ? policyFacts.plannedLayout?.updatedAtEpochMs ?? null
-            : null,
-        minimumLayoutAgeMs: GROUP_MINIMUM_LAYOUT_AGE_MS
+        // Only a live planned layout ages; a removal tombstone carries the
+        // group's last update, not a layout write.
+        replanNotBeforeEpochMs: plannedLayout?.state === 'active'
+            ? plannedLayout.updatedAtEpochMs + options.minimumLayoutAgeMs
+            : null
     };
 }
 

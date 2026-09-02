@@ -696,7 +696,7 @@ Deno.test(
                     groupSnapshot: snapshot,
                     requestedAtEpochMs: nowEpochMs,
                     expireAtEpochMs: FUTURE_MS,
-                    timing: { window: { debounceMs: 0, maxWaitMs: null }, plannedLayoutUpdatedAtEpochMs: null, minimumLayoutAgeMs: 0 },
+                    timing: { window: { debounceMs: 0, maxWaitMs: null }, replanNotBeforeEpochMs: null },
                     senderId: 'fingerprint-gate-worker',
                     origin: 'automatic',
                     previousEntry

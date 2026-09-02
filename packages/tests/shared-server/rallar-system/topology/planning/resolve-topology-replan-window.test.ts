@@ -1,43 +1,52 @@
 import { describe, expect, it } from 'vitest';
 
 import { resolveTopologyReplanWindow } from '@shared-server/rallar-system/topology/planning/resolve-topology-replan-window.ts';
-import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 
 const SERVER_DEBOUNCE_MS = 250;
 
+/** Window values no preset carries, so a policy read is told apart from the server window. */
+function createPolicyWith(replanning: 'auto' | 'debounced' | 'commanded') {
+    const policy = createDefaultGroupLifecyclePolicy();
+    return {
+        ...policy,
+        topology: { ...policy.topology, replanning, debounceWindowMs: 3_000, maxReplanWaitMs: 4_000 }
+    };
+}
+
 describe('resolveTopologyReplanWindow', () => {
-    it('gives a debounced group the policy window and its maximum wait', () => {
-        const managed = resolveGroupLifecyclePolicyPreset('managed');
+    it('gives a debounced policy its own window and maximum wait', () => {
         expect(resolveTopologyReplanWindow({
-            lifecyclePolicy: { status: 'present', policy: managed },
+            lifecyclePolicy: { status: 'present', policy: createPolicyWith('debounced') },
             serverDebounceMs: SERVER_DEBOUNCE_MS
-        })).toEqual({ debounceMs: managed.topology.debounceWindowMs, maxWaitMs: managed.topology.maxReplanWaitMs });
+        })).toEqual({ debounceMs: 3_000, maxWaitMs: 4_000 });
     });
 
-    it('leaves an auto group on the server window while bounding its extension', () => {
-        const optimistic = resolveGroupLifecyclePolicyPreset('optimistic');
+    it('keeps the server window, unbounded, for an auto policy', () => {
         expect(resolveTopologyReplanWindow({
-            lifecyclePolicy: { status: 'present', policy: optimistic },
+            lifecyclePolicy: { status: 'present', policy: createPolicyWith('auto') },
             serverDebounceMs: SERVER_DEBOUNCE_MS
-        })).toEqual({ debounceMs: SERVER_DEBOUNCE_MS, maxWaitMs: optimistic.topology.maxReplanWaitMs });
-        expect(resolveTopologyReplanWindow({ lifecyclePolicy: { status: 'absent' }, serverDebounceMs: SERVER_DEBOUNCE_MS }))
-            .toEqual({ debounceMs: SERVER_DEBOUNCE_MS, maxWaitMs: optimistic.topology.maxReplanWaitMs });
+        })).toEqual({ debounceMs: SERVER_DEBOUNCE_MS, maxWaitMs: null });
     });
 
-    it('coalesces a commanded group\'s follow-ups under the policy window', () => {
-        const match = resolveGroupLifecyclePolicyPreset('match');
+    it('coalesces commanded follow-ups under the policy window', () => {
         expect(resolveTopologyReplanWindow({
-            lifecyclePolicy: { status: 'present', policy: match },
+            lifecyclePolicy: { status: 'present', policy: createPolicyWith('commanded') },
             serverDebounceMs: SERVER_DEBOUNCE_MS
-        })).toEqual({ debounceMs: match.topology.debounceWindowMs, maxWaitMs: match.topology.maxReplanWaitMs });
+        })).toEqual({ debounceMs: 3_000, maxWaitMs: 4_000 });
     });
 
-    it('keeps the server window unbounded outside the policy and under a corrupt policy', () => {
-        const unbounded = { debounceMs: SERVER_DEBOUNCE_MS, maxWaitMs: null };
-        expect(resolveTopologyReplanWindow({ lifecyclePolicy: null, serverDebounceMs: SERVER_DEBOUNCE_MS })).toEqual(unbounded);
+    it('follows the default preset when no policy is stored', () => {
         expect(resolveTopologyReplanWindow({
-            lifecyclePolicy: { status: 'corrupt', reason: 'bad row' },
+            lifecyclePolicy: { status: 'absent' },
             serverDebounceMs: SERVER_DEBOUNCE_MS
-        })).toEqual(unbounded);
+        })).toEqual({ debounceMs: SERVER_DEBOUNCE_MS, maxWaitMs: null });
+    });
+
+    it('keeps the server window, unbounded, when the stored policy is unreadable', () => {
+        expect(resolveTopologyReplanWindow({
+            lifecyclePolicy: { status: 'corrupt', reason: 'not json' },
+            serverDebounceMs: SERVER_DEBOUNCE_MS
+        })).toEqual({ debounceMs: SERVER_DEBOUNCE_MS, maxWaitMs: null });
     });
 });

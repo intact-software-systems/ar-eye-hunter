@@ -154,13 +154,16 @@ topology-input fingerprint differs from the authority's fingerprint computed at 
 
 The replan window (product decision 31, `resolveTopologyReplanWindow`) is decided on the same
 consulted policy: `debounced` coalesces under the policy's `debounceWindowMs` and replans no later
-than `maxReplanWaitMs` after the first change of a series; `auto` keeps the server's
-`topology.recompute.formationDebounceMs` window but its extension is bounded the same way;
-`commanded` coalesces its commanded follow-ups under the policy window; a stage outside the policy
-keeps the server window unbounded, as before. The coalesced row carries the series anchor
-(`windowOpenedAtEpochMs`), which every merge keeps and a successor row restarts; a row written
-before the anchor existed reads as one that opened its series at its own request. A planned layout
-younger than the minimum layout age (1 000 ms) is never replanned before it has aged.
+than `maxReplanWaitMs` after the first change of a series; `auto` carries no policy window and keeps
+the server's `topology.recompute.formationDebounceMs`, unbounded, so it replans on the first
+opportunity after a change; `commanded` coalesces its commanded follow-ups under the policy window;
+a stage outside the policy and an unreadable policy keep the server window unbounded. The coalesced
+row carries the series anchor (`windowOpenedAtEpochMs`), minted by the generic coalescing service,
+kept by every merge and restarted by a successor row or a revived terminal row; a migration backfilled
+it onto rows written before it existed, so every reader requires it. A queued replan of a live
+planned layout is floored at the layout's last write plus the minimum layout age (1 000 ms), decided
+when the change is queued. RTT refreshes are the machinery's own work and keep the server's
+unbounded window.
 
 Two fields are carried but enforced by nothing in v1: `establishment.transports` and
 `establishment.maxConcurrentEdgeSetups` are normalized, clamped, and persisted, and no server path

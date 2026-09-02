@@ -391,8 +391,8 @@ Decisions I21–I25 were taken while delivering and reviewing PR 2 (1b + 1c) on 
 | I25 | **Supersedes I16: the `mutationDescriptor` refactor had already landed on `main` via #338** (`MutationDescriptorInput`, one named parameter), one day after this plan's last edit, so slice 5a carries no refactor. What survives of I16 is its own closing observation: the function's remaining job is defaulting `targetPrincipalId` and `sessionId` to `null` on a type that declares both required, so the honest outcome may be deletion. That question is decided in slice 5a with the four new commands in hand, where the call-site shape is being edited anyway. _Alternative rejected:_ deleting it during a governance pass — 36 live call sites across 9 files edited outside any behavioural slice, with no gate that exercises them all. |
 | I26 | **The member-policy field lands with its first reader** (2026-09-02, Slice 9b): `Group.memberPolicy` is a 9b field, not a 9a one, so 9a carries no wire change.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | I27 | **Layout staleness is derived, not stored** (2026-09-02, Slice 10a). The accepted layout is always a promoted planned layout, so `layoutStale` = the accepted identity differs from the planned slot's, or the planned slot's stored topology-input fingerprint differs from the authority's computed at read time. Decision 11's second stored fingerprint is unnecessary; the flip-flop edge (authority back at the accepted inputs while a newer planned layout awaits application) reads stale, the conservative answer.                                                                                                                                                                                                                            |
-| I28 | **The replan window per mode** (2026-09-02, Slice 10b): `debounced` uses the policy's `debounceWindowMs` and `maxReplanWaitMs`; `auto` keeps the server's `topology.recompute.formationDebounceMs` with its extension bounded by the policy's `maxReplanWaitMs`; `commanded` coalesces its commanded follow-ups under the policy window; a stage outside the policy and an unreadable policy keep the server window unbounded. The series anchor lives on the coalescing metadata and reads compatibly when absent.                                                                                                                                                                                                                                     |
-| I29 | **Minimum layout age** (2026-09-02, Slice 10b): a planned layout younger than 1 000 ms (I24) is never replanned before it has aged; the due time is floored by the planned slot's last write plus the age, and the floor wins over the maximum-wait bound because it is short.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| I28 | **The replan window per mode** (2026-09-02, Slice 10b): `debounced` uses the policy's `debounceWindowMs` and `maxReplanWaitMs`; `auto` carries no policy window and keeps the server's `topology.recompute.formationDebounceMs`, unbounded, so it replans on the first opportunity after a change (decision 31's own statement); `commanded` coalesces its commanded follow-ups under the policy window; a stage outside the policy and an unreadable policy keep the server window unbounded. The series anchor lives on the coalescing metadata, minted and kept by the generic coalescing service, and a migration backfilled it onto stored rows so every reader requires it. RTT refreshes keep the server's unbounded window.                     |
+| I29 | **Minimum layout age** (2026-09-02, Slice 10b): a queued replan of a live planned layout is due no earlier than the layout's last write plus 1 000 ms (I24), decided when the change is queued from the planned slot the presence-summary read saw; the floor wins over the maximum-wait bound because it is short. It is a scheduling floor, not a planner invariant: a replan that commits between that read and the due time is not re-checked at execution, a removal tombstone does not age, and stages that do not follow the policy (`planned`, `reconfiguring`) keep the bare server window.                                                                                                                                                    |
 
 The held-layout capability is the next milestone under current evidence, but every checkpoint selects
 only its next two independently reviewable PRs. Later labels below are capability-analysis anchors used
@@ -2354,21 +2354,39 @@ until the reader exists. The minimum layout age (I24, 1 000 ms) had a constant a
 What 10b lands:
 
 - **`resolveTopologyReplanWindow`** (I28): `debounced` carries the policy's window and maximum
-  wait; `auto` carries no policy window — it keeps the server's `formationDebounceMs` — but its
-  extension is bounded by the policy's maximum wait too, because decision 31 bounds the extending
-  window as such; `commanded` coalesces its commanded follow-ups under the policy's window; a stage
-  outside the policy and an unreadable policy keep the server window unbounded, as before.
-- **The series anchor** `windowOpenedAtEpochMs` on the coalescing metadata: the first request of
-  a merged series, kept by every merge, restarted by a successor row behind a reserved head. The
-  due time is the extended window bounded by `anchor + maxWait`, then floored by the planned
-  layout's last write plus the minimum layout age (I29: a layout younger than 1 000 ms is never
-  replanned before it has aged; the floor wins over the bound because it is short). The codec
-  accepts a row without the anchor as one that opened its series at its own request, the
-  backwards-compatible read the draft allowed instead of a database drop; the compatibility
-  default retires with the next coalescing-metadata change.
+  wait; `auto` carries no policy window and keeps the server's `formationDebounceMs`, unbounded,
+  which is decision 31's own statement — the review's first cut bounded `auto` by the policy's
+  maximum wait too, which made `optimistic` and `managed` compute identical due times under every
+  shipped preset (all 500 / 5 000) and silently truncated an operator window above 5 000 ms;
+  `commanded` coalesces its commanded follow-ups under the policy's window; a stage outside the
+  policy and an unreadable policy keep the server window unbounded, as before.
+- **The series anchor** `windowOpenedAtEpochMs` on the coalescing metadata: minted by the generic
+  coalescing service at the first request of a series, kept by every pending merge, restarted by a
+  successor row behind a reserved head and by a revived terminal row (the row's message identity is
+  never rewritten, so it cannot anchor a revived series). The due time is the extended window
+  bounded by `anchor + maxWait`, then floored by the planned layout's last write plus the minimum
+  layout age (I29). Rather than a compatibility read in two decoders, migration
+  `20260902150000_coalesced_work_window_anchor` backfills the anchor onto stored rows (at their
+  stored latest request, the closest fact a merged legacy row carries), so the codec and the
+  in-memory envelope reader both require it; a row without it fails closed as corrupt. The codec's
+  compatibility is one-directional — a server before this slice rejects the new key — so the
+  rollout follows the stop-drain-deploy runbook (Slice 14), never a mixed cluster.
+- **A merge that the bound makes due at once keeps its lifecycle shape**: a head that already
+  failed an attempt stays `RETRY` with a past `next_ts` (immediately eligible) instead of flipping
+  to `NEW` with `attempts > 0`, a shape the row lifecycle validator rejects.
+- **`pending.generation`** on the formation view: the queued row's generation, up by one per merged
+  change, so a reader can see a change land on the queued replan; the debounced-replanning recipe
+  asserts strictly increasing generations across its churn to prove its due-time reads were fresh.
 - **The gate's read predicate widens** to every delta of an active group whose stage follows the
   replanning policy, because the window needs the policy where 10a's hold did not (a merge into a
-  queued row, and commanded-origin work); the hold itself keeps 10a's exceptions.
+  queued row, and commanded-origin work); the hold itself keeps 10a's exceptions. The registered
+  state-write reason profile `commanded-replan-gate-reads` now describes that population (two point
+  reads per active-group summary, merges included); the A-B-B-A run itself stays blocked locally by
+  the foreign perf container on port 5433.
+- **Carried forward, not addressed here**: 10a's open item that a topology-inbox `reconfigure`
+  enqueues per-command work as `automatic` origin (`computeRtcTopologyEntry`), which the planner
+  freezes under `commanded`; the per-command producer census is the first step of Slice 11's
+  trigger work, where the origin belongs with the command.
 
 ## Slice 11 — Automation triggers
 

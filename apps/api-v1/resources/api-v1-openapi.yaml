@@ -5380,9 +5380,9 @@ components:
             Replanning policy after a layout exists. `commanded` holds automatic
             replans until `reconfigure`; `debounced` coalesces changes under
             `debounceWindowMs` and replans no later than `maxReplanWaitMs` after
-            the first change of a burst; `auto` coalesces under the server's
-            window with the same bound. Stage triggers take effect in a later
-            release.
+            the first change of a burst; `auto` carries no policy window and
+            replans on the server's first opportunity after a change. Stage
+            triggers take effect in a later release.
           properties:
             replanning:
               type: string
@@ -5932,7 +5932,7 @@ components:
     PendingTopologyReplan:
       type: object
       description: A replan is queued and due; carried as null when none is.
-      required: [reconfigureQueued, dueAtEpochMs]
+      required: [reconfigureQueued, dueAtEpochMs, generation]
       properties:
         reconfigureQueued:
           type: boolean
@@ -5940,6 +5940,13 @@ components:
           type: integer
           format: int64
           nullable: true
+        generation:
+          type: integer
+          format: int64
+          nullable: true
+          description: >-
+            Up by one for every change merged into the queued replan; null
+            when the queued row no longer decodes.
 
     RallarOverlayTopologySnapshot:
       type: object

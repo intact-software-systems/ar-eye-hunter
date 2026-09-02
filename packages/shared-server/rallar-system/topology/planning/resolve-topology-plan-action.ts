@@ -67,8 +67,8 @@ export interface ResolveTopologyPlanActionInput {
  * row freezes. `active` follows the replanning policy: `commanded` holds
  * automatic work (the layout moves only on an application command, product
  * decision 2's table) and an unreadable policy fails automatic replanning
- * closed the same way; `auto` and `debounced` are indistinguishable on
- * main until decision 31 lands, so both plan.
+ * closed the same way; `auto` and `debounced` both plan and differ only in
+ * the replan window (`resolveTopologyReplanWindow`, product decision 31).
  */
 export function resolveTopologyPlanAction(input: ResolveTopologyPlanActionInput): TopologyPlanAction {
     const disposition = resolveGroupTopologyWorkDisposition(input.lifecycleState);

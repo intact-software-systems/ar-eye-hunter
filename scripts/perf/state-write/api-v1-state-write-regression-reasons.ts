@@ -64,10 +64,11 @@ export const PLANNED_LAYOUT_PROMOTION_REASONS = (['uncontended', 'shared', 'hot'
 
 export const PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE = 'planned-layout-promotion' as const;
 
-const COMMANDED_REPLAN_GATE_READS_REASON = 'Slice 10a consults the stored lifecycle policy and the planned ' +
-    'topology slot before it queues an automatic replan for an active group, ' +
-    'two point reads per presence summary of an active group; the bench\'s ' +
-    'groups are active and default-policied, so every summary pays them.';
+const COMMANDED_REPLAN_GATE_READS_REASON = 'Slices 10a and 10b consult the stored lifecycle policy and the ' +
+    'planned topology slot on every presence summary of an active group, for ' +
+    'the replan hold and the replan window alike: two point reads per summary, ' +
+    'merges included; the bench\'s groups are active and default-policied, so ' +
+    'every summary pays them.';
 
 export const COMMANDED_REPLAN_GATE_READS_REASONS = (['uncontended', 'shared', 'hot'] as const).flatMap(
     (workload) =>
