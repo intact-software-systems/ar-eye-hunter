@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "8a94bd77280ee4fe7cbae522b4275e58d91f5302",
+      "source": {
+        "path": "packages/shared/api/authoritative-state-validation.ts",
+        "blob": "8330573c554007dbb11579bebb12ea854b08dc05"
+      },
+      "targets": [
+        "packages/shared/api/authoritative-state-validation/group-state-validation.ts",
+        "packages/shared/api/authoritative-state-validation/assert-authoritative-event-page.ts",
+        "packages/shared/api/authoritative-state-validation/validate-authoritative-overlay-topology-snapshot.ts",
+        "packages/shared/api/authoritative-state-validation/validation-issues.ts"
+      ]
+    }
+  ]
+}

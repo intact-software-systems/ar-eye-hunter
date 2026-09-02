@@ -1,12 +1,19 @@
 import {
+    GROUP_LAYOUT_IDENTITY_KEYS,
+    GROUP_LAYOUT_IDENTITY_STATES
+} from '../group-lifecycle/group-layout-identity.ts';
+import {
+    GROUP_LIFECYCLE_STATES,
+    GROUP_TRANSPORT_STATES
+} from '../group-lifecycle/group-lifecycle-policy.ts';
+import type { StateScope } from '../state-types.ts';
+import {
     authoritativeStateAssertion,
     AuthoritativeStateValidation,
     collectAuthoritativeStateValidationIssues,
+    type AuthoritativeStateRecord,
     type AuthoritativeStateValidationIssue
-} from './authoritative-state-validation-issues.ts';
-import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
-import { GROUP_LIFECYCLE_STATES, GROUP_TRANSPORT_STATES } from './group-lifecycle/group-lifecycle-policy.ts';
-import type { StateScope } from './state-types.ts';
+} from './validation-issues.ts';
 
 const GROUP_KEYS = [
     'applicationId',
@@ -140,15 +147,15 @@ export function validateAuthoritativeGroupEventIssues(
     );
 }
 
-export function assertAuthoritativeGroupEvent(
-    value: unknown,
+export function assertAuthoritativeGroupEvent<Value>(
+    value: Value,
     expected?: StateScope & Readonly<{ groupId?: string; }>
 ): void {
     validateAuthoritativeGroupEventValue(value, expected, authoritativeStateAssertion);
 }
 
-function validateAuthoritativeGroupEventValue(
-    value: unknown,
+function validateAuthoritativeGroupEventValue<Value>(
+    value: Value,
     expected: StateScope & Readonly<{ groupId?: string; }> | undefined,
     validation: AuthoritativeStateValidation
 ): void {
@@ -180,12 +187,12 @@ export function validateAuthoritativeGroupSnapshotIssues(
     );
 }
 
-export function assertAuthoritativeGroupSnapshot(value: unknown, scope?: StateScope): void {
+export function assertAuthoritativeGroupSnapshot<Value>(value: Value, scope?: StateScope): void {
     validateAuthoritativeGroupSnapshotValue(value, scope, authoritativeStateAssertion);
 }
 
-function validateAuthoritativeGroupSnapshotValue(
-    value: unknown,
+function validateAuthoritativeGroupSnapshotValue<Value>(
+    value: Value,
     scope: StateScope | undefined,
     validation: AuthoritativeStateValidation
 ): void {
@@ -220,9 +227,9 @@ function validateAuthoritativeGroupSnapshotValue(
     validateSnapshotAggregates(value, collections, validation);
 }
 
-function validateSnapshotGroup(
-    value: unknown,
-    causal: unknown,
+function validateSnapshotGroup<Value, CausalRevision>(
+    value: Value,
+    causal: CausalRevision,
     context: AuthoritativeGroupValidationContext
 ): void {
     const { validation } = context;
@@ -239,7 +246,7 @@ function validateSnapshotGroup(
 }
 
 function validateGroupIdentity(
-    value: Readonly<Record<string, unknown>>,
+    value: AuthoritativeStateRecord,
     path: string,
     context: AuthoritativeGroupValidationContext
 ): void {
@@ -253,7 +260,7 @@ function validateGroupIdentity(
     }
 }
 function validateGroupMetadata(
-    group: Readonly<Record<string, unknown>>,
+    group: AuthoritativeStateRecord,
     validation: AuthoritativeStateValidation
 ): void {
     validation.enum(group.status, ['active', 'archived', 'deleted'], 'GroupSnapshot.group.status');
@@ -270,9 +277,9 @@ function validateGroupMetadata(
     validation.integer(group.activeMemberCount, 0, 'GroupSnapshot.group.activeMemberCount');
 }
 
-function validateGroupVersions(
-    group: Readonly<Record<string, unknown>>,
-    causal: unknown,
+function validateGroupVersions<CausalRevision>(
+    group: AuthoritativeStateRecord,
+    causal: CausalRevision,
     validation: AuthoritativeStateValidation
 ): void {
     validation.positiveIntegers(
@@ -296,7 +303,7 @@ function validateGroupVersions(
 }
 
 function validateGroupLifecycle(
-    group: Readonly<Record<string, unknown>>,
+    group: AuthoritativeStateRecord,
     validation: AuthoritativeStateValidation
 ): void {
     validation.audits(group, ['created', 'updated'], 'GroupSnapshot.group');
@@ -316,7 +323,7 @@ function validateGroupLifecycle(
 }
 
 function validateGroupFormation(
-    group: Readonly<Record<string, unknown>>,
+    group: AuthoritativeStateRecord,
     validation: AuthoritativeStateValidation
 ): void {
     validation.enum(
@@ -343,8 +350,8 @@ function validateGroupFormation(
     );
 }
 
-function validateFormationOutcome(
-    value: unknown,
+function validateFormationOutcome<Value>(
+    value: Value,
     validation: AuthoritativeStateValidation
 ): void {
     const path = 'GroupSnapshot.group.lastFormationOutcome';
@@ -371,8 +378,8 @@ function validateFormationOutcome(
     validation.integer(value.formationEpoch, 0, `${path}.formationEpoch`);
 }
 
-function validateFormationElectorate(
-    value: unknown,
+function validateFormationElectorate<Value>(
+    value: Value,
     validation: AuthoritativeStateValidation
 ): void {
     const path = 'GroupSnapshot.group.formationElectorate';
@@ -391,8 +398,8 @@ function validateFormationElectorate(
     }
 }
 
-function validateAcceptedLayout(
-    value: unknown,
+function validateAcceptedLayout<Value>(
+    value: Value,
     validation: AuthoritativeStateValidation
 ): void {
     const path = 'GroupSnapshot.group.acceptedLayoutIdentity';
@@ -409,7 +416,7 @@ function validateAcceptedLayout(
 }
 
 function validateSnapshotCollections(
-    snapshot: Readonly<Record<string, unknown>>,
+    snapshot: AuthoritativeStateRecord,
     validation: AuthoritativeStateValidation
 ): GroupSnapshotCollections {
     const memberIds = new Set<string>();
@@ -440,9 +447,9 @@ function validateSnapshotCollections(
     return { activeMemberIds, activeOwnerIds, ...sessions };
 }
 
-function validateSnapshotMember(
-    value: unknown,
-    group: unknown,
+function validateSnapshotMember<Value, Group>(
+    value: Value,
+    group: Group,
     validation: AuthoritativeStateValidation
 ): void {
     const path = 'GroupSnapshot.member';
@@ -478,7 +485,7 @@ function validateSnapshotMember(
 }
 
 function validateSnapshotSessions(
-    snapshot: Readonly<Record<string, unknown>>,
+    snapshot: AuthoritativeStateRecord,
     activeMemberIds: ReadonlySet<string>,
     validation: AuthoritativeStateValidation
 ): Pick<GroupSnapshotCollections, 'onlinePrincipalIds' | 'sessionCount'> {
@@ -504,8 +511,8 @@ function validateSnapshotSessions(
     return { onlinePrincipalIds, sessionCount: sessions.length };
 }
 
-function validateSnapshotSession(
-    value: unknown,
+function validateSnapshotSession<Value>(
+    value: Value,
     predecessor: GroupSnapshotSessionPredecessor,
     validation: AuthoritativeStateValidation
 ): void {
@@ -542,7 +549,7 @@ function validateSnapshotSession(
 }
 
 function validateSnapshotAggregates(
-    snapshot: Readonly<Record<string, unknown>>,
+    snapshot: AuthoritativeStateRecord,
     collections: GroupSnapshotCollections,
     validation: AuthoritativeStateValidation
 ): void {
@@ -576,7 +583,7 @@ function validateSnapshotAggregates(
 }
 
 function validateSameGroup(
-    value: Readonly<Record<string, unknown>>,
+    value: AuthoritativeStateRecord,
     relationship: GroupRelationshipValidation
 ): void {
     const { group, path, validation } = relationship;

@@ -3,6 +3,8 @@ export interface AuthoritativeStateValidationIssue {
     readonly message: string;
 }
 
+export type AuthoritativeStateRecord = Readonly<Record<string, unknown>>;
+
 type AuthoritativeStateValidationIssueSink = (path: string, message: string) => void;
 
 export class AuthoritativeStateValidation {
@@ -16,17 +18,17 @@ export class AuthoritativeStateValidation {
         this.#report(path, message);
     }
 
-    isRecord(value: unknown): value is Record<string, unknown> {
+    isRecord<Value>(value: Value): value is Value & AuthoritativeStateRecord {
         return typeof value === 'object' && value !== null && !Array.isArray(value);
     }
 
-    record(value: unknown, path: string): void {
+    record<Value>(value: Value, path: string): void {
         if (!this.isRecord(value)) {
             this.issue(path, `${path} must be an object`);
         }
     }
 
-    array(value: unknown, path: string): void {
+    array<Value>(value: Value, path: string): void {
         if (!Array.isArray(value)) {
             this.issue(path, `${path} must be an array`);
         }
@@ -45,20 +47,20 @@ export class AuthoritativeStateValidation {
         }
     }
 
-    string(value: unknown, path: string): void {
+    string<Value>(value: Value, path: string): void {
         if (typeof value !== 'string' || value.length === 0) {
             this.issue(path, `${path} is invalid`);
         }
     }
 
-    nullableString(value: unknown, path: string): void {
+    nullableString<Value>(value: Value, path: string): void {
         if (value !== null) {
             this.string(value, path);
         }
     }
 
     strings(
-        value: Readonly<Record<string, unknown>>,
+        value: AuthoritativeStateRecord,
         keys: readonly string[],
         path: string
     ): void {
@@ -68,7 +70,7 @@ export class AuthoritativeStateValidation {
     }
 
     nullableStrings(
-        value: Readonly<Record<string, unknown>>,
+        value: AuthoritativeStateRecord,
         keys: readonly string[],
         path: string
     ): void {
@@ -77,14 +79,14 @@ export class AuthoritativeStateValidation {
         }
     }
 
-    integer(value: unknown, minimum: number, path: string): void {
+    integer<Value>(value: Value, minimum: number, path: string): void {
         if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum) {
             this.issue(path, `${path} is invalid`);
         }
     }
 
     nonNegativeIntegers(
-        value: Readonly<Record<string, unknown>>,
+        value: AuthoritativeStateRecord,
         keys: readonly string[],
         path: string
     ): void {
@@ -94,7 +96,7 @@ export class AuthoritativeStateValidation {
     }
 
     positiveIntegers(
-        value: Readonly<Record<string, unknown>>,
+        value: AuthoritativeStateRecord,
         keys: readonly string[],
         path: string
     ): void {
@@ -103,14 +105,14 @@ export class AuthoritativeStateValidation {
         }
     }
 
-    nullablePositiveInteger(value: unknown, path: string): void {
+    nullablePositiveInteger<Value>(value: Value, path: string): void {
         if (value !== null) {
             this.integer(value, 1, path);
         }
     }
 
     nullablePositiveIntegers(
-        value: Readonly<Record<string, unknown>>,
+        value: AuthoritativeStateRecord,
         keys: readonly string[],
         path: string
     ): void {
@@ -119,13 +121,13 @@ export class AuthoritativeStateValidation {
         }
     }
 
-    enum(value: unknown, allowed: readonly string[], path: string): void {
+    enum<Value>(value: Value, allowed: readonly string[], path: string): void {
         if (typeof value !== 'string' || !allowed.includes(value)) {
             this.issue(path, `${path} is invalid`);
         }
     }
 
-    actor(value: unknown, path: string): void {
+    actor<Value>(value: Value, path: string): void {
         if (!this.isRecord(value)) {
             this.record(value, path);
             return;
@@ -145,7 +147,7 @@ export class AuthoritativeStateValidation {
         }
     }
 
-    audit(value: unknown, path: string): void {
+    audit<Value>(value: Value, path: string): void {
         if (!this.isRecord(value)) {
             this.record(value, path);
             return;
@@ -158,14 +160,14 @@ export class AuthoritativeStateValidation {
         }
     }
 
-    nullableAudit(value: unknown, path: string): void {
+    nullableAudit<Value>(value: Value, path: string): void {
         if (value !== null) {
             this.audit(value, path);
         }
     }
 
     audits(
-        value: Readonly<Record<string, unknown>>,
+        value: AuthoritativeStateRecord,
         keys: readonly string[],
         path: string
     ): void {
@@ -175,7 +177,7 @@ export class AuthoritativeStateValidation {
     }
 
     nullableAudits(
-        value: Readonly<Record<string, unknown>>,
+        value: AuthoritativeStateRecord,
         keys: readonly string[],
         path: string
     ): void {
@@ -184,7 +186,7 @@ export class AuthoritativeStateValidation {
         }
     }
 
-    causalRevision(value: unknown, path: string): void {
+    causalRevision<Value>(value: Value, path: string): void {
         if (!this.isRecord(value)) {
             this.record(value, path);
             return;
@@ -200,7 +202,7 @@ export class AuthoritativeStateValidation {
     }
 
     private actorFields(
-        value: Readonly<Record<string, unknown>>,
+        value: AuthoritativeStateRecord,
         path: string,
         keys: readonly string[]
     ): void {

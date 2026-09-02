@@ -1,13 +1,15 @@
-import { toScopedOverlayId } from './api-type-utils.ts';
+import { assertAuthoritativeEventPage } from './authoritative-state-validation/assert-authoritative-event-page.ts';
 import {
     assertAuthoritativeGroupEvent,
     assertAuthoritativeGroupSnapshot,
     validateAuthoritativeGroupEventIssues,
     validateAuthoritativeGroupSnapshotIssues
-} from './authoritative-group-state-validation.ts';
+} from './authoritative-state-validation/group-state-validation.ts';
+import { validateAuthoritativeOverlayTopologySnapshot } from './authoritative-state-validation/validate-authoritative-overlay-topology-snapshot.ts';
 import {
-    authoritativeStateAssertion
-} from './authoritative-state-validation-issues.ts';
+    authoritativeStateAssertion,
+    type AuthoritativeStateRecord
+} from './authoritative-state-validation/validation-issues.ts';
 import type {
     ClientEvent,
     ClientPrincipal,
@@ -24,8 +26,9 @@ import type { StateScope } from './state-types.ts';
 export {
     validateAuthoritativeGroupEventIssues,
     validateAuthoritativeGroupSnapshotIssues
-} from './authoritative-group-state-validation.ts';
-export type { AuthoritativeStateValidationIssue } from './authoritative-state-validation-issues.ts';
+} from './authoritative-state-validation/group-state-validation.ts';
+export { validateAuthoritativeOverlayTopologySnapshot } from './authoritative-state-validation/validate-authoritative-overlay-topology-snapshot.ts';
+export type { AuthoritativeStateValidationIssue } from './authoritative-state-validation/validation-issues.ts';
 
 const CLIENT_PRINCIPAL_KEYS = [
     'applicationId',
@@ -300,7 +303,7 @@ function decodeClientSnapshotSessionHeartbeats(
 }
 
 function assertClientSnapshotPresence(
-    snapshot: Record<string, unknown>,
+    snapshot: AuthoritativeStateRecord,
     principalLastSeenAtEpochMs: number | null,
     activeSessionHeartbeats: readonly Pick<ClientSession, 'lastHeartbeatAtEpochMs'>[]
 ): void {
@@ -329,158 +332,6 @@ export function validateAuthoritativeGroupSnapshot(
     scope?: StateScope
 ): asserts value is GroupSnapshot {
     assertAuthoritativeGroupSnapshot(value, scope);
-}
-
-export function validateAuthoritativeOverlayTopologySnapshot(
-    value: unknown,
-    scope?: StateScope
-): asserts value is RallarOverlayTopologySnapshot {
-    const topology = record(value, 'RallarOverlayTopologySnapshot');
-    exact(
-        topology,
-        [
-            'sourceGroupStateCausalRevision',
-            'state',
-            'overlayId',
-            'groupRef',
-            'name',
-            'topology',
-            'activeSessionIds',
-            'nextHopsBySessionId',
-            'degreeLimit',
-            'version',
-            'createdByClientId',
-            'createdAtEpochMs',
-            'updatedAtEpochMs'
-        ],
-        'RallarOverlayTopologySnapshot'
-    );
-    causalRevision(
-        topology.sourceGroupStateCausalRevision,
-        'RallarOverlayTopologySnapshot.sourceGroupStateCausalRevision'
-    );
-    const ref = groupRef(
-        record(topology.groupRef, 'RallarOverlayTopologySnapshot.groupRef'),
-        'RallarOverlayTopologySnapshot.groupRef',
-        scope
-    );
-    if (topology.state !== 'active' && topology.state !== 'removed') {
-        fail('RallarOverlayTopologySnapshot.state is invalid');
-    }
-    nonEmptyString(topology.overlayId, 'RallarOverlayTopologySnapshot.overlayId');
-    if (topology.overlayId !== toScopedOverlayId(ref)) {
-        fail('RallarOverlayTopologySnapshot overlayId is not canonical');
-    }
-    nonEmptyString(topology.name, 'RallarOverlayTopologySnapshot.name');
-    enumValue(topology.topology, ['star', 'tree', 'mesh'], 'RallarOverlayTopologySnapshot.topology');
-    nonEmptyString(topology.createdByClientId, 'RallarOverlayTopologySnapshot.createdByClientId');
-    assertOverlayTopologyRouting(topology);
-    nonNegativeInteger(topology.version, 'RallarOverlayTopologySnapshot.version');
-    nonNegativeInteger(topology.createdAtEpochMs, 'RallarOverlayTopologySnapshot.createdAtEpochMs');
-    nonNegativeInteger(topology.updatedAtEpochMs, 'RallarOverlayTopologySnapshot.updatedAtEpochMs');
-    if (topology.createdAtEpochMs > topology.updatedAtEpochMs) {
-        fail('RallarOverlayTopologySnapshot timestamps are inverted');
-    }
-}
-
-function assertOverlayTopologyRouting(topology: Record<string, unknown>): void {
-    const activeSessionIds = stringArray(
-        topology.activeSessionIds,
-        'RallarOverlayTopologySnapshot.activeSessionIds'
-    );
-    assertCanonicalTopologyIdentifiers(
-        activeSessionIds,
-        'RallarOverlayTopologySnapshot.activeSessionIds'
-    );
-    const activeSessionIdSet = new Set(activeSessionIds);
-    const nextHops = record(
-        topology.nextHopsBySessionId,
-        'RallarOverlayTopologySnapshot.nextHopsBySessionId'
-    );
-    const routingSessionIds = Object.keys(nextHops);
-    if (
-        routingSessionIds.length !== activeSessionIds.length ||
-        routingSessionIds.some((sessionId) => !activeSessionIdSet.has(sessionId))
-    ) {
-        fail('RallarOverlayTopologySnapshot routing keys differ from active sessions');
-    }
-    for (const [sessionId, peers] of Object.entries(nextHops)) {
-        const peerIds = stringArray(
-            peers,
-            `RallarOverlayTopologySnapshot.nextHopsBySessionId.${sessionId}`
-        );
-        assertCanonicalTopologyIdentifiers(
-            peerIds,
-            `RallarOverlayTopologySnapshot.nextHopsBySessionId.${sessionId}`
-        );
-        for (const peerId of peerIds) {
-            if (peerId === sessionId || !activeSessionIdSet.has(peerId)) {
-                fail('RallarOverlayTopologySnapshot next hop identity is invalid');
-            }
-            const reverse = nextHops[peerId];
-            if (!Array.isArray(reverse) || !reverse.includes(sessionId)) {
-                fail('RallarOverlayTopologySnapshot next hops are not reciprocal');
-            }
-        }
-        if (topology.state === 'removed' && peerIds.length !== 0) {
-            fail('RallarOverlayTopologySnapshot removed topology has active edges');
-        }
-    }
-    positiveInteger(topology.degreeLimit, 'RallarOverlayTopologySnapshot.degreeLimit');
-    if (topology.state === 'active') {
-        assertActiveTopologyGraph(nextHops, activeSessionIdSet, topology.degreeLimit);
-    }
-}
-
-function assertCanonicalTopologyIdentifiers(values: readonly string[], label: string): void {
-    for (let index = 1; index < values.length; index += 1) {
-        const previous = values[index - 1];
-        const current = values[index];
-        if (previous === undefined || current === undefined || previous >= current) {
-            fail(`${label} is not canonical`);
-        }
-    }
-}
-
-function assertActiveTopologyGraph(
-    nextHops: Readonly<Record<string, unknown>>,
-    activeSessionIds: ReadonlySet<string>,
-    degreeLimit: number
-): void {
-    for (const peers of Object.values(nextHops)) {
-        if (!Array.isArray(peers) || peers.length > degreeLimit) {
-            fail('RallarOverlayTopologySnapshot degree limit is exceeded');
-        }
-    }
-    if (activeSessionIds.size <= 1) {
-        return;
-    }
-    const first = activeSessionIds.values().next().value;
-    if (typeof first !== 'string') {
-        return;
-    }
-    const visited = new Set([first]);
-    const queue = [first];
-    for (let index = 0; index < queue.length; index += 1) {
-        const sessionId = queue[index];
-        if (sessionId === undefined) {
-            continue;
-        }
-        const peers = nextHops[sessionId];
-        if (!Array.isArray(peers)) {
-            continue;
-        }
-        for (const peerId of peers) {
-            if (typeof peerId !== 'string' || visited.has(peerId)) {
-                continue;
-            }
-            visited.add(peerId);
-            queue.push(peerId);
-        }
-    }
-    if (visited.size !== activeSessionIds.size) {
-        fail('RallarOverlayTopologySnapshot active graph is disconnected');
-    }
 }
 
 export function validateAuthoritativeClientSnapshotList(
@@ -557,7 +408,7 @@ export function validateAuthoritativeClientEventPage(
     value: unknown,
     expected: StateScope & Readonly<{ principalId?: string; }>
 ): asserts value is StateEventPage<ClientEvent> {
-    assertEventPage(
+    assertAuthoritativeEventPage(
         value,
         (event) => validateAuthoritativeClientEvent(event, expected),
         'ClientEventPage'
@@ -568,38 +419,11 @@ export function validateAuthoritativeGroupEventPage(
     value: unknown,
     expected: StateScope & Readonly<{ groupId?: string; }>
 ): asserts value is StateEventPage<GroupEvent> {
-    assertEventPage(
+    assertAuthoritativeEventPage(
         value,
         (event) => validateAuthoritativeGroupEvent(event, expected),
         'GroupEventPage'
     );
-}
-
-function assertEventPage(
-    value: unknown,
-    validateEvent: (event: unknown) => void,
-    label: string
-): void {
-    const page = record(value, label);
-    exact(
-        page,
-        Object.hasOwn(page, 'nextCursor') ? ['events', 'nextCursor', 'hasMore'] : ['events', 'hasMore'],
-        label
-    );
-    const events = array(page.events, `${label}.events`);
-    for (const event of events) {
-        validateEvent(event);
-    }
-    if (typeof page.hasMore !== 'boolean') {
-        fail(`${label}.hasMore is invalid`);
-    }
-    if (Object.hasOwn(page, 'nextCursor')) {
-        const cursor = record(page.nextCursor, `${label}.nextCursor`);
-        exact(cursor, ['snapshotVersion', 'occurredAtEpochMs', 'eventId'], `${label}.nextCursor`);
-        nonNegativeInteger(cursor.snapshotVersion, `${label}.nextCursor.snapshotVersion`);
-        nonNegativeInteger(cursor.occurredAtEpochMs, `${label}.nextCursor.occurredAtEpochMs`);
-        nonEmptyString(cursor.eventId, `${label}.nextCursor.eventId`);
-    }
 }
 
 function assertAudit(value: unknown, label: string): void {
@@ -617,7 +441,7 @@ function nullableAudit(value: unknown, label: string): void {
 }
 
 function clientRef(
-    value: Record<string, unknown>,
+    value: AuthoritativeStateRecord,
     label: string,
     scope?: StateScope
 ): Readonly<{ applicationId: string; workspaceId: string; principalId: string; }> {
@@ -633,7 +457,7 @@ function clientRef(
 }
 
 function groupRef(
-    value: Record<string, unknown>,
+    value: AuthoritativeStateRecord,
     label: string,
     scope?: StateScope
 ): GroupRef {
@@ -650,7 +474,7 @@ function groupRef(
 }
 
 function sameClientRef(
-    value: Record<string, unknown>,
+    value: AuthoritativeStateRecord,
     ref: Readonly<{ applicationId: string; workspaceId: string; principalId: string; }>,
     label: string
 ): void {
@@ -664,7 +488,7 @@ function sameClientRef(
 }
 
 function requireScope(
-    value: Record<string, unknown>,
+    value: AuthoritativeStateRecord,
     scope: StateScope | undefined,
     label: string
 ): void {
@@ -690,14 +514,14 @@ function causalRevision(
     };
 }
 
-function record(value: unknown, label: string): Record<string, unknown> {
+function record(value: unknown, label: string): AuthoritativeStateRecord {
     if (!isRecord(value)) {
         fail(`${label} must be an object`);
     }
     return value;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: unknown): value is AuthoritativeStateRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
@@ -723,7 +547,7 @@ function enumValue(value: unknown, allowed: readonly string[], label: string): v
 }
 
 function exact(
-    value: Record<string, unknown>,
+    value: AuthoritativeStateRecord,
     keys: readonly string[],
     label: string
 ): void {
