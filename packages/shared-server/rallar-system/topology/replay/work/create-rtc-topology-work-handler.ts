@@ -5,15 +5,6 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
-import type { GroupFormationAutomationPort } from './create-group-connect-trigger-work-handler.ts';
-import {
-    computePublicationConnectTriggerRequests
-} from './write-group-connect-trigger-requests.ts';
-import {
-    computeRtcTopologyPublicationDeliveryWrite,
-    writeRtcTopologyPublicationTransaction,
-    type RtcTopologyDeliveryOptions
-} from './write-rtc-topology-publication-transaction.ts';
 
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
@@ -28,6 +19,7 @@ import {
     computeTopologyMutation,
     validateTopologyMutation,
     type RtcTopologyMutationComputed,
+    type RtcTopologyMutationInput,
     type RtcTopologyMutationRead
 } from '../../mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyWorkRuntime } from '../../mutation/rtc-topology-outbox-work.ts';
@@ -38,10 +30,19 @@ import {
     materializeRtcOverlayTopologyBroadcastMessage,
     type RtcOverlayTopologyMessageFacts
 } from '../../planning/materialize-rtc-overlay-topology-broadcast-message.ts';
+import {
+    computeRtcTopologyWorkWrite,
+    validateRtcTopologyWorkWrite,
+    type AcceptedRtcTopologyMutation,
+    type AcceptedRtcTopologyWork,
+    type AcceptedRtcTopologyWorkWrite,
+    type CommittedCriterionPetition,
+    type ComputeRtcTopologyWorkWriteInput
+} from './compute-rtc-topology-work-write.ts';
+import type { GroupFormationAutomationPort } from './create-group-connect-trigger-work-handler.ts';
 import { isChangeGatedGroupRevisionWork, toTopologyWorkOrigin } from './rtc-topology-coalesced-group-revision-work.ts';
 import {
-    computeAuthorityTopologyInputFingerprint,
-    computeRtcTopologyInputFingerprintWrite
+    computeAuthorityTopologyInputFingerprint
 } from './rtc-topology-input-fingerprint.ts';
 import {
     readRtcTopologyWorkEnvelope,
@@ -54,13 +55,16 @@ import {
     writeRtcTopologyWorkCompletion
 } from './rtc-topology-work-completion.ts';
 import {
-    computeTopologyPromotionRequest,
     readTopologyPromotion,
     type TopologyPromotionPublicationPort,
     type TopologyPromotionRead
 } from './topology-promotion-request.ts';
-
-type AcceptedRtcTopologyMutation = Exclude<RtcTopologyMutationComputed, Readonly<{ outcome: 'loaded' | 'retry'; }>>;
+import {
+    computeRtcTopologyPublicationDeliveryWrite,
+    writeRtcTopologyPublicationTransaction,
+    type RtcTopologyDeliveryOptions,
+    type RtcTopologyPublicationTransactionWrite
+} from './write-rtc-topology-publication-transaction.ts';
 
 import {
     createDeferredCriterionPetitioner,
@@ -99,56 +103,6 @@ interface RtcTopologyWorkHandlerOptions {
     readonly timing?: RallarTimingSink;
     readonly serviceId?: string;
 }
-
-/**
- * A criterion petition deferred until the write phase commits: the fence
- * must name the layout identity the store actually holds, so the petition
- * fires only after the row it names is durable (product decisions 19/32,
- * the plan's post-publication boundary).
- */
-interface CommittedCriterionPetition {
-    readonly authority: GroupTopologyPlanningAuthority;
-    readonly planned: RallarOverlayTopologySnapshot;
-}
-
-type AcceptedRtcTopologyWork =
-    | Readonly<{
-        decision: 'accepted';
-        work: PersistedRtcTopologyWork;
-        group: GroupSnapshot;
-        computed: AcceptedRtcTopologyMutation;
-        publication: RtcTopologyPublication | null;
-        inputFingerprint: string;
-        promotionRead: TopologyPromotionRead | null;
-        criterionPetition: CommittedCriterionPetition | null;
-    }>
-    | Readonly<{
-        decision: 'skipped-fingerprint';
-        work: PersistedRtcTopologyWork;
-        group: GroupSnapshot;
-        promotionRead: TopologyPromotionRead | null;
-        criterionPetition: CommittedCriterionPetition;
-    }>
-    | Readonly<{
-        decision: 'skipped-unchanged';
-        work: PersistedRtcTopologyWork;
-        group: GroupSnapshot;
-        inputFingerprint: string;
-        promotionRead: TopologyPromotionRead | null;
-        criterionPetition: CommittedCriterionPetition | null;
-    }>
-    | Readonly<{
-        decision: 'skipped-frozen';
-        work: PersistedRtcTopologyWork;
-        group: GroupSnapshot;
-        promotionRead: TopologyPromotionRead | null;
-        criterionPetition: CommittedCriterionPetition;
-    }>
-    | Readonly<{
-        decision: 'skipped-rtt-refinement';
-        work: PersistedRtcTopologyWork;
-        group: GroupSnapshot;
-    }>;
 
 interface PrepareRtcTopologyWorkInput {
     readonly options: RtcTopologyWorkHandlerOptions;
@@ -207,7 +161,17 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         expireAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
         deferredCriterionPetitioner
     });
-    await writeAcceptedRtcTopologyWork({ options, entry, accepted, reservationFinish });
+    const writeInput: ComputeRtcTopologyWorkWriteInput = {
+        entry,
+        accepted,
+        reservationFinish,
+        formationAutomationEnabled: options.formationAutomation !== undefined,
+        serviceId: options.serviceId,
+        publisherStreamId: options.topologyDelivery?.publisherStreamId
+    };
+    const computedWrite = computeRtcTopologyWorkWrite(writeInput);
+    validateRtcTopologyWorkWrite(writeInput, computedWrite);
+    await writeAcceptedRtcTopologyWork({ options, accepted, computedWrite });
 }
 
 async function processLoadedRtcTopologyWork(
@@ -436,13 +400,13 @@ async function prepareTopologyMutation(
             commandHash: null,
             attemptCount: null
         } as const);
-    const computed = computeTopologyMutation({
+    const mutationInput: RtcTopologyMutationInput = {
         read,
         candidate: planned.snapshot,
         publication,
         facts
-    });
-    validateTopologyMutation({ read, candidate: planned.snapshot, publication, facts, computed });
+    };
+    const computed = computeTopologyMutation(mutationInput);
     if (computed.outcome === 'retry') {
         throw new RuntimeStateWriteConflictError();
     }
@@ -454,6 +418,7 @@ async function prepareTopologyMutation(
         work,
         group: authority.group,
         computed,
+        mutationInput,
         publication,
         inputFingerprint,
         promotionRead,
@@ -463,21 +428,20 @@ async function prepareTopologyMutation(
 
 interface WriteAcceptedRtcTopologyWorkInput {
     readonly options: RtcTopologyWorkHandlerOptions;
-    readonly entry: ResourceEntry;
     readonly accepted: AcceptedRtcTopologyWork;
-    readonly reservationFinish: ResourceInboxReservationFinish;
+    readonly computedWrite: AcceptedRtcTopologyWorkWrite;
 }
 
 async function writeAcceptedRtcTopologyWork(
     input: WriteAcceptedRtcTopologyWorkInput
 ): Promise<void> {
-    const { options, entry, accepted, reservationFinish } = input;
+    const { options, accepted, computedWrite } = input;
     if (accepted.decision === 'skipped-rtt-refinement') {
-        await writeRtcTopologyWorkCompletion(options.database, reservationFinish);
+        await writeCompletionOnly(options.database, computedWrite);
         return;
     }
     if (accepted.decision === 'skipped-fingerprint') {
-        await writeRtcTopologyWorkCompletion(options.database, reservationFinish);
+        await writeCompletionOnly(options.database, computedWrite);
         options.topologyPlanning.recordTopologyRebuildSkippedFingerprint();
         // Topology inputs exclude lifecycle: entering a dialing stage can
         // activate against this stored layout without a rebuild/publication.
@@ -485,106 +449,65 @@ async function writeAcceptedRtcTopologyWork(
         return;
     }
     if (accepted.decision === 'skipped-unchanged' || accepted.decision === 'skipped-frozen') {
-        await writeSkippedTopologyWork({ options, entry, accepted, reservationFinish });
+        await writeSkippedTopologyWork({ options, accepted, computedWrite });
         return;
     }
     const computed = accepted.computed;
     if (computed.outcome === 'superseded') {
-        await writeRtcTopologyWorkCompletion(options.database, reservationFinish);
+        await writeCompletionOnly(options.database, computedWrite);
         options.topologyPlanning.observeCommittedTopology(accepted.group, computed.current);
         return;
     }
-    // Read outside, mint inside: the gate reads use the shared database
-    // handle and must not run while the transaction holds the session.
-    const promotionRequest = computed.outcome === 'write'
-        ? computeTopologyPromotionRequest({
-            read: accepted.promotionRead,
-            serviceId: options.serviceId,
-            entry,
-            target: computed.snapshotGuard.candidate
-        })
-        : null;
-    const connectRequests = computePublicationConnectTriggerRequests({
-        automation: options.formationAutomation,
-        target: computed.outcome === 'write' ? computed.snapshotGuard.candidate : null,
-        entry
-    });
-    const deliveryWrite = accepted.publication
-        ? computeRtcTopologyPublicationDeliveryWrite(
-            accepted.publication,
-            options.topologyDelivery?.publisherStreamId
-        )
-        : null;
-    const fingerprintWrite = computed.outcome === 'write'
-        ? computeRtcTopologyInputFingerprintWrite(
-            accepted.group.group,
-            accepted.inputFingerprint
-        )
-        : null;
+    const transaction = requireTopologyTransactionWrite(computedWrite);
     await writeRtcTopologyPublicationTransaction({
         database: options.database,
         executionRepository: options.executionRepository,
         deliveryAppend: options.topologyDelivery?.append
-    }, {
-        mutation: computed,
-        promotionRequest,
-        connectRequests,
-        fingerprint: fingerprintWrite,
-        delivery: deliveryWrite,
-        reservationFinish
-    });
+    }, transaction);
     await finishCommittedTopologyWork(options, accepted, computed);
 }
 
+async function writeCompletionOnly(
+    database: PSqlSql,
+    computed: AcceptedRtcTopologyWorkWrite
+): Promise<void> {
+    if (computed.kind !== 'completion-only') {
+        throw new TypeError('RTC topology work expected a completion-only write');
+    }
+    await writeRtcTopologyWorkCompletion(database, computed.reservationFinish);
+}
+
+function requireTopologyTransactionWrite(
+    computed: AcceptedRtcTopologyWorkWrite
+): RtcTopologyPublicationTransactionWrite {
+    if (computed.kind !== 'transaction') {
+        throw new TypeError('RTC topology work expected a publication transaction');
+    }
+    return computed.transaction;
+}
+
 /**
- * The one transaction both skip decisions share: the promotion reconcile —
- * a request a stale cycle failed to mint is re-derived from the stored row
- * here, so accepted and planned can never diverge silently — plus the
- * reservation finish. Only the unchanged decision refreshes the input
- * fingerprint: the frozen path must NOT write it, because the stale
- * fingerprint is decision 11's latched signal that the stored layout
- * trails the authority.
+ * Both skip decisions commit one already validated transaction write. Only
+ * the unchanged decision refreshes the input fingerprint: the frozen path
+ * must NOT write it, because the stale fingerprint is decision 11's latched
+ * signal that the stored layout trails the authority.
  */
 interface WriteSkippedTopologyWorkInput {
     readonly options: RtcTopologyWorkHandlerOptions;
-    readonly entry: ResourceEntry;
     readonly accepted: Extract<AcceptedRtcTopologyWork, { decision: 'skipped-unchanged' | 'skipped-frozen'; }>;
-    readonly reservationFinish: ResourceInboxReservationFinish;
+    readonly computedWrite: AcceptedRtcTopologyWorkWrite;
 }
 
 async function writeSkippedTopologyWork(
     input: WriteSkippedTopologyWorkInput
 ): Promise<void> {
-    const { options, entry, accepted, reservationFinish } = input;
-    const promotionRequest = computeTopologyPromotionRequest({
-        read: accepted.promotionRead,
-        serviceId: options.serviceId,
-        entry,
-        target: accepted.criterionPetition?.planned ?? null
-    });
-    const connectRequests = computePublicationConnectTriggerRequests({
-        automation: options.formationAutomation,
-        target: accepted.criterionPetition?.planned ?? null,
-        entry
-    });
-    const fingerprintWrite = accepted.decision === 'skipped-unchanged'
-        ? computeRtcTopologyInputFingerprintWrite(
-            accepted.group.group,
-            accepted.inputFingerprint
-        )
-        : null;
+    const { options, accepted, computedWrite } = input;
+    const transaction = requireTopologyTransactionWrite(computedWrite);
     await writeRtcTopologyPublicationTransaction({
         database: options.database,
         executionRepository: options.executionRepository,
         deliveryAppend: undefined
-    }, {
-        mutation: null,
-        promotionRequest,
-        connectRequests,
-        fingerprint: fingerprintWrite,
-        delivery: null,
-        reservationFinish
-    });
+    }, transaction);
     if (accepted.decision === 'skipped-frozen') {
         options.topologyPlanning.recordTopologyPlanFrozen();
     }

@@ -285,7 +285,7 @@ describe('retry handoff commit races and replay', () => {
             createdAtEpochMs: 1000,
             expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
         });
-        const requests = computePublicationConnectTriggerRequests({ automation: port, target: PLANNED, entry: source });
+        const requests = computePublicationConnectTriggerRequests({ automationEnabled: true, target: PLANNED, entry: source });
         expect(requests).toHaveLength(1);
         expect(decodeGroupConnectTriggerWork(requests[0]!.resource).kind).toBe('publication');
         await harness.runtimeRepository.upsert(
@@ -320,8 +320,8 @@ describe('retry handoff commit races and replay', () => {
             createdAtEpochMs: 1000,
             expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
         });
-        const first = computePublicationConnectTriggerRequests({ automation: port, target: PLANNED, entry: source });
-        const next = computePublicationConnectTriggerRequests({ automation: port, target: { ...PLANNED, version: 2 }, entry: source });
+        const first = computePublicationConnectTriggerRequests({ automationEnabled: true, target: PLANNED, entry: source });
+        const next = computePublicationConnectTriggerRequests({ automationEnabled: true, target: { ...PLANNED, version: 2 }, entry: source });
         expect(first[0]!.key).not.toEqual(next[0]!.key);
         await expect(harness.database.begin(async (tx) => {
             await writeGroupConnectTriggerRequests(tx, first);
