@@ -58,6 +58,35 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         expect(wakeCount).toBe(1);
     });
 
+    it('omits the topology topic when the replanning policy held the replan', async () => {
+        const { message, entry } = createCanonicalReservation();
+        const queue = new TestResourceInbox();
+        await queue.enqueue(entry);
+        const database = createAppInboxTestDatabase(queue, new TestResourceInboxResults());
+        const formationEvents: Array<Readonly<{ downstreamTopicIds: readonly string[]; }>> = [];
+        const worker = new GroupPresenceSummaryWork({
+            outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+            recomputeDebounceMs: 0,
+            runtimeRepository: new FakeRuntimeStateRepository(),
+            database: database as never,
+            serviceId: 'summary-handler',
+            now: () => BASE_EPOCH_MS + 5_000,
+            formationMetrics: (event) => {
+                formationEvents.push(event);
+            }
+        });
+        vi.spyOn(worker, 'read').mockResolvedValue({} as never);
+        vi.spyOn(worker, 'compute').mockReturnValue(
+            createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent], 'held-by-policy')
+        );
+        vi.spyOn(worker, 'validate').mockReturnValue(undefined);
+        vi.spyOn(worker, 'write').mockResolvedValue(undefined);
+
+        await worker.processReservedEntry(message, entry);
+
+        expect(formationEvents).toEqual([{ downstreamTopicIds: [AppTopics.groupStateEvent] }]);
+    });
+
     it('records no summary expansion metric when the transaction fails', async () => {
         const { message, entry } = createCanonicalReservation();
         const database = createAppInboxTestDatabase(new TestResourceInbox(), new TestResourceInboxResults());
@@ -81,7 +110,10 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
     });
 });
 
-function createComputedWorkWithDownstreamTopics(topicIds: readonly string[]) {
+function createComputedWorkWithDownstreamTopics(
+    topicIds: readonly string[],
+    replan: 'enqueued' | 'held-by-policy' = 'enqueued'
+) {
     return {
         downstreamOutboxEntries: topicIds.map((topicId, index) => ({
             key: {
@@ -90,7 +122,8 @@ function createComputedWorkWithDownstreamTopics(topicIds: readonly string[]) {
                 contextId: 'summary-context'
             }
         })),
-        coalescedTopologyWork: null
+        // The write is mocked here, so the coalesced work only has to be present or absent.
+        coalescedTopologyWork: replan === 'enqueued' ? { presentForMetrics: true } : null
     } as never;
 }
 

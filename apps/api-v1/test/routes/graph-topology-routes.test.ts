@@ -5,6 +5,8 @@ import { Either } from '@shared/resilience/Either.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
+import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
+import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
@@ -601,6 +603,7 @@ function createRouteApp(options: {
     readonly requireApiAuthSession?: GraphTopologyRouteRequireApiAuthSession;
     readonly graphDiagnostics?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['graphDiagnostics']>;
     readonly topologyQuery?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyQuery']>;
+    readonly readAcceptedLayoutFingerprint?: graphTopologyRoutes.GraphTopologyRouteDependencies['readAcceptedLayoutFingerprint'];
     readonly topologyPlanning?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyPlanning']>;
     readonly processTopologyAppInbox?: graphTopologyRoutes.ProcessTopologyAppInbox;
     readonly onCurrentGroupRead?: () => void;
@@ -657,10 +660,13 @@ function createRouteApp(options: {
                                 applicationId: input.groupRef.applicationId,
                                 workspaceId: input.groupRef.workspaceId
                             }),
+                        config: createTopologyConfigView(),
+                        kindHysteresisWidths: { meshExitWidth: 0, treeExitWidth: 0 },
                         rttMeasurements: [],
                         nowEpochMs: 123_456
                     }))
         },
+        readAcceptedLayoutFingerprint: options.readAcceptedLayoutFingerprint ?? (() => Promise.resolve(null)),
         processTopologyAppInbox: options.processTopologyAppInbox ??
             ((_authority, reservation) => createTopologyAppInboxResult(reservation)),
         now: () => 123_456
@@ -824,3 +830,82 @@ function toTopologyMutationRequestPath(path: string, requestId: string): string 
     return '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/' +
         `${path}/requests/${requestId}`;
 }
+
+const FORMATION_PATH = `/api/state/apps/${TEST_SCOPE.applicationId}/workspaces/${TEST_SCOPE.workspaceId}/groups/room-1/formation`;
+const ACCEPTED_IDENTITY = { groupRevision: 1, presenceRevision: 0, version: 1, state: 'active' } as const;
+
+async function readFormationView(app: Hono): Promise<GroupFormationView> {
+    const response = await app.request(FORMATION_PATH, { headers: { authorization: 'Bearer token' } });
+    assert.equal(response.status, 200);
+    return await response.json() as GroupFormationView;
+}
+
+function withAcceptedLayout(snapshot: GroupSnapshot): GroupSnapshot {
+    return { ...snapshot, group: { ...snapshot.group, acceptedLayoutIdentity: ACCEPTED_IDENTITY } };
+}
+
+async function authorityFingerprintFor(group: GroupSnapshot): Promise<string> {
+    return await computeRtcTopologyInputFingerprint({
+        group,
+        effectiveConfig: createTopologyConfigView().effective,
+        kindHysteresisWidths: { meshExitWidth: 0, treeExitWidth: 0 }
+    });
+}
+
+Deno.test('formation view reports nothing stale and nothing pending without an accepted layout', async () => {
+    const app = createRouteApp({
+        group: createGroupSnapshot('room-1', ['owner']),
+        // A stale row left behind by a reset does not count without an accepted layout.
+        readAcceptedLayoutFingerprint: () => Promise.resolve(`sha256:${'d'.repeat(64)}`)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.layoutStale, false);
+    assert.equal(view.pending, null);
+});
+
+Deno.test('formation view latches layoutStale when the accepted fingerprint trails the authority', async () => {
+    const group = withAcceptedLayout(createGroupSnapshot('room-1', ['owner']));
+    const app = createRouteApp({
+        group,
+        readAcceptedLayoutFingerprint: () => Promise.resolve(`sha256:${'d'.repeat(64)}`)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.layoutStale, true);
+});
+
+Deno.test('formation view clears layoutStale when the accepted fingerprint matches the authority', async () => {
+    const group = withAcceptedLayout(createGroupSnapshot('room-1', ['owner']));
+    const app = createRouteApp({
+        group,
+        readAcceptedLayoutFingerprint: async () => await authorityFingerprintFor(group)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.layoutStale, false);
+});
+
+Deno.test('formation view carries the queued replan the topology view reports', async () => {
+    const app = createRouteApp({
+        group: createGroupSnapshot('room-1', ['owner']),
+        topologyQuery: {
+            readTopologyView: (groupRef) =>
+                Promise.resolve({
+                    groupRef,
+                    overlayId: 'overlay',
+                    snapshot: null,
+                    acceptedSnapshot: null,
+                    config: createTopologyConfigView(),
+                    pending: { reconfigureQueued: true, dueAtEpochMs: 4_000 }
+                })
+        }
+    });
+
+    const view = await readFormationView(app);
+
+    assert.deepEqual(view.pending, { reconfigureQueued: true, dueAtEpochMs: 4_000 });
+});

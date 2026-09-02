@@ -1,5 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
+import { isSameGroupLayoutIdentity, toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -498,6 +499,13 @@ async function writeSkippedTopologyWork(
                 accepted.group.group,
                 accepted.inputFingerprint
             );
+            if (runsOnPlannedLayout(accepted)) {
+                await options.executionRepository.writeAcceptedTopologyInputFingerprint(
+                    transaction,
+                    accepted.group.group,
+                    accepted.inputFingerprint
+                );
+            }
         }
         await writeTopologyPromotionRequest(transaction, promotionRequest);
         await writeGroupConnectTriggerRequests(transaction, connectRequests);
@@ -575,4 +583,14 @@ function canonicalGroupRef(ref: GroupRef): GroupRef {
         workspaceId: ref.workspaceId,
         groupId: ref.groupId
     };
+}
+
+/** The accepted layout is the unchanged planned one, so the authority it trails is this cycle's. */
+function runsOnPlannedLayout(
+    accepted: Extract<AcceptedRtcTopologyWork, { decision: 'skipped-unchanged'; }>
+): boolean {
+    const acceptedIdentity = accepted.group.group.acceptedLayoutIdentity;
+    const planned = accepted.criterionPetition?.planned;
+    return acceptedIdentity !== null && planned !== undefined &&
+        isSameGroupLayoutIdentity(acceptedIdentity, toGroupLayoutIdentity(planned));
 }

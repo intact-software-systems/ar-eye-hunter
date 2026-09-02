@@ -1,3 +1,4 @@
+import type { PendingTopologyReplan } from '../graph-topology-management-types.ts';
 import type { GroupRef } from '../group-types.ts';
 import type { GroupFormationReadiness } from './compute-group-formation-readiness.ts';
 import type { GroupFormationOutcome, GroupLifecycleState } from './group-lifecycle-policy.ts';
@@ -22,4 +23,14 @@ export type GroupFormationView = Readonly<{
      * the policy selects none or no candidate survives the liveness filter.
      */
     managerPrincipalIds: readonly string[];
+    /**
+     * The latched staleness obligation (product decision 11): the accepted
+     * layout's stored topology-input fingerprint differs from the planning
+     * authority's. Under `commanded` replanning it clears only through
+     * `reconfigure`. A temporary topology override is part of the authority,
+     * so its expiry can raise this on wall-clock time alone.
+     */
+    layoutStale: boolean;
+    /** The transient half: a replan is queued and due; null when none is. */
+    pending: PendingTopologyReplan | null;
 }>;

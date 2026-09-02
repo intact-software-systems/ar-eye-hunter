@@ -69,7 +69,7 @@ async function createFenceReadHarness(options: FenceReadHarnessOptions = {}): Pr
         serviceId: 'fence-read-service',
         readPlannedLayoutRow: (ref) => {
             readRefs.push(ref);
-            return Promise.resolve({ snapshot: PLANNED_SNAPSHOT, revision: 7 });
+            return Promise.resolve({ snapshot: PLANNED_SNAPSHOT, revision: 7, inputFingerprint: null });
         },
         readAcceptedLayoutRow: async (ref) => {
             acceptedReadRefs.push(ref);

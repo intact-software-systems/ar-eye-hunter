@@ -48,6 +48,34 @@ export function toGroupTopologyReplanningRead(read: GroupLifecyclePolicyRead): G
         : createDefaultGroupLifecyclePolicy().topology.replanning;
 }
 
+export type TopologyReplanEnqueue = 'enqueue' | 'held-by-policy';
+
+export interface ResolveTopologyReplanEnqueueInput {
+    readonly lifecycleState: GroupLifecycleState;
+    readonly replanning: GroupTopologyReplanningRead;
+    readonly workOrigin: TopologyWorkOrigin;
+    /** Whether the stored planned slot holds an active layout, the row a freeze protects. */
+    readonly plannedLayoutActive: boolean;
+}
+
+/**
+ * The enqueue-side twin of `resolveTopologyPlanAction` (product decision 2's
+ * table, plan slice 10a): the automatic follow-ups a `commanded` group's
+ * planner would freeze are held at the presence-summary enqueue instead, so
+ * `pending` never reports a replan the policy forbids and no frozen cycle is
+ * paid for. The two gates hold under the same facts — the stage that follows
+ * the replanning policy, an active planned row, automatic origin — and an
+ * unreadable policy holds automatic work closed here as well. The planner's
+ * freeze stays authoritative for every path that still reaches it.
+ */
+export function resolveTopologyReplanEnqueue(input: ResolveTopologyReplanEnqueueInput): TopologyReplanEnqueue {
+    if (!consultsReplanningPolicy(input.lifecycleState) || !input.plannedLayoutActive) {
+        return 'enqueue';
+    }
+    const automaticHeld = input.replanning === 'commanded' || input.replanning === 'corrupt';
+    return automaticHeld && input.workOrigin === 'automatic' ? 'held-by-policy' : 'enqueue';
+}
+
 export interface ResolveTopologyPlanActionInput {
     readonly lifecycleState: GroupLifecycleState;
     readonly replanning: GroupTopologyReplanningRead;

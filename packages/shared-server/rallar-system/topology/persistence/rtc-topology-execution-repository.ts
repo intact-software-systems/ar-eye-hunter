@@ -68,7 +68,7 @@ export class RtcTopologyExecutionRepository {
     }
 
     async readTopologyInputFingerprint(groupRef: GroupRef): Promise<string | null> {
-        return await new RtcTopologyInputFingerprintRepository(this.runtimeRepository)
+        return await new RtcTopologyInputFingerprintRepository(this.runtimeRepository, 'planned')
             .findFingerprint(groupRef);
     }
 
@@ -78,7 +78,24 @@ export class RtcTopologyExecutionRepository {
         fingerprint: string
     ): Promise<void> {
         await new RtcTopologyInputFingerprintRepository(
-            new PSqlRuntimeStateRepository(transaction)
+            new PSqlRuntimeStateRepository(transaction),
+            'planned'
+        ).putFingerprint(groupRef, fingerprint);
+    }
+
+    /**
+     * The accepted slot's fingerprint follows an unchanged replan of the layout
+     * it already runs on, so the staleness obligation (product decision 11)
+     * clears once the authority and the accepted layout agree again.
+     */
+    async writeAcceptedTopologyInputFingerprint(
+        transaction: PSqlSql,
+        groupRef: GroupRef,
+        fingerprint: string
+    ): Promise<void> {
+        await new RtcTopologyInputFingerprintRepository(
+            new PSqlRuntimeStateRepository(transaction),
+            'accepted'
         ).putFingerprint(groupRef, fingerprint);
     }
 

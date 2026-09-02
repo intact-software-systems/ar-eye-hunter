@@ -118,7 +118,7 @@ describe('Postgres runtime-state guarded batches', () => {
                 command: { ...transitionCommand('resetGroupFormation'), aggregateRef: ref },
                 read: {
                     ...read,
-                    plannedLayoutRow: { snapshot, revision: 0 },
+                    plannedLayoutRow: { snapshot, revision: 0, inputFingerprint: null },
                     acceptedLayoutRow: { snapshot, revision: 0 }
                 },
                 facts: createGroupAuthorityFacts()

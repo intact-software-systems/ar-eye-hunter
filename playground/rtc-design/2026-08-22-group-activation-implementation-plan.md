@@ -2429,6 +2429,52 @@ today, so there is no existing regression barrier here at all.
 reason — the state-write reasons module throws on any unknown profile), `topology-replay`,
 `formation-large`.
 
+### Slice 10a start checkpoint — `commanded` replanning and staleness on the formation view (2026-09-02)
+
+Branched from `main` @ `8a94bd772`, the same base as 9a/9b: the standing Slice 0 review found no
+new commits to re-plan against. 10a is server-side and independent of the RTC slices, so it is not
+stacked on them; the only shared surfaces are the OpenAPI document and this file.
+
+Ownership recovery corrected the Slice 10 draft in three places. The planner already holds
+`commanded` automatic work — `resolveTopologyPlanAction` freezes it for an `active` group whose
+planned slot is active — so the missing suppression point was the enqueue alone, and the two gates
+must hold under the same facts or `pending` and the freeze diverge. Second, the promotion effect's
+doc claimed to compute "row, fingerprint and identity together", but no accepted-slot fingerprint
+existed anywhere; the planned row's reader also promised a fingerprint it never loaded. Third, the
+TTL'd effective topology override is inside the planned fingerprint already (through
+`config.effective`), so decision 11's staleness inherits it: an override's expiry raises
+`layoutStale` on wall-clock time alone, which the read surface now says rather than excluding the
+override and changing the planned gate's meaning.
+
+What 10a lands:
+
+- **`resolveTopologyReplanEnqueue`**, the enqueue-side twin of the planning gate, beside it in
+  `resolve-topology-plan-action.ts`: automatic work for a stage that follows the replanning policy
+  is held when the mode is `commanded` or the policy is unreadable and the planned slot holds an
+  active layout; commanded-origin work and every establishment case still enqueue. The
+  presence-summary read carries the stored policy and the planned slot; compute decides; the write
+  and the formation metric follow the decision.
+- **One stored fingerprint per layout slot** (product decision 11): the repository takes a slot,
+  the planned row's reader loads the planned fingerprint, the canonical promotion copies it into the
+  accepted slot as an unguarded `put` beside the guarded accepted row, and an unchanged replan of
+  the layout the group already runs on refreshes both — the path that lets a `reconfigure` with an
+  unchanged graph clear the obligation. Reset keeps both fingerprints, as the reset scenario
+  requires.
+- **`layoutStale` and `pending` on `GroupFormationView`** and its OpenAPI schema: the route's
+  planning port widens to the effective config and hysteresis widths the fingerprint hashes, the
+  route reads the accepted slot, and `pending` is the topology view's queued-replan row.
+- **The `commanded-replanning` recipe**: a closed match group reaches `active` on an accepted
+  layout, a replacing session moves the authority, the hold leaves `pending` empty while
+  `layoutStale` latches, `reconfigure` under the `hold` landing republishes without clearing it, and
+  the promotion after `connect` and `activate` clears it.
+
+Two consequences are accepted. The remediation axis (`awaiting-application`) is not read anywhere
+yet: `resolveGroupActivationRemediation` waits for Slice 12's status projection, so the scenario's
+remediation clause is carried there and 10a asserts on the two fields the plan named. And
+`connectPresenceSession` under the hold no longer enqueues topology work for `commanded` groups,
+so the promotion reconcile the skipped cycle used to re-run on those deltas now runs only on
+commanded-origin cycles; a stale promotion request is still re-derived by every commanded cycle.
+
 ## Slice 11 — Automation triggers
 
 The canonical exhausted-failure landing remains an unactivated prerequisite: the current mutation
