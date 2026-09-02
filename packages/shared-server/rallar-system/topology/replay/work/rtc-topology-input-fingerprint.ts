@@ -1,13 +1,17 @@
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import { readGroupDisplayName, readGroupMemberSessionIds } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
-import { RuntimeStateJsonStore } from '../../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateRepositoryLike } from '../../../../runtime-state/runtime-state-repository.ts';
 import { sha256CanonicalJson } from '../../../protocol/canonical-json.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../../protocol/json-wire-identity.ts';
+// dprint-ignore
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../../protocol/json-wire-identity.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../../persistence/rtc-topology-errors.ts';
 import { compareRtcTopologyIdentifiers } from '../../persistence/rtc-topology-identifiers.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
@@ -21,6 +25,17 @@ export interface RtcTopologyInputFingerprintFacts {
     readonly kindHysteresisWidths: RtcTopologyKindHysteresisWidths;
 }
 
+export interface RtcTopologyInputFingerprintRow {
+    readonly key: string;
+    readonly value: string;
+    readonly expireAtIsoTimestamp: string;
+}
+
+interface StoredRtcTopologyInputFingerprint {
+    readonly groupRef: GroupRef;
+    readonly fingerprint: string;
+}
+
 export function computeAuthorityTopologyInputFingerprint(
     authority: GroupTopologyPlanningAuthority
 ): Promise<string> {
@@ -31,9 +46,26 @@ export function computeAuthorityTopologyInputFingerprint(
     });
 }
 
-interface StoredRtcTopologyInputFingerprint {
-    readonly groupRef: GroupRef;
-    readonly fingerprint: string;
+export function computeRtcTopologyInputFingerprintRow(
+    ref: GroupRef,
+    fingerprint: string
+): RtcTopologyInputFingerprintRow {
+    if (!/^sha256:[0-9a-f]{64}$/u.test(fingerprint)) {
+        throw new TypeError('RTC topology input fingerprint is invalid');
+    }
+    const stored: StoredRtcTopologyInputFingerprint = {
+        groupRef: {
+            applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
+            groupId: ref.groupId
+        },
+        fingerprint
+    };
+    return {
+        key: groupStateGroupStorageKey(ref),
+        value: JSON.stringify(stored),
+        expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
+    };
 }
 
 export async function computeRtcTopologyInputFingerprint(
@@ -59,11 +91,32 @@ export async function computeRtcTopologyInputFingerprint(
     return `sha256:${digest}`;
 }
 
-export class RtcTopologyInputFingerprintRepository extends RuntimeStateJsonStore {
+export function validateRtcTopologyInputFingerprintRow(
+    ref: GroupRef,
+    fingerprint: string,
+    computed: RtcTopologyInputFingerprintRow
+): readonly string[] {
+    if (!/^sha256:[0-9a-f]{64}$/u.test(fingerprint)) {
+        return ['RTC topology input fingerprint is invalid'];
+    }
+    const expected = computeRtcTopologyInputFingerprintRow(ref, fingerprint);
+    const issues: string[] = [];
+    if (computed.key !== expected.key) {
+        issues.push('RTC topology input fingerprint key differs from its group');
+    }
+    if (computed.value !== expected.value) {
+        issues.push('RTC topology input fingerprint row differs from canonical computation');
+    }
+    if (computed.expireAtIsoTimestamp !== expected.expireAtIsoTimestamp) {
+        issues.push('RTC topology input fingerprint expiry differs from canonical computation');
+    }
+    return issues;
+}
+
+export class RtcTopologyInputFingerprintRepository {
     readonly runtimeRepository: RuntimeStateRepositoryLike;
 
     constructor(runtimeRepository: RuntimeStateRepositoryLike) {
-        super(runtimeRepository);
         this.runtimeRepository = runtimeRepository;
     }
 
@@ -91,26 +144,6 @@ export class RtcTopologyInputFingerprintRepository extends RuntimeStateJsonStore
                     : 'Stored RTC topology input fingerprint is invalid'
             );
         }
-    }
-
-    async putFingerprint(ref: GroupRef, fingerprint: string): Promise<void> {
-        if (!/^sha256:[0-9a-f]{64}$/.test(fingerprint)) {
-            throw new TypeError('RTC topology input fingerprint is invalid');
-        }
-        const stored: StoredRtcTopologyInputFingerprint = {
-            groupRef: {
-                applicationId: ref.applicationId,
-                workspaceId: ref.workspaceId,
-                groupId: ref.groupId
-            },
-            fingerprint
-        };
-        await this.putValue(
-            RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
-            groupStateGroupStorageKey(ref),
-            stored,
-            NEVER_EXPIRE_AT_TIMESTAMP
-        );
     }
 }
 

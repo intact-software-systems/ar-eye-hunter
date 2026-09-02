@@ -1,13 +1,14 @@
-import { assertPrincipalAuthority } from '../aggregate/group-aggregate-mutation-policy.ts';
+import type { GroupStateValidationIssue } from '../../group-state-validation-issues.ts';
+import { validatePrincipalAuthority } from '../aggregate/group-aggregate-mutation-policy.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from '../group-mutation-contracts.ts';
 
 export function validateGroupPresenceMutationAuthority(
     command: GroupMutationCommand,
     principalId: string,
     facts: GroupMutationFacts
-): void {
+): readonly GroupStateValidationIssue[] {
     if (facts.internalAuthority !== 'none') {
-        return;
+        return [];
     }
-    assertPrincipalAuthority(command, principalId);
+    return validatePrincipalAuthority(command, principalId);
 }

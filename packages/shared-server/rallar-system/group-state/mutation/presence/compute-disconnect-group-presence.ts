@@ -1,5 +1,7 @@
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
+import type { GroupStateValidationIssue } from '../../group-state-validation-issues.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -16,16 +18,22 @@ export function computeDisconnectGroupPresence(
     command: Extract<GroupMutationCommand, { operation: 'disconnectPresence'; }>,
     read: GroupMutationRead,
     facts: GroupMutationFacts
-): GroupMutationComputed {
+): Either<readonly GroupStateValidationIssue[], GroupMutationComputed> {
     requireGroup(read, command.aggregateRef);
     const existing = read.targetPresence;
     if (!existing) {
         if (facts.internalAuthority === 'expiry') {
-            return noOp(command, read, facts);
+            return Either.ofRight(noOp(command, read, facts));
         }
-        throw new GroupMutationRejectedError(`Group presence session not found: ${command.sessionId}`);
+        return Either.ofLeft([{
+            path: 'read.targetPresence',
+            cause: new GroupMutationRejectedError(`Group presence session not found: ${command.sessionId}`)
+        }]);
     }
-    validateGroupPresenceMutationAuthority(command, existing.value.principalId, facts);
+    const issues = validateGroupPresenceMutationAuthority(command, existing.value.principalId, facts);
+    if (issues.length > 0) {
+        return Either.ofLeft(issues);
+    }
     if (
         existing.value.generationId !== command.input.generationId ||
         (command.input.generationVersion !== null &&
@@ -34,44 +42,30 @@ export function computeDisconnectGroupPresence(
             existing.value.expiresAtEpochMs !== command.input.observedExpiresAtEpochMs) ||
         existing.value.disconnectedAtEpochMs !== null
     ) {
-        return noOp(command, read, facts);
+        return Either.ofRight(noOp(command, read, facts));
     }
     const disconnectedAt = command.input.disconnectedAtEpochMs ?? facts.nowEpochMs;
     if (disconnectedAt < existing.value.lastHeartbeatAtEpochMs) {
-        return noOp(command, read, facts);
+        return Either.ofRight(noOp(command, read, facts));
     }
-    if (facts.internalAuthority === 'expiry') {
-        return computeGroupPresenceWrite({
-            command,
-            read,
-            facts,
-            session: existing.value,
-            operation: 'delete',
-            eventType: 'session-disconnected',
-            presenceAdmission: computeDisconnectPresenceAdmission({
-                read,
-                session: existing.value,
-                facts
-            })
-        });
+    const admission = computeDisconnectPresenceAdmission({ read, session: existing.value, facts });
+    if (admission.left !== undefined) {
+        return Either.ofLeft(admission.left);
     }
-    const session: GroupPresenceSession = {
+    const isExpiry = facts.internalAuthority === 'expiry';
+    const session: GroupPresenceSession = isExpiry ? existing.value : {
         ...existing.value,
         status: 'disconnected',
         disconnectedAtEpochMs: disconnectedAt,
         disconnectReason: command.input.reason ?? 'closed'
     };
-    return computeGroupPresenceWrite({
+    return Either.ofRight(computeGroupPresenceWrite({
         command,
         read,
         facts,
         session,
-        operation: 'update',
+        operation: isExpiry ? 'delete' : 'update',
         eventType: 'session-disconnected',
-        presenceAdmission: computeDisconnectPresenceAdmission({
-            read,
-            session: existing.value,
-            facts
-        })
-    });
+        presenceAdmission: admission.right!
+    }));
 }

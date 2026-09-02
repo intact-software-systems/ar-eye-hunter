@@ -3,23 +3,25 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
+
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
-import { PSqlResourceInboxEntryRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { PSqlResourceInboxFinalizationRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-finalization-repository.ts';
+import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { requireConditionalWrite } from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
-import { CoalescedAppOutboxWorkService } from '../../app-outbox/coalesced-app-outbox-work-service.ts';
+import { writeAppOutboxInsertOrMatch } from '../../app-outbox/app-outbox-insert.ts';
+import { writeCoalescedAppOutboxWork } from '../../app-outbox/coalesced-app-outbox-work.ts';
 import type { GroupFormationPresenceSummarySink } from '../../observability/formation-metrics.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../topology/mutation/rtc-topology-outbox-entry.ts';
 import {
     toRtcTopologyCoalescedGroupRevisionResourceId
 } from '../../topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
+import type { GroupStateValidationIssue } from '../group-state-validation-issues.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepositoryReads } from '../persistence/group-state-repository-reads.ts';
-import { createTransactionBoundGroupStateRepository } from '../persistence/group-state-repository.ts';
 import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
 import {
     computeGroupPresenceSummaryWork,
@@ -41,45 +43,37 @@ export interface GroupPresenceSummaryWorkOptions {
 
 export class GroupPresenceSummaryWork {
     private readonly now: () => number;
-    private readonly coalescedTopologyWorkService: CoalescedAppOutboxWorkService;
     private readonly options: GroupPresenceSummaryWorkOptions;
 
     public constructor(options: GroupPresenceSummaryWorkOptions) {
         this.options = options;
         this.now = options.now ?? Date.now;
-        this.coalescedTopologyWorkService = new CoalescedAppOutboxWorkService(
-            options.outboxQueueReader,
-            options.serviceId,
-            this.now
-        );
     }
 
     public async read(
-        work: GroupPresenceSummaryWorkData
+        work: GroupPresenceSummaryWorkData,
+        entry: ResourceEntry
     ): Promise<GroupPresenceSummaryWorkRead> {
         const repository = new GroupStateRepositoryReads(this.options.runtimeRepository);
-        const [group, members, admissions, presenceSessions, current, coalescedTopologyEntry] = await Promise.all([
-            repository.findGroupEntry(work.aggregateRef),
-            repository.listMemberEntries(work.aggregateRef),
-            repository.listPresenceAdmissionEntries(work.aggregateRef),
-            repository.listPresenceSessionEntries(work.aggregateRef),
-            repository.findPresenceSummaryEntry(work.aggregateRef),
+        const [presence, coalescedTopologyEntry] = await Promise.all([
+            repository.readGroupPresenceSummary(work.aggregateRef),
             this.readCoalescedTopologyEntry(work.aggregateRef)
         ]);
-        if (!group) {
+        if (!presence) {
             throw new TypeError(
                 `Group not found for presence summary: ${work.aggregateRef.groupId}`
             );
         }
         return {
-            presence: {
-                group,
-                members,
-                admissions,
-                presenceSessions,
-                current: current ?? null
-            },
-            coalescedTopologyEntry
+            presence,
+            coalescedTopologyEntry,
+            nowEpochMs: this.now(),
+            serviceId: this.options.serviceId,
+            recomputeDebounceMs: this.options.recomputeDebounceMs,
+            reservation: {
+                key: entry.key,
+                expectedAttempts: entry.dequeueAudit.attempts
+            }
         };
     }
 
@@ -87,26 +81,18 @@ export class GroupPresenceSummaryWork {
         work: GroupPresenceSummaryWorkData,
         read: GroupPresenceSummaryWorkRead
     ): GroupPresenceSummaryComputedWork {
-        return computeGroupPresenceSummaryWork(work, read, {
-            serviceId: this.options.serviceId,
-            nowEpochMs: this.now(),
-            recomputeDebounceMs: this.options.recomputeDebounceMs
-        });
+        return computeGroupPresenceSummaryWork(work, read);
     }
 
     public validate(
         work: GroupPresenceSummaryWorkData,
         read: GroupPresenceSummaryWorkRead,
         computed: GroupPresenceSummaryComputedWork
-    ): void {
-        validateGroupPresenceSummaryComputedWork({
+    ): readonly GroupStateValidationIssue[] {
+        return validateGroupPresenceSummaryComputedWork({
             work,
             read,
-            computed,
-            options: {
-                serviceId: this.options.serviceId,
-                recomputeDebounceMs: this.options.recomputeDebounceMs
-            }
+            computed
         });
     }
 
@@ -114,25 +100,40 @@ export class GroupPresenceSummaryWork {
         transaction: PSqlSql,
         computed: GroupPresenceSummaryComputedWork
     ): Promise<void> {
-        const repository = createTransactionBoundGroupStateRepository(transaction);
-        if (computed.summary.outcome === 'write') {
+        const summaryWrite = computed.summaryWrite;
+        if (summaryWrite) {
+            const repository = new PSqlRuntimeStateRepository(transaction);
             requireConditionalWrite(
-                computed.summary.operation === 'insert'
-                    ? await repository.insertPresenceSummary(computed.summary.summary)
-                    : await repository.updatePresenceSummary(
-                        computed.summary.summary,
-                        computed.summary.expectedRevision!
+                summaryWrite.expectedRevision === null
+                    ? await repository.insertIfAbsent(
+                        summaryWrite.namespace,
+                        summaryWrite.key,
+                        summaryWrite.value,
+                        summaryWrite.expireAtIsoTimestamp
+                    )
+                    : await repository.upsertIfRevision(
+                        summaryWrite.namespace,
+                        summaryWrite.key,
+                        summaryWrite.value,
+                        summaryWrite.expireAtIsoTimestamp,
+                        summaryWrite.expectedRevision
                     )
             );
         }
-        const outbox = new PSqlResourceInboxEntryRepository(transaction);
-        for (const entry of computed.downstreamOutboxEntries) {
-            await outbox.writeIfAbsentOrMatch(entry);
+        for (const outboxWrite of computed.downstreamOutboxWrites) {
+            await writeAppOutboxInsertOrMatch(transaction, outboxWrite);
         }
-        await this.coalescedTopologyWorkService.write(
+        await writeCoalescedAppOutboxWork(
             transaction,
             computed.coalescedTopologyWork
         );
+        const finished = await writeResourceInboxReservationFinish(
+            transaction,
+            computed.reservationFinish
+        );
+        if (!finished) {
+            throw new Error('Presence-summary reservation changed before commit');
+        }
     }
 
     public async processReservedEntry(
@@ -143,20 +144,14 @@ export class GroupPresenceSummaryWork {
             throw new TypeError('Presence-summary queue processing requires a database');
         }
         const work = decodeCanonicalGroupPresenceSummaryWork(message, entry);
-        const read = await this.read(work);
+        const read = await this.read(work, entry);
         const computed = this.compute(work, read);
-        this.validate(work, read, computed);
+        const issues = this.validate(work, read, computed);
+        if (issues.length > 0) {
+            throw issues[0].cause;
+        }
         await runInPSqlTransaction(this.options.database, async (transaction) => {
             await this.write(transaction, computed);
-            const finished = await new PSqlResourceInboxFinalizationRepository(transaction).finishReserved(
-                entry.key,
-                entry.dequeueAudit.attempts,
-                EntityStatus.COMPLETED,
-                new Date(this.now())
-            );
-            if (!finished) {
-                throw new Error('Presence-summary reservation changed before commit');
-            }
         });
         this.options.wakeQueue?.();
         this.recordFormationMetrics(computed);
@@ -175,7 +170,7 @@ export class GroupPresenceSummaryWork {
         try {
             this.options.formationMetrics?.({
                 downstreamTopicIds: [
-                    ...computed.downstreamOutboxEntries.map((entry) => entry.key.topicId),
+                    ...computed.downstreamOutboxWrites.map((outboxWrite) => outboxWrite.entry.key.topicId),
                     APP_OUTBOX_RTC_TOPOLOGY_TOPIC
                 ]
             });

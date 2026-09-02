@@ -14,14 +14,14 @@ import {
     type RallarTimingSink
 } from '../../observability/timing.ts';
 import { AppInboxCommandIdentityError, validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
-import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../app-inbox-contracts.ts';
+import type { AppInboxEnqueueInput, AppInboxExecutionMetadata } from '../app-inbox-contracts.ts';
 import { classifyAppInboxError, type AppInboxErrorClassification } from '../app-inbox-error-classification.ts';
-import { encodeAppInboxFailure } from '../app-inbox-failure.ts';
 import type { AppInboxOptions } from '../app-inbox-options.ts';
 import type { AppInboxResultRepository } from '../app-inbox-persistence-ports.ts';
 import { toAppInboxAttemptTimingDetails, toAppInboxTimingDetails } from './app-inbox-attempt-timing.ts';
+import { computeAppInboxCompletion, validateAppInboxCompletion } from './app-inbox-completion-computation.ts';
 import type { AppInboxHandlerRegistration } from './app-inbox-handler-registration.ts';
-import { AppInboxTransactionWriter, toFinalizedResourceEntry } from './app-inbox-transaction-writer.ts';
+import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
 
 interface AppInboxExecutionAttempt<Command, Result> {
     readonly registration: AppInboxHandlerRegistration<Command, Result>;
@@ -30,15 +30,15 @@ interface AppInboxExecutionAttempt<Command, Result> {
     readonly fallbackEnqueue: AppInboxEnqueueInput;
 }
 
-interface BegunAppInboxExecution<Command, Result> {
+interface BegunAppInboxExecution<Command> {
     readonly command: Command;
-    readonly context: AppInboxMessageContext<Result>;
+    readonly context: AppInboxExecutionMetadata;
 }
 
 interface FailedAppInboxExecution<Command, Result> extends AppInboxExecutionAttempt<Command, Result> {
     readonly error: Error;
     readonly classification: AppInboxErrorClassification;
-    readonly context: AppInboxMessageContext<Result> | undefined;
+    readonly context: AppInboxExecutionMetadata | undefined;
 }
 
 export namespace AppInboxHandlerExecutor {
@@ -104,7 +104,7 @@ export class AppInboxHandlerExecutor {
     private async executeAttempt<Command, Result>(
         attempt: AppInboxExecutionAttempt<Command, Result>
     ): Promise<void> {
-        let context: AppInboxMessageContext<Result> | undefined;
+        let context: AppInboxExecutionMetadata | undefined;
         try {
             const begun = this.beginExecution(attempt);
             context = begun.context;
@@ -132,17 +132,16 @@ export class AppInboxHandlerExecutor {
 
     private beginExecution<Command, Result>(
         attempt: AppInboxExecutionAttempt<Command, Result>
-    ): BegunAppInboxExecution<Command, Result> {
+    ): BegunAppInboxExecution<Command> {
         const identity = validateAppInboxCommandIdentity(attempt.entry);
         if (!identity.valid) {
             throw new AppInboxCommandIdentityError(identity.identity.operationSource);
         }
         const command = attempt.registration.decodeCommand(identity.command.data);
-        const context: AppInboxMessageContext<Result> = {
+        const context: AppInboxExecutionMetadata = {
             enqueue: identity.command,
             message: attempt.message,
-            entry: attempt.entry,
-            encodeResult: attempt.registration.encodeResult
+            entry: attempt.entry
         };
         this.transactionWriter.begin(context);
         return {
@@ -153,7 +152,7 @@ export class AppInboxHandlerExecutor {
 
     private async writeNonTransactionalResult<Command, Result>(
         registration: AppInboxHandlerRegistration<Command, Result>,
-        context: AppInboxMessageContext<Result>,
+        context: AppInboxExecutionMetadata,
         result: Result
     ): Promise<void> {
         await this.timePhase(
@@ -197,19 +196,22 @@ export class AppInboxHandlerExecutor {
         const terminalContext = input.context ?? {
             enqueue: input.fallbackEnqueue,
             message: input.message,
-            entry: input.entry,
-            encodeResult: input.registration.encodeResult
+            entry: input.entry
         };
-        await this.transactionWriter.writeTerminalFailure(
-            terminalContext,
-            encodeAppInboxFailure(input.classification.result)
-        );
+        const failureInput = {
+            entry: terminalContext.entry,
+            durableResult: input.classification.result,
+            status: EntityStatus.FAILED,
+            completedAtEpochMs: this.nowEpochMs()
+        };
+        const computed = computeAppInboxCompletion(failureInput);
+        const issues = validateAppInboxCompletion(failureInput, computed);
+        if (issues.length > 0) {
+            throw issues[0].cause;
+        }
+        await this.transactionWriter.writeTerminalFailure(terminalContext, computed);
         throw new ResourceInboxFinalizedByHandlerError(
-            toFinalizedResourceEntry(
-                terminalContext,
-                EntityStatus.FAILED,
-                this.nowEpochMs()
-            ),
+            computed.finalizedEntry,
             input.error
         );
     }

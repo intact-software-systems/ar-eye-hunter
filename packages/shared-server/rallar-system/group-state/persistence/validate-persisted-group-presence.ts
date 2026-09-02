@@ -1,22 +1,22 @@
-import type {
-    GroupPresenceAdmission,
-    GroupPresenceSession,
-    GroupPresenceSummary,
-    GroupRef
-} from '@shared/api/group-types.ts';
+import type { GroupPresenceAdmission, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import {
+    isGroupStateRecord,
+    toGroupStateValidationIssue,
+    type GroupStateValidationIssue
+} from '../group-state-validation-issues.ts';
 
 import {
-    assertExactKeys,
-    assertRequiredKeys,
-    nullableNonEmptyString,
-    nullablePositiveSafeInteger,
-    requireNonEmptyString,
-    requireNonNegativeSafeInteger,
-    requireOneOf,
-    requirePositiveSafeInteger,
-    requireRecord
-} from '../group-state-validation-primitives.ts';
+    validateExactKeys,
+    validateNonEmptyString,
+    validateNonNegativeSafeInteger,
+    validateNullableNonEmptyString,
+    validateNullablePositiveSafeInteger,
+    validateOneOf,
+    validatePositiveSafeInteger,
+    validateRecord,
+    validateRequiredKeys
+} from '../group-state-validation-issues.ts';
 
 import { validateCausalRevision, validateScopedRecord } from './validate-persisted-group.ts';
 
@@ -69,107 +69,111 @@ export function validatePresenceSession(
     session: unknown,
     ref: GroupRef,
     label: string
-): asserts session is GroupPresenceSession {
-    const value = requireRecord(session, `${label} value`);
-    assertExactKeys(value, PRESENCE_SESSION_KEYS, `${label} value`);
-    assertRequiredKeys(value, PRESENCE_SESSION_KEYS, `${label} value`);
-    validateScopedRecord(value, ref, label);
-    requireNonEmptyString(value.sessionId, `${label} sessionId`);
-    requireNonEmptyString(value.principalId, `${label} principalId`);
-    requireNonEmptyString(value.generationId, `${label} generationId`);
-    requirePositiveSafeInteger(value.connectedAtEpochMs, 'Stored presence connectedAtEpochMs');
-    requirePositiveSafeInteger(value.generationVersion, 'Stored presence generationVersion');
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
+    const value = session;
+    if (!isGroupStateRecord(value)) {
+        return [...issues, ...validateRecord(value, `${label} value`)];
+    }
+    issues.push(...validateExactKeys(value, PRESENCE_SESSION_KEYS, `${label} value`));
+    issues.push(...validateRequiredKeys(value, PRESENCE_SESSION_KEYS, `${label} value`));
+    issues.push(...validateScopedRecord(value, ref, label));
+    issues.push(...validateNonEmptyString(value.sessionId, `${label} sessionId`));
+    issues.push(...validateNonEmptyString(value.principalId, `${label} principalId`));
+    issues.push(...validateNonEmptyString(value.generationId, `${label} generationId`));
+    issues.push(...validatePositiveSafeInteger(value.connectedAtEpochMs, 'Stored presence connectedAtEpochMs'));
+    issues.push(...validatePositiveSafeInteger(value.generationVersion, 'Stored presence generationVersion'));
     if (value.generationVersion !== value.connectedAtEpochMs) {
-        throw new TypeError('Stored presence generation order is ambiguous');
+        issues.push(toGroupStateValidationIssue(label, 'Stored presence generation order is ambiguous'));
     }
-    requirePositiveSafeInteger(value.lastHeartbeatAtEpochMs, `${label} lastHeartbeatAtEpochMs`);
-    requirePositiveSafeInteger(value.expiresAtEpochMs, `${label} expiresAtEpochMs`);
+    issues.push(...validatePositiveSafeInteger(value.lastHeartbeatAtEpochMs, `${label} lastHeartbeatAtEpochMs`));
+    issues.push(...validatePositiveSafeInteger(value.expiresAtEpochMs, `${label} expiresAtEpochMs`));
     if (
-        value.lastHeartbeatAtEpochMs < value.connectedAtEpochMs ||
-        value.expiresAtEpochMs < value.lastHeartbeatAtEpochMs
+        (typeof value.lastHeartbeatAtEpochMs === 'number' && typeof value.connectedAtEpochMs === 'number' &&
+            value.lastHeartbeatAtEpochMs < value.connectedAtEpochMs) ||
+        (typeof value.expiresAtEpochMs === 'number' && typeof value.lastHeartbeatAtEpochMs === 'number' &&
+            value.expiresAtEpochMs < value.lastHeartbeatAtEpochMs)
     ) {
-        throw new TypeError(`${label} timestamps are causally inconsistent`);
+        issues.push(toGroupStateValidationIssue(label, `${label} timestamps are causally inconsistent`));
     }
-    requireOneOf(value.status, ['active', 'disconnected'], `${label} status`);
-    nullablePositiveSafeInteger(value.disconnectedAtEpochMs, `${label} disconnectedAtEpochMs`);
-    nullableNonEmptyString(value.disconnectReason, `${label} disconnectReason`);
+    issues.push(...validateOneOf(value.status, ['active', 'disconnected'], `${label} status`));
+    issues.push(...validateNullablePositiveSafeInteger(value.disconnectedAtEpochMs, `${label} disconnectedAtEpochMs`));
+    issues.push(...validateNullableNonEmptyString(value.disconnectReason, `${label} disconnectReason`));
     if (
-        value.disconnectedAtEpochMs !== null &&
+        typeof value.disconnectedAtEpochMs === 'number' && typeof value.lastHeartbeatAtEpochMs === 'number' &&
         value.disconnectedAtEpochMs < value.lastHeartbeatAtEpochMs
     ) {
-        throw new TypeError(`${label} disconnect predates heartbeat`);
+        issues.push(toGroupStateValidationIssue(label, `${label} disconnect predates heartbeat`));
     }
     if (
         value.status === 'active' &&
         (value.disconnectedAtEpochMs !== null || value.disconnectReason !== null)
     ) {
-        throw new TypeError(`${label} active disconnect fields must be null`);
+        issues.push(toGroupStateValidationIssue(label, `${label} active disconnect fields must be null`));
     }
     if (
         value.status === 'disconnected' &&
         (value.disconnectedAtEpochMs === null || value.disconnectReason === null)
     ) {
-        throw new TypeError(`${label} disconnect lifecycle fields differ`);
+        issues.push(toGroupStateValidationIssue(label, `${label} disconnect lifecycle fields differ`));
     }
-}
-
-export function validatePersistedGroupPresenceSession(
-    value: unknown,
-    ref: GroupRef
-): asserts value is GroupPresenceSession {
-    validatePresenceSession(value, ref, 'Stored group presence session');
-}
-
-export function validatePersistedGroupPresenceSummary(
-    value: unknown,
-    ref: GroupRef
-): asserts value is GroupPresenceSummary {
-    validatePresenceSummaryValue(value, ref);
-}
-
-export function validatePersistedGroupPresenceAdmission(
-    value: unknown,
-    ref: GroupRef
-): asserts value is GroupPresenceAdmission {
-    validatePresenceAdmission(value, ref);
+    return issues;
 }
 
 export function validatePresenceSummaryValue(
     summary: unknown,
     ref: GroupRef
-): asserts summary is GroupPresenceSummary {
-    const value = requireRecord(summary, 'Stored presence summary value');
-    assertExactKeys(value, PRESENCE_SUMMARY_KEYS, 'Stored presence summary value');
-    assertRequiredKeys(value, PRESENCE_SUMMARY_KEYS, 'Stored presence summary value');
-    validateScopedRecord(value, ref, 'Stored presence summary');
-    validateCausalRevision(value.causalRevision, 'Stored presence summary');
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
+    const value = summary;
+    if (!isGroupStateRecord(value)) {
+        return [...issues, ...validateRecord(value, 'Stored presence summary value')];
+    }
+    issues.push(...validateExactKeys(value, PRESENCE_SUMMARY_KEYS, 'Stored presence summary value'));
+    issues.push(...validateRequiredKeys(value, PRESENCE_SUMMARY_KEYS, 'Stored presence summary value'));
+    issues.push(...validateScopedRecord(value, ref, 'Stored presence summary'));
+    issues.push(...validateCausalRevision(value.causalRevision, 'Stored presence summary'));
     if (
         !Array.isArray(value.activePrincipalIds) ||
         !Array.isArray(value.activeSessionIds) ||
         !Array.isArray(value.activeSessions)
     ) {
-        throw new TypeError('Stored presence summary collections must be arrays');
+        issues.push(
+            toGroupStateValidationIssue('Stored presence summary', 'Stored presence summary collections must be arrays')
+        );
     }
-    for (const principalId of value.activePrincipalIds) {
-        requireNonEmptyString(principalId, 'Stored presence summary principalId');
+    for (const principalId of Array.isArray(value.activePrincipalIds) ? value.activePrincipalIds : []) {
+        issues.push(...validateNonEmptyString(principalId, 'Stored presence summary principalId'));
     }
-    for (const sessionId of value.activeSessionIds) {
-        requireNonEmptyString(sessionId, 'Stored presence summary sessionId');
+    for (const sessionId of Array.isArray(value.activeSessionIds) ? value.activeSessionIds : []) {
+        issues.push(...validateNonEmptyString(sessionId, 'Stored presence summary sessionId'));
     }
     const activeSessions: GroupPresenceSession[] = [];
-    for (const session of value.activeSessions) {
-        validatePresenceSession(session, ref, 'Stored presence summary session');
-        activeSessions.push(session);
+    for (const session of Array.isArray(value.activeSessions) ? value.activeSessions : []) {
+        const sessionIssues = validatePresenceSession(session, ref, 'Stored presence summary session');
+        issues.push(...sessionIssues);
+        if (sessionIssues.length === 0) {
+            activeSessions.push(session as GroupPresenceSession);
+        }
     }
-    requireNonNegativeSafeInteger(
+    issues.push(...validateNonNegativeSafeInteger(
         value.activePrincipalCount,
         'Stored presence summary activePrincipalCount'
-    );
-    requireNonNegativeSafeInteger(
+    ));
+    issues.push(...validateNonNegativeSafeInteger(
         value.activeSessionCount,
         'Stored presence summary activeSessionCount'
-    );
-    requirePositiveSafeInteger(value.computedAtEpochMs, 'Stored presence summary computedAtEpochMs');
+    ));
+    issues.push(...validatePositiveSafeInteger(value.computedAtEpochMs, 'Stored presence summary computedAtEpochMs'));
+    issues.push(...validatePresenceSummaryAggregates(value, activeSessions));
+    return issues;
+}
+
+function validatePresenceSummaryAggregates(
+    value: Record<string, unknown>,
+    activeSessions: readonly GroupPresenceSession[]
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
     const canonicalSessions = activeSessions.toSorted(
         (left, right) =>
             left.sessionId.localeCompare(right.sessionId) ||
@@ -179,8 +183,10 @@ export function validatePresenceSummaryValue(
         ...new Set(activeSessions.map((session) => session.principalId))
     ].toSorted();
     if (
-        value.activePrincipalCount !== value.activePrincipalIds.length ||
-        value.activeSessionCount !== value.activeSessionIds.length ||
+        value.activePrincipalCount !==
+            (Array.isArray(value.activePrincipalIds) ? value.activePrincipalIds.length : undefined) ||
+        value.activeSessionCount !==
+            (Array.isArray(value.activeSessionIds) ? value.activeSessionIds.length : undefined) ||
         value.activeSessionCount !== activeSessions.length ||
         !jsonEquals(value.activePrincipalIds, canonicalPrincipals) ||
         !jsonEquals(activeSessions, canonicalSessions) ||
@@ -189,53 +195,79 @@ export function validatePresenceSummaryValue(
             activeSessions.map((session) => session.sessionId)
         )
     ) {
-        throw new TypeError('Stored presence summary facts are inconsistent');
+        issues.push(
+            toGroupStateValidationIssue('Stored presence summary', 'Stored presence summary facts are inconsistent')
+        );
     }
+    return issues;
 }
 
 export function validatePresenceAdmission(
     admission: unknown,
     ref?: GroupRef
-): asserts admission is GroupPresenceAdmission {
-    const value = requireRecord(admission, 'Presence admission');
-    assertExactKeys(value, PRESENCE_ADMISSION_KEYS, 'Presence admission');
-    assertRequiredKeys(value, PRESENCE_ADMISSION_KEYS, 'Presence admission');
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
+    const value = admission;
+    if (!isGroupStateRecord(value)) {
+        return [...issues, ...validateRecord(value, 'Presence admission')];
+    }
+    issues.push(...validateExactKeys(value, PRESENCE_ADMISSION_KEYS, 'Presence admission'));
+    issues.push(...validateRequiredKeys(value, PRESENCE_ADMISSION_KEYS, 'Presence admission'));
     if (ref) {
-        validateScopedRecord(value, ref, 'Presence admission');
+        issues.push(...validateScopedRecord(value, ref, 'Presence admission'));
     }
-    requireNonEmptyString(value.principalId, 'Presence admission principalId');
-    requirePositiveSafeInteger(value.updatedAtEpochMs, 'Presence admission updatedAtEpochMs');
+    issues.push(...validateNonEmptyString(value.principalId, 'Presence admission principalId'));
+    issues.push(...validatePositiveSafeInteger(value.updatedAtEpochMs, 'Presence admission updatedAtEpochMs'));
     if (!Array.isArray(value.admittedSessions)) {
-        throw new TypeError('Presence admission sessions must be an array');
+        return [
+            ...issues,
+            toGroupStateValidationIssue(
+                'Presence admission admittedSessions',
+                'Presence admission sessions must be an array'
+            )
+        ];
     }
-    const sessionIdentities: Array<
-        Readonly<{
-            sessionId: string;
-            generationId: string;
-            generationVersion: number;
-            connectedAtEpochMs: number;
-        }>
-    > = [];
+    issues.push(...validateAdmissionSessions(value.admittedSessions));
+    return issues;
+}
+
+function validateAdmissionSessions(sessions: readonly unknown[]): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
+    const sessionIdentities: Array<GroupPresenceAdmission['admittedSessions'][number]> = [];
     const sessionIds = new Set<string>();
-    for (const session of value.admittedSessions) {
-        const sessionValue = requireRecord(session, 'Presence admission session');
-        assertExactKeys(sessionValue, ADMITTED_SESSION_KEYS, 'Presence admission session');
-        assertRequiredKeys(sessionValue, ADMITTED_SESSION_KEYS, 'Presence admission session');
-        requireNonEmptyString(sessionValue.sessionId, 'Presence admission sessionId');
-        requireNonEmptyString(sessionValue.generationId, 'Presence admission generationId');
-        requirePositiveSafeInteger(
+    for (const session of sessions) {
+        const sessionValue = session;
+        if (!isGroupStateRecord(sessionValue)) {
+            issues.push(...validateRecord(sessionValue, 'Presence admission session'));
+            continue;
+        }
+        issues.push(...validateExactKeys(sessionValue, ADMITTED_SESSION_KEYS, 'Presence admission session'));
+        issues.push(...validateRequiredKeys(sessionValue, ADMITTED_SESSION_KEYS, 'Presence admission session'));
+        issues.push(...validateNonEmptyString(sessionValue.sessionId, 'Presence admission sessionId'));
+        issues.push(...validateNonEmptyString(sessionValue.generationId, 'Presence admission generationId'));
+        issues.push(...validatePositiveSafeInteger(
             sessionValue.generationVersion,
             'Presence admission generationVersion'
-        );
-        requirePositiveSafeInteger(
+        ));
+        issues.push(...validatePositiveSafeInteger(
             sessionValue.connectedAtEpochMs,
             'Presence admission connectedAtEpochMs'
-        );
+        ));
         if (sessionValue.generationVersion !== sessionValue.connectedAtEpochMs) {
-            throw new TypeError('Presence admission generation version is ambiguous');
+            issues.push(
+                toGroupStateValidationIssue('Presence admission', 'Presence admission generation version is ambiguous')
+            );
         }
-        if (sessionIds.has(sessionValue.sessionId)) {
-            throw new TypeError('Presence admission sessionId must be unique');
+        if (typeof sessionValue.sessionId === 'string' && sessionIds.has(sessionValue.sessionId)) {
+            issues.push(
+                toGroupStateValidationIssue('Presence admission', 'Presence admission sessionId must be unique')
+            );
+        }
+        if (
+            typeof sessionValue.sessionId !== 'string' || typeof sessionValue.generationId !== 'string' ||
+            typeof sessionValue.generationVersion !== 'number' || typeof sessionValue.connectedAtEpochMs !== 'number'
+        ) {
+            continue;
         }
         sessionIds.add(sessionValue.sessionId);
         sessionIdentities.push({
@@ -247,23 +279,26 @@ export function validatePresenceAdmission(
     }
     const canonical = sessionIdentities.toSorted((left, right) => left.sessionId.localeCompare(right.sessionId));
     if (!jsonEquals(canonical, sessionIdentities)) {
-        throw new TypeError('Presence admission sessions must be canonically sorted');
+        issues.push(
+            toGroupStateValidationIssue('Presence admission', 'Presence admission sessions must be canonically sorted')
+        );
     }
-}
-
-export function validateStoredGeneration(session: GroupPresenceSession): void {
-    validateStoredGenerationValues(session.connectedAtEpochMs, session.generationVersion);
+    return issues;
 }
 
 export function validateStoredGenerationValues(
     connectedAtEpochMs: number,
     generationVersion: number
-): void {
-    requirePositiveSafeInteger(connectedAtEpochMs, 'Stored presence connectedAtEpochMs');
-    requirePositiveSafeInteger(generationVersion, 'Stored presence generationVersion');
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
+    issues.push(...validatePositiveSafeInteger(connectedAtEpochMs, 'Stored presence connectedAtEpochMs'));
+    issues.push(...validatePositiveSafeInteger(generationVersion, 'Stored presence generationVersion'));
     if (generationVersion !== connectedAtEpochMs) {
-        throw new TypeError('Stored presence generation order is ambiguous');
+        issues.push(
+            toGroupStateValidationIssue('Stored presence generation', 'Stored presence generation order is ambiguous')
+        );
     }
+    return issues;
 }
 
 export function compareGenerationOrder(

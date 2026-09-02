@@ -1,3 +1,8 @@
+import {
+    validateAppInboxComputedData,
+    validateAppInboxComputedProjection
+} from '../../../app-inbox/handler/app-inbox-computed-validation.ts';
+import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import { computeClientStateSyncEntries } from '../../../state-sync/state-sync-entry-computation.ts';
 import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
 import type {
@@ -47,6 +52,10 @@ export function validateClientMutation(
     const { command, read, computed } = input;
     validateClientMutationCommand(command);
     validateClientMutationFacts(command.facts);
+    const issues = validateAppInboxComputedData(computed, 'computed');
+    if (issues.length > 0) {
+        throw new ClientMutationRejectedError(issues[0].message);
+    }
     validateClientMutationResult(computed);
     validateClientMutationIdentity(command);
     validateClientMutationRead(command, read);
@@ -137,14 +146,20 @@ function validateClientMutationOutbox(
     command: ClientMutationCommand,
     computed: Extract<ClientMutationComputed, { outcome: 'write'; }>
 ): void {
-    const expectedOutboxEntries = computed.stateSync.flatMap((stateSync) =>
-        computeClientStateSyncEntries(stateSync, command.facts.serviceId)
+    const expectedOutboxWrites = computed.stateSync
+        .flatMap((stateSync) => computeClientStateSyncEntries(stateSync, command.facts.serviceId))
+        .map(computeAppOutboxInsert);
+    const outboxIssues = validateAppInboxComputedProjection(
+        expectedOutboxWrites,
+        computed.outboxWrites,
+        'computed.outboxWrites'
     );
-    if (
-        JSON.stringify(expectedOutboxEntries) !== JSON.stringify(computed.outboxEntries) ||
-        JSON.stringify(computed.receipt.outboxIds) !==
-            JSON.stringify(expectedOutboxEntries.map((entry) => entry.key.resourceId))
-    ) {
+    const identityIssues = validateAppInboxComputedProjection(
+        expectedOutboxWrites.map((write) => write.entry.key.resourceId),
+        computed.receipt.outboxIds,
+        'computed.receipt.outboxIds'
+    );
+    if (outboxIssues.length > 0 || identityIssues.length > 0) {
         throw new ClientMutationRejectedError('Client mutation WS outbox differs');
     }
 }

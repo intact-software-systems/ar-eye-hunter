@@ -1,14 +1,12 @@
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import {
     createRallarGroupDirectorAppointment,
     mergeRallarGroupDirectorMetadata,
-    readRallarGroupDirectorFromSnapshot,
-    resolveRallarGroupDirectorAppointmentEligibility
+    readRallarGroupDirectorFromSnapshot
 } from '@shared/api/group-director.ts';
-import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
-import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { toExpiredAwareInsertCandidate } from '../../presence/group-expired-state-authority.ts';
 import {
     nextInitialGroupSnapshotVersion,
@@ -23,8 +21,8 @@ import type {
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
 import {
     auditStamp,
+    computeGroupMutationJoinCode,
     computeGroupMutationWriteResult,
-    materializedRotateJoinCode,
     noOp,
     rejected,
     requireGroup
@@ -34,7 +32,13 @@ import {
     createInitialOwner,
     createInitialPresenceSummary
 } from './create-initial-group-mutation.ts';
-import { assertActive, assertGovernance, toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
+import {
+    assertGovernance,
+    computeGroupCreationRejection,
+    toPolicySnapshot,
+    validateGroupDirectorAppointment,
+    validateGroupUpdate
+} from './group-aggregate-mutation-policy.ts';
 
 const RALLAR_GROUP_JOIN_CODE_METADATA_KEY = 'rallarJoinCode';
 const RALLAR_GROUP_JOIN_CODE_VERSION = 1;
@@ -47,50 +51,24 @@ interface GroupWriteInput {
     readonly eventType: GroupEventType;
 }
 
+interface JoinCodeMetadata extends ApiJsonObject {
+    readonly version: number;
+    readonly verifier: string;
+    readonly expiresAtEpochMs: number;
+    readonly rotatedAtEpochMs: number;
+}
+
 export function computeCreate(
     command: Extract<GroupMutationCommand, { operation: 'createGroup'; }>,
     read: GroupMutationRead,
     facts: GroupMutationFacts
 ): GroupMutationComputed {
-    if (command.input.actorPrincipalId !== command.input.createdByPrincipalId) {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: 'Creator authority does not match createdByPrincipalId'
-        });
-    }
-    if (read.group) {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-already-exists',
-            message: `Group already exists: ${command.aggregateRef.groupId}`
-        });
-    }
-    const policyIssues = command.input.lifecyclePolicy === undefined
-        ? []
-        : (validateGroupLifecyclePolicy(command.input.lifecyclePolicy).left ?? []);
-    if (policyIssues.length > 0) {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: 'group-mutation-rejected',
-            message: `Group lifecycle policy is not coherent: ${
-                policyIssues
-                    .map((issue) => `${issue.field} ${issue.code}`)
-                    .join('; ')
-            }`
-        });
+    const rejection = computeGroupCreationRejection(command, read);
+    if (rejection !== null) {
+        return rejected({ command, read, facts, ...rejection });
     }
     const audit = auditStamp(command, facts, command.input.createdByPrincipalId);
-    const snapshotVersion = nextInitialGroupSnapshotVersion(
-        read.expiredGroupEntry,
-        read.presenceSummary
-    );
+    const snapshotVersion = nextInitialGroupSnapshotVersion(read.expiredGroupEntry, read.presenceSummary);
     const group = createInitialGroup({ command, audit, snapshotVersion });
     const owner = createInitialOwner(command, audit);
     const summary = createInitialPresenceSummary({ command, read, facts, snapshotVersion });
@@ -98,10 +76,7 @@ export function computeCreate(
         command,
         read,
         facts,
-        guard: {
-            kind: 'group',
-            ...toExpiredAwareInsertCandidate(read.expiredGroupEntry, group)
-        },
+        guard: { kind: 'group', ...toExpiredAwareInsertCandidate(read.expiredGroupEntry, group) },
         members: [owner],
         initialPresenceSummary: toInitialGroupPresenceSummaryCandidate(summary, read.presenceSummary),
         presenceAdmission: null,
@@ -116,10 +91,14 @@ export function computeUpdate(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
-    assertUpdateAuthority(command, read);
-    const allowsArchivedDeletion = stored.value.status === 'archived' && command.input.status === 'deleted';
-    if (!allowsArchivedDeletion) {
-        assertActive(stored.value, facts.nowEpochMs);
+    const issues = validateGroupUpdate({
+        command,
+        group: stored.value,
+        actorMember: read.actorMember,
+        nowEpochMs: facts.nowEpochMs
+    });
+    if (issues.length > 0) {
+        throw issues[0].cause;
     }
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const current = stored.value;
@@ -134,7 +113,7 @@ export function computeUpdate(
             joinMode: command.input.joinMode ?? current.joinMode,
             maxMembers: command.input.maxMembers ?? current.maxMembers,
             maxSessionsPerMember: command.input.maxSessionsPerMember ?? current.maxSessionsPerMember,
-            metadata: command.input.metadata === null ? current.metadata : cloneRecord(command.input.metadata),
+            metadata: command.input.metadata === null ? current.metadata : structuredClone(command.input.metadata),
             snapshotVersion: current.snapshotVersion + 1,
             metadataVersion: current.metadataVersion + 1,
             updated: audit,
@@ -145,11 +124,6 @@ export function computeUpdate(
         status,
         audit
     );
-    if (next.maxMembers !== null && next.maxMembers < next.activeMemberCount) {
-        throw new GroupMutationRejectedError(
-            'Group maxMembers cannot be lower than activeMemberCount.'
-        );
-    }
     if (sameGroupIgnoringVersions(current, next)) {
         return noOp(command, read, facts);
     }
@@ -172,25 +146,13 @@ export function computeDirector(
     facts: GroupMutationFacts
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
-    assertActive(stored.value, facts.nowEpochMs);
-    const principalId = command.input.actorPrincipalId;
-    const sessionId = command.input.actorSessionId;
-    if (!principalId || !sessionId) {
-        throw new GroupMutationRejectedError(
-            'Forbidden: Cannot appoint a director without a local session.'
-        );
+    const issues = validateGroupDirectorAppointment(command, read, facts);
+    if (issues.length > 0) {
+        throw issues[0].cause;
     }
+    const principalId = command.input.actorPrincipalId as string;
+    const sessionId = command.input.actorSessionId as string;
     const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs);
-    const eligibility = resolveRallarGroupDirectorAppointmentEligibility({
-        snapshot,
-        principalId,
-        sessionId
-    });
-    if (!eligibility.allowed) {
-        throw new GroupMutationRejectedError(
-            `Forbidden: ${eligibility.reason ?? 'Cannot appoint the browser director.'}`
-        );
-    }
     const appointment = createRallarGroupDirectorAppointment({
         session: { clientId: principalId, sessionId },
         previous: readRallarGroupDirectorFromSnapshot(snapshot),
@@ -214,7 +176,7 @@ export function computeRotateJoinCode(
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
     assertGovernance({ command, read, facts, action: 'invite' });
-    const materialized = materializedRotateJoinCode(command, facts);
+    const materialized = computeGroupMutationJoinCode(command, facts);
     if (!facts.joinCodeVerifier) {
         throw new GroupMutationRejectedError('Join code verifier is required');
     }
@@ -252,25 +214,6 @@ function groupWrite(input: GroupWriteInput): GroupMutationComputed {
         eventType,
         presenceSummaryWork: 'enqueue'
     });
-}
-
-function assertUpdateAuthority(
-    command: Extract<GroupMutationCommand, { operation: 'updateGroup'; }>,
-    read: GroupMutationRead
-): void {
-    const actor = read.actorMember;
-    if (
-        !command.input.actorPrincipalId ||
-        actor?.principalId !== command.input.actorPrincipalId ||
-        actor.status !== 'active' ||
-        (actor.role !== 'owner' && actor.role !== 'admin')
-    ) {
-        throw new GroupPolicyDeniedError({
-            allowed: false,
-            code: 'forbidden-role',
-            message: 'Only active group owners/admins can update groups.'
-        });
-    }
 }
 
 function transitionGroupLifecycle(group: Group, status: GroupStatus, audit: AuditStamp): Group {
@@ -314,17 +257,6 @@ export function readJoinCode(metadata: Group['metadata']): JoinCodeMetadata | un
         : undefined;
 }
 
-type JoinCodeMetadata = Readonly<{
-    version: number;
-    verifier: string;
-    expiresAtEpochMs: number;
-    rotatedAtEpochMs: number;
-}>;
-
 function mergeJoinCode(metadata: Group['metadata'], joinCode: JoinCodeMetadata): Group['metadata'] {
     return { ...metadata, [RALLAR_GROUP_JOIN_CODE_METADATA_KEY]: joinCode };
-}
-
-function cloneRecord(value: Group['metadata']): Group['metadata'] {
-    return structuredClone(value) as Group['metadata'];
 }

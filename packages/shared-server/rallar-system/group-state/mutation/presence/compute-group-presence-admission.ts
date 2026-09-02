@@ -1,7 +1,9 @@
-import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
+import { toGroupStateValidationIssue, type GroupStateValidationIssue } from '../../group-state-validation-issues.ts';
 import { validatePresenceAdmission } from '../../persistence/validate-persisted-group-presence.ts';
+import { GroupPolicyDeniedError } from '../../policy/group-policy-result.ts';
 import { isExactlyAdmitted } from '../aggregate/group-aggregate-mutation-policy.ts';
 import type {
     GroupMutationCommand,
@@ -34,31 +36,52 @@ export function computeMemberPresenceAdmission({
     read,
     members,
     facts
-}: ComputeMemberPresenceAdmissionInput): PresenceAdmissionCandidate | null {
+}: ComputeMemberPresenceAdmissionInput): Either<
+    readonly GroupStateValidationIssue[],
+    PresenceAdmissionCandidate | null
+> {
     const current = read.targetAdmission;
     const target = members.find((member) => member.status !== 'active');
     if (!target) {
-        return null;
+        return Either.ofRight(null);
     }
     if (current) {
-        validatePresenceAdmission(current.value);
+        const presenceAdmissionIssues = validatePresenceAdmission(current.value);
+        if (presenceAdmissionIssues.length > 0) {
+            return Either.ofLeft(presenceAdmissionIssues);
+        }
         if (current.value.principalId !== target.principalId) {
-            throw new TypeError('Presence admission predecessor differs from member authority target');
+            return Either.ofLeft([
+                toGroupStateValidationIssue(
+                    'read.targetAdmission',
+                    'Presence admission predecessor differs from member authority target'
+                )
+            ]);
         }
     }
     const previousUpdatedAt = current?.value.updatedAtEpochMs ?? 0;
     if (previousUpdatedAt >= Number.MAX_SAFE_INTEGER) {
-        throw new TypeError('Presence admission fence timestamp cannot advance');
+        return Either.ofLeft([
+            toGroupStateValidationIssue(
+                'read.targetAdmission.updatedAtEpochMs',
+                'Presence admission fence timestamp cannot advance'
+            )
+        ]);
     }
     const value: GroupPresenceAdmission = {
         ...presenceAdmissionRef(target),
         admittedSessions: [],
         updatedAtEpochMs: Math.max(previousUpdatedAt + 1, facts.nowEpochMs)
     };
-    validatePresenceAdmission(value);
-    return current
-        ? { operation: 'update', value, expectedRevision: current.entry.revision }
-        : { operation: 'insert', value };
+    const presenceAdmissionIssues = validatePresenceAdmission(value);
+    if (presenceAdmissionIssues.length > 0) {
+        return Either.ofLeft(presenceAdmissionIssues);
+    }
+    return Either.ofRight(
+        current
+            ? { operation: 'update', value, expectedRevision: current.entry.revision }
+            : { operation: 'insert', value }
+    );
 }
 
 export function computeConnectPresenceAdmission({
@@ -66,10 +89,13 @@ export function computeConnectPresenceAdmission({
     read,
     session,
     facts
-}: ComputeConnectPresenceAdmissionInput): PresenceAdmissionCandidate {
+}: ComputeConnectPresenceAdmissionInput): Either<readonly GroupStateValidationIssue[], PresenceAdmissionCandidate> {
     const current = read.targetAdmission;
     if (current) {
-        validatePresenceAdmission(current.value);
+        const presenceAdmissionIssues = validatePresenceAdmission(current.value);
+        if (presenceAdmissionIssues.length > 0) {
+            return Either.ofLeft(presenceAdmissionIssues);
+        }
     }
     const retained = (current?.value.admittedSessions ?? []).filter(
         (entry) => entry.sessionId !== session.sessionId
@@ -85,11 +111,14 @@ export function computeConnectPresenceAdmission({
     ].toSorted((left, right) => left.sessionId.localeCompare(right.sessionId));
     const cap = requireGroup(read, command.aggregateRef).value.maxSessionsPerMember;
     if (cap !== null && admittedSessions.length > cap) {
-        throw new GroupPolicyDeniedError({
-            allowed: false,
-            code: 'member-session-limit-reached',
-            message: 'Group member session capacity has been reached.'
-        });
+        return Either.ofLeft([{
+            path: 'read.targetAdmission.admittedSessions',
+            cause: new GroupPolicyDeniedError({
+                allowed: false,
+                code: 'member-session-limit-reached',
+                message: 'Group member session capacity has been reached.'
+            })
+        }]);
     }
     const value: GroupPresenceAdmission = {
         ...command.aggregateRef,
@@ -97,20 +126,28 @@ export function computeConnectPresenceAdmission({
         admittedSessions,
         updatedAtEpochMs: Math.max(current?.value.updatedAtEpochMs ?? 0, facts.nowEpochMs)
     };
-    validatePresenceAdmission(value);
-    return current
-        ? { operation: 'update', value, expectedRevision: current.entry.revision }
-        : { operation: 'insert', value };
+    const presenceAdmissionIssues = validatePresenceAdmission(value);
+    if (presenceAdmissionIssues.length > 0) {
+        return Either.ofLeft(presenceAdmissionIssues);
+    }
+    return Either.ofRight(
+        current
+            ? { operation: 'update', value, expectedRevision: current.entry.revision }
+            : { operation: 'insert', value }
+    );
 }
 
 export function computeDisconnectPresenceAdmission({
     read,
     session,
     facts
-}: ComputeDisconnectPresenceAdmissionInput): PresenceAdmissionCandidate | null {
+}: ComputeDisconnectPresenceAdmissionInput): Either<
+    readonly GroupStateValidationIssue[],
+    PresenceAdmissionCandidate | null
+> {
     const current = read.targetAdmission;
     if (!current || !isExactlyAdmitted(current.value, session)) {
-        return null;
+        return Either.ofRight(null);
     }
     const value: GroupPresenceAdmission = {
         ...current.value,
@@ -119,8 +156,11 @@ export function computeDisconnectPresenceAdmission({
         ),
         updatedAtEpochMs: Math.max(current.value.updatedAtEpochMs, facts.nowEpochMs)
     };
-    validatePresenceAdmission(value);
-    return { operation: 'update', value, expectedRevision: current.entry.revision };
+    const presenceAdmissionIssues = validatePresenceAdmission(value);
+    if (presenceAdmissionIssues.length > 0) {
+        return Either.ofLeft(presenceAdmissionIssues);
+    }
+    return Either.ofRight({ operation: 'update', value, expectedRevision: current.entry.revision });
 }
 
 export function presenceAdmissionIdentity(

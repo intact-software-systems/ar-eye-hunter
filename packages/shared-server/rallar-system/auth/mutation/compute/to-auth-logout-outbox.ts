@@ -1,14 +1,15 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-
 import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+
+import { computeAppOutboxInsert, type AppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import type { LogoutAuthSessionCommand } from '../auth-mutation-contracts.ts';
 
 export function toAuthLogoutOutbox(
     command: LogoutAuthSessionCommand,
     serviceId: string
-): ResourceEntry {
+): AppOutboxInsert {
     const message = {
         id: {
             v: 2,
@@ -37,7 +38,7 @@ export function toAuthLogoutOutbox(
     const createdTs = Temporal.Instant.fromEpochMilliseconds(command.capturedAtEpochMs)
         .toZonedDateTimeISO('UTC')
         .toPlainDateTime();
-    return {
+    return computeAppOutboxInsert({
         key: message.route,
         resource: JSON.stringify(message),
         typeId: EnqueuedType.WS_OUTBOX,
@@ -49,5 +50,5 @@ export function toAuthLogoutOutbox(
             expiryTs: Temporal.Instant.fromEpochMilliseconds(command.expected.expiresAtEpochMs)
         },
         dequeueAudit: { attempts: 0 }
-    };
+    });
 }

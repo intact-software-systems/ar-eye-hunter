@@ -12,18 +12,22 @@ import {
     toCanonicalGroupTopologyConfigPatch
 } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     isMutableCoalescedStatus,
     tryReadCoalescedAppOutboxWorkEnvelope,
     type CoalescedAppOutboxWorkData,
-    type CoalescedAppOutboxWorkEnvelope,
+    type CoalescedAppOutboxWorkEnvelope
+} from '@shared/queuebox/coalesced-app-outbox-work-envelope.ts';
+import { computeAppOutboxInsertOrMatch } from '../../../app-outbox/app-outbox-insert.ts';
+import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
+import {
+    computeCoalescedAppOutboxWriteOperation,
     type ComputedCoalescedAppOutboxWork
-} from '../../../app-outbox/coalesced-app-outbox-work-service.ts';
+} from '../../../app-outbox/coalesced-app-outbox-work.ts';
 import { groupStateGroupStorageKey } from '../../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { RtcTopologyGroupRevisionWork } from '../../mutation/rtc-topology-outbox-work.ts';
@@ -50,9 +54,48 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
 ): ComputedCoalescedAppOutboxWork {
     assertCoalescedGroupRevisionInput(input);
     const overlayId = toScopedOverlayId(input.aggregateRef);
-    const incoming: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork> = {
+    const incoming = computeIncomingGroupRevisionWork(input);
+    const successorEntry = toCoalescedGroupRevisionEntry({
+        input,
+        resourceId: toRtcTopologyCoalescedGroupRevisionSuccessorResourceId(
+            overlayId,
+            incoming.sourceGroupStateCausalRevision
+        ),
+        data: incoming,
+        dequeueAudit: { attempts: 0 },
+        entryAudit: null,
+        messageIdentity: null
+    });
+    if (input.previousEntry === null) {
+        const entry = toCoalescedGroupRevisionEntry({
+            input,
+            resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(overlayId),
+            data: incoming,
+            dequeueAudit: { attempts: 0 },
+            entryAudit: null,
+            messageIdentity: null
+        });
+        requireDistinctCoalescedEntryKeys(entry, successorEntry);
+        return {
+            entryWrite: computeAppOutboxInsertOrMatch(entry),
+            successorWrite: computeAppOutboxInsertOrMatch(successorEntry),
+            operation: { kind: 'insert' }
+        };
+    }
+    return computeReplacementGroupRevisionWork({
+        input,
+        incoming,
+        successorEntry,
+        previousEntry: input.previousEntry
+    });
+}
+
+function computeIncomingGroupRevisionWork(
+    input: RtcTopologyCoalescedGroupRevisionInput
+): CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork> {
+    return {
         kind: 'group-revision',
-        overlayId,
+        overlayId: toScopedOverlayId(input.aggregateRef),
         groupSnapshot: input.groupSnapshot,
         sourceGroupStateCausalRevision: readGroupCausalRevision(input.groupSnapshot),
         requestedAtEpochMs: input.requestedAtEpochMs,
@@ -66,34 +109,22 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
             reasons: ['group-revision']
         }
     };
-    const successorEntry = toCoalescedGroupRevisionEntry({
-        input,
-        resourceId: toRtcTopologyCoalescedGroupRevisionSuccessorResourceId(
-            overlayId,
-            incoming.sourceGroupStateCausalRevision
-        ),
-        data: incoming,
-        dequeueAudit: { attempts: 0 },
-        entryAudit: null,
-        messageIdentity: null
-    });
-    if (input.previousEntry === null) {
-        return {
-            expectedEntry: null,
-            entry: toCoalescedGroupRevisionEntry({
-                input,
-                resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(overlayId),
-                data: incoming,
-                dequeueAudit: { attempts: 0 },
-                entryAudit: null,
-                messageIdentity: null
-            }),
-            successorEntry
-        };
-    }
-    const previous = readPreviousCoalescedGroupRevisionEnvelope(input.previousEntry);
+}
+
+interface ComputeReplacementGroupRevisionWorkInput {
+    readonly input: RtcTopologyCoalescedGroupRevisionInput;
+    readonly incoming: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>;
+    readonly successorEntry: ResourceEntry;
+    readonly previousEntry: ResourceEntry;
+}
+
+function computeReplacementGroupRevisionWork(
+    replacement: ComputeReplacementGroupRevisionWorkInput
+): ComputedCoalescedAppOutboxWork {
+    const { input, incoming, successorEntry, previousEntry } = replacement;
+    const previous = readPreviousCoalescedGroupRevisionEnvelope(previousEntry);
     const previousGeneration = previous.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation;
-    const merged = isMutableCoalescedStatus(input.previousEntry.status)
+    const merged = isMutableCoalescedStatus(previousEntry.status)
         ? mergeRtcTopologyGroupRevisionWork(previous.data, incoming)
         : incoming;
     const nextData: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork> = {
@@ -104,21 +135,36 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
             requestedAtEpochMs: input.requestedAtEpochMs
         }
     };
-    const carriesPreviousLifecycle = isMutableCoalescedStatus(input.previousEntry.status);
+    const carriesPreviousLifecycle = isMutableCoalescedStatus(previousEntry.status);
+    const entry = toCoalescedGroupRevisionEntry({
+        input,
+        resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(incoming.overlayId),
+        data: nextData,
+        dequeueAudit: {
+            attempts: carriesPreviousLifecycle ? previousEntry.dequeueAudit.attempts : 0
+        },
+        entryAudit: previousEntry.audit,
+        messageIdentity: readPreviousMessageIdentity(previousEntry)
+    });
+    requireDistinctCoalescedEntryKeys(entry, successorEntry);
     return {
-        expectedEntry: input.previousEntry,
-        entry: toCoalescedGroupRevisionEntry({
-            input,
-            resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(overlayId),
-            data: nextData,
-            dequeueAudit: {
-                attempts: carriesPreviousLifecycle ? input.previousEntry.dequeueAudit.attempts : 0
-            },
-            entryAudit: input.previousEntry.audit,
-            messageIdentity: readPreviousMessageIdentity(input.previousEntry)
-        }),
-        successorEntry
+        entryWrite: computeAppOutboxInsertOrMatch(entry),
+        successorWrite: computeAppOutboxInsertOrMatch(successorEntry),
+        operation: computeCoalescedAppOutboxWriteOperation(previousEntry, previousGeneration)
     };
+}
+
+function requireDistinctCoalescedEntryKeys(
+    entry: ResourceEntry,
+    successorEntry: ResourceEntry
+): void {
+    if (
+        entry.key.topicId === successorEntry.key.topicId &&
+        entry.key.resourceId === successorEntry.key.resourceId &&
+        entry.key.contextId === successorEntry.key.contextId
+    ) {
+        throw new TypeError('Coalesced APP_OUTBOX successor must have a distinct queue identity');
+    }
 }
 
 /**
@@ -185,11 +231,6 @@ function isPendingCoalescedStatus(status: EntityStatus): boolean {
 }
 
 /**
- * The M3 change gate applies only to coalesced group-revision recomputes whose
- * request carries a preserve-only topology-config patch; explicit reconfigures
- * and per-command work always rebuilds.
- */
-/**
  * Exhaustive origin classification for every persisted work kind: RTT
  * refreshes and the change-gated coalesced deltas (the presence-summary
  * channel, which also carries the lifecycle transitions' follow-ups) are
@@ -206,6 +247,7 @@ export function toTopologyWorkOrigin(work: PersistedRtcTopologyWork): TopologyWo
     return work.origin;
 }
 
+/** Automatic preserve-only coalesced work uses the change gate; explicit per-command work always rebuilds. */
 export function isChangeGatedGroupRevisionWork(work: PersistedRtcTopologyWork): boolean {
     return (
         work.kind === 'group-revision' &&
@@ -285,17 +327,7 @@ function toCoalescedGroupRevisionEntry(
     const { input, resourceId, data } = entryInput;
     const createdBy = toAppQueueCreatedBy(input.senderId);
     const contextId = groupStateGroupStorageKey(input.aggregateRef);
-    const key = toAppQueueKey({
-        topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
-        resourceId,
-        contextId
-    });
     const metadata = data[COALESCED_APP_OUTBOX_WORK_FIELD];
-    const messageId = `${resourceId}:g${metadata.generation}`;
-    const messageTsEpochMs = entryInput.messageIdentity?.tsEpochMs ?? input.requestedAtEpochMs;
-    const messageExpiresAtEpochMs = entryInput.messageIdentity
-        ? entryInput.messageIdentity.expiresAtEpochMs
-        : input.expireAtEpochMs;
     const envelope: CoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork> = {
         type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
         topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
@@ -304,11 +336,46 @@ function toCoalescedGroupRevisionEntry(
         senderId: createdBy,
         data
     };
+    const message = computeCoalescedGroupRevisionMessage(entryInput, envelope);
+    const isDue = metadata.dueAtEpochMs <= input.requestedAtEpochMs;
+    const createdTs = Temporal.Instant.fromEpochMilliseconds(message.id.ts)
+        .toZonedDateTimeISO('UTC')
+        .toPlainDateTime();
+    return {
+        key: message.route,
+        resource: JSON.stringify(message),
+        typeId: EnqueuedType.APP_OUTBOX,
+        status: isDue ? EntityStatus.NEW : EntityStatus.RETRY,
+        audit: entryInput.entryAudit ?? {
+            date: createdTs.toPlainTime(),
+            createdBy,
+            createdTs,
+            expiryTs: Temporal.Instant.fromEpochMilliseconds(input.expireAtEpochMs)
+        },
+        dequeueAudit: {
+            attempts: entryInput.dequeueAudit.attempts,
+            nextTs: isDue ? undefined : Temporal.Instant.fromEpochMilliseconds(metadata.dueAtEpochMs)
+        }
+    };
+}
+
+function computeCoalescedGroupRevisionMessage(
+    entryInput: ToCoalescedGroupRevisionEntryInput,
+    envelope: CoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork>
+): ALMessage {
+    const { input, resourceId, data } = entryInput;
+    const key = toAppQueueKey(envelope);
+    const createdBy = envelope.senderId;
+    const metadata = data[COALESCED_APP_OUTBOX_WORK_FIELD];
+    const messageTsEpochMs = entryInput.messageIdentity?.tsEpochMs ?? input.requestedAtEpochMs;
+    const messageExpiresAtEpochMs = entryInput.messageIdentity
+        ? entryInput.messageIdentity.expiresAtEpochMs
+        : input.expireAtEpochMs;
     const causalRevision = readGroupCausalRevision(data.groupSnapshot);
-    const message: ALMessage = {
+    return {
         id: {
             v: 2,
-            msgId: messageId,
+            msgId: `${resourceId}:g${metadata.generation}`,
             ts: messageTsEpochMs,
             senderId: createdBy
         },
@@ -334,26 +401,6 @@ function toCoalescedGroupRevisionEntry(
         audit: {
             createdBy,
             createdTs: messageTsEpochMs
-        }
-    };
-    const isDue = metadata.dueAtEpochMs <= input.requestedAtEpochMs;
-    const createdTs = Temporal.Instant.fromEpochMilliseconds(messageTsEpochMs)
-        .toZonedDateTimeISO('UTC')
-        .toPlainDateTime();
-    return {
-        key,
-        resource: JSON.stringify(message),
-        typeId: EnqueuedType.APP_OUTBOX,
-        status: isDue ? EntityStatus.NEW : EntityStatus.RETRY,
-        audit: entryInput.entryAudit ?? {
-            date: createdTs.toPlainTime(),
-            createdBy,
-            createdTs,
-            expiryTs: Temporal.Instant.fromEpochMilliseconds(input.expireAtEpochMs)
-        },
-        dequeueAudit: {
-            attempts: entryInput.dequeueAudit.attempts,
-            nextTs: isDue ? undefined : Temporal.Instant.fromEpochMilliseconds(metadata.dueAtEpochMs)
         }
     };
 }

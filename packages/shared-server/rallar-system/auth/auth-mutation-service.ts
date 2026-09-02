@@ -15,6 +15,7 @@ import { AuthSessionRepository } from './persistence/auth-session-repository.ts'
 import { AuthUserRepository } from './persistence/auth-user-repository.ts';
 
 export interface AuthMutationService {
+    readonly serviceId: string;
     readonly read: (command: AuthMutationCommand) => Promise<AuthMutationRead>;
     readonly compute: (
         command: AuthMutationCommand,
@@ -43,6 +44,7 @@ export function createAuthMutationService(
     const users = new AuthUserRepository(input.runtimeRepository);
     const sessions = new AuthSessionRepository(input.runtimeRepository);
     return {
+        serviceId: input.serviceId,
         read: async (command) => await readAuthMutation(users, sessions, command),
         compute: (command, read, facts) => computeAuthMutation({ command, read, facts, serviceId: input.serviceId }),
         validate: validateAuthMutation,

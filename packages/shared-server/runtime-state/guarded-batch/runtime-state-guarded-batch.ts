@@ -54,6 +54,13 @@ export interface RuntimeStateGuardedBatch {
     readonly effects: readonly RuntimeStateGuardedBatchEffect[];
 }
 
+/** SQL parameters and their expected receipts, computed before transaction entry. */
+export interface RuntimeStateGuardedBatchComputed {
+    readonly batch: RuntimeStateGuardedBatch;
+    readonly guardJson: string;
+    readonly effectsJson: string;
+}
+
 export type RuntimeStateGuardedBatchGuardResult =
     | Readonly<{
         status: 'applied';
@@ -118,6 +125,6 @@ export interface RuntimeStateGuardedBatchResult {
 
 export interface RuntimeStateGuardedBatchTransaction {
     executeGuardedBatch(
-        batch: RuntimeStateGuardedBatch
+        computed: RuntimeStateGuardedBatchComputed
     ): Promise<RuntimeStateGuardedBatchResult>;
 }

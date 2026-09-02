@@ -19,6 +19,7 @@ import type {
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
+import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 
 export const CRDT_MUTATION_INBOX_TYPES = [
     AppInboxType.CRDT_UPDATE_APPEND,
@@ -138,6 +139,62 @@ export interface CrdtMutationAttemptFacts {
     readonly read: CrdtMutationRead;
 }
 
+interface CrdtDocumentWriteValues {
+    readonly documentKey: string;
+    readonly applicationId: string;
+    readonly workspaceId: string | undefined;
+    readonly scope: string;
+    readonly documentType: string;
+    readonly documentId: string;
+    readonly documentRefJson: string;
+    readonly documentRevision: number;
+    readonly lifecycle: RallarCrdtDocumentLifecycleState;
+    readonly createdAt: Date;
+    readonly updatedAt: Date;
+    readonly archivedAt: Date | null;
+    readonly destroyedAt: Date | null;
+    readonly lastAppendSequence: number;
+    readonly updateCount: number;
+    readonly snapshotCount: number;
+    readonly storedUpdateBytes: number;
+    readonly retentionJson: string | null;
+    readonly quotaJson: string | null;
+    readonly projectionIdsJson: string;
+}
+
+export type CrdtDocumentWrite =
+    | CrdtDocumentWriteValues & Readonly<{ operation: 'insert'; }>
+    | CrdtDocumentWriteValues
+        & Readonly<{
+            operation: 'update';
+            expectedRevision: number;
+            expectedLifecycle: RallarCrdtDocumentLifecycleState;
+            expectedAppendSequence: number;
+        }>;
+
+export interface CrdtUpdateWrite {
+    readonly documentKey: string;
+    readonly appendSequence: number;
+    readonly updateId: string;
+    readonly updateEnvelopeJson: string;
+    readonly acceptedUpdateHash: string;
+    readonly actorId: string;
+    readonly principalId: string;
+    readonly sessionId: string;
+    readonly serverId: string;
+    readonly authorizationScope: RallarCrdtAuthorizationScope;
+    readonly acceptedAt: Date;
+}
+
+export interface CrdtSnapshotWrite {
+    readonly documentKey: string;
+    readonly snapshotId: string;
+    readonly appendSequence: number;
+    readonly snapshotEnvelopeJson: string;
+    readonly createdAt: Date;
+    readonly reason: string;
+}
+
 interface CrdtMutationComputedBase {
     readonly command: CrdtMutationCommand;
     readonly read: CrdtMutationRead;
@@ -153,12 +210,17 @@ interface CrdtMutationComputedBase {
     readonly append: RallarCrdtTrustedAppendMetadata | null;
     readonly snapshot: CrdtCanonicalSnapshotEnvelope | null;
     readonly outboxEntries: readonly ResourceEntry[];
+    readonly outboxWrites: readonly AppOutboxInsert[];
     readonly result: CrdtMutationResult;
 }
 
 export interface CrdtMutationComputedWrite extends CrdtMutationComputedBase {
     readonly outcome: 'write';
     readonly document: RallarCrdtDocumentMetadata;
+    readonly documentWrite: CrdtDocumentWrite;
+    readonly updateWrite: CrdtUpdateWrite | null;
+    readonly snapshotWrite: CrdtSnapshotWrite | null;
+    readonly conflict: CrdtMutationConflictError;
 }
 
 export interface CrdtMutationComputedReplay extends CrdtMutationComputedBase {
@@ -332,7 +394,7 @@ export type CrdtAdminEraseResult =
 export interface CrdtMutationRepository {
     readonly readMutation: (command: CrdtMutationCommand) => Promise<CrdtMutationRead>;
     readonly writeMutation: (computed: CrdtMutationComputedWrite) => Promise<void>;
-    readonly writeOutbox: (entries: readonly ResourceEntry[]) => Promise<void>;
+    readonly writeOutbox: (writes: readonly AppOutboxInsert[]) => Promise<void>;
 }
 
 export class CrdtMutationConflictError extends Error {

@@ -1,3 +1,4 @@
+import { validateAppInboxComputedProjection } from '../../app-inbox/handler/app-inbox-computed-validation.ts';
 import type {
     CrdtMutationCommand,
     CrdtMutationComputed,
@@ -12,7 +13,8 @@ interface UntrustedCrdtRecord {
 }
 
 export function validateCrdtMutation(
-    input: ValidateCrdtMutationInput
+    input: ValidateCrdtMutationInput,
+    expected: CrdtMutationComputed
 ): readonly CrdtMutationValidationIssue[] {
     const { command, read, computed } = input;
     const issues: CrdtMutationValidationIssue[] = [];
@@ -66,7 +68,35 @@ export function validateCrdtMutation(
             message: error instanceof Error ? error.message : String(error)
         });
     }
+    const persistenceIssue = validateAppInboxComputedProjection(
+        toCrdtPersistenceProjection(expected),
+        toCrdtPersistenceProjection(computed),
+        'computed.persistence'
+    )[0];
+    if (persistenceIssue) {
+        issues.push({
+            code: 'computed-persistence-differs',
+            message: persistenceIssue.message
+        });
+    }
     return issues;
+}
+
+function toCrdtPersistenceProjection(computed: CrdtMutationComputed): object {
+    if (computed.outcome !== 'write') {
+        return {
+            outcome: computed.outcome,
+            outboxWrites: computed.outboxWrites
+        };
+    }
+    return {
+        outcome: computed.outcome,
+        documentWrite: computed.documentWrite,
+        updateWrite: computed.updateWrite,
+        snapshotWrite: computed.snapshotWrite,
+        outboxWrites: computed.outboxWrites,
+        conflict: computed.conflict
+    };
 }
 
 function readSnapshotReason(snapshot: object | null | undefined): string | null {

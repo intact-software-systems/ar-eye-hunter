@@ -38,9 +38,9 @@ import {
     SESSIONS_NAMESPACE
 } from '../group-state-runtime-namespaces.ts';
 import {
-    validatePersistedGroupPresenceAdmission,
-    validatePersistedGroupPresenceSession,
-    validatePersistedGroupPresenceSummary
+    validatePresenceAdmission,
+    validatePresenceSession,
+    validatePresenceSummaryValue
 } from '../validate-persisted-group-presence.ts';
 import {
     decodeGroupStatePresenceAdmissionStorageKey,
@@ -55,7 +55,14 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
     }
 
     async putPresenceSession(session: GroupPresenceSession): Promise<void> {
-        validatePersistedGroupPresenceSession(session, session);
+        const persistedGroupPresenceSessionIssues = validatePresenceSession(
+            session,
+            session,
+            'Stored group presence session'
+        );
+        if (persistedGroupPresenceSessionIssues.length > 0) {
+            throw persistedGroupPresenceSessionIssues[0].cause;
+        }
         await this.putValue(
             SESSIONS_NAMESPACE,
             groupStatePresenceSessionStorageKey(session),
@@ -65,7 +72,14 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
     }
 
     async insertPresence(session: GroupPresenceSession): Promise<RuntimeStateConditionalWriteResult> {
-        validatePersistedGroupPresenceSession(session, session);
+        const persistedGroupPresenceSessionIssues = validatePresenceSession(
+            session,
+            session,
+            'Stored group presence session'
+        );
+        if (persistedGroupPresenceSessionIssues.length > 0) {
+            throw persistedGroupPresenceSessionIssues[0].cause;
+        }
         return await this.putValueIfAbsent(
             SESSIONS_NAMESPACE,
             groupStatePresenceSessionStorageKey(session),
@@ -78,7 +92,14 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
         session: GroupPresenceSession,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
-        validatePersistedGroupPresenceSession(session, session);
+        const persistedGroupPresenceSessionIssues = validatePresenceSession(
+            session,
+            session,
+            'Stored group presence session'
+        );
+        if (persistedGroupPresenceSessionIssues.length > 0) {
+            throw persistedGroupPresenceSessionIssues[0].cause;
+        }
         return await this.putValueIfRevision(
             SESSIONS_NAMESPACE,
             groupStatePresenceSessionStorageKey(session),
@@ -102,7 +123,10 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
     async insertPresenceAdmission(
         admission: GroupPresenceAdmission
     ): Promise<RuntimeStateConditionalWriteResult> {
-        validatePersistedGroupPresenceAdmission(admission, admission);
+        const persistedGroupPresenceAdmissionIssues = validatePresenceAdmission(admission, admission);
+        if (persistedGroupPresenceAdmissionIssues.length > 0) {
+            throw persistedGroupPresenceAdmissionIssues[0].cause;
+        }
         return await this.putValueIfAbsent(
             PRESENCE_ADMISSIONS_NAMESPACE,
             groupStatePresenceAdmissionStorageKey(admission),
@@ -114,7 +138,10 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
         admission: GroupPresenceAdmission,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
-        validatePersistedGroupPresenceAdmission(admission, admission);
+        const persistedGroupPresenceAdmissionIssues = validatePresenceAdmission(admission, admission);
+        if (persistedGroupPresenceAdmissionIssues.length > 0) {
+            throw persistedGroupPresenceAdmissionIssues[0].cause;
+        }
         return await this.putValueIfRevision(
             PRESENCE_ADMISSIONS_NAMESPACE,
             groupStatePresenceAdmissionStorageKey(admission),
@@ -131,7 +158,10 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
     async insertPresenceSummary(
         summary: GroupPresenceSummary
     ): Promise<RuntimeStateConditionalWriteResult> {
-        validatePersistedGroupPresenceSummary(summary, summary);
+        const persistedGroupPresenceSummaryIssues = validatePresenceSummaryValue(summary, summary);
+        if (persistedGroupPresenceSummaryIssues.length > 0) {
+            throw persistedGroupPresenceSummaryIssues[0].cause;
+        }
         return await this.putValueIfAbsent(
             PRESENCE_SUMMARIES_NAMESPACE,
             groupStateGroupStorageKey(summary),
@@ -143,7 +173,10 @@ export class GroupPresenceRepository extends RuntimeStateJsonStore {
         summary: GroupPresenceSummary,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
-        validatePersistedGroupPresenceSummary(summary, summary);
+        const persistedGroupPresenceSummaryIssues = validatePresenceSummaryValue(summary, summary);
+        if (persistedGroupPresenceSummaryIssues.length > 0) {
+            throw persistedGroupPresenceSummaryIssues[0].cause;
+        }
         return await this.putValueIfRevision(
             PRESENCE_SUMMARIES_NAMESPACE,
             groupStateGroupStorageKey(summary),

@@ -37,13 +37,21 @@ export function createCrdtMutationService(
             await dependencies.repository.readMutation(decodeCrdtMutationCommand(command)),
         compute: ({ command, read }: CrdtMutationAttemptFacts) =>
             computeCrdtMutation({ command, read, serviceId: dependencies.serviceId }),
-        validate: validateCrdtMutation,
+        validate: (facts) =>
+            validateCrdtMutation(
+                facts,
+                computeCrdtMutation({
+                    command: facts.command,
+                    read: facts.read,
+                    serviceId: dependencies.serviceId
+                })
+            ),
         write: async (transaction: PSqlSql, computed: CrdtMutationComputed) => {
             const writer = dependencies.createWriter(transaction);
             if (computed.outcome === 'write') {
                 await writer.writeMutation(computed);
             }
-            await writer.writeOutbox(computed.outboxEntries);
+            await writer.writeOutbox(computed.outboxWrites);
             return computed.result;
         }
     };

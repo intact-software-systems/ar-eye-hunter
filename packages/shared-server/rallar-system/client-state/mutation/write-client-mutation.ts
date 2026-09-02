@@ -1,6 +1,6 @@
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { requireConditionalWrite } from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type { ClientMutationReceipt } from '../persistence/client-state-persistence-contracts.ts';
 import { ClientStateRepository } from '../persistence/client-state-repository.ts';
 import type { ClientMutationComputedWrite } from './client-mutation-contracts.ts';
@@ -23,7 +23,9 @@ export async function writeClientMutation(
     }
 
     await repository.appendEvent(computed.event);
-    await writeFinalOutboxEntries(transaction, computed);
+    for (const outbox of computed.outboxWrites) {
+        await writeAppOutboxInsert(transaction, outbox);
+    }
     return computed.receipt;
 }
 
@@ -81,14 +83,4 @@ async function writeIdempotencyRecord(
             idempotency
         )
     );
-}
-
-async function writeFinalOutboxEntries(
-    transaction: PSqlSql,
-    computed: Extract<ClientMutationComputedWrite, { outcome: 'write'; }>
-): Promise<void> {
-    const outbox = new PSqlResourceInboxEntryRepository(transaction);
-    for (const entry of computed.outboxEntries) {
-        await outbox.writeIfAbsentOrMatch(entry);
-    }
 }

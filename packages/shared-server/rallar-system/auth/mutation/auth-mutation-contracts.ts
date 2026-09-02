@@ -6,10 +6,9 @@ import type {
     RegisterResponse,
     WebSocketTicketResponse
 } from '@shared/api/api-config.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
+import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type { PreparedAuthUserRegistration } from '../login/prepare-auth-user-registration.ts';
 import type { IssuedAuthSession } from '../persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '../persistence/persisted-auth-session.ts';
@@ -229,12 +228,12 @@ export type AuthMutationResult =
         }>
     );
 
-export type AuthSessionEntries = Readonly<{
-    byToken: RuntimeStateEntryValue<PersistedAuthSession> | null;
-    bySession: RuntimeStateEntryValue<PersistedAuthSession> | null;
-    expiredByTokenEntry: RuntimeStateEntry | null;
-    expiredBySessionEntry: RuntimeStateEntry | null;
-}>;
+export interface AuthSessionEntries {
+    readonly byToken: RuntimeStateEntryValue<PersistedAuthSession> | null;
+    readonly bySession: RuntimeStateEntryValue<PersistedAuthSession> | null;
+    readonly expiredByTokenEntry: RuntimeStateEntry | null;
+    readonly expiredBySessionEntry: RuntimeStateEntry | null;
+}
 
 export type AuthMutationRead =
     | Readonly<{
@@ -275,20 +274,122 @@ export type AuthMutationRead =
         session: RuntimeStateEntryValue<PersistedAuthSession> | null;
     }>;
 
-export type AuthMutationFacts = Readonly<{
-    kind: AuthMutationCommand['kind'];
-}>;
+export interface AuthMutationFacts {
+    readonly kind: AuthMutationCommand['kind'];
+}
 
-export type AuthComputedSession = Readonly<{
-    session: PersistedAuthSession;
-}>;
+export interface AuthComputedSession {
+    readonly session: PersistedAuthSession;
+    readonly tokenStorageKey: string;
+    readonly sessionStorageKey: string;
+    readonly serializedValue: string;
+    readonly expireAtIsoTimestamp: string;
+    readonly expectedTokenRevision: number | null;
+    readonly expectedSessionRevision: number | null;
+}
 
-export type AuthMutationComputed = Readonly<{
-    command: AuthMutationCommand;
-    read: AuthMutationRead;
-    result: AuthMutationResult;
-    sessions: readonly AuthComputedSession[];
-    agentTickets: readonly PersistedAgentSessionTicket[];
-    logoutOutbox: ResourceEntry | null;
-    outcome: 'write' | 'replay' | 'no-op';
-}>;
+export interface AuthComputedLogoutDeletion {
+    readonly sessionStorageKey: string;
+    readonly tokenStorageKey: string;
+    readonly expectedSessionRevision: number;
+    readonly expectedTokenRevision: number;
+}
+
+export interface AuthComputedTicketDeletion {
+    readonly storageKey: string;
+    readonly expectedRevision: number;
+}
+
+export interface AuthComputedTicketWrite {
+    readonly namespace: 'auth-sessions:ws-tickets' | 'auth-sessions:agent-session-tickets';
+    readonly storageKey: string;
+    readonly serializedValue: string;
+    readonly expireAtIsoTimestamp: string;
+    readonly expectedRevision: number | null;
+}
+
+export interface AuthComputedUserRegistration {
+    readonly usernameStorageKey: string;
+    readonly clientIdStorageKey: string;
+    readonly serializedValue: string;
+    readonly expireAtIsoTimestamp: string;
+}
+
+interface AuthMutationComputedBase {
+    readonly result: AuthMutationResult;
+    readonly sessions: readonly AuthComputedSession[];
+    readonly agentTickets: readonly PersistedAgentSessionTicket[];
+    readonly logoutOutbox: AppOutboxInsert | null;
+    readonly outcome: 'write' | 'replay' | 'no-op';
+}
+
+type AuthMutationComputedOperation<Kind extends AuthMutationCommand['kind']> = Kind extends
+    AuthMutationCommand['kind'] ? Readonly<{
+        kind: Kind;
+        command: Extract<AuthMutationCommand, { kind: Kind; }>;
+        read: Extract<AuthMutationRead, { kind: Kind; }>;
+    }> :
+    never;
+
+export type AuthMutationComputed =
+    | (
+        & AuthMutationComputedBase
+        & AuthMutationComputedOperation<'register-user'>
+        & Readonly<{
+            logoutDeletion: null;
+            ticketDeletion: null;
+            ticketWrites: readonly [];
+            userRegistration: AuthComputedUserRegistration;
+        }>
+    )
+    | (
+        & AuthMutationComputedBase
+        & AuthMutationComputedOperation<'issue-session'>
+        & Readonly<{
+            logoutDeletion: null;
+            sessions: readonly [AuthComputedSession];
+            ticketDeletion: null;
+            ticketWrites: readonly [];
+            userRegistration: null;
+        }>
+    )
+    | (
+        & AuthMutationComputedBase
+        & AuthMutationComputedOperation<'logout-session'>
+        & Readonly<{
+            logoutDeletion: AuthComputedLogoutDeletion | null;
+            ticketDeletion: null;
+            ticketWrites: readonly [];
+            userRegistration: null;
+        }>
+    )
+    | (
+        & AuthMutationComputedBase
+        & AuthMutationComputedOperation<'issue-ws-ticket'>
+        & Readonly<{
+            logoutDeletion: null;
+            ticketDeletion: null;
+            ticketWrites: readonly [AuthComputedTicketWrite];
+            userRegistration: null;
+        }>
+    )
+    | (
+        & AuthMutationComputedBase
+        & AuthMutationComputedOperation<'consume-ws-ticket' | 'consume-agent-ticket'>
+        & Readonly<{
+            logoutDeletion: null;
+            ticketDeletion: AuthComputedTicketDeletion;
+            ticketWrites: readonly [];
+            userRegistration: null;
+        }>
+    )
+    | (
+        & AuthMutationComputedBase
+        & AuthMutationComputedOperation<'issue-agent-tickets'>
+        & Readonly<{
+            logoutDeletion: null;
+            ticketDeletion: null;
+            ticketWrites: readonly AuthComputedTicketWrite[];
+            userRegistration: null;
+        }>
+    );

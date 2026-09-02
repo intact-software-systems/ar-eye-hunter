@@ -1,71 +1,79 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import type { AuthSessionRepository } from '../../persistence/auth-session-repository.ts';
-import { requireIssueSessionLifecycle } from '../../sessions/require-issue-session-lifecycle.ts';
+import type { RuntimeStateConditionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+
+import { writeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
+import {
+    AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+    AUTH_SESSIONS_BY_TOKEN_NAMESPACE
+} from '../../persistence/auth-storage-keys.ts';
 import type {
     AuthComputedSession,
-    AuthMutationComputed,
-    AuthMutationRead,
-    AuthSessionEntries
+    AuthMutationComputed
 } from '../auth-mutation-contracts.ts';
 
-export async function writeAuthSession(
-    repository: AuthSessionRepository,
-    computed: AuthComputedSession,
-    read: AuthSessionEntries
-): Promise<void> {
-    requireConditionalWrite(
-        await repository.insertSessionByTokenDigest(
-            computed.session,
-            read.expiredByTokenEntry?.revision ?? null
-        )
-    );
-    requireConditionalWrite(
-        await repository.insertSessionBySessionId(
-            computed.session,
-            read.expiredBySessionEntry?.revision ?? null
-        )
-    );
-}
+type AuthLogoutComputed = Extract<AuthMutationComputed, { kind: 'logout-session'; }>;
 
-export async function writeAuthSessionIssue(
-    repository: AuthSessionRepository,
-    computed: AuthMutationComputed
+export async function writeAuthSession(
+    repository: RuntimeStateConditionalRepositoryLike,
+    computed: AuthComputedSession
 ): Promise<void> {
-    requireIssueSessionLifecycle(computed.command.capturedAtEpochMs, computed.sessions[0].session);
-    await writeAuthSession(
-        repository,
-        computed.sessions[0],
-        computed.read as Extract<AuthMutationRead, { kind: 'issue-session'; }>
-    );
+    const token = computed.expectedTokenRevision === null
+        ? await repository.insertIfAbsent(
+            AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
+            computed.tokenStorageKey,
+            computed.serializedValue,
+            computed.expireAtIsoTimestamp
+        )
+        : await repository.upsertIfRevision(
+            AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
+            computed.tokenStorageKey,
+            computed.serializedValue,
+            computed.expireAtIsoTimestamp,
+            computed.expectedTokenRevision
+        );
+    requireConditionalWrite(token);
+    const session = computed.expectedSessionRevision === null
+        ? await repository.insertIfAbsent(
+            AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+            computed.sessionStorageKey,
+            computed.serializedValue,
+            computed.expireAtIsoTimestamp
+        )
+        : await repository.upsertIfRevision(
+            AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+            computed.sessionStorageKey,
+            computed.serializedValue,
+            computed.expireAtIsoTimestamp,
+            computed.expectedSessionRevision
+        );
+    requireConditionalWrite(session);
 }
 
 export async function writeAuthLogout(
     transaction: PSqlSql,
-    repository: AuthSessionRepository,
-    computed: AuthMutationComputed
+    repository: RuntimeStateConditionalRepositoryLike,
+    computed: AuthLogoutComputed
 ): Promise<void> {
-    const command = computed.command as Extract<AuthMutationComputed['command'], { kind: 'logout-session'; }>;
-    const read = computed.read as Extract<AuthMutationRead, { kind: 'logout-session'; }>;
-    if (!read.bySession || !read.byToken) {
+    const deletion = computed.logoutDeletion;
+    if (!deletion) {
         return;
     }
     requireConditionalWrite(
-        await repository.deleteSessionBySessionIdIfRevision(
-            command.expected.sessionId,
-            read.bySession.entry.revision
+        await repository.deleteIfRevision(
+            AUTH_SESSIONS_BY_SESSION_NAMESPACE,
+            deletion.sessionStorageKey,
+            deletion.expectedSessionRevision
         )
     );
     requireConditionalWrite(
-        await repository.deleteSessionTokenStorageKeyIfRevision(
-            read.byToken.entry.key,
-            read.byToken.entry.revision
+        await repository.deleteIfRevision(
+            AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
+            deletion.tokenStorageKey,
+            deletion.expectedTokenRevision
         )
     );
     if (computed.logoutOutbox) {
-        await new PSqlResourceInboxEntryRepository(transaction).writeIfAbsentOrMatch(
-            computed.logoutOutbox
-        );
+        await writeAppOutboxInsert(transaction, computed.logoutOutbox);
     }
 }

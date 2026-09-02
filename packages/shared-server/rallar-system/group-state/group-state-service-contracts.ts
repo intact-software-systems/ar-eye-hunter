@@ -42,6 +42,7 @@ import type { RallarTimingSink } from '../observability/timing.ts';
 import type { GroupStateEventStore } from '../state-events/group-state-event-store.ts';
 import type { StateEventListQuery } from '../state-events/state-event-listing.ts';
 import type { WsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
+import type { GroupStateValidationIssue } from './group-state-validation-issues.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -162,7 +163,7 @@ export interface GroupStateMutationService {
         command: GroupStateMutationCommand,
         read: GroupMutationRead,
         computed: GroupMutationComputed
-    ): void;
+    ): readonly GroupStateValidationIssue[];
     write(
         transaction: PSqlSql,
         computed: GroupMutationComputedWrite
@@ -215,6 +216,7 @@ export type GroupStateService =
         readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
         readCausalRevision(ref: GroupRef): Promise<GroupStateCausalRevision | undefined>;
         readIssuedAuthSession(sessionId: string): Promise<PersistedAuthSession | undefined>;
+        readEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined>;
         listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
         listRecentEvents(ref: GroupRef, query: StateEventListQuery): Promise<readonly GroupEvent[]>;
         listEventPage(ref: GroupRef, query: StateEventListQuery): Promise<StateEventPage<GroupEvent>>;

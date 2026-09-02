@@ -1,7 +1,10 @@
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
-import { isRuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import {
+    assertRuntimeStateUpsertExpectedRevision,
+    isRuntimeStateOptimisticTransactionalRepositoryLike,
+    type RuntimeStateOptimisticTransactionalRepositoryLike
+} from '../../../runtime-state/runtime-state-repository.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../../topology/persistence/rtc-topology-errors.ts';
 import { compareRtcTopologyIdentifiers } from '../../topology/persistence/rtc-topology-identifiers.ts';
 import type { RtcRttMutationReceipt } from './rtc-rtt-persistence-contracts.ts';
@@ -10,28 +13,28 @@ import { RTC_RTT_RECEIPTS_NAMESPACE } from './rtc-rtt-runtime-namespaces.ts';
 
 export const DEFAULT_RTC_RTT_RECEIPT_FAMILY_CLEANUP_INTERVAL_MS = 60_000;
 
-export type RtcRttReceiptFamilyCleanupHandle = Readonly<{
-    firstRun: Promise<number>;
-    stop(): void;
-}>;
+export interface RtcRttReceiptFamilyCleanupHandle {
+    readonly firstRun: Promise<number>;
+    readonly stop: () => void;
+}
 
 export type RtcRttReceiptFamilyCleanupTimerHandle = object | number;
 
-export type RtcRttReceiptFamilyCleanupOptions = Readonly<{
-    intervalMs?: number;
-    schedule?: (callback: () => void, delayMs: number) => RtcRttReceiptFamilyCleanupTimerHandle;
-    cancel?: (handle: RtcRttReceiptFamilyCleanupTimerHandle) => void;
-    onError?: (error: Error) => void;
-}>;
+export interface RtcRttReceiptFamilyCleanupOptions {
+    readonly intervalMs?: number;
+    readonly schedule?: (callback: () => void, delayMs: number) => RtcRttReceiptFamilyCleanupTimerHandle;
+    readonly cancel?: (handle: RtcRttReceiptFamilyCleanupTimerHandle) => void;
+    readonly onError?: (error: Error) => void;
+}
 
-export type RtcRttReceiptFamilyCleanupFailure = Readonly<{
-    familyId: string;
-    error: Readonly<{
-        name: string;
-        message: string;
-        code?: string;
-    }>;
-}>;
+export interface RtcRttReceiptFamilyCleanupFailure {
+    readonly familyId: string;
+    readonly error: {
+        readonly name: string;
+        readonly message: string;
+        readonly code?: string;
+    };
+}
 
 export class RtcRttReceiptFamilyCleanupError extends RtcTopologyRepositoryInvariantCorruptionError {
     readonly removedCount: number;
@@ -145,12 +148,14 @@ async function deleteGuardedRtcRttReceipt(
     runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
     receipt: RuntimeStateEntryValue<RtcRttMutationReceipt>
 ): Promise<boolean> {
+    const expireAtIsoTimestamp = new Date(receipt.entry.expireAtTimestamp).toISOString();
+    assertRuntimeStateUpsertExpectedRevision(receipt.entry.revision);
     return await runtime.begin(async (transaction) => {
         const guardedReceipt = await transaction.upsertIfRevision(
             RTC_RTT_RECEIPTS_NAMESPACE,
             receipt.entry.key,
             receipt.entry.value,
-            receipt.entry.expireAtTimestamp,
+            expireAtIsoTimestamp,
             receipt.entry.revision
         );
         if (guardedReceipt.status === 'conflict') {
@@ -193,7 +198,7 @@ function toCleanupFailureError(error: Error): RtcRttReceiptFamilyCleanupFailure[
         };
     }
     return {
-        name: error instanceof Error ? error.name : 'Error',
+        name: error.name,
         message: 'RTC RTT receipt cleanup failed'
     };
 }

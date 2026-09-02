@@ -15,7 +15,6 @@ import type {
 import {
     readRtcTopologyDeliverySafeInteger,
     RtcTopologyDeliveryCorruptionError,
-    validateRtcTopologyDeliveryAppendInput,
     validateRtcTopologyDeliveryStreamId,
     type RtcTopologyDeliveryBoundaryNumber
 } from '../delivery/rtc-topology-delivery-validation.ts';
@@ -49,6 +48,10 @@ interface DeliveryLogRow {
 interface AppendQueryRow extends DeliveryLogRow {
     readonly result_kind: 'appended' | 'existing';
 }
+
+const MAX_DELIVERY_SEQUENCE = Number.MAX_SAFE_INTEGER;
+const DELIVERY_LEASE_LOST: RtcTopologyDeliveryAppendResult = { status: 'lease-lost' };
+const DELIVERY_CONFLICT: RtcTopologyDeliveryAppendResult = { status: 'conflict' };
 
 export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryAppendPort {
     private readonly sql: PSqlSql;
@@ -94,29 +97,7 @@ export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryApp
         transaction: PSqlSql,
         input: RtcTopologyDeliveryAppendInput
     ): Promise<RtcTopologyDeliveryAppendResult> {
-        validateRtcTopologyDeliveryAppendInput(input);
-        const result = await appendOrReadExistingEntry(transaction, input);
-        if (result) {
-            const entry = toLogEntry(result);
-            validateExistingEntry(entry, input);
-            return { status: result.result_kind, entry };
-        }
-
-        const stream = await readAppendStream(transaction, input.publisherStreamId);
-        if (!stream?.lease_valid) {
-            return { status: 'lease-lost' };
-        }
-        const headSequence = readRtcTopologyDeliverySafeInteger(
-            stream.head_sequence,
-            'RTC topology delivery HEAD'
-        );
-        if (headSequence === Number.MAX_SAFE_INTEGER) {
-            throw new RtcTopologyDeliveryCorruptionError(
-                `RTC topology delivery HEAD is exhausted for ${input.publisherStreamId}`
-            );
-        }
-
-        return { status: 'conflict' };
+        return await appendOrValidateRtcTopologyDelivery(transaction, input);
     }
 
     async renewStreamLease(
@@ -152,6 +133,34 @@ export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryApp
     }
 }
 
+export async function appendOrValidateRtcTopologyDelivery(
+    transaction: PSqlSql,
+    input: RtcTopologyDeliveryAppendInput
+): Promise<RtcTopologyDeliveryAppendResult> {
+    const result = await appendOrReadExistingEntry(transaction, input);
+    if (result) {
+        const entry = toLogEntry(result);
+        validateExistingEntry(entry, input);
+        return { status: result.result_kind, entry };
+    }
+
+    const stream = await readAppendStream(transaction, input.publisherStreamId);
+    if (!stream?.lease_valid) {
+        return DELIVERY_LEASE_LOST;
+    }
+    const headSequence = readRtcTopologyDeliverySafeInteger(
+        stream.head_sequence,
+        'RTC topology delivery HEAD'
+    );
+    if (headSequence === MAX_DELIVERY_SEQUENCE) {
+        throw new RtcTopologyDeliveryCorruptionError(
+            `RTC topology delivery HEAD is exhausted for ${input.publisherStreamId}`
+        );
+    }
+
+    return DELIVERY_CONFLICT;
+}
+
 async function appendOrReadExistingEntry(
     sql: PSqlSql,
     input: RtcTopologyDeliveryAppendInput
@@ -181,7 +190,7 @@ async function appendOrReadExistingEntry(
       from rtc_topology_delivery_stream as stream
       where stream.stream_id = ${input.publisherStreamId}
         and stream.lease_expires_at > statement_timestamp()
-        and stream.head_sequence < ${Number.MAX_SAFE_INTEGER}
+        and stream.head_sequence < ${MAX_DELIVERY_SEQUENCE}
         and not exists (select 1 from existing_publication)
     ),
     advanced_stream as (
@@ -192,7 +201,7 @@ async function appendOrReadExistingEntry(
       where stream.stream_id = ${input.publisherStreamId}
         and stream.head_sequence = append_stream.head_sequence
         and stream.lease_expires_at > statement_timestamp()
-        and stream.head_sequence < ${Number.MAX_SAFE_INTEGER}
+        and stream.head_sequence < ${MAX_DELIVERY_SEQUENCE}
       returning stream.head_sequence
     ),
     inserted_entry as (
@@ -218,7 +227,7 @@ async function appendOrReadExistingEntry(
         ${input.outboxKey.topicId},
         ${input.outboxKey.resourceId},
         ${input.outboxKey.contextId},
-        ${new Date(input.retainUntilEpochMs)}
+        ${input.retainUntil}
       from advanced_stream
       returning
         publisher_stream_id,

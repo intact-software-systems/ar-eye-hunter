@@ -323,7 +323,11 @@ function createGroupStateInboxServiceFactory(
                 resourceInboxRepository: input.resourceInboxRepository.entries,
                 resourceInboxResultsRepository: input.resourceInboxResultsRepository,
                 database: input.database,
-                groupStateService: input.groupStateService
+                groupStateService: input.groupStateService,
+                resultReader: {
+                    readSnapshot: input.groupStateService.readCurrentSnapshot,
+                    readEvent: input.groupStateService.readEvent
+                }
             },
             {
                 serviceId: input.serviceId,

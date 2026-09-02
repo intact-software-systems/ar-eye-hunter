@@ -19,7 +19,8 @@ import { validateAppInboxCommandIdentity } from '../../app-inbox/app-inbox-comma
 import {
     AppInboxIdempotencyConflictError,
     AppInboxType,
-    type AppInboxEnqueueInput
+    type AppInboxEnqueueInput,
+    type AppInboxExecutionMetadata
 } from '../../app-inbox/app-inbox-contracts.ts';
 import {
     classifyAppInboxError,
@@ -154,14 +155,53 @@ export class AppAuthInboxService {
             transactionWriter: handlerRuntime.transactionWriter,
             nowEpochMs: this.authFactNowEpochMs
         });
-        for (const type of AUTH_TYPES) {
-            this.handlers.registerHandler({
-                type,
-                decodeCommand: decodeAuthMutationIntent,
-                encodeResult: (result) => encodeAppInboxResult(result, 'Auth AppInbox result'),
-                handle: async (command, context) => await this.authInboxHandler.processAuthMutation(command, context)
-            });
-        }
+        const encodeResult = (result: AuthMutationResult) => encodeAppInboxResult(result, 'Auth AppInbox result');
+        const handleMutation = async (
+            command: AuthMutationIntent,
+            context: AppInboxExecutionMetadata
+        ): Promise<AuthMutationResult> => await this.authInboxHandler.processAuthMutation(command, context);
+        this.handlers.registerHandler({
+            type: AppInboxType.AUTH_USER_REGISTER,
+            decodeCommand: decodeAuthMutationIntent,
+            encodeResult,
+            handle: handleMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.AUTH_SESSION_ISSUE,
+            decodeCommand: decodeAuthMutationIntent,
+            encodeResult,
+            handle: handleMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.AUTH_SESSION_LOGOUT,
+            decodeCommand: decodeAuthMutationIntent,
+            encodeResult,
+            handle: handleMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.AUTH_WS_TICKET_ISSUE,
+            decodeCommand: decodeAuthMutationIntent,
+            encodeResult,
+            handle: handleMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.AUTH_WS_TICKET_CONSUME,
+            decodeCommand: decodeAuthMutationIntent,
+            encodeResult,
+            handle: handleMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.AUTH_AGENT_SESSION_TICKETS_ISSUE,
+            decodeCommand: decodeAuthMutationIntent,
+            encodeResult,
+            handle: handleMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME,
+            decodeCommand: decodeAuthMutationIntent,
+            encodeResult,
+            handle: handleMutation
+        });
         this.handlers.assertRegistrationComplete(AUTH_TYPES);
     }
 

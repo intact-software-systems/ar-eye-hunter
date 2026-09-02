@@ -1,6 +1,14 @@
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RtcTopologyPublication } from '../publication/rtc-topology-publication.ts';
+import {
+    computeRtcTopologyPublicationDelivery,
+    type RtcTopologyPublicationDeliveryComputed
+} from '../replay/delivery/rtc-topology-delivery-validation.ts';
+import {
+    computeRtcTopologyPersistence,
+    type RtcTopologyPersistenceComputed
+} from './compute-rtc-topology-persistence.ts';
 
 export type RtcTopologyStaleMutationComputed =
     | Readonly<{
@@ -17,6 +25,8 @@ export type RtcTopologyStaleMutationComputed =
         publicationExpireAtTimestamp: number;
         commandHash: string;
         attemptCount: number;
+        publicationDelivery: RtcTopologyPublicationDeliveryComputed;
+        persistence: RtcTopologyPersistenceComputed;
     }>;
 
 export function computeStaleTopologyPublication(
@@ -26,6 +36,7 @@ export function computeStaleTopologyPublication(
         publicationExpireAtTimestamp: number | null;
         commandHash: string | null;
         attemptCount: number | null;
+        deliveryPublisherStreamId: string | null;
     }>
 ): RtcTopologyStaleMutationComputed {
     if (input.publication === null) {
@@ -43,6 +54,14 @@ export function computeStaleTopologyPublication(
     }
     return {
         outcome: 'publish-superseded',
+        persistence: computeRtcTopologyPersistence({
+            snapshot: input.current.value,
+            expectedRevision: input.current.entry.revision,
+            publication: input.publication,
+            publicationExpireAtTimestamp: expiresAt,
+            commandHash: input.commandHash,
+            attemptCount: input.attemptCount
+        }),
         currentGuard: {
             expectedRevision: input.current.entry.revision,
             current: input.current.value
@@ -50,6 +69,10 @@ export function computeStaleTopologyPublication(
         publication: input.publication,
         publicationExpireAtTimestamp: expiresAt,
         commandHash: input.commandHash,
-        attemptCount: input.attemptCount!
+        attemptCount: input.attemptCount!,
+        publicationDelivery: computeRtcTopologyPublicationDelivery(
+            input.publication,
+            input.deliveryPublisherStreamId
+        )
     };
 }

@@ -1,5 +1,7 @@
 import type { Group, GroupEventType, GroupMember } from '@shared/api/group-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
+import { toGroupStateValidationIssue, type GroupStateValidationIssue } from '../../group-state-validation-issues.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -24,12 +26,23 @@ export function computeGroupMembershipWrite({
     facts,
     members,
     eventType
-}: ComputeGroupMembershipWriteInput): GroupMutationComputed {
+}: ComputeGroupMembershipWriteInput): Either<readonly GroupStateValidationIssue[], GroupMutationComputed> {
     const stored = requireGroup(read, command.aggregateRef);
     const audit = auditStamp(command, facts, command.input.actorPrincipalId ?? undefined);
     const activeMemberCount = computeActiveMemberCount(stored.value.activeMemberCount, read, members);
     const ownerPrincipalId = resolveOwnerPrincipalId(stored.value, members, eventType);
-    assertOwnerTransition(members, ownerPrincipalId);
+    const issues: GroupStateValidationIssue[] = [];
+    if (!Number.isSafeInteger(activeMemberCount) || activeMemberCount < 0) {
+        issues.push(
+            toGroupStateValidationIssue('read.group.activeMemberCount', 'Group activeMemberCount delta is invalid')
+        );
+    }
+    issues.push(...validateOwnerTransition(members, ownerPrincipalId));
+    const admission = computeMemberPresenceAdmission({ read, members, facts });
+    issues.push(...(admission.left ?? []));
+    if (issues.length > 0) {
+        return Either.ofLeft(issues);
+    }
     const group: Group = {
         ...stored.value,
         activeMemberCount,
@@ -38,7 +51,7 @@ export function computeGroupMembershipWrite({
         rosterVersion: stored.value.rosterVersion + 1,
         updated: audit
     };
-    return computeGroupMutationWriteResult({
+    return Either.ofRight(computeGroupMutationWriteResult({
         command,
         read,
         facts,
@@ -50,10 +63,10 @@ export function computeGroupMembershipWrite({
         },
         members,
         initialPresenceSummary: null,
-        presenceAdmission: computeMemberPresenceAdmission({ read, members, facts }),
+        presenceAdmission: admission.right!,
         eventType,
         presenceSummaryWork: 'enqueue'
-    });
+    }));
 }
 
 function computeActiveMemberCount(
@@ -69,9 +82,6 @@ function computeActiveMemberCount(
         if (previousActive !== nextActive) {
             activeMemberCount += nextActive ? 1 : -1;
         }
-    }
-    if (!Number.isSafeInteger(activeMemberCount) || activeMemberCount < 0) {
-        throw new TypeError('Group activeMemberCount delta is invalid');
     }
     return activeMemberCount;
 }
@@ -93,24 +103,35 @@ function resolveOwnerPrincipalId(
     return ownerPrincipalId;
 }
 
-function assertOwnerTransition(members: readonly GroupMember[], ownerPrincipalId: string): void {
+function validateOwnerTransition(
+    members: readonly GroupMember[],
+    ownerPrincipalId: string
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
     for (const member of members) {
         if (
             member.principalId === ownerPrincipalId &&
             (member.status !== 'active' || member.role !== 'owner')
         ) {
-            throw new GroupMutationRejectedError('Cannot remove or demote the active group owner.');
+            issues.push({
+                path: 'members',
+                cause: new GroupMutationRejectedError('Cannot remove or demote the active group owner.')
+            });
         }
         if (
             member.status === 'active' &&
             member.role === 'owner' &&
             member.principalId !== ownerPrincipalId
         ) {
-            throw new GroupMutationRejectedError(
-                'Ownership can only change through a single guarded transfer.'
-            );
+            issues.push({
+                path: 'members',
+                cause: new GroupMutationRejectedError(
+                    'Ownership can only change through a single guarded transfer.'
+                )
+            });
         }
     }
+    return issues;
 }
 
 export function findKnownMember(

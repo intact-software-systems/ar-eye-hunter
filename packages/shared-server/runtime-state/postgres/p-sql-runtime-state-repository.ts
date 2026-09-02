@@ -1,5 +1,5 @@
 import type {
-    RuntimeStateGuardedBatch,
+    RuntimeStateGuardedBatchComputed,
     RuntimeStateGuardedBatchResult,
     RuntimeStateGuardedBatchTransaction
 } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
@@ -9,10 +9,6 @@ import type {
     RuntimeStateEntry,
     RuntimeStateGuardedBatchTransactionalRepositoryLike,
     RuntimeStateOptimisticTransactionRepositoryLike
-} from '@shared-server/runtime-state/runtime-state-repository.ts';
-import {
-    assertRuntimeStateExpectedRevision,
-    assertRuntimeStateUpsertExpectedRevision
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type {
@@ -28,35 +24,27 @@ import {
 } from './runtime-state-row-codec.ts';
 import { toExclusivePrefixEnd, toPgDate } from './runtime-state-sql-values.ts';
 
+const MAX_SAFE_RUNTIME_STATE_REVISION = Number.MAX_SAFE_INTEGER;
+
 interface RuntimeStateSavepointSql extends PSqlSql {
     savepoint<T>(fn: (sql: PSqlSql) => Promise<T>): Promise<T>;
 }
 
-type RuntimeStateSqlState =
-    | Readonly<{ kind: 'root'; sql: PSqlSql; }>
-    | Readonly<{ kind: 'transaction'; sql: PSqlSql; }>;
-
 export function createTransactionBoundPSqlRuntimeStateRepository(
     transaction: PSqlSql
 ): PSqlRuntimeStateRepository {
-    return new PSqlRuntimeStateRepository(transaction, {
-        kind: 'transaction',
-        sql: transaction
-    });
+    return new PSqlRuntimeStateRepository(transaction, transaction);
 }
 
 export class PSqlRuntimeStateRepository
     implements RuntimeStateGuardedBatchTransactionalRepositoryLike, RuntimeStateGuardedBatchTransaction {
-    private readonly sqlState: RuntimeStateSqlState;
+    private readonly transactionSql: PSqlSql | undefined;
 
     public readonly sql: PSqlSql;
 
-    constructor(sql: PSqlSql, sqlState?: RuntimeStateSqlState) {
+    constructor(sql: PSqlSql, transactionSql?: PSqlSql) {
         this.sql = sql;
-        this.sqlState = sqlState ?? {
-            kind: 'root',
-            sql
-        };
+        this.transactionSql = transactionSql;
     }
 
     async readRuntimeStateBatch(
@@ -70,34 +58,29 @@ export class PSqlRuntimeStateRepository
             repository: RuntimeStateOptimisticTransactionRepositoryLike
         ) => Promise<T>
     ): Promise<T> {
-        if (this.sqlState.kind === 'transaction') {
-            const savepointSql = requireSavepointSql(this.sqlState.sql);
+        if (this.transactionSql !== undefined) {
+            const savepointSql = requireSavepointSql(this.transactionSql);
             return await savepointSql.savepoint(async (sql) => {
                 const savepointSql = requireSavepointSql(sql);
-                return await fn(
-                    new PSqlRuntimeStateRepository(savepointSql, {
-                        kind: 'transaction',
-                        sql: savepointSql
-                    })
-                );
+                return await fn(createTransactionBoundPSqlRuntimeStateRepository(savepointSql));
             });
         }
 
-        return await this.sqlState.sql.begin(async (sql: PSqlSql) => {
+        return await this.sql.begin(async (sql: PSqlSql) => {
             const transactionSql = requireSavepointSql(sql);
             return await fn(createTransactionBoundPSqlRuntimeStateRepository(transactionSql));
         });
     }
 
     async executeGuardedBatch(
-        input: RuntimeStateGuardedBatch
+        computed: RuntimeStateGuardedBatchComputed
     ): Promise<RuntimeStateGuardedBatchResult> {
-        if (this.sqlState.kind !== 'transaction') {
+        if (this.transactionSql === undefined) {
             throw new Error(
                 'Guarded runtime state batches require a transaction-scoped repository.'
             );
         }
-        return await executeRuntimeStateGuardedBatch(this.sql, input);
+        return await executeRuntimeStateGuardedBatch(this.sql, computed);
     }
 
     async findEntry(
@@ -254,7 +237,7 @@ export class PSqlRuntimeStateRepository
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number
+        expireAtIsoTimestamp: string
     ): Promise<RuntimeStateConditionalWriteResult> {
         const rows = await this.sql<Array<{ revision: number | string; }>>`
             insert into runtime_state_store (store_namespace,
@@ -266,7 +249,7 @@ export class PSqlRuntimeStateRepository
             values (${namespace},
                     ${key},
                     ${value},
-                    ${toPgDate(expireAtTimestamp)},
+                    ${expireAtIsoTimestamp},
                     now(),
                     0)
             on conflict (store_namespace, store_key) do nothing
@@ -285,19 +268,19 @@ export class PSqlRuntimeStateRepository
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtIsoTimestamp: string,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
-        assertRuntimeStateUpsertExpectedRevision(expectedRevision);
         const rows = await this.sql<Array<{ revision: number | string; }>>`
             update runtime_state_store
             set store_value = ${value},
-                expire_at_ts = ${toPgDate(expireAtTimestamp)},
+                expire_at_ts = ${expireAtIsoTimestamp},
                 updated_ts = now(),
                 revision = revision + 1
             where store_namespace = ${namespace}
               and store_key = ${key}
               and revision = ${expectedRevision}
+              and revision < ${MAX_SAFE_RUNTIME_STATE_REVISION}
             returning revision
         `;
 
@@ -314,7 +297,6 @@ export class PSqlRuntimeStateRepository
         key: string,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalDeleteResult> {
-        assertRuntimeStateExpectedRevision(expectedRevision);
         const rows = await this.sql<Array<{ revision: number | string; }>>`
             delete from runtime_state_store
             where store_namespace = ${namespace}

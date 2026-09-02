@@ -15,6 +15,7 @@ import type { ClientSessionExpiryCandidate } from '../presence/session-expiry.ts
 import type { ClientStateEventStore } from '../state-events/client-state-event-store.ts';
 import type { StateEventListQuery } from '../state-events/state-event-listing.ts';
 import type { WsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
+import type { ClientStateMutationTiming } from './client-state-service-timing.ts';
 import type {
     ClientMutationCommand,
     ClientMutationComputed,
@@ -24,31 +25,32 @@ import type {
 import { assertNeverClientMutationComputed } from './mutation/compute/compute-client-mutation-result.ts';
 import type { ClientMutationReceipt } from './persistence/client-state-persistence-contracts.ts';
 
-export type RegisterAuthorisedWsClientInput = Readonly<{
-    applicationId?: string;
-    workspaceId?: string;
-    principalId?: string;
-    clientInstanceId?: string;
-    displayName?: string;
-    userAgent?: string;
-    platform?: ClientPlatform;
-    capabilities?: readonly string[];
-    connectedAtEpochMs?: number;
-    expiresAtEpochMs?: number;
-}>;
+export interface RegisterAuthorisedWsClientInput {
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+    readonly principalId?: string;
+    readonly clientInstanceId?: string;
+    readonly displayName?: string;
+    readonly userAgent?: string;
+    readonly platform?: ClientPlatform;
+    readonly capabilities?: readonly string[];
+    readonly connectedAtEpochMs?: number;
+    readonly expiresAtEpochMs?: number;
+}
 
-export type ClientMutationWritten = Readonly<{
-    snapshot: ClientSnapshot;
-    event: ClientEvent | null;
-}>;
+export interface ClientMutationWritten {
+    readonly snapshot: ClientSnapshot;
+    readonly event: ClientEvent | null;
+}
 
-export type ClientStateWritten = Readonly<{
-    status: 'ok';
-    result: ClientMutationWritten;
-}>;
+export interface ClientStateWritten {
+    readonly status: 'ok';
+    readonly result: ClientMutationWritten;
+}
 
-export type ClientStateService = Readonly<{
-    sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
+export interface ClientStateService {
+    readonly mutationTiming: ClientStateMutationTiming;
+    readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
     listSnapshots(scope: ClientScope): Promise<readonly ClientSnapshot[]>;
     readSnapshot(ref: ClientPrincipalRef): Promise<ClientSnapshot | undefined>;
     readPresenceSnapshot(ref: ClientPrincipalRef): Promise<ClientPresenceSnapshot | undefined>;
@@ -76,16 +78,16 @@ export type ClientStateService = Readonly<{
     findSessionBySessionId(sessionId: string): Promise<ClientSession | undefined>;
     readIssuedAuthSession(sessionId: string): Promise<PersistedAuthSession | undefined>;
     observeSnapshot(snapshot: ClientSnapshot): Promise<ClientSnapshot>;
-}>;
+}
 
 export type ClientStateMutationService = Pick<ClientStateService, 'read' | 'compute' | 'validate' | 'write'>;
 
-export type ClientStateServiceDependencies = Readonly<{
-    runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
-    clientStateEventStore: ClientStateEventStore;
-    serviceId: string;
-    timing?: import('../observability/timing.ts').RallarTimingSink;
-}>;
+export interface ClientStateServiceDependencies {
+    readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
+    readonly clientStateEventStore: ClientStateEventStore;
+    readonly serviceId: string;
+    readonly timing?: import('../observability/timing.ts').RallarTimingSink;
+}
 
 export function requiresClientWrite(
     computed: ClientMutationComputed

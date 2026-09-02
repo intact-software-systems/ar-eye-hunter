@@ -1,5 +1,10 @@
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 
+import {
+    isGroupStateRecord,
+    toGroupStateValidationIssue,
+    type GroupStateValidationIssue
+} from '../group-state-validation-issues.ts';
 import { groupStateMemberStorageKey } from '../persistence/membership/group-membership-storage-key.ts';
 import {
     groupStatePresenceAdmissionStorageKey,
@@ -16,7 +21,8 @@ import type { GroupPresenceSummaryRead } from './compute-group-presence-summary.
 export function validateGroupPresenceSummaryReadCollections(
     ref: GroupRef,
     read: GroupPresenceSummaryRead
-): void {
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
     for (
         const [label, values] of [
             ['members', read.members],
@@ -25,28 +31,67 @@ export function validateGroupPresenceSummaryReadCollections(
         ] as const
     ) {
         if (!Array.isArray(values)) {
-            throw new TypeError(`Group presence summary ${label} must be an array`);
+            issues.push(
+                toGroupStateValidationIssue(
+                    'read',
+                    `Group presence summary ${label} must be an array`
+                )
+            );
         }
     }
-    validateGroupPresenceSummaryMembers(ref, read);
-    validateGroupPresenceSummaryAdmissions(ref, read.admissions);
-    const sessionsById = validateGroupPresenceSummarySessions(ref, read.presenceSessions);
-    validateGroupPresenceSummaryAdmissionSessions(read.admissions, sessionsById);
+    if (Array.isArray(read.members)) {
+        issues.push(...validateGroupPresenceSummaryMembers(ref, read));
+    }
+    const admissionIssues = Array.isArray(read.admissions)
+        ? validateGroupPresenceSummaryAdmissions(ref, read.admissions)
+        : [];
+    const sessionIssues = Array.isArray(read.presenceSessions)
+        ? validateGroupPresenceSummarySessions(ref, read.presenceSessions)
+        : [];
+    issues.push(...admissionIssues, ...sessionIssues);
+    if (
+        Array.isArray(read.admissions) && Array.isArray(read.presenceSessions) &&
+        admissionIssues.length === 0 && sessionIssues.length === 0
+    ) {
+        const sessionsById = new Map(read.presenceSessions.map(({ value }) => [value.sessionId, value]));
+        issues.push(...validateGroupPresenceSummaryAdmissionSessions(read.admissions, sessionsById));
+    }
+    return issues;
 }
 
-function validateGroupPresenceSummaryMembers(ref: GroupRef, read: GroupPresenceSummaryRead): void {
+function validateGroupPresenceSummaryMembers(
+    ref: GroupRef,
+    read: GroupPresenceSummaryRead
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
     const memberIds = new Set<string>();
     for (const stored of read.members) {
-        validateGroupStateRuntimeEntry(
+        if (!isGroupStateRecord(stored) || !isGroupStateRecord(stored.value)) {
+            issues.push(
+                toGroupStateValidationIssue('read.members', 'Stored summary member must contain an object value')
+            );
+            continue;
+        }
+        issues.push(...validateGroupStateRuntimeEntry(
             stored,
             'Stored summary member',
-            groupStateMemberStorageKey({ ...ref, principalId: stored.value.principalId })
-        );
-        validateStoredMember(stored.value, ref, 'Stored summary member');
+            typeof stored.value.principalId === 'string' && stored.value.principalId.length > 0
+                ? groupStateMemberStorageKey({ ...ref, principalId: stored.value.principalId })
+                : undefined
+        ));
+        issues.push(...validateStoredMember(stored.value, ref, 'Stored summary member'));
         if (memberIds.has(stored.value.principalId)) {
-            throw new TypeError('Group presence summary member principal is duplicated');
+            issues.push(
+                toGroupStateValidationIssue(
+                    'read.members',
+                    'Group presence summary member principal is duplicated'
+                )
+            );
         }
         memberIds.add(stored.value.principalId);
+    }
+    if (issues.length > 0 || !isGroupStateRecord(read.group?.value)) {
+        return issues;
     }
     const activeMembers = read.members
         .map(({ value }) => value)
@@ -57,61 +102,111 @@ function validateGroupPresenceSummaryMembers(ref: GroupRef, read: GroupPresenceS
         activeOwners.length !== 1 ||
         activeOwners[0]?.principalId !== read.group.value.ownerPrincipalId
     ) {
-        throw new TypeError('Group presence summary roster facts are inconsistent');
+        issues.push(
+            toGroupStateValidationIssue(
+                'read.members',
+                'Group presence summary roster facts are inconsistent'
+            )
+        );
     }
+    return issues;
 }
 
 function validateGroupPresenceSummaryAdmissions(
     ref: GroupRef,
     admissions: GroupPresenceSummaryRead['admissions']
-): void {
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
     const admissionPrincipals = new Set<string>();
     const admittedSessionOwners = new Map<string, string>();
     for (const stored of admissions) {
-        validateGroupStateRuntimeEntry(
+        if (!isGroupStateRecord(stored) || !isGroupStateRecord(stored.value)) {
+            issues.push(
+                toGroupStateValidationIssue('read.admissions', 'Stored summary admission must contain an object value')
+            );
+            continue;
+        }
+        issues.push(...validateGroupStateRuntimeEntry(
             stored,
             'Stored summary admission',
-            groupStatePresenceAdmissionStorageKey({ ...ref, principalId: stored.value.principalId })
-        );
-        validatePresenceAdmission(stored.value, ref);
+            typeof stored.value.principalId === 'string' && stored.value.principalId.length > 0
+                ? groupStatePresenceAdmissionStorageKey({ ...ref, principalId: stored.value.principalId })
+                : undefined
+        ));
+        issues.push(...validatePresenceAdmission(stored.value, ref));
         if (admissionPrincipals.has(stored.value.principalId)) {
-            throw new TypeError('Group presence summary admission principal is duplicated');
+            issues.push(
+                toGroupStateValidationIssue(
+                    'read.admissions',
+                    'Group presence summary admission principal is duplicated'
+                )
+            );
         }
         admissionPrincipals.add(stored.value.principalId);
+        if (!Array.isArray(stored.value.admittedSessions)) {
+            continue;
+        }
         for (const session of stored.value.admittedSessions) {
+            if (!isGroupStateRecord(session) || typeof session.sessionId !== 'string') {
+                continue;
+            }
             const existing = admittedSessionOwners.get(session.sessionId);
             if (existing !== undefined && existing !== stored.value.principalId) {
-                throw new TypeError('Group presence summary session has multiple principals');
+                issues.push(
+                    toGroupStateValidationIssue(
+                        'read.admissions',
+                        'Group presence summary session has multiple principals'
+                    )
+                );
             }
             admittedSessionOwners.set(session.sessionId, stored.value.principalId);
         }
     }
+    return issues;
 }
 
 function validateGroupPresenceSummarySessions(
     ref: GroupRef,
     presenceSessions: GroupPresenceSummaryRead['presenceSessions']
-): Map<string, GroupPresenceSession> {
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
     const sessionsById = new Map<string, GroupPresenceSession>();
     for (const stored of presenceSessions) {
-        validateGroupStateRuntimeEntry(
+        if (!isGroupStateRecord(stored) || !isGroupStateRecord(stored.value)) {
+            issues.push(
+                toGroupStateValidationIssue(
+                    'read.presenceSessions',
+                    'Stored summary presence session must contain an object value'
+                )
+            );
+            continue;
+        }
+        issues.push(...validateGroupStateRuntimeEntry(
             stored,
             'Stored summary presence session',
-            groupStatePresenceSessionStorageKey({ ...ref, sessionId: stored.value.sessionId })
-        );
-        validatePresenceSession(stored.value, ref, 'Stored summary presence session');
+            typeof stored.value.sessionId === 'string' && stored.value.sessionId.length > 0
+                ? groupStatePresenceSessionStorageKey({ ...ref, sessionId: stored.value.sessionId })
+                : undefined
+        ));
+        issues.push(...validatePresenceSession(stored.value, ref, 'Stored summary presence session'));
         if (sessionsById.has(stored.value.sessionId)) {
-            throw new TypeError('Group presence summary sessionId is duplicated');
+            issues.push(
+                toGroupStateValidationIssue(
+                    'read.presenceSessions',
+                    'Group presence summary sessionId is duplicated'
+                )
+            );
         }
         sessionsById.set(stored.value.sessionId, stored.value);
     }
-    return sessionsById;
+    return issues;
 }
 
 function validateGroupPresenceSummaryAdmissionSessions(
     admissions: GroupPresenceSummaryRead['admissions'],
     sessionsById: ReadonlyMap<string, GroupPresenceSession>
-): void {
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
     for (const stored of admissions) {
         for (const admitted of stored.value.admittedSessions) {
             const session = sessionsById.get(admitted.sessionId);
@@ -124,8 +219,14 @@ function validateGroupPresenceSummaryAdmissionSessions(
                 session.generationVersion !== admitted.generationVersion ||
                 session.connectedAtEpochMs !== admitted.connectedAtEpochMs
             ) {
-                throw new TypeError('Group presence summary admission differs from stored generation');
+                issues.push(
+                    toGroupStateValidationIssue(
+                        'read.admissions',
+                        'Group presence summary admission differs from stored generation'
+                    )
+                );
             }
         }
     }
+    return issues;
 }

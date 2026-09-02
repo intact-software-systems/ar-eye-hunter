@@ -6,7 +6,8 @@ import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import {
     AppInboxIdempotencyConflictError,
     AppInboxType,
-    type AppInboxEnqueueInput
+    type AppInboxEnqueueInput,
+    type AppInboxExecutionMetadata
 } from '../../app-inbox/app-inbox-contracts.ts';
 import { type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
@@ -108,15 +109,42 @@ export class TopologyInboxService {
             nowEpochMs: config.options?.nowEpochMs ?? Date.now,
             wakeQueue: config.wakeOwningQueue
         });
-        for (const type of TOPOLOGY_CONFIG_INBOX_TYPES) {
-            handlers.registerHandler({
-                type,
-                decodeCommand: readDurableTopologyAppInboxCommand,
-                encodeResult: (result) => encodeAppInboxResult(result, 'Topology AppInbox result'),
-                handle: async (_command, context) =>
-                    await this.handler.processMutation(context, dependencies.mutationOwners)
-            });
-        }
+        const handleMutation = async (
+            _command: TopologyAppInboxCommand,
+            context: AppInboxExecutionMetadata
+        ): Promise<TopologyAppInboxResult> => await this.handler.processMutation(context, dependencies.mutationOwners);
+        const encodeResult = (result: TopologyAppInboxResult) =>
+            encodeAppInboxResult(result, 'Topology AppInbox result');
+        handlers.registerHandler({
+            type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+            decodeCommand: readDurableTopologyAppInboxCommand,
+            encodeResult,
+            handle: handleMutation
+        });
+        handlers.registerHandler({
+            type: AppInboxType.TOPOLOGY_CONFIG_DELETE,
+            decodeCommand: readDurableTopologyAppInboxCommand,
+            encodeResult,
+            handle: handleMutation
+        });
+        handlers.registerHandler({
+            type: AppInboxType.TOPOLOGY_OVERRIDE_PUT,
+            decodeCommand: readDurableTopologyAppInboxCommand,
+            encodeResult,
+            handle: handleMutation
+        });
+        handlers.registerHandler({
+            type: AppInboxType.TOPOLOGY_OVERRIDE_DELETE,
+            decodeCommand: readDurableTopologyAppInboxCommand,
+            encodeResult,
+            handle: handleMutation
+        });
+        handlers.registerHandler({
+            type: AppInboxType.TOPOLOGY_RECONFIGURE,
+            decodeCommand: readDurableTopologyAppInboxCommand,
+            encodeResult,
+            handle: handleMutation
+        });
         handlers.assertRegistrationComplete(TOPOLOGY_CONFIG_INBOX_TYPES);
     }
 

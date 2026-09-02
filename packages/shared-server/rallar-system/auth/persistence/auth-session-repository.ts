@@ -1,7 +1,6 @@
 import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
-    RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
 import { AuthSessionPersistence } from './auth-session-persistence.ts';
@@ -37,13 +36,6 @@ export class AuthSessionRepository extends AuthSessionPersistence {
         return await this.tickets.consumeAgentSessionTicket(ticket);
     }
 
-    async insertWebSocketTicket(
-        ticket: PersistedWebSocketTicket,
-        expectedRevision: number | null = null
-    ): Promise<RuntimeStateConditionalWriteResult> {
-        return await this.tickets.insertWebSocketTicket(ticket, expectedRevision);
-    }
-
     async findWebSocketTicketByDigestEntry(
         ticketDigest: string
     ): Promise<RuntimeStateEntryValue<PersistedWebSocketTicket> | undefined> {
@@ -71,13 +63,6 @@ export class AuthSessionRepository extends AuthSessionPersistence {
             storageKey,
             expectedRevision
         );
-    }
-
-    async insertAgentSessionTicket(
-        ticket: PersistedAgentSessionTicket,
-        expectedRevision: number | null = null
-    ): Promise<RuntimeStateConditionalWriteResult> {
-        return await this.tickets.insertAgentSessionTicket(ticket, expectedRevision);
     }
 
     async findAgentSessionTicketByDigestEntry(

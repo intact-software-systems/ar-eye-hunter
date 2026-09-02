@@ -11,9 +11,9 @@ import type {
     ClientSnapshot,
     ClientTransport
 } from '@shared/api/client-types.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
+import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type { JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import type { ComputedClientStateSync } from '../../state-sync/state-sync-entry-computation.ts';
 import type {
@@ -210,16 +210,16 @@ export type ClientMutationCommand =
         }>
     );
 
-export type ClientMutationRead = Readonly<{
-    authoritySession: PersistedAuthSession | null;
-    idempotency: RuntimeStateEntryValue<ClientMutationIdempotencyRecord> | null;
-    principal: RuntimeStateEntryValue<ClientPrincipal> | null;
-    instance: RuntimeStateEntryValue<ClientInstance> | null;
-    session: RuntimeStateEntryValue<ClientSession> | null;
-    expiredSessionEntry: RuntimeStateEntry | null;
-    snapshot: ClientSnapshot | null;
-    receiptEvent: ClientEvent | null;
-}>;
+export interface ClientMutationRead {
+    readonly authoritySession: PersistedAuthSession | null;
+    readonly idempotency: RuntimeStateEntryValue<ClientMutationIdempotencyRecord> | null;
+    readonly principal: RuntimeStateEntryValue<ClientPrincipal> | null;
+    readonly instance: RuntimeStateEntryValue<ClientInstance> | null;
+    readonly session: RuntimeStateEntryValue<ClientSession> | null;
+    readonly expiredSessionEntry: RuntimeStateEntry | null;
+    readonly snapshot: ClientSnapshot | null;
+    readonly receiptEvent: ClientEvent | null;
+}
 
 export type ClientMutationFacts = Readonly<{
     nowEpochMs: number;
@@ -240,36 +240,36 @@ export type ConditionalCandidate<T> =
     | Readonly<{ operation: 'insert'; value: T; }>
     | Readonly<{ operation: 'update'; value: T; expectedRevision: number; }>;
 
-export type ClientMutationComputedPersistedNoOp = Readonly<{
-    outcome: 'no-op';
-    persistIdempotency: true;
-    aggregateRef: ClientPrincipalRef;
-    idempotency: ClientMutationIdempotencyRecord;
-    receipt: ClientMutationReceipt;
-    snapshot: ClientSnapshot;
-    event: null;
-}>;
+export interface ClientMutationComputedPersistedNoOp {
+    readonly outcome: 'no-op';
+    readonly persistIdempotency: true;
+    readonly aggregateRef: ClientPrincipalRef;
+    readonly idempotency: ClientMutationIdempotencyRecord;
+    readonly receipt: ClientMutationReceipt;
+    readonly snapshot: ClientSnapshot;
+    readonly event: null;
+}
 
-export type ClientMutationComputedNonPersistedNoOp = Readonly<{
-    outcome: 'no-op';
-    persistIdempotency: false;
-    receipt: ClientMutationReceipt;
-    snapshot: ClientSnapshot;
-    event: null;
-}>;
+export interface ClientMutationComputedNonPersistedNoOp {
+    readonly outcome: 'no-op';
+    readonly persistIdempotency: false;
+    readonly receipt: ClientMutationReceipt;
+    readonly snapshot: ClientSnapshot;
+    readonly event: null;
+}
 
-export type ClientMutationComputedAppliedWrite = Readonly<{
-    outcome: 'write';
-    principal: Exclude<ConditionalCandidate<ClientPrincipal>, { operation: 'none'; }>;
-    instance: ConditionalCandidate<ClientInstance>;
-    session: ConditionalCandidate<ClientSession>;
-    event: ClientEvent;
-    snapshot: ClientSnapshot;
-    receipt: ClientMutationReceipt;
-    idempotency: ClientMutationIdempotencyRecord | null;
-    stateSync: readonly ComputedClientStateSync[];
-    outboxEntries: readonly ResourceEntry[];
-}>;
+export interface ClientMutationComputedAppliedWrite {
+    readonly outcome: 'write';
+    readonly principal: Exclude<ConditionalCandidate<ClientPrincipal>, { operation: 'none'; }>;
+    readonly instance: ConditionalCandidate<ClientInstance>;
+    readonly session: ConditionalCandidate<ClientSession>;
+    readonly event: ClientEvent;
+    readonly snapshot: ClientSnapshot;
+    readonly receipt: ClientMutationReceipt;
+    readonly idempotency: ClientMutationIdempotencyRecord | null;
+    readonly stateSync: readonly ComputedClientStateSync[];
+    readonly outboxWrites: readonly AppOutboxInsert[];
+}
 
 export type ClientMutationComputedWrite = ClientMutationComputedAppliedWrite | ClientMutationComputedPersistedNoOp;
 

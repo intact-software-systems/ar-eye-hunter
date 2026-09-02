@@ -7,11 +7,12 @@ import type {
     GroupMutationDescriptor,
     GroupMutationPreparation
 } from '../group-state-service-contracts.ts';
+import { isGroupStateRecord } from '../group-state-validation-issues.ts';
 import { requireNonNegativeSafeInteger } from '../group-state-validation-primitives.ts';
-import { assertGroupMutationCommand } from '../mutation/command-validation/assert-group-mutation-command.ts';
 import { assertGroupMutationRequest } from '../mutation/command-validation/group-mutation-request-validation.ts';
+import { validateGroupMutationCommand } from '../mutation/command-validation/validate-group-mutation-command.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from '../mutation/group-mutation-contracts.ts';
-import { assertGroupMutationFacts } from '../mutation/state-validation/assert-group-mutation-facts.ts';
+import { validateGroupMutationFacts } from '../mutation/state-validation/validate-group-mutation-facts.ts';
 
 export type DecodedGroupStateInboxAuthority =
     | Readonly<{ kind: 'authorized'; mutation: AuthorizedGroupMutation; }>
@@ -65,7 +66,14 @@ function decodeGroupMutationPreparation(value: JsonWireObject): GroupMutationPre
         if ((authorityProof === null) !== (descriptor === null)) {
             throw new TypeError('Prepared authority proof and descriptor must both be present');
         }
-        assertGroupMutationCommand(value.command);
+        const commandIssues = validateGroupMutationCommand(value.command);
+        if (commandIssues.length > 0) {
+            throw commandIssues[0].cause;
+        }
+        if (!isGroupStateRecord(value.command)) {
+            throw commandIssues[0]?.cause ?? new TypeError('Prepared group mutation command must be an object');
+        }
+        const command = value.command as unknown as GroupMutationCommand;
         const facts = decodePreparedGroupMutationFacts(value.facts);
         assertPreparedAuthorityFacts(authorityProof, facts);
         requireString(value.causalToken, 'Prepared group mutation causal token');
@@ -73,7 +81,7 @@ function decodeGroupMutationPreparation(value: JsonWireObject): GroupMutationPre
         return {
             authorityProof,
             descriptor,
-            command: value.command,
+            command,
             facts,
             causalToken: value.causalToken,
             queueResourceId: value.queueResourceId
@@ -205,7 +213,10 @@ function decodePreparedGroupMutationFacts(
     });
     const withAttemptCount = { ...facts, attemptCount: 1 };
     const decodedFacts = withAttemptCount as GroupMutationFacts;
-    assertGroupMutationFacts(decodedFacts);
+    const factIssues = validateGroupMutationFacts(decodedFacts);
+    if (factIssues.length > 0) {
+        throw factIssues[0].cause;
+    }
     return {
         nowEpochMs: decodedFacts.nowEpochMs,
         expireAtEpochMs: decodedFacts.expireAtEpochMs,

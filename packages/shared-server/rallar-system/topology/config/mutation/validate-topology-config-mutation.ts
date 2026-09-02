@@ -1,4 +1,8 @@
-import { toRtcTopologyEntryResourceId } from '../../mutation/rtc-topology-outbox-entry.ts';
+import {
+    assertRuntimeStateExpectedRevision,
+    assertRuntimeStateUpsertExpectedRevision
+} from '../../../../runtime-state/runtime-state-repository.ts';
+import { validateAppInboxComputedProjection } from '../../../app-inbox/handler/app-inbox-computed-validation.ts';
 import { computeTopologyConfigMutation } from './compute-topology-config-mutation.ts';
 import type {
     GroupTopologyConfigMutationComputed,
@@ -16,7 +20,8 @@ export function validateTopologyConfigMutation(
 ): void {
     const computed = topologyValidation.computed;
     const canonical = computeTopologyConfigMutation(topologyValidation);
-    if (JSON.stringify(computed) !== JSON.stringify(canonical)) {
+    const issues = validateAppInboxComputedProjection(canonical, computed, 'topology config mutation');
+    if (issues.length > 0) {
         const operation = topologyValidation.command.operation;
         throw new TypeError(
             `Topology config ${operation} mutation differs from its canonical deterministic projection`
@@ -24,12 +29,6 @@ export function validateTopologyConfigMutation(
     }
     if (computed.outcome === 'write' || computed.outcome === 'claim') {
         validateWrittenOrClaimedTopologyConfigMutation({ ...topologyValidation, computed });
-    }
-    if (
-        computed.outcome === 'write' &&
-        computed.receipt.outboxIds[0] !== toRtcTopologyEntryResourceId(computed.outbox)
-    ) {
-        throw new TypeError('Topology config receipt outbox differs from intent');
     }
 }
 
@@ -48,5 +47,13 @@ function validateWrittenOrClaimedTopologyConfigMutation(
             groupRef: topologyValidation.command.aggregateRef,
             requestId: requireTopologyConfigRequestId(topologyValidation.command)
         });
+    }
+    for (const write of topologyValidation.computed.runtimeWrites) {
+        if (write.operation === 'update') {
+            assertRuntimeStateUpsertExpectedRevision(write.expectedRevision);
+        }
+        else if (write.operation === 'delete') {
+            assertRuntimeStateExpectedRevision(write.expectedRevision);
+        }
     }
 }

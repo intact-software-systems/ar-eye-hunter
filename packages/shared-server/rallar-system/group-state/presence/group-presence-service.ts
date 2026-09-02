@@ -1,27 +1,40 @@
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
-import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
+import {
+    AppInboxType,
+    type AppInboxEnqueueInput,
+    type AppInboxExecutionMetadata
+} from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion,
+    type AppInboxCompletionComputed,
+    type AppInboxCompletionFacts
+} from '../../app-inbox/handler/app-inbox-completion-computation.ts';
+import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
-import type {
-    WsSessionGenerationCloseFacts,
-    WsSessionGenerationLifecycleComputed,
-    WsSessionHighWaterIdentity
+import {
+    computeWsSessionGenerationClosed,
+    validateWsSessionGenerationClosed,
+    type WsSessionGenerationCloseFacts,
+    type WsSessionGenerationFacts,
+    type WsSessionGenerationLifecycleComputed,
+    type WsSessionGenerationLifecycleRead,
+    type WsSessionHighWaterIdentity
 } from '../../websocket/ws-session-generation-computation.ts';
 import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
 import type {
     GroupMutationPreparation,
     GroupStateMutationCommand,
-    GroupStateMutationService,
     GroupStateService
 } from '../group-state-service-contracts.ts';
-import type { GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
+import { GroupMutationIdempotencyConflictError } from '../group-state-service.ts';
+import { toGroupStateValidationIssue, type GroupStateValidationIssue } from '../group-state-validation-issues.ts';
+import type { GroupMutationComputed, GroupMutationRead } from '../mutation/group-mutation-contracts.ts';
+import { computeGroupMutation } from '../mutation/orchestration/compute-group-mutation.ts';
+import { validateGroupMutation } from '../mutation/state-validation/validate-group-mutation.ts';
 import type { GroupPresenceSessionCleanupAppInboxPayload } from './group-presence-session-cleanup-app-inbox-payload.ts';
-
-type WriteMutation = <Result>(
-    write: (transaction: PSqlSql) => Promise<Result>
-) => Promise<Result>;
 
 export interface InactiveGroupPresenceResult {
     readonly status: 'inactive';
@@ -29,22 +42,48 @@ export interface InactiveGroupPresenceResult {
     readonly generationId: string;
 }
 
-export type GroupPresenceConnectOutcome =
+export type GroupPresenceConnectRead =
     | InactiveGroupPresenceResult
     | Readonly<{
-        status: 'ready-to-commit';
-        computed: GroupMutationComputed;
-        lifecycleGuard: WsSessionGenerationLifecycleComputed;
+        status: 'active';
+        facts: WsSessionGenerationFacts;
+        lifecycleRead: WsSessionGenerationLifecycleRead;
     }>;
 
-interface ProcessGroupPresenceConnectInput {
+interface ReadGroupPresenceConnectInput {
     readonly command: GroupStateMutationCommand;
-    readonly mutationService: GroupStateMutationService;
     readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
 }
 
 interface GroupSessionCleanupResult extends InactiveGroupPresenceResult {
     readonly affectedGroups: number;
+}
+
+interface ProcessGroupSessionCleanupInput {
+    readonly facts: GroupPresenceSessionCleanupAppInboxPayload;
+    readonly attemptCount: number;
+    readonly context: AppInboxExecutionMetadata;
+    readonly groupStateService: GroupStateService;
+    readonly transactionWriter: AppInboxMutationTransactionWriter;
+    readonly wakeQueue?: () => void;
+}
+
+interface GroupSessionCleanupMutationRead {
+    readonly command: GroupStateMutationCommand;
+    readonly read: GroupMutationRead;
+}
+
+interface GroupSessionCleanupInput {
+    readonly facts: GroupPresenceSessionCleanupAppInboxPayload;
+    readonly lifecycleRead: WsSessionGenerationLifecycleRead;
+    readonly mutationReads: readonly GroupSessionCleanupMutationRead[];
+    readonly completionFacts: AppInboxCompletionFacts;
+}
+
+interface GroupSessionCleanupComputed {
+    readonly lifecycle: WsSessionGenerationLifecycleComputed;
+    readonly mutations: readonly GroupMutationComputed[];
+    readonly completion: AppInboxCompletionComputed<GroupSessionCleanupResult>;
 }
 
 export function toGroupSessionCleanupEnqueue(
@@ -81,9 +120,9 @@ export function toExpiredPresenceEnqueue(
     };
 }
 
-export async function processGroupPresenceConnect(
-    input: ProcessGroupPresenceConnectInput
-): Promise<GroupPresenceConnectOutcome> {
+export async function readGroupPresenceConnect(
+    input: ReadGroupPresenceConnectInput
+): Promise<GroupPresenceConnectRead> {
     const operation = input.command.command;
     if (operation.operation !== 'connectPresence') {
         throw new TypeError('Group presence connect command is invalid');
@@ -103,70 +142,133 @@ export async function processGroupPresenceConnect(
             generationId: operation.input.generationId
         };
     }
-    const read = await input.mutationService.read(input.command);
-    const computed = input.mutationService.compute(input.command, read);
-    input.mutationService.validate(input.command, read, computed);
-    const lifecycleGuard = lifecycle.computeConnectGuard(
-        {
+    return {
+        status: 'active',
+        facts: {
             ...identity,
             generationId: operation.input.generationId,
-            generationStartedAtEpochMs: observedAtEpochMs,
-            expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(observedAtEpochMs)
+            generationStartedAtEpochMs: observedAtEpochMs
         },
         lifecycleRead
-    );
-    return { status: 'ready-to-commit', computed, lifecycleGuard };
+    };
 }
 
 export async function processGroupSessionCleanup(
-    input: Readonly<{
-        facts: GroupPresenceSessionCleanupAppInboxPayload;
-        attemptCount: number;
-        groupStateService: GroupStateService;
-        writeMutation: WriteMutation;
-        wakeQueue?: () => void;
-    }>
+    input: ProcessGroupSessionCleanupInput
 ): Promise<GroupSessionCleanupResult> {
-    const closeFacts = toGroupCloseFacts(input.facts);
     const lifecycle = input.groupStateService.sessionGenerationLifecycle;
-    const lifecycleRead = await lifecycle.read(closeFacts);
-    const lifecycleComputed = lifecycle.computeClosed(closeFacts, lifecycleRead);
+    const lifecycleRead = await lifecycle.read(toGroupHighWaterIdentity({
+        scope: input.facts.connection.scope,
+        principalId: input.facts.connection.principalId,
+        sessionId: input.facts.connection.authSession.sessionId
+    }));
+    const mutationReads = await readGroupSessionCleanupMutations(input);
+    const computationInput: GroupSessionCleanupInput = {
+        facts: input.facts,
+        lifecycleRead,
+        mutationReads,
+        completionFacts: input.transactionWriter.readCompletionFacts(input.context)
+    };
+    const computed = computeGroupSessionCleanup(computationInput);
+    const issues = validateGroupSessionCleanup(computationInput, computed);
+    if (issues.length > 0) {
+        throw issues[0].cause;
+    }
+    for (const [index, mutation] of computed.mutations.entries()) {
+        if (mutation.outcome === 'idempotency-conflict') {
+            throw new GroupMutationIdempotencyConflictError(
+                mutationReads[index].command.command.commandId,
+                mutation.existingCommandHash,
+                mutation.receivedCommandHash
+            );
+        }
+    }
+    const result = await input.transactionWriter.writeMutation(
+        input.context,
+        computed.completion,
+        async (transaction) => {
+            await lifecycle.write(transaction, computed.lifecycle);
+            for (const mutation of computed.mutations) {
+                if (mutation.outcome === 'write') {
+                    await input.groupStateService.write(transaction, mutation);
+                }
+            }
+        }
+    );
+    input.wakeQueue?.();
+    return result;
+}
+
+function computeGroupSessionCleanup(input: GroupSessionCleanupInput): GroupSessionCleanupComputed {
+    return {
+        lifecycle: computeWsSessionGenerationClosed(toGroupCloseFacts(input.facts), input.lifecycleRead),
+        mutations: input.mutationReads.map(({ command, read }) =>
+            computeGroupMutation({ command: command.command, read, facts: command.facts })
+        ),
+        completion: computeAppInboxCompletion({
+            ...input.completionFacts,
+            durableResult: computeGroupSessionCleanupResult(input),
+            status: EntityStatus.COMPLETED
+        })
+    };
+}
+
+function validateGroupSessionCleanup(
+    input: GroupSessionCleanupInput,
+    computed: GroupSessionCleanupComputed
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
+    if (computed.mutations.length !== input.mutationReads.length) {
+        issues.push(toGroupStateValidationIssue('mutations', 'Group session cleanup must retain every read mutation.'));
+    }
+    for (const [index, mutation] of computed.mutations.entries()) {
+        const original = input.mutationReads[index];
+        if (original) {
+            const { command, read } = original;
+            issues.push(
+                ...validateGroupMutation({ command: command.command, read, facts: command.facts, computed: mutation })
+            );
+        }
+    }
+    issues.push(
+        ...validateWsSessionGenerationClosed(toGroupCloseFacts(input.facts), input.lifecycleRead, computed.lifecycle)
+    );
+    issues.push(...validateAppInboxCompletion({
+        ...input.completionFacts,
+        durableResult: computeGroupSessionCleanupResult(input),
+        status: EntityStatus.COMPLETED
+    }, computed.completion));
+    return issues;
+}
+
+function computeGroupSessionCleanupResult(input: GroupSessionCleanupInput): GroupSessionCleanupResult {
+    return {
+        status: 'inactive',
+        sessionId: input.facts.connection.authSession.sessionId,
+        generationId: input.facts.connection.generationId,
+        affectedGroups: input.mutationReads.length
+    };
+}
+
+async function readGroupSessionCleanupMutations(
+    input: ProcessGroupSessionCleanupInput
+): Promise<readonly GroupSessionCleanupMutationRead[]> {
     const preparations = await input.groupStateService.prepareSessionCleanupMutations({
         scope: input.facts.connection.scope,
         authSession: input.facts.connection.authSession,
         principalId: input.facts.connection.principalId,
         disconnectedAtEpochMs: input.facts.disconnectedAtEpochMs
     });
-    const mutations = await Promise.all(
-        preparations.map(async (prepared) => {
-            const command: GroupStateMutationCommand = {
-                authorityProof: prepared.authorityProof,
-                descriptor: prepared.descriptor,
-                command: prepared.command,
-                facts: { ...prepared.facts, attemptCount: input.attemptCount }
-            };
-            const read = await input.groupStateService.read(command);
-            const computed = input.groupStateService.compute(command, read);
-            input.groupStateService.validate(command, read, computed);
-            return computed;
-        })
-    );
-    const result = await input.writeMutation(async (transaction) => {
-        await lifecycle.write(transaction, lifecycleComputed);
-        for (const computed of mutations) {
-            if (computed.outcome === 'write') {
-                await input.groupStateService.write(transaction, computed);
-            }
-        }
-        return {
-            status: 'inactive',
-            sessionId: input.facts.connection.authSession.sessionId,
-            generationId: input.facts.connection.generationId,
-            affectedGroups: mutations.length
-        } as const;
-    });
-    input.wakeQueue?.();
-    return result;
+    return await Promise.all(preparations.map(async (prepared) => {
+        const command: GroupStateMutationCommand = {
+            authorityProof: prepared.authorityProof,
+            descriptor: prepared.descriptor,
+            command: prepared.command,
+            facts: { ...prepared.facts, attemptCount: input.attemptCount }
+        };
+        const read = await input.groupStateService.read(command);
+        return { command, read };
+    }));
 }
 
 function toGroupHighWaterIdentity(

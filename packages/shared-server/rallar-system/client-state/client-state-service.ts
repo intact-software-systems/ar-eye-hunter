@@ -18,18 +18,17 @@ export function createClientStateService(
 ): ClientStateService {
     const runtimeRepository = dependencies.runtimeRepository;
     const authSessionRepository = new AuthSessionRepository(runtimeRepository);
-    const repositoryFor = (runtime: typeof runtimeRepository) =>
-        new ClientStateRepository(runtime, dependencies.clientStateEventStore);
+    const repository = new ClientStateRepository(runtimeRepository, dependencies.clientStateEventStore);
     const service: ClientStateService = {
+        mutationTiming: { sink: dependencies.timing, serviceId: dependencies.serviceId },
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtimeRepository),
-        listSnapshots: async (scope) => await repositoryFor(runtimeRepository).listSnapshots(scope),
-        readSnapshot: async (ref) => await repositoryFor(runtimeRepository).readSnapshot(ref),
-        readPresenceSnapshot: async (ref) => await repositoryFor(runtimeRepository).readPresenceSnapshot(ref),
-        listEvents: async (ref) => await repositoryFor(runtimeRepository).listEvents(ref),
-        listRecentEvents: async (ref, query) => await repositoryFor(runtimeRepository).listRecentEvents(ref, query),
-        listEventPage: async (ref, query) => await repositoryFor(runtimeRepository).listEventPage(ref, query),
-        read: async (command) =>
-            await readClientMutation(repositoryFor(runtimeRepository), authSessionRepository, command),
+        listSnapshots: async (scope) => await repository.listSnapshots(scope),
+        readSnapshot: async (ref) => await repository.readSnapshot(ref),
+        readPresenceSnapshot: async (ref) => await repository.readPresenceSnapshot(ref),
+        listEvents: async (ref) => await repository.listEvents(ref),
+        listRecentEvents: async (ref, query) => await repository.listRecentEvents(ref, query),
+        listEventPage: async (ref, query) => await repository.listEventPage(ref, query),
+        read: async (command) => await readClientMutation(repository, authSessionRepository, command),
         compute: (command, read) => computeClientMutation({ command, read }),
         validate: (command, read, computed) => validateClientMutation({ command, read, computed }),
         write: async (transaction, computed) =>
@@ -39,11 +38,10 @@ export function createClientStateService(
                 computed
             ),
         listExpiredSessionCandidates: async (atEpochMs) =>
-            (await repositoryFor(runtimeRepository).listAllSessions())
+            (await repository.listAllSessions())
                 .filter(isExpiredActiveSession(atEpochMs))
                 .map(toClientSessionExpiryCandidate),
-        findSessionBySessionId: async (sessionId) =>
-            await findClientSessionBySessionId(repositoryFor(runtimeRepository), sessionId),
+        findSessionBySessionId: async (sessionId) => await findClientSessionBySessionId(repository, sessionId),
         readIssuedAuthSession: async (sessionId) => await authSessionRepository.findBySessionId(sessionId),
         observeSnapshot: async (snapshot) => snapshot
     };

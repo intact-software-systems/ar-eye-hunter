@@ -124,6 +124,7 @@ export class AppClientInboxService {
             expiryCandidates: dependencies.clientStateService,
             snapshotObserver: dependencies.clientStateService,
             transactionWriter: handlerRuntime.transactionWriter,
+            mutationTiming: dependencies.clientStateService.mutationTiming,
             serviceId: config.serviceId
         });
         this.registerClientStateMessages();

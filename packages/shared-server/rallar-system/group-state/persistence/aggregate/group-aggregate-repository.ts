@@ -1,4 +1,3 @@
-import { validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
 import type { Group, GroupEvent, GroupRef, GroupScope } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -13,10 +12,10 @@ import {
     type RuntimeStateRepositoryLike
 } from '../../../../runtime-state/runtime-state-repository.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../../../protocol/json-wire-identity.ts';
-import type { GroupStateEventStore } from '../../../state-events/group-state-event-store.ts';
+import type { GroupStateEventStore, GroupStateEventWrite } from '../../../state-events/group-state-event-store.ts';
 import type { StateEventListQuery } from '../../../state-events/state-event-listing.ts';
 import type { GroupMutationIdempotencyRecord } from '../../mutation/group-mutation-contracts.ts';
-import { assertGroupMutationIdempotencyRecord } from '../../mutation/result-validation/assert-group-mutation-result.ts';
+import { validateGroupMutationIdempotencyRecord } from '../../mutation/result-validation/validate-group-mutation-result.ts';
 import { decodePersistedGroup } from '../group-state-persistence-codec.ts';
 import {
     assertGroupRefIdentity,
@@ -28,7 +27,7 @@ import {
 } from '../group-state-persistence-contracts.ts';
 import { GROUPS_NAMESPACE } from '../group-state-runtime-namespaces.ts';
 import { decodeGroupStateIdempotencyStorageKey } from '../idempotency/group-idempotency-storage-key.ts';
-import { validatePersistedGroup } from '../validate-persisted-group.ts';
+import { validateStoredGroup } from '../validate-persisted-group.ts';
 import { decodeGroupStateGroupStorageKey, groupStateGroupStorageKey } from './group-aggregate-storage-keys.ts';
 
 export class GroupAggregateRepository extends RuntimeStateJsonStore {
@@ -40,7 +39,7 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
     }
 
     async insertGroup(group: Group): Promise<RuntimeStateConditionalWriteResult> {
-        validatePersistedGroup(group, group);
+        assertStoredGroup(group);
         return await this.putValueIfAbsent(
             GROUPS_NAMESPACE,
             groupStateGroupStorageKey(group),
@@ -53,7 +52,7 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
         group: Group,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
-        validatePersistedGroup(group, group);
+        assertStoredGroup(group);
         return await this.putValueIfRevision(
             GROUPS_NAMESPACE,
             groupStateGroupStorageKey(group),
@@ -70,7 +69,7 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
     }
 
     async putGroup(group: Group): Promise<void> {
-        validatePersistedGroup(group, group);
+        assertStoredGroup(group);
         await this.putValue(
             GROUPS_NAMESPACE,
             groupStateGroupStorageKey(group),
@@ -83,9 +82,8 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
         await this.deleteValue(GROUPS_NAMESPACE, groupStateGroupStorageKey(ref));
     }
 
-    async appendEvent(event: GroupEvent): Promise<void> {
-        validateAuthoritativeGroupEvent(event, event);
-        await this.events.appendGroupEvent(event);
+    async appendEvent(computed: GroupStateEventWrite): Promise<void> {
+        await this.events.appendGroupEvent(computed);
     }
 
     async listEvents(ref: GroupRef): Promise<readonly GroupEvent[]> {
@@ -119,9 +117,16 @@ export async function advanceGroupStateAuthorityFence(
         descriptor.namespace,
         descriptor.key,
         descriptor.value,
-        descriptor.expireAtTimestamp,
+        new Date(descriptor.expireAtTimestamp).toISOString(),
         descriptor.expectedRevision
     );
+}
+
+function assertStoredGroup(group: Group): void {
+    const issues = validateStoredGroup(group, group);
+    if (issues.length > 0) {
+        throw issues[0].cause;
+    }
 }
 
 export function materializeGroupStateAuthorityGuard(
@@ -263,13 +268,11 @@ function assertIdempotencyIdentity(
     expected: GroupRef & Readonly<{ requestId: string; }>,
     storageKey: string
 ): void {
-    try {
-        assertGroupMutationIdempotencyRecord(value, expected);
-    }
-    catch (error) {
+    const issues = validateGroupMutationIdempotencyRecord(value, expected);
+    if (issues.length > 0) {
         throw new GroupStateRepositoryInvariantCorruptionError(
             storageKey,
-            error instanceof Error ? error.message : 'Stored group idempotency value is invalid'
+            issues[0].cause.message
         );
     }
     if (value.requestId !== expected.requestId) {

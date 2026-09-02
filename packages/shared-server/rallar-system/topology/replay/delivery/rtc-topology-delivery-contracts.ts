@@ -7,6 +7,7 @@ export interface RtcTopologyDeliveryAppendInput {
     readonly publicationId: string;
     readonly outboxKey: Key;
     readonly retainUntilEpochMs: number;
+    readonly retainUntil: Date;
 }
 
 export interface RtcTopologyDeliveryStream {
@@ -16,10 +17,12 @@ export interface RtcTopologyDeliveryStream {
     readonly leaseExpiresAtEpochMs: number;
 }
 
-export interface RtcTopologyDeliveryLogEntry extends RtcTopologyDeliveryAppendInput {
-    readonly sequence: number;
-    readonly insertedAtEpochMs: number;
-}
+export type RtcTopologyDeliveryLogEntry = Readonly<
+    Omit<RtcTopologyDeliveryAppendInput, 'retainUntil'> & {
+        sequence: number;
+        insertedAtEpochMs: number;
+    }
+>;
 
 export interface RtcTopologyDeliveryStreamRegistrationInput {
     readonly streamId: string;

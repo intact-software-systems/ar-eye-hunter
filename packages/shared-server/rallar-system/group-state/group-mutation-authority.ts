@@ -20,7 +20,7 @@ import {
     type GroupMutationPreparation,
     type GroupStateMutationCommand
 } from './group-state-service-contracts.ts';
-import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
+import { validateGroupMutationCommand } from './mutation/command-validation/validate-group-mutation-command.ts';
 import { type GroupMutationCommand, type GroupMutationFacts } from './mutation/group-mutation-contracts.ts';
 import { constantTimeHexEqual, constantTimeSecretEqual, hmacSha256Hex } from './mutation/group-state-crypto.ts';
 import { isScopedGroupMutationCommandId, toScopedGroupMutationCommandId } from './scoped-group-mutation-command-id.ts';
@@ -162,7 +162,10 @@ export async function authorizeGroupMutation(
     const command = toDescriptorCommand(verified.descriptor, () => {
         throw new NonRetryableException('Authenticated group mutation requestId is required.');
     });
-    assertGroupMutationCommand(command);
+    const commandIssues = validateGroupMutationCommand(command);
+    if (commandIssues.length > 0) {
+        throw commandIssues[0].cause;
+    }
     return {
         authorityProof: await createGroupMutationAuthorityProof(verified.session, verified.descriptor),
         descriptor: verified.descriptor

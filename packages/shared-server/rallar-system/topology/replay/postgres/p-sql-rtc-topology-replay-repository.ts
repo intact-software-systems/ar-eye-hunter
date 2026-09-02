@@ -160,6 +160,7 @@ export class PSqlRtcTopologyReplayRepository {
         validateRtcTopologyDeliveryStreamId(input.publisherStreamId);
         validatePageSize(input.pageSize, RTC_TOPOLOGY_REPLAY_PAGE_SIZE, 'replay');
         return await this.sql.begin(async (transaction) => {
+            await transaction`SET TRANSACTION READ ONLY`;
             const boundaries = await transaction<PageBoundaryRow[]>`
         with database_clock as materialized (
           select clock_timestamp() as now

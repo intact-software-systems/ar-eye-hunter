@@ -2,19 +2,16 @@ import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { GroupStateEventCollisionError, type GroupStateEventStore } from '../group-state-event-store.ts';
+import type { GroupStateEventStore, GroupStateEventWrite } from '../group-state-event-store.ts';
 import { DEFAULT_STATE_EVENT_LIST_LIMIT, type StateEventListQuery } from '../state-event-listing.ts';
 import { toStateEventCursor } from '../state-event-ordering.ts';
-import {
-    assertPersistableGroupStateEvent,
-    isExactPersistedGroupStateEvent,
-    toValidatedGroupStateEvent
-} from './group-state-event-row-codec.ts';
+import { isExactPersistedGroupStateEvent, toValidatedGroupStateEvent } from './group-state-event-row-codec.ts';
+import { groupStateEventWorkspaceKey } from './group-state-event-workspace-key.ts';
 import {
     insertPSqlGroupStateEvent,
     readAllPSqlGroupStateEventRows,
-    readPSqlGroupStateEventCollision,
     readPSqlGroupStateEventPageRows,
+    readPSqlGroupStateEventRow,
     readRecentPSqlGroupStateEventRows
 } from './p-sql-group-state-event-queries.ts';
 
@@ -25,16 +22,24 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
         this.sql = sql;
     }
 
-    async appendGroupEvent(event: GroupEvent): Promise<void> {
-        assertPersistableGroupStateEvent(event, event);
-        const eventJson = JSON.stringify(event);
-        if (await insertPSqlGroupStateEvent(this.sql, event, eventJson)) {
+    async appendGroupEvent(computed: GroupStateEventWrite): Promise<void> {
+        if (await insertPSqlGroupStateEvent(this.sql, computed)) {
             return;
         }
-        const existing = await readPSqlGroupStateEventCollision(this.sql, event);
-        if (existing === undefined || !isExactPersistedGroupStateEvent(existing, event, eventJson)) {
-            throw new GroupStateEventCollisionError(event);
+        const existing = await readPSqlGroupStateEventRow(this.sql, computed);
+        if (existing === undefined || !isExactPersistedGroupStateEvent(existing, computed)) {
+            throw computed.collision;
         }
+    }
+
+    async readGroupEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined> {
+        const row = await readPSqlGroupStateEventRow(this.sql, {
+            applicationId: ref.applicationId,
+            workspaceKey: groupStateEventWorkspaceKey(ref.workspaceId),
+            groupId: ref.groupId,
+            eventId
+        });
+        return row === undefined ? undefined : toValidatedGroupStateEvent(row, ref);
     }
 
     async listGroupEvents(ref: GroupRef): Promise<readonly GroupEvent[]> {

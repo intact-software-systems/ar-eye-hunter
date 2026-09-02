@@ -1,3 +1,4 @@
+import { decodeRuntimeStateGuardedBatchResult } from '../guarded-batch/decode-runtime-state-guarded-batch-result.ts';
 import type {
     RuntimeStateGuardedBatch,
     RuntimeStateGuardedBatchEffect,
@@ -5,7 +6,6 @@ import type {
     RuntimeStateGuardedBatchGuardResult,
     RuntimeStateGuardedBatchResult
 } from '../guarded-batch/runtime-state-guarded-batch.ts';
-import { validateRuntimeStateGuardedBatchResult } from '../guarded-batch/validate-runtime-state-guarded-batch-result.ts';
 import { decodeRuntimeStateRevision } from './runtime-state-row-codec.ts';
 
 export interface RuntimeStateGuardedBatchDatabaseRow {
@@ -30,45 +30,13 @@ export function decodeRuntimeStateGuardedBatchRows(
     batch: RuntimeStateGuardedBatch,
     rows: readonly RuntimeStateGuardedBatchDatabaseRow[]
 ): RuntimeStateGuardedBatchResult {
-    requireDenseRows(rows);
-    let guardRow: DecodedRuntimeStateGuardedBatchRow | undefined;
-    const effectRows = new Map<string, DecodedRuntimeStateGuardedBatchRow>();
-    for (const inputRow of rows) {
-        const row = decodeRow(inputRow);
-        if (row.resultKind === 'guard') {
-            if (row.effectId !== null || guardRow !== undefined) {
-                throw invalidDatabaseResult('expected exactly one unique guard row');
-            }
-            guardRow = row;
-            continue;
-        }
-        if (row.effectId === null || effectRows.has(row.effectId)) {
-            throw invalidDatabaseResult('effect rows require unique effect IDs');
-        }
-        effectRows.set(row.effectId, row);
-    }
+    const { guardRow, effectRows } = decodeUniqueRows(rows);
 
     if (guardRow === undefined) {
         if (effectRows.size > 0) {
             throw invalidDatabaseResult('effects applied without guard authority');
         }
-        return validateRuntimeStateGuardedBatchResult(batch, {
-            guard: {
-                status: 'conflict',
-                operation: batch.guard.operation,
-                namespace: batch.guard.namespace,
-                key: batch.guard.key,
-                reason: 'condition-not-met'
-            },
-            effects: batch.effects.map((effect) => ({
-                status: 'skipped',
-                effectId: effect.effectId,
-                operation: effect.operation,
-                namespace: effect.namespace,
-                key: effect.key,
-                reason: 'guard-conflict'
-            }))
-        });
+        return decodeGuardConflict(batch);
     }
 
     const guardResult = toAppliedGuardResult(batch, guardRow);
@@ -96,10 +64,57 @@ export function decodeRuntimeStateGuardedBatchRows(
         throw invalidDatabaseResult('received an unexpected effect row');
     }
 
-    return validateRuntimeStateGuardedBatchResult(batch, {
+    return decodeRuntimeStateGuardedBatchResult(batch, {
         guard: guardResult,
         effects
     });
+}
+
+function decodeGuardConflict(batch: RuntimeStateGuardedBatch): RuntimeStateGuardedBatchResult {
+    return decodeRuntimeStateGuardedBatchResult(batch, {
+        guard: {
+            status: 'conflict',
+            operation: batch.guard.operation,
+            namespace: batch.guard.namespace,
+            key: batch.guard.key,
+            reason: 'condition-not-met'
+        },
+        effects: batch.effects.map((effect) => ({
+            status: 'skipped',
+            effectId: effect.effectId,
+            operation: effect.operation,
+            namespace: effect.namespace,
+            key: effect.key,
+            reason: 'guard-conflict'
+        }))
+    });
+}
+
+interface DecodedRuntimeStateGuardedBatchRows {
+    readonly guardRow: DecodedRuntimeStateGuardedBatchRow | undefined;
+    readonly effectRows: Map<string, DecodedRuntimeStateGuardedBatchRow>;
+}
+
+function decodeUniqueRows(rows: readonly RuntimeStateGuardedBatchDatabaseRow[]): DecodedRuntimeStateGuardedBatchRows {
+    requireDenseRows(rows);
+    let guardRow: DecodedRuntimeStateGuardedBatchRow | undefined;
+    const effectRows = new Map<string, DecodedRuntimeStateGuardedBatchRow>();
+    for (const inputRow of rows) {
+        const row = decodeRow(inputRow);
+        if (row.resultKind === 'guard') {
+            if (row.effectId !== null || guardRow !== undefined) {
+                throw invalidDatabaseResult('expected exactly one unique guard row');
+            }
+            guardRow = row;
+            continue;
+        }
+        if (row.effectId === null || effectRows.has(row.effectId)) {
+            throw invalidDatabaseResult('effect rows require unique effect IDs');
+        }
+        effectRows.set(row.effectId, row);
+    }
+
+    return { guardRow, effectRows };
 }
 
 function decodeRow(

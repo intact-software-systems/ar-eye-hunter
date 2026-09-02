@@ -46,13 +46,13 @@ export interface RuntimeStateConditionalRepositoryLike {
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number
+        expireAtIsoTimestamp: string
     ): Promise<RuntimeStateConditionalWriteResult>;
     upsertIfRevision(
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtIsoTimestamp: string,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult>;
     deleteIfRevision(
@@ -154,17 +154,25 @@ export function assertRuntimeStateUpsertExpectedRevision(
     );
 }
 
+export function isValidRuntimeStateExpectedRevision(value: unknown): value is number {
+    return isValidRuntimeStateRevisionWithinLimit(value, Number.MAX_SAFE_INTEGER);
+}
+
+export function isValidRuntimeStateUpsertExpectedRevision(value: unknown): value is number {
+    return isValidRuntimeStateRevisionWithinLimit(value, Number.MAX_SAFE_INTEGER - 1);
+}
+
 function assertRuntimeStateExpectedRevisionWithinLimit(
     expectedRevision: number,
     maximum: number,
     label: string
 ): void {
-    if (
-        !Number.isSafeInteger(expectedRevision) ||
-        Object.is(expectedRevision, -0) ||
-        expectedRevision < 0 ||
-        expectedRevision > maximum
-    ) {
+    if (!isValidRuntimeStateRevisionWithinLimit(expectedRevision, maximum)) {
         throw new Error(`Invalid ${label}: ${expectedRevision}`);
     }
+}
+
+function isValidRuntimeStateRevisionWithinLimit(value: unknown, maximum: number): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) &&
+        !Object.is(value, -0) && value >= 0 && value <= maximum;
 }

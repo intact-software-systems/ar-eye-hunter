@@ -1,11 +1,14 @@
-import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
-import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import type { AppInboxEnqueueInput, AppInboxExecutionMetadata } from '../../app-inbox/app-inbox-contracts.ts';
+import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
-import { computeRtcRttMutation } from '../mutation/compute-rtc-rtt-mutation.ts';
 import { readRtcRttMutation } from '../mutation/read-rtc-rtt-mutation.ts';
-import { validateRtcRttMutation } from '../mutation/validate-rtc-rtt-mutation.ts';
 import { writeRtcRttMutation } from '../mutation/write-rtc-rtt-mutation.ts';
+import {
+    computeRtcRttAppInboxMutation,
+    validateRtcRttAppInboxMutation,
+    type RtcRttAppInboxComputed,
+    type RtcRttAppInboxRead
+} from './compute-rtc-rtt-app-inbox-mutation.ts';
 import {
     createRtcRttDurableEnqueue,
     decodeRtcRttAppInboxAuthority,
@@ -16,14 +19,11 @@ import type {
     RtcRttAppInboxCommand,
     RtcRttAppInboxDependencies
 } from './rtc-rtt-app-inbox-contracts.ts';
-import { toRtcRttAppInboxResult, type RtcRttAppInboxResult } from './rtc-rtt-app-inbox-result.ts';
+import type { RtcRttAppInboxResult } from './rtc-rtt-app-inbox-result.ts';
 
 export interface RtcRttAppInboxHandlerDependencies {
     readonly groupStateService: GroupStateService;
-    readonly writeMutation: (
-        context: AppInboxMessageContext<RtcRttAppInboxResult>,
-        write: (transaction: PSqlSql) => Promise<RtcRttAppInboxResult>
-    ) => Promise<RtcRttAppInboxResult>;
+    readonly transactionWriter: AppInboxMutationTransactionWriter;
     readonly nowEpochMs: () => number;
     readonly wakeQueue?: () => void;
 }
@@ -46,7 +46,7 @@ export class RtcRttAppInboxHandler {
     }
 
     async processMutation(
-        context: AppInboxMessageContext<RtcRttAppInboxResult>,
+        context: AppInboxExecutionMetadata,
         rtcRttDependencies: RtcRttAppInboxDependencies
     ): Promise<RtcRttAppInboxResult> {
         const authority = decodeRtcRttAppInboxAuthority(context.enqueue.authority);
@@ -55,9 +55,36 @@ export class RtcRttAppInboxHandler {
             groupStateService: this.dependencies.groupStateService,
             nowEpochMs: this.dependencies.nowEpochMs
         });
+        const read = await this.readMutation(context, authority.command, rtcRttDependencies);
+        const computed = computeRtcRttAppInboxMutation(read);
+        const issues = validateRtcRttAppInboxMutation(read, computed);
+        if (issues.length > 0) {
+            throw issues[0]!.cause;
+        }
+        const result = await this.commitMutation(context, computed, rtcRttDependencies);
+        if (computed.mutation.outcome === 'write') {
+            rtcRttDependencies.observeCommitted?.(computed.mutation.measurementGuard.value);
+            this.dependencies.wakeQueue?.();
+            try {
+                rtcRttDependencies.formationMetrics?.({
+                    topologyEffectCount: computed.mutation.affectedGroups.length
+                });
+            }
+            catch {
+                // Recording must never affect RTT mutation behavior.
+            }
+        }
+        return result;
+    }
+
+    private async readMutation(
+        context: AppInboxExecutionMetadata,
+        inboxCommand: RtcRttAppInboxCommand,
+        rtcRttDependencies: RtcRttAppInboxDependencies
+    ): Promise<RtcRttAppInboxRead> {
         const stableRequest = {
-            rtt: authority.command.rtt,
-            alSenderId: authority.command.actor.sessionId
+            rtt: inboxCommand.rtt,
+            alSenderId: inboxCommand.actor.sessionId
         };
         const read = await readRtcRttMutation(rtcRttDependencies.repository, stableRequest);
         const attemptCount = context.entry.dequeueAudit.attempts;
@@ -70,66 +97,47 @@ export class RtcRttAppInboxHandler {
             }
             : {
                 ...stableRequest,
-                ...(await rtcRttDependencies.readPolicyInputs(authority.command))
+                ...(await rtcRttDependencies.readPolicyInputs(inboxCommand))
             };
         const lifecycleFacts = read.receipt
             ? { requestedAtEpochMs: null, purgeAfterEpochMs: null }
             : await rtcRttDependencies.repository.readMutationFacts();
-        const facts = {
-            ...lifecycleFacts,
-            commandHash: authority.command.mutationCommandHash,
-            attemptCount
+        return {
+            requestId: inboxCommand.requestId,
+            command,
+            mutationRead: read,
+            facts: {
+                ...lifecycleFacts,
+                commandHash: inboxCommand.mutationCommandHash,
+                attemptCount
+            },
+            completionFacts: this.dependencies.transactionWriter.readCompletionFacts(context)
         };
-        const computed = computeRtcRttMutation({ command, read, facts });
-        validateRtcRttMutation({ command, read, facts, computed });
-        const result = await this.commitMutation({
-            context,
-            command: authority.command,
-            computed,
-            facts,
-            mutationDependencies: rtcRttDependencies
-        });
-        if (computed.outcome === 'write') {
-            rtcRttDependencies.observeCommitted?.(computed.measurementGuard.value);
-            this.dependencies.wakeQueue?.();
-            try {
-                rtcRttDependencies.formationMetrics?.({
-                    topologyEffectCount: computed.affectedGroups.length
-                });
-            }
-            catch {
-                // Recording must never affect RTT mutation behavior.
-            }
-        }
-        return result;
     }
 
-    private async commitMutation(input: CommitRtcRttMutationInput): Promise<RtcRttAppInboxResult> {
-        const { context, command, computed, facts } = input;
-        return await this.dependencies.writeMutation(context, async (transaction) => {
-            if (computed.outcome === 'write') {
-                if (facts.requestedAtEpochMs === null || facts.purgeAfterEpochMs === null) {
-                    throw new TypeError('RTC RTT write lifecycle facts are missing');
+    private async commitMutation(
+        context: AppInboxExecutionMetadata,
+        computed: RtcRttAppInboxComputed,
+        mutationDependencies: RtcRttAppInboxDependencies
+    ): Promise<RtcRttAppInboxResult> {
+        const durableResult = await this.dependencies.transactionWriter.writeMutation(
+            context,
+            computed.completion,
+            async (transaction) => {
+                if (computed.mutation.outcome !== 'write') {
+                    return;
                 }
                 await writeRtcRttMutation({
                     transaction,
-                    repositoryOptions: {
-                        ttlMs: facts.purgeAfterEpochMs - facts.requestedAtEpochMs,
-                        now: () => facts.requestedAtEpochMs
-                    },
-                    computed,
-                    outboxWriter: input.mutationDependencies.outboxWriter
+                    computed: computed.mutation
                 });
             }
-            return toRtcRttAppInboxResult(computed, command.requestId);
-        });
+        );
+        if (computed.mutation.outcome === 'write') {
+            mutationDependencies.outboxWriter.recordCommitted(
+                computed.mutation.outboxWrites.length
+            );
+        }
+        return durableResult;
     }
-}
-
-interface CommitRtcRttMutationInput {
-    readonly context: AppInboxMessageContext<RtcRttAppInboxResult>;
-    readonly command: RtcRttAppInboxCommand;
-    readonly computed: ReturnType<typeof computeRtcRttMutation>;
-    readonly facts: Parameters<typeof computeRtcRttMutation>[0]['facts'];
-    readonly mutationDependencies: RtcRttAppInboxDependencies;
 }

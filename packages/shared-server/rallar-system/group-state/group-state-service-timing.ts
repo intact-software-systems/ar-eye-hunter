@@ -180,8 +180,15 @@ function createTimedSnapshotOperations(
 function createTimedEventOperations(
     service: GroupStateService,
     input: TimedGroupStateServiceInput
-): Pick<GroupStateService, 'listEvents' | 'listRecentEvents' | 'listEventPage'> {
+): Pick<GroupStateService, 'readEvent' | 'listEvents' | 'listRecentEvents' | 'listEventPage'> {
     return {
+        readEvent: async (ref, eventId) =>
+            await timeGroupStateOperation({
+                ...input,
+                operation: 'readEvent',
+                details: toScopeTimingDetails(ref),
+                action: async () => await service.readEvent(ref, eventId)
+            }),
         listEvents: async (ref) =>
             await timeGroupStateOperation({
                 ...input,

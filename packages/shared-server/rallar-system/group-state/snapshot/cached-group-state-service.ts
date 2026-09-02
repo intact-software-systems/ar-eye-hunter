@@ -66,6 +66,7 @@ export function createCachedGroupStateService(
         listSnapshotsPage: async (scope, pageOptions) => await options.durable.listSnapshotsPage(scope, pageOptions),
         readCausalRevision: async (ref) => await options.durable.readCausalRevision(ref),
         readIssuedAuthSession: async (sessionId) => await options.durable.readIssuedAuthSession(sessionId),
+        readEvent: async (ref, eventId) => await options.durable.readEvent(ref, eventId),
         listEvents: async (ref) => await options.durable.listEvents(ref),
         listRecentEvents: async (ref, query) => await options.durable.listRecentEvents(ref, query),
         listEventPage: async (ref, query) => await options.durable.listEventPage(ref, query),

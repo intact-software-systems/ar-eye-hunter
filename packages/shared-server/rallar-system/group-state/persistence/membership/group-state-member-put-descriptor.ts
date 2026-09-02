@@ -4,11 +4,9 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import type { RuntimeStateGuardedBatchPut } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { MEMBERS_NAMESPACE } from '../group-state-runtime-namespaces.ts';
 import { serializeGroupStateValue } from '../serialize-group-state-value.ts';
-import { validatePersistedGroupMember } from '../validate-persisted-group.ts';
 import { groupStateMemberStorageKey } from './group-membership-storage-key.ts';
 
 export function groupStateMemberPutDescriptor(member: GroupMember): RuntimeStateGuardedBatchPut {
-    validatePersistedGroupMember(member, member);
     return {
         operation: 'put',
         namespace: MEMBERS_NAMESPACE,

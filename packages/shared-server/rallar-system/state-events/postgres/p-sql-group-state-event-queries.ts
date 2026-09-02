@@ -1,6 +1,7 @@
-import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
+import type { GroupStateEventWrite } from '../group-state-event-store.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
 import type { GroupStateEventCollisionRow, GroupStateEventRow } from './group-state-event-row-codec.ts';
 import { groupStateEventWorkspaceKey } from './group-state-event-workspace-key.ts';
@@ -14,8 +15,7 @@ interface GroupStateEventRowsQuery {
 
 export async function insertPSqlGroupStateEvent(
     sql: PSqlSql,
-    event: GroupEvent,
-    eventJson: string
+    computed: GroupStateEventWrite
 ): Promise<boolean> {
     const inserted = await sql<{ event_id: string; }[]>`
         insert into group_state_events (application_id,
@@ -26,14 +26,14 @@ export async function insertPSqlGroupStateEvent(
                                         snapshot_version,
                                         occurred_at_epoch_ms,
                                         event_json)
-        values (${event.applicationId},
-                ${groupStateEventWorkspaceKey(event.workspaceId)},
-                ${event.groupId},
-                ${event.eventId},
-                ${event.eventType},
-                ${event.snapshotVersion},
-                ${event.occurredAtEpochMs},
-                ${eventJson})
+        values (${computed.applicationId},
+                ${computed.workspaceKey},
+                ${computed.groupId},
+                ${computed.eventId},
+                ${computed.eventType},
+                ${computed.snapshotVersion},
+                ${computed.occurredAtEpochMs},
+                ${computed.eventJson})
         on conflict (application_id, workspace_key, group_id, event_id)
             do nothing
         returning event_id
@@ -41,18 +41,18 @@ export async function insertPSqlGroupStateEvent(
     return inserted.length === 1;
 }
 
-export async function readPSqlGroupStateEventCollision(
+export async function readPSqlGroupStateEventRow(
     sql: PSqlSql,
-    event: GroupEvent
+    identity: Pick<GroupStateEventWrite, 'applicationId' | 'workspaceKey' | 'groupId' | 'eventId'>
 ): Promise<GroupStateEventCollisionRow | undefined> {
     const [existing] = await sql<GroupStateEventCollisionRow[]>`
         select application_id, workspace_key, group_id, event_id,
                event_type, snapshot_version, occurred_at_epoch_ms, event_json
         from group_state_events
-        where application_id = ${event.applicationId}
-          and workspace_key = ${groupStateEventWorkspaceKey(event.workspaceId)}
-          and group_id = ${event.groupId}
-          and event_id = ${event.eventId}
+        where application_id = ${identity.applicationId}
+          and workspace_key = ${identity.workspaceKey}
+          and group_id = ${identity.groupId}
+          and event_id = ${identity.eventId}
     `;
     return existing;
 }

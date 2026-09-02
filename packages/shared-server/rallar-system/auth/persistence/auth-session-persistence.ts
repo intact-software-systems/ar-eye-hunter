@@ -165,28 +165,6 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
             expectedRevision
         );
     }
-
-    async deleteSessionByAccessTokenDigestIfRevision(
-        accessTokenDigest: string,
-        expectedRevision: number
-    ): Promise<RuntimeStateConditionalDeleteResult> {
-        return await this.deleteValueIfRevision(
-            AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
-            authTokenDigestKey(accessTokenDigest),
-            expectedRevision
-        );
-    }
-
-    async deleteSessionTokenStorageKeyIfRevision(
-        storageKey: string,
-        expectedRevision: number
-    ): Promise<RuntimeStateConditionalDeleteResult> {
-        return await this.deleteValueIfRevision(
-            AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
-            storageKey,
-            expectedRevision
-        );
-    }
 }
 
 async function toPersistedAuthSession(session: IssuedAuthSession): Promise<PersistedAuthSession> {

@@ -42,7 +42,7 @@ export class RuntimeStateJsonStore {
         await this.repository.upsert(
             namespace,
             key,
-            serializeRuntimeStateJsonValue(value),
+            encodeRuntimeStateJsonValue(value),
             expireAtTimestamp
         );
     }
@@ -54,12 +54,12 @@ export class RuntimeStateJsonStore {
         expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP
     ): Promise<RuntimeStateConditionalWriteResult> {
         const repository = this.conditionalRepository();
-        const serializedValue = serializeRuntimeStateJsonValue(value);
+        const serializedValue = encodeRuntimeStateJsonValue(value);
         return await repository.insertIfAbsent(
             namespace,
             key,
             serializedValue,
-            expireAtTimestamp
+            new Date(expireAtTimestamp).toISOString()
         );
     }
 
@@ -71,12 +71,12 @@ export class RuntimeStateJsonStore {
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
         const repository = this.conditionalRepository();
-        const serializedValue = serializeRuntimeStateJsonValue(value);
+        const serializedValue = encodeRuntimeStateJsonValue(value);
         return await repository.upsertIfRevision(
             namespace,
             key,
             serializedValue,
-            expireAtTimestamp,
+            new Date(expireAtTimestamp).toISOString(),
             expectedRevision
         );
     }
@@ -286,7 +286,7 @@ export class RuntimeStateJsonStore {
     }
 }
 
-function serializeRuntimeStateJsonValue(value: object): string {
+export function encodeRuntimeStateJsonValue(value: object): string {
     const serialized = JSON.stringify(value);
     if (serialized === undefined) {
         throw new TypeError('Runtime state value cannot be represented as JSON');

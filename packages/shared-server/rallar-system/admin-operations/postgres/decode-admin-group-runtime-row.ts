@@ -4,11 +4,8 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { decodeGroupStateGroupStorageKey } from '../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { decodeGroupStateMemberStorageKey } from '../../group-state/persistence/membership/group-membership-storage-key.ts';
 import { decodeGroupStatePresenceSessionStorageKey } from '../../group-state/persistence/presence/group-presence-storage-keys.ts';
-import { validatePersistedGroupPresenceSession } from '../../group-state/persistence/validate-persisted-group-presence.ts';
-import {
-    validatePersistedGroup,
-    validatePersistedGroupMember
-} from '../../group-state/persistence/validate-persisted-group.ts';
+import { validatePresenceSession } from '../../group-state/persistence/validate-persisted-group-presence.ts';
+import { validateStoredGroup, validateStoredMember } from '../../group-state/persistence/validate-persisted-group.ts';
 
 import { AdminStateCorruptionError } from './admin-state-corruption-error.ts';
 
@@ -67,14 +64,20 @@ export function decodeAdminGroupRuntimeRow(
                 const ref = decodeGroupStateGroupStorageKey(row.store_key);
                 requireScope(ref, scope, row.store_key);
                 const value = JSON.parse(row.store_value);
-                validatePersistedGroup(value, ref);
+                const persistedGroupIssues = validateStoredGroup(value, ref);
+                if (persistedGroupIssues.length > 0) {
+                    throw persistedGroupIssues[0].cause;
+                }
                 return { kind, ref, value };
             }
             case 'member': {
                 const ref = decodeGroupStateMemberStorageKey(row.store_key);
                 requireScope(ref, scope, row.store_key);
                 const value = JSON.parse(row.store_value);
-                validatePersistedGroupMember(value, ref);
+                const persistedGroupMemberIssues = validateStoredMember(value, ref, 'Stored group member');
+                if (persistedGroupMemberIssues.length > 0) {
+                    throw persistedGroupMemberIssues[0].cause;
+                }
                 if (value.principalId !== ref.principalId) {
                     throw new TypeError(`Stored group member identity differs from its slot: ${row.store_key}`);
                 }
@@ -84,7 +87,14 @@ export function decodeAdminGroupRuntimeRow(
                 const ref = decodeGroupStatePresenceSessionStorageKey(row.store_key);
                 requireScope(ref, scope, row.store_key);
                 const value = JSON.parse(row.store_value);
-                validatePersistedGroupPresenceSession(value, ref);
+                const persistedGroupPresenceSessionIssues = validatePresenceSession(
+                    value,
+                    ref,
+                    'Stored group presence session'
+                );
+                if (persistedGroupPresenceSessionIssues.length > 0) {
+                    throw persistedGroupPresenceSessionIssues[0].cause;
+                }
                 if (value.sessionId !== ref.sessionId) {
                     throw new TypeError(`Stored group session identity differs from its slot: ${row.store_key}`);
                 }

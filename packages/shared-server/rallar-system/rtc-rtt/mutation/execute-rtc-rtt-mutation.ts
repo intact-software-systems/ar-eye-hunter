@@ -1,7 +1,6 @@
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 
 import { encodeJsonWireValue, hashMutationCommand } from '../../protocol/json-wire-identity.ts';
-import type { RtcTopologyOutboxWriter } from '../../topology/mutation/rtc-topology-outbox-writer.ts';
 import { RtcRttRepository } from '../persistence/rtc-rtt-repository.ts';
 import { computeRtcRttMutation } from './compute-rtc-rtt-mutation.ts';
 import { readRtcRttMutation } from './read-rtc-rtt-mutation.ts';
@@ -23,7 +22,6 @@ export interface ExecuteRtcRttMutationResult {
 export interface ExecuteRtcRttMutationInput {
     readonly repository: RtcRttRepository;
     readonly transaction: PSqlSql;
-    readonly outboxWriter: RtcTopologyOutboxWriter;
     readFacts: () => RtcRttMutationLifecycleFacts | Promise<RtcRttMutationLifecycleFacts>;
     readonly request: RtcRttStableRequest;
     readCommand: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;
@@ -72,12 +70,7 @@ export async function executeRtcRttMutation(
     }
     await writeRtcRttMutation({
         transaction: input.transaction,
-        repositoryOptions: {
-            ttlMs: facts.purgeAfterEpochMs - facts.requestedAtEpochMs,
-            now: () => facts.requestedAtEpochMs
-        },
-        computed,
-        outboxWriter: input.outboxWriter
+        computed
     });
     return { computed, updated: true };
 }

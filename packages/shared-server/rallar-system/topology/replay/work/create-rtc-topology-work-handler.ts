@@ -12,7 +12,6 @@ import {
 } from './write-group-connect-trigger-requests.ts';
 import {
     writePublicationDelivery,
-    writeRtcTopologyPublicationTransaction,
     type RtcTopologyDeliveryOptions
 } from './write-rtc-topology-publication-transaction.ts';
 
@@ -23,25 +22,40 @@ import { type RtcTopologyPublication } from '@shared-server/rallar-system/topolo
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../../postgres/run-in-p-sql-transaction.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
+import type { AppOutboxInsertOrMatch } from '../../../app-outbox/app-outbox-insert.ts';
 import type { RallarTimingSink } from '../../../observability/timing.ts';
 import type { RtcRttRefinementService } from '../../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
 import {
     computeTopologyMutation,
     validateTopologyMutation,
     type RtcTopologyMutationComputed,
+    type RtcTopologyMutationInput,
     type RtcTopologyMutationRead
 } from '../../mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyWorkRuntime } from '../../mutation/rtc-topology-outbox-work.ts';
-import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
+import {
+    writeRtcTopologyInputFingerprint,
+    writeRtcTopologyMutation,
+    type RtcTopologyExecutionRepository
+} from '../../persistence/rtc-topology-execution-repository.ts';
 import type { ReconcileGroupTopologyResult } from '../../planning/group-topology-planning-contracts.ts';
 import type { GroupTopologyPlanningService } from '../../planning/group-topology-planning-service.ts';
 import {
     materializeRtcOverlayTopologyBroadcastMessage,
     type RtcOverlayTopologyMessageFacts
 } from '../../planning/materialize-rtc-overlay-topology-broadcast-message.ts';
-import { finishRtcTopologyReservation, finishRtcTopologyWork } from './finish-rtc-topology-work.ts';
+import { isRtcTopologyDeliveryRetryableConflict } from '../delivery/rtc-topology-delivery-validation.ts';
+import {
+    computeRtcTopologyReservationFinish,
+    finishRtcTopologyWork,
+    writeRtcTopologyReservationFinish
+} from './finish-rtc-topology-work.ts';
 import { isChangeGatedGroupRevisionWork, toTopologyWorkOrigin } from './rtc-topology-coalesced-group-revision-work.ts';
-import { computeAuthorityTopologyInputFingerprint } from './rtc-topology-input-fingerprint.ts';
+import {
+    computeAuthorityTopologyInputFingerprint,
+    computeRtcTopologyInputFingerprintRow,
+    type RtcTopologyInputFingerprintRow
+} from './rtc-topology-input-fingerprint.ts';
 import {
     readRtcTopologyWorkEnvelope,
     toRtcTopologyExecutionId,
@@ -49,7 +63,9 @@ import {
     type RtcTopologyWorkEnvelope
 } from './rtc-topology-work-codec.ts';
 import {
+    computeTopologyPromotionRequest,
     readTopologyPromotionRequest,
+    validateTopologyPromotionRequest,
     writeTopologyPromotionRequest,
     type TopologyPromotionPublicationPort
 } from './write-topology-promotion-request.ts';
@@ -111,8 +127,9 @@ type AcceptedRtcTopologyWork =
         work: PersistedRtcTopologyWork;
         group: GroupSnapshot;
         computed: AcceptedRtcTopologyMutation;
+        mutationInput: RtcTopologyMutationInput;
         publication: RtcTopologyPublication | null;
-        inputFingerprint: string;
+        inputFingerprintWrite: RtcTopologyInputFingerprintRow;
         criterionPetition: CommittedCriterionPetition | null;
     }>
     | Readonly<{
@@ -125,7 +142,7 @@ type AcceptedRtcTopologyWork =
         decision: 'skipped-unchanged';
         work: PersistedRtcTopologyWork;
         group: GroupSnapshot;
-        inputFingerprint: string;
+        inputFingerprintWrite: RtcTopologyInputFingerprintRow;
         criterionPetition: CommittedCriterionPetition | null;
     }>
     | Readonly<{
@@ -206,6 +223,7 @@ async function processLoadedRtcTopologyWork(
 ): Promise<void> {
     const replayInput = {
         read,
+        deliveryPublisherStreamId: options.topologyDelivery?.publisherStreamId ?? null,
         candidate: null,
         publication: null,
         facts: {
@@ -219,9 +237,19 @@ async function processLoadedRtcTopologyWork(
     if (computed.outcome !== 'loaded') {
         throw new RuntimeStateWriteConflictError();
     }
-    await writeRtcTopologyPublicationTransaction(options, entry, async (transaction) => {
-        await writePublicationDelivery(transaction, computed.publication, options.topologyDelivery);
-    });
+    const reservationFinish = computeRtcTopologyReservationFinish(entry, new Date());
+    try {
+        await runInPSqlTransaction(options.database, async (transaction) => {
+            await writePublicationDelivery(transaction, computed.publicationDelivery);
+            await writeRtcTopologyReservationFinish(transaction, reservationFinish);
+        });
+    }
+    catch (error) {
+        if (error instanceof Error && isRtcTopologyDeliveryRetryableConflict(error)) {
+            throw new RuntimeStateWriteConflictError();
+        }
+        throw error;
+    }
     options.topologyPlanning.recordTopologyPublication(true);
     options.wakeQueue?.();
     options.wakeReplay?.();
@@ -308,7 +336,10 @@ async function prepareRtcTopologyWork(
             decision: 'skipped-unchanged',
             work,
             group: authority.group,
-            inputFingerprint,
+            inputFingerprintWrite: computeRtcTopologyInputFingerprintRow(
+                authority.group.group,
+                inputFingerprint
+            ),
             criterionPetition: { authority, planned: read.snapshot.value }
         };
     }
@@ -382,13 +413,15 @@ async function prepareTopologyMutation(
             commandHash: null,
             attemptCount: null
         } as const);
-    const computed = computeTopologyMutation({
+    const mutationInput: RtcTopologyMutationInput = {
         read,
         candidate: planned.snapshot,
         publication,
-        facts
-    });
-    validateTopologyMutation({ read, candidate: planned.snapshot, publication, facts, computed });
+        facts,
+        deliveryPublisherStreamId: options.topologyDelivery?.publisherStreamId ?? null
+    };
+    const computed = computeTopologyMutation(mutationInput);
+    validateTopologyMutation({ ...mutationInput, computed });
     if (computed.outcome === 'retry') {
         throw new RuntimeStateWriteConflictError();
     }
@@ -400,8 +433,12 @@ async function prepareTopologyMutation(
         work,
         group: authority.group,
         computed,
+        mutationInput,
         publication,
-        inputFingerprint,
+        inputFingerprintWrite: computeRtcTopologyInputFingerprintRow(
+            authority.group.group,
+            inputFingerprint
+        ),
         criterionPetition: { authority, planned: planned.snapshot }
     };
 }
@@ -433,36 +470,34 @@ async function writeAcceptedRtcTopologyWork(
         options.topologyPlanning.observeCommittedTopology(accepted.group, computed.current);
         return;
     }
-    // Read outside, mint inside: the gate reads use the shared database
-    // handle and must not run while the transaction holds the session.
-    const promotionRequest = computed.outcome === 'write'
-        ? await readTopologyPromotionRequest({
-            publication: options.topologyPublication,
-            serviceId: options.serviceId,
-            entry,
-            target: computed.snapshotGuard.candidate
-        })
-        : null;
+    const target = computed.outcome === 'write' ? computed.snapshotGuard.candidate : null;
+    const promotionRequest = await computeValidatedTopologyPromotionRequest(options, entry, target);
     const connectRequests = computePublicationConnectTriggerRequests({
         automation: options.formationAutomation,
-        target: computed.outcome === 'write' ? computed.snapshotGuard.candidate : null,
+        target,
         entry
     });
-    await writeRtcTopologyPublicationTransaction(options, entry, async (transaction) => {
-        await options.executionRepository.writeTopologyMutation(transaction, computed);
-        await writeTopologyPromotionRequest(transaction, promotionRequest);
-        await writeGroupConnectTriggerRequests(transaction, connectRequests);
-        if (computed.outcome === 'write') {
-            await options.executionRepository.writeTopologyInputFingerprint(
-                transaction,
-                accepted.group.group,
-                accepted.inputFingerprint
-            );
+    const reservationFinish = computeRtcTopologyReservationFinish(entry, new Date());
+    try {
+        await runInPSqlTransaction(options.database, async (transaction) => {
+            await writeRtcTopologyMutation(transaction, computed);
+            await writeTopologyPromotionRequest(transaction, promotionRequest);
+            await writeGroupConnectTriggerRequests(transaction, connectRequests);
+            if (computed.outcome === 'write') {
+                await writeRtcTopologyInputFingerprint(transaction, accepted.inputFingerprintWrite);
+            }
+            if (computed.publicationDelivery) {
+                await writePublicationDelivery(transaction, computed.publicationDelivery);
+            }
+            await writeRtcTopologyReservationFinish(transaction, reservationFinish);
+        });
+    }
+    catch (error) {
+        if (error instanceof Error && isRtcTopologyDeliveryRetryableConflict(error)) {
+            throw new RuntimeStateWriteConflictError();
         }
-        if (accepted.publication) {
-            await writePublicationDelivery(transaction, accepted.publication, options.topologyDelivery);
-        }
-    });
+        throw error;
+    }
     await finishCommittedTopologyWork(options, accepted, computed);
 }
 
@@ -480,28 +515,21 @@ async function writeSkippedTopologyWork(
     entry: ResourceEntry,
     accepted: Extract<AcceptedRtcTopologyWork, { decision: 'skipped-unchanged' | 'skipped-frozen'; }>
 ): Promise<void> {
-    const promotionRequest = await readTopologyPromotionRequest({
-        publication: options.topologyPublication,
-        serviceId: options.serviceId,
-        entry,
-        target: accepted.criterionPetition?.planned ?? null
-    });
+    const target = accepted.criterionPetition?.planned ?? null;
+    const promotionRequest = await computeValidatedTopologyPromotionRequest(options, entry, target);
     const connectRequests = computePublicationConnectTriggerRequests({
         automation: options.formationAutomation,
-        target: accepted.criterionPetition?.planned ?? null,
+        target,
         entry
     });
+    const reservationFinish = computeRtcTopologyReservationFinish(entry, new Date());
     await runInPSqlTransaction(options.database, async (transaction) => {
         if (accepted.decision === 'skipped-unchanged') {
-            await options.executionRepository.writeTopologyInputFingerprint(
-                transaction,
-                accepted.group.group,
-                accepted.inputFingerprint
-            );
+            await writeRtcTopologyInputFingerprint(transaction, accepted.inputFingerprintWrite);
         }
         await writeTopologyPromotionRequest(transaction, promotionRequest);
         await writeGroupConnectTriggerRequests(transaction, connectRequests);
-        await finishRtcTopologyReservation(transaction, entry);
+        await writeRtcTopologyReservationFinish(transaction, reservationFinish);
     });
     if (accepted.decision === 'skipped-frozen') {
         options.topologyPlanning.recordTopologyPlanFrozen();
@@ -510,6 +538,24 @@ async function writeSkippedTopologyWork(
         options.topologyPlanning.recordTopologyPublication(false);
     }
     await petitionCommittedCriterion(options, accepted.criterionPetition);
+}
+
+async function computeValidatedTopologyPromotionRequest(
+    options: RtcTopologyWorkHandlerOptions,
+    entry: ResourceEntry,
+    target: RallarOverlayTopologySnapshot | null
+): Promise<AppOutboxInsertOrMatch | null> {
+    const read = await readTopologyPromotionRequest({
+        publication: options.topologyPublication,
+        target
+    });
+    const input = { serviceId: options.serviceId, entry, target, read };
+    const computed = computeTopologyPromotionRequest(input);
+    const issues = validateTopologyPromotionRequest(input, computed);
+    if (issues.length > 0) {
+        throw new TypeError(issues.map((issue) => issue.message).join('; '));
+    }
+    return computed;
 }
 
 async function finishCommittedTopologyWork(

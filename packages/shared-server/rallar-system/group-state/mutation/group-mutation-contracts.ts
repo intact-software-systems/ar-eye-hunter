@@ -20,8 +20,14 @@ import type {
     GroupStatus
 } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type {
+    RuntimeStateGuardedBatchComputed,
+    RuntimeStateGuardedBatchEffect
+} from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { AppOutboxInsertOrMatch } from '../../app-outbox/app-outbox-insert.ts';
+import type { GroupStateEventWrite } from '../../state-events/group-state-event-store.ts';
 import type { GroupConnectTriggerLatchRow } from '../persistence/group-connect-trigger-latch-repository.ts';
+import type { GroupLifecyclePolicyWrite } from '../persistence/group-lifecycle-policy-repository.ts';
 import type {
     GroupAcceptedLayoutRow,
     GroupPlannedLayoutRow,
@@ -522,10 +528,13 @@ export type GroupMutationComputed =
         initialPresenceSummary: InitialGroupPresenceSummaryCandidate | null;
         presenceAdmission: PresenceAdmissionCandidate | null;
         event: GroupEvent;
+        eventWrite: GroupStateEventWrite;
         receipt: GroupMutationReceipt;
         idempotency: GroupMutationIdempotencyRecord | null;
         outboxEntries: readonly ResourceEntry[];
+        outboxWrites: readonly AppOutboxInsertOrMatch[];
         lifecyclePolicy: GroupLifecyclePolicy | null;
+        lifecyclePolicyWrite: GroupLifecyclePolicyWrite | null;
         /**
          * The accepted-layout facts an activation or applyPlannedLayout
          * commits atomically with the group row (product decisions 24/42);
@@ -541,6 +550,7 @@ export type GroupMutationComputed =
         plannedLayoutFence: GroupPlannedLayoutRow | null;
         layoutTombstones: GroupLayoutTombstones | null;
         connectTriggerLatchEffect: RuntimeStateGuardedBatchEffect | null;
+        guardedBatch: RuntimeStateGuardedBatchComputed;
     }>;
 
 export interface GroupLayoutTombstones {

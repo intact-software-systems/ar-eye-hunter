@@ -2,7 +2,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { RuntimeStateGuardedBatchInsert } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { GroupMutationIdempotencyRecord } from '../../mutation/group-mutation-contracts.ts';
-import { assertGroupMutationIdempotencyRecord } from '../../mutation/result-validation/assert-group-mutation-result.ts';
+import { validateGroupMutationIdempotencyRecord } from '../../mutation/result-validation/validate-group-mutation-result.ts';
 import { IDEMPOTENT_NAMESPACE } from '../group-state-runtime-namespaces.ts';
 import { serializeGroupStateValue } from '../serialize-group-state-value.ts';
 import { groupStateIdempotencyStorageKey } from './group-idempotency-storage-key.ts';
@@ -17,7 +17,10 @@ export interface GroupStateIdempotencyDescriptorInput {
 export function groupStateInsertIdempotencyDescriptor(
     input: GroupStateIdempotencyDescriptorInput
 ): RuntimeStateGuardedBatchInsert {
-    assertGroupMutationIdempotencyRecord(input.record, input.ref);
+    const issues = validateGroupMutationIdempotencyRecord(input.record, input.ref);
+    if (issues.length > 0) {
+        throw issues[0].cause;
+    }
     if (input.record.requestId !== input.requestId) {
         throw new TypeError('Group idempotency request identity differs');
     }

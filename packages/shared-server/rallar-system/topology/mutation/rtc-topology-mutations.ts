@@ -1,30 +1,46 @@
-import { type RtcTopologyPublicationWorkClaim } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
+import type { RtcTopologyPublicationWorkClaim } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import { assertRuntimeStateUpsertExpectedRevision } from '../../../runtime-state/runtime-state-repository.ts';
+import { validateAppInboxComputedProjection } from '../../app-inbox/handler/app-inbox-computed-validation.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { decodeRtcTopologySnapshot } from '../persistence/decode-rtc-topology-snapshot.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../persistence/rtc-topology-errors.ts';
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
-import { compareTopologyTuple, decideTopologySnapshot } from '../persistence/rtc-topology-snapshot-contract.ts';
+import {
+    compareTopologyTuple,
+    decideTopologySnapshot,
+    type RtcTopologySnapshotObservation
+} from '../persistence/rtc-topology-snapshot-contract.ts';
 import type { RtcTopologyPublication } from '../publication/rtc-topology-publication.ts';
 import { validateRtcTopologyPublication } from '../publication/validate-rtc-topology-publication.ts';
+import {
+    computeRtcTopologyPublicationDelivery,
+    type RtcTopologyPublicationDeliveryComputed
+} from '../replay/delivery/rtc-topology-delivery-validation.ts';
+import {
+    computeRtcTopologyPersistence,
+    type RtcTopologyPersistenceComputed
+} from './compute-rtc-topology-persistence.ts';
 import { computeStaleTopologyPublication } from './rtc-topology-stale-publication.ts';
 import type { RtcTopologyStaleMutationComputed } from './rtc-topology-stale-publication.ts';
 
-export type RtcTopologyPublicationClaim = Readonly<{
-    receipt: RtcTopologyPublicationWorkClaim;
-    publication: RtcTopologyPublication;
-}>;
-export type RtcTopologyMutationRead = Readonly<{
-    snapshot: RuntimeStateEntryValue<RallarOverlayTopologySnapshot> | null;
-    publicationClaim: RtcTopologyPublicationClaim | null;
-}>;
-export type RtcTopologyMutationInput = Readonly<{
-    read: RtcTopologyMutationRead;
-    candidate: RallarOverlayTopologySnapshot | null;
-    publication: RtcTopologyPublication | null;
-    facts: RtcTopologyMutationFacts;
-}>;
+export interface RtcTopologyPublicationClaim {
+    readonly receipt: RtcTopologyPublicationWorkClaim;
+    readonly publication: RtcTopologyPublication;
+}
+export interface RtcTopologyMutationRead {
+    readonly snapshot: RuntimeStateEntryValue<RallarOverlayTopologySnapshot> | null;
+    readonly publicationClaim: RtcTopologyPublicationClaim | null;
+}
+export interface RtcTopologyMutationInput {
+    readonly read: RtcTopologyMutationRead;
+    readonly candidate: RallarOverlayTopologySnapshot | null;
+    readonly publication: RtcTopologyPublication | null;
+    readonly facts: RtcTopologyMutationFacts;
+    readonly deliveryPublisherStreamId: string | null;
+}
 export type RtcTopologyMutationFacts =
     | Readonly<{
         publicationExpireAtTimestamp: null;
@@ -41,6 +57,7 @@ export type RtcTopologyMutationComputed =
         outcome: 'loaded';
         snapshot: RallarOverlayTopologySnapshot;
         publication: RtcTopologyPublication;
+        publicationDelivery: RtcTopologyPublicationDeliveryComputed;
     }>
     | Readonly<{
         outcome: 'retry';
@@ -51,6 +68,7 @@ export type RtcTopologyMutationComputed =
         & Readonly<{
             outcome: 'write';
             observation: 'inserted' | 'advanced' | 'duplicate';
+            persistence: RtcTopologyPersistenceComputed;
             snapshotGuard: Readonly<{
                 expectedRevision: number | null;
                 candidate: RallarOverlayTopologySnapshot;
@@ -62,10 +80,12 @@ export type RtcTopologyMutationComputed =
                 publicationExpireAtTimestamp: number;
                 commandHash: string;
                 attemptCount: number;
+                publicationDelivery: RtcTopologyPublicationDeliveryComputed;
             }>
             | Readonly<{
                 publication: null;
                 publicationExpireAtTimestamp: null;
+                publicationDelivery: null;
             }>
         )
     );
@@ -73,47 +93,7 @@ export function computeTopologyMutation(
     input: RtcTopologyMutationInput
 ): RtcTopologyMutationComputed {
     if (input.read.publicationClaim) {
-        if (
-            input.candidate !== null ||
-            input.publication !== null ||
-            input.facts.publicationExpireAtTimestamp !== null ||
-            input.facts.commandHash !== null ||
-            input.facts.attemptCount !== null
-        ) {
-            throw new TypeError(
-                'RTC topology publication replay must not include mutable planning input'
-            );
-        }
-        if (!input.read.snapshot) {
-            throw new TypeError('RTC topology publication claim has no durable snapshot');
-        }
-        const storedPublication = input.read.publicationClaim.publication;
-        const storedSnapshot = input.read.snapshot.value;
-        const publicationSnapshot = assertPublicationSelfConsistent(storedPublication);
-        const relation = compareTopologyTuple(publicationSnapshot, storedSnapshot);
-        if (relation === 'dominates') {
-            return {
-                outcome: 'retry',
-                reason: 'publication-ahead-of-snapshot'
-            };
-        }
-        if (relation === 'equal' && !rtcTopologySemanticEqual(publicationSnapshot, storedSnapshot)) {
-            throw new RtcTopologyRepositoryInvariantCorruptionError(
-                storedPublication.publicationId,
-                'RTC topology publication equal causal tuple differs from durable snapshot'
-            );
-        }
-        if (relation === 'incomparable') {
-            return {
-                outcome: 'retry',
-                reason: 'incomparable-causal-revision'
-            };
-        }
-        return {
-            outcome: 'loaded',
-            snapshot: storedSnapshot,
-            publication: storedPublication
-        };
+        return computeTopologyPublicationReplay(input, input.read.publicationClaim);
     }
 
     if (input.candidate === null) {
@@ -125,6 +105,7 @@ export function computeTopologyMutation(
         return computeStaleTopologyPublication({
             current: input.read.snapshot!,
             publication: input.publication,
+            deliveryPublisherStreamId: input.deliveryPublisherStreamId,
             ...input.facts
         });
     }
@@ -134,20 +115,75 @@ export function computeTopologyMutation(
             reason: 'incomparable-causal-revision'
         };
     }
+    return computeTopologySnapshotWrite(input, input.candidate, observation);
+}
+
+function computeTopologyPublicationReplay(
+    input: RtcTopologyMutationInput,
+    publicationClaim: RtcTopologyPublicationClaim
+): RtcTopologyMutationComputed {
+    if (
+        input.candidate !== null ||
+        input.publication !== null ||
+        input.facts.publicationExpireAtTimestamp !== null ||
+        input.facts.commandHash !== null ||
+        input.facts.attemptCount !== null
+    ) {
+        throw new TypeError('RTC topology publication replay must not include mutable planning input');
+    }
+    if (!input.read.snapshot) {
+        throw new TypeError('RTC topology publication claim has no durable snapshot');
+    }
+    const storedPublication = publicationClaim.publication;
+    const storedSnapshot = input.read.snapshot.value;
+    const publicationSnapshot = assertPublicationSelfConsistent(storedPublication);
+    const relation = compareTopologyTuple(publicationSnapshot, storedSnapshot);
+    if (relation === 'dominates') {
+        return { outcome: 'retry', reason: 'publication-ahead-of-snapshot' };
+    }
+    if (relation === 'equal' && !rtcTopologySemanticEqual(publicationSnapshot, storedSnapshot)) {
+        throw new RtcTopologyRepositoryInvariantCorruptionError(
+            storedPublication.publicationId,
+            'RTC topology publication equal causal tuple differs from durable snapshot'
+        );
+    }
+    if (relation === 'incomparable') {
+        return { outcome: 'retry', reason: 'incomparable-causal-revision' };
+    }
+    return {
+        outcome: 'loaded',
+        snapshot: storedSnapshot,
+        publication: storedPublication,
+        publicationDelivery: computeRtcTopologyPublicationDelivery(storedPublication, input.deliveryPublisherStreamId)
+    };
+}
+
+function computeTopologySnapshotWrite(
+    input: RtcTopologyMutationInput,
+    candidate: RallarOverlayTopologySnapshot,
+    observation: Exclude<RtcTopologySnapshotObservation, 'stale' | 'incomparable'>
+): RtcTopologyMutationComputed {
     validatePublicationExpiryFact(input.publication, input.facts);
     const write = {
         outcome: 'write',
         observation,
+        persistence: computeRtcTopologyPersistence({
+            snapshot: candidate,
+            expectedRevision: input.read.snapshot?.entry.revision ?? null,
+            publication: input.publication,
+            ...input.facts
+        }),
         snapshotGuard: {
             expectedRevision: input.read.snapshot?.entry.revision ?? null,
-            candidate: input.candidate
+            candidate
         }
     } as const;
     if (input.publication === null) {
         return {
             ...write,
             publication: null,
-            publicationExpireAtTimestamp: null
+            publicationExpireAtTimestamp: null,
+            publicationDelivery: null
         };
     }
     const publicationExpireAtTimestamp = input.facts.publicationExpireAtTimestamp;
@@ -162,7 +198,11 @@ export function computeTopologyMutation(
         publication: input.publication,
         publicationExpireAtTimestamp,
         commandHash: input.facts.commandHash,
-        attemptCount: input.facts.attemptCount
+        attemptCount: input.facts.attemptCount,
+        publicationDelivery: computeRtcTopologyPublicationDelivery(
+            input.publication,
+            input.deliveryPublisherStreamId
+        )
     };
 }
 
@@ -207,8 +247,15 @@ export function validateTopologyMutation(
         }>
 ): void {
     const recomputed = computeTopologyMutation(input);
-    if (!rtcTopologySemanticEqual(recomputed, input.computed)) {
+    const issues = validateAppInboxComputedProjection(recomputed, input.computed, 'topology mutation');
+    if (issues.length > 0) {
         throw new TypeError('RTC topology mutation differs from canonical computation');
+    }
+    if (recomputed.outcome === 'write' || recomputed.outcome === 'publish-superseded') {
+        const expectedRevision = recomputed.persistence.snapshot.expectedRevision;
+        if (expectedRevision !== null) {
+            assertRuntimeStateUpsertExpectedRevision(expectedRevision);
+        }
     }
     if (input.candidate === null) {
         return;

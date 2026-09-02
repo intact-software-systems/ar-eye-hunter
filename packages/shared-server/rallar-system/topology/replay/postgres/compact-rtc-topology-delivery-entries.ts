@@ -108,16 +108,18 @@ async function compactStreamEntries(
     }
 
     let expiredCount = 0;
-    for (const [index, row] of rows.entries()) {
+    let expectedSequence = retainedFromSequence;
+    for (const row of rows) {
         const sequence = readRtcTopologyDeliverySafeInteger(
             row.sequence,
             'RTC topology delivery sequence'
         );
-        if (sequence !== retainedFromSequence + index) {
+        if (sequence !== expectedSequence) {
             throw new RtcTopologyDeliveryCorruptionError(
                 `RTC topology delivery stream ${streamId} is not contiguous`
             );
         }
+        expectedSequence += 1;
         const retainUntilEpochMs = readRtcTopologyDeliverySafeInteger(
             row.retain_until_epoch_ms,
             'RTC topology delivery retention timestamp'

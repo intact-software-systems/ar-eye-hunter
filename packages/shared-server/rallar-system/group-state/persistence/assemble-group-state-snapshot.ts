@@ -1,4 +1,7 @@
-import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
+import {
+    validateAuthoritativeGroupSnapshotIssues,
+    type AuthoritativeStateValidationIssue
+} from '@shared/api/authoritative-state-validation.ts';
 import type {
     Group,
     GroupMember,
@@ -11,13 +14,13 @@ import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-stat
 import { isLogicallyActiveSession } from '../../presence/session-expiry.ts';
 import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 
-export type GroupStateSnapshotAssemblyInput = Readonly<{
-    group: Group;
-    members: readonly GroupMember[];
-    summary: GroupPresenceSummary | undefined;
-    authoritativeSessions: readonly GroupPresenceSession[];
-    groupRevision: number;
-    observedAtEpochMs: number;
+export interface GroupStateSnapshotAssemblyInput {
+    readonly group: Group;
+    readonly members: readonly GroupMember[];
+    readonly summary: GroupPresenceSummary | undefined;
+    readonly authoritativeSessions: readonly GroupPresenceSession[];
+    readonly groupRevision: number;
+    readonly observedAtEpochMs: number;
     /**
      * 'authoritative' carries the liveness plane without revision movement:
      * emitted sessions take lastHeartbeatAtEpochMs/expiresAtEpochMs from the
@@ -25,8 +28,8 @@ export type GroupStateSnapshotAssemblyInput = Readonly<{
      * truthful between transitions. 'summary-frozen' reproduces the stored
      * summary copies bit-for-bit.
      */
-    sessionLeaseFields: 'summary-frozen' | 'authoritative';
-}>;
+    readonly sessionLeaseFields: 'summary-frozen' | 'authoritative';
+}
 
 export interface GroupStateScopeSnapshotRead {
     readonly groupsBefore: readonly RuntimeStateEntryValue<Group>[];
@@ -46,11 +49,6 @@ export interface GroupStateSnapshotPageScan {
     readonly hasMore: boolean;
 }
 
-interface SnapshotInvariantContext {
-    readonly storageKey: string;
-    readonly invariantError: (storageKey: string, message: string) => Error;
-}
-
 export function collectGroupStateValuesByGroupId<T extends GroupRef>(
     values: readonly T[]
 ): Map<string, T[]> {
@@ -67,12 +65,21 @@ export function assembleGroupStateSnapshot(
     input: GroupStateSnapshotAssemblyInput,
     invariantError: (storageKey: string, message: string) => Error
 ): GroupSnapshot {
+    const snapshot = computeGroupStateSnapshot(input);
+    const issues = validateGroupStateSnapshotAssembly(input, snapshot);
+    if (issues.length > 0) {
+        throw invariantError(groupStateGroupStorageKey(input.group), issues[0].message);
+    }
+    return snapshot;
+}
+
+export function computeGroupStateSnapshot(input: GroupStateSnapshotAssemblyInput): GroupSnapshot {
     const activeMemberIds = new Set(
         input.members
             .filter((member) => member.status === 'active')
             .map((member) => member.principalId)
     );
-    const activeSessions = readActiveSessions(input, activeMemberIds);
+    const activeSessions = computeActiveSessions(input, activeMemberIds);
     const presenceRevision = input.summary?.causalRevision.presenceRevision ?? 0;
     const causalRevision = {
         groupRevision: input.groupRevision,
@@ -80,12 +87,7 @@ export function assembleGroupStateSnapshot(
     };
     const activePrincipals = new Set(activeSessions.map((session) => session.principalId));
     const activeMembers = input.members.filter((member) => member.status === 'active');
-    const invariantContext = {
-        storageKey: groupStateGroupStorageKey(input.group),
-        invariantError
-    };
-    assertStoredRoster(input, activeMembers, invariantContext);
-    const snapshot: GroupSnapshot = {
+    return {
         causalRevision,
         group: { ...input.group, presenceVersion: presenceRevision },
         members: input.members,
@@ -94,11 +96,9 @@ export function assembleGroupStateSnapshot(
         onlineMemberCount: activeMembers.filter((member) => activePrincipals.has(member.principalId))
             .length
     };
-    assertValidSnapshot(snapshot, input.group, invariantContext);
-    return snapshot;
 }
 
-function readActiveSessions(
+function computeActiveSessions(
     input: GroupStateSnapshotAssemblyInput,
     activeMemberIds: ReadonlySet<string>
 ): readonly GroupPresenceSession[] {
@@ -142,39 +142,19 @@ function readActiveSessions(
         });
 }
 
-function assertStoredRoster(
+export function validateGroupStateSnapshotAssembly(
     input: GroupStateSnapshotAssemblyInput,
-    activeMembers: readonly GroupMember[],
-    invariantContext: SnapshotInvariantContext
-): void {
+    snapshot: GroupSnapshot
+): readonly AuthoritativeStateValidationIssue[] {
+    const activeMembers = input.members.filter((member) => member.status === 'active');
     const activeOwners = activeMembers.filter((member) => member.role === 'owner');
-    if (
-        input.group.activeMemberCount !== activeMembers.length ||
+    const rosterIsInvalid = input.group.activeMemberCount !== activeMembers.length ||
         (input.group.maxMembers !== null && activeMembers.length > input.group.maxMembers) ||
-        activeOwners.length !== 1 ||
-        activeOwners[0]?.principalId !== input.group.ownerPrincipalId
-    ) {
-        throw invariantContext.invariantError(
-            invariantContext.storageKey,
-            'Stored group roster facts are inconsistent'
-        );
-    }
-}
-
-function assertValidSnapshot(
-    snapshot: GroupSnapshot,
-    group: Group,
-    invariantContext: SnapshotInvariantContext
-): void {
-    try {
-        validateAuthoritativeGroupSnapshot(snapshot, group);
-    }
-    catch (error) {
-        throw invariantContext.invariantError(
-            invariantContext.storageKey,
-            error instanceof Error ? error.message : 'Stored group snapshot is invalid'
-        );
-    }
+        activeOwners.length !== 1 || activeOwners[0]?.principalId !== input.group.ownerPrincipalId;
+    return [
+        ...(rosterIsInvalid ? [{ path: 'members', message: 'Stored group roster facts are inconsistent' }] : []),
+        ...validateAuthoritativeGroupSnapshotIssues(snapshot, input.group)
+    ];
 }
 
 function toActiveSessions(

@@ -6,10 +6,17 @@ import type {
     GroupSnapshot,
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { jsonEquals } from '@shared/repository/state-utils.ts';
-import type { ComputedCoalescedAppOutboxWork } from '../../app-outbox/coalesced-app-outbox-work-service.ts';
+import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+
+import type { ResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import { validateAppInboxComputedProjection } from '../../app-inbox/handler/app-inbox-computed-validation.ts';
+import { computeAppOutboxInsertOrMatch, type AppOutboxInsertOrMatch } from '../../app-outbox/app-outbox-insert.ts';
+import {
+    validateCoalescedAppOutboxWrite,
+    type ComputedCoalescedAppOutboxWork
+} from '../../app-outbox/coalesced-app-outbox-work.ts';
 import {
     computeGroupStateSyncEntries,
     type ComputedGroupStateSyncEffect,
@@ -18,10 +25,14 @@ import {
 import {
     computeCoalescedRtcTopologyGroupRevisionWork
 } from '../../topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
+import { toGroupStateValidationIssue, type GroupStateValidationIssue } from '../group-state-validation-issues.ts';
+import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import { assembleGroupStateSnapshot } from '../persistence/assemble-group-state-snapshot.ts';
+import { PRESENCE_SUMMARIES_NAMESPACE } from '../persistence/group-state-runtime-namespaces.ts';
 import {
     computeGroupPresenceSummary,
-    validateGroupPresenceSummary,
+    validateGroupPresenceSummaryCandidate,
+    validateGroupPresenceSummaryRead,
     type GroupPresenceSummaryComputed,
     type GroupPresenceSummaryRead
 } from './compute-group-presence-summary.ts';
@@ -29,20 +40,23 @@ import {
 export interface GroupPresenceSummaryWorkRead {
     readonly presence: GroupPresenceSummaryRead;
     readonly coalescedTopologyEntry: ResourceEntry | null;
+    readonly nowEpochMs: number;
+    readonly serviceId: string;
+    readonly recomputeDebounceMs: number;
+    readonly reservation: Readonly<{
+        key: Key;
+        expectedAttempts: number;
+    }>;
 }
 
 export interface GroupPresenceSummaryComputedWork {
     readonly work: GroupPresenceSummaryWorkData;
     readonly summary: GroupPresenceSummaryComputed;
+    readonly summaryWrite: GroupPresenceSummaryRuntimeWrite | null;
     readonly snapshot: GroupSnapshot;
-    readonly downstreamOutboxEntries: readonly ResourceEntry[];
+    readonly downstreamOutboxWrites: readonly AppOutboxInsertOrMatch[];
     readonly coalescedTopologyWork: ComputedCoalescedAppOutboxWork;
-}
-
-export interface ComputeGroupPresenceSummaryWorkOptions {
-    readonly serviceId: string;
-    readonly nowEpochMs: number;
-    readonly recomputeDebounceMs: number;
+    readonly reservationFinish: ResourceInboxReservationFinish;
 }
 
 export interface ComputeGroupPresenceSummaryOutboxInput {
@@ -65,7 +79,14 @@ export interface ValidateGroupPresenceSummaryComputedWorkInput {
     readonly work: GroupPresenceSummaryWorkData;
     readonly read: GroupPresenceSummaryWorkRead;
     readonly computed: GroupPresenceSummaryComputedWork;
-    readonly options: Omit<ComputeGroupPresenceSummaryWorkOptions, 'nowEpochMs'>;
+}
+
+interface GroupPresenceSummaryRuntimeWrite {
+    readonly namespace: string;
+    readonly key: string;
+    readonly value: string;
+    readonly expireAtIsoTimestamp: string;
+    readonly expectedRevision: number | null;
 }
 
 interface ToGroupPresenceSummaryOutboxInputInput {
@@ -73,18 +94,17 @@ interface ToGroupPresenceSummaryOutboxInputInput {
     readonly read: GroupPresenceSummaryWorkRead;
     readonly summary: GroupPresenceSummaryComputed;
     readonly snapshot: GroupSnapshot;
-    readonly options: ComputeGroupPresenceSummaryWorkOptions;
+    readonly serviceId: string;
 }
 
 export function computeGroupPresenceSummaryWork(
     work: GroupPresenceSummaryWorkData,
-    read: GroupPresenceSummaryWorkRead,
-    options: ComputeGroupPresenceSummaryWorkOptions
+    read: GroupPresenceSummaryWorkRead
 ): GroupPresenceSummaryComputedWork {
     const summary = computeGroupPresenceSummary({
         ref: work.aggregateRef,
         read: read.presence,
-        nowEpochMs: options.nowEpochMs
+        nowEpochMs: read.nowEpochMs
     });
     const snapshot = assembleGroupStateSnapshot(
         {
@@ -103,40 +123,60 @@ export function computeGroupPresenceSummaryWork(
         read,
         summary,
         snapshot,
-        options
+        serviceId: read.serviceId
     });
     return {
         work,
         summary,
+        summaryWrite: computeGroupPresenceSummaryRuntimeWrite(summary),
         snapshot,
-        downstreamOutboxEntries: computeGroupPresenceSummaryOutboxEntries(outboxInput),
+        downstreamOutboxWrites: computeGroupPresenceSummaryOutboxEntries(outboxInput).map(
+            computeAppOutboxInsertOrMatch
+        ),
         coalescedTopologyWork: computeCoalescedRtcTopologyGroupRevisionWork({
             aggregateRef: work.aggregateRef,
             groupSnapshot: snapshot,
             requestedAtEpochMs: summary.summary.computedAtEpochMs,
             expireAtEpochMs: work.expireAtEpochMs,
-            recomputeDebounceMs: options.recomputeDebounceMs,
-            senderId: options.serviceId,
+            recomputeDebounceMs: read.recomputeDebounceMs,
+            senderId: read.serviceId,
             origin: work.event.payload.topologyReplanOrigin === 'commanded'
                 ? 'commanded'
                 : 'automatic',
             previousEntry: read.coalescedTopologyEntry
-        })
+        }),
+        reservationFinish: {
+            key: read.reservation.key,
+            expectedAttempts: read.reservation.expectedAttempts,
+            status: EntityStatus.COMPLETED,
+            completedAt: new Date(read.nowEpochMs)
+        }
     };
 }
 
 export function validateGroupPresenceSummaryComputedWork(
     input: ValidateGroupPresenceSummaryComputedWorkInput
-): void {
-    const { work, read, computed, options } = input;
-    if (computed.work !== work) {
-        throw new TypeError('Presence-summary computed work differs from its command');
+): readonly GroupStateValidationIssue[] {
+    const { work, read, computed } = input;
+    const issues = [...validateGroupPresenceSummaryRead(work.aggregateRef, read.presence)];
+    if (issues.length > 0) {
+        return issues;
     }
-    validateGroupPresenceSummary({
+    issues.push(
+        ...validateAppInboxComputedProjection(computeGroupPresenceSummaryWork(work, read), computed, 'presenceSummary')
+    );
+    if (issues.length > 0) {
+        return issues;
+    }
+    issues.push(...validateGroupPresenceSummaryCandidate({
         ref: work.aggregateRef,
         read: read.presence,
         computed: computed.summary
-    });
+    }));
+    if (computed.work !== work) {
+        issues.push(toGroupStateValidationIssue('work', 'Presence-summary computed work differs from its command'));
+    }
+    issues.push(...validateCoalescedAppOutboxWrite(read.coalescedTopologyEntry, computed.coalescedTopologyWork));
     if (
         work.event.applicationId !== work.aggregateRef.applicationId ||
         work.event.workspaceId !== work.aggregateRef.workspaceId ||
@@ -144,24 +184,32 @@ export function validateGroupPresenceSummaryComputedWork(
         work.event.causalRevision.groupRevision !== work.acceptedCausalRevision.groupRevision ||
         work.event.causalRevision.presenceRevision !== work.acceptedCausalRevision.presenceRevision
     ) {
-        throw new TypeError('Presence-summary event differs from accepted group revision');
+        issues.push(
+            toGroupStateValidationIssue('work.event', 'Presence-summary event differs from accepted group revision')
+        );
     }
-    validateGroupPresenceSummaryOutboxEntries(
-        computed.downstreamOutboxEntries,
-        toGroupPresenceSummaryOutboxInput({
-            work,
-            read,
-            summary: computed.summary,
-            snapshot: computed.snapshot,
-            options: { ...options, nowEpochMs: computed.summary.summary.computedAtEpochMs }
-        })
-    );
+    return issues;
+}
+
+function computeGroupPresenceSummaryRuntimeWrite(
+    summary: GroupPresenceSummaryComputed
+): GroupPresenceSummaryRuntimeWrite | null {
+    if (summary.outcome === 'no-op') {
+        return null;
+    }
+    return {
+        namespace: PRESENCE_SUMMARIES_NAMESPACE,
+        key: groupStateGroupStorageKey(summary.summary),
+        value: JSON.stringify(summary.summary),
+        expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString(),
+        expectedRevision: summary.expectedRevision
+    };
 }
 
 function toGroupPresenceSummaryOutboxInput(
     input: ToGroupPresenceSummaryOutboxInputInput
 ): ComputeGroupPresenceSummaryOutboxInput {
-    const { work, read, summary, snapshot, options } = input;
+    const { work, read, summary, snapshot, serviceId } = input;
     return {
         work,
         summary,
@@ -173,7 +221,7 @@ function toGroupPresenceSummaryOutboxInput(
             workspaceId: work.aggregateRef.workspaceId,
             resourceId: work.aggregateRef.groupId
         },
-        serviceId: options.serviceId
+        serviceId
     };
 }
 
@@ -198,10 +246,12 @@ export function computeGroupPresenceSummaryOutboxEntries(
 export function validateGroupPresenceSummaryOutboxEntries(
     computedEntries: readonly ResourceEntry[],
     input: ComputeGroupPresenceSummaryOutboxInput
-): void {
-    if (!jsonEquals(computedEntries, computeGroupPresenceSummaryOutboxEntries(input))) {
-        throw new TypeError('Presence-summary downstream outbox entries are not canonical');
-    }
+): readonly GroupStateValidationIssue[] {
+    return validateAppInboxComputedProjection(
+        computeGroupPresenceSummaryOutboxEntries(input),
+        computedEntries,
+        'presenceSummary.downstreamOutboxEntries'
+    );
 }
 
 function computeGroupStateEventEffect(

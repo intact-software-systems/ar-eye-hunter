@@ -14,6 +14,10 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import { computeAppOutboxInsertOrMatch } from '../../app-outbox/app-outbox-insert.ts';
+import { computeGroupStateEventWrite } from '../../state-events/group-state-event-store.ts';
+import type { GroupStateValidationIssue } from '../group-state-validation-issues.ts';
+import { computeGroupLifecyclePolicyWrite } from '../persistence/group-lifecycle-policy-repository.ts';
 import { GroupPolicyDeniedError } from '../policy/group-policy-result.ts';
 
 import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
@@ -33,6 +37,7 @@ import type {
 import { GroupAlreadyExistsError, GroupMutationRejectedError } from './group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from './group-mutation-idempotency-key.ts';
 import { GroupConnectDeniedError, type GroupMutationRejectionCode } from './group-mutation-rejection-codes.ts';
+import { computeGroupStateGuardedBatch } from './write/compute-group-state-guarded-batch.ts';
 
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
@@ -94,7 +99,7 @@ interface GroupMutationReceiptInput {
     readonly rejection: string | null;
 }
 
-export function materializedRotateJoinCode(
+export function computeGroupMutationJoinCode(
     command: Extract<GroupMutationCommand, { operation: 'rotateGroupJoinCode'; }>,
     facts: GroupMutationFacts
 ): MaterializedGroupJoinCode {
@@ -135,22 +140,29 @@ export function computeGroupMutationWriteResult(
         outboxIds: outboxEntries.map((outboxEntry) => outboxEntry.key.resourceId),
         rejection: null
     });
-    return {
+    const lifecyclePolicy = command.operation === 'createGroup' ? (command.input.lifecyclePolicy ?? null) : null;
+    const write = {
         outcome: 'write',
         guard: input.guard,
         members: input.members,
         initialPresenceSummary: input.initialPresenceSummary,
         presenceAdmission: input.presenceAdmission ?? null,
         event,
+        eventWrite: computeGroupStateEventWrite(event),
         receipt,
         idempotency: toGroupMutationIdempotency(command, facts, receipt),
         outboxEntries,
-        lifecyclePolicy: command.operation === 'createGroup' ? (command.input.lifecyclePolicy ?? null) : null,
+        outboxWrites: outboxEntries.map(computeAppOutboxInsertOrMatch),
+        lifecyclePolicy,
+        lifecyclePolicyWrite: lifecyclePolicy === null
+            ? null
+            : computeGroupLifecyclePolicyWrite(command.aggregateRef, lifecyclePolicy),
         acceptedLayoutPromotion,
         plannedLayoutFence,
         layoutTombstones,
         connectTriggerLatchEffect: input.connectTriggerLatchEffect ?? null
-    };
+    } as const;
+    return { ...write, guardedBatch: computeGroupStateGuardedBatch(write) };
 }
 
 function toGroupMutationIdempotency(
@@ -249,7 +261,7 @@ function toGroupMutationReceipt(
     facts: GroupMutationFacts,
     input: GroupMutationReceiptInput
 ): GroupMutationReceipt {
-    const joinCode = command.operation === 'rotateGroupJoinCode' ? materializedRotateJoinCode(command, facts) : null;
+    const joinCode = command.operation === 'rotateGroupJoinCode' ? computeGroupMutationJoinCode(command, facts) : null;
     return {
         commandId: command.commandId,
         requestId: command.requestId,
@@ -279,12 +291,20 @@ export function requireGroup(
     read: GroupMutationRead,
     ref: GroupRef
 ): RuntimeStateEntryValue<Group> {
-    // Fresh non-create absence is a typed rejection at computeGroupMutation.
-    // Result assembly reaches this only after that existence decision.
-    if (!read.group) {
-        throw new GroupMutationRejectedError(`Group not found: ${ref.groupId}`);
+    const issues = validateRequiredGroup(read, ref);
+    if (issues.length > 0) {
+        throw issues[0].cause;
     }
-    return read.group;
+    return read.group as RuntimeStateEntryValue<Group>;
+}
+
+export function validateRequiredGroup(
+    read: GroupMutationRead,
+    ref: GroupRef
+): readonly GroupStateValidationIssue[] {
+    return read.group
+        ? []
+        : [{ path: 'read.group', cause: new GroupMutationRejectedError(`Group not found: ${ref.groupId}`) }];
 }
 
 export function auditStamp(

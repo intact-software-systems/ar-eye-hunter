@@ -1,6 +1,6 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import * as snapshotValidation from '../../group-state/snapshot/validate-persisted-group-snapshot.ts';
+import * as snapshotValidation from '../../group-state/snapshot/assert-persisted-group-snapshot.ts';
 import { encodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     compareRtcTopologyIdentifiers,
@@ -18,35 +18,45 @@ import type { RtcRttMutationComputed } from './rtc-rtt-mutation-contracts.ts';
 import { toRtcRttTopologyOutboxId } from './rtc-rtt-mutation-identifiers.ts';
 
 export function validateRtcRttWriteCandidate(
-    value: Extract<RtcRttMutationComputed, { outcome: 'write'; }>,
+    candidate: Extract<RtcRttMutationComputed, { outcome: 'write'; }>,
     mutationExpireAtTimestamp: number
 ): void {
-    const candidate = record(
-        encodeJsonWireValue(value, 'RTC RTT write candidate'),
-        'RTC RTT write candidate'
-    );
     exactKeys(candidate, [
         'outcome',
         'reason',
         'affectedGroups',
         'endpointGuards',
         'measurementGuard',
+        'outboxWrites',
         'receipt',
+        'runtimeWrites',
         'senderId'
     ]);
     if (candidate.outcome !== 'write' || candidate.reason !== 'accepted') {
         throw new TypeError('RTC RTT write candidate discriminant is invalid');
     }
-    const receipt = candidate.receipt;
+    const receipt = encodeJsonWireValue(candidate.receipt, 'RTC RTT receipt');
     validateRtcRttMutationReceipt(receipt, mutationExpireAtTimestamp);
     const canonicalReceipt = receipt as RtcRttMutationReceipt;
     nonEmptyString(candidate.senderId, 'sender id');
     const expectedGroups = canonicalReceipt.affectedGroupRefs.map(
         toCanonicalRtcTopologyGroupIdentity
     );
-    validateAffectedGroups(candidate.affectedGroups, expectedGroups, canonicalReceipt);
-    const measurement = validateMeasurementGuard(candidate.measurementGuard, canonicalReceipt);
-    validateEndpointGuards(candidate.endpointGuards, canonicalReceipt, measurement.purgeAfterEpochMs);
+    validateAffectedGroups(
+        encodeJsonWireValue(candidate.affectedGroups, 'RTC RTT affected groups'),
+        expectedGroups,
+        canonicalReceipt
+    );
+    const measurement = validateMeasurementGuard(
+        encodeJsonWireValue(candidate.measurementGuard, 'RTC RTT measurement guard'),
+        canonicalReceipt
+    );
+    validateEndpointGuards(
+        encodeJsonWireValue(candidate.endpointGuards, 'RTC RTT endpoint guards'),
+        canonicalReceipt,
+        measurement.purgeAfterEpochMs
+    );
+    encodeJsonWireValue(candidate.runtimeWrites, 'RTC RTT runtime writes');
 }
 
 function validateAffectedGroups(
@@ -60,7 +70,7 @@ function validateAffectedGroups(
     const observed: string[] = [];
     for (let index = 0; index < value.length; index += 1) {
         const rawGroup = value[index];
-        snapshotValidation.validatePersistedGroupSnapshot(rawGroup);
+        snapshotValidation.assertPersistedGroupSnapshot(rawGroup);
         const group = rawGroup as GroupSnapshot;
         const identity = toCanonicalRtcTopologyGroupIdentity(group.group);
         validateAffectedGroupAgainstReceipt(group, receipt);
@@ -189,7 +199,7 @@ function record(value: JsonWireValue, label: string): JsonWireObject {
     return value as JsonWireObject;
 }
 
-function exactKeys(value: JsonWireObject, expected: readonly string[]): void {
+function exactKeys(value: object, expected: readonly string[]): void {
     const keys = Object.keys(value).sort(compareRtcTopologyIdentifiers);
     const canonical = [...expected].sort(compareRtcTopologyIdentifiers);
     if (!rtcTopologySemanticEqual(keys, canonical)) {

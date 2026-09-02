@@ -1,5 +1,5 @@
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import type { AppInboxMessageContext, AppInboxType } from '../app-inbox-contracts.ts';
+import type { AppInboxExecutionMetadata, AppInboxType } from '../app-inbox-contracts.ts';
 
 export interface AppInboxHandlerRegistration<Command, Result> {
     readonly type: AppInboxType;
@@ -7,6 +7,6 @@ export interface AppInboxHandlerRegistration<Command, Result> {
     readonly encodeResult: (result: Result) => JsonWireValue;
     readonly handle: (
         command: Command,
-        context: AppInboxMessageContext<Result>
+        context: AppInboxExecutionMetadata
     ) => Promise<Result>;
 }

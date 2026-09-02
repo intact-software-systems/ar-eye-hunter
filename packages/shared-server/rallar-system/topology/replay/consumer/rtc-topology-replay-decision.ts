@@ -3,7 +3,7 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { decodeJsonWireValue } from '../../../protocol/json-wire-identity.ts';
+import { decodeJsonWireText, decodeJsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { decodeRtcTopologySnapshot } from '../../persistence/decode-rtc-topology-snapshot.ts';
 import { rtcTopologySemanticEqual } from '../../persistence/rtc-topology-semantic-equal.ts';
 import { compareTopologyTuple } from '../../persistence/rtc-topology-snapshot-contract.ts';
@@ -57,7 +57,7 @@ export function decideRtcTopologyReplayEntry(
     if (publication.publicationId !== input.entry.publicationId) {
         throw corruption(input.entry, 'the referenced publication identity differs');
     }
-    const expectedOutbox = computeRtcTopologyPublicationOutbox(publication);
+    const expectedOutbox = computeRtcTopologyPublicationOutbox(publication).entry;
     if (
         !isKeysEqual(input.entry.outboxKey, expectedOutbox.key) ||
         input.entry.retainUntilEpochMs !== expectedOutbox.audit.expiryTs.epochMilliseconds
@@ -97,8 +97,8 @@ function readPublicationSnapshot(
 ): RallarOverlayTopologySnapshot {
     try {
         return decodeRtcTopologySnapshot(
-            decodeJsonWireValue(
-                JSON.parse(publication.message.payload.resource),
+            decodeJsonWireText(
+                publication.message.payload.resource,
                 'RTC topology publication snapshot'
             ),
             entry.groupRef

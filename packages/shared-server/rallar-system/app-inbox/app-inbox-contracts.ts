@@ -82,12 +82,6 @@ export type AppInboxExecutionMetadata = Readonly<{
     entry: ResourceEntry;
 }>;
 
-export type AppInboxMessageContext<Result> =
-    & AppInboxExecutionMetadata
-    & Readonly<{
-        encodeResult: (result: Result) => JsonWireValue;
-    }>;
-
 export class AppInboxIdempotencyConflictError extends Error {
     readonly code = 'app-inbox-idempotency-conflict';
     readonly status = 409;

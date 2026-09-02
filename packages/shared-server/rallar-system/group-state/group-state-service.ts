@@ -19,8 +19,8 @@ import {
     type GroupStateServiceDependencies
 } from './group-state-service-contracts.ts';
 import { createTimedGroupStateService } from './group-state-service-timing.ts';
-import { assertGroupMutationAuthority } from './mutation/command-validation/assert-group-mutation-authority.ts';
-import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
+import { validateGroupMutationAuthority } from './mutation/command-validation/validate-group-mutation-authority.ts';
+import { validateGroupMutationCommand } from './mutation/command-validation/validate-group-mutation-command.ts';
 import type {
     GroupMutationCommand,
     GroupMutationFacts,
@@ -29,7 +29,7 @@ import type {
 import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
 import { readsAcceptedLayoutRow, readsGroupLayoutRows } from './mutation/read/group-mutation-read-scope.ts';
 import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
-import { assertGroupMutation } from './mutation/state-validation/assert-group-mutation.ts';
+import { validateGroupMutation } from './mutation/state-validation/validate-group-mutation.ts';
 import { writeGroupMutation } from './mutation/write/write-group-mutation.ts';
 import { GroupConnectTriggerLatchRepository } from './persistence/group-connect-trigger-latch-repository.ts';
 import { GroupStateRepository } from './persistence/group-state-repository.ts';
@@ -130,7 +130,10 @@ function createInternalMutationPreparer(
     dependencies: GroupStateServiceDependencies
 ): InternalMutationPreparer {
     return async (command, internalAuthority, atEpochMs) => {
-        assertGroupMutationCommand(command);
+        const commandIssues = validateGroupMutationCommand(command);
+        if (commandIssues.length > 0) {
+            throw commandIssues[0].cause;
+        }
         const commandHash = await hashMutationCommand(
             decodeJsonWireValue(command, 'Internal group mutation command')
         );
@@ -150,7 +153,10 @@ function createInternalMutationPreparer(
         // execute fails at the call site, never as a poison row the queue
         // retries into a terminal failure. attemptCount is a placeholder the
         // matrix never reads.
-        assertGroupMutationAuthority(command, { ...facts, attemptCount: 1 });
+        const authorityIssues = validateGroupMutationAuthority(command, { ...facts, attemptCount: 1 });
+        if (authorityIssues.length > 0) {
+            throw authorityIssues[0].cause;
+        }
         const causalToken = await sha256CanonicalJson({ command, facts });
         return {
             authorityProof: null,
@@ -232,6 +238,7 @@ function createQueryOperations(
     | 'readSnapshot'
     | 'readCausalRevision'
     | 'readIssuedAuthSession'
+    | 'readEvent'
     | 'listEvents'
     | 'listRecentEvents'
     | 'listEventPage'
@@ -245,6 +252,7 @@ function createQueryOperations(
         readSnapshot: async (ref) => await repositoryFor(runtime).readSnapshot(ref),
         readCausalRevision: async (ref) => await repositoryFor(runtime).readCausalRevision(ref),
         readIssuedAuthSession: async (sessionId) => await dependencies.authSessionRepository.findBySessionId(sessionId),
+        readEvent: async (ref, eventId) => await dependencies.groupStateEventStore.readGroupEvent(ref, eventId),
         listEvents: async (ref) => await repositoryFor(runtime).listEvents(ref),
         listRecentEvents: async (ref, query) => await repositoryFor(runtime).listRecentEvents(ref, query),
         listEventPage: async (ref, query) => await repositoryFor(runtime).listEventPage(ref, query),
@@ -258,21 +266,13 @@ function createMutationOperations(
     return {
         read: async (prepared) => await readPreparedGroupMutation(owners, prepared),
         compute: (prepared, read) => computeGroupMutation({ command: prepared.command, read, facts: prepared.facts }),
-        validate: (prepared, read, computed) => {
-            assertGroupMutation({
+        validate: (prepared, read, computed) =>
+            validateGroupMutation({
                 command: prepared.command,
                 read,
                 facts: prepared.facts,
                 computed
-            });
-            if (computed.outcome === 'idempotency-conflict') {
-                throw new GroupMutationIdempotencyConflictError(
-                    prepared.command.commandId,
-                    computed.existingCommandHash,
-                    computed.receivedCommandHash
-                );
-            }
-        },
+            }),
         write: async (transaction, computed) => await writeGroupMutation(transaction, computed)
     };
 }

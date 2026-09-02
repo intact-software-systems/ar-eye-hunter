@@ -11,7 +11,7 @@ import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     type CoalescedAppOutboxWorkMetadata
-} from '../../../app-outbox/coalesced-app-outbox-work-service.ts';
+} from '@shared/queuebox/coalesced-app-outbox-work-envelope.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import {
     readRtcRttTopologyOutboxIdentity,

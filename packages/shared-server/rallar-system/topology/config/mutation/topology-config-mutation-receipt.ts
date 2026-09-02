@@ -5,10 +5,13 @@ import type {
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
+import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import {
+    computeRtcTopologyEntry,
     toRtcTopologyEntryResourceId,
     type ComputedRtcTopologyOutbox
 } from '../../mutation/rtc-topology-outbox-entry.ts';
+import { computeTopologyConfigRuntimeWrites } from './compute-topology-config-runtime-writes.ts';
 import type {
     GroupTopologyConfigGeneration,
     GroupTopologyConfigMutationAcceptedResult,
@@ -65,7 +68,7 @@ export function createTopologyConfigWriteResult(
     };
     const outbox = createTopologyConfigOutbox(topologyWrite, acceptedCausalRevision);
     const receipt = createAppliedTopologyConfigReceipt(topologyWrite, acceptedCausalRevision, outbox);
-    return {
+    const computed = {
         outcome: 'write',
         groupAuthorityGuard: topologyWrite.read.groupAuthorityGuard,
         guard: topologyWrite.guard,
@@ -90,8 +93,12 @@ export function createTopologyConfigWriteResult(
             topologyWrite.facts,
             receipt
         ),
-        outbox,
+        outboxWrite: computeAppOutboxInsert(computeRtcTopologyEntry(outbox)),
         result: resultFromTopologyConfigGuard(topologyWrite.guard)
+    } satisfies Omit<GroupTopologyConfigMutationWriteComputed, 'runtimeWrites'>;
+    return {
+        ...computed,
+        runtimeWrites: computeTopologyConfigRuntimeWrites(computed)
     };
 }
 

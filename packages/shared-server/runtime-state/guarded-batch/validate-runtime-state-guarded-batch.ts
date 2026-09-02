@@ -1,254 +1,146 @@
-import { type JsonWireObject, type JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
+import type { JsonWireObject, JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import {
-    assertRuntimeStateExpectedRevision,
-    assertRuntimeStateUpsertExpectedRevision
+    isValidRuntimeStateExpectedRevision,
+    isValidRuntimeStateUpsertExpectedRevision
 } from '../runtime-state-repository.ts';
-import {
-    type RuntimeStateGuardedBatch,
-    type RuntimeStateGuardedBatchDelete,
-    type RuntimeStateGuardedBatchEffect,
-    type RuntimeStateGuardedBatchGuard,
-    type RuntimeStateGuardedBatchIdentity,
-    type RuntimeStateGuardedBatchInsert,
-    type RuntimeStateGuardedBatchUpdate
-} from './runtime-state-guarded-batch.ts';
+import type { RuntimeStateGuardedBatch } from './runtime-state-guarded-batch.ts';
 
-export function validateRuntimeStateGuardedBatch(
-    input: unknown
-): RuntimeStateGuardedBatch {
-    const batch = requireRecord(
-        input,
-        'runtime state guarded batch'
-    );
-    requireExactKeys(batch, ['guard', 'effects'], 'runtime state guarded batch');
-    const guard = validateGuard(batch.guard);
-    const effects = requireDenseArray(
-        batch.effects,
-        'runtime state guarded batch effects'
-    );
-    if (effects.length === 0) {
-        throw invalidBatch('effects must not be empty');
+export interface RuntimeStateGuardedBatchValidationIssue {
+    readonly path: string;
+    readonly cause: Error;
+}
+
+export function validateRuntimeStateGuardedBatch(input: unknown): readonly RuntimeStateGuardedBatchValidationIssue[] {
+    if (!isRecord(input)) {
+        return [issue('batch', 'must be an object')];
     }
-
-    const identities = new Set<string>([identityKey(guard)]);
+    const issues = [...exactKeys(input, ['guard', 'effects'], 'batch')];
+    issues.push(...validateMutation(input.guard, 'guard', true));
+    if (!Array.isArray(input.effects)) {
+        return [...issues, issue('effects', 'must be an array')];
+    }
+    if (input.effects.length === 0) {
+        issues.push(issue('effects', 'must not be empty'));
+    }
+    const identities = new Set<string>();
     const effectIds = new Set<string>();
-    const validatedEffects = effects.map((effect, index) => {
-        const validated = validateEffect(effect, index);
-        if (effectIds.has(validated.effectId)) {
-            throw invalidBatch(`duplicate effect ID: ${validated.effectId}`);
+    const guardIdentity = identityKey(input.guard);
+    if (guardIdentity !== null) {
+        identities.add(guardIdentity);
+    }
+    for (let index = 0; index < input.effects.length; index += 1) {
+        const path = 'effects.' + index;
+        if (!Object.hasOwn(input.effects, index)) {
+            issues.push(issue(path, 'effects must be dense'));
+            continue;
         }
-        effectIds.add(validated.effectId);
-        const currentIdentity = identityKey(validated);
-        if (identities.has(currentIdentity)) {
-            throw invalidBatch(
-                `duplicate identity: ${validated.namespace}/${validated.key}`
-            );
+        const effect = input.effects[index];
+        issues.push(...validateMutation(effect, path, false));
+        if (isRecord(effect) && typeof effect.effectId === 'string') {
+            if (effectIds.has(effect.effectId)) {
+                issues.push(issue(path + '.effectId', 'duplicate effect ID: ' + effect.effectId));
+            }
+            effectIds.add(effect.effectId);
         }
-        identities.add(currentIdentity);
-        return validated;
-    });
-
-    return { guard, effects: validatedEffects };
+        const identity = identityKey(effect);
+        if (identity !== null) {
+            if (identities.has(identity)) {
+                issues.push(issue(path, 'duplicate identity: ' + identity));
+            }
+            identities.add(identity);
+        }
+    }
+    return issues;
 }
 
-function validateGuard(input: JsonWireValue): RuntimeStateGuardedBatchGuard {
-    const mutation = requireRecord(input, 'runtime state guarded batch guard');
-    if (mutation.operation === 'put') {
-        throw invalidBatch('put cannot be used as the guard');
+/** Decoder/test-adapter boundary; production writes consume the already validated batch. */
+export function assertRuntimeStateGuardedBatch(input: unknown): asserts input is RuntimeStateGuardedBatch {
+    const issues = validateRuntimeStateGuardedBatch(input);
+    if (issues.length > 0) {
+        throw issues[0].cause;
     }
-    return validateMutation(mutation, 'guard');
-}
-
-function validateEffect(input: JsonWireValue, index: number): RuntimeStateGuardedBatchEffect {
-    const label = `effect ${index}`;
-    const mutation = requireRecord(input, `runtime state guarded batch ${label}`);
-    const effectId = requireNonEmptyString(mutation.effectId, `${label} effect ID`);
-    if (mutation.operation === 'put') {
-        requireExactKeys(
-            mutation,
-            ['effectId', 'operation', 'namespace', 'key', 'value', 'expireAtTimestamp'],
-            `runtime state guarded batch ${label}`
-        );
-        return {
-            effectId,
-            operation: mutation.operation,
-            namespace: requireNonEmptyString(mutation.namespace, `${label} namespace`),
-            key: requireNonEmptyString(mutation.key, `${label} key`),
-            value: requireString(mutation.value, `${label} value`),
-            expireAtTimestamp: requireExpiry(mutation.expireAtTimestamp, label)
-        };
-    }
-    return {
-        ...validateMutation(mutation, label, ['effectId']),
-        effectId
-    };
 }
 
 function validateMutation(
-    mutation: JsonWireObject,
-    label: string,
-    additionalKeys: readonly string[] = []
-): RuntimeStateGuardedBatchGuard {
-    const commonKeys = [...additionalKeys, 'operation', 'namespace', 'key'];
-    const namespace = requireNonEmptyString(mutation.namespace, `${label} namespace`);
-    const key = requireNonEmptyString(mutation.key, `${label} key`);
-
-    switch (mutation.operation) {
-        case 'insert':
-            requireExactKeys(
-                mutation,
-                [...commonKeys, 'value', 'expireAtTimestamp'],
-                `runtime state guarded batch ${label}`
-            );
-            return {
-                operation: mutation.operation,
-                namespace,
-                key,
-                value: requireString(mutation.value, `${label} value`),
-                expireAtTimestamp: requireExpiry(mutation.expireAtTimestamp, label)
-            } satisfies RuntimeStateGuardedBatchInsert;
-        case 'update': {
-            requireExactKeys(
-                mutation,
-                [...commonKeys, 'expectedRevision', 'value', 'expireAtTimestamp'],
-                `runtime state guarded batch ${label}`
-            );
-            const expectedRevision = requireNumber(
-                mutation.expectedRevision,
-                `${label} expected revision`
-            );
-            validateExpectedRevision(expectedRevision, label, 'update');
-            return {
-                operation: mutation.operation,
-                namespace,
-                key,
-                expectedRevision,
-                value: requireString(mutation.value, `${label} value`),
-                expireAtTimestamp: requireExpiry(mutation.expireAtTimestamp, label)
-            } satisfies RuntimeStateGuardedBatchUpdate;
-        }
-        case 'delete': {
-            requireExactKeys(
-                mutation,
-                [...commonKeys, 'expectedRevision'],
-                `runtime state guarded batch ${label}`
-            );
-            const expectedRevision = requireNumber(
-                mutation.expectedRevision,
-                `${label} expected revision`
-            );
-            validateExpectedRevision(expectedRevision, label, 'delete');
-            return {
-                operation: mutation.operation,
-                namespace,
-                key,
-                expectedRevision
-            } satisfies RuntimeStateGuardedBatchDelete;
-        }
-        default:
-            throw invalidBatch(`${label} operation is invalid: ${String(mutation.operation)}`);
+    input: JsonWireValue | undefined,
+    path: string,
+    isGuard: boolean
+): readonly RuntimeStateGuardedBatchValidationIssue[] {
+    if (!isRecord(input)) {
+        return [issue(path, 'must be an object')];
     }
-}
-
-function validateExpectedRevision(
-    expectedRevision: number,
-    label: string,
-    operation: 'update' | 'delete'
-): void {
-    try {
-        if (operation === 'update') {
-            assertRuntimeStateUpsertExpectedRevision(expectedRevision);
-        }
-        else {
-            assertRuntimeStateExpectedRevision(expectedRevision);
+    const issues: RuntimeStateGuardedBatchValidationIssue[] = [];
+    const operation = input.operation;
+    if (operation !== 'insert' && operation !== 'update' && operation !== 'delete' && operation !== 'put') {
+        issues.push(issue(path + '.operation', 'operation is invalid'));
+    }
+    else if (isGuard && operation === 'put') {
+        issues.push(issue(path + '.operation', 'put cannot be used as the guard'));
+    }
+    const keys = ['operation', 'namespace', 'key'];
+    if (!isGuard) {
+        keys.push('effectId');
+        requireNonEmptyString(input.effectId, path + '.effectId', issues);
+    }
+    requireNonEmptyString(input.namespace, path + '.namespace', issues);
+    requireNonEmptyString(input.key, path + '.key', issues);
+    if (operation === 'update' || operation === 'delete') {
+        keys.push('expectedRevision');
+        const valid = operation === 'update'
+            ? isValidRuntimeStateUpsertExpectedRevision(input.expectedRevision)
+            : isValidRuntimeStateExpectedRevision(input.expectedRevision);
+        if (!valid) {
+            issues.push(issue(path + '.expectedRevision', 'expected revision is invalid'));
         }
     }
-    catch {
-        throw invalidBatch(
-            `${label} expected revision is invalid: ${expectedRevision}`
-        );
+    if (operation === 'insert' || operation === 'update' || operation === 'put') {
+        keys.push('value', 'expireAtTimestamp');
+        if (typeof input.value !== 'string') {
+            issues.push(issue(path + '.value', 'must be a string'));
+        }
+        if (
+            typeof input.expireAtTimestamp !== 'number' || !Number.isFinite(input.expireAtTimestamp) ||
+            !Number.isFinite(new Date(input.expireAtTimestamp).getTime())
+        ) {
+            issues.push(issue(path + '.expireAtTimestamp', 'expiry is invalid'));
+        }
     }
+    issues.push(...exactKeys(input, keys, path));
+    return issues;
 }
 
-function requireExpiry(value: JsonWireValue | undefined, label: string): number {
-    const timestamp = requireNumber(value, `${label} expiry`);
-    if (!Number.isFinite(timestamp) || !Number.isFinite(new Date(timestamp).getTime())) {
-        throw invalidBatch(`${label} expiry is invalid`);
+function identityKey(value: JsonWireValue | undefined): string | null {
+    if (!isRecord(value) || typeof value.namespace !== 'string' || typeof value.key !== 'string') {
+        return null;
     }
-    return timestamp;
+    return JSON.stringify([value.namespace, value.key]);
 }
 
-function requireNonEmptyString(value: JsonWireValue | undefined, label: string): string {
-    if (typeof value !== 'string' || value.length === 0) {
-        throw invalidBatch(`${label} must be a non-empty string`);
-    }
-    return value;
-}
-
-function requireString(value: JsonWireValue | undefined, label: string): string {
-    if (typeof value !== 'string') {
-        throw invalidBatch(`${label} must be a string`);
-    }
-    return value;
-}
-
-function requireNumber(value: JsonWireValue | undefined, label: string): number {
-    if (typeof value !== 'number') {
-        throw invalidBatch(`${label} must be a number`);
-    }
-    return value;
-}
-
-function requireRecord(
-    value: unknown,
-    label: string
-): JsonWireObject {
-    if (!isJsonWireObject(value)) {
-        throw invalidBatch(`${label} must be an object`);
-    }
-    return value;
-}
-
-function requireDenseArray(
+function requireNonEmptyString(
     value: JsonWireValue | undefined,
-    label: string
-): readonly JsonWireValue[] {
-    if (!Array.isArray(value)) {
-        throw invalidBatch(`${label} must be an array`);
-    }
-    for (let index = 0; index < value.length; index += 1) {
-        if (!Object.hasOwn(value, index)) {
-            throw invalidBatch(`${label} must be dense`);
-        }
-    }
-    return value;
-}
-
-function requireExactKeys(
-    value: JsonWireObject,
-    keys: readonly string[],
-    label: string
+    path: string,
+    issues: RuntimeStateGuardedBatchValidationIssue[]
 ): void {
-    const actual = Object.keys(value).sort();
-    const expected = [...keys].sort();
-    if (
-        actual.length !== expected.length ||
-        !actual.every((key, index) => key === expected[index])
-    ) {
-        throw invalidBatch(`${label} fields are invalid`);
+    if (typeof value !== 'string' || value.length === 0) {
+        issues.push(issue(path, 'must be a non-empty string'));
     }
 }
 
-function identityKey(identity: RuntimeStateGuardedBatchIdentity): string {
-    return JSON.stringify([identity.namespace, identity.key]);
+function exactKeys(
+    value: JsonWireObject,
+    expected: readonly string[],
+    path: string
+): readonly RuntimeStateGuardedBatchValidationIssue[] {
+    const keys = Object.keys(value);
+    return keys.length === expected.length && keys.every((key) => expected.includes(key))
+        ? []
+        : [issue(path, 'fields are invalid')];
 }
 
-function isJsonWireObject(
-    value: unknown
-): value is JsonWireObject {
+function isRecord(value: unknown): value is JsonWireObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function invalidBatch(reason: string): Error {
-    return new Error(`Invalid runtime state guarded batch: ${reason}`);
+function issue(path: string, message: string): RuntimeStateGuardedBatchValidationIssue {
+    return { path, cause: new Error('Invalid runtime state guarded batch: ' + path + ' ' + message) };
 }

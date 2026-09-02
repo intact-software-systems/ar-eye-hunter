@@ -1,10 +1,26 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import {
+    encodeRuntimeStateJsonValue,
+    type RuntimeStateEntryValue
+} from '../../../runtime-state/runtime-state-json-store.ts';
 
+import { computeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import { computeRtcTopologyEntry } from '../../topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../../topology/persistence/rtc-topology-errors.ts';
 import { compareRtcTopologyIdentifiers } from '../../topology/persistence/rtc-topology-identifiers.ts';
 import { rtcTopologySemanticEqual } from '../../topology/persistence/rtc-topology-semantic-equal.ts';
 import type { RtcRttEndpointAdmission } from '../persistence/rtc-rtt-persistence-contracts.ts';
+import { RTC_RTT_MUTATION_RETENTION_MS } from '../persistence/rtc-rtt-persistence-validation-primitives.ts';
+import {
+    RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+    RTC_RTT_LATEST_NAMESPACE,
+    RTC_RTT_RECEIPTS_NAMESPACE
+} from '../persistence/rtc-rtt-runtime-namespaces.ts';
+import {
+    toRtcRttEndpointAdmissionStorageKey,
+    toRtcRttMeasurementStorageKey
+} from '../persistence/rtc-rtt-storage-keys.ts';
 import {
     canonicalRtcRttAffectedGroups,
     canonicalRtcRttGroupRef,
@@ -169,42 +185,113 @@ export function computeRtcRttMutation(
     const outboxIds = affectedGroups.map((group) =>
         toRtcRttTopologyOutboxId(receiptId, group.group, input.facts.commandHash)
     );
+    const measurementGuard = {
+        expectedRevision: authorityRead.measurement?.entry.revision ??
+            authorityRead.expiredMeasurementEntry?.revision ??
+            null,
+        value: authority.command.rtt,
+        purgeAfterEpochMs: authority.facts.purgeAfterEpochMs
+    };
+    const receipt = {
+        receiptId,
+        commandId: receiptId,
+        requestId: receiptId,
+        sessionIdFrom: authority.command.rtt.sessionIdFrom,
+        sessionIdTo: authority.command.rtt.sessionIdTo,
+        aggregateRef: {
+            sessionIdFrom: authority.command.rtt.sessionIdFrom,
+            sessionIdTo: authority.command.rtt.sessionIdTo
+        },
+        measurementVersion: authority.command.rtt.version,
+        affectedGroupRefs,
+        acceptedAtEpochMs: authority.facts.requestedAtEpochMs,
+        outcome: 'accepted',
+        attemptCount: input.facts.attemptCount,
+        acceptedStorageRevision: (authorityRead.measurement?.entry.revision ??
+            authorityRead.expiredMeasurementEntry?.revision ??
+            -1) + 1,
+        eventId: null,
+        outboxIds,
+        commandHash: input.facts.commandHash
+    } as const;
+    const computed = {
+        affectedGroups,
+        endpointGuards,
+        measurementGuard,
+        receipt,
+        senderId: authority.command.alSenderId
+    };
+    const writes = computeRtcRttWrites(computed);
     return {
         outcome: 'write',
         reason: 'accepted',
-        affectedGroups,
-        endpointGuards,
-        measurementGuard: {
-            expectedRevision: authorityRead.measurement?.entry.revision ??
-                authorityRead.expiredMeasurementEntry?.revision ??
-                null,
-            value: authority.command.rtt,
-            purgeAfterEpochMs: authority.facts.purgeAfterEpochMs
-        },
-        receipt: {
-            receiptId,
-            commandId: receiptId,
-            requestId: receiptId,
-            sessionIdFrom: authority.command.rtt.sessionIdFrom,
-            sessionIdTo: authority.command.rtt.sessionIdTo,
-            aggregateRef: {
-                sessionIdFrom: authority.command.rtt.sessionIdFrom,
-                sessionIdTo: authority.command.rtt.sessionIdTo
-            },
-            measurementVersion: authority.command.rtt.version,
-            affectedGroupRefs,
-            acceptedAtEpochMs: authority.facts.requestedAtEpochMs,
-            outcome: 'accepted',
-            attemptCount: input.facts.attemptCount,
-            acceptedStorageRevision: (authorityRead.measurement?.entry.revision ??
-                authorityRead.expiredMeasurementEntry?.revision ??
-                -1) + 1,
-            eventId: null,
-            outboxIds,
-            commandHash: input.facts.commandHash
-        },
-        senderId: authority.command.alSenderId
+        ...computed,
+        ...writes
     };
+}
+
+function computeRtcRttWrites(
+    computed: Omit<
+        Extract<RtcRttMutationComputed, { outcome: 'write'; }>,
+        'outcome' | 'reason' | 'runtimeWrites' | 'outboxWrites'
+    >
+): ComputedRtcRttWrites {
+    const mutationExpireAtTimestamp = computed.receipt.acceptedAtEpochMs +
+        RTC_RTT_MUTATION_RETENTION_MS;
+    const runtimeWrites = computed.endpointGuards.map((guard) => ({
+        namespace: RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+        key: toRtcRttEndpointAdmissionStorageKey(guard.value.endpointId),
+        value: encodeRuntimeStateJsonValue(guard.value),
+        expireAtIsoTimestamp: new Date(guard.expireAtTimestamp).toISOString(),
+        expectedRevision: guard.expectedRevision
+    }));
+    return {
+        runtimeWrites: [
+            ...runtimeWrites,
+            {
+                namespace: RTC_RTT_LATEST_NAMESPACE,
+                key: toRtcRttMeasurementStorageKey(
+                    computed.measurementGuard.value.sessionIdFrom,
+                    computed.measurementGuard.value.sessionIdTo
+                ),
+                value: encodeRuntimeStateJsonValue(computed.measurementGuard.value),
+                expireAtIsoTimestamp: new Date(
+                    computed.measurementGuard.purgeAfterEpochMs
+                ).toISOString(),
+                expectedRevision: computed.measurementGuard.expectedRevision
+            },
+            {
+                namespace: RTC_RTT_RECEIPTS_NAMESPACE,
+                key: computed.receipt.receiptId,
+                value: encodeRuntimeStateJsonValue(computed.receipt),
+                expireAtIsoTimestamp: new Date(mutationExpireAtTimestamp).toISOString(),
+                expectedRevision: null
+            }
+        ],
+        outboxWrites: computed.affectedGroups.map((group, index) =>
+            computeAppOutboxInsert(computeRtcTopologyEntry({
+                commandId: computed.receipt.receiptId,
+                resourceId: computed.receipt.outboxIds[index]!,
+                aggregateRef: group.group,
+                acceptedCausalRevision: group.causalRevision,
+                groupSnapshot: group,
+                effectKind: 'rtc-topology-recompute',
+                payloadKind: 'rtt-refresh',
+                rtt: computed.measurementGuard.value,
+                refinementObservationId: computed.receipt.receiptId,
+                createdAtEpochMs: computed.receipt.acceptedAtEpochMs,
+                expireAtEpochMs: mutationExpireAtTimestamp,
+                senderId: computed.senderId,
+                requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+                publish: true
+            }))
+        )
+    };
+}
+
+interface ComputedRtcRttWrites {
+    readonly runtimeWrites: Extract<RtcRttMutationComputed, { outcome: 'write'; }>['runtimeWrites'];
+    readonly outboxWrites: Extract<RtcRttMutationComputed, { outcome: 'write'; }>['outboxWrites'];
 }
 
 interface ExceedsEndpointAdmissionDegreeInput {

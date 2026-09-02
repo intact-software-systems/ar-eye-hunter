@@ -1,10 +1,16 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { isKeysEqual } from '@shared/queuebox/ResourceEntry.ts';
 
+import type { AppOutboxInsertOrMatch } from '../../../app-outbox/app-outbox-insert.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import { computeRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
 import { validateRtcTopologyPublication } from '../../publication/validate-rtc-topology-publication.ts';
 import type { RtcTopologyDeliveryAppendInput } from './rtc-topology-delivery-contracts.ts';
+
+export interface RtcTopologyPublicationDeliveryComputed {
+    readonly outboxWrite: AppOutboxInsertOrMatch;
+    readonly appendInput: RtcTopologyDeliveryAppendInput | null;
+}
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const RETRYABLE_UNIQUE_CONSTRAINTS = new Set([
@@ -55,7 +61,7 @@ export function isRtcTopologyDeliveryRetryableConflict(error: Error): boolean {
     );
 }
 
-export function toRtcTopologyDeliveryAppendInput(
+export function computeRtcTopologyDeliveryAppendInput(
     publisherStreamId: string,
     publication: RtcTopologyPublication,
     outbox: ResourceEntry
@@ -64,7 +70,7 @@ export function toRtcTopologyDeliveryAppendInput(
     validateRtcTopologyPublication(publication, publication.groupRef);
     validateDeliveryGroupRef(publication);
 
-    const expectedOutbox = computeRtcTopologyPublicationOutbox(publication);
+    const expectedOutbox = computeRtcTopologyPublicationOutbox(publication).entry;
     if (
         !isKeysEqual(outbox.key, expectedOutbox.key) ||
         outbox.resource !== expectedOutbox.resource ||
@@ -74,7 +80,11 @@ export function toRtcTopologyDeliveryAppendInput(
         throw new TypeError('RTC topology delivery outbox differs from its publication');
     }
 
-    return {
+    const retainUntilEpochMs = readRtcTopologyDeliverySafeInteger(
+        publication.message.constraints?.expiresAtMs,
+        'RTC topology delivery retention timestamp'
+    );
+    const appendInput = {
         publisherStreamId,
         groupRef: {
             applicationId: publication.groupRef.applicationId,
@@ -87,10 +97,23 @@ export function toRtcTopologyDeliveryAppendInput(
             resourceId: outbox.key.resourceId,
             contextId: outbox.key.contextId
         },
-        retainUntilEpochMs: readRtcTopologyDeliverySafeInteger(
-            publication.message.constraints?.expiresAtMs,
-            'RTC topology delivery retention timestamp'
-        )
+        retainUntilEpochMs,
+        retainUntil: new Date(retainUntilEpochMs)
+    };
+    validateRtcTopologyDeliveryAppendInput(appendInput);
+    return appendInput;
+}
+
+export function computeRtcTopologyPublicationDelivery(
+    publication: RtcTopologyPublication,
+    publisherStreamId: string | null
+): RtcTopologyPublicationDeliveryComputed {
+    const outboxWrite = computeRtcTopologyPublicationOutbox(publication);
+    return {
+        outboxWrite,
+        appendInput: publisherStreamId === null
+            ? null
+            : computeRtcTopologyDeliveryAppendInput(publisherStreamId, publication, outboxWrite.entry)
     };
 }
 
@@ -109,6 +132,12 @@ export function validateRtcTopologyDeliveryAppendInput(
         input.retainUntilEpochMs,
         'RTC topology delivery retention timestamp'
     );
+    if (
+        !(input.retainUntil instanceof Date) ||
+        input.retainUntil.getTime() !== input.retainUntilEpochMs
+    ) {
+        throw new TypeError('RTC topology delivery retention Date differs from its timestamp');
+    }
 }
 
 export function validateRtcTopologyDeliveryStreamId(streamId: string): void {

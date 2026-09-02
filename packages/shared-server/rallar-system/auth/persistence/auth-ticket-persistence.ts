@@ -6,7 +6,6 @@ import {
 } from '../../../runtime-state/runtime-state-json-store.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
-    RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
@@ -113,27 +112,6 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
         return await this.readTicketSession(issuedTicket.value);
     }
 
-    async insertWebSocketTicket(
-        ticket: PersistedWebSocketTicket,
-        expectedRevision: number | null = null
-    ): Promise<RuntimeStateConditionalWriteResult> {
-        const persisted = decodePersistedWebSocketTicket(ticket);
-        return expectedRevision === null
-            ? await this.putValueIfAbsent(
-                WS_AUTH_TICKETS_NAMESPACE,
-                authTicketDigestKey(persisted.ticketDigest),
-                persisted,
-                persisted.expiresAtEpochMs
-            )
-            : await this.putValueIfRevision(
-                WS_AUTH_TICKETS_NAMESPACE,
-                authTicketDigestKey(persisted.ticketDigest),
-                persisted,
-                persisted.expiresAtEpochMs,
-                expectedRevision
-            );
-    }
-
     async findWebSocketTicketByDigestEntry(
         ticketDigest: string
     ): Promise<RuntimeStateEntryValue<PersistedWebSocketTicket> | undefined> {
@@ -177,27 +155,6 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
             storageKey,
             expectedRevision
         );
-    }
-
-    async insertAgentSessionTicket(
-        ticket: PersistedAgentSessionTicket,
-        expectedRevision: number | null = null
-    ): Promise<RuntimeStateConditionalWriteResult> {
-        const persisted = decodePersistedAgentSessionTicket(ticket);
-        return expectedRevision === null
-            ? await this.putValueIfAbsent(
-                AGENT_SESSION_TICKETS_NAMESPACE,
-                authTicketDigestKey(persisted.ticketDigest),
-                persisted,
-                persisted.expiresAtEpochMs
-            )
-            : await this.putValueIfRevision(
-                AGENT_SESSION_TICKETS_NAMESPACE,
-                authTicketDigestKey(persisted.ticketDigest),
-                persisted,
-                persisted.expiresAtEpochMs,
-                expectedRevision
-            );
     }
 
     async findAgentSessionTicketByDigestEntry(

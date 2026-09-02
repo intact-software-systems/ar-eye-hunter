@@ -1,62 +1,81 @@
 import { PGlite } from '@electric-sql/pglite';
+
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
-type PGliteQueryExecutor = Readonly<{
-    query<T>(query: string, params?: unknown[]): Promise<{ rows: T[]; }>;
-}>;
-
-type PGliteTransactionExecutor = PGliteQueryExecutor;
-
-type PGliteSavepointState = {
-    nextId: number;
-};
-
-type PGliteSavepointSql = PSqlSql & {
-    savepoint<T>(fn: (sql: PSqlSql) => Promise<T>): Promise<T>;
-};
-
-type PGliteSqlArrayFragment = Readonly<{
-    kind: 'array';
-    values: readonly unknown[];
-}>;
-
-type SqlCallableOptions = Readonly<{
-    raw: PGlite;
-    executor: PGliteQueryExecutor;
-    ready: Promise<unknown>;
-    stopBeforeClose?: () => Promise<void>;
-    inTransaction: boolean;
-    savepointState?: PGliteSavepointState;
-}>;
-
-export type PGliteSql = PSqlSql & {
+export interface PGliteSql extends PSqlSql {
     readonly raw: PGlite;
     close(): Promise<void>;
     exec(sql: string): Promise<unknown>;
     notify(channel: string, payload: string): Promise<void>;
     listen(channel: string, callback: (payload: string) => void): Promise<() => Promise<void>>;
+}
+
+export interface PGliteSqlClientOptions {
+    readonly ready?: Promise<unknown>;
+    readonly stopBeforeClose?: () => Promise<void>;
+}
+
+interface PGliteQueryExecutor {
+    query<T>(query: string, params?: unknown[]): Promise<{ rows: T[]; }>;
+}
+
+interface PGliteSavepointState {
+    nextId: number;
+}
+
+type PGliteSavepointSql = PSqlSql & {
+    savepoint<T>(fn: (sql: PSqlSql) => Promise<T>): Promise<T>;
 };
 
-export type PGliteSqlClientOptions = Readonly<{
-    ready?: Promise<unknown>;
-    stopBeforeClose?: () => Promise<void>;
-}>;
+interface PGliteSqlArrayFragment {
+    readonly kind: 'array';
+    readonly values: readonly unknown[];
+}
+
+interface SqlCallableOptions {
+    readonly raw: PGlite;
+    readonly executor: PGliteQueryExecutor;
+    readonly ready: Promise<unknown>;
+    readonly inTransaction: boolean;
+    readonly savepointState?: PGliteSavepointState;
+}
+
+interface PGliteLifecycleOptions {
+    readonly raw: PGlite;
+    readonly ready: SqlCallableOptions['ready'];
+    readonly stopBeforeClose?: () => Promise<void>;
+}
+
+interface QueryRowsOptions {
+    readonly executor: PGliteQueryExecutor;
+    readonly ready: SqlCallableOptions['ready'];
+}
+
+interface PGliteRenderedQuery {
+    readonly text: string;
+    readonly params: NonNullable<Parameters<PGliteQueryExecutor['query']>[1]>;
+}
 
 export function createPGliteSqlClient(
     raw: PGlite,
     options: PGliteSqlClientOptions = {}
 ): PGliteSql {
     const ready = options.ready ?? raw.waitReady;
-    return createSqlCallable({
+    const sql = createSqlCallable({
         raw,
         executor: raw,
         ready,
-        stopBeforeClose: options.stopBeforeClose,
         inTransaction: false
-    }) as PGliteSql;
+    });
+
+    return attachPGliteLifecycle(sql, {
+        raw,
+        ready,
+        stopBeforeClose: options.stopBeforeClose
+    });
 }
 
-function createSqlCallable(options: SqlCallableOptions): PSqlSql | PGliteSql {
+function createSqlCallable(options: SqlCallableOptions): PSqlSql {
     const sql = ((
         stringsOrValues: TemplateStringsArray | readonly unknown[],
         ...values: unknown[]
@@ -73,27 +92,30 @@ function createSqlCallable(options: SqlCallableOptions): PSqlSql | PGliteSql {
 
     attachPGliteBegin(sql, options);
     attachPGliteSavepoint(sql, options);
-    return attachPGliteLifecycle(sql, options);
+    return sql;
 }
 
 function attachPGliteBegin(sql: PSqlSql, options: SqlCallableOptions): void {
-    sql.begin = async <T>(fn: (transactionSql: PSqlSql) => Promise<T>): Promise<T> => {
+    sql.begin = async function executePGliteTransaction<T> (
+        fn: (transactionSql: PSqlSql) => Promise<T>
+    ): Promise<T> {
         await options.ready;
 
         if (options.inTransaction) {
-            return await fn(sql as PSqlSql);
+            return await fn(sql);
         }
 
-        return await options.raw.transaction(async (tx: PGliteTransactionExecutor) => {
+        const savepointState: PGliteSavepointState = { nextId: 0 };
+        return await options.raw.transaction(async (tx: PGliteQueryExecutor) => {
             const txSql = createSqlCallable({
                 raw: options.raw,
                 executor: tx,
-                ready: Promise.resolve(),
+                ready: options.ready,
                 inTransaction: true,
-                savepointState: { nextId: 0 }
+                savepointState
             });
 
-            return await fn(txSql as PSqlSql);
+            return await fn(txSql);
         });
     };
 }
@@ -126,7 +148,7 @@ function attachPGliteSavepoint(sql: PSqlSql, options: SqlCallableOptions): void 
     };
 }
 
-function attachPGliteLifecycle(sql: PSqlSql, options: SqlCallableOptions): PGliteSql {
+function attachPGliteLifecycle(sql: PSqlSql, options: PGliteLifecycleOptions): PGliteSql {
     return Object.assign(sql, {
         raw: options.raw,
         close: async () => {
@@ -154,10 +176,7 @@ function attachPGliteLifecycle(sql: PSqlSql, options: SqlCallableOptions): PGlit
 }
 
 async function queryRows(
-    options: Readonly<{
-        executor: PGliteQueryExecutor;
-        ready: Promise<unknown>;
-    }>,
+    options: QueryRowsOptions,
     strings: TemplateStringsArray,
     values: readonly unknown[]
 ): Promise<readonly Record<string, unknown>[]> {
@@ -174,7 +193,7 @@ async function queryRows(
 function renderPGliteTemplate(
     strings: TemplateStringsArray,
     values: readonly unknown[]
-): Readonly<{ text: string; params: unknown[]; }> {
+): PGliteRenderedQuery {
     const textParts: string[] = [];
     const params: unknown[] = [];
 
@@ -183,7 +202,15 @@ function renderPGliteTemplate(
         const value = values[index];
 
         if (isPGliteSqlArrayFragment(value)) {
-            textParts.push(renderArrayFragment(value, params));
+            if (value.values.length === 0) {
+                textParts.push('(null)');
+                continue;
+            }
+            const placeholders = value.values.map((item) => {
+                params.push(item);
+                return `$${params.length}`;
+            });
+            textParts.push(`(${placeholders.join(', ')})`);
             continue;
         }
 
@@ -196,22 +223,6 @@ function renderPGliteTemplate(
         text: textParts.join(''),
         params
     };
-}
-
-function renderArrayFragment(
-    fragment: PGliteSqlArrayFragment,
-    params: unknown[]
-): string {
-    if (fragment.values.length === 0) {
-        return '(null)';
-    }
-
-    const placeholders = fragment.values.map((value) => {
-        params.push(value);
-        return `$${params.length}`;
-    });
-
-    return `(${placeholders.join(', ')})`;
 }
 
 function isPGliteSqlArrayFragment(value: unknown): value is PGliteSqlArrayFragment {

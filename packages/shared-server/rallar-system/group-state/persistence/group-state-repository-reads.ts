@@ -9,10 +9,14 @@ import type {
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
 
+import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
+import type { RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { isGroupStateRecord } from '../group-state-validation-issues.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
-import { assertGroupMutationIdempotencyRecord } from '../mutation/result-validation/assert-group-mutation-result.ts';
+import { validateGroupMutationIdempotencyRecord } from '../mutation/result-validation/validate-group-mutation-result.ts';
+import type { GroupPresenceSummaryRead } from '../presence/compute-group-presence-summary.ts';
 import { assertStoredIdempotency, canonicalStoredGroup } from './aggregate/group-aggregate-repository.ts';
 import { groupStateGroupStorageKey, groupStateScopeStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 import { decodeStoredGroupStateValue } from './group-state-persistence-contracts.ts';
@@ -44,6 +48,60 @@ import {
 } from './read-exact-group-state-mutation.ts';
 
 export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
+    async readGroupPresenceSummary(
+        ref: GroupRef
+    ): Promise<GroupPresenceSummaryRead | undefined> {
+        const groupKey = groupStateGroupStorageKey(ref);
+        const childPrefix = `${groupKey}:`;
+        const selectors: readonly RuntimeStateReadBatchSelector[] = [
+            { selectorId: 'group', kind: 'key', namespace: GROUPS_NAMESPACE, key: groupKey },
+            { selectorId: 'members', kind: 'prefix', namespace: MEMBERS_NAMESPACE, keyPrefix: childPrefix },
+            {
+                selectorId: 'presence-admissions',
+                kind: 'prefix',
+                namespace: PRESENCE_ADMISSIONS_NAMESPACE,
+                keyPrefix: childPrefix
+            },
+            {
+                selectorId: 'presence-sessions',
+                kind: 'prefix',
+                namespace: SESSIONS_NAMESPACE,
+                keyPrefix: childPrefix
+            },
+            {
+                selectorId: 'presence-summary',
+                kind: 'key',
+                namespace: PRESENCE_SUMMARIES_NAMESPACE,
+                key: groupKey
+            }
+        ];
+        const resolved = await resolveRuntimeStateReadBatchLiveValues(
+            selectors,
+            await this.repository.readRuntimeStateBatch(selectors),
+            async (namespace, entry) => await this.toLiveJsonEntryValue(namespace, entry)
+        );
+        if (resolved.status === 'changed') {
+            throw new Error('Group presence-summary facts changed during the batch read');
+        }
+        const [group, members, admissions, sessions, summary] = resolved.selections;
+        if (!group || !members || !admissions || !sessions || !summary) {
+            throw new Error('Group presence-summary batch read returned incomplete selections');
+        }
+        const storedGroup = group.entries[0];
+        if (!storedGroup) {
+            return undefined;
+        }
+        return {
+            group: canonicalStoredGroup(storedGroup, ref),
+            members: members.entries.map((entry) => canonicalStoredMember(entry, ref)),
+            admissions: admissions.entries.map((entry) => canonicalStoredAdmission(entry, ref)),
+            presenceSessions: sessions.entries.map((entry) => canonicalStoredSession(entry, ref)),
+            current: summary.entries[0]
+                ? canonicalStoredSummary(summary.entries[0], ref)
+                : null
+        };
+    }
+
     async readMutationExactEntries(
         input: GroupStateMutationExactReadInput
     ): Promise<GroupStateMutationExactReadResult> {
@@ -271,6 +329,12 @@ function decodeGroupMutationIdempotencyRecord(
     value: JsonWireValue,
     expected: GroupRef
 ): GroupMutationIdempotencyRecord {
-    assertGroupMutationIdempotencyRecord(value, expected);
-    return value;
+    const issues = validateGroupMutationIdempotencyRecord(value, expected);
+    if (issues.length > 0) {
+        throw issues[0].cause;
+    }
+    if (!isGroupStateRecord(value)) {
+        throw new TypeError('Stored group idempotency value must be an object');
+    }
+    return value as unknown as GroupMutationIdempotencyRecord;
 }

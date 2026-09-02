@@ -20,11 +20,6 @@ import {
 } from '../group-state-runtime-namespaces.ts';
 import { serializeGroupStateValue } from '../serialize-group-state-value.ts';
 import {
-    validatePersistedGroupPresenceAdmission,
-    validatePersistedGroupPresenceSession,
-    validatePersistedGroupPresenceSummary
-} from '../validate-persisted-group-presence.ts';
-import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
 } from './group-presence-storage-keys.ts';
@@ -32,7 +27,6 @@ import {
 export function groupStateInsertPresenceDescriptor(
     session: GroupPresenceSession
 ): RuntimeStateGuardedBatchInsert {
-    validatePersistedGroupPresenceSession(session, session);
     return {
         operation: 'insert',
         namespace: SESSIONS_NAMESPACE,
@@ -68,7 +62,6 @@ export function groupStateDeletePresenceDescriptor(
 export function groupStateInsertPresenceAdmissionDescriptor(
     admission: GroupPresenceAdmission
 ): RuntimeStateGuardedBatchInsert {
-    validatePersistedGroupPresenceAdmission(admission, admission);
     return {
         operation: 'insert',
         namespace: PRESENCE_ADMISSIONS_NAMESPACE,
@@ -89,7 +82,6 @@ export function groupStateUpdatePresenceAdmissionDescriptor(
 export function groupStateInsertPresenceSummaryDescriptor(
     summary: GroupPresenceSummary
 ): RuntimeStateGuardedBatchInsert {
-    validatePersistedGroupPresenceSummary(summary, summary);
     return {
         operation: 'insert',
         namespace: PRESENCE_SUMMARIES_NAMESPACE,

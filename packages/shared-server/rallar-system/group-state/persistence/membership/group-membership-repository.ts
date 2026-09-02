@@ -14,7 +14,7 @@ import {
     throwGroupStateIdentityCorruption
 } from '../group-state-persistence-contracts.ts';
 import { MEMBERS_NAMESPACE } from '../group-state-runtime-namespaces.ts';
-import { validatePersistedGroupMember } from '../validate-persisted-group.ts';
+import { validateStoredMember } from '../validate-persisted-group.ts';
 import { decodeGroupStateMemberStorageKey, groupStateMemberStorageKey } from './group-membership-storage-key.ts';
 
 export class GroupMembershipRepository extends RuntimeStateJsonStore {
@@ -23,7 +23,10 @@ export class GroupMembershipRepository extends RuntimeStateJsonStore {
     }
 
     async putMember(member: GroupMember): Promise<void> {
-        validatePersistedGroupMember(member, member);
+        const persistedGroupMemberIssues = validateStoredMember(member, member, 'Stored group member');
+        if (persistedGroupMemberIssues.length > 0) {
+            throw persistedGroupMemberIssues[0].cause;
+        }
         await this.putValue(MEMBERS_NAMESPACE, groupStateMemberStorageKey(member), member);
     }
 

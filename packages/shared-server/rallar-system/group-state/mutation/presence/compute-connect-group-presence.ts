@@ -1,18 +1,16 @@
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import { isPresenceTimestampWithinSkew } from '../../../presence/presence-lease.ts';
-import { requirePositiveSafeInteger } from '../../group-state-validation-primitives.ts';
+import { validatePositiveSafeInteger, type GroupStateValidationIssue } from '../../group-state-validation-issues.ts';
 import {
     compareGenerationOrder,
-    validateStoredGeneration
+    validateStoredGenerationValues
 } from '../../persistence/validate-persisted-group-presence.ts';
 import { canConnectGroupPresenceSession } from '../../policy/group-membership-admission-policy.ts';
-import {
-    assertAllowed,
-    assertPrincipalAuthority,
-    toPolicySnapshot
-} from '../aggregate/group-aggregate-mutation-policy.ts';
+import { GroupPolicyDeniedError } from '../../policy/group-policy-result.ts';
+import { toPolicySnapshot, validatePrincipalAuthority } from '../aggregate/group-aggregate-mutation-policy.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -30,48 +28,61 @@ export function computeConnectGroupPresence(
     command: Extract<GroupMutationCommand, { operation: 'connectPresence'; }>,
     read: GroupMutationRead,
     facts: GroupMutationFacts
-): GroupMutationComputed {
+): Either<readonly GroupStateValidationIssue[], GroupMutationComputed> {
     requireGroup(read, command.aggregateRef);
-    assertPrincipalAuthority(command, command.input.principalId);
+    const issues = [...validatePrincipalAuthority(command, command.input.principalId)];
     const member = read.targetMember ?? undefined;
     if (!member || member.status !== 'active') {
-        throw new GroupMutationRejectedError(
-            `Forbidden: active group member required for presence: ${command.input.principalId}`
-        );
+        issues.push({
+            path: 'read.targetMember',
+            cause: new GroupMutationRejectedError(
+                `Forbidden: active group member required for presence: ${command.input.principalId}`
+            )
+        });
     }
-    assertAllowed(
-        canConnectGroupPresenceSession({
-            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
-            actor: {
-                principalId: command.input.principalId,
-                sessionId: command.input.actorSessionId ?? undefined
-            },
-            sessionId: command.sessionId,
-            nowEpochMs: facts.nowEpochMs
-        })
-    );
+    const permission = canConnectGroupPresenceSession({
+        snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
+        actor: {
+            principalId: command.input.principalId,
+            sessionId: command.input.actorSessionId ?? undefined
+        },
+        sessionId: command.sessionId,
+        nowEpochMs: facts.nowEpochMs
+    });
+    if (!permission.allowed) {
+        issues.push({ path: 'read', cause: new GroupPolicyDeniedError(permission) });
+    }
+    if (issues.length > 0) {
+        return Either.ofLeft(issues);
+    }
     const existing = read.targetPresence;
-    const connection = createConnectedPresenceSession({ command, read, facts });
-    if (connection.outcome === 'noop') {
-        return noOp(command, read, facts);
+    const connection = computeConnectedPresenceSession({ command, read, facts });
+    if (connection.left !== undefined) {
+        return Either.ofLeft(connection.left);
     }
-    const session = connection.session;
+    if (connection.right!.outcome === 'noop') {
+        return Either.ofRight(noOp(command, read, facts));
+    }
+    const session = connection.right!.session;
     if (existing && jsonEquals(existing.value, session)) {
-        return noOp(command, read, facts);
+        return Either.ofRight(noOp(command, read, facts));
     }
     const presenceAdmission = computeConnectPresenceAdmission({ command, read, session, facts });
-    return computeGroupPresenceWrite({
+    if (presenceAdmission.left !== undefined) {
+        return Either.ofLeft(presenceAdmission.left);
+    }
+    return Either.ofRight(computeGroupPresenceWrite({
         command,
         read,
         facts,
         session,
         operation: existing ? 'update' : 'insert',
         eventType: 'session-connected',
-        presenceAdmission
-    });
+        presenceAdmission: presenceAdmission.right!
+    }));
 }
 
-interface CreateConnectedPresenceSessionInput {
+interface ComputeConnectedPresenceSessionInput {
     readonly command: Extract<GroupMutationCommand, { operation: 'connectPresence'; }>;
     readonly read: GroupMutationRead;
     readonly facts: GroupMutationFacts;
@@ -88,20 +99,24 @@ type ConnectedPresenceSession =
     | Readonly<{ outcome: 'noop'; }>
     | Readonly<{ outcome: 'session'; session: GroupPresenceSession; }>;
 
-function createConnectedPresenceSession({
+function computeConnectedPresenceSession({
     command,
     read,
     facts
-}: CreateConnectedPresenceSessionInput): ConnectedPresenceSession {
-    const timing = resolvePresenceConnectionTiming({ command, read, facts });
+}: ComputeConnectedPresenceSessionInput): Either<readonly GroupStateValidationIssue[], ConnectedPresenceSession> {
+    const decision = computePresenceConnectionTiming({ command, read, facts });
+    if (decision.left !== undefined) {
+        return Either.ofLeft(decision.left);
+    }
+    const timing = decision.right!;
     if (timing === null) {
-        return { outcome: 'noop' };
+        return Either.ofRight({ outcome: 'noop' });
     }
     const existing = read.targetPresence;
     const existingSession = timing.sameGeneration
         ? requireExistingPresenceSession(existing?.value)
         : null;
-    return {
+    return Either.ofRight({
         outcome: 'session',
         session: {
             ...command.aggregateRef,
@@ -120,7 +135,7 @@ function createConnectedPresenceSession({
             disconnectedAtEpochMs: null,
             disconnectReason: null
         }
-    };
+    });
 }
 
 function requireExistingPresenceSession(
@@ -132,57 +147,87 @@ function requireExistingPresenceSession(
     return session;
 }
 
-function resolvePresenceConnectionTiming({
+function computePresenceConnectionTiming({
     command,
     read,
     facts
-}: CreateConnectedPresenceSessionInput): PresenceConnectionTiming | null {
+}: ComputeConnectedPresenceSessionInput): Either<
+    readonly GroupStateValidationIssue[],
+    PresenceConnectionTiming | null
+> {
     const existing = read.targetPresence;
     const connectedAt = existing?.value.generationId === command.input.generationId &&
             command.input.connectedAtEpochMs === null
         ? existing.value.connectedAtEpochMs
         : (command.input.connectedAtEpochMs ?? facts.nowEpochMs);
-    requirePositiveSafeInteger(connectedAt, 'Group presence connectedAtEpochMs');
+    const issues = [...validatePositiveSafeInteger(connectedAt, 'Group presence connectedAtEpochMs')];
     if (!isPresenceTimestampWithinSkew(connectedAt, facts.nowEpochMs)) {
-        throw new GroupMutationRejectedError(
-            'Group presence connectedAtEpochMs is too far in the future.'
-        );
+        issues.push({
+            path: 'read.targetPresence.connectedAtEpochMs',
+            cause: new GroupMutationRejectedError(
+                'Group presence connectedAtEpochMs is too far in the future.'
+            )
+        });
     }
-    if (!isConnectGenerationCurrent(command, read, connectedAt)) {
-        return null;
+    if (issues.length > 0) {
+        return Either.ofLeft(issues);
+    }
+    const generation = computeConnectGenerationCurrent(command, read, connectedAt);
+    if (generation.left !== undefined) {
+        return Either.ofLeft(generation.left);
+    }
+    if (!generation.right) {
+        return Either.ofRight(null);
     }
     const sameGeneration = existing !== null &&
         existing.value.generationId === command.input.generationId &&
         existing.value.generationVersion === connectedAt;
     const heartbeatAt = command.input.lastHeartbeatAtEpochMs ?? facts.nowEpochMs;
     if (!isPresenceTimestampWithinSkew(heartbeatAt, facts.nowEpochMs)) {
-        throw new GroupMutationRejectedError(
-            'Group presence lastHeartbeatAtEpochMs is too far in the future.'
-        );
+        issues.push({
+            path: 'command.input.lastHeartbeatAtEpochMs',
+            cause: new GroupMutationRejectedError(
+                'Group presence lastHeartbeatAtEpochMs is too far in the future.'
+            )
+        });
     }
     const expiresAt = command.input.expiresAtEpochMs ?? facts.nowEpochMs + DEFAULT_GROUP_SESSION_TTL_MS;
     if (heartbeatAt < connectedAt || expiresAt < heartbeatAt) {
-        throw new GroupMutationRejectedError(
-            'Presence connection timestamps are causally inconsistent.'
-        );
+        issues.push({
+            path: 'command.input',
+            cause: new GroupMutationRejectedError(
+                'Presence connection timestamps are causally inconsistent.'
+            )
+        });
     }
-    return { connectedAt, heartbeatAt, expiresAt, sameGeneration };
+    return issues.length > 0
+        ? Either.ofLeft(issues)
+        : Either.ofRight({ connectedAt, heartbeatAt, expiresAt, sameGeneration });
 }
 
-function isConnectGenerationCurrent(
+function computeConnectGenerationCurrent(
     command: Extract<GroupMutationCommand, { operation: 'connectPresence'; }>,
     read: GroupMutationRead,
     connectedAt: number
-): boolean {
+): Either<readonly GroupStateValidationIssue[], boolean> {
     const existing = read.targetPresence;
     if (!existing) {
-        return true;
+        return Either.ofRight(true);
     }
-    validateStoredGeneration(existing.value);
+    const generationIssues = validateStoredGenerationValues(
+        existing.value.connectedAtEpochMs,
+        existing.value.generationVersion
+    );
+    if (generationIssues.length > 0) {
+        return Either.ofLeft(generationIssues);
+    }
     if (existing.value.principalId !== command.input.principalId) {
-        throw new GroupMutationRejectedError(
-            'A presence session cannot be reassigned to another principal.'
-        );
+        return Either.ofLeft([{
+            path: 'read.targetPresence.principalId',
+            cause: new GroupMutationRejectedError(
+                'A presence session cannot be reassigned to another principal.'
+            )
+        }]);
     }
     // connectedAt is the durable generation version. The generation id only
     // breaks equal-timestamp ties, so every writer derives the same total order.
@@ -190,19 +235,22 @@ function isConnectGenerationCurrent(
     const currentOrder = [existing.value.generationVersion, existing.value.generationId] as const;
     const order = compareGenerationOrder(incomingOrder, currentOrder);
     if (order < 0) {
-        return false;
+        return Either.ofRight(false);
     }
     if (order === 0 && existing.value.disconnectedAtEpochMs !== null) {
-        return false;
+        return Either.ofRight(false);
     }
     if (
         existing.value.generationId === command.input.generationId &&
         command.input.connectedAtEpochMs !== null &&
         connectedAt !== existing.value.connectedAtEpochMs
     ) {
-        throw new GroupMutationRejectedError(
-            'A generationId cannot be reused with a different connectedAtEpochMs.'
-        );
+        return Either.ofLeft([{
+            path: 'command.input.generationId',
+            cause: new GroupMutationRejectedError(
+                'A generationId cannot be reused with a different connectedAtEpochMs.'
+            )
+        }]);
     }
-    return true;
+    return Either.ofRight(true);
 }

@@ -8,13 +8,20 @@ import type {
     GroupRef
 } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import {
-    assertExactKeys,
-    assertRequiredKeys,
-    requireJsonSafe,
-    requirePositiveSafeInteger
-} from '../group-state-validation-primitives.ts';
+    isGroupStateRecord,
+    toGroupStateValidationIssue,
+    type GroupStateValidationIssue
+} from '../group-state-validation-issues.ts';
+
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import { isValidRuntimeStateUpsertExpectedRevision } from '../../../runtime-state/runtime-state-repository.ts';
+import {
+    validateExactKeys,
+    validateJsonSafe,
+    validatePositiveSafeInteger,
+    validateRequiredKeys
+} from '../group-state-validation-issues.ts';
 import { presenceAdmissionIdentity } from '../mutation/presence/compute-group-presence-admission.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStatePresenceSummaryStorageKey } from '../persistence/presence/group-presence-storage-keys.ts';
@@ -61,17 +68,25 @@ interface GroupPresenceSummaryValidation {
     readonly ref: GroupRef;
     readonly read: GroupPresenceSummaryRead;
     readonly computed: GroupPresenceSummaryComputed;
-    readonly expectedContent: ReturnType<typeof summaryContent>;
+    readonly expectedContent: GroupPresenceSummaryContent;
     readonly groupRevision: number;
     readonly current: GroupPresenceSummary | undefined;
     readonly expectedNoOp: boolean;
+}
+
+interface GroupPresenceSummaryContent {
+    readonly activePrincipalIds: readonly string[];
+    readonly activeSessionIds: readonly string[];
+    readonly activeSessions: readonly GroupPresenceSession[];
+    readonly activePrincipalCount: number;
+    readonly activeSessionCount: number;
 }
 
 export function computeGroupPresenceSummary(
     input: ComputeGroupPresenceSummaryInput
 ): GroupPresenceSummaryComputed {
     const { ref, read, nowEpochMs } = input;
-    const content = deriveGroupPresenceSummaryContent(read, nowEpochMs);
+    const content = computeGroupPresenceSummaryContent(read, nowEpochMs);
     const groupRevision = read.group.value.snapshotVersion;
     const current = read.current?.value;
     if (
@@ -79,7 +94,7 @@ export function computeGroupPresenceSummary(
         (current.causalRevision.groupRevision > groupRevision ||
             (current.causalRevision.groupRevision === groupRevision &&
                 jsonEquals(
-                    toComparableSummaryContent(summaryContent(current)),
+                    toComparableSummaryContent(toGroupPresenceSummaryContent(current)),
                     toComparableSummaryContent(content)
                 )))
     ) {
@@ -107,55 +122,79 @@ export function computeGroupPresenceSummary(
 
 export function validateGroupPresenceSummary(
     input: ValidateGroupPresenceSummaryInput
-): void {
+): readonly GroupStateValidationIssue[] {
     const { ref, read, computed } = input;
-    requireJsonSafe(read, 'Group presence summary read');
-    requireJsonSafe(computed, 'Group presence summary computed result');
-    assertExactKeys(
+    const issues = [...validateGroupPresenceSummaryRead(ref, read)];
+    issues.push(...validateJsonSafe(computed, 'Group presence summary computed result'));
+    if (issues.length === 0) {
+        issues.push(...validateGroupPresenceSummaryCandidate(input));
+    }
+    return issues;
+}
+
+export function validateGroupPresenceSummaryRead(
+    ref: GroupRef,
+    read: GroupPresenceSummaryRead
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
+    if (!isGroupStateRecord(read)) {
+        return [toGroupStateValidationIssue('presenceSummary.read', 'Group presence summary read must be an object')];
+    }
+    issues.push(...validateJsonSafe(read, 'Group presence summary read'));
+    issues.push(...validateExactKeys(
         read,
         ['group', 'members', 'admissions', 'presenceSessions', 'current'],
         'Group presence summary read'
-    );
-    assertRequiredKeys(
+    ));
+    issues.push(...validateRequiredKeys(
         read,
         ['group', 'members', 'admissions', 'presenceSessions', 'current'],
         'Group presence summary read'
-    );
-    validateGroupStateRuntimeEntry(
+    ));
+    issues.push(...validateGroupStateRuntimeEntry(
         read.group,
         'Stored summary group',
         groupStateGroupStorageKey(ref)
-    );
-    validateStoredGroup(read.group.value, ref);
-    validateGroupPresenceSummaryReadCollections(ref, read);
+    ));
+    issues.push(...validateStoredGroup(read.group?.value, ref));
+    issues.push(...validateGroupPresenceSummaryReadCollections(ref, read));
     if (read.current) {
-        validateGroupStateRuntimeEntry(
+        issues.push(...validateGroupStateRuntimeEntry(
             read.current,
             'Stored current presence summary',
             groupStatePresenceSummaryStorageKey(ref)
-        );
-        validatePresenceSummaryValue(read.current.value, ref);
+        ));
+        issues.push(...validatePresenceSummaryValue(read.current.value, ref));
     }
-    validateGroupPresenceSummaryCandidate(input);
+    return issues;
 }
 
-function validateGroupPresenceSummaryCandidate(
+export function validateGroupPresenceSummaryCandidate(
     input: ValidateGroupPresenceSummaryInput
-): void {
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
     const { ref, read, computed } = input;
-    validatePresenceSummaryValue(computed.summary, ref);
-    requirePositiveSafeInteger(
+    if (!isGroupStateRecord(computed)) {
+        return [
+            toGroupStateValidationIssue('presenceSummary.computed', 'Group presence summary computed must be an object')
+        ];
+    }
+    issues.push(...validatePresenceSummaryValue(computed.summary, ref));
+    issues.push(...validatePositiveSafeInteger(
         computed.evaluatedAtEpochMs,
         'Group presence summary evaluatedAtEpochMs'
-    );
-    const expectedContent = deriveGroupPresenceSummaryContent(read, computed.evaluatedAtEpochMs);
+    ));
+    if (issues.length > 0) {
+        return issues;
+    }
+    const expectedContent = computeGroupPresenceSummaryContent(read, computed.evaluatedAtEpochMs);
     const groupRevision = read.group.value.snapshotVersion;
     const current = read.current?.value;
     const expectedNoOp = current !== undefined &&
         (current.causalRevision.groupRevision > groupRevision ||
             (current.causalRevision.groupRevision === groupRevision &&
                 jsonEquals(
-                    toComparableSummaryContent(summaryContent(current)),
+                    toComparableSummaryContent(toGroupPresenceSummaryContent(current)),
                     toComparableSummaryContent(expectedContent)
                 )));
     const validation = {
@@ -167,28 +206,45 @@ function validateGroupPresenceSummaryCandidate(
         current,
         expectedNoOp
     };
-    validateGroupPresenceSummaryOutcome(validation);
-    validateGroupPresenceSummaryCausalRevision(validation);
+    issues.push(...validateGroupPresenceSummaryOutcome(validation));
+    issues.push(...validateGroupPresenceSummaryCausalRevision(validation));
+    return issues;
 }
 
-function validateGroupPresenceSummaryOutcome(validation: GroupPresenceSummaryValidation): void {
+function validateGroupPresenceSummaryOutcome(
+    validation: GroupPresenceSummaryValidation
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
     const { ref, read, computed, expectedContent, groupRevision, current, expectedNoOp } = validation;
     if (computed.outcome === 'no-op') {
-        assertExactKeys(
+        issues.push(...validateExactKeys(
             computed,
             ['outcome', 'evaluatedAtEpochMs', 'summary'],
             'Group presence summary computed result'
-        );
+        ));
         if (!expectedNoOp || !current || !jsonEquals(computed.summary, current)) {
-            throw new TypeError('Group presence summary no-op differs from current canonical candidate');
+            issues.push(
+                toGroupStateValidationIssue(
+                    'computed.summary.outcome',
+                    'Group presence summary no-op differs from current canonical candidate'
+                )
+            );
         }
-        return;
+        return issues;
     }
-    assertExactKeys(
+    issues.push(...validateExactKeys(
         computed,
         ['outcome', 'evaluatedAtEpochMs', 'operation', 'expectedRevision', 'summary'],
         'Group presence summary computed result'
-    );
+    ));
+    if (computed.operation === 'update' && !isValidRuntimeStateUpsertExpectedRevision(computed.expectedRevision)) {
+        issues.push(
+            toGroupStateValidationIssue(
+                'computed.summary.outcome',
+                'Group presence summary update expectedRevision must be incrementable'
+            )
+        );
+    }
     const expectedSummary: GroupPresenceSummary = {
         applicationId: ref.applicationId,
         workspaceId: ref.workspaceId,
@@ -206,40 +262,56 @@ function validateGroupPresenceSummaryOutcome(validation: GroupPresenceSummaryVal
         computed.expectedRevision !== (read.current?.entry.revision ?? null) ||
         !jsonEquals(computed.summary, expectedSummary)
     ) {
-        throw new TypeError(
-            'Group presence summary write differs from canonical predecessor projection'
+        issues.push(
+            toGroupStateValidationIssue(
+                'computed.summary.outcome',
+                'Group presence summary write differs from canonical predecessor projection'
+            )
         );
     }
+    return issues;
 }
 
 function validateGroupPresenceSummaryCausalRevision(
     validation: GroupPresenceSummaryValidation
-): void {
+): readonly GroupStateValidationIssue[] {
+    const issues: GroupStateValidationIssue[] = [];
     if (!validation.read.current) {
-        return;
+        return issues;
     }
     const comparison = compareGroupCausalRevision(
         validation.computed.summary.causalRevision,
         validation.read.current.value.causalRevision
     );
     if (validation.computed.outcome === 'write' && comparison !== 'dominates') {
-        throw new TypeError('Group presence summary write must advance its causal tuple');
+        issues.push(
+            toGroupStateValidationIssue(
+                'computed.summary.causalRevision',
+                'Group presence summary write must advance its causal tuple'
+            )
+        );
     }
     if (
         comparison === 'equal' &&
         !jsonEquals(
-            toComparableSummaryContent(summaryContent(validation.computed.summary)),
-            toComparableSummaryContent(summaryContent(validation.read.current.value))
+            toComparableSummaryContent(toGroupPresenceSummaryContent(validation.computed.summary)),
+            toComparableSummaryContent(toGroupPresenceSummaryContent(validation.read.current.value))
         )
     ) {
-        throw new TypeError('Equal group presence summary tuple has different content');
+        issues.push(
+            toGroupStateValidationIssue(
+                'computed.summary.causalRevision',
+                'Equal group presence summary tuple has different content'
+            )
+        );
     }
+    return issues;
 }
 
-function deriveGroupPresenceSummaryContent(
+function computeGroupPresenceSummaryContent(
     read: GroupPresenceSummaryRead,
     nowEpochMs: number
-): ReturnType<typeof summaryContent> {
+): GroupPresenceSummaryContent {
     const groupActive = read.group.value.status === 'active' &&
         (read.group.value.expiresAtEpochMs === null || read.group.value.expiresAtEpochMs > nowEpochMs);
     const activeMemberIds = new Set(
@@ -282,13 +354,7 @@ function deriveGroupPresenceSummaryContent(
     };
 }
 
-function summaryContent(summary: GroupPresenceSummary): Readonly<{
-    activePrincipalIds: readonly string[];
-    activeSessionIds: readonly string[];
-    activeSessions: readonly GroupPresenceSession[];
-    activePrincipalCount: number;
-    activeSessionCount: number;
-}> {
+function toGroupPresenceSummaryContent(summary: GroupPresenceSummary): GroupPresenceSummaryContent {
     return {
         activePrincipalIds: summary.activePrincipalIds,
         activeSessionIds: summary.activeSessionIds,
@@ -304,8 +370,8 @@ function summaryContent(summary: GroupPresenceSummary): Readonly<{
  * renewal never advances presenceRevision.
  */
 function toComparableSummaryContent(
-    content: ReturnType<typeof summaryContent>
-): ReturnType<typeof summaryContent> {
+    content: GroupPresenceSummaryContent
+): GroupPresenceSummaryContent {
     return {
         ...content,
         activeSessions: content.activeSessions.map((session) => ({

@@ -8,7 +8,7 @@ import {
     AppInboxIdempotencyConflictError,
     AppInboxReservationConflictError,
     type AppInboxEnqueueInput,
-    type AppInboxMessageContext
+    type AppInboxExecutionMetadata
 } from '../app-inbox-contracts.ts';
 import { toAppInboxResourceEntry } from '../app-inbox-queue-entry.ts';
 
@@ -50,8 +50,8 @@ export class AppInboxReservationClient {
         this.serviceId = config.serviceId;
     }
 
-    async persistAuthority<Result>(
-        context: AppInboxMessageContext<Result>,
+    async persistAuthority(
+        context: AppInboxExecutionMetadata,
         authority: JsonWireValue
     ): Promise<void> {
         const enqueue = { ...context.enqueue, authority };

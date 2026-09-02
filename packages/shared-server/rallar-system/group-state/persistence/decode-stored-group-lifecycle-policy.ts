@@ -12,21 +12,40 @@ import {
 import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-import { requireExactKeys, requireOneOf, requireString } from '../../protocol/exact-object-decoding.ts';
-import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import {
+    isGroupStateRecord,
+    toGroupStateValidationIssue,
+    validateNonEmptyString,
+    validateOneOf,
+    validateRecord,
+    type GroupStateValidationIssue
+} from '../group-state-validation-issues.ts';
 
 export interface StoredGroupLifecyclePolicy {
     readonly groupRef: GroupRef;
     readonly policy: GroupLifecyclePolicy;
 }
 
+interface BoundedIntegerInput {
+    readonly value: unknown;
+    readonly minimum: number;
+    readonly maximum: number;
+    readonly label: string;
+}
+
 export function decodeStoredGroupLifecyclePolicy(
     value: JsonWireValue,
     expectedRef: GroupRef
 ): StoredGroupLifecyclePolicy {
-    const stored = requireJsonWireObject(value, 'Stored group lifecycle policy');
-    requireExactKeys(stored, ['groupRef', 'policy'], 'Stored group lifecycle policy');
-    const groupRef = decodeStoredGroupRef(stored.groupRef);
+    if (!isGroupStateRecord(value)) {
+        throw new TypeError('Stored group lifecycle policy must be an object');
+    }
+    const issues = validatePolicyKeys(value, ['groupRef', 'policy'], 'Stored group lifecycle policy');
+    if (issues.length > 0) {
+        throw issues[0].cause;
+    }
+    const groupRef = decodeStoredGroupRef(value.groupRef);
     if (
         groupRef.applicationId !== expectedRef.applicationId ||
         groupRef.workspaceId !== expectedRef.workspaceId ||
@@ -34,315 +53,354 @@ export function decodeStoredGroupLifecyclePolicy(
     ) {
         throw new TypeError('Stored group lifecycle policy identity differs from the requested group');
     }
-    return {
-        groupRef,
-        policy: decodeCurrentGroupLifecyclePolicy(stored.policy)
-    };
+    return { groupRef, policy: decodeCurrentGroupLifecyclePolicy(value.policy as JsonWireValue) };
 }
 
 export function decodeCurrentGroupLifecyclePolicy(value: JsonWireValue): GroupLifecyclePolicy {
-    const policy = requireJsonWireObject(value, 'Group lifecycle policy');
-    requireExactKeys(
-        policy,
-        ['formation', 'initiator', 'manager', 'establishment', 'activation', 'admission', 'topology', 'data'],
-        'Group lifecycle policy'
-    );
-    const decoded: GroupLifecyclePolicy = {
-        formation: requireOneOf(policy.formation, ['phased', 'immediate'] as const, 'Policy formation'),
-        initiator: requireOneOf(
-            policy.initiator,
-            ['manager', 'any-member', 'server-auto'] as const,
-            'Policy initiator'
-        ),
-        manager: decodeManagerPolicy(policy.manager),
-        establishment: decodeEstablishmentPolicy(policy.establishment),
-        activation: decodeActivationCriterion(policy.activation),
-        admission: decodeAdmissionPolicy(policy.admission),
-        topology: decodeTopologyPolicy(policy.topology),
-        data: decodeDataPolicy(policy.data)
-    };
-    return validateGroupLifecyclePolicy(decoded).fold(
-        (issues) => {
-            throw new TypeError(
-                'Group lifecycle policy is incoherent: ' +
-                    issues.map((issue) => issue.code).join(', ')
-            );
-        },
-        (coherent) => coherent
-    );
-}
-
-function decodeStoredGroupRef(value: JsonWireValue): GroupRef {
-    const ref = requireJsonWireObject(value, 'Stored group lifecycle policy groupRef');
-    requireExactKeys(
-        ref,
-        ['applicationId', 'workspaceId', 'groupId'],
-        'Stored group lifecycle policy groupRef'
-    );
-    requireString(ref.applicationId, 'Stored group lifecycle policy applicationId');
-    requireString(ref.workspaceId, 'Stored group lifecycle policy workspaceId');
-    requireString(ref.groupId, 'Stored group lifecycle policy groupId');
-    return {
-        applicationId: ref.applicationId,
-        workspaceId: ref.workspaceId,
-        groupId: ref.groupId
-    };
-}
-
-function decodeManagerPolicy(value: JsonWireValue): GroupLifecyclePolicy['manager'] {
-    const manager = requireJsonWireObject(value, 'Group lifecycle manager policy');
-    requireExactKeys(
-        manager,
-        ['selection', 'assignedPrincipalIds', 'count', 'succession'],
-        'Group lifecycle manager policy'
-    );
-    if (!Array.isArray(manager.assignedPrincipalIds)) {
-        throw new TypeError('Group lifecycle manager assignedPrincipalIds must be an array');
+    const issues = validateCurrentGroupLifecyclePolicy(value);
+    if (issues.length > 0) {
+        throw issues[0].cause;
     }
-    const assignedPrincipalIds = manager.assignedPrincipalIds.map((principalId, index) => {
-        requireString(principalId, `Group lifecycle manager assignedPrincipalIds[${index}]`);
-        return principalId;
-    });
+    return computeCanonicalGroupLifecyclePolicy(value as GroupLifecyclePolicy);
+}
+
+export function computeCanonicalGroupLifecyclePolicy(policy: GroupLifecyclePolicy): GroupLifecyclePolicy {
     return {
-        selection: requireOneOf(
-            manager.selection,
-            ['none', 'creator', 'assigned', 'elected-by-rank', 'elected-random-deterministic'] as const,
-            'Group lifecycle manager selection'
+        formation: policy.formation,
+        initiator: policy.initiator,
+        manager: {
+            selection: policy.manager.selection,
+            assignedPrincipalIds: [...policy.manager.assignedPrincipalIds],
+            count: policy.manager.count,
+            succession: policy.manager.succession
+        },
+        establishment: {
+            transports: policy.establishment.transports,
+            maxConcurrentEdgeSetups: policy.establishment.maxConcurrentEdgeSetups,
+            planTrigger: copyStageTrigger(policy.establishment.planTrigger),
+            connectTrigger: copyStageTrigger(policy.establishment.connectTrigger)
+        },
+        activation: {
+            mode: policy.activation.mode,
+            successRate: policy.activation.successRate,
+            minimumViableRate: policy.activation.minimumViableRate,
+            deadlineMs: policy.activation.deadlineMs,
+            maxFormationAttempts: policy.activation.maxFormationAttempts,
+            strictConfirmation: policy.activation.strictConfirmation
+        },
+        admission: {
+            mode: policy.admission.mode,
+            untilEpochMs: policy.admission.untilEpochMs,
+            untilMemberCount: policy.admission.untilMemberCount
+        },
+        topology: {
+            replanning: policy.topology.replanning,
+            reconfigureLanding: policy.topology.reconfigureLanding,
+            debounceWindowMs: policy.topology.debounceWindowMs,
+            maxReplanWaitMs: policy.topology.maxReplanWaitMs
+        },
+        data: { preActivationAppData: policy.data.preActivationAppData }
+    };
+}
+
+export function validateCurrentGroupLifecyclePolicy(value: unknown): readonly GroupStateValidationIssue[] {
+    if (!isGroupStateRecord(value)) {
+        return validateRecord(value, 'Group lifecycle policy');
+    }
+    const issues = [
+        ...validatePolicyKeys(value, [
+            'formation',
+            'initiator',
+            'manager',
+            'establishment',
+            'activation',
+            'admission',
+            'topology',
+            'data'
+        ], 'Group lifecycle policy'),
+        ...validateOneOf(value.formation, ['phased', 'immediate'], 'Policy formation'),
+        ...validateOneOf(value.initiator, ['manager', 'any-member', 'server-auto'], 'Policy initiator'),
+        ...validateManagerPolicy(value.manager),
+        ...validateEstablishmentPolicy(value.establishment),
+        ...validateActivationPolicy(value.activation),
+        ...validateAdmissionPolicy(value.admission),
+        ...validateTopologyPolicy(value.topology),
+        ...validateDataPolicy(value.data)
+    ];
+    if (issues.length > 0) {
+        return issues;
+    }
+    const coherence = validateGroupLifecyclePolicy(value as unknown as GroupLifecyclePolicy).left ?? [];
+    const message = 'Group lifecycle policy is incoherent: ' + coherence.map((issue) => issue.code).join(', ');
+    return coherence.map((issue) => toGroupStateValidationIssue(issue.field, message));
+}
+
+function decodeStoredGroupRef(value: unknown): GroupRef {
+    if (!isGroupStateRecord(value)) {
+        throw new TypeError('Stored group lifecycle policy groupRef must be an object');
+    }
+    const issues = [
+        ...validatePolicyKeys(
+            value,
+            ['applicationId', 'workspaceId', 'groupId'],
+            'Stored group lifecycle policy groupRef'
         ),
-        assignedPrincipalIds,
-        count: requireBoundedInteger({
-            value: manager.count,
+        ...validateNonEmptyString(value.applicationId, 'Stored group lifecycle policy applicationId'),
+        ...validateNonEmptyString(value.workspaceId, 'Stored group lifecycle policy workspaceId'),
+        ...validateNonEmptyString(value.groupId, 'Stored group lifecycle policy groupId')
+    ];
+    if (issues.length > 0) {
+        throw issues[0].cause;
+    }
+    return {
+        applicationId: value.applicationId as string,
+        workspaceId: value.workspaceId as string,
+        groupId: value.groupId as string
+    };
+}
+
+function validateManagerPolicy(value: unknown): readonly GroupStateValidationIssue[] {
+    if (!isGroupStateRecord(value)) {
+        return validateRecord(value, 'Group lifecycle manager policy');
+    }
+    return [
+        ...validatePolicyKeys(
+            value,
+            ['selection', 'assignedPrincipalIds', 'count', 'succession'],
+            'Group lifecycle manager policy'
+        ),
+        ...(Array.isArray(value.assignedPrincipalIds)
+            ? value.assignedPrincipalIds.flatMap((id, index) =>
+                validateNonEmptyString(id, `Group lifecycle manager assignedPrincipalIds[${index}]`)
+            )
+            : [toGroupStateValidationIssue(
+                'manager.assignedPrincipalIds',
+                'Group lifecycle manager assignedPrincipalIds must be an array'
+            )]),
+        ...validateOneOf(value.selection, [
+            'none',
+            'creator',
+            'assigned',
+            'elected-by-rank',
+            'elected-random-deterministic'
+        ], 'Group lifecycle manager selection'),
+        ...validateBoundedInteger({
+            value: value.count,
             minimum: 1,
             maximum: MAX_GROUP_MANAGERS,
             label: 'Group lifecycle manager count'
         }),
-        succession: requireOneOf(
-            manager.succession,
-            ['next-by-selection', 'none'] as const,
-            'Group lifecycle manager succession'
-        )
-    };
+        ...validateOneOf(value.succession, ['next-by-selection', 'none'], 'Group lifecycle manager succession')
+    ];
 }
 
-function decodeEstablishmentPolicy(value: JsonWireValue): GroupLifecyclePolicy['establishment'] {
-    const establishment = requireJsonWireObject(value, 'Group lifecycle establishment policy');
-    requireExactKeys(
-        establishment,
-        ['transports', 'maxConcurrentEdgeSetups', 'planTrigger', 'connectTrigger'],
-        'Group lifecycle establishment policy'
-    );
-    return {
-        transports: requireOneOf(
-            establishment.transports,
-            ['rtc-and-ws', 'ws-only', 'rtc-preferred'] as const,
+function validateEstablishmentPolicy(value: unknown): readonly GroupStateValidationIssue[] {
+    if (!isGroupStateRecord(value)) {
+        return validateRecord(value, 'Group lifecycle establishment policy');
+    }
+    return [
+        ...validatePolicyKeys(
+            value,
+            ['transports', 'maxConcurrentEdgeSetups', 'planTrigger', 'connectTrigger'],
+            'Group lifecycle establishment policy'
+        ),
+        ...validateOneOf(
+            value.transports,
+            ['rtc-and-ws', 'ws-only', 'rtc-preferred'],
             'Group lifecycle establishment transports'
         ),
-        maxConcurrentEdgeSetups: requireBoundedInteger({
-            value: establishment.maxConcurrentEdgeSetups,
+        ...validateBoundedInteger({
+            value: value.maxConcurrentEdgeSetups,
             minimum: 1,
             maximum: MAX_GROUP_CONCURRENT_EDGE_SETUPS,
             label: 'Group lifecycle establishment maxConcurrentEdgeSetups'
         }),
-        planTrigger: decodeStageTrigger(establishment.planTrigger, 'planTrigger'),
-        connectTrigger: decodeStageTrigger(establishment.connectTrigger, 'connectTrigger')
-    };
+        ...validateStageTrigger(value.planTrigger, 'planTrigger'),
+        ...validateStageTrigger(value.connectTrigger, 'connectTrigger')
+    ];
 }
 
-function decodeStageTrigger(value: JsonWireValue, label: string): GroupStageTrigger {
-    const trigger = requireJsonWireObject(value, `Group lifecycle establishment ${label}`);
-    const kind = requireOneOf(
-        trigger.kind,
-        ['manual', 'immediate', 'after', 'presence'] as const,
-        `Group lifecycle establishment ${label} kind`
-    );
-    if (kind === 'after') {
-        requireExactKeys(trigger, ['kind', 'settleMs'], `Group lifecycle establishment ${label}`);
-        return {
-            kind,
-            settleMs: requireBoundedInteger({
-                value: trigger.settleMs,
+function validateStageTrigger(value: unknown, name: string): readonly GroupStateValidationIssue[] {
+    const label = `Group lifecycle establishment ${name}`;
+    if (!isGroupStateRecord(value)) {
+        return validateRecord(value, label);
+    }
+    const issues = [...validateOneOf(value.kind, ['manual', 'immediate', 'after', 'presence'], `${label} kind`)];
+    if (value.kind === 'after') {
+        issues.push(...validatePolicyKeys(value, ['kind', 'settleMs'], label));
+        issues.push(
+            ...validateBoundedInteger({
+                value: value.settleMs,
                 minimum: 0,
                 maximum: MAX_GROUP_STAGE_TRIGGER_DELAY_MS,
-                label: `Group lifecycle establishment ${label} settleMs`
+                label: `${label} settleMs`
             })
-        };
-    }
-    if (kind === 'presence') {
-        requireExactKeys(
-            trigger,
-            ['kind', 'memberCount', 'fallbackMs'],
-            `Group lifecycle establishment ${label}`
         );
-        return {
-            kind,
-            memberCount: requireBoundedInteger({
-                value: trigger.memberCount,
+    }
+    else if (value.kind === 'presence') {
+        issues.push(...validatePolicyKeys(value, ['kind', 'memberCount', 'fallbackMs'], label));
+        issues.push(
+            ...validateBoundedInteger({
+                value: value.memberCount,
                 minimum: 1,
                 maximum: MAX_GROUP_ADMISSION_MEMBER_COUNT,
-                label: `Group lifecycle establishment ${label} memberCount`
-            }),
-            fallbackMs: requireBoundedInteger({
-                value: trigger.fallbackMs,
+                label: `${label} memberCount`
+            })
+        );
+        issues.push(
+            ...validateBoundedInteger({
+                value: value.fallbackMs,
                 minimum: 0,
                 maximum: MAX_GROUP_STAGE_TRIGGER_DELAY_MS,
-                label: `Group lifecycle establishment ${label} fallbackMs`
+                label: `${label} fallbackMs`
             })
-        };
+        );
     }
-    requireExactKeys(trigger, ['kind'], `Group lifecycle establishment ${label}`);
-    return { kind };
+    else if (value.kind === 'manual' || value.kind === 'immediate') {
+        issues.push(...validatePolicyKeys(value, ['kind'], label));
+    }
+    return issues;
 }
 
-function decodeTopologyPolicy(value: JsonWireValue): GroupLifecyclePolicy['topology'] {
-    const topology = requireJsonWireObject(value, 'Group lifecycle topology policy');
-    requireExactKeys(
-        topology,
-        ['replanning', 'reconfigureLanding', 'debounceWindowMs', 'maxReplanWaitMs'],
-        'Group lifecycle topology policy'
-    );
-    return {
-        replanning: requireOneOf(
-            topology.replanning,
-            ['auto', 'debounced', 'commanded'] as const,
-            'Group lifecycle topology replanning'
-        ),
-        reconfigureLanding: requireOneOf(
-            topology.reconfigureLanding,
-            ['apply', 'hold'] as const,
-            'Group lifecycle topology reconfigureLanding'
-        ),
-        debounceWindowMs: requireBoundedInteger({
-            value: topology.debounceWindowMs,
-            minimum: 0,
-            maximum: MAX_GROUP_TOPOLOGY_DEBOUNCE_WINDOW_MS,
-            label: 'Group lifecycle topology debounceWindowMs'
-        }),
-        maxReplanWaitMs: requireBoundedInteger({
-            value: topology.maxReplanWaitMs,
-            minimum: 0,
-            maximum: MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS,
-            label: 'Group lifecycle topology maxReplanWaitMs'
-        })
-    };
+function copyStageTrigger(trigger: GroupStageTrigger): GroupStageTrigger {
+    switch (trigger.kind) {
+        case 'after':
+            return { kind: trigger.kind, settleMs: trigger.settleMs };
+        case 'presence':
+            return { kind: trigger.kind, memberCount: trigger.memberCount, fallbackMs: trigger.fallbackMs };
+        default:
+            return { kind: trigger.kind };
+    }
 }
 
-function decodeActivationCriterion(value: JsonWireValue): GroupLifecyclePolicy['activation'] {
-    const activation = requireJsonWireObject(value, 'Group lifecycle activation policy');
-    requireExactKeys(
-        activation,
-        [
+function validateActivationPolicy(value: unknown): readonly GroupStateValidationIssue[] {
+    if (!isGroupStateRecord(value)) {
+        return validateRecord(value, 'Group lifecycle activation policy');
+    }
+    return [
+        ...validatePolicyKeys(value, [
             'mode',
             'successRate',
             'minimumViableRate',
             'deadlineMs',
             'maxFormationAttempts',
             'strictConfirmation'
-        ],
-        'Group lifecycle activation policy'
-    );
-    if (typeof activation.strictConfirmation !== 'boolean') {
-        throw new TypeError('Group lifecycle activation strictConfirmation must be boolean');
-    }
-    return {
-        mode: requireOneOf(
-            activation.mode,
-            ['threshold', 'deadline', 'manual', 'threshold-or-deadline'] as const,
+        ], 'Group lifecycle activation policy'),
+        ...(typeof value.strictConfirmation === 'boolean'
+            ? []
+            : [toGroupStateValidationIssue(
+                'activation.strictConfirmation',
+                'Group lifecycle activation strictConfirmation must be boolean'
+            )]),
+        ...validateOneOf(
+            value.mode,
+            ['threshold', 'deadline', 'manual', 'threshold-or-deadline'],
             'Group lifecycle activation mode'
         ),
-        successRate: requireRate(activation.successRate, 'Group lifecycle activation successRate'),
-        minimumViableRate: requireRate(
-            activation.minimumViableRate,
-            'Group lifecycle activation minimumViableRate'
-        ),
-        deadlineMs: requireBoundedInteger({
-            value: activation.deadlineMs,
+        ...validateRate(value.successRate, 'Group lifecycle activation successRate'),
+        ...validateRate(value.minimumViableRate, 'Group lifecycle activation minimumViableRate'),
+        ...validateBoundedInteger({
+            value: value.deadlineMs,
             minimum: 0,
             maximum: MAX_GROUP_FORMATION_DEADLINE_MS,
             label: 'Group lifecycle activation deadlineMs'
         }),
-        maxFormationAttempts: requireBoundedInteger({
-            value: activation.maxFormationAttempts,
+        ...validateBoundedInteger({
+            value: value.maxFormationAttempts,
             minimum: 1,
             maximum: MAX_GROUP_FORMATION_ATTEMPTS,
             label: 'Group lifecycle activation maxFormationAttempts'
-        }),
-        strictConfirmation: activation.strictConfirmation
-    };
-}
-
-function decodeAdmissionPolicy(value: JsonWireValue): GroupLifecyclePolicy['admission'] {
-    const admission = requireJsonWireObject(value, 'Group lifecycle admission policy');
-    requireExactKeys(
-        admission,
-        ['mode', 'untilEpochMs', 'untilMemberCount'],
-        'Group lifecycle admission policy'
-    );
-    return {
-        mode: requireOneOf(
-            admission.mode,
-            ['open', 'manager-approval', 'closed'] as const,
-            'Group lifecycle admission mode'
-        ),
-        untilEpochMs: requireNullableBoundedInteger({
-            value: admission.untilEpochMs,
-            minimum: 0,
-            maximum: Number.MAX_SAFE_INTEGER,
-            label: 'Group lifecycle admission untilEpochMs'
-        }),
-        untilMemberCount: requireNullableBoundedInteger({
-            value: admission.untilMemberCount,
-            minimum: 1,
-            maximum: MAX_GROUP_ADMISSION_MEMBER_COUNT,
-            label: 'Group lifecycle admission untilMemberCount'
         })
-    };
+    ];
 }
 
-function decodeDataPolicy(value: JsonWireValue): GroupLifecyclePolicy['data'] {
-    const data = requireJsonWireObject(value, 'Group lifecycle data policy');
-    requireExactKeys(data, ['preActivationAppData'], 'Group lifecycle data policy');
-    return {
-        preActivationAppData: requireOneOf(
-            data.preActivationAppData,
-            ['allowed', 'blocked-until-active'] as const,
+function validateAdmissionPolicy(value: unknown): readonly GroupStateValidationIssue[] {
+    if (!isGroupStateRecord(value)) {
+        return validateRecord(value, 'Group lifecycle admission policy');
+    }
+    return [
+        ...validatePolicyKeys(value, ['mode', 'untilEpochMs', 'untilMemberCount'], 'Group lifecycle admission policy'),
+        ...validateOneOf(value.mode, ['open', 'manager-approval', 'closed'], 'Group lifecycle admission mode'),
+        ...(value.untilEpochMs === null
+            ? []
+            : validateBoundedInteger({
+                value: value.untilEpochMs,
+                minimum: 0,
+                maximum: Number.MAX_SAFE_INTEGER,
+                label: 'Group lifecycle admission untilEpochMs'
+            })),
+        ...(value.untilMemberCount === null
+            ? []
+            : validateBoundedInteger({
+                value: value.untilMemberCount,
+                minimum: 1,
+                maximum: MAX_GROUP_ADMISSION_MEMBER_COUNT,
+                label: 'Group lifecycle admission untilMemberCount'
+            }))
+    ];
+}
+
+function validateTopologyPolicy(value: unknown): readonly GroupStateValidationIssue[] {
+    if (!isGroupStateRecord(value)) {
+        return validateRecord(value, 'Group lifecycle topology policy');
+    }
+    return [
+        ...validatePolicyKeys(
+            value,
+            ['replanning', 'reconfigureLanding', 'debounceWindowMs', 'maxReplanWaitMs'],
+            'Group lifecycle topology policy'
+        ),
+        ...validateOneOf(value.replanning, ['auto', 'debounced', 'commanded'], 'Group lifecycle topology replanning'),
+        ...validateOneOf(value.reconfigureLanding, ['apply', 'hold'], 'Group lifecycle topology reconfigureLanding'),
+        ...validateBoundedInteger({
+            value: value.debounceWindowMs,
+            minimum: 0,
+            maximum: MAX_GROUP_TOPOLOGY_DEBOUNCE_WINDOW_MS,
+            label: 'Group lifecycle topology debounceWindowMs'
+        }),
+        ...validateBoundedInteger({
+            value: value.maxReplanWaitMs,
+            minimum: 0,
+            maximum: MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS,
+            label: 'Group lifecycle topology maxReplanWaitMs'
+        })
+    ];
+}
+
+function validateDataPolicy(value: unknown): readonly GroupStateValidationIssue[] {
+    if (!isGroupStateRecord(value)) {
+        return validateRecord(value, 'Group lifecycle data policy');
+    }
+    return [
+        ...validatePolicyKeys(value, ['preActivationAppData'], 'Group lifecycle data policy'),
+        ...validateOneOf(
+            value.preActivationAppData,
+            ['allowed', 'blocked-until-active'],
             'Group lifecycle data preActivationAppData'
         )
-    };
+    ];
 }
 
-function requireJsonWireObject(value: JsonWireValue, label: string): JsonWireObject {
-    if (!isJsonWireObject(value)) {
-        throw new TypeError(`${label} must be an object`);
-    }
-    return value;
+function validatePolicyKeys(
+    value: object,
+    keys: readonly string[],
+    label: string
+): readonly GroupStateValidationIssue[] {
+    const actual = Object.keys(value);
+    return actual.length === keys.length && actual.every((key) => keys.includes(key))
+        ? []
+        : [toGroupStateValidationIssue(label, `${label} fields are invalid`)];
 }
 
-function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
+function validateRate(value: unknown, label: string): readonly GroupStateValidationIssue[] {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
+        ? []
+        : [toGroupStateValidationIssue(label, `${label} must be between zero and one`)];
 }
 
-function requireRate(value: JsonWireValue, label: string): number {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
-        throw new TypeError(`${label} must be between zero and one`);
-    }
-    return value;
-}
-
-interface BoundedIntegerInput {
-    readonly value: JsonWireValue;
-    readonly minimum: number;
-    readonly maximum: number;
-    readonly label: string;
-}
-
-function requireBoundedInteger(input: BoundedIntegerInput): number {
+function validateBoundedInteger(input: BoundedIntegerInput): readonly GroupStateValidationIssue[] {
     const { value, minimum, maximum, label } = input;
-    if (!Number.isSafeInteger(value) || (value as number) < minimum || (value as number) > maximum) {
-        throw new TypeError(`${label} is outside the current supported range`);
-    }
-    return value as number;
-}
-
-function requireNullableBoundedInteger(input: BoundedIntegerInput): number | null {
-    return input.value === null ? null : requireBoundedInteger(input);
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum && value <= maximum
+        ? []
+        : [toGroupStateValidationIssue(label, `${label} is outside the current supported range`)];
 }

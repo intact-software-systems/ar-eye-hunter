@@ -2,13 +2,20 @@ import { decodePersistedAuthSession } from '../../persistence/persisted-auth-ses
 import type { PersistedAgentSessionTicket } from '../../persistence/persisted-auth-ticket.ts';
 import type {
     AuthComputedSession,
+    AuthComputedTicketWrite,
     AuthMutationCommand,
     AuthMutationComputed,
     AuthMutationRead,
+    AuthSessionEntries,
     IssueAuthAgentTicketsCommand
 } from '../auth-mutation-contracts.ts';
 import { equalAuthJson, requireAuthTicket } from '../validate/auth-mutation-validation.ts';
-import { requireConsumedAuthSession, toConsumedAuthSessionResult } from './compute-auth-session-mutation.ts';
+import {
+    computeAuthSessionWrite,
+    requireConsumedAuthSession,
+    toConsumedAuthSessionResult
+} from './compute-auth-session-mutation.ts';
+import { computeAuthAgentTicketWrite } from './compute-auth-ticket-write.ts';
 
 type AuthAgentTicketMutationCommand = Extract<
     AuthMutationCommand,
@@ -24,6 +31,7 @@ interface ComputeAuthAgentTicketMutationInput {
 interface AuthAgentTicketComputation {
     readonly session: AuthComputedSession;
     readonly agentTicket: PersistedAgentSessionTicket;
+    readonly ticketWrite: AuthComputedTicketWrite;
     readonly resultTicket: Readonly<{
         agentId: string;
         ticketDigest: string;
@@ -53,11 +61,16 @@ export function computeAuthAgentTicketMutation(
             );
             const accessTokenDigest = ticket.value.accessTokenDigest;
             return {
+                kind: 'consume-agent-ticket',
                 command,
-                read: input.read,
+                read: consumeRead,
                 sessions: [],
                 agentTickets: [],
+                logoutDeletion: null,
                 logoutOutbox: null,
+                ticketDeletion: { storageKey: ticket.entry.key, expectedRevision: ticket.entry.revision },
+                ticketWrites: [],
+                userRegistration: null,
                 result: toConsumedAuthSessionResult({
                     kind: 'agent-ticket-consumed',
                     requestId,
@@ -74,15 +87,27 @@ function computeIssueAuthAgentTickets(
     command: IssueAuthAgentTicketsCommand,
     read: Extract<AuthMutationRead, { kind: 'issue-agent-tickets'; }>
 ): AuthMutationComputed {
-    const ticketComputations = command.tickets.map(toAuthAgentTicketComputation);
+    const ticketComputations = command.tickets.map((ticket, index) =>
+        toAuthAgentTicketComputation(
+            ticket,
+            read.sessions[index],
+            read.expiredTicketEntries[index]?.revision ?? null
+        )
+    );
     const sessions = ticketComputations.map(({ session }) => session);
     const agentTickets = ticketComputations.map(({ agentTicket }) => agentTicket);
+    const ticketWrites = ticketComputations.map(({ ticketWrite }) => ticketWrite);
     return {
+        kind: 'issue-agent-tickets',
         command,
         read,
         sessions,
         agentTickets,
+        logoutDeletion: null,
         logoutOutbox: null,
+        ticketDeletion: null,
+        ticketWrites,
+        userRegistration: null,
         result: {
             requestId: command.requestId,
             kind: 'agent-tickets-issued',
@@ -92,28 +117,44 @@ function computeIssueAuthAgentTickets(
     };
 }
 
-function toAuthAgentTicketComputation(
-    ticket: IssueAuthAgentTicketsCommand['tickets'][number]
-): AuthAgentTicketComputation {
-    const session = {
-        session: decodePersistedAuthSession({
+export function computeAuthAgentSessionWrite(
+    ticket: IssueAuthAgentTicketsCommand['tickets'][number],
+    read: AuthSessionEntries
+): AuthComputedSession {
+    return computeAuthSessionWrite(
+        decodePersistedAuthSession({
             clientId: ticket.clientId,
             username: ticket.username,
             sessionId: ticket.sessionId,
             accessTokenDigest: ticket.accessTokenDigest,
             issuedAtEpochMs: ticket.issuedAtEpochMs,
             expiresAtEpochMs: ticket.sessionExpiresAtEpochMs
-        })
-    };
-    const agentTicket = {
+        }),
+        read
+    );
+}
+
+export function computeAuthAgentTicket(
+    ticket: IssueAuthAgentTicketsCommand['tickets'][number]
+): PersistedAgentSessionTicket {
+    return {
         ticketDigest: ticket.ticketDigest,
         accessTokenDigest: ticket.accessTokenDigest,
         sessionId: ticket.sessionId,
         clientId: ticket.clientId,
-        agentId: ticket.agentId,
         issuedAtEpochMs: ticket.issuedAtEpochMs,
-        expiresAtEpochMs: ticket.ticketExpiresAtEpochMs
+        expiresAtEpochMs: ticket.ticketExpiresAtEpochMs,
+        agentId: ticket.agentId
     };
+}
+
+function toAuthAgentTicketComputation(
+    ticket: IssueAuthAgentTicketsCommand['tickets'][number],
+    read: AuthSessionEntries,
+    expectedTicketRevision: number | null
+): AuthAgentTicketComputation {
+    const session = computeAuthAgentSessionWrite(ticket, read);
+    const agentTicket = computeAuthAgentTicket(ticket);
     const resultTicket = {
         agentId: ticket.agentId,
         ticketDigest: ticket.ticketDigest,
@@ -121,7 +162,11 @@ function toAuthAgentTicketComputation(
         issuedAtEpochMs: ticket.issuedAtEpochMs,
         expiresAtEpochMs: ticket.ticketExpiresAtEpochMs
     };
-    return { session, agentTicket, resultTicket };
+    const ticketWrite = computeAuthAgentTicketWrite(
+        agentTicket,
+        expectedTicketRevision
+    );
+    return { session, agentTicket, ticketWrite, resultTicket };
 }
 
 function isMatchingAgentIssueRead(

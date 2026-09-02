@@ -6,13 +6,17 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    computeAppOutboxInsertOrMatch,
+    writeAppOutboxInsertOrMatch,
+    type AppOutboxInsertOrMatch
+} from '../../app-outbox/app-outbox-insert.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
 import { validateRtcTopologyPublication } from './validate-rtc-topology-publication.ts';
 
 export function computeRtcTopologyPublicationOutbox(
     publication: RtcTopologyPublication
-): ResourceEntry {
+): AppOutboxInsertOrMatch {
     validateRtcTopologyPublication(publication, publication.groupRef);
     const publicationMessage = publication.message;
     if (
@@ -42,7 +46,7 @@ export function computeRtcTopologyPublicationOutbox(
         .fromEpochMilliseconds(publication.createdAtEpochMs)
         .toZonedDateTimeISO('UTC')
         .toPlainDateTime();
-    return {
+    return computeAppOutboxInsertOrMatch({
         key: toAppQueueKey({
             topicId: message.route.topicId,
             resourceId: message.id.msgId,
@@ -60,14 +64,13 @@ export function computeRtcTopologyPublicationOutbox(
             )
         },
         dequeueAudit: { attempts: 0 }
-    };
+    });
 }
 
 export async function writeRtcTopologyPublicationOutbox(
     transaction: PSqlSql,
-    publication: RtcTopologyPublication
+    computed: AppOutboxInsertOrMatch
 ): Promise<ResourceEntry> {
-    const entry = computeRtcTopologyPublicationOutbox(publication);
-    await new PSqlResourceInboxEntryRepository(transaction).writeIfAbsentOrMatch(entry);
-    return entry;
+    await writeAppOutboxInsertOrMatch(transaction, computed);
+    return computed.entry;
 }

@@ -1,3 +1,4 @@
+import { isValidRuntimeStateUpsertExpectedRevision } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { validateAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
 
 import {
@@ -106,7 +107,7 @@ function validateAppliedWriteResult(value: ClientValidationRecord): void {
             'snapshot',
             'idempotency',
             'stateSync',
-            'outboxEntries'
+            'outboxWrites'
         ],
         'Client mutation computed'
     );
@@ -141,8 +142,8 @@ function validateAppliedWriteResult(value: ClientValidationRecord): void {
     if (!Array.isArray(value.stateSync) || value.stateSync.length !== 2) {
         rejectClientMutation('Client mutation computed stateSync must contain snapshot and event');
     }
-    if (!Array.isArray(value.outboxEntries) || value.outboxEntries.length !== 2) {
-        rejectClientMutation('Client mutation computed outboxEntries must contain snapshot and event');
+    if (!Array.isArray(value.outboxWrites) || value.outboxWrites.length !== 2) {
+        rejectClientMutation('Client mutation computed outboxWrites must contain snapshot and event');
     }
 }
 
@@ -163,12 +164,8 @@ function validateConditionalCandidate<T>(
         case 'update':
             requireExactKeys(candidate, ['operation', 'value', 'expectedRevision'], label);
             validateValue(candidate.value, `${label}.value`);
-            if (
-                !Number.isSafeInteger(candidate.expectedRevision) ||
-                (candidate.expectedRevision as number) < 0 ||
-                Object.is(candidate.expectedRevision, -0)
-            ) {
-                rejectClientMutation(`${label}.expectedRevision must be a finite safe nonnegative integer`);
+            if (!isValidRuntimeStateUpsertExpectedRevision(candidate.expectedRevision)) {
+                rejectClientMutation(`${label}.expectedRevision must be an incrementable runtime-state revision`);
             }
             return;
         default:

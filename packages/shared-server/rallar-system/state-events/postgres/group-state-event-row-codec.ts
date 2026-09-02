@@ -2,8 +2,10 @@ import { validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
-
-import { groupStateEventWorkspaceKey } from './group-state-event-workspace-key.ts';
+import {
+    GroupStateEventRepositoryInvariantCorruptionError,
+    type GroupStateEventWrite
+} from '../group-state-event-store.ts';
 
 export interface GroupStateEventRow {
     readonly event_id: string;
@@ -19,42 +21,18 @@ export interface GroupStateEventCollisionRow extends GroupStateEventRow {
     readonly group_id: string;
 }
 
-export class GroupStateEventRepositoryInvariantCorruptionError extends Error {
-    readonly code = 'group-state-event-repository-invariant-corruption';
-
-    constructor(message: string) {
-        super(message);
-        this.name = 'GroupStateEventRepositoryInvariantCorruptionError';
-    }
-}
-
-export function assertPersistableGroupStateEvent(
-    event: GroupEvent,
-    expected: GroupRef
-): void {
-    try {
-        validateAuthoritativeGroupEvent(event, expected);
-    }
-    catch (error) {
-        throw new GroupStateEventRepositoryInvariantCorruptionError(
-            error instanceof Error ? error.message : 'Stored group event is invalid'
-        );
-    }
-}
-
 export function isExactPersistedGroupStateEvent(
     row: GroupStateEventCollisionRow,
-    event: GroupEvent,
-    eventJson: string
+    computed: GroupStateEventWrite
 ): boolean {
-    return row.application_id === event.applicationId &&
-        row.workspace_key === groupStateEventWorkspaceKey(event.workspaceId) &&
-        row.group_id === event.groupId &&
-        row.event_id === event.eventId &&
-        row.event_type === event.eventType &&
-        Number(row.snapshot_version) === event.snapshotVersion &&
-        Number(row.occurred_at_epoch_ms) === event.occurredAtEpochMs &&
-        row.event_json === eventJson;
+    return row.application_id === computed.applicationId &&
+        row.workspace_key === computed.workspaceKey &&
+        row.group_id === computed.groupId &&
+        row.event_id === computed.eventId &&
+        row.event_type === computed.eventType &&
+        Number(row.snapshot_version) === computed.snapshotVersion &&
+        Number(row.occurred_at_epoch_ms) === computed.occurredAtEpochMs &&
+        row.event_json === computed.eventJson;
 }
 
 export function toValidatedGroupStateEvent(

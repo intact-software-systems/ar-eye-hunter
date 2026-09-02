@@ -13,16 +13,17 @@ import {
     isWsSessionGenerationClosed,
     isWsSessionObservedAtClosed,
     toWsSessionLifecycleKey,
+    validateWsSessionConnectGuard,
+    validateWsSessionGenerationClosed,
     type WsSessionCloseHighWaterState,
     type WsSessionGenerationCloseFacts,
     type WsSessionGenerationFacts,
     type WsSessionGenerationGuardFacts,
     type WsSessionGenerationLifecycleComputed,
     type WsSessionGenerationLifecycleRead,
+    type WsSessionGenerationValidationIssue,
     type WsSessionHighWaterIdentity
 } from './ws-session-generation-computation.ts';
-
-const SESSION_CLOSE_HIGH_WATER_NAMESPACE = 'ws-session-close-high-water';
 
 export interface WsSessionGenerationLifecycleService {
     read(identity: WsSessionHighWaterIdentity): Promise<WsSessionGenerationLifecycleRead>;
@@ -43,57 +44,80 @@ export interface WsSessionGenerationLifecycleService {
         facts: WsSessionGenerationGuardFacts,
         read: WsSessionGenerationLifecycleRead
     ): WsSessionGenerationLifecycleComputed;
+    validateConnectGuard(
+        facts: WsSessionGenerationGuardFacts,
+        read: WsSessionGenerationLifecycleRead,
+        computed: WsSessionGenerationLifecycleComputed
+    ): readonly WsSessionGenerationValidationIssue[];
+    validateClosed(
+        facts: WsSessionGenerationCloseFacts,
+        read: WsSessionGenerationLifecycleRead,
+        computed: WsSessionGenerationLifecycleComputed
+    ): readonly WsSessionGenerationValidationIssue[];
     write(
         transaction: PSqlSql,
         computed: WsSessionGenerationLifecycleComputed
     ): Promise<void>;
 }
 
+const SESSION_CLOSE_HIGH_WATER_NAMESPACE = 'ws-session-close-high-water';
+
 export function createWsSessionGenerationLifecycleService(
     repository: RuntimeStateOptimisticTransactionalRepositoryLike
 ): WsSessionGenerationLifecycleService {
     return {
-        read: async (identity) => {
-            const key = toWsSessionLifecycleKey(identity);
-            const entry = await repository.findEntry(SESSION_CLOSE_HIGH_WATER_NAMESPACE, key);
-            const state = entry ? decodeCurrentSessionGenerationRow(entry, identity) : null;
-            return {
-                identity,
-                key,
-                revision: entry?.revision ?? null,
-                persistedExpireAtEpochMs: entry?.expireAtTimestamp ?? null,
-                state
-            };
-        },
+        read: async (identity) => await readWsSessionGenerationLifecycle(repository, identity),
         isGenerationClosed: isWsSessionGenerationClosed,
         isObservedAtClosed: isWsSessionObservedAtClosed,
         computeClosed: computeWsSessionGenerationClosed,
         computeConnectGuard: computeWsSessionConnectGuard,
-        write: async (transaction, computed) => {
-            if (computed.outcome === 'none') {
-                return;
-            }
-            const target = new PSqlRuntimeStateRepository(transaction);
-            const value = JSON.stringify(computed.state);
-            const result = computed.outcome === 'insert'
-                ? await target.insertIfAbsent(
-                    SESSION_CLOSE_HIGH_WATER_NAMESPACE,
-                    computed.key,
-                    value,
-                    computed.state.expireAtEpochMs
-                )
-                : await target.upsertIfRevision(
-                    SESSION_CLOSE_HIGH_WATER_NAMESPACE,
-                    computed.key,
-                    value,
-                    computed.state.expireAtEpochMs,
-                    requireExpectedRevision(computed)
-                );
-            if (result.status === 'conflict') {
-                throw new RuntimeStateWriteConflictError();
-            }
-        }
+        validateConnectGuard: validateWsSessionConnectGuard,
+        validateClosed: validateWsSessionGenerationClosed,
+        write: writeWsSessionGenerationLifecycle
     };
+}
+
+async function readWsSessionGenerationLifecycle(
+    repository: RuntimeStateOptimisticTransactionalRepositoryLike,
+    identity: WsSessionHighWaterIdentity
+): Promise<WsSessionGenerationLifecycleRead> {
+    const key = toWsSessionLifecycleKey(identity);
+    const entry = await repository.findEntry(SESSION_CLOSE_HIGH_WATER_NAMESPACE, key);
+    const state = entry ? decodeCurrentSessionGenerationRow(entry, identity) : null;
+    return {
+        identity,
+        key,
+        revision: entry?.revision ?? null,
+        persistedExpireAtEpochMs: entry?.expireAtTimestamp ?? null,
+        state
+    };
+}
+
+async function writeWsSessionGenerationLifecycle(
+    transaction: PSqlSql,
+    computed: WsSessionGenerationLifecycleComputed
+): Promise<void> {
+    if (computed.outcome === 'none') {
+        return;
+    }
+    const target = new PSqlRuntimeStateRepository(transaction);
+    const result = computed.outcome === 'insert'
+        ? await target.insertIfAbsent(
+            SESSION_CLOSE_HIGH_WATER_NAMESPACE,
+            computed.key,
+            computed.value,
+            computed.expireAtIsoTimestamp
+        )
+        : await target.upsertIfRevision(
+            SESSION_CLOSE_HIGH_WATER_NAMESPACE,
+            computed.key,
+            computed.value,
+            computed.expireAtIsoTimestamp,
+            computed.expectedRevision
+        );
+    if (result.status === 'conflict') {
+        throw new RuntimeStateWriteConflictError();
+    }
 }
 
 function decodeCurrentSessionGenerationRow(
@@ -111,11 +135,4 @@ function decodeCurrentSessionGenerationRow(
         throw new TypeError('WebSocket session close high-water row expiry is invalid');
     }
     return state;
-}
-
-function requireExpectedRevision(computed: WsSessionGenerationLifecycleComputed): number {
-    if (computed.expectedRevision === null) {
-        throw new TypeError('WebSocket session close high-water update revision is missing');
-    }
-    return computed.expectedRevision;
 }

@@ -3,7 +3,11 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    computeAppOutboxInsertOrMatch,
+    writeAppOutboxInsertOrMatch,
+    type AppOutboxInsertOrMatch
+} from '../../../app-outbox/app-outbox-insert.ts';
 import { computeGroupConnectTriggerEntry } from '../../../group-state/group-connect-trigger-outbox-entry.ts';
 import { GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS } from '../../../group-state/group-state-service-contracts.ts';
 import { serializeCanonicalJson } from '../../../protocol/canonical-json.ts';
@@ -17,12 +21,12 @@ export interface PublicationConnectTriggerRequestsInput {
 
 export function computePublicationConnectTriggerRequests(
     input: PublicationConnectTriggerRequestsInput
-): readonly ResourceEntry[] {
+): readonly AppOutboxInsertOrMatch[] {
     const { automation, target, entry } = input;
     if (automation === undefined || target === null || target.state !== 'active') {
         return [];
     }
-    return [computeGroupConnectTriggerEntry({
+    return [computeAppOutboxInsertOrMatch(computeGroupConnectTriggerEntry({
         work: {
             kind: 'publication',
             groupRef: target.groupRef,
@@ -31,15 +35,14 @@ export function computePublicationConnectTriggerRequests(
         senderId: entry.audit.createdBy,
         createdAtEpochMs: entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
         expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS
-    })];
+    }))];
 }
 
 export async function writeGroupConnectTriggerRequests(
     transaction: PSqlSql,
-    requests: readonly ResourceEntry[]
+    requests: readonly AppOutboxInsertOrMatch[]
 ): Promise<void> {
-    const repository = new PSqlResourceInboxEntryRepository(transaction);
-    for (const entry of requests) {
-        await repository.writeIfAbsentOrMatch(entry);
+    for (const request of requests) {
+        await writeAppOutboxInsertOrMatch(transaction, request);
     }
 }

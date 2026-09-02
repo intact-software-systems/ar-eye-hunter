@@ -3,6 +3,10 @@ import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import {
+    isValidRuntimeStateExpectedRevision,
+    isValidRuntimeStateUpsertExpectedRevision
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ALAdmissionBackendEntry, ALAdmissionWriteContext } from '@shared/alm/al-admission-backend.ts';
 import {
     ALAdmissionCorruptionError,
@@ -21,14 +25,14 @@ export type ALAdmissionMutation =
         key: string;
         expected: 'absent';
         value: string;
-        expireAtEpochMs: number;
+        expireAtIsoTimestamp: string;
     }>
     | Readonly<{
         kind: 'replace';
         key: string;
         expectedRevision: number;
         value: string;
-        expireAtEpochMs: number;
+        expireAtIsoTimestamp: string;
     }>
     | Readonly<{
         kind: 'delete';
@@ -150,7 +154,7 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
                     key,
                     expected: 'absent',
                     value,
-                    expireAtEpochMs: observation.expireAtEpochMs
+                    expireAtIsoTimestamp: new Date(observation.expireAtEpochMs).toISOString()
                 });
                 continue;
             }
@@ -159,13 +163,17 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
                 key,
                 expectedRevision: observation.entry.revision,
                 value,
-                expireAtEpochMs: observation.expireAtEpochMs
+                expireAtIsoTimestamp: new Date(observation.expireAtEpochMs).toISOString()
             });
         }
         return mutations;
     }
 
     async apply(mutations: readonly ALAdmissionMutation[]): Promise<void> {
+        const [revisionIssue] = validateALAdmissionMutationRevisions(mutations);
+        if (revisionIssue !== undefined) {
+            throw revisionIssue;
+        }
         await this.repository.begin((transaction) => this.writeMutations(transaction, mutations));
     }
 
@@ -199,7 +207,7 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
                             this.namespace,
                             mutation.key,
                             mutation.value,
-                            mutation.expireAtEpochMs
+                            mutation.expireAtIsoTimestamp
                         )
                     );
                     break;
@@ -209,7 +217,7 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
                             this.namespace,
                             mutation.key,
                             mutation.value,
-                            mutation.expireAtEpochMs,
+                            mutation.expireAtIsoTimestamp,
                             mutation.expectedRevision
                         )
                     );
@@ -226,6 +234,27 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
             }
         }
     }
+}
+
+function validateALAdmissionMutationRevisions(
+    mutations: readonly ALAdmissionMutation[]
+): readonly Error[] {
+    const issues: Error[] = [];
+    for (const [index, mutation] of mutations.entries()) {
+        if (
+            mutation.kind === 'replace' &&
+            !isValidRuntimeStateUpsertExpectedRevision(mutation.expectedRevision)
+        ) {
+            issues.push(new Error(`Invalid AL admission replacement revision at mutations[${index}]`));
+        }
+        else if (
+            mutation.kind === 'delete' &&
+            !isValidRuntimeStateExpectedRevision(mutation.expectedRevision)
+        ) {
+            issues.push(new Error(`Invalid AL admission deletion revision at mutations[${index}]`));
+        }
+    }
+    return issues;
 }
 
 function toPSqlAdmissionObservation(

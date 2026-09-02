@@ -7,11 +7,9 @@ import type {
 } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { GROUPS_NAMESPACE } from '../group-state-runtime-namespaces.ts';
 import { serializeGroupStateValue } from '../serialize-group-state-value.ts';
-import { validatePersistedGroup } from '../validate-persisted-group.ts';
 import { groupStateGroupStorageKey } from './group-aggregate-storage-keys.ts';
 
 export function groupStateInsertGroupDescriptor(group: Group): RuntimeStateGuardedBatchInsert {
-    validatePersistedGroup(group, group);
     return {
         operation: 'insert',
         namespace: GROUPS_NAMESPACE,
@@ -25,7 +23,6 @@ export function groupStateUpdateGroupDescriptor(
     group: Group,
     expectedRevision: number
 ): RuntimeStateGuardedBatchUpdate {
-    validatePersistedGroup(group, group);
     return {
         operation: 'update',
         namespace: GROUPS_NAMESPACE,

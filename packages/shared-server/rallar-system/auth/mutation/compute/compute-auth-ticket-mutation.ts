@@ -6,6 +6,7 @@ import type {
 } from '../auth-mutation-contracts.ts';
 import { equalAuthJson, requireAuthTicket } from '../validate/auth-mutation-validation.ts';
 import { requireConsumedAuthSession, toConsumedAuthSessionResult } from './compute-auth-session-mutation.ts';
+import { computeAuthWebSocketTicketWrite } from './compute-auth-ticket-write.ts';
 
 type AuthTicketMutationCommand = Extract<AuthMutationCommand, { kind: 'issue-ws-ticket' | 'consume-ws-ticket'; }>;
 
@@ -35,11 +36,16 @@ export function computeAuthTicketMutation(
             );
             const accessTokenDigest = ticket.value.accessTokenDigest;
             return {
+                kind: 'consume-ws-ticket',
                 command,
-                read: input.read,
+                read: consumeRead,
                 sessions: [],
                 agentTickets: [],
+                logoutDeletion: null,
                 logoutOutbox: null,
+                ticketDeletion: { storageKey: ticket.entry.key, expectedRevision: ticket.entry.revision },
+                ticketWrites: [],
+                userRegistration: null,
                 result: toConsumedAuthSessionResult({
                     kind: 'ws-ticket-consumed',
                     requestId,
@@ -57,11 +63,21 @@ function computeIssueAuthWebSocketTicket(
     read: Extract<AuthMutationRead, { kind: 'issue-ws-ticket'; }>
 ): AuthMutationComputed {
     return {
+        kind: 'issue-ws-ticket',
         command,
         read,
         sessions: [],
         agentTickets: [],
+        logoutDeletion: null,
         logoutOutbox: null,
+        ticketDeletion: null,
+        ticketWrites: [
+            computeAuthWebSocketTicketWrite(
+                command.ticketRecord,
+                read.expiredTicketEntry?.revision ?? null
+            )
+        ],
+        userRegistration: null,
         result: {
             requestId: command.requestId,
             kind: 'ws-ticket-issued',

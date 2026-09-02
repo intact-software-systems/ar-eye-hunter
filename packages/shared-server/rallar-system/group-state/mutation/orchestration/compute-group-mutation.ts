@@ -1,3 +1,5 @@
+import { Either } from '@shared/resilience/Either.ts';
+import type { GroupStateValidationIssue } from '../../group-state-validation-issues.ts';
 import { computeApplyPlannedLayout } from '../aggregate/compute-apply-planned-layout.ts';
 import {
     computeCreate,
@@ -7,8 +9,6 @@ import {
 } from '../aggregate/compute-group-aggregate-mutation.ts';
 import { computeGroupTransportMutation } from '../aggregate/compute-group-transport-mutation.ts';
 import { computeLifecycleTransition } from '../aggregate/compute-lifecycle-transition.ts';
-import { assertGroupMutationAuthority } from '../command-validation/assert-group-mutation-authority.ts';
-import { assertGroupMutationCommand } from '../command-validation/assert-group-mutation-command.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -32,8 +32,6 @@ import { computeConnectGroupPresence } from '../presence/compute-connect-group-p
 import { computeDisconnectGroupPresence } from '../presence/compute-disconnect-group-presence.ts';
 import { computeHeartbeatGroupPresence } from '../presence/compute-heartbeat-group-presence.ts';
 import { probeGroupMutationIdempotency } from '../probe-group-mutation-idempotency.ts';
-import { assertGroupMutationFacts } from '../state-validation/assert-group-mutation-facts.ts';
-import { assertGroupMutationRead } from '../state-validation/assert-group-mutation-read.ts';
 
 export interface GroupMutationInput {
     readonly command: GroupMutationCommand;
@@ -42,35 +40,41 @@ export interface GroupMutationInput {
 }
 
 export function computeGroupMutation(input: GroupMutationInput): GroupMutationComputed {
+    return unwrapGroupMutationComputation(computeGroupMutationDecision(input));
+}
+
+/** The command, read and facts are validated by both public callers before this pure decision. */
+export function computeGroupMutationDecision(
+    input: GroupMutationInput
+): Either<readonly GroupStateValidationIssue[], GroupMutationComputed> {
     const { command, read, facts } = input;
-    assertGroupMutationCommand(command);
-    assertGroupMutationRead(read, command);
-    assertGroupMutationFacts(facts);
-    assertGroupMutationAuthority(command, facts);
     const idempotency = probeGroupMutationIdempotency(command, read, facts.commandHash);
     if (idempotency.outcome !== 'miss') {
-        return idempotency.outcome === 'replay'
-            ? { ...idempotency, rejectionCode: null }
-            : idempotency;
+        return Either.ofRight(
+            idempotency.outcome === 'replay'
+                ? { ...idempotency, rejectionCode: null }
+                : idempotency
+        );
     }
     if (command.operation !== 'createGroup' && read.group === null) {
-        return rejected({
+        return Either.ofRight(rejected({
             command,
             read,
             facts,
             rejectionCode: 'group-mutation-rejected',
             message: `Group not found: ${command.aggregateRef.groupId}`
-        });
+        }));
     }
 
-    return computeFreshGroupMutation(command, read, facts);
+    const computed = computeFreshGroupMutation(command, read, facts);
+    return computed instanceof Either ? computed : Either.ofRight(computed);
 }
 
 function computeFreshGroupMutation(
     command: GroupMutationCommand,
     read: GroupMutationRead,
     facts: GroupMutationFacts
-): GroupMutationComputed {
+): GroupMutationComputed | Either<readonly GroupStateValidationIssue[], GroupMutationComputed> {
     switch (command.operation) {
         case 'createGroup':
             return computeCreate(command, read, facts);
@@ -120,4 +124,16 @@ function computeFreshGroupMutation(
         case 'disconnectPresence':
             return computeDisconnectGroupPresence(command, read, facts);
     }
+}
+
+function unwrapGroupMutationComputation(
+    result: GroupMutationComputed | Either<readonly GroupStateValidationIssue[], GroupMutationComputed>
+): GroupMutationComputed {
+    if (!(result instanceof Either)) {
+        return result;
+    }
+    if (result.left !== undefined) {
+        throw result.left[0].cause;
+    }
+    return result.right!;
 }

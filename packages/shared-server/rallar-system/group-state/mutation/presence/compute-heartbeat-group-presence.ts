@@ -1,8 +1,10 @@
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import { isPresenceTimestampWithinSkew } from '../../../presence/presence-lease.ts';
-import { assertActive, isExactlyAdmitted } from '../aggregate/group-aggregate-mutation-policy.ts';
+import type { GroupStateValidationIssue } from '../../group-state-validation-issues.ts';
+import { isExactlyAdmitted, validateActiveGroup } from '../aggregate/group-aggregate-mutation-policy.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -18,54 +20,43 @@ export function computeHeartbeatGroupPresence(
     command: Extract<GroupMutationCommand, { operation: 'heartbeatPresence'; }>,
     read: GroupMutationRead,
     facts: GroupMutationFacts
-): GroupMutationComputed {
+): Either<readonly GroupStateValidationIssue[], GroupMutationComputed> {
     const group = requireGroup(read, command.aggregateRef);
-    assertActive(group.value, facts.nowEpochMs);
+    const issues = [...validateActiveGroup(group.value, facts.nowEpochMs)];
     const existing = read.targetPresence;
     if (!existing) {
-        throw new GroupMutationRejectedError(`Group presence session not found: ${command.sessionId}`);
+        issues.push({
+            path: 'read.targetPresence',
+            cause: new GroupMutationRejectedError(`Group presence session not found: ${command.sessionId}`)
+        });
+        return Either.ofLeft(issues);
     }
-    validateGroupPresenceMutationAuthority(command, existing.value.principalId, facts);
+    issues.push(...validateGroupPresenceMutationAuthority(command, existing.value.principalId, facts));
+    if (issues.length > 0) {
+        return Either.ofLeft(issues);
+    }
     if (
         existing.value.generationId !== command.input.generationId ||
         existing.value.disconnectedAtEpochMs !== null
     ) {
-        return noOp(command, read, facts);
+        return Either.ofRight(noOp(command, read, facts));
     }
     if (!isExactlyAdmitted(read.targetAdmission?.value, existing.value)) {
-        return noOp(command, read, facts);
+        return Either.ofRight(noOp(command, read, facts));
     }
     const member = read.targetMember ?? undefined;
     if (!member || member.status !== 'active') {
-        return noOp(command, read, facts);
+        return Either.ofRight(noOp(command, read, facts));
     }
-    const heartbeatAt = command.input.lastHeartbeatAtEpochMs ?? facts.nowEpochMs;
-    if (!isPresenceTimestampWithinSkew(heartbeatAt, facts.nowEpochMs)) {
-        throw new GroupMutationRejectedError(
-            'Group presence lastHeartbeatAtEpochMs is too far in the future.'
-        );
+    const projection = computeHeartbeatSession(command, existing.value, facts);
+    if (projection.left !== undefined) {
+        return Either.ofLeft(projection.left);
     }
-    if (heartbeatAt < existing.value.lastHeartbeatAtEpochMs) {
-        return noOp(command, read, facts);
+    const session = projection.right!;
+    if (session === null) {
+        return Either.ofRight(noOp(command, read, facts));
     }
-    const expiresAt = Math.max(
-        existing.value.expiresAtEpochMs,
-        command.input.expiresAtEpochMs ?? existing.value.expiresAtEpochMs
-    );
-    if (expiresAt < heartbeatAt) {
-        throw new GroupMutationRejectedError(
-            'Presence heartbeat expiry must not predate the heartbeat.'
-        );
-    }
-    const session: GroupPresenceSession = {
-        ...existing.value,
-        lastHeartbeatAtEpochMs: heartbeatAt,
-        expiresAtEpochMs: expiresAt
-    };
-    if (jsonEquals(existing.value, session)) {
-        return noOp(command, read, facts);
-    }
-    return computeGroupPresenceWrite({
+    return Either.ofRight(computeGroupPresenceWrite({
         command,
         read,
         facts,
@@ -73,7 +64,7 @@ export function computeHeartbeatGroupPresence(
         operation: 'update',
         eventType: 'session-heartbeat',
         presenceSummaryWork: isPureLeaseRenewalHeartbeat(command, read, facts) ? 'none' : 'enqueue'
-    });
+    }));
 }
 
 /**
@@ -94,4 +85,48 @@ export function isPureLeaseRenewalHeartbeat(
         existing.value.expiresAtEpochMs > facts.nowEpochMs &&
         (read.presenceSummary?.value.activeSessionIds ?? []).includes(command.sessionId)
     );
+}
+
+function computeHeartbeatSession(
+    command: Extract<GroupMutationCommand, { operation: 'heartbeatPresence'; }>,
+    existing: GroupPresenceSession,
+    facts: GroupMutationFacts
+): Either<readonly GroupStateValidationIssue[], GroupPresenceSession | null> {
+    const issues: GroupStateValidationIssue[] = [];
+    const heartbeatAt = command.input.lastHeartbeatAtEpochMs ?? facts.nowEpochMs;
+    if (!isPresenceTimestampWithinSkew(heartbeatAt, facts.nowEpochMs)) {
+        issues.push({
+            path: 'command.input.lastHeartbeatAtEpochMs',
+            cause: new GroupMutationRejectedError(
+                'Group presence lastHeartbeatAtEpochMs is too far in the future.'
+            )
+        });
+    }
+    if (heartbeatAt < existing.lastHeartbeatAtEpochMs) {
+        return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(null);
+    }
+    const expiresAt = Math.max(
+        existing.expiresAtEpochMs,
+        command.input.expiresAtEpochMs ?? existing.expiresAtEpochMs
+    );
+    if (expiresAt < heartbeatAt) {
+        issues.push({
+            path: 'read.targetPresence.expiresAtEpochMs',
+            cause: new GroupMutationRejectedError(
+                'Presence heartbeat expiry must not predate the heartbeat.'
+            )
+        });
+    }
+    if (issues.length > 0) {
+        return Either.ofLeft(issues);
+    }
+    const session: GroupPresenceSession = {
+        ...existing,
+        lastHeartbeatAtEpochMs: heartbeatAt,
+        expiresAtEpochMs: expiresAt
+    };
+    if (jsonEquals(existing, session)) {
+        return Either.ofRight(null);
+    }
+    return Either.ofRight(session);
 }

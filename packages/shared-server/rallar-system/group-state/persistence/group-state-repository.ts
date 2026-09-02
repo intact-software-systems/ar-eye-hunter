@@ -15,7 +15,7 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
-import type { GroupStateEventStore } from '../../state-events/group-state-event-store.ts';
+import type { GroupStateEventStore, GroupStateEventWrite } from '../../state-events/group-state-event-store.ts';
 import { PSqlGroupStateEventRepository } from '../../state-events/postgres/p-sql-group-state-event-repository.ts';
 import type { StateEventListQuery } from '../../state-events/state-event-listing.ts';
 import { GroupAggregateRepository } from './aggregate/group-aggregate-repository.ts';
@@ -135,8 +135,8 @@ export class GroupStateRepository extends GroupStateRepositoryReads {
         return await this.presence.updatePresenceSummary(summary, expectedRevision);
     }
 
-    async appendEvent(event: GroupEvent): Promise<void> {
-        await this.aggregate.appendEvent(event);
+    async appendEvent(computed: GroupStateEventWrite): Promise<void> {
+        await this.aggregate.appendEvent(computed);
     }
 
     async listEvents(ref: GroupRef): Promise<readonly GroupEvent[]> {
