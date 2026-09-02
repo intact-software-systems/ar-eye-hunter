@@ -20,11 +20,6 @@ export type AppInboxHandlerFinalization =
         result: JsonWireValue;
     }>;
 
-export interface AppInboxMutationTransactionResult<DurableResult, AfterCommitResult> {
-    readonly durableResult: DurableResult;
-    readonly afterCommitResult: AfterCommitResult;
-}
-
 export interface AppInboxMutationTransactionWriter {
     readCompletionFacts(context: AppInboxExecutionMetadata): AppInboxCompletionFacts;
 
@@ -33,12 +28,6 @@ export interface AppInboxMutationTransactionWriter {
         computed: AppInboxCompletionComputed<Result>,
         write: (transaction: PSqlSql) => Promise<void>
     ): Promise<Result>;
-
-    writeComputedMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
-        context: AppInboxExecutionMetadata,
-        computed: AppInboxCompletionComputed<DurableResult>,
-        write: (transaction: PSqlSql) => Promise<AfterCommitResult>
-    ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>;
 }
 
 export namespace AppInboxTransactionWriter {
@@ -91,15 +80,6 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         return computed.durableResult;
     }
 
-    async writeComputedMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
-        context: AppInboxExecutionMetadata,
-        computed: AppInboxCompletionComputed<DurableResult>,
-        write: (transaction: PSqlSql) => Promise<AfterCommitResult>
-    ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>> {
-        const afterCommitResult = await this.writeFinalizedMutation(context, computed, write);
-        return { durableResult: computed.durableResult, afterCommitResult };
-    }
-
     async writeComputedTerminalFailure<Result>(
         context: AppInboxExecutionMetadata,
         computed: AppInboxCompletionComputed<Result>
@@ -107,27 +87,25 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         await this.writeFinalizedMutation(context, computed, async () => {});
     }
 
-    private async writeFinalizedMutation<DurableResult, WriteResult>(
+    private async writeFinalizedMutation<DurableResult>(
         context: AppInboxExecutionMetadata,
         computed: AppInboxCompletionComputed<DurableResult>,
-        write: (transaction: PSqlSql) => Promise<WriteResult>
-    ): Promise<WriteResult> {
+        write: (transaction: PSqlSql) => Promise<void>
+    ): Promise<void> {
         this.ensurePending(context);
-        const result = await this.inTransaction(context, this.toTimingDetails(context), async (transaction) => {
-            const writeResult = await write(transaction);
+        await this.inTransaction(context, this.toTimingDetails(context), async (transaction) => {
+            await write(transaction);
             await writeResourceInboxResultReplacement(transaction, computed.resultReplacement);
             const completed = await writeResourceInboxReservationFinish(transaction, computed.reservationFinish);
             if (!completed) {
                 throw computed.reservationConflict;
             }
-            return writeResult;
         });
         this.finalizationByContext.set(context, {
             state: 'transaction-finalized',
             status: computed.reservationFinish.status,
             result: computed.encodedResult
         });
-        return result;
     }
 
     private ensurePending(context: AppInboxExecutionMetadata): void {

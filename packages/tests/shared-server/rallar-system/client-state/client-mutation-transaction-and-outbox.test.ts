@@ -92,6 +92,31 @@ describe('client mutation transaction and outbox', () => {
         expect(harness.observedSnapshots).toEqual([]);
         expect(await harness.results.findByKey(harness.context.entry.key)).toBeUndefined();
     });
+
+    it('selects the after-commit snapshot before opening the transaction', async () => {
+        const harness = await createClientMutationTransactionBoundaryFixture({
+            rejectSnapshotReadInTransaction: true
+        });
+
+        await expect(
+            harness.handler.processCommand(
+                harness.context,
+                toUpsertClientPrincipalMutationInput({
+                    scope: SCOPE,
+                    principalId: 'alice',
+                    request: {
+                        username: 'alice',
+                        actorPrincipalId: 'alice',
+                        actorSessionId: 'alice-session',
+                        requestId: 'client-snapshot-selection'
+                    },
+                    defaultCommandId: 'client-snapshot-selection'
+                })
+            )
+        ).resolves.toBeDefined();
+
+        expect(harness.observedSnapshots).toHaveLength(1);
+    });
 });
 
 describe('client mutation AppInbox retry and rollback', () => {

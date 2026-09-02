@@ -139,9 +139,6 @@ describe('group-state AppInbox transaction result boundary', () => {
                 actions.push('inactive-transaction');
                 await write(createUnusedTransaction());
                 return computed.durableResult;
-            },
-            writeComputedMutationWithAfterCommitResult: async () => {
-                throw new Error('Inactive presence must not use computed after-commit transaction');
             }
         };
         const handler = new GroupStateInboxHandler({

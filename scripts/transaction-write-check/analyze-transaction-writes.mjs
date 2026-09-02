@@ -16,10 +16,7 @@ const PRECOMPUTABLE_NAME = /^(?:compute|prepare|serialize|canonicalize|hash|enco
 const TRANSACTION_TYPE = /(?:PSqlSql|IDBTransaction)/u;
 const DATABASE_RECEIVER_TYPE = /(?:Sql|Database|Repository|Runtime|PGlite)/u;
 const APP_INBOX_TRANSACTION_WRITER_TYPE = /AppInbox(?:Mutation)?TransactionWriter/u;
-const APP_INBOX_WRITE_METHODS = new Set([
-    'writeComputedMutation',
-    'writeComputedMutationWithAfterCommitResult'
-]);
+const APP_INBOX_WRITE_METHOD = 'writeComputedMutation';
 const SPECIALIZED_RESOURCE_INBOX_ROOT = 'packages/shared-server/queuebox/postgres/';
 
 export function analyzeTransactionWrites(project, sourceFiles = project.getSourceFiles()) {
@@ -163,7 +160,7 @@ function precomputableOperation(call, operation) {
 
 function appInboxWriteBoundary(call) {
     const expression = call.getExpression();
-    if (!Node.isPropertyAccessExpression(expression) || !APP_INBOX_WRITE_METHODS.has(expression.getName())) {
+    if (!Node.isPropertyAccessExpression(expression) || expression.getName() !== APP_INBOX_WRITE_METHOD) {
         return undefined;
     }
     const receiver = expression.getExpression();

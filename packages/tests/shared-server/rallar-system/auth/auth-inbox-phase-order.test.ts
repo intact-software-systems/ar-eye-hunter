@@ -28,10 +28,7 @@ import type {
     AppInboxCompletionComputed,
     AppInboxCompletionFacts
 } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
-import type {
-    AppInboxMutationTransactionResult,
-    AppInboxMutationTransactionWriter
-} from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
+import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import { materializeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/materialize-auth-mutation-intent.ts';
 
 const decodeOrderCase = 'decodes before queue identity validation and exits before mutation phases on mismatch';
@@ -218,14 +215,6 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
         this.actions.push('transaction');
         await write(this.transaction);
         return computed.durableResult;
-    }
-
-    async writeComputedMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
-        _context: AppInboxExecutionMetadata,
-        _computed: AppInboxCompletionComputed<DurableResult>,
-        _write: (transaction: PSqlSql) => Promise<AfterCommitResult>
-    ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>> {
-        throw new Error('Computed after-commit transaction path must not run');
     }
 }
 

@@ -32,6 +32,7 @@ const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'defaul
 
 interface ClientMutationTransactionBoundaryOptions {
     readonly failTransaction?: boolean;
+    readonly rejectSnapshotReadInTransaction?: boolean;
 }
 
 interface ClientMutationTransactionBoundaryFixture {
@@ -53,6 +54,7 @@ export async function createClientMutationTransactionBoundaryFixture(
     const results = new TestResourceInboxResults();
     const runtimeRepository = new FakeRuntimeStateRepository();
     const context = createReservedClientContext();
+    let transactionActive = false;
     await queue.enqueue(context.entry);
     const database = createAppInboxTestDatabase(queue, results, {
         runtimeRepository,
@@ -60,14 +62,25 @@ export async function createClientMutationTransactionBoundaryFixture(
             if (options.failTransaction) {
                 throw new Error('injected transaction failure');
             }
-            const result = await write();
-            actions.push('commit');
-            return result;
+            transactionActive = true;
+            try {
+                const result = await write();
+                actions.push('commit');
+                return result;
+            }
+            finally {
+                transactionActive = false;
+            }
         }
     });
     const durable = createAutoAuthorizingClientStateService(runtimeRepository, database);
     const handler = new ClientStateInboxHandler({
-        mutationService: observeMutationWrites(durable, { actions, computedSnapshots }),
+        mutationService: observeMutationWrites(durable, {
+            actions,
+            computedSnapshots,
+            rejectSnapshotReadInTransaction: options.rejectSnapshotReadInTransaction === true,
+            isTransactionActive: () => transactionActive
+        }),
         sessionGenerationLifecycle: durable.sessionGenerationLifecycle,
         expiryCandidates: durable,
         snapshotObserver: {
@@ -99,6 +112,8 @@ export async function createClientMutationTransactionBoundaryFixture(
 interface ObservedMutationEffects {
     readonly actions: string[];
     readonly computedSnapshots: ClientSnapshot[];
+    readonly rejectSnapshotReadInTransaction: boolean;
+    readonly isTransactionActive: () => boolean;
 }
 
 function observeMutationWrites(
@@ -111,6 +126,16 @@ function observeMutationWrites(
             const computed = durable.compute(command, read);
             if (computed.outcome !== 'idempotency-conflict') {
                 effects.computedSnapshots.push(computed.snapshot);
+                if (effects.rejectSnapshotReadInTransaction) {
+                    return Object.defineProperty({ ...computed }, 'snapshot', {
+                        get: () => {
+                            if (effects.isTransactionActive()) {
+                                throw new Error('snapshot selection must finish before the transaction');
+                            }
+                            return computed.snapshot;
+                        }
+                    });
+                }
             }
             return computed;
         },

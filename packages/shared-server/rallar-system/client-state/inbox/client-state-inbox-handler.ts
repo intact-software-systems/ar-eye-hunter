@@ -1,3 +1,4 @@
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
@@ -49,10 +50,6 @@ export interface ClientStateInboxHandlerDependencies {
     readonly snapshotObserver: Pick<ClientStateService, 'observeSnapshot'>;
     readonly transactionWriter: AppInboxMutationTransactionWriter;
     readonly serviceId: string;
-}
-
-export interface ClientStateInboxAfterCommitResult {
-    readonly committedSnapshots: readonly import('@shared/api/client-types.ts').ClientSnapshot[];
 }
 
 interface WriteMissingSessionDisconnectInput {
@@ -137,8 +134,9 @@ export class ClientStateInboxHandler {
         const computed = await this.readComputeValidateExpiredSessionMutations(context, atEpochMs);
         const applied = computed.filter((successor) => successor.outcome === 'write');
         const durableResult = applied.map(toClientStateWritten);
+        const committedSnapshots = applied.map((successor) => successor.snapshot);
         const completion = this.readComputeValidateCompletion(context, durableResult);
-        const result = await this.dependencies.transactionWriter.writeComputedMutationWithAfterCommitResult(
+        const result = await this.dependencies.transactionWriter.writeComputedMutation(
             context,
             completion,
             async (transaction) => {
@@ -147,11 +145,10 @@ export class ClientStateInboxHandler {
                         await this.dependencies.mutationService.write(transaction, successor);
                     }
                 }
-                return { committedSnapshots: applied.map((successor) => successor.snapshot) };
             }
         );
-        await this.observeCommittedSnapshots(result.afterCommitResult);
-        return result.durableResult;
+        await this.observeCommittedSnapshots(committedSnapshots);
+        return result;
     }
 
     private async readComputeValidateMutation(
@@ -172,17 +169,17 @@ export class ClientStateInboxHandler {
             throw new Error('Validated client idempotency conflict is unreachable');
         }
         const durableResult = toClientStateWritten(computed);
+        const committedSnapshots = [computed.snapshot];
         const completion = this.readComputeValidateCompletion(context, durableResult);
-        const result = await this.dependencies.transactionWriter.writeComputedMutationWithAfterCommitResult(
+        const result = await this.dependencies.transactionWriter.writeComputedMutation(
             context,
             completion,
             async (transaction) => {
                 await this.writeClientMutation(transaction, computed, lifecycleComputed);
-                return { committedSnapshots: [computed.snapshot] };
             }
         );
-        await this.observeCommittedSnapshots(result.afterCommitResult);
-        return result.durableResult;
+        await this.observeCommittedSnapshots(committedSnapshots);
+        return result;
     }
 
     private async writeClientMutation(
@@ -198,10 +195,8 @@ export class ClientStateInboxHandler {
         }
     }
 
-    private async observeCommittedSnapshots(
-        result: ClientStateInboxAfterCommitResult
-    ): Promise<void> {
-        for (const snapshot of result.committedSnapshots) {
+    private async observeCommittedSnapshots(snapshots: readonly ClientSnapshot[]): Promise<void> {
+        for (const snapshot of snapshots) {
             await this.dependencies.snapshotObserver.observeSnapshot(snapshot);
         }
     }
