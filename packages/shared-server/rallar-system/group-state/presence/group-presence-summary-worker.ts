@@ -14,10 +14,12 @@ import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../..
 import { CoalescedAppOutboxWorkService } from '../../app-outbox/coalesced-app-outbox-work-service.ts';
 import type { GroupFormationPresenceSummarySink } from '../../observability/formation-metrics.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../topology/mutation/rtc-topology-outbox-entry.ts';
+import { RtcTopologySnapshotRepository } from '../../topology/persistence/rtc-topology-snapshot-repository.ts';
 import {
     toRtcTopologyCoalescedGroupRevisionResourceId
 } from '../../topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
+import { GroupLifecyclePolicyRepository } from '../persistence/group-lifecycle-policy-repository.ts';
 import { GroupStateRepositoryReads } from '../persistence/group-state-repository-reads.ts';
 import { createTransactionBoundGroupStateRepository } from '../persistence/group-state-repository.ts';
 import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
@@ -58,13 +60,24 @@ export class GroupPresenceSummaryWork {
         work: GroupPresenceSummaryWorkData
     ): Promise<GroupPresenceSummaryWorkRead> {
         const repository = new GroupStateRepositoryReads(this.options.runtimeRepository);
-        const [group, members, admissions, presenceSessions, current, coalescedTopologyEntry] = await Promise.all([
+        const [
+            group,
+            members,
+            admissions,
+            presenceSessions,
+            current,
+            coalescedTopologyEntry,
+            lifecyclePolicy,
+            plannedLayout
+        ] = await Promise.all([
             repository.findGroupEntry(work.aggregateRef),
             repository.listMemberEntries(work.aggregateRef),
             repository.listPresenceAdmissionEntries(work.aggregateRef),
             repository.listPresenceSessionEntries(work.aggregateRef),
             repository.findPresenceSummaryEntry(work.aggregateRef),
-            this.readCoalescedTopologyEntry(work.aggregateRef)
+            this.readCoalescedTopologyEntry(work.aggregateRef),
+            new GroupLifecyclePolicyRepository(this.options.runtimeRepository).readPolicy(work.aggregateRef),
+            new RtcTopologySnapshotRepository(this.options.runtimeRepository).findSnapshot(work.aggregateRef)
         ]);
         if (!group) {
             throw new TypeError(
@@ -79,7 +92,9 @@ export class GroupPresenceSummaryWork {
                 presenceSessions,
                 current: current ?? null
             },
-            coalescedTopologyEntry
+            coalescedTopologyEntry,
+            lifecyclePolicy,
+            plannedLayout: plannedLayout ?? null
         };
     }
 
@@ -129,10 +144,12 @@ export class GroupPresenceSummaryWork {
         for (const entry of computed.downstreamOutboxEntries) {
             await outbox.writeIfAbsentOrMatch(entry);
         }
-        await this.coalescedTopologyWorkService.write(
-            transaction,
-            computed.coalescedTopologyWork
-        );
+        if (computed.coalescedTopologyWork) {
+            await this.coalescedTopologyWorkService.write(
+                transaction,
+                computed.coalescedTopologyWork
+            );
+        }
     }
 
     public async processReservedEntry(
@@ -176,7 +193,7 @@ export class GroupPresenceSummaryWork {
             this.options.formationMetrics?.({
                 downstreamTopicIds: [
                     ...computed.downstreamOutboxEntries.map((entry) => entry.key.topicId),
-                    APP_OUTBOX_RTC_TOPOLOGY_TOPIC
+                    ...(computed.coalescedTopologyWork ? [APP_OUTBOX_RTC_TOPOLOGY_TOPIC] : [])
                 ]
             });
         }

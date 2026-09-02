@@ -137,6 +137,16 @@ and initiator choices plus six policy sections. Every field is required once nor
 | `topology`      | `replanning`, `reconfigureLanding`, `debounceWindowMs`, `maxReplanWaitMs`                              |
 | `data`          | `preActivationAppData`: `'allowed'` \| `'blocked-until-active'`                                        |
 
+`topology.replanning` is enforced at two gates that hold under the same facts. The planner
+(`resolveTopologyPlanAction`) freezes automatic work for an `active` group whose planned slot holds
+an active layout when the mode is `commanded` or the policy is unreadable. The presence-summary
+enqueue (`resolveTopologyReplanEnqueue`) holds that same work before it is queued, so `pending` never
+reports a replan the policy forbids and no frozen cycle is paid for; commanded-origin work (the
+`reconfigure` family) always enqueues. Staleness follows product decision 11: every planning cycle
+stores the planned slot's topology-input fingerprint, a promotion copies it into the accepted slot,
+an unchanged replan of the layout the group already runs on refreshes both, and the formation view
+compares the accepted fingerprint with the authority's at read time.
+
 Two fields are carried but enforced by nothing in v1: `establishment.transports` and
 `establishment.maxConcurrentEdgeSetups` are normalized, clamped, and persisted, and no server path
 reads them. Establishment pacing is whatever the browser's existing dial budget provides.
@@ -634,12 +644,14 @@ commands; browser dial/data enforcement uses the authoritative group and layout 
 returns `GroupFormationView`: authoritative intent beside derived observation, enough for an
 application to explain the group to a user.
 
-| Field                                                                                                                | Source                                                                                                        |
-| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `groupRef`                                                                                                           | the route path's `{ applicationId, workspaceId, groupId }`, echoed so the view names the group it describes   |
-| `lifecycleState`, `formationEpoch`, `formationAttemptCount`, `lastFormationOutcome`, `establishmentStartedAtEpochMs` | the aggregate                                                                                                 |
-| `readiness`                                                                                                          | computed at read time from the stored plan and the authority's evidence; `{ 0, 0, 1 }` when no plan is stored |
-| `managerPrincipalIds`                                                                                                | `resolveGroupLifecycleManagers` at read time over the active roster; `[]` when the policy is corrupt          |
+| Field                                                                                                                | Source                                                                                                                                                                                       |
+| -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `groupRef`                                                                                                           | the route path's `{ applicationId, workspaceId, groupId }`, echoed so the view names the group it describes                                                                                  |
+| `lifecycleState`, `formationEpoch`, `formationAttemptCount`, `lastFormationOutcome`, `establishmentStartedAtEpochMs` | the aggregate                                                                                                                                                                                |
+| `readiness`                                                                                                          | computed at read time from the stored plan and the authority's evidence; `{ 0, 0, 1 }` when no plan is stored                                                                                |
+| `managerPrincipalIds`                                                                                                | `resolveGroupLifecycleManagers` at read time over the active roster; `[]` when the policy is corrupt                                                                                         |
+| `layoutStale`                                                                                                        | product decision 11's latched half: the accepted slot's stored topology-input fingerprint differs from the authority's fingerprint computed at read time; `false` without an accepted layout |
+| `pending`                                                                                                            | the transient half, `{ reconfigureQueued, dueAtEpochMs }` from the coalesced replan row, or `null`                                                                                           |
 
 Like the other group reads, the route applies full-visibility authorization — active members only,
 so a pending member cannot read it — when `RALLAR_STATE_STRICT_READ_AUTH` is enabled, which the

@@ -4851,7 +4851,29 @@ components:
         - establishmentStartedAtEpochMs
         - readiness
         - managerPrincipalIds
+        - layoutStale
+        - pending
       properties:
+        layoutStale:
+          type: boolean
+          description: >-
+            The accepted layout's stored topology-input fingerprint differs from
+            the planning authority's (product decision 11). Latched: under
+            `commanded` replanning it clears only through `reconfigure`. A
+            temporary topology override is part of the authority, so its expiry
+            can raise this on wall-clock time alone.
+        pending:
+          type: object
+          nullable: true
+          description: A replan is queued and due; null when none is.
+          required: [reconfigureQueued, dueAtEpochMs]
+          properties:
+            reconfigureQueued:
+              type: boolean
+            dueAtEpochMs:
+              type: integer
+              format: int64
+              nullable: true
         groupRef:
           $ref: '#/components/schemas/GroupRef'
         lifecycleState:

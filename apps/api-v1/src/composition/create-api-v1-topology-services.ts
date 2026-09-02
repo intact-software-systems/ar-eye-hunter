@@ -41,6 +41,7 @@ import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
+import { RtcTopologyInputFingerprintRepository } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import { createApiRtcTopologyAdminMetrics } from '../runtime/rtc-topology/create-api-rtc-topology-admin-metrics.ts';
 
 export interface ApiV1TopologyReplayMetrics {
@@ -68,6 +69,7 @@ export interface ApiV1TopologyServices {
     readonly rtcTopologyOptions: RallarRtcTopologyServiceOptions;
     readonly topologyQuery: GroupTopologyConfigQueryService;
     readonly topologyPlanning: GroupTopologyPlanningService;
+    readonly readAcceptedLayoutFingerprint: (ref: GroupRef) => Promise<string | null>;
     readonly topologyConfigMutation: GroupTopologyConfigMutationService;
     readonly topologyReconfigureMutation: GroupTopologyReconfigureMutation;
     readonly topologyMutationOwners: TopologyAppInboxMutationOwners;
@@ -213,6 +215,8 @@ export function createApiV1TopologyServices(
         rtcTopologyOptions,
         topologyQuery: topologyRuntimeOwners.query,
         topologyPlanning: topologyRuntimeOwners.planning,
+        readAcceptedLayoutFingerprint: (ref: GroupRef) =>
+            new RtcTopologyInputFingerprintRepository(input.runtimeStateRepository, 'accepted').findFingerprint(ref),
         topologyConfigMutation,
         topologyReconfigureMutation,
         topologyMutationOwners: {

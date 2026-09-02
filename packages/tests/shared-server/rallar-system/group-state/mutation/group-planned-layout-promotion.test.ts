@@ -1,3 +1,5 @@
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
+import { toRtcTopologyFingerprintNamespace } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import { describe, expect, it } from 'vitest';
 
 import type { GroupStateMutationCommand } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
@@ -53,9 +55,11 @@ const SNAPSHOT: RallarOverlayTopologySnapshot = {
     updatedAtEpochMs: 900
 };
 
+const PLANNED_FINGERPRINT = `sha256:${'b'.repeat(64)}`;
 const PLANNED: GroupPlannedLayoutRow = {
     snapshot: SNAPSHOT,
-    revision: 11
+    revision: 11,
+    inputFingerprint: PLANNED_FINGERPRINT
 };
 
 interface PlannedLayoutApplyHarness {
@@ -79,7 +83,8 @@ describe('computePlannedLayoutPromotion', () => {
             acceptedSnapshot: SNAPSHOT,
             acceptedIdentity: IDENTITY,
             acceptedExpectedRevision: null,
-            plannedExpectedRevision: 11
+            plannedExpectedRevision: 11,
+            acceptedInputFingerprint: PLANNED_FINGERPRINT
         });
     });
 
@@ -161,7 +166,8 @@ describe('groupLayoutPromotionEffects', () => {
             acceptedSnapshot: SNAPSHOT,
             acceptedIdentity: IDENTITY,
             acceptedExpectedRevision: null,
-            plannedExpectedRevision: 11
+            plannedExpectedRevision: 11,
+            acceptedInputFingerprint: null
         });
 
         expect(effects.map((effect) => [effect.effectId, effect.operation, effect.namespace]))
@@ -182,7 +188,8 @@ describe('groupLayoutPromotionEffects', () => {
             acceptedSnapshot: SNAPSHOT,
             acceptedIdentity: IDENTITY,
             acceptedExpectedRevision: 8,
-            plannedExpectedRevision: 11
+            plannedExpectedRevision: 11,
+            acceptedInputFingerprint: null
         });
 
         const accepted = effects.find((effect) => effect.effectId === 'accepted-layout');
@@ -190,6 +197,25 @@ describe('groupLayoutPromotionEffects', () => {
             throw new Error('re-promotion must be a revision-guarded update');
         }
         expect(accepted.expectedRevision).toBe(8);
+    });
+
+    it('copies the planned fingerprint into the accepted slot beside the accepted row', () => {
+        const effects = toGroupLayoutPromotionEffects({
+            outcome: 'apply',
+            acceptedSnapshot: SNAPSHOT,
+            acceptedIdentity: IDENTITY,
+            acceptedExpectedRevision: null,
+            plannedExpectedRevision: 11,
+            acceptedInputFingerprint: PLANNED_FINGERPRINT
+        });
+
+        const fingerprint = effects.find((effect) => effect.effectId === 'accepted-layout-fingerprint');
+        if (fingerprint?.operation !== 'put') {
+            throw new Error('the accepted fingerprint follows the guarded planned fence, unguarded itself');
+        }
+        expect(fingerprint.namespace).toBe(toRtcTopologyFingerprintNamespace('accepted'));
+        expect(fingerprint.key).toBe(groupStateGroupStorageKey(GROUP_REF));
+        expect(JSON.parse(fingerprint.value)).toEqual({ groupRef: GROUP_REF, fingerprint: PLANNED_FINGERPRINT });
     });
 });
 
@@ -203,7 +229,7 @@ describe('applyPlannedLayout through the durable service', () => {
                 return () => `apply-id-${++generated}`;
             })(),
             serviceId: 'apply-service',
-            readPlannedLayoutRow: async () => ({ snapshot: SNAPSHOT, revision: 11 }),
+            readPlannedLayoutRow: async () => PLANNED,
             readAcceptedLayoutRow: async () => null
         });
         await service.createGroup(

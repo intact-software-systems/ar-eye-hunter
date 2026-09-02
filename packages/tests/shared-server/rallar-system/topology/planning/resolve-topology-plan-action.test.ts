@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-import { resolveTopologyPlanAction, type ResolveTopologyPlanActionInput } from '@shared-server/rallar-system/topology/planning/resolve-topology-plan-action.ts';
+import {
+    resolveTopologyPlanAction,
+    resolveTopologyReplanEnqueue,
+    type ResolveTopologyPlanActionInput,
+    type ResolveTopologyReplanEnqueueInput
+} from '@shared-server/rallar-system/topology/planning/resolve-topology-plan-action.ts';
 
 const ACTIVE_PREVIOUS = { state: 'active' } as RallarOverlayTopologySnapshot;
 const REMOVED_PREVIOUS = { state: 'removed' } as RallarOverlayTopologySnapshot;
@@ -59,5 +64,43 @@ describe('resolveTopologyPlanAction', () => {
     it('freezes dialing stages for commanded work too', () => {
         expect(action({ lifecycleState: 'connecting', workOrigin: 'commanded' })).toBe('freeze');
         expect(action({ lifecycleState: 'reconnecting', workOrigin: 'commanded' })).toBe('freeze');
+    });
+});
+
+function enqueue(input: Partial<ResolveTopologyReplanEnqueueInput>): ReturnType<typeof resolveTopologyReplanEnqueue> {
+    return resolveTopologyReplanEnqueue({
+        lifecycleState: 'active',
+        replanning: 'commanded',
+        workOrigin: 'automatic',
+        plannedLayoutActive: true,
+        ...input
+    });
+}
+
+describe('resolveTopologyReplanEnqueue', () => {
+    it('holds only the automatic work the planner would freeze', () => {
+        expect(enqueue({})).toBe('held-by-policy');
+        expect(enqueue({ replanning: 'corrupt' })).toBe('held-by-policy');
+        expect(enqueue({ workOrigin: 'commanded' })).toBe('enqueue');
+        expect(enqueue({ replanning: 'auto' })).toBe('enqueue');
+        expect(enqueue({ replanning: 'debounced' })).toBe('enqueue');
+    });
+
+    it('never holds establishment: an absent or tombstoned planned slot always enqueues', () => {
+        expect(enqueue({ plannedLayoutActive: false })).toBe('enqueue');
+        expect(enqueue({ plannedLayoutActive: false, replanning: 'corrupt' })).toBe('enqueue');
+    });
+
+    it('consults the policy only for the stage that follows it, in step with the planning gate', () => {
+        for (const lifecycleState of GROUP_LIFECYCLE_STATES) {
+            const held = enqueue({ lifecycleState }) === 'held-by-policy';
+            const frozen = action({ lifecycleState, replanning: 'commanded' }) === 'freeze';
+            expect({ lifecycleState, held }).toEqual({
+                lifecycleState,
+                held: lifecycleState === 'active'
+            });
+            // Every stage the enqueue holds, the planner would have frozen too.
+            expect(held ? frozen : true).toBe(true);
+        }
     });
 });

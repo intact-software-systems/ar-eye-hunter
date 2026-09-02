@@ -1,6 +1,9 @@
 import type {
     GroupLifecyclePolicyRead
 } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
+import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
+import type { PendingTopologyReplan } from '@shared/api/graph-topology-management-types.ts';
+import { computeLayoutStale } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
 import { computeGroupFormationReadiness } from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
@@ -16,6 +19,7 @@ export interface ReadGroupFormationViewDependencies {
     readonly topologyQuery: GraphTopologyRouteQuery;
     readonly topologyPlanning: GraphTopologyRoutePlanning;
     readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
+    readonly readAcceptedLayoutFingerprint: (ref: GroupRef) => Promise<string | null>;
 }
 
 export async function readGroupFormationView(
@@ -30,11 +34,20 @@ export async function readGroupFormationView(
             snapshotSelection: 'prefer-current'
         }),
         deps.topologyQuery.readTopologyView(groupRef) as Promise<
-            Readonly<{ snapshot: RallarOverlayTopologySnapshot | null; }>
+            Readonly<{ snapshot: RallarOverlayTopologySnapshot | null; pending: PendingTopologyReplan | null; }>
         >
     ]);
     const group = authority.group.group;
-    const policyRead = await deps.readLifecyclePolicy(groupRef);
+    const [policyRead, acceptedFingerprint, authorityFingerprint] = await Promise.all([
+        deps.readLifecyclePolicy(groupRef),
+        // With no accepted layout there is nothing to be stale, whatever an old row says.
+        group.acceptedLayoutIdentity === null ? null : deps.readAcceptedLayoutFingerprint(groupRef),
+        computeRtcTopologyInputFingerprint({
+            group: authority.group,
+            effectiveConfig: authority.config.effective,
+            kindHysteresisWidths: authority.kindHysteresisWidths
+        })
+    ]);
     return {
         groupRef,
         lifecycleState: group.lifecycleState,
@@ -66,6 +79,11 @@ export async function readGroupFormationView(
                         .map((member) => member.principalId)
                 ),
                 rankByPrincipalId: null
-            })
+            }),
+        layoutStale: computeLayoutStale({
+            acceptedFingerprint: acceptedFingerprint ?? undefined,
+            planningAuthorityFingerprint: authorityFingerprint
+        }),
+        pending: view.pending
     };
 }

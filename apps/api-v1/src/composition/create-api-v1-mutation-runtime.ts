@@ -51,6 +51,7 @@ import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { DequeueResourceEntryOptions, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
+import { RtcTopologyInputFingerprintRepository } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import { createApiCrdtDocumentAuthorizer } from '../crdt/create-api-crdt-document-authorizer.ts';
 import { createApiCrdtInboxFactory } from '../crdt/create-api-crdt-inbox-factory.ts';
 import {
@@ -166,9 +167,14 @@ export function createApiV1MutationRuntime(
             timing: input.timing,
             readPlannedLayoutRow: async (ref) => {
                 const planned = await plannedSnapshotRepository.findSnapshotEntry(ref);
-                return planned
-                    ? { snapshot: planned.value, revision: planned.entry.revision }
-                    : null;
+                if (!planned) {
+                    return null;
+                }
+                const inputFingerprint = await new RtcTopologyInputFingerprintRepository(
+                    resources.runtimeStateRepository,
+                    'planned'
+                ).findFingerprint(ref);
+                return { snapshot: planned.value, revision: planned.entry.revision, inputFingerprint };
             },
             readAcceptedLayoutRow: async (ref) => {
                 const accepted = await acceptedSnapshotRepository.findSnapshotEntry(ref);
