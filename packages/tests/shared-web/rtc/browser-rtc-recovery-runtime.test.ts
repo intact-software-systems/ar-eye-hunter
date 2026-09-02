@@ -185,7 +185,8 @@ describe('Rallar RTC recovery', () => {
                 Either.ofLeft({
                     kind: 'connect-failed',
                     peerId,
-                    error: new Error('connect not mocked')
+                    error: new Error('connect not mocked'),
+                    startedSetup: false
                 })
         );
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
@@ -688,6 +689,7 @@ describe('Rallar RTC recovery', () => {
         lifecycleCallback?.onEstablished?.(
             peer,
             {
+                phase: 'established',
                 peerId: 'peer-1',
                 startedAtEpochMs: 1,
                 establishedAtEpochMs: 51

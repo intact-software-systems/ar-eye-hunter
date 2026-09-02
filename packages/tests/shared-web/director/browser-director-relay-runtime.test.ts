@@ -572,11 +572,12 @@ function resetDirectorRtcDoubles(): void {
     mocks.webRtcConnectionService.activePeerIds.mockReturnValue([]);
     mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
     mocks.webRtcConnectionService.ensurePeerConnectionStarted.mockImplementation(
-        (peerId) =>
-            Either.ofLeft<WebRtcConnectionService.PeerConnectionLeft, WebRtcConnectionService.PeerConnectionEnsured>({
+        (peerId: string): WebRtcConnectionService.PeerConnectionResult =>
+            Either.ofLeft({
                 kind: 'connect-failed',
                 peerId,
-                error: new Error('connect not mocked')
+                error: new Error('connect not mocked'),
+                startedSetup: false
             })
     );
     mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(

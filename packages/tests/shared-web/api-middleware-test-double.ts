@@ -130,12 +130,15 @@ function createWebRtcConnectionServiceDouble(
         knownPeerIds: vi.fn((): readonly string[] => []),
         activePeerIds: vi.fn((): readonly string[] => []),
         readyPeerIdsForLane: vi.fn((): readonly string[] => []),
-        ensurePeerConnectionStarted: vi.fn((peerId: string) =>
-            Either.ofLeft<WebRtcConnectionService.PeerConnectionLeft, WebRtcConnectionService.PeerConnectionEnsured>({
-                kind: 'connect-failed',
-                peerId,
-                error: new Error('connect not mocked')
-            })
+        inFlightPeerIds: vi.fn((): readonly string[] => []),
+        ensurePeerConnectionStarted: vi.fn(
+            (peerId: string): WebRtcConnectionService.PeerConnectionResult =>
+                Either.ofLeft({
+                    kind: 'connect-failed',
+                    peerId,
+                    error: new Error('connect not mocked'),
+                    startedSetup: false
+                })
         ),
         ensurePeerLaneOpen: vi.fn(
             async (peerId: string, laneId: string = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => ({

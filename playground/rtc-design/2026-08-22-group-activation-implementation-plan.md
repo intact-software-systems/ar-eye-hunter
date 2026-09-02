@@ -2258,25 +2258,33 @@ landing the field early so 9b is smaller, which is exactly the dark-plumbing haz
 
 What 9a lands, all in `WebRtcConnectionService` and its two consumers:
 
-- **A setup record per peer.** Created with the peer when the attempt budget is consumed, marked
-  established on the first open report from the connection or any lane, deleted with the peer. A
-  setup is the interval product decision 18 bounds; a later repair cycle on the same peer is the
+- **One entry per peer, carrying its setup.** The service keeps a single map of peer entries; the
+  entry's setup starts when the attempt budget is consumed, is replaced once on the first open
+  report from the connection or any lane, and leaves with the peer, so the two facts cannot drift.
+  A setup is the interval product decision 18 bounds; a later repair cycle on the same peer is the
   connection's own reconnect state, which the per-peer status already reports, never a second setup.
+- **Creation owns its own undo.** A native start that throws inside `createPeer` releases the entry
+  before any observer hears of it — no creation notice, no deletion notice — while the consumed
+  attempt still counts against the budget, so a rejected ICE configuration still climbs the
+  exhaustion ladder instead of retrying forever. The old delayed `peer-timeout` for that case was an
+  accident of the corpse it left behind; the ensure result now reports the failure at once.
 - **A truthful ensure result.** `ensurePeerConnectionStarted` returns `{ peer, outcome }` with
-  `setup-started`, `setup-in-flight` or `established`, so the reconciler and every other caller can
-  tell a dial from a no-op without an observer. `acceptPeerIfAbsent` and the lane opener carry the
-  same shape. A synchronous connect failure now ends the dead setup in the same call, with its
-  consumed attempts preserved, instead of leaving the corpse for the next ensure to sweep.
+  `setup-started`, `setup-in-flight` or `setup-established`, and a `connect-failed` left states
+  `startedSetup` so a lane start that kills the connection is reported as the started-then-ended
+  setup it was. `isPeerSetupStarted` beside the result type answers "did this call start a setup"
+  once, for every caller. `acceptPeerIfAbsent` and the lane opener carry the same shape.
 - **`onEstablished`,** fired exactly once per setup with the started and established timestamps, and
-  the `getPeerSetup` / `inFlightPeerIds` reads 9b's bound will count from. The five lifecycle
-  notifications now share one guarded loop instead of four copies.
-- **The manager counts setups, not calls**: `connectAttemptCount` advances on `setup-started` and on
-  a synchronous `connect-failed`, so repeated reconciles over in-flight peers no longer inflate it.
+  `inFlightPeerIds`, which lists started, unestablished setups on live native connections — the set
+  9b's bound will count from. There is no reader-less setup accessor; 9b adds the read it needs with
+  its consumer. The five lifecycle notifications share one guarded loop instead of four copies.
+- **The manager counts setups, not calls**: `connectAttemptCount` advances only when
+  `isPeerSetupStarted` says so, so repeated reconciles over in-flight peers no longer inflate it.
   The formation churn simulation's dial-count assertions hold unchanged, which is the semantic proof
   the counter was previously wrong only in the repeated-reconcile case.
 - **`peer-established`** joins `RallarRtcLifecycleKind`, emitted by the browser lifecycle runtime, so
   an application's member-progress view can advance on the event product decision 40 names rather
-  than polling lane health.
+  than polling lane health. The per-peer status does not yet project the setup phase; 9b decides
+  whether member progress needs that level view beside the event.
 
 Refreshed next two slices. 9a is this PR. 9b starts by rewriting the simulated RTC connection
 harness with a completable dial — the setup record makes "created but not yet established" a real
@@ -2288,15 +2296,20 @@ owner's desired set, and wake-on-completion from `onEstablished`, `onDeleted` an
 the shared-web trio, `test:full-stack` and the live-RTC suite; the 6/20/50 sweep manifests follow
 only when that evidence exists.
 
-Local evidence for 9a: the focused RTC suites pass with the three new setup-phase tests, the
-once-only `onEstablished` proof and the repeated-reconcile counter proof; the complete root
-typecheck, the governed test typecheck, the full unit gate (its only non-environment failure was the
-overlay-roles test, which had passed only because a peer whose native construction threw lingered
-in `knownPeerIds`, and now dials through the simulated harness), the changed-range style, coupling,
-structure and retained-legacy gates, the public API snapshots, the browser bundle budget and the
-headless bundle boundary all pass. The sandboxed unit run reports six files that bind ports or
-`/tmp`; they pass unsandboxed and are environment evidence, not slice evidence. Seventeen
-pre-existing unformatted files on `main` are untouched and outside this closure.
+Local evidence for 9a: the focused RTC suites pass with the setup-phase, once-only `onEstablished`,
+lane-failure, construction-failure and repeated-reconcile counter proofs; the complete root
+typecheck, the governed test typecheck, the full unit gate, the Deno gate, the workspace build, the
+changed-range style, coupling, structure and retained-legacy gates, the public API snapshots, the
+browser bundle budget and the headless bundle boundary all pass. The nine-angle review of the first
+head produced one consolidated correction, recorded above: a single per-peer entry, creation that
+undoes its own failed start, a `startedSetup` failure fact with `isPeerSetupStarted`, the liveness
+filter on `inFlightPeerIds`, the `setup-established` vocabulary, and the removal of the reader-less
+accessor. The same review found the overlay-roles test and both group-coordination benches mocking
+`connect` after the native constructor had already thrown; all three now dial through a simulated
+native runtime. The sandboxed unit run reports six files that bind ports or `/tmp`; they pass
+unsandboxed and are environment evidence, not slice evidence. Seventeen pre-existing unformatted
+files on `main` are untouched and outside this closure, as is the legacy scan's vocabulary hit on
+the benches' pre-existing CLI default parameter.
 
 ## Slice 10 — Replanning modes and landing go live
 

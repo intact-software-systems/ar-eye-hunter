@@ -7,7 +7,7 @@ import {
     vi
 } from 'vitest';
 
-import { QRtcPeerDto, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { isPeerSetupStarted, QRtcPeerDto, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import {
     QRtcSignalingChannel,
     QRtcSignalingMessage,
@@ -616,25 +616,33 @@ describe('WebRtcConnectionService setup phases', () => {
         expect(started.right).toMatchObject({ outcome: 'setup-started', peer: { peerId: 'z-peer' } });
         expect(fixture.service.ensurePeerConnectionStarted('z-peer').right?.outcome).toBe('setup-in-flight');
         expect(fixture.service.inFlightPeerIds()).toEqual(['z-peer']);
-        expect(fixture.service.getPeerSetup('z-peer')).toMatchObject({ peerId: 'z-peer', establishedAtEpochMs: null });
 
         await fixture.nativePeer('z-peer').channels[0].open();
 
-        expect(fixture.service.ensurePeerConnectionStarted('z-peer').right?.outcome).toBe('established');
+        expect(fixture.service.ensurePeerConnectionStarted('z-peer').right?.outcome).toBe('setup-established');
         expect(fixture.service.inFlightPeerIds()).toEqual([]);
-        expect(fixture.service.getPeerSetup('z-peer')?.establishedAtEpochMs).toEqual(expect.any(Number));
+    });
+
+    it('stops reporting a setup in flight once its native connection has failed', () => {
+        const fixture = createFixture();
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+
+        makeNativePeerUnusable(fixture, 'failed');
+
+        expect(fixture.service.knownPeerIds()).toEqual(['z-peer']);
+        expect(fixture.service.inFlightPeerIds()).toEqual([]);
     });
 
     it('emits onEstablished once per setup when both the connection and its lane report open', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
         const fixture = createFixture();
-        const events: WebRtcConnectionService.PeerEstablishedEvent[] = [];
+        const events: WebRtcConnectionService.PeerSetupEstablished[] = [];
         fixture.service.onRtcPeerLifecycleDo('test', {
             onCreated: () => {},
             onDeleted: () => {},
-            onEstablished: (_peer, event) => {
-                events.push(event);
+            onEstablished: (_peer, setup) => {
+                events.push(setup);
             }
         });
         fixture.service.ensurePeerConnectionStarted('z-peer', true);
@@ -644,18 +652,97 @@ describe('WebRtcConnectionService setup phases', () => {
         native.setConnected();
         await native.channels[0].open();
 
-        expect(events).toEqual([{ peerId: 'z-peer', startedAtEpochMs: 1_000, establishedAtEpochMs: 1_250 }]);
+        expect(events).toEqual([
+            { phase: 'established', peerId: 'z-peer', startedAtEpochMs: 1_000, establishedAtEpochMs: 1_250 }
+        ]);
     });
 
     it('ends the setup on removal and starts a fresh one for a replacement peer', () => {
         const fixture = createFixture();
         fixture.service.ensurePeerConnectionStarted('z-peer', true);
         fixture.service.removePeerIfPresent('z-peer');
-        expect(fixture.service.getPeerSetup('z-peer')).toBeUndefined();
         expect(fixture.service.inFlightPeerIds()).toEqual([]);
 
         expect(fixture.service.ensurePeerConnectionStarted('z-peer', true).right?.outcome).toBe('setup-started');
         expect(fixture.service.inFlightPeerIds()).toEqual(['z-peer']);
+    });
+
+    it('ends a setup whose lane start kills the connection and keeps its consumed attempt', () => {
+        const fixture = createFixture(budgetInput());
+        const lifecycle: string[] = [];
+        fixture.service.onRtcPeerLifecycleDo('test', {
+            onCreated: (peer) => {
+                lifecycle.push(`created:${peer.peerId}`);
+                for (const channel of peer.channels.values()) {
+                    channel.connect = () => {
+                        peer.connection.reset();
+                        throw new Error('lane failed');
+                    };
+                }
+            },
+            onDeleted: (peer) => {
+                lifecycle.push(`deleted:${peer.peerId}`);
+            }
+        });
+
+        const failed = fixture.service.ensurePeerConnectionStarted('z-peer', true);
+
+        expect(failed.left).toMatchObject({ kind: 'connect-failed', startedSetup: true });
+        expect(isPeerSetupStarted(failed)).toBe(true);
+        expect(lifecycle).toEqual(['created:z-peer', 'deleted:z-peer']);
+        expect(fixture.service.knownPeerIds()).toEqual([]);
+        expect(fixture.service.inFlightPeerIds()).toEqual([]);
+        expect(fixture.service.peerConnectionAttemptDiagnostics('z-peer')?.attempts).toBe(1);
+    });
+
+    it('keeps a started setup dialing when a lane fails to start on a live connection', () => {
+        const fixture = createFixture();
+        fixture.service.onRtcPeerLifecycleDo('test', {
+            onCreated: (peer) => {
+                for (const channel of peer.channels.values()) {
+                    channel.connect = () => {
+                        throw new Error('lane failed');
+                    };
+                }
+            },
+            onDeleted: () => {}
+        });
+
+        const started = fixture.service.ensurePeerConnectionStarted('z-peer', true);
+
+        expect(started.right).toMatchObject({ outcome: 'setup-started', peer: { peerId: 'z-peer' } });
+        expect(isPeerSetupStarted(started)).toBe(true);
+        expect(fixture.service.inFlightPeerIds()).toEqual(['z-peer']);
+    });
+
+    it('discards a peer whose native construction throws without any lifecycle notice', () => {
+        const fixture = createFixture(budgetInput());
+        const lifecycle: string[] = [];
+        fixture.service.onRtcPeerLifecycleDo('test', {
+            onCreated: (peer) => {
+                lifecycle.push(`created:${peer.peerId}`);
+            },
+            onDeleted: (peer) => {
+                lifecycle.push(`deleted:${peer.peerId}`);
+            }
+        });
+        vi.stubGlobal(
+            'RTCPeerConnection',
+            class {
+                constructor() {
+                    throw new Error('ice configuration rejected');
+                }
+            }
+        );
+
+        const failed = fixture.service.ensurePeerConnectionStarted('z-peer', true);
+
+        expect(failed.left).toMatchObject({ kind: 'connect-failed', startedSetup: false });
+        expect(isPeerSetupStarted(failed)).toBe(false);
+        expect(lifecycle).toEqual([]);
+        expect(fixture.service.knownPeerIds()).toEqual([]);
+        expect(fixture.service.inFlightPeerIds()).toEqual([]);
+        expect(fixture.service.peerConnectionAttemptDiagnostics('z-peer')?.attempts).toBe(1);
     });
 });
 

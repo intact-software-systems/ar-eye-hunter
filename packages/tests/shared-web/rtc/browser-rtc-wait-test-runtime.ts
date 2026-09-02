@@ -253,7 +253,8 @@ function resetRtcConnectionMocks(): void {
             Either.ofLeft({
                 kind: 'connect-failed',
                 peerId,
-                error: new Error('connect not mocked')
+                error: new Error('connect not mocked'),
+                startedSetup: false
             })
     );
     mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(

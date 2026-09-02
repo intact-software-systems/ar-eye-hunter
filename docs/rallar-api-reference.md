@@ -607,7 +607,7 @@ product as degraded or failed delivery.
 
 `rtc.onStatus(listener, options?)` subscribes to RTC status snapshots.
 
-`rtc.onLifecycle(listener, options?)` subscribes to RTC lifecycle events such as `peer-created`, `peer-established`, `lane-open`, `lane-close`, and `peer-timeout`.
+`rtc.onLifecycle(listener, options?)` subscribes to RTC lifecycle events such as `peer-created`, `peer-established`, `lane-open`, `lane-close`, and `peer-timeout`. `peer-established` fires once per peer setup, when the connection or its first lane reports open; later lane opens on the same peer emit only `lane-open`.
 
 `rtc.waitForLane(peerId, laneId, options?)` waits for a specific peer/lane.
 
@@ -639,7 +639,7 @@ if (readiness.status === 'open' || readiness.status === 'partial') {
 Browser RTC enables a bounded initial-establishment budget by default: six
 attempts, 180 seconds total, and a 30 second cooldown after exhaustion. The
 shared service exposes `WebRtcPeerLaneOpenStatus: 'exhausted'` and
-`WebRtcPeerConnectionLeft.kind: 'connect-exhausted'`; the browser facade keeps
+`WebRtcConnectionService.PeerConnectionLeft.kind: 'connect-exhausted'`; the browser facade keeps
 `RallarWaitForOpenStatus` compatible by returning `status: 'failed'` with reason
 `rtc-connect-attempt-budget-exhausted`.
 

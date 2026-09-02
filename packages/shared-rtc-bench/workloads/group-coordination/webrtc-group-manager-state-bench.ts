@@ -7,6 +7,8 @@ import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts'
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
+import { installRtcBenchmarkNativeRuntime } from '../native-rtc/rtc-benchmark-native-peer.ts';
+
 import {
     parseRtcBaselineAcceptedWorker,
     runRtcBaselineAcceptedWorker,
@@ -146,9 +148,27 @@ export function parseWebRtcGroupManagerStateArguments(
 export async function runWebRtcGroupManagerState(
     input: WebRtcGroupManagerStateInput
 ): Promise<WebRtcGroupManagerStateResult> {
+    const connections = createSimulatedConnections('self');
+    try {
+        const seeded = await seedGroupManagerState(input, connections.service);
+        return measureStateLookups(input, seeded);
+    }
+    finally {
+        connections.dispose();
+    }
+}
+
+interface SeededGroupManagerState {
+    readonly manager: WebRtcGroupManager;
+    readonly clientCache: CountingClientCache;
+}
+
+async function seedGroupManagerState(
+    input: WebRtcGroupManagerStateInput,
+    connectionService: WebRtcConnectionService
+): Promise<SeededGroupManagerState> {
     const groupCache = new LatestRepository<string, GroupSnapshot>();
     const clientCache = new CountingClientCache();
-    const connectionService = createSimulatedConnectionService('self');
     const manager = new WebRtcGroupManager(
         connectionService,
         { groupCache, clientCache }
@@ -169,14 +189,20 @@ export async function runWebRtcGroupManagerState(
             ...Array.from({ length: input.desired }, (_, index) => `peer-${index}`)
         ])
     );
-
     clientCache.resetCounters();
+    return { manager, clientCache };
+}
+
+function measureStateLookups(
+    input: WebRtcGroupManagerStateInput,
+    seeded: SeededGroupManagerState
+): WebRtcGroupManagerStateResult {
     let onlineDesiredPeerCount = 0;
     let onlinePeerCount = 0;
     const start = performance.now();
 
     for (let lookup = 0; lookup < input.lookups; lookup += 1) {
-        const state = manager.state();
+        const state = seeded.manager.state();
         onlineDesiredPeerCount = state.onlineDesiredPeerIds.length;
         onlinePeerCount = state.onlinePeerIds.length;
     }
@@ -186,8 +212,8 @@ export async function runWebRtcGroupManagerState(
         clientCount: input.clients,
         desiredPeerCount: input.desired,
         lookups: input.lookups,
-        keysCalls: clientCache.keysCalls,
-        readCalls: clientCache.readCalls,
+        keysCalls: seeded.clientCache.keysCalls,
+        readCalls: seeded.clientCache.readCalls,
         onlineDesiredPeerCount,
         onlinePeerCount
     };
@@ -210,8 +236,14 @@ export function runWebRtcGroupManagerStateAcceptedSamples(
     });
 }
 
-function createSimulatedConnectionService(sessionId: string): WebRtcConnectionService {
-    const connectedPeerIds = new Set<string>();
+interface SimulatedConnections {
+    readonly service: WebRtcConnectionService;
+    dispose(): void;
+}
+
+/** Real dials over the benchmark's simulated native peers, so the manager's readiness queries run their true workload. */
+function createSimulatedConnections(sessionId: string): SimulatedConnections {
+    const nativeRuntime = installRtcBenchmarkNativeRuntime();
     const service = new WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
         sessionId,
         token: 'benchmark-token',
@@ -219,22 +251,15 @@ function createSimulatedConnectionService(sessionId: string): WebRtcConnectionSe
         dataChannelName: 'benchmark',
         rtcSignalingTopicId: 'rtc'
     });
-    service.onRtcPeerLifecycleDo('simulated-native-transport', {
-        onCreated: (peer) => {
-            peer.connection.connect = () => {
-                connectedPeerIds.add(peer.peerId);
-            };
-            for (const channel of peer.channels.values()) {
-                channel.connect = () => undefined;
+    return {
+        service,
+        dispose: () => {
+            for (const peerId of service.knownPeerIds()) {
+                service.removePeerIfPresent(peerId);
             }
-        },
-        onDeleted: (peer) => {
-            connectedPeerIds.delete(peer.peerId);
+            nativeRuntime.restore();
         }
-    });
-    // Preserve the simulated native readiness query's workload without creating browser sockets.
-    service.peerIdsWithNoReconnectableLanes = () => Array.from(connectedPeerIds);
-    return service;
+    };
 }
 
 function createGroupSnapshot(

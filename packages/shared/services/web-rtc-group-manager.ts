@@ -18,7 +18,7 @@ import {
     normalizeRttReportingDegreeLimit,
     selectRttReportingPeers
 } from '../rtc/rtt-reporting-policy.ts';
-import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
+import { isPeerSetupStarted, type WebRtcConnectionService } from './web-rtc-connection-service.ts';
 import { WebRtcGroupService } from './web-rtc-group-service.ts';
 import { selectGroupDialPeerIds } from './webrtc-group-dial-policy.ts';
 import {
@@ -382,7 +382,7 @@ export class WebRtcGroupManager {
     ): void {
         for (const peerId of dialPlan.peersToConnect) {
             const connected = this.rtcQBox.ensurePeerConnectionStarted(peerId);
-            if (connected.right?.outcome === 'setup-started' || connected.left?.kind === 'connect-failed') {
+            if (isPeerSetupStarted(connected)) {
                 this.diagnostics.connectAttemptCount += 1;
             }
             if (connected.left) {
