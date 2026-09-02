@@ -12,13 +12,13 @@ import {
 } from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import {
     computeAppOutboxInsert,
+    isExactAppOutboxInsert,
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
 import { toAdminPruneOutbox } from '../prune/admin-prune-page-codec.ts';
 import {
     createAdminPruneAggregate,
-    toAdminPruneAggregateEntry,
-    toAdminPruneAggregateKey
+    toAdminPruneAggregateEntry
 } from '../prune/admin-prune-progress.ts';
 import type { AdminPruneCommand } from './admin-prune-command-codec.ts';
 import type { AdminPruneEnqueueResult } from './admin-prune-inbox-codec.ts';
@@ -93,6 +93,7 @@ export function validateAdminPruneMutation(
     computed: AdminPruneComputed
 ): readonly AdminPruneValidationIssue[] {
     const issues: AdminPruneValidationIssue[] = [];
+    const expected = computeAdminPruneMutation(read);
     if (!read.authority.allowed || read.command.expireAtEpochMs <= read.nowEpochMs) {
         issues.push({
             code: 'admin-prune-authority-denied',
@@ -118,10 +119,10 @@ export function validateAdminPruneMutation(
             status: 400
         });
     }
-    if (!hasExpectedAggregateWrite(read, computed.aggregateWrite)) {
+    if (!hasExactAdminPrunePersistence(computed, expected)) {
         issues.push({
-            code: 'admin-prune-aggregate-presence-invalid',
-            message: 'Admin prune aggregate write differs from its command',
+            code: 'admin-prune-computed-persistence-invalid',
+            message: 'Admin prune prepared persistence differs from its computed mutation',
             status: 400
         });
     }
@@ -140,6 +141,41 @@ export function validateAdminPruneMutation(
         }))
     );
     return issues;
+}
+
+function hasExactAdminPrunePersistence(
+    computed: AdminPruneComputed,
+    expected: AdminPruneComputed
+): boolean {
+    if (
+        computed.outboxWrites.length !== expected.outboxWrites.length ||
+        !computed.outboxWrites.every((write, index) => {
+            const expectedWrite = expected.outboxWrites[index];
+            return expectedWrite !== undefined && isExactAppOutboxInsert(expectedWrite.entry, write);
+        })
+    ) {
+        return false;
+    }
+    return hasSameAdminPruneAggregateWrite(computed.aggregateWrite, expected.aggregateWrite);
+}
+
+function hasSameAdminPruneAggregateWrite(
+    left: AdminPruneAggregateWrite | null,
+    right: AdminPruneAggregateWrite | null
+): boolean {
+    if (left === null || right === null) {
+        return left === right;
+    }
+    return left.entry.key.topicId === right.entry.key.topicId &&
+        left.entry.key.resourceId === right.entry.key.resourceId &&
+        left.entry.key.contextId === right.entry.key.contextId &&
+        left.entry.resource === right.entry.resource &&
+        left.entry.typeId === right.entry.typeId &&
+        left.entry.status === right.entry.status &&
+        left.entry.audit.createdBy === right.entry.audit.createdBy &&
+        left.systemDate === right.systemDate &&
+        left.createdAt === right.createdAt &&
+        left.expiresAt === right.expiresAt;
 }
 
 function computeInitialAdminPrunePages(
@@ -179,20 +215,4 @@ function computeAdminPruneAggregateWrite(entry: ResourceEntry): AdminPruneAggreg
         createdAt: toPgTimestamp(snapshot.audit.createdTs),
         expiresAt: toPgTimestamp(snapshot.audit.expiryTs)
     };
-}
-
-function hasExpectedAggregateWrite(
-    read: AdminPruneRead,
-    aggregateWrite: AdminPruneAggregateWrite | null
-): boolean {
-    if (read.command.dryRun) {
-        return aggregateWrite === null;
-    }
-    if (aggregateWrite === null) {
-        return false;
-    }
-    const expectedKey = toAdminPruneAggregateKey(read.command.jobId);
-    return aggregateWrite.entry.key.topicId === expectedKey.topicId &&
-        aggregateWrite.entry.key.resourceId === expectedKey.resourceId &&
-        aggregateWrite.entry.key.contextId === expectedKey.contextId;
 }

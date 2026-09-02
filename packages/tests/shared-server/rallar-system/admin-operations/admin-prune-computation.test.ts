@@ -57,6 +57,42 @@ describe('admin prune computation', () => {
         expect(changed.result.jobId).toBe('another-job');
     });
 
+    it('rejects prepared admin prune rows that differ from the computed mutation', async () => {
+        const read = await createRead();
+        const computed = computeAdminPruneMutation(read);
+        const firstOutboxWrite = computed.outboxWrites[0];
+        if (firstOutboxWrite === undefined || computed.aggregateWrite === null) {
+            throw new TypeError('Expected prepared admin prune writes');
+        }
+        const tampered = [
+            {
+                ...computed,
+                outboxWrites: [{ ...firstOutboxWrite, expiresAt: '2000-01-01T00:00:00.000Z' }]
+            },
+            {
+                ...computed,
+                aggregateWrite: {
+                    ...computed.aggregateWrite,
+                    createdAt: '2000-01-01T00:00:00.000Z'
+                }
+            },
+            {
+                ...computed,
+                aggregateWrite: {
+                    ...computed.aggregateWrite,
+                    entry: { ...computed.aggregateWrite.entry, resource: '{"jobId":"tampered"}' }
+                }
+            }
+        ];
+
+        for (const candidate of tampered) {
+            expect(validateAdminPruneMutation(read, candidate)).toContainEqual(expect.objectContaining({
+                code: 'admin-prune-computed-persistence-invalid',
+                status: 400
+            }));
+        }
+    });
+
     it('writes the prepared aggregate without formatting timestamps in the transaction', async () => {
         const computed = computeAdminPruneMutation(await createRead());
         const aggregateWrite = computed.aggregateWrite;
