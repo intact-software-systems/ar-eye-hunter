@@ -2371,6 +2371,19 @@ signaled peer regardless of the bound, so a member's in-flight count can exceed 
 offers it accepts; the bound governs what this member starts. RTT-driven peer selection should
 decide whether the acceptor pays for those setups or whether the initiator's bound is enough.
 
+**Validation (2026-09-02, final head).** Baseline: dprint, `check:repo-style:changed` (no new
+findings), test-structure coupling, `check:retained-legacy` (four candidates, all the pre-existing
+`fallback` identifiers of two benches that only gained a policy import), `check:repo-structure`,
+the governed test typecheck, `typecheck`, `build`, `test:deno`, and `test:unit` unsandboxed with
+two failures: the headless bundle boundary (216.6 KiB against the 216 KiB ceiling, below) and one
+IndexedDB AL store test whose 30 ms real-timer wait lost under full-suite load; it passes three of
+three alone and the slice touches no AL code. The shared-web trio, the browser bundle budget and
+the API-v1 black-box in-memory profile, medium-scale profile and full-stack suite pass. The
+live-RTC three-browser matrix fails identically on pristine `main` on this machine today, so it
+is environmental and not slice evidence. Two items wait on the maintainer: the headless bundle
+ceiling, which this slice does not touch, and the state-write A-B-B-A comparison, blocked while a
+foreign perf-bench container from another worktree holds the pinned port.
+
 Refreshed next two slices. 9b is this PR. The 6/20/50 sweep manifests (`pacing-sweep`) follow as
 their own PR once 9b's live-RTC evidence exists; Slice 10a is the outcome after that.
 
