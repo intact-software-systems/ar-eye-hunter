@@ -1,28 +1,20 @@
-// dprint-ignore
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createTestGroup } from '../create-test-group.ts';
+import { createSimulatedRtcConnections } from './simulated-rtc-connection-service.ts';
 
 describe('WebRtcGroupManager overlay roles', () => {
-    afterEach(() => vi.restoreAllMocks());
     it('uses planned topology for RTT evidence and accepted topology for traffic dials', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
         const plannedOverlayCache = new LatestRepository<string, OverlayInfo>();
         const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
-        const rtc = createRtcService();
+        const rtc = createSimulatedRtcConnections('local').service;
         const group = createGroupSnapshot();
         const overlayId = toScopedOverlayId(group.group);
         const manager = new WebRtcGroupManager(
@@ -51,27 +43,10 @@ describe('WebRtcGroupManager overlay roles', () => {
 
         expect(manager.rttReportingPeerIds({ degreeLimit: 1 })).toEqual(['peer-planned']);
         expect(manager.state().desiredPeerIds).toEqual(['peer-accepted']);
-        expect(rtc.knownPeerIds()).toEqual(['peer-accepted']);
+        expect(rtc.inFlightPeerIds()).toEqual(['peer-accepted']);
+        expect(manager.readDiagnostics()).toMatchObject({ connectAttemptCount: 1, connectFailureCount: 0 });
     });
 });
-
-function createRtcService(): WebRtcConnectionService {
-    const service = new WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
-        sessionId: 'local',
-        token: 'fixture-token',
-        iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-        dataChannelName: 'test',
-        rtcSignalingTopicId: 'rtc'
-    });
-    service.onRtcPeerLifecycleDo('fixture-transport', {
-        onCreated: (peer) => {
-            vi.spyOn(peer.connection, 'connect').mockImplementation(() => undefined);
-            vi.spyOn(peer.channel, 'connect').mockImplementation(() => undefined);
-        },
-        onDeleted: () => undefined
-    });
-    return service;
-}
 
 function createClientInfo(sessionId: string): ClientInfo {
     return {

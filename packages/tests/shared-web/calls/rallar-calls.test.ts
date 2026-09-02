@@ -5,7 +5,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
@@ -393,7 +393,7 @@ function resetCallRtcDoubles(): void {
     mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
     mocks.webRtcConnectionService.ensurePeerConnectionStarted.mockImplementation(
         (peerId) =>
-            Either.ofLeft<WebRtcConnectionService.PeerConnectionLeft, QRtcPeerDto>({
+            Either.ofLeft<WebRtcConnectionService.PeerConnectionLeft, WebRtcConnectionService.PeerConnectionEnsured>({
                 kind: 'connect-failed',
                 peerId,
                 error: new Error('connect not mocked')

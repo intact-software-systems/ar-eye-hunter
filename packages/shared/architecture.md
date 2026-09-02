@@ -33,8 +33,11 @@ without pulling in DOM, HTTP-server, Postgres, or app-specific runtime wiring.
   contracts that do not depend on browser APIs directly. The shared RTC
   connection service supports bounded initial connection-attempt budgets,
   `connect-exhausted` diagnostics, max-peer caps, and symmetric inbound/outbound
-  missing-peer creation policies; browser wiring enables the budget by default
-  and admits new peers only from the lifecycle-selected server layouts.
+  missing-peer creation policies; it tracks each peer's setup from the started
+  attempt to its first established report, so an ensure names whether it
+  started, found in flight, or found established, and lifecycle observers
+  receive `onEstablished` once per setup. Browser wiring enables the budget by
+  default and admits new peers only from the lifecycle-selected server layouts.
 
 ## Boundaries
 

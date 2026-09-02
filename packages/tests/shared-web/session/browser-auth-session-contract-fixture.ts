@@ -1,5 +1,5 @@
 import { Either } from '@shared/resilience/Either.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { vi } from 'vitest';
 import { installGroupSnapshotRepositoryMocks } from '../auth-session-contract-fixtures.ts';
 import type * as ContractModules from '../auth-session-contract-modules.ts';
@@ -208,7 +208,7 @@ function resetRtcTransportMocks(): void {
     mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
     mocks.webRtcConnectionService.ensurePeerConnectionStarted.mockImplementation(
         (peerId) =>
-            Either.ofLeft<WebRtcConnectionService.PeerConnectionLeft, QRtcPeerDto>({
+            Either.ofLeft<WebRtcConnectionService.PeerConnectionLeft, WebRtcConnectionService.PeerConnectionEnsured>({
                 kind: 'connect-failed',
                 peerId,
                 error: new Error('connect not mocked')

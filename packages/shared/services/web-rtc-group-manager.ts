@@ -381,8 +381,10 @@ export class WebRtcGroupManager {
         peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>
     ): void {
         for (const peerId of dialPlan.peersToConnect) {
-            this.diagnostics.connectAttemptCount += 1;
             const connected = this.rtcQBox.ensurePeerConnectionStarted(peerId);
+            if (connected.right?.outcome === 'setup-started' || connected.left?.kind === 'connect-failed') {
+                this.diagnostics.connectAttemptCount += 1;
+            }
             if (connected.left) {
                 this.diagnostics.connectFailureCount += 1;
                 const error = connected.left.kind === 'self' ||

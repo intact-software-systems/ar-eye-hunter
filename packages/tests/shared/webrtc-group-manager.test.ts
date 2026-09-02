@@ -830,6 +830,8 @@ describe('WebRtcGroupManager', () => {
         // re-runs once against the newest state after the in-flight run.
         expect(afterConcurrentReconcile.reconcileRunCount).toBe(3);
         expect(afterConcurrentReconcile.reconcileAwaitedInFlightCount).toBe(1);
+        // Re-ensuring a peer whose setup is still in flight starts no new attempt.
+        expect(afterConcurrentReconcile.connectAttemptCount).toBe(2);
 
         manager.resetDiagnostics();
         expect(manager.readDiagnostics().reconcileRunCount).toBe(0);

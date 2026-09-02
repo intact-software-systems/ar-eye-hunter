@@ -607,7 +607,7 @@ product as degraded or failed delivery.
 
 `rtc.onStatus(listener, options?)` subscribes to RTC status snapshots.
 
-`rtc.onLifecycle(listener, options?)` subscribes to RTC lifecycle events such as `peer-created`, `lane-open`, `lane-close`, and `peer-timeout`.
+`rtc.onLifecycle(listener, options?)` subscribes to RTC lifecycle events such as `peer-created`, `peer-established`, `lane-open`, `lane-close`, and `peer-timeout`.
 
 `rtc.waitForLane(peerId, laneId, options?)` waits for a specific peer/lane.
 
