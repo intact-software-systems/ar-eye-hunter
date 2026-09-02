@@ -3,6 +3,7 @@ import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/Res
 import { Either } from '@shared/resilience/Either.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type { StartProcessingEntitySkipped } from './p-sql-resource-inbox-reservation-repository.ts';
+import { writeResourceInboxReservationFinish } from './resource-inbox-reservation-write.ts';
 import { rowsToMap, toDomain, type ResourceInboxRow } from './resource-inbox-row-codec.ts';
 
 export class PSqlResourceInboxFinalizationRepository {
@@ -111,18 +112,11 @@ export class PSqlResourceInboxFinalizationRepository {
             );
         }
 
-        const rows = await this.sql<{ ri_row_id: bigint; }[]>`
-            update resource_inbox
-            set ri_status = ${status}, end_ts = ${completedAt}, next_ts = null
-            where ri_topic_id = ${key.topicId}
-              and ri_resource_id = ${key.resourceId}
-              and fk_ext_bank_id = ${key.contextId}
-              and ri_status = 'RESERVED'
-              and ri_attempts = ${expectedAttempts}
-              and expire_ts > (now() at time zone 'UTC')
-            returning ri_row_id
-        `;
-
-        return rows.length === 1;
+        return await writeResourceInboxReservationFinish(this.sql, {
+            key,
+            expectedAttempts,
+            status,
+            completedAt
+        });
     }
 }
