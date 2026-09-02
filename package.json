@@ -106,7 +106,7 @@
     "check:adaptive-agent-evaluation": "node .agents/evaluations/adaptive-agent-execution/v1/validate-result.mjs",
     "check:repo-structure": "node scripts/repo-structure-check.mjs",
     "check:transaction-writes": "node scripts/transaction-write-check/check-transaction-writes.mjs",
-    "test:transaction-writes": "vitest run packages/tests/repo/transaction-write-check",
+    "test:transaction-writes": "vitest run packages/tests/repo/transaction-write-check.test.ts",
     "test:repo-structure": "vitest run packages/tests/repo/repo-structure-check",
     "check:governance-gate": "node scripts/governance-gate.mjs",
     "test:governance-gate": "vitest run packages/tests/repo/governance-gate",

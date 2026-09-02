@@ -218,10 +218,10 @@ function isTransactionWriteDeclaration(declaration) {
     }
     return declaration.getParameters().some((parameter) => {
         const typeNode = parameter.getTypeNode();
+        const typeText = typeNode?.getText() ?? parameter.getType().getText(parameter);
         return /^(?:transaction|tx|sql)$/iu.test(parameter.getName()) &&
-            typeNode !== undefined &&
-            !Node.isFunctionTypeNode(typeNode) &&
-            TRANSACTION_TYPE.test(typeNode.getText());
+            (typeNode === undefined || !Node.isFunctionTypeNode(typeNode)) &&
+            TRANSACTION_TYPE.test(typeText);
     });
 }
 
@@ -301,7 +301,9 @@ function declarationName(declaration) {
         return declaration.getName() ?? '';
     }
     const parent = declaration.getParent();
-    return Node.isVariableDeclaration(parent) ? parent.getName() : '';
+    return Node.isVariableDeclaration(parent) || Node.isPropertyAssignment(parent)
+        ? parent.getName()
+        : '';
 }
 
 function callOperation(call) {

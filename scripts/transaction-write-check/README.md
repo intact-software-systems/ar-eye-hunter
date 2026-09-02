@@ -17,8 +17,9 @@ It recognizes PostgreSQL/PGlite `begin` and `transaction` callbacks, the
 upgrade callbacks, and callback identifiers that resolve to authored source.
 It inspects the lexical transaction body rather than expanding arbitrary helper
 graphs; suspiciously named compute/prepare/serialize/hash helpers still fail at
-their call site. Readonly IndexedDB transactions, tests, fixtures, generated/vendor code,
-`packages/shared-test/**`, and `packages/shared-rtc-bench/**` are excluded.
+their call site. Readonly IndexedDB transactions, tests, fixtures,
+generated/vendor code, `packages/shared-test/**`, and
+`packages/shared-rtc-bench/**` are excluded.
 Exact PostgreSQL ResourceInbox owners under
 `packages/shared-server/queuebox/postgres/**` are governed by their specialized
 SQL review and semantic tests instead.
