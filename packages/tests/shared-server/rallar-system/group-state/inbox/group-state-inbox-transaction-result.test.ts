@@ -61,7 +61,7 @@ const EXPECTED_CREATE_GROUP_DURABLE_JSON = '{"status":"created","result":{"snaps
     '"traceId":null,"requestId":"create-transaction-boundary-room","payload":{}}}}';
 
 describe('group-state AppInbox transaction result boundary', () => {
-    it('persists the real durable result before exposing the committed snapshot', async () => {
+    it('persists the exact durable result without an inbox-owned cache observation', async () => {
         const harness = await createGroupStateTransactionBoundaryHarness();
 
         const created = await harness.handler.processGroupStateMutation(harness.context);
@@ -85,9 +85,7 @@ describe('group-state AppInbox transaction result boundary', () => {
             status: EntityStatus.COMPLETED,
             result: created
         });
-        expect(harness.observedSnapshots).toHaveLength(1);
-        expect(harness.observedSnapshots[0]).toEqual(created.result.snapshot);
-        expect(harness.observedSnapshots[0]).toBe(created.result.snapshot);
+        expect(harness.observedSnapshots).toEqual([]);
         expect(harness.readWakeCount()).toBe(1);
         expect(harness.outboxEntries.size).toBe(1);
     });
@@ -129,23 +127,23 @@ describe('group-state AppInbox transaction result boundary', () => {
     it('persists an inactive presence result once without active mutation effects', async () => {
         const actions: string[] = [];
         const transactionWriter: AppInboxMutationTransactionWriter = {
-            readCompletionFacts: (_context: AppInboxExecutionMetadata): AppInboxCompletionFacts => {
-                throw new Error('Inactive presence must not read computed completion facts');
+            readCompletionFacts: (context: AppInboxExecutionMetadata): AppInboxCompletionFacts => {
+                actions.push('completion');
+                return { entry: context.entry, completedAtEpochMs: context.message.id.ts };
             },
             writeComputedMutation: async <Result>(
                 _context: AppInboxExecutionMetadata,
-                _computed: AppInboxCompletionComputed<Result>,
-                _write: (transaction: PSqlSql) => Promise<void>
+                computed: AppInboxCompletionComputed<Result>,
+                write: (transaction: PSqlSql) => Promise<void>
             ): Promise<Result> => {
-                throw new Error('Inactive presence must not use computed mutation transaction');
+                actions.push('inactive-transaction');
+                await write(createUnusedTransaction());
+                return computed.durableResult;
             },
             writeComputedMutationWithAfterCommitResult: async () => {
                 throw new Error('Inactive presence must not use computed after-commit transaction');
             },
-            writeMutation: async (_context, write) => {
-                actions.push('inactive-transaction');
-                return await write(createUnusedTransaction());
-            },
+            writeMutation: () => Promise.reject(new Error('Inactive presence must not use legacy mutation transaction')),
             writeMutationWithAfterCommitResult: () =>
                 Promise.reject(
                     new Error('Inactive presence must not enter the active mutation transaction')
@@ -192,9 +190,12 @@ describe('group-state AppInbox transaction result boundary', () => {
                     throw new Error('Inactive presence must not write lifecycle state');
                 }
             },
-            snapshotObserver: {
-                observeSnapshot: async () => {
-                    throw new Error('Inactive presence must not observe a snapshot');
+            resultReader: {
+                readSnapshot: async () => {
+                    throw new Error('Inactive presence must not read a snapshot');
+                },
+                readEvent: async () => {
+                    throw new Error('Inactive presence must not read an event');
                 }
             },
             transactionWriter,
@@ -202,33 +203,7 @@ describe('group-state AppInbox transaction result boundary', () => {
         });
         const result = await handler.processGroupStateMutation(inactiveConnectContext());
         expect(JSON.stringify(result)).toBe('{"status":"inactive","sessionId":"inactive-session","generationId":"inactive-generation"}');
-        expect(actions).toEqual(['inactive-transaction']);
-    });
-
-    it('keeps the existing durable-only writer result and serialization unchanged', async () => {
-        const harness = await createGroupStateTransactionBoundaryHarness();
-        const durableResult = {
-            status: 'durable-only',
-            result: { value: 0, omitted: null }
-        } as const;
-        const durableContext = {
-            ...harness.context,
-            encodeResult: (result: typeof durableResult) => encodeAppInboxResult(result, 'Durable-only transaction test result')
-        };
-
-        const returned = await harness.transactionWriter.writeMutation(
-            durableContext,
-            async () => durableResult
-        );
-        const persisted = await harness.results.findByKey(harness.context.entry.key);
-
-        expect(returned).toBe(durableResult);
-        expect(persisted?.resource).toBe('{"status":"durable-only","result":{"value":0,"omitted":null}}');
-        expect(harness.transactionWriter.read(durableContext)).toEqual({
-            state: 'transaction-finalized',
-            status: EntityStatus.COMPLETED,
-            result: durableResult
-        });
+        expect(actions).toEqual(['completion', 'inactive-transaction']);
     });
 });
 

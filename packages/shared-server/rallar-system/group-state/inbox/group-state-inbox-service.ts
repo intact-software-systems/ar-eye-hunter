@@ -39,7 +39,10 @@ import {
     isAuthenticatedGroupMutationEnqueue,
     type AuthenticatedGroupMutationEnqueue
 } from './group-state-inbox-contracts.ts';
-import { GroupStateInboxHandler } from './group-state-inbox-handler.ts';
+import {
+    GroupStateInboxHandler,
+    type GroupStateInboxResultReader
+} from './group-state-inbox-handler.ts';
 import { decodeGroupStateInboxDurableResult } from './group-state-inbox-result-codec.ts';
 import type { GroupStateInboxDurableResult } from './group-state-inbox-result.ts';
 import { toGroupMutationDescriptor } from './to-group-mutation-descriptor.ts';
@@ -51,6 +54,7 @@ export namespace GroupStateInboxService {
         readonly resourceInboxResultsRepository: AppInboxResultRepository;
         readonly database: PSqlSql;
         readonly groupStateService: GroupStateService;
+        readonly resultReader: GroupStateInboxResultReader;
     }
 
     export interface Config {
@@ -107,7 +111,7 @@ export class GroupStateInboxService {
         this.groupStateInboxHandler = new GroupStateInboxHandler({
             mutationService: this.groupStateService,
             sessionGenerationLifecycle: this.groupStateService.sessionGenerationLifecycle,
-            snapshotObserver: this.groupStateService,
+            resultReader: dependencies.resultReader,
             transactionWriter: this.transactionWriter,
             wakeQueue: this.wakeQueue,
             formationMetrics: config.formationMetrics,

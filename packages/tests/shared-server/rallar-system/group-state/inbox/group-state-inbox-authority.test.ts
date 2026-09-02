@@ -247,6 +247,8 @@ describe('GroupStateInboxService authenticated authority', () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
+        const eventStore = new InMemoryGroupStateEventStore();
+        const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
         const groupStateService = createGroupStateService(
             {
                 runtimeRepository,
@@ -254,7 +256,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 readPlannedLayoutRow: async () => null,
                 readAcceptedLayoutRow: async () => null,
                 now: () => nowEpochMs,
-                groupStateEventStore: new InMemoryGroupStateEventStore(),
+                groupStateEventStore: eventStore,
                 authSessionRepository: authSessions
             } as
                 & Parameters<typeof createGroupStateService>[0]
@@ -267,8 +269,12 @@ describe('GroupStateInboxService authenticated authority', () => {
                 inboxQueueReader: reader,
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
-                database: createAppInboxTestDatabase(queue, results, { runtimeRepository }),
-                groupStateService: groupStateService
+                database,
+                groupStateService,
+                resultReader: {
+                    readSnapshot: (ref) => groupStateService.readSnapshot(ref),
+                    readEvent: (ref, eventId) => eventStore.readGroupEvent(ref, eventId)
+                }
             },
             {
                 serviceId: 'server-12345678'

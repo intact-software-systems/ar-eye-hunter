@@ -18,12 +18,15 @@ import type {
     GroupMutationAuthority,
     GroupMutationDescriptor,
     GroupMutationPreparation,
-    GroupStateMutationService,
-    GroupStateService
+    GroupStateMutationService
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService as createDurableGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import { GroupStateInboxHandler, type GroupStateInboxHandlerDependencies } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
+import {
+    GroupStateInboxHandler,
+    type GroupStateInboxHandlerDependencies,
+    type GroupStateInboxResultReader
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import type { GroupMutationComputed } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
@@ -63,7 +66,7 @@ type ExpectedTransactionWriter = {
 type ExpectedHandlerDependencies = {
     readonly mutationService: GroupStateMutationService;
     readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
-    readonly snapshotObserver: Pick<GroupStateService, 'observeSnapshot'>;
+    readonly resultReader: GroupStateInboxResultReader;
     readonly transactionWriter: AppInboxMutationTransactionWriter;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
@@ -119,7 +122,7 @@ describe('convergent group and presence state', () => {
         expectTypeOf<GroupStateInboxHandlerDependencies>().toEqualTypeOf<ExpectedHandlerDependencies>();
         expectTypeOf<GroupStateInboxHandlerDependencies['mutationService']>().toEqualTypeOf<GroupStateMutationService>();
         expectTypeOf<GroupStateInboxHandlerDependencies['sessionGenerationLifecycle']>().toEqualTypeOf<WsSessionGenerationLifecycleService>();
-        expectTypeOf<GroupStateInboxHandlerDependencies['snapshotObserver']>().toEqualTypeOf<Pick<GroupStateService, 'observeSnapshot'>>();
+        expectTypeOf<GroupStateInboxHandlerDependencies['resultReader']>().toEqualTypeOf<GroupStateInboxResultReader>();
         expectTypeOf<GroupStateInboxHandlerDependencies['transactionWriter']>().toEqualTypeOf<AppInboxMutationTransactionWriter>();
         expectTypeOf<GroupStateInboxHandlerDependencies['wakeQueue']>().toEqualTypeOf<(() => void) | undefined>();
         expectTypeOf<ConstructorParameters<typeof GroupStateInboxHandler>>().toEqualTypeOf<[GroupStateInboxHandlerDependencies]>();
