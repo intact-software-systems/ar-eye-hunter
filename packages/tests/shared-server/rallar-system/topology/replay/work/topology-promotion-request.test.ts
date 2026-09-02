@@ -6,11 +6,62 @@ import type {
 import {
     ResourceInboxInvariantCorruptionError
 } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { writeTopologyPromotionRequest } from '@shared-server/rallar-system/topology/replay/work/write-topology-promotion-request.ts';
+import {
+    computeTopologyPromotionRequest,
+    readTopologyPromotion,
+    writeTopologyPromotionRequest
+} from '@shared-server/rallar-system/topology/replay/work/topology-promotion-request.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
+import { createTestGroup } from '../../../../../create-test-group.ts';
 
 describe('topology promotion request write', () => {
+    it('reads current authority before pure promotion selection', async () => {
+        const calls: string[] = [];
+        const group = createTestGroup({ lifecycleState: 'active' });
+        const read = await readTopologyPromotion({
+            groupRef: group,
+            publication: {
+                findCurrentGroup: async () => {
+                    calls.push('group');
+                    return group;
+                },
+                readLifecyclePolicy: async () => {
+                    calls.push('policy');
+                    return { status: 'absent' };
+                }
+            }
+        });
+
+        expect(calls).toEqual(['group', 'policy']);
+        expect(computeTopologyPromotionRequest({
+            read,
+            serviceId: 'topology-service',
+            entry: promotionEntry(),
+            target: null
+        })).toBeNull();
+        expect(calls).toEqual(['group', 'policy']);
+    });
+
+    it('does not read policy for an inactive current group', async () => {
+        const group = createTestGroup({ lifecycleState: 'dormant' });
+        let policyReads = 0;
+
+        const read = await readTopologyPromotion({
+            groupRef: group,
+            publication: {
+                findCurrentGroup: async () => group,
+                readLifecyclePolicy: async () => {
+                    policyReads += 1;
+                    return { status: 'absent' };
+                }
+            }
+        });
+
+        expect(read).toEqual({ group, policy: null });
+        expect(policyReads).toBe(0);
+    });
+
     it('rejects an immutable ResourceInbox collision', async () => {
         const entry = promotionEntry();
 

@@ -54,9 +54,11 @@ import {
     writeRtcTopologyWorkCompletion
 } from './rtc-topology-work-completion.ts';
 import {
-    readTopologyPromotionRequest,
-    type TopologyPromotionPublicationPort
-} from './write-topology-promotion-request.ts';
+    computeTopologyPromotionRequest,
+    readTopologyPromotion,
+    type TopologyPromotionPublicationPort,
+    type TopologyPromotionRead
+} from './topology-promotion-request.ts';
 
 type AcceptedRtcTopologyMutation = Exclude<RtcTopologyMutationComputed, Readonly<{ outcome: 'loaded' | 'retry'; }>>;
 
@@ -117,12 +119,14 @@ type AcceptedRtcTopologyWork =
         computed: AcceptedRtcTopologyMutation;
         publication: RtcTopologyPublication | null;
         inputFingerprint: string;
+        promotionRead: TopologyPromotionRead | null;
         criterionPetition: CommittedCriterionPetition | null;
     }>
     | Readonly<{
         decision: 'skipped-fingerprint';
         work: PersistedRtcTopologyWork;
         group: GroupSnapshot;
+        promotionRead: TopologyPromotionRead | null;
         criterionPetition: CommittedCriterionPetition;
     }>
     | Readonly<{
@@ -130,12 +134,14 @@ type AcceptedRtcTopologyWork =
         work: PersistedRtcTopologyWork;
         group: GroupSnapshot;
         inputFingerprint: string;
+        promotionRead: TopologyPromotionRead | null;
         criterionPetition: CommittedCriterionPetition | null;
     }>
     | Readonly<{
         decision: 'skipped-frozen';
         work: PersistedRtcTopologyWork;
         group: GroupSnapshot;
+        promotionRead: TopologyPromotionRead | null;
         criterionPetition: CommittedCriterionPetition;
     }>
     | Readonly<{
@@ -287,14 +293,29 @@ async function prepareRtcTopologyWork(
         return rttRefinementSkip;
     }
     const membershipDeltaWork = work.kind === 'group-revision';
-    const authority = await options.topologyPlanning.readTopologyPlanningAuthority({
-        groupRef: work.groupSnapshot.group,
-        requestOptions: fromCanonicalGroupTopologyConfigPatch(work.requestOptions),
-        knownGroup: work.groupSnapshot,
-        snapshotSelection: membershipDeltaWork ? 'preserve-known-revision' : 'prefer-current'
-    });
+    const [authority, promotionRead, storedInputFingerprint] = await Promise.all([
+        options.topologyPlanning.readTopologyPlanningAuthority({
+            groupRef: work.groupSnapshot.group,
+            requestOptions: fromCanonicalGroupTopologyConfigPatch(work.requestOptions),
+            knownGroup: work.groupSnapshot,
+            snapshotSelection: membershipDeltaWork ? 'preserve-known-revision' : 'prefer-current'
+        }),
+        readTopologyPromotion({
+            publication: options.topologyPublication,
+            groupRef: work.groupSnapshot.group
+        }),
+        options.executionRepository.readTopologyInputFingerprint(
+            work.groupSnapshot.group
+        )
+    ]);
     const inputFingerprint = await computeAuthorityTopologyInputFingerprint(authority);
-    const fingerprintSkip = await readFingerprintSkip(input, authority, inputFingerprint);
+    const fingerprintSkip = computeFingerprintSkip({
+        input,
+        authority,
+        inputFingerprint,
+        promotionRead,
+        storedInputFingerprint
+    });
     if (fingerprintSkip !== null) {
         return fingerprintSkip;
     }
@@ -312,6 +333,7 @@ async function prepareRtcTopologyWork(
             decision: 'skipped-frozen',
             work,
             group: authority.group,
+            promotionRead,
             criterionPetition: { authority, planned: computedTopology.current }
         };
     }
@@ -327,6 +349,7 @@ async function prepareRtcTopologyWork(
             work,
             group: authority.group,
             inputFingerprint,
+            promotionRead,
             criterionPetition: { authority, planned: read.snapshot.value }
         };
     }
@@ -334,28 +357,40 @@ async function prepareRtcTopologyWork(
         base: input,
         authority,
         planned: computedTopology,
-        inputFingerprint
+        inputFingerprint,
+        promotionRead
     });
 }
 
-async function readFingerprintSkip(
-    input: PrepareRtcTopologyWorkInput,
-    authority: GroupTopologyPlanningAuthority,
-    inputFingerprint: string
-): Promise<Extract<AcceptedRtcTopologyWork, { decision: 'skipped-fingerprint'; }> | null> {
-    const work = input.workEnvelope.data;
-    const snapshot = input.read.snapshot;
+interface ComputeFingerprintSkipInput {
+    readonly input: PrepareRtcTopologyWorkInput;
+    readonly authority: GroupTopologyPlanningAuthority;
+    readonly inputFingerprint: string;
+    readonly promotionRead: TopologyPromotionRead | null;
+    readonly storedInputFingerprint: string | null;
+}
+
+function computeFingerprintSkip(
+    input: ComputeFingerprintSkipInput
+): Extract<AcceptedRtcTopologyWork, { decision: 'skipped-fingerprint'; }> | null {
+    const {
+        input: preparation,
+        authority,
+        inputFingerprint,
+        promotionRead,
+        storedInputFingerprint
+    } = input;
+    const work = preparation.workEnvelope.data;
+    const snapshot = preparation.read.snapshot;
     if (!isChangeGatedGroupRevisionWork(work) || snapshot?.value.state !== 'active') {
         return null;
     }
-    const storedFingerprint = await input.options.executionRepository.readTopologyInputFingerprint(
-        authority.group.group
-    );
-    return storedFingerprint === inputFingerprint
+    return storedInputFingerprint === inputFingerprint
         ? {
             decision: 'skipped-fingerprint',
             work,
             group: authority.group,
+            promotionRead,
             criterionPetition: { authority, planned: snapshot.value }
         }
         : null;
@@ -366,12 +401,13 @@ interface PrepareTopologyMutationInput {
     readonly authority: GroupTopologyPlanningAuthority;
     readonly planned: Extract<ReconcileGroupTopologyResult, { action: 'planned'; }>;
     readonly inputFingerprint: string;
+    readonly promotionRead: TopologyPromotionRead | null;
 }
 
 async function prepareTopologyMutation(
     input: PrepareTopologyMutationInput
 ): Promise<AcceptedRtcTopologyWork> {
-    const { authority, planned, inputFingerprint } = input;
+    const { authority, planned, inputFingerprint, promotionRead } = input;
     const { options, workEnvelope, workId, attemptCount, read } = input.base;
     const work = workEnvelope.data;
     const publicationExpireAtTimestamp = work.publish
@@ -420,6 +456,7 @@ async function prepareTopologyMutation(
         computed,
         publication,
         inputFingerprint,
+        promotionRead,
         criterionPetition: { authority, planned: planned.snapshot }
     };
 }
@@ -460,8 +497,8 @@ async function writeAcceptedRtcTopologyWork(
     // Read outside, mint inside: the gate reads use the shared database
     // handle and must not run while the transaction holds the session.
     const promotionRequest = computed.outcome === 'write'
-        ? await readTopologyPromotionRequest({
-            publication: options.topologyPublication,
+        ? computeTopologyPromotionRequest({
+            read: accepted.promotionRead,
             serviceId: options.serviceId,
             entry,
             target: computed.snapshotGuard.candidate
@@ -519,8 +556,8 @@ async function writeSkippedTopologyWork(
     input: WriteSkippedTopologyWorkInput
 ): Promise<void> {
     const { options, entry, accepted, reservationFinish } = input;
-    const promotionRequest = await readTopologyPromotionRequest({
-        publication: options.topologyPublication,
+    const promotionRequest = computeTopologyPromotionRequest({
+        read: accepted.promotionRead,
         serviceId: options.serviceId,
         entry,
         target: accepted.criterionPetition?.planned ?? null

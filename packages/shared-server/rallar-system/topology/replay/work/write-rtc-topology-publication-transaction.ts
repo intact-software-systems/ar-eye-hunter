@@ -22,8 +22,8 @@ import type { RtcTopologyInputFingerprintWrite } from './rtc-topology-input-fing
 import {
     finishRtcTopologyReservation
 } from './rtc-topology-work-completion.ts';
+import { writeTopologyPromotionRequest } from './topology-promotion-request.ts';
 import { writeGroupConnectTriggerRequests } from './write-group-connect-trigger-requests.ts';
-import { writeTopologyPromotionRequest } from './write-topology-promotion-request.ts';
 
 export interface RtcTopologyDeliveryOptions {
     readonly publisherStreamId: string;
