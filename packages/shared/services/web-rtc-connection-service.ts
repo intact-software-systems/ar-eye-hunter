@@ -712,7 +712,8 @@ export class WebRtcConnectionService {
         catch (caught) {
             const error = toError(caught);
             // A lane that failed to start on a live native connection leaves the setup
-            // dialing; the lane wait reports the missing lane.
+            // dialing: the next ensure retries the lane, and a lane wait reports it as
+            // timed out or closed.
             if (this.isPeerConnectedOrInProgress(computed.peerDto)) {
                 return Either.ofRight({ peer: computed.peerDto, outcome: computed.outcome });
             }
