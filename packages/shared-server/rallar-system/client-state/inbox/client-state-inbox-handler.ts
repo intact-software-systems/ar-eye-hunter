@@ -87,7 +87,7 @@ export class ClientStateInboxHandler {
             return await this.writeInactiveGeneration(context, connection);
         }
         const command = await this.toAuthorisedWsConnectCommand(context, connection);
-        const computed = await this.computeValidatedMutation(command);
+        const computed = await this.readComputeValidateMutation(command);
         const lifecycleGuardFacts = {
             ...lifecycleFacts,
             expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(
@@ -107,7 +107,7 @@ export class ClientStateInboxHandler {
         input: ClientAuthorisedWsSessionDisconnectAppInboxPayload,
         context: AppInboxMessageContext<AuthorisedWsClientMutationResult>
     ): Promise<AuthorisedWsClientMutationResult> {
-        const lifecycleComputed = await this.computeAuthorisedWsDisconnectLifecycle(input);
+        const lifecycleComputed = await this.readComputeValidateAuthorisedWsDisconnectLifecycle(input);
         const command = await this.toAuthorisedWsDisconnectCommand(context, input);
         const read = await this.dependencies.mutationService.read(command);
         if (!read.session) {
@@ -128,7 +128,7 @@ export class ClientStateInboxHandler {
         context: AppInboxMessageContext<readonly ClientStateWritten[]>,
         atEpochMs: number
     ): Promise<readonly ClientStateWritten[]> {
-        const computed = await this.computeExpiredSessionMutations(context, atEpochMs);
+        const computed = await this.readComputeValidateExpiredSessionMutations(context, atEpochMs);
         const applied = computed.filter((successor) => successor.outcome === 'write');
         const durableResult = applied.map(toClientStateWritten);
         const result = await this.dependencies.transactionWriter.writeMutationWithAfterCommitResult(
@@ -149,7 +149,7 @@ export class ClientStateInboxHandler {
         return result.durableResult;
     }
 
-    private async computeValidatedMutation(
+    private async readComputeValidateMutation(
         command: ClientMutationCommand
     ): Promise<ClientMutationComputed> {
         const read = await this.dependencies.mutationService.read(command);
@@ -224,7 +224,7 @@ export class ClientStateInboxHandler {
         }));
     }
 
-    private async computeAuthorisedWsDisconnectLifecycle(
+    private async readComputeValidateAuthorisedWsDisconnectLifecycle(
         input: ClientAuthorisedWsSessionDisconnectAppInboxPayload
     ): Promise<WsSessionGenerationLifecycleComputed> {
         const connection = input.connection;
@@ -327,7 +327,7 @@ export class ClientStateInboxHandler {
         );
     }
 
-    private async computeExpiredSessionMutations(
+    private async readComputeValidateExpiredSessionMutations(
         context: AppInboxExecutionMetadata,
         atEpochMs: number
     ): Promise<readonly ClientMutationComputed[]> {
@@ -341,7 +341,7 @@ export class ClientStateInboxHandler {
                 context,
                 toExpireClientSessionMutationInput(candidate)
             );
-            computed.push(await this.computeValidatedMutation(command));
+            computed.push(await this.readComputeValidateMutation(command));
         }
         return computed;
     }

@@ -80,8 +80,8 @@ describe('CRDT mutation service', () => {
         });
         await applyCrdtMutation(service, repository, await createAppendCommand('append-first', 'update-1'));
 
-        const replay = await computeCrdtMutation(service, await createAppendCommand('append-replay', 'update-1'));
-        const collision = await computeCrdtMutation(service, await createAppendCommand('append-collision', 'update-1', 'different'));
+        const replay = await readComputeValidateCrdtMutation(service, await createAppendCommand('append-replay', 'update-1'));
+        const collision = await readComputeValidateCrdtMutation(service, await createAppendCommand('append-collision', 'update-1', 'different'));
 
         expect(replay.outcome).toBe('replay');
         expect(collision).toMatchObject({
@@ -99,7 +99,7 @@ describe('CRDT mutation service', () => {
             serviceId: 'server-1'
         });
         const command = await createAppendCommand('append-conflict', 'update-1');
-        const first = await computeCrdtMutation(service, command);
+        const first = await readComputeValidateCrdtMutation(service, command);
         repository.failNextConflict = true;
 
         await expect(service.write(repository.transaction, first)).rejects.toBeInstanceOf(CrdtMutationConflictError);
@@ -108,7 +108,7 @@ describe('CRDT mutation service', () => {
             documentRevision: 1,
             archivedAtEpochMs: 1_000
         });
-        const retried = await computeCrdtMutation(service, command);
+        const retried = await readComputeValidateCrdtMutation(service, command);
 
         expect(retried).toMatchObject({
             outcome: 'rejected',
@@ -392,7 +392,7 @@ function createUnusedTransaction(): PSqlSql {
     return transaction;
 }
 
-async function computeCrdtMutation(
+async function readComputeValidateCrdtMutation(
     service: ReturnType<typeof createCrdtMutationService>,
     command: Awaited<ReturnType<typeof createAppendCommand>>
 ) {
@@ -407,6 +407,6 @@ async function applyCrdtMutation(
     repository: MemoryCrdtMutationRepository,
     command: Awaited<ReturnType<typeof createAppendCommand>>
 ) {
-    const computed = await computeCrdtMutation(service, command);
+    const computed = await readComputeValidateCrdtMutation(service, command);
     return await service.write(repository.transaction, computed);
 }
