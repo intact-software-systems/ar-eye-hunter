@@ -8,9 +8,20 @@ import type {
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
-import type { AuditStamp, Group, GroupMember, GroupRef } from '@shared/api/group-types.ts';
+// dprint-ignore
+import type {
+    AuditStamp,
+    Group,
+    GroupMember,
+    GroupRef
+} from '@shared/api/group-types.ts';
 import { decodeCanonicalGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { describe, expect, it } from 'vitest';
+// dprint-ignore
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { SCOPE } from '../mutation/group-mutation-test-runtime.ts';
@@ -34,7 +45,7 @@ describe('group presence-summary causal identity', () => {
         const baseEpochMs = Date.now();
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'heartbeat-room', 200);
-        const service = createService(runtime, baseEpochMs + 2_000);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: baseEpochMs + 2_000 });
         for (let index = 0; index < 100; index += 1) {
             const principalId = `member-${index}`;
             await service.upsertMember(SCOPE, 'heartbeat-room', principalId, {
@@ -52,26 +63,29 @@ describe('group presence-summary causal identity', () => {
         }
         runtime.resetGuards();
         await Promise.all(
-            Array.from({ length: 100 }, (_, index) =>
-                createService(runtime, baseEpochMs + 3_000 + index).heartbeatPresenceSessionReceipt(
-                    SCOPE,
-                    'heartbeat-room',
-                    `session-${index}`,
-                    {
-                        generationId: `generation-${index}`,
-                        actorPrincipalId: `member-${index}`,
-                        lastHeartbeatAtEpochMs: baseEpochMs + 3_000 + index,
-                        expiresAtEpochMs: baseEpochMs + 60_000 + index,
-                        requestId: `heartbeat-${index}`
-                    }
-                ))
+            Array.from(
+                { length: 100 },
+                (_, index) =>
+                    createService({ runtimeRepository: runtime, nowEpochMs: baseEpochMs + 3_000 + index }).heartbeatPresenceSessionReceipt(
+                        SCOPE,
+                        'heartbeat-room',
+                        `session-${index}`,
+                        {
+                            generationId: `generation-${index}`,
+                            actorPrincipalId: `member-${index}`,
+                            lastHeartbeatAtEpochMs: baseEpochMs + 3_000 + index,
+                            expiresAtEpochMs: baseEpochMs + 60_000 + index,
+                            requestId: `heartbeat-${index}`
+                        }
+                    )
+            )
         );
         expect(runtime.groupGuards).toBe(0);
         expect(runtime.presenceGuards).toBe(100);
         expect(runtime.hotPathListReads).toBe(0);
         expect(runtime.snapshotListReads).toBe(0);
 
-        await createService(runtime, baseEpochMs + 4_000).heartbeatPresenceSession(
+        await createService({ runtimeRepository: runtime, nowEpochMs: baseEpochMs + 4_000 }).heartbeatPresenceSession(
             SCOPE,
             'heartbeat-room',
             'session-0',
@@ -131,7 +145,7 @@ describe('group presence-summary causal identity', () => {
         }
         expect(computed.receipt.causalRevision).toEqual({ groupRevision: 2, presenceRevision: 0 });
         expect(computed.receipt.snapshotVersion).toBe(2);
-        const effect = decodeCanonicalGroupPresenceSummaryEntry(computed.outboxEntries[0]);
+        const effect = decodeCanonicalGroupPresenceSummaryEntry(computed.outboxWrites[0].entry);
         expect(effect.acceptedCausalRevision).toEqual(computed.receipt.causalRevision);
         expect(effect.event.snapshotVersion).toBe(computed.receipt.snapshotVersion);
     });

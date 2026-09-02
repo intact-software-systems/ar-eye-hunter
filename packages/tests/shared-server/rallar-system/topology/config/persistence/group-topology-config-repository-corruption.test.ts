@@ -24,7 +24,7 @@ describe('group topology config repository corruption handling', () => {
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
             'malformed',
             '{',
-            NEVER_EXPIRE_AT_TIMESTAMP
+            new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
         );
         const entry = await runtimeRepository.findEntry(GROUP_TOPOLOGY_CONFIG_NAMESPACE, 'malformed');
 
@@ -49,7 +49,7 @@ describe('group topology config repository corruption handling', () => {
                 updatedByPrincipalId: 'noncanonical-owner',
                 unexpected: true
             }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
         );
 
         await expect(repository.findConfig(groupRef)).rejects.toThrow(
@@ -65,7 +65,7 @@ describe('group topology config repository corruption handling', () => {
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
             repository.configKey(groupRef),
             JSON.stringify({ version: 7 }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
         );
 
         await expect(repository.listGenerationSources('config')).rejects.toThrow(
@@ -95,7 +95,7 @@ describe('group topology config repository corruption handling', () => {
                     requestId: null,
                     expiresAtEpochMs: 1_000
                 }),
-                1_000
+                new Date(1_000).toISOString()
             );
 
             await expect(repository.findOverride(requested)).rejects.toThrow(
@@ -121,7 +121,7 @@ describe('group topology config repository corruption handling', () => {
                     seeded.namespace,
                     seeded.key,
                     JSON.stringify(seeded.value),
-                    1_000
+                    new Date(1_000).toISOString()
                 );
 
                 await expect(seeded.read()).rejects.toBeInstanceOf(
@@ -186,7 +186,7 @@ describe('group topology config repository corruption handling', () => {
                 seeded.namespace,
                 seeded.key,
                 JSON.stringify(seeded.value),
-                NEVER_EXPIRE_AT_TIMESTAMP - 1
+                new Date(NEVER_EXPIRE_AT_TIMESTAMP - 1).toISOString()
             );
 
             await expect(seeded.read()).rejects.toBeInstanceOf(
@@ -223,7 +223,7 @@ describe('group topology config repository corruption handling', () => {
                 namespace,
                 key,
                 JSON.stringify(value),
-                target === 'config' ? NEVER_EXPIRE_AT_TIMESTAMP - 1 : 10_000
+                new Date(target === 'config' ? NEVER_EXPIRE_AT_TIMESTAMP - 1 : 10_000).toISOString()
             );
 
             const read = boundary === 'source'

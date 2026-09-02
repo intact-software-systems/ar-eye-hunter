@@ -25,6 +25,7 @@ export const TIMED_ASYNC_OPERATIONS = [
     'readSnapshot',
     'readCausalRevision',
     'readIssuedAuthSession',
+    'readEvent',
     'listEvents',
     'listRecentEvents',
     'listEventPage',
@@ -134,6 +135,7 @@ function createQueryFake(
     | 'readSnapshot'
     | 'readCausalRevision'
     | 'readIssuedAuthSession'
+    | 'readEvent'
     | 'listEvents'
     | 'listRecentEvents'
     | 'listEventPage'
@@ -145,6 +147,7 @@ function createQueryFake(
         readSnapshot: async (...arguments_) => (await record('readSnapshot', arguments_)) as never,
         readCausalRevision: async (...arguments_) => (await record('readCausalRevision', arguments_)) as never,
         readIssuedAuthSession: async (...arguments_) => (await record('readIssuedAuthSession', arguments_)) as never,
+        readEvent: async (...arguments_) => (await record('readEvent', arguments_)) as never,
         listEvents: async (...arguments_) => (await record('listEvents', arguments_)) as never,
         listRecentEvents: async (...arguments_) => (await record('listRecentEvents', arguments_)) as never,
         listEventPage: async (...arguments_) => (await record('listEventPage', arguments_)) as never,
@@ -165,6 +168,7 @@ function createMutationFake(
         },
         validate: () => {
             calls.push('validate');
+            return [];
         },
         write: async (...arguments_) => (await record('write', arguments_)) as never
     };
@@ -191,7 +195,10 @@ export function invokeUntimedGroupStateOperations(service: GroupStateService): u
     const command = timingCommand;
     const read = {} as never;
     const computed = service.compute(command, read);
-    service.validate(command, read, computed);
+    const issues = service.validate(command, read, computed);
+    if (issues.length > 0) {
+        throw issues[0].cause;
+    }
     return computed;
 }
 
@@ -244,6 +251,7 @@ export const TIMED_OPERATION_ARGUMENTS: TimedOperationArgumentsByOperation = {
     readSnapshot: [timingGroupRef],
     readCausalRevision: [timingGroupRef],
     readIssuedAuthSession: ['timing-session'],
+    readEvent: [timingGroupRef, 'timing-event'],
     listEvents: [timingGroupRef],
     listRecentEvents: [timingGroupRef, timingRecentEventsQuery],
     listEventPage: [timingGroupRef, timingEventPageQuery],
@@ -288,8 +296,9 @@ const TIMED_OPERATION_INVOCATIONS: Readonly<Record<TimedAsyncOperation, (service
     readSnapshot: async (service) => await service.readSnapshot(...TIMED_OPERATION_ARGUMENTS.readSnapshot),
     readCausalRevision: async (service) => await service.readCausalRevision(...TIMED_OPERATION_ARGUMENTS.readCausalRevision),
     readIssuedAuthSession: async (service) => await service.readIssuedAuthSession(...TIMED_OPERATION_ARGUMENTS.readIssuedAuthSession),
+    readEvent: async (service) => await service.readEvent(...TIMED_OPERATION_ARGUMENTS.readEvent),
     listEvents: async (service) => await service.listEvents(...TIMED_OPERATION_ARGUMENTS.listEvents),
-    listRecentEvents: async (service) => await service.listRecentEvents!(...TIMED_OPERATION_ARGUMENTS.listRecentEvents),
+    listRecentEvents: async (service) => await service.listRecentEvents(...TIMED_OPERATION_ARGUMENTS.listRecentEvents),
     listEventPage: async (service) => await service.listEventPage(...TIMED_OPERATION_ARGUMENTS.listEventPage),
     observeSnapshot: async (service) => await service.observeSnapshot(...TIMED_OPERATION_ARGUMENTS.observeSnapshot),
     read: async (service) => await service.read(...TIMED_OPERATION_ARGUMENTS.read),

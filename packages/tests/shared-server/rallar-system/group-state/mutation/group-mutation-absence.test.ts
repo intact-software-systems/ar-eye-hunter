@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { GroupMutationCommand, GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/idempotency/group-idempotency-storage-key.ts';
 
 import { createGroupAuthorityFacts, createGroupAuthorityRead, groupRef, storedEntry } from './group-mutation-test-runtime.ts';
@@ -44,7 +44,7 @@ describe('group mutation absence', () => {
                     rejection: 'Group not found: pure-room'
                 }
             });
-            expect(() => assertGroupMutation({ command, read, facts, computed })).not.toThrow();
+            expect(() => requireValidGroupMutation({ command, read, facts, computed })).not.toThrow();
         }
     );
 
@@ -149,4 +149,11 @@ function createMissingGroupCommand(
             purgeAfterEpochMs: null
         }
     };
+}
+
+function requireValidGroupMutation(input: Parameters<typeof validateGroupMutation>[0]): void {
+    const issues = validateGroupMutation(input);
+    if (issues.length > 0) {
+        throw issues[0].cause;
+    }
 }

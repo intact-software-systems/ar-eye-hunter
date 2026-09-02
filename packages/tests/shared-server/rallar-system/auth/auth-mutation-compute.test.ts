@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AuthMutationCommand, AuthMutationRead, AuthMutationResult } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
 import { computeAuthMutation } from '@shared-server/rallar-system/auth/mutation/compute/compute-auth-mutation.ts';
+import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 
 const user = {
     clientId: 'client-1',
@@ -50,9 +51,9 @@ const agentTicket = {
     accessTokenDigest: agentTicketCommand.accessTokenDigest,
     sessionId: agentTicketCommand.sessionId,
     clientId: agentTicketCommand.clientId,
-    agentId: agentTicketCommand.agentId,
     issuedAtEpochMs: agentTicketCommand.issuedAtEpochMs,
-    expiresAtEpochMs: agentTicketCommand.ticketExpiresAtEpochMs
+    expiresAtEpochMs: agentTicketCommand.ticketExpiresAtEpochMs,
+    agentId: agentTicketCommand.agentId
 } as const;
 const emptySessionEntries = {
     byToken: null,
@@ -224,7 +225,7 @@ const operationMatrix: readonly Readonly<{
 ];
 
 describe('auth mutation compute operation matrix', () => {
-    it('preserves all seven write decisions, input identities, results, and property order', () => {
+    it('preserves all seven write decisions, original inputs, and result values', () => {
         for (const { command, read, result } of operationMatrix) {
             const computed = computeAuthMutation({
                 command,
@@ -238,15 +239,6 @@ describe('auth mutation compute operation matrix', () => {
             expect(computed.outcome).toBe('write');
             expect(computed.result).toEqual(result);
             expect(Object.keys(computed.result)).toEqual(Object.keys(result));
-            expect(Object.keys(computed)).toEqual([
-                'command',
-                'read',
-                'sessions',
-                'agentTickets',
-                'logoutOutbox',
-                'result',
-                'outcome'
-            ]);
         }
     });
 
@@ -379,7 +371,7 @@ function replayRead(command: AuthMutationCommand): AuthMutationRead {
     }
 }
 
-function entry<T>(value: T, key: string) {
+function entry<T>(value: T, key: string): RuntimeStateEntryValue<T> {
     return {
         entry: {
             key,

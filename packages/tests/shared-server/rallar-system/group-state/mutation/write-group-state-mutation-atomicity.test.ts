@@ -6,7 +6,7 @@ import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
-import { GroupStateEventCollisionError } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
+import { GroupStateEventCollisionError, type GroupStateEventWrite } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 import { RuntimeStateRetryExhaustedError, RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
@@ -20,12 +20,12 @@ class CollidingGroupEventStore extends TestGroupStateEventStore {
         this.runtime = runtime;
     }
 
-    override appendGroupEvent(event: GroupEvent): Promise<void> {
+    override appendGroupEvent(computed: GroupStateEventWrite): Promise<void> {
         if (this.runtime.activeTransactionDepth !== 1) {
             throw new Error('Group event append must stay inside the transaction');
         }
         this.runtime.transactionOrder.push('event');
-        return Promise.reject(new GroupStateEventCollisionError(event));
+        return Promise.reject(computed.collision);
     }
 }
 

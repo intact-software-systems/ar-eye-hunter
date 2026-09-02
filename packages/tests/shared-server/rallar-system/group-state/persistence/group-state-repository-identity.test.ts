@@ -308,7 +308,7 @@ describe('GroupStateRepository persistence', () => {
             validWrite.namespace,
             validWrite.key,
             validWrite.value,
-            validWrite.expireAtTimestamp
+            new Date(validWrite.expireAtTimestamp).toISOString()
         )).resolves.toMatchObject({ status: 'applied', revision: 0 });
         await expect(
             validRepository.findIdempotentGroupMutationReceipt(ref, requestId)
@@ -335,7 +335,7 @@ describe('GroupStateRepository persistence', () => {
             authorityFencedNoOpWrite.namespace,
             authorityFencedNoOpWrite.key,
             authorityFencedNoOpWrite.value,
-            authorityFencedNoOpWrite.expireAtTimestamp
+            new Date(authorityFencedNoOpWrite.expireAtTimestamp).toISOString()
         )).resolves.toMatchObject({ status: 'applied', revision: 0 });
         await expect(
             validRepository.findIdempotentGroupMutationReceipt(ref, fencedRequestId)
@@ -366,7 +366,7 @@ describe('GroupStateRepository persistence', () => {
             absentRejectedWrite.namespace,
             absentRejectedWrite.key,
             absentRejectedWrite.value,
-            absentRejectedWrite.expireAtTimestamp
+            new Date(absentRejectedWrite.expireAtTimestamp).toISOString()
         )).resolves.toMatchObject({ status: 'applied', revision: 0 });
         await expect(
             validRepository.findIdempotentGroupMutationReceipt(ref, absentRequestId)

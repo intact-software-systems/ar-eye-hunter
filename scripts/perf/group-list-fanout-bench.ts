@@ -348,13 +348,13 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number
+        expireAtIsoTimestamp: string
     ): Promise<{ status: 'applied'; revision: number; } | { status: 'conflict'; }> {
         const compositeKey = this.toKey(namespace, key);
         if (this.data.has(compositeKey)) {
             return Promise.resolve({ status: 'conflict' });
         }
-        this.data.set(compositeKey, this.entry(key, value, expireAtTimestamp, 0));
+        this.data.set(compositeKey, this.entry(key, value, new Date(expireAtIsoTimestamp).getTime(), 0));
         return Promise.resolve({ status: 'applied', revision: 0 });
     }
 
@@ -362,7 +362,7 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtIsoTimestamp: string,
         expectedRevision: number
     ): Promise<{ status: 'applied'; revision: number; } | { status: 'conflict'; }> {
         assertRuntimeStateUpsertExpectedRevision(expectedRevision);
@@ -372,7 +372,7 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
             return Promise.resolve({ status: 'conflict' });
         }
         const revision = expectedRevision + 1;
-        this.data.set(compositeKey, this.entry(key, value, expireAtTimestamp, revision));
+        this.data.set(compositeKey, this.entry(key, value, new Date(expireAtIsoTimestamp).getTime(), revision));
         return Promise.resolve({ status: 'applied', revision });
     }
 

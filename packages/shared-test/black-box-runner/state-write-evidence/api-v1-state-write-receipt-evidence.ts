@@ -13,7 +13,7 @@ import * as AppInboxCommandIdentity from '@shared-server/rallar-system/app-inbox
 import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts';
-import { assertGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/assert-group-mutation-command.ts';
+import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import {
     groupMutationIdempotencyKey
@@ -464,8 +464,11 @@ function decodeGroupReceiptPreparation(authority: unknown): GroupReceiptPreparat
         ['authorityProof', 'descriptor', 'command', 'facts', 'causalToken', 'queueResourceId'],
         'group preparation'
     );
-    assertGroupMutationCommand(prepared.command);
-    const command = prepared.command;
+    const commandIssues = validateGroupMutationCommand(prepared.command);
+    if (commandIssues.length > 0) {
+        throw commandIssues[0].cause;
+    }
+    const command = prepared.command as unknown as GroupMutationCommand;
     const requestId = readString(command.requestId, 'group requestId');
     const idempotencyKey = groupMutationIdempotencyKey(command);
     if (idempotencyKey === null) {

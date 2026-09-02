@@ -73,20 +73,7 @@ export async function createAuthorityHarness(
     const nowEpochMs = Date.now();
     const runtimeRepository = options.runtimeRepository ?? new FakeRuntimeStateRepository();
     const authSessions = new AuthSessionRepository(runtimeRepository);
-    const sessions = Object.fromEntries(
-        principalIds.map((principalId) => [
-            principalId,
-            authSession({
-                clientId: principalId,
-                sessionId: `${principalId}-session`,
-                accessToken: `${principalId}-token`,
-                nowEpochMs
-            })
-        ])
-    );
-    for (const session of Object.values(sessions)) {
-        await authSessions.putSession(session);
-    }
+    const sessions = await createAuthoritySessions(principalIds, authSessions, nowEpochMs);
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
@@ -129,6 +116,28 @@ export async function createAuthorityHarness(
     };
 }
 
+async function createAuthoritySessions(
+    principalIds: readonly string[],
+    authSessions: AuthSessionRepository,
+    nowEpochMs: number
+): Promise<Readonly<Record<string, IssuedAuthSession>>> {
+    const sessions = Object.fromEntries(
+        principalIds.map((principalId) => [
+            principalId,
+            authSession({
+                clientId: principalId,
+                sessionId: `${principalId}-session`,
+                accessToken: `${principalId}-token`,
+                nowEpochMs
+            })
+        ])
+    );
+    for (const session of Object.values(sessions)) {
+        await authSessions.putSession(session);
+    }
+    return sessions;
+}
+
 interface AuthorityAppInboxServiceInput {
     readonly reader: InboxQueueReader;
     readonly queue: TestResourceInbox;
@@ -148,7 +157,8 @@ function createAuthorityAppInboxService(
             resourceInboxRepository: input.queue,
             resourceInboxResultsRepository: input.results,
             database: input.database,
-            groupStateService: input.groupStateService
+            groupStateService: input.groupStateService,
+            resultReader: input.groupStateService
         },
         {
             serviceId: 'server-12345678',

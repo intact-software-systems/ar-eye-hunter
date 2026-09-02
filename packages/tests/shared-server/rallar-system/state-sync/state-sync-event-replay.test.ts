@@ -1,5 +1,4 @@
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { computeGroupStateEventWrite } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ClientEvent, ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
@@ -100,8 +99,8 @@ describe('state sync event replay', () => {
         const groupRef = toGroupRef('room-1');
         const principalRef = toClientPrincipalRef('alice');
 
-        await groupRepository.appendEvent(createGroupEvent('group-event-a', 1_000, 2));
-        await groupRepository.appendEvent(createGroupEvent('group-event-b', 1_000, 1));
+        await groupRepository.appendEvent(computeGroupStateEventWrite(createGroupEvent('group-event-a', 1_000, 2)));
+        await groupRepository.appendEvent(computeGroupStateEventWrite(createGroupEvent('group-event-b', 1_000, 1)));
         await clientRepository.appendEvent(createClientEvent('client-event-a', 1_000, 2));
         await clientRepository.appendEvent(createClientEvent('client-event-b', 1_000, 1));
 

@@ -1,43 +1,43 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import {
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+    computeTopologyConfigMutationAttempt,
+    validateTopologyConfigMutationAttempt
+} from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
+import { createAppInboxTestDatabase } from '../../app-inbox/test-support/app-inbox-test-database.ts';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
-import {
-    AppInboxType,
-    type AppInboxEnqueueInput,
-    type AppInboxMessageContext
-} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
+
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+
+import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
+import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
+
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+
+import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
+import { type AppInboxEnqueueInput, type AppInboxExecutionMetadata } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
+
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 import {
     toTopologyAppInboxCommand,
+    toTopologyAppInboxType,
     toTopologyConfigMutationCommand,
     toTopologyHttpMutationSemanticHash
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
-import {
-    TopologyAppInboxHandler,
-    type TopologyAppInboxMutationOwners,
-    type TopologyAppInboxResult
-} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+import { TopologyAppInboxHandler, type TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
-import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
-import { computeRtcTopologyEntry } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
-import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
-import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
-import { EnqueuedType } from '@shared/api/api-config.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
-import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-
 import { authSession } from '../../group-state/group-state-test-runtime.ts';
 import {
     createAuthorityHarness,
@@ -54,7 +54,96 @@ const GROUP_REF: GroupRef = {
 };
 const topologyServices = new WeakMap<AuthorityHarness, TopologyInboxService>();
 
+afterEach(() => vi.restoreAllMocks());
+
 describe('topology AppInbox transaction and idempotency', () => {
+    for (const operation of ['putConfig', 'reconfigureTopology'] as const) {
+        for (const stage of ['resource-result-replace', 'reservation-finish'] as const) {
+            it(`rolls back ${operation} on ${stage} failure and completes only on queue redelivery`, async () => {
+                const harness = await createAuthorityHarness(['owner']);
+                await createRoom(harness, GROUP_REF.groupId, 'Topology room');
+                const before = new Map(harness.runtimeRepository.data);
+                let fail = true;
+                let wakes = 0;
+                const database = createAppInboxTestDatabase(harness.queue, harness.results, {
+                    runtimeRepository: harness.runtimeRepository,
+                    onStage: (current) => {
+                        if (current === stage && fail) {
+                            throw new RuntimeStateWriteConflictError();
+                        }
+                    }
+                });
+                configureTopology(harness, () => {
+                    wakes += 1;
+                }, database);
+                const command = operation === 'putConfig'
+                    ? await topologyCommand('completion-rollback', 4)
+                    : await reconfigureCommand('completion-rollback', { principalId: 'owner', sessionId: 'owner-session', capturedAtEpochMs: 1_000 });
+                const enqueue = topologyEnqueue(command);
+                const completionAttempts: number[] = [];
+                const readCompletionFacts = AppInboxTransactionWriter.prototype.readCompletionFacts;
+                vi.spyOn(AppInboxTransactionWriter.prototype, 'readCompletionFacts').mockImplementation(function (
+                    this: AppInboxTransactionWriter,
+                    context
+                ) {
+                    completionAttempts.push(context.entry.dequeueAudit.attempts);
+                    return readCompletionFacts.call(this, context);
+                });
+                const terminalFailureResults: AppInboxFailure[] = [];
+                const writeTerminalFailure = AppInboxTransactionWriter.prototype.writeTerminalFailure;
+                vi.spyOn(AppInboxTransactionWriter.prototype, 'writeTerminalFailure').mockImplementation(async function (
+                    this: AppInboxTransactionWriter,
+                    context,
+                    computed
+                ) {
+                    terminalFailureResults.push(computed.durableResult);
+                    return await writeTerminalFailure.call(this, context, computed);
+                });
+                const pending = topologyServiceFor(harness).processAuthenticatedEntryUntilCompletion(enqueue, harness.sessions.owner);
+                await waitForQueueEntry(harness.queue);
+                wakes = 0;
+                const reserveEntries = harness.queue.reserveEntries.bind(harness.queue);
+                let allowDelivery = true;
+                vi.spyOn(harness.queue, 'reserveEntries').mockImplementation(async (...args) => {
+                    if (!allowDelivery) {
+                        return new Map();
+                    }
+                    const reserved = await reserveEntries(...args);
+                    if (reserved.size > 0) {
+                        allowDelivery = false;
+                    }
+                    return reserved;
+                });
+                vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+                await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+
+                expect(harness.runtimeRepository.data).toEqual(before);
+                expect(database.outboxEntries.size).toBe(0);
+                expect(wakes).toBe(0);
+                expect(terminalFailureResults).toEqual([]);
+                expect(completionAttempts).toEqual([1]);
+                const entry = (await harness.queueEntries()).find((item) => item.key.resourceId === command.requestId)!;
+                expect(await harness.results.findByKey(entry.key)).toBeUndefined();
+
+                fail = false;
+                allowDelivery = true;
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+
+                expect((await pending).right).toMatchObject(
+                    operation === 'putConfig'
+                        ? { receipt: { outcome: 'applied', attemptCount: 2 } }
+                        : { status: 'queued' }
+                );
+                expect(completionAttempts).toEqual([1, 2]);
+                expect(await harness.queue.getItem(entry.key)).toMatchObject({ status: EntityStatus.COMPLETED });
+                expect(database.outboxEntries.size).toBe(1);
+                expect(wakes).toBe(1);
+            });
+        }
+    }
+
     it('coalesces concurrent identical commands into one durable mutation and result', async () => {
         let queueWakeCount = 0;
         const wakeQueue = vi.fn(() => {
@@ -222,30 +311,26 @@ describe('topology AppInbox transaction and idempotency', () => {
         await createRoom(harness, GROUP_REF.groupId, 'Topology room');
         configureTopology(harness);
         const owner = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
-            await configReservation(
-                {
-                    callerId: 'owner',
-                    requestId: 'shared-graph-request',
-                    degreeLimit: 4,
-                    materialize: async () => await topologyCommand('shared-graph-request', 4)
-                }
-            ),
+            await configReservation({
+                callerId: 'owner',
+                requestId: 'shared-graph-request',
+                degreeLimit: 4,
+                materialize: async () => await topologyCommand('shared-graph-request', 4)
+            }),
             harness.sessions.owner
         );
         const other = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
-            await configReservation(
-                {
-                    callerId: 'other',
-                    requestId: 'shared-graph-request',
-                    degreeLimit: 4,
-                    materialize: async () =>
-                        await topologyCommand('shared-graph-request', 4, {
-                            principalId: 'other',
-                            sessionId: 'other-session',
-                            capturedAtEpochMs: 1_000
-                        })
-                }
-            ),
+            await configReservation({
+                callerId: 'other',
+                requestId: 'shared-graph-request',
+                degreeLimit: 4,
+                materialize: async () =>
+                    await topologyCommand('shared-graph-request', 4, {
+                        principalId: 'other',
+                        sessionId: 'other-session',
+                        capturedAtEpochMs: 1_000
+                    })
+            }),
             harness.sessions.other
         );
         await vi.waitFor(async () => {
@@ -271,9 +356,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         let materializationCount = 0;
         const materialize = vi.fn(async () => {
             materializationCount += 1;
-            return await reconfigureCommand(
-                { requestId: 'shared-admin-request', principalId: 'owner', sessionId: 'owner-session', capturedAtEpochMs: 1_000 }
-            );
+            return await reconfigureCommand('shared-admin-request', { principalId: 'owner', sessionId: 'owner-session', capturedAtEpochMs: 1_000 });
         });
         const first = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
             await adminReconfigureReservation('owner', materialize),
@@ -294,9 +377,11 @@ describe('topology AppInbox transaction and idempotency', () => {
         const replayMaterialize = vi.fn(
             async () => {
                 replayMaterializationCount += 1;
-                return await reconfigureCommand(
-                    { requestId: 'shared-admin-request', principalId: renewed.clientId, sessionId: renewed.sessionId, capturedAtEpochMs: 2_000 }
-                );
+                return await reconfigureCommand('shared-admin-request', {
+                    principalId: renewed.clientId,
+                    sessionId: renewed.sessionId,
+                    capturedAtEpochMs: 2_000
+                });
             }
         );
         await expect(
@@ -311,9 +396,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         let otherMaterializationCount = 0;
         const otherMaterialize = vi.fn(async () => {
             otherMaterializationCount += 1;
-            return await reconfigureCommand(
-                { requestId: 'shared-admin-request', principalId: 'other', sessionId: 'other-session', capturedAtEpochMs: 3_000 }
-            );
+            return await reconfigureCommand('shared-admin-request', { principalId: 'other', sessionId: 'other-session', capturedAtEpochMs: 3_000 });
         });
         const other = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
             await adminReconfigureReservation('other', otherMaterialize),
@@ -346,23 +429,23 @@ describe('topology AppInbox transaction and idempotency', () => {
         const command = await topologyCommand('collision-request', 5);
         const mutationCommand = toTopologyConfigMutationCommand(command);
         const mutation = management.mutationOwners.configMutationService;
-        const preparation = await mutation.prepare({
-            command: mutationCommand,
-            commandHash: command.commandHash,
-            capturedAtEpochMs: command.capturedAtEpochMs
-        });
         const read = await mutation.read(mutationCommand);
-        const computed = mutation.compute(preparation, read, 1);
-        mutation.validate(preparation, read, 1, computed);
+        const attempt = {
+            commandHash: command.commandHash,
+            capturedAtEpochMs: command.capturedAtEpochMs,
+            count: 1
+        };
+        const computed = computeTopologyConfigMutationAttempt(mutationCommand, read, attempt);
+        expect(validateTopologyConfigMutationAttempt({ command: mutationCommand, read, attempt }, computed)).toEqual([]);
         expect(computed.outcome).toBe('write');
         if (computed.outcome !== 'write') {
             throw new Error('Expected a topology config write');
         }
-        const expectedEntry = computeRtcTopologyEntry(computed.outbox);
-        const collisionEntry = computeRtcTopologyEntry({
-            ...computed.outbox,
-            publish: !computed.outbox.publish
-        });
+        const expectedEntry = computed.outboxWrite.entry;
+        const collisionEntry = {
+            ...expectedEntry,
+            resource: `${expectedEntry.resource}\n`
+        };
         expect(collisionEntry.key).toEqual(expectedEntry.key);
         expect(collisionEntry.resource).not.toBe(expectedEntry.resource);
         await harness.database.begin(async (transaction) => {
@@ -395,7 +478,11 @@ describe('topology AppInbox transaction and idempotency', () => {
             nowEpochMs: () => harness.nowEpochMs,
             wakeQueue,
             transactionWriter: {
-                writeMutation: async (_context, write) => await harness.database.begin(write)
+                readCompletionFacts: (context) => ({ entry: context.entry, completedAtEpochMs: harness.nowEpochMs }),
+                writeMutation: async (_context, computed, write) => {
+                    await harness.database.begin(write);
+                    return computed.durableResult;
+                }
             }
         });
 
@@ -404,9 +491,8 @@ describe('topology AppInbox transaction and idempotency', () => {
                 {
                     enqueue: wireEnqueue,
                     message,
-                    entry: { ...entry, dequeueAudit: { ...entry.dequeueAudit, attempts: 1 } },
-                    encodeResult: (result) => encodeAppInboxResult(result, 'Topology transaction test result')
-                } satisfies AppInboxMessageContext<TopologyAppInboxResult>,
+                    entry: { ...entry, status: EntityStatus.RESERVED, dequeueAudit: { ...entry.dequeueAudit, attempts: 1 } }
+                } satisfies AppInboxExecutionMetadata,
                 management.mutationOwners
             )
         ).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
@@ -424,7 +510,8 @@ describe('topology AppInbox transaction and idempotency', () => {
 
 function configureTopology(
     harness: AuthorityHarness,
-    wakeQueue?: () => void
+    wakeQueue?: () => void,
+    database: AuthorityHarness['database'] = harness.database
 ): GroupTopologyConfigRepository {
     const repository = new GroupTopologyConfigRepository(harness.runtimeRepository);
     const management = topologyManagement(harness, repository);
@@ -435,7 +522,7 @@ function configureTopology(
                 inboxQueueReader: harness.reader,
                 resourceInboxRepository: harness.queue,
                 resourceInboxResultsRepository: harness.results,
-                database: harness.database,
+                database,
                 groupStateService: harness.groupStateService,
                 mutationOwners: management.mutationOwners
             },
@@ -517,29 +604,25 @@ async function topologyCommand(
     });
 }
 
-interface ReconfigureCommandInput extends TopologyCommandFacts {
-    readonly requestId: string;
-}
-
 async function reconfigureCommand(
-    input: ReconfigureCommandInput
+    requestId: string,
+    facts: TopologyCommandFacts
 ): Promise<TopologyAppInboxCommand> {
-    const { requestId, principalId, sessionId, capturedAtEpochMs } = input;
     return await toTopologyAppInboxCommand({
-        actor: { principalId, sessionId },
+        actor: { principalId: facts.principalId, sessionId: facts.sessionId },
         groupRef: GROUP_REF,
         requestId,
-        capturedAtEpochMs,
+        capturedAtEpochMs: facts.capturedAtEpochMs,
         payload: { operation: 'reconfigureTopology', requestOptions: {}, publish: true }
     });
 }
 
 async function adminReconfigureReservation(
     callerId: string,
-    materialize: () => Promise<TopologyAppInboxCommand>
+    materialize: TopologyInboxService.HttpCommandReservation['materialize']
 ): Promise<TopologyInboxService.HttpCommandReservation> {
     return {
-        operation: 'reconfigureTopology',
+        operation: 'reconfigureTopology' as const,
         requestId: 'shared-admin-request',
         callerId,
         groupRef: GROUP_REF,
@@ -557,7 +640,7 @@ interface ConfigReservationInput {
     readonly callerId: string;
     readonly requestId: string;
     readonly degreeLimit: number;
-    readonly materialize: () => Promise<TopologyAppInboxCommand>;
+    readonly materialize: TopologyInboxService.HttpCommandReservation['materialize'];
 }
 
 async function configReservation(
@@ -565,7 +648,7 @@ async function configReservation(
 ): Promise<TopologyInboxService.HttpCommandReservation> {
     const { callerId, requestId, degreeLimit, materialize } = input;
     return {
-        operation: 'putConfig',
+        operation: 'putConfig' as const,
         requestId,
         callerId,
         groupRef: GROUP_REF,
@@ -580,9 +663,10 @@ async function configReservation(
 }
 
 function topologyEnqueue(command: TopologyAppInboxCommand): AppInboxEnqueueInput {
+    const type = toTopologyAppInboxType(command.operation);
     return {
-        type: AppInboxType.TOPOLOGY_CONFIG_PUT,
-        topicId: AppInboxType.TOPOLOGY_CONFIG_PUT,
+        type,
+        topicId: type,
         resourceId: command.requestId,
         contextId: `application=${GROUP_REF.applicationId}:workspace=${GROUP_REF.workspaceId}:` +
             `group=${GROUP_REF.groupId}:caller=${command.actor.principalId}`,

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GroupStateMutationCommand } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
-import { assertGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/assert-group-mutation-authority.ts';
-import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { validateGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-authority.ts';
+import type {
+    GroupMutationCommand,
+    GroupMutationFacts
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { toApplyPlannedLayoutCommand } from '@shared-server/rallar-system/group-state/to-apply-planned-layout-command.ts';
 import { computeTopologyPromotionEntry, decodeTopologyPromotionWork } from '@shared-server/rallar-system/group-state/topology-promotion-outbox-entry.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -303,7 +306,7 @@ describe('applyPlannedLayout through the durable service', () => {
             expectedLayout: IDENTITY
         }));
 
-        expect(() => assertGroupMutationAuthority(prepared.command, prepared.facts))
+        expect(() => requireValidGroupMutationAuthority(prepared.command, prepared.facts))
             .not.toThrow();
     });
 });
@@ -326,3 +329,13 @@ describe('topology promotion outbox entry', () => {
         });
     });
 });
+
+function requireValidGroupMutationAuthority(
+    command: GroupMutationCommand,
+    facts: GroupMutationFacts
+): void {
+    const issues = validateGroupMutationAuthority(command, facts);
+    if (issues.length > 0) {
+        throw issues[0].cause;
+    }
+}

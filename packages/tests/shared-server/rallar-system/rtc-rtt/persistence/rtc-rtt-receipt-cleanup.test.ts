@@ -1,3 +1,12 @@
+// dprint-ignore
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import type { RtcRttMutationReceipt } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-contracts.ts';
 import { RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
@@ -12,7 +21,7 @@ import {
     RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
     RTC_RTT_RECEIPTS_NAMESPACE
 } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
-import { describe, expect, it } from 'vitest';
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
@@ -23,7 +32,129 @@ interface RtcRttReceiptHarness {
     readonly expireAtEpochMs: number;
 }
 
+interface ScheduledRtcRttReceiptCleanup {
+    readonly callback: () => void;
+    readonly delayMs: number;
+    readonly handle: object;
+}
+
 describe('RTC RTT receipt cleanup ownership', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it.each([-1, -0, 0.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1])(
+        'rejects original revision %s before entering a transaction and preserves the receipt',
+        async (revision) => {
+            const harness = await createReceiptHarness({ nowOffsetFromExpiry: 1 });
+            const original = setReceiptStorageRevision(harness, revision);
+            const transactionCount = observeTransactionCount(harness.runtime);
+
+            await expect(cleanupExpiredRtcRttReceipts(harness.repository)).rejects.toMatchObject({
+                name: 'RtcRttReceiptFamilyCleanupError',
+                removedCount: 0,
+                failures: [{
+                    familyId: harness.receipt.receiptId,
+                    error: { name: 'Error', message: 'RTC RTT receipt cleanup failed' }
+                }]
+            });
+
+            expect(transactionCount()).toBe(0);
+            await expect(harness.runtime.findEntry(RTC_RTT_RECEIPTS_NAMESPACE, harness.receipt.receiptId))
+                .resolves.toEqual(original);
+        }
+    );
+
+    it('accepts an update at MAX minus one and deletes with the resulting MAX revision', async () => {
+        const harness = await createReceiptHarness({ nowOffsetFromExpiry: 1 });
+        setReceiptStorageRevision(harness, Number.MAX_SAFE_INTEGER - 1);
+        const deleteIfRevision = harness.runtime.deleteIfRevision.bind(harness.runtime);
+        const deletions: Parameters<typeof harness.runtime.deleteIfRevision>[] = [];
+        vi.spyOn(harness.runtime, 'deleteIfRevision').mockImplementation(async (...args) => {
+            deletions.push(args);
+            return await deleteIfRevision(...args);
+        });
+
+        await expect(cleanupExpiredRtcRttReceipts(harness.repository)).resolves.toBe(1);
+
+        expect(deletions).toEqual([
+            [RTC_RTT_RECEIPTS_NAMESPACE, harness.receipt.receiptId, Number.MAX_SAFE_INTEGER]
+        ]);
+        await expect(harness.runtime.findEntry(RTC_RTT_RECEIPTS_NAMESPACE, harness.receipt.receiptId))
+            .resolves.toBeUndefined();
+    });
+
+    it('deletes with the revision returned by the guard, not an independently calculated revision', async () => {
+        const harness = await createReceiptHarness({ nowOffsetFromExpiry: 1 });
+        const upsertIfRevision = harness.runtime.upsertIfRevision.bind(harness.runtime);
+        vi.spyOn(harness.runtime, 'upsertIfRevision').mockImplementationOnce(async (...args) => {
+            const result = await upsertIfRevision(...args);
+            if (result.status === 'conflict') {
+                return result;
+            }
+            setReceiptStorageRevision(harness, 41);
+            return { status: 'applied', revision: 41 };
+        });
+
+        await expect(cleanupExpiredRtcRttReceipts(harness.repository)).resolves.toBe(1);
+        await expect(harness.runtime.findEntry(RTC_RTT_RECEIPTS_NAMESPACE, harness.receipt.receiptId))
+            .resolves.toBeUndefined();
+    });
+
+    it('rolls back the guard when deletion conflicts and does not retry inside cleanup', async () => {
+        const harness = await createReceiptHarness({ nowOffsetFromExpiry: 1 });
+        const original = setReceiptStorageRevision(harness, 0);
+        const transactionCount = observeTransactionCount(harness.runtime);
+        let deletionCount = 0;
+        vi.spyOn(harness.runtime, 'deleteIfRevision').mockImplementation(async () => {
+            deletionCount += 1;
+            return { status: 'conflict' };
+        });
+
+        await expect(cleanupExpiredRtcRttReceipts(harness.repository)).rejects.toMatchObject({
+            name: 'RtcRttReceiptFamilyCleanupError',
+            removedCount: 0,
+            failures: [{
+                familyId: harness.receipt.receiptId,
+                error: {
+                    name: 'RuntimeStateWriteConflictError',
+                    message: 'RTC RTT receipt cleanup lost its optimistic guard'
+                }
+            }]
+        });
+
+        expect(transactionCount()).toBe(1);
+        expect(deletionCount).toBe(1);
+        await expect(harness.runtime.findEntry(RTC_RTT_RECEIPTS_NAMESPACE, harness.receipt.receiptId))
+            .resolves.toEqual(original);
+    });
+
+    it('aggregates invalid receipt failures while still deleting another expired receipt', async () => {
+        const harness = await createReceiptHarness({ nowOffsetFromExpiry: 1 });
+        const original = setReceiptStorageRevision(harness, Number.MAX_SAFE_INTEGER);
+        const validReceipt = createReceipt(1, 2);
+        await harness.runtime.insertIfAbsent(
+            RTC_RTT_RECEIPTS_NAMESPACE,
+            validReceipt.receiptId,
+            JSON.stringify(validReceipt),
+            new Date(harness.expireAtEpochMs).toISOString()
+        );
+        const transactionCount = observeTransactionCount(harness.runtime);
+
+        await expect(cleanupExpiredRtcRttReceipts(harness.repository)).rejects.toMatchObject({
+            name: 'RtcRttReceiptFamilyCleanupError',
+            removedCount: 1,
+            failures: [{
+                familyId: harness.receipt.receiptId,
+                error: { name: 'Error', message: 'RTC RTT receipt cleanup failed' }
+            }]
+        });
+
+        expect(transactionCount()).toBe(1);
+        await expect(harness.runtime.findEntry(RTC_RTT_RECEIPTS_NAMESPACE, harness.receipt.receiptId))
+            .resolves.toEqual(original);
+        await expect(harness.runtime.findEntry(RTC_RTT_RECEIPTS_NAMESPACE, validReceipt.receiptId))
+            .resolves.toBeUndefined();
+    });
+
     it('deletes an expired receipt', async () => {
         const harness = await createReceiptHarness({ nowOffsetFromExpiry: 1 });
 
@@ -44,6 +175,13 @@ describe('RTC RTT receipt cleanup ownership', () => {
 
     it('preserves a receipt when its optimistic revision changes before deletion', async () => {
         const harness = await createReceiptHarness({ nowOffsetFromExpiry: 1 });
+        const transactionCount = observeTransactionCount(harness.runtime);
+        const deleteIfRevision = harness.runtime.deleteIfRevision.bind(harness.runtime);
+        let deletionCount = 0;
+        vi.spyOn(harness.runtime, 'deleteIfRevision').mockImplementation(async (...args) => {
+            deletionCount += 1;
+            return await deleteIfRevision(...args);
+        });
         let changedRevision = false;
         harness.runtime.beforeConditionalWrite = async (operation, namespace, key) => {
             if (
@@ -63,12 +201,14 @@ describe('RTC RTT receipt cleanup ownership', () => {
 
         const cleanup = cleanupExpiredRtcRttReceipts(harness.repository);
         await expect(cleanup).rejects.toBeInstanceOf(RtcRttReceiptFamilyCleanupError);
+        expect(transactionCount()).toBe(1);
+        expect(deletionCount).toBe(0);
         await expect(
             harness.repository.probeMutationReceiptEntry(harness.receipt.receiptId)
         ).resolves.toBeDefined();
     });
 
-    it('protects the receipt namespace from generic runtime expiry', () => {
+    it('declares the receipt namespace protected from generic runtime expiry', () => {
         expect(RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES).toContain(RTC_RTT_RECEIPTS_NAMESPACE);
     });
 
@@ -77,13 +217,7 @@ describe('RTC RTT receipt cleanup ownership', () => {
         const repository = new RtcRttRepository(runtimeRepository, {
             now: () => 1
         });
-        const scheduled: Array<
-            Readonly<{
-                callback: () => void;
-                delayMs: number;
-                handle: object;
-            }>
-        > = [];
+        const scheduled: ScheduledRtcRttReceiptCleanup[] = [];
         const cancelled: RtcRttReceiptFamilyCleanupTimerHandle[] = [];
         const errors: Error[] = [];
         const handle = initRtcRttReceiptFamilyCleanup(repository, {
@@ -110,17 +244,12 @@ describe('RTC RTT receipt cleanup ownership', () => {
         const failure = new Error('one corrupt family');
         const secondRun = Promise.withResolvers<number>();
         const repository = new SequencedCleanupRtcRttRepository(failure, secondRun.promise);
-        const scheduled: Array<
-            Readonly<{
-                callback: () => void;
-                handle: object;
-            }>
-        > = [];
+        const scheduled: ScheduledRtcRttReceiptCleanup[] = [];
         const handle = initRtcRttReceiptFamilyCleanup(repository, {
             intervalMs: 10,
-            schedule: (callback) => {
+            schedule: (callback, delayMs) => {
                 const timer = {};
-                scheduled.push({ callback, handle: timer });
+                scheduled.push({ callback, delayMs, handle: timer });
                 return timer;
             },
             cancel: () => {}
@@ -139,6 +268,27 @@ describe('RTC RTT receipt cleanup ownership', () => {
         handle.stop();
     });
 });
+
+function setReceiptStorageRevision(harness: RtcRttReceiptHarness, revision: number): RuntimeStateEntry {
+    const storageKey = `${RTC_RTT_RECEIPTS_NAMESPACE}::${harness.receipt.receiptId}`;
+    const current = harness.runtime.data.get(storageKey);
+    if (current === undefined) {
+        throw new Error('Expected a seeded RTC RTT receipt');
+    }
+    const entry = { ...current, revision };
+    harness.runtime.data.set(storageKey, entry);
+    return entry;
+}
+
+function observeTransactionCount(repository: FakeRuntimeStateRepository): () => number {
+    const begin = repository.begin.bind(repository);
+    let count = 0;
+    vi.spyOn(repository, 'begin').mockImplementation(async (operation) => {
+        count += 1;
+        return await begin(operation);
+    });
+    return () => count;
+}
 
 class SequencedCleanupRtcRttRepository extends RtcRttRepository {
     private readonly firstFailure: Error;
@@ -172,21 +322,21 @@ async function createReceiptHarness(
     const repository = new RtcRttRepository(runtime, {
         now: () => expireAtEpochMs + input.nowOffsetFromExpiry
     });
-    const receipt = createReceipt(acceptedAtEpochMs);
+    const receipt = createReceipt(acceptedAtEpochMs, 1);
     await runtime.insertIfAbsent(
         RTC_RTT_RECEIPTS_NAMESPACE,
         receipt.receiptId,
         JSON.stringify(receipt),
-        expireAtEpochMs
+        new Date(expireAtEpochMs).toISOString()
     );
     return { runtime, repository, receipt, expireAtEpochMs };
 }
 
-function createReceipt(acceptedAtEpochMs: number): RtcRttMutationReceipt {
+function createReceipt(acceptedAtEpochMs: number, measurementVersion: number): RtcRttMutationReceipt {
     const receiptId = toRtcRttMutationReceiptId({
         sessionIdFrom: 'session-a',
         sessionIdTo: 'session-b',
-        version: 1
+        version: measurementVersion
     });
     return {
         receiptId,
@@ -198,7 +348,7 @@ function createReceipt(acceptedAtEpochMs: number): RtcRttMutationReceipt {
             sessionIdFrom: 'session-a',
             sessionIdTo: 'session-b'
         },
-        measurementVersion: 1,
+        measurementVersion,
         affectedGroupRefs: [
             {
                 applicationId: 'app-1',

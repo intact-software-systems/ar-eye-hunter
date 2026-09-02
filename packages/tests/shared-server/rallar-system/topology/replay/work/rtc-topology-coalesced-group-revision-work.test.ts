@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest';
+// dprint-ignore
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
-import {
-    COALESCED_APP_OUTBOX_WORK_FIELD,
-    type CoalescedAppOutboxWorkData,
-    type CoalescedAppOutboxWorkEnvelope
-} from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
 import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
@@ -24,9 +24,15 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
+import {
+    COALESCED_APP_OUTBOX_WORK_FIELD,
+    type CoalescedAppOutboxWorkData,
+    type CoalescedAppOutboxWorkEnvelope
+} from '@shared/queuebox/coalesced-app-outbox-work-envelope.ts';
 import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { isCanonicalRtcTopologyWorkEntry } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
+
 import { createTestGroup } from '../../../../../create-test-group.ts';
 
 const GROUP_REF = {
@@ -52,7 +58,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: null
         });
 
-        const envelope = readPersistedGroupRevisionEnvelope(computed.entry);
+        const envelope = readPersistedGroupRevisionEnvelope(computed.entryWrite.entry);
         expect(envelope.data.origin).toBe('commanded');
         expect(isChangeGatedGroupRevisionWork(envelope.data)).toBe(false);
     });
@@ -81,10 +87,10 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
             origin: secondOrigin,
-            previousEntry: first.entry
+            previousEntry: first.entryWrite.entry
         });
 
-        expect(readPersistedGroupRevisionEnvelope(second.entry).data.origin).toBe('commanded');
+        expect(readPersistedGroupRevisionEnvelope(second.entryWrite.entry).data.origin).toBe('commanded');
     });
 
     it('creates a per-group coalesced entry with debounce scheduling on first intent', () => {
@@ -99,11 +105,11 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: null
         });
 
-        expect(computed.expectedEntry).toBeNull();
-        expect(computed.entry.status).toBe(EntityStatus.RETRY);
-        expect(computed.entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(BASE_EPOCH_MS + DEBOUNCE_MS);
+        expect(computed.operation).toEqual({ kind: 'insert' });
+        expect(computed.entryWrite.entry.status).toBe(EntityStatus.RETRY);
+        expect(computed.entryWrite.entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(BASE_EPOCH_MS + DEBOUNCE_MS);
 
-        const envelope = readPersistedEnvelope(computed.entry);
+        const envelope = readPersistedEnvelope(computed.entryWrite.entry);
         expect(envelope.resourceId).toBe(toRtcTopologyCoalescedGroupRevisionResourceId(OVERLAY_ID));
         expect(envelope.resourceId).toBe(`${OVERLAY_ID}:group-revision`);
         expect(envelope.data.kind).toBe('group-revision');
@@ -128,8 +134,8 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: null
         });
 
-        expect(computed.entry.status).toBe(EntityStatus.NEW);
-        expect(computed.entry.dequeueAudit.nextTs).toBeUndefined();
+        expect(computed.entryWrite.entry.status).toBe(EntityStatus.NEW);
+        expect(computed.entryWrite.entry.dequeueAudit.nextTs).toBeUndefined();
     });
 
     it('merges onto a pending predecessor: max revision, sliding due, one generation up', () => {
@@ -151,11 +157,15 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
             origin: 'automatic',
-            previousEntry: first.entry
+            previousEntry: first.entryWrite.entry
         });
 
-        expect(second.expectedEntry).toBe(first.entry);
-        const envelope = readPersistedGroupRevisionEnvelope(second.entry);
+        expect(second.operation).toMatchObject({
+            kind: 'replace-pending-or-successor',
+            expectedGeneration: 1,
+            expectedEntry: first.entryWrite.entry
+        });
+        const envelope = readPersistedGroupRevisionEnvelope(second.entryWrite.entry);
         expect(envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]).toMatchObject({
             generation: 2,
             dueAtEpochMs: BASE_EPOCH_MS + 200 + DEBOUNCE_MS
@@ -164,8 +174,8 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupRevision: 4,
             presenceRevision: 5
         });
-        expect(second.entry.status).toBe(EntityStatus.RETRY);
-        expect(second.entry.dequeueAudit.attempts).toBe(first.entry.dequeueAudit.attempts);
+        expect(second.entryWrite.entry.status).toBe(EntityStatus.RETRY);
+        expect(second.entryWrite.entry.dequeueAudit.attempts).toBe(first.entryWrite.entry.dequeueAudit.attempts);
     });
 
     it('keeps merged generations canonical so handler-finalized releases stay idempotent', () => {
@@ -189,26 +199,22 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             recomputeDebounceMs: DEBOUNCE_MS,
             senderId: 'server-1',
             origin: 'automatic',
-            previousEntry: first.entry
+            previousEntry: first.entryWrite.entry
         });
-        const merged = JSON.parse(second.entry.resource) as {
-            id: { ts: number; };
-            audit: { createdTs: number; };
-            constraints: { expiresAtMs: number; };
-        };
+        const merged = decodePersistedALMessage(second.entryWrite.entry.resource);
 
         expect(merged.id.ts).toBe(unexpiredBaseEpochMs);
-        expect(merged.audit.createdTs).toBe(unexpiredBaseEpochMs);
-        expect(merged.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
-        expect(isCanonicalRtcTopologyWorkEntry(second.entry)).toBe(true);
+        expect(merged.audit?.createdTs).toBe(unexpiredBaseEpochMs);
+        expect(merged.constraints?.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
+        expect(isCanonicalRtcTopologyWorkEntry(second.entryWrite.entry)).toBe(true);
 
         const reserved: ResourceEntry = {
-            ...second.entry,
+            ...second.entryWrite.entry,
             status: EntityStatus.RESERVED,
             dequeueAudit: { attempts: 1 }
         };
         const finalized: ResourceEntry = {
-            ...second.entry,
+            ...second.entryWrite.entry,
             status: EntityStatus.COMPLETED,
             dequeueAudit: { attempts: 1 }
         };
@@ -234,7 +240,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: null
         });
         const completedFirst: ResourceEntry = {
-            ...first.entry,
+            ...first.entryWrite.entry,
             status: EntityStatus.COMPLETED,
             dequeueAudit: { attempts: 1 }
         };
@@ -248,16 +254,18 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             origin: 'automatic',
             previousEntry: completedFirst
         });
-        const revivedMessage = JSON.parse(revived.entry.resource) as {
-            id: { ts: number; };
-            constraints: { expiresAtMs: number; };
-        };
+        const revivedMessage = decodePersistedALMessage(revived.entryWrite.entry.resource);
 
-        expect(revived.entry.dequeueAudit.attempts).toBe(0);
+        expect(revived.entryWrite.entry.dequeueAudit.attempts).toBe(0);
+        expect(revived.operation).toMatchObject({
+            kind: 'replace-finished-or-successor',
+            expectedGeneration: 1,
+            expectedEntry: completedFirst
+        });
         expect(revivedMessage.id.ts).toBe(unexpiredBaseEpochMs);
-        expect(revivedMessage.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
-        expect(revived.entry.audit).toEqual(first.entry.audit);
-        expect(isCanonicalRtcTopologyWorkEntry(revived.entry)).toBe(true);
+        expect(revivedMessage.constraints?.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
+        expect(revived.entryWrite.entry.audit).toEqual(first.entryWrite.entry.audit);
+        expect(isCanonicalRtcTopologyWorkEntry(revived.entryWrite.entry)).toBe(true);
     });
 
     it('keeps the newer predecessor snapshot when the incoming revision is older', () => {
@@ -270,7 +278,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupRevision: 4,
             presenceRevision: 6
         });
-        expect(merged.groupSnapshot).toBe(newer.groupSnapshot);
+        expect(merged.groupSnapshot).toEqual(newer.groupSnapshot);
         expect(merged.requestedAtEpochMs).toBe(BASE_EPOCH_MS + 300);
         expect(merged[COALESCED_APP_OUTBOX_WORK_FIELD].dueAtEpochMs).toBe(
             BASE_EPOCH_MS + 300 + DEBOUNCE_MS
@@ -289,7 +297,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: null
         });
         const completed: ResourceEntry = {
-            ...first.entry,
+            ...first.entryWrite.entry,
             status: EntityStatus.COMPLETED,
             dequeueAudit: { attempts: 3 }
         };
@@ -305,7 +313,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: completed
         });
 
-        const envelope = readPersistedGroupRevisionEnvelope(revived.entry);
+        const envelope = readPersistedGroupRevisionEnvelope(revived.entryWrite.entry);
         expect(envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]).toMatchObject({
             generation: 2,
             dueAtEpochMs: BASE_EPOCH_MS + 60_000 + DEBOUNCE_MS,
@@ -315,7 +323,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupRevision: 5,
             presenceRevision: 5
         });
-        expect(revived.entry.dequeueAudit.attempts).toBe(0);
+        expect(revived.entryWrite.entry.dequeueAudit.attempts).toBe(0);
     });
 
     it('always carries a deterministic per-revision successor identity', () => {
@@ -329,7 +337,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             origin: 'automatic',
             previousEntry: null
         });
-        const reserved: ResourceEntry = { ...first.entry, status: EntityStatus.RESERVED };
+        const reserved: ResourceEntry = { ...first.entryWrite.entry, status: EntityStatus.RESERVED };
 
         const blocked = computeCoalescedRtcTopologyGroupRevisionWork({
             aggregateRef: GROUP_REF,
@@ -342,7 +350,8 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: reserved
         });
 
-        const successorEnvelope = readPersistedGroupRevisionEnvelope(blocked.successorEntry);
+        const successorEnvelope = readPersistedGroupRevisionEnvelope(blocked.successorWrite.entry);
+        expect(blocked.operation).toEqual({ kind: 'successor', expectedEntry: reserved });
         expect(successorEnvelope.resourceId).toBe(
             `${OVERLAY_ID}:group-revision:group=4;presence=5`
         );
@@ -351,7 +360,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupRevision: 4,
             presenceRevision: 5
         });
-        const mainEnvelope = readPersistedGroupRevisionEnvelope(blocked.entry);
+        const mainEnvelope = readPersistedGroupRevisionEnvelope(blocked.entryWrite.entry);
         expect(mainEnvelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation).toBe(2);
     });
 
@@ -366,7 +375,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             origin: 'automatic',
             previousEntry: null
         });
-        const corrupted: ResourceEntry = { ...first.entry, resource: '{"not":"a message"}' };
+        const corrupted: ResourceEntry = { ...first.entryWrite.entry, resource: '{"not":"a message"}' };
 
         expect(() =>
             computeCoalescedRtcTopologyGroupRevisionWork({
@@ -595,7 +604,7 @@ describe('readPendingTopologyReplan', () => {
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: null
-        }).entry;
+        }).entryWrite.entry;
     }
 
     it('reads a queued replan and its due time off the coalesced row', async () => {

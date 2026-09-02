@@ -8,6 +8,7 @@ import {
     type GroupStateServiceDependencies,
     type GroupStateWritten
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { GroupMutationIdempotencyConflictError } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import {
     type GroupMutationComputed,
     type GroupMutationComputedWrite,
@@ -17,14 +18,13 @@ import {
 import { toGroupMutationRejectionError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { readGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
-import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
-import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
-import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
+import { GROUP_LIFECYCLE_POLICIES_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { decodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { GroupStateEventStore } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
+import { decodeRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/decode-runtime-state-guarded-batch-result.ts';
 import type { RuntimeStateGuardedBatchTransaction } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
 import { RuntimeStateRetryExhaustedError, RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type {
     RuntimeStateGuardedBatchTransactionalRepositoryLike,
@@ -75,9 +75,16 @@ export class GroupStateTestMutationExecutor {
             try {
                 const read = await this.dependencies.durableService.read(command);
                 computed = this.dependencies.durableService.compute(command, read);
-                this.dependencies.durableService.validate(command, read, computed);
+                const issues = this.dependencies.durableService.validate(command, read, computed);
+                if (issues.length > 0) {
+                    throw issues[0].cause;
+                }
                 if (computed.outcome === 'idempotency-conflict') {
-                    throw new TypeError('Validated idempotency conflict is unreachable');
+                    throw new GroupMutationIdempotencyConflictError(
+                        command.command.commandId,
+                        computed.existingCommandHash,
+                        computed.receivedCommandHash
+                    );
                 }
                 if (computed.outcome === 'write') {
                     await this.writeComputed(computed);
@@ -115,7 +122,10 @@ export class GroupStateTestMutationExecutor {
                 authenticatedAuthority: null
             };
             computed = computeGroupMutation({ command, read, facts });
-            assertGroupMutation({ command, read, facts, computed });
+            const issues = validateGroupMutation({ command, read, facts, computed });
+            if (issues.length > 0) {
+                throw issues[0].cause;
+            }
             if (computed.outcome === 'idempotency-conflict') {
                 throw new TypeError('Validated idempotency conflict is unreachable');
             }
@@ -195,10 +205,16 @@ export class GroupStateTestMutationExecutor {
         await this.dependencies.runtimeRepository.begin(async (transaction) => {
             const repository = this.repository(transaction);
             await writeGuardedBatch(transaction, computed);
-            if (computed.lifecyclePolicy !== null) {
-                await new GroupLifecyclePolicyRepository(transaction).writePolicy(computed.receipt.aggregateRef, computed.lifecyclePolicy);
+            if (computed.lifecyclePolicyWrite !== null) {
+                const policy = computed.lifecyclePolicyWrite;
+                await transaction.upsert(
+                    GROUP_LIFECYCLE_POLICIES_NAMESPACE,
+                    policy.key,
+                    policy.value,
+                    Date.parse(policy.expireAtIsoTimestamp)
+                );
             }
-            await repository.appendEvent(computed.event);
+            await repository.appendEvent(computed.eventWrite);
         });
         return computed.receipt;
     }
@@ -229,9 +245,9 @@ export class GroupStateTestMutationExecutor {
 }
 
 async function writeGuardedBatch(transaction: RuntimeStateGuardedBatchTransaction, computed: GroupMutationComputedWrite): Promise<void> {
-    const materialized = materializeGroupStateGuardedBatch(computed);
-    const result = validateRuntimeStateGuardedBatchResult(
-        materialized,
+    const materialized = computed.guardedBatch;
+    const result = decodeRuntimeStateGuardedBatchResult(
+        materialized.batch,
         await transaction.executeGuardedBatch(materialized)
     );
     if (result.guard.status === 'conflict' || result.effects.some((effect) => effect.status !== 'applied')) {

@@ -1,4 +1,5 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { computeGroupStateEventWrite } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 import type { RuntimeStateOptimisticTransactionRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 
 import {
@@ -108,6 +109,6 @@ async function publishAppInboxTestPendingWrites({
         await state.clientEventStore.appendClientEvent(event);
     }
     for (const event of pending.groupEvents) {
-        await state.groupEventStore.appendGroupEvent(event);
+        await state.groupEventStore.appendGroupEvent(computeGroupStateEventWrite(event));
     }
 }

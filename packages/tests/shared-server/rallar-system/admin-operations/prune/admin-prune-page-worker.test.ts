@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createAdminPruneCommand, decodeAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import {
     ADMIN_PRUNE_APP_OUTBOX_TOPIC,
@@ -6,7 +7,10 @@ import {
     toAdminPruneOutbox,
     type AdminPrunePageWork
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
-import { AdminPrunePageWorker, type AdminPrunePageRepository } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
+import {
+    AdminPrunePageWorker,
+    type AdminPrunePageRepository
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
 import { createAdminPruneAggregate, toAdminPruneAggregateEntry } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
@@ -75,14 +79,34 @@ describe('AdminPrunePageWorker', () => {
             kind: 'page',
             category: 'runtime-state',
             deletedRows: 2,
+            deletion: {
+                category: 'runtime-state',
+                rowIds: ['1', '2'],
+                capturedAt: new Date(NOW)
+            },
             next: {
                 kind: 'page',
                 afterCursor: '2',
                 pageIndex: 1
+            },
+            successorOutboxWrite: expect.objectContaining({
+                entry: expect.objectContaining({
+                    typeId: 'APP_OUTBOX',
+                    status: EntityStatus.NEW
+                }),
+                systemDate: expect.any(String),
+                createdAt: expect.any(String),
+                expiresAt: expect.any(String)
+            }),
+            reservationFinish: {
+                key: entry.key,
+                expectedAttempts: entry.dequeueAudit.attempts,
+                status: EntityStatus.COMPLETED,
+                completedAt: new Date(NOW)
             }
         });
 
-        await work.write(repository.transaction, computed, entry);
+        await work.write(repository.transaction, computed);
 
         expect(repository.deleted).toEqual(['1', '2']);
         expect(repository.calls[0]).toBe('progress');
@@ -346,12 +370,41 @@ describe('AdminPrunePageWorker', () => {
         });
 
         const command = decodeAdminPruneWork(entry);
-        const computed = work.compute(command, await work.read(command));
+        const read = await work.read(command);
+        const computed = work.compute(command, read);
 
         expect(computed.next?.expireAtEpochMs).toBe(resourceInboxRetryExpiryAtEpochMs(NOW + 50_000));
         expect(computed.aggregateSuccessor.audit.expiryTs.epochMilliseconds).toBe(
             resourceInboxRetryExpiryAtEpochMs(NOW + 50_000)
         );
+        expect(computed).toMatchObject({
+            aggregateSuccessorExpiryAtIsoTimestamp: Temporal.Instant.fromEpochMilliseconds(
+                resourceInboxRetryExpiryAtEpochMs(NOW + 50_000)
+            ).toString(),
+            pageChangedError: new Error('Admin prune page changed before delete'),
+            reservationChangedError: new Error('Admin prune reservation changed before commit')
+        });
+        expect(() =>
+            work.validate(command, read, {
+                ...computed,
+                aggregateSuccessorExpiryAtIsoTimestamp: 'forged'
+            })
+        ).toThrow(TypeError);
+        expect(() =>
+            work.validate(command, read, {
+                ...computed,
+                progressConflictError: Object.assign(
+                    new Error('Forged admin prune progress conflict'),
+                    { code: 'admin-prune-progress-conflict' as const }
+                )
+            })
+        ).toThrow(TypeError);
+        expect(() =>
+            work.validate(command, read, {
+                ...computed,
+                reservationChangedError: new Error('Forged admin prune reservation conflict')
+            })
+        ).toThrow(TypeError);
     });
 
     it('rejects forged multi-category work and page-size widening', () => {
@@ -384,32 +437,11 @@ describe('AdminPrunePageWorker', () => {
     });
 });
 
-class MemoryPruneRepository implements AdminPrunePageRepository {
-    readonly transaction = (() => undefined) as never;
-    readonly database = Object.assign((() => undefined) as never, {
-        begin: async <T>(write: (transaction: never) => Promise<T>) => {
-            const beforeDeleted = [...this.deleted];
-            const beforeEntries = [...this.writtenEntries];
-            const beforeFinished = [...this.finished];
-            const beforeProgressWrites = this.progressWrites;
-            try {
-                const result = await write(this.transaction);
-                if (this.rejectCommit) {
-                    throw new Error('Admin prune commit failed');
-                }
-                return result;
-            }
-            catch (error) {
-                this.deleted.splice(0, this.deleted.length, ...beforeDeleted);
-                this.writtenEntries.splice(0, this.writtenEntries.length, ...beforeEntries);
-                this.finished.splice(0, this.finished.length, ...beforeFinished);
-                this.progressWrites = beforeProgressWrites;
-                throw error;
-            }
-        }
-    });
+class MemoryPruneRepository implements Pick<AdminPrunePageRepository, 'readPage' | 'readAggregate'> {
+    readonly transaction: PSqlSql;
+    readonly database: PSqlSql;
     readonly deleted: string[] = [];
-    readonly writtenEntries: ResourceEntry[] = [];
+    readonly writtenEntries: PSqlParameter[][] = [];
     readonly finished: ResourceEntry['key'][] = [];
     readonly calls: string[] = [];
     lastExcludedResourceKey: ResourceEntry['key'] | null = null;
@@ -425,6 +457,29 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
 
     constructor(rowIds: readonly string[]) {
         this.rowIds = rowIds;
+        this.transaction = this.createTransaction();
+        this.database = Object.assign(this.createUnexpectedSql(), {
+            begin: async <T>(write: (transaction: PSqlSql) => Promise<T>) => {
+                const beforeDeleted = [...this.deleted];
+                const beforeEntries = [...this.writtenEntries];
+                const beforeFinished = [...this.finished];
+                const beforeProgressWrites = this.progressWrites;
+                try {
+                    const result = await write(this.transaction);
+                    if (this.rejectCommit) {
+                        throw new Error('Admin prune commit failed');
+                    }
+                    return result;
+                }
+                catch (error) {
+                    this.deleted.splice(0, this.deleted.length, ...beforeDeleted);
+                    this.writtenEntries.splice(0, this.writtenEntries.length, ...beforeEntries);
+                    this.finished.splice(0, this.finished.length, ...beforeFinished);
+                    this.progressWrites = beforeProgressWrites;
+                    throw error;
+                }
+            }
+        }) as PSqlSql;
     }
 
     readPage(input: { pageSize: number; excludedResourceKey: ResourceEntry['key'] | null; }) {
@@ -459,39 +514,62 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
         return Promise.resolve({ aggregate, resource: entry.resource });
     }
 
-    deletePage(_transaction: never, _command: unknown, rowIds: readonly string[]) {
-        this.calls.push('delete');
-        this.deleted.push(...rowIds);
-        return Promise.resolve(rowIds.length);
+    private createTransaction(): PSqlSql {
+        const transaction = (async <Result>(
+            stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+            ...values: readonly PSqlParameter[]
+        ): Promise<Result> => {
+            const statement = stringsOrValues.join(' ');
+            if (statement.includes('update resource_inbox_results')) {
+                this.calls.push('progress');
+                if (this.rejectProgressOnce) {
+                    this.rejectProgressOnce = false;
+                    return [] as Result;
+                }
+                this.progressWrites += 1;
+                return [{ ris_row_id: 1 }] as Result;
+            }
+            if (statement.includes('delete from')) {
+                this.calls.push('delete');
+                const rowIds = values[0] as readonly string[];
+                this.deleted.push(...rowIds);
+                return rowIds.map((rowId) => ({ rowId })) as Result;
+            }
+            if (statement.includes('insert into resource_inbox')) {
+                this.calls.push('outbox');
+                this.writtenEntries.push([...values]);
+                if (this.rejectOutbox) {
+                    throw new Error('Admin prune outbox collision');
+                }
+                return [{ ri_row_id: 1n }] as Result;
+            }
+            if (statement.includes('update resource_inbox')) {
+                if (this.loseReservation) {
+                    return [] as Result;
+                }
+                this.finished.push({
+                    topicId: String(values[2]),
+                    resourceId: String(values[3]),
+                    contextId: String(values[4])
+                });
+                return [{ ri_row_id: 1n }] as Result;
+            }
+            throw new Error('Unexpected admin prune transaction SQL');
+        }) as PSqlSql;
+        transaction.begin = () => Promise.reject(new Error('Admin prune write must use the caller transaction'));
+        return transaction;
     }
 
-    writeOutbox(_transaction: never, entry: ResourceEntry) {
-        this.calls.push('outbox');
-        this.writtenEntries.push(entry);
-        if (this.rejectOutbox) {
-            throw new Error('Admin prune outbox collision');
-        }
-        return Promise.resolve();
-    }
-
-    writeProgress() {
-        this.calls.push('progress');
-        this.progressWrites += 1;
-        if (this.rejectProgressOnce) {
-            this.rejectProgressOnce = false;
-            throw Object.assign(new Error('Admin prune aggregate changed before commit'), {
-                code: 'admin-prune-progress-conflict'
-            });
-        }
-        return Promise.resolve();
-    }
-
-    finishReserved(_transaction: never, entry: ResourceEntry) {
-        if (this.loseReservation) {
-            return Promise.resolve(false);
-        }
-        this.finished.push(entry.key);
-        return Promise.resolve(true);
+    private createUnexpectedSql(): PSqlSql {
+        const sql = async <Result>(
+            _stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+            ..._values: readonly PSqlParameter[]
+        ): Promise<Result> => {
+            throw new Error('Unexpected admin prune SQL outside a transaction');
+        };
+        return Object.assign(sql, {
+            begin: <Result>(_write: (transaction: PSqlSql) => Promise<Result>) => Promise.reject(new Error('Unexpected nested admin prune transaction'))
+        }) as PSqlSql;
     }
 }
 

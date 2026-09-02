@@ -86,7 +86,7 @@ describe('auth mutation validation', () => {
     it.each(validationRejectionCases())(
         'preserves the $label rejection',
         ({ command, read, computed, message, status }) => {
-            const rejection = captureRejection(() => validateAuthMutation(command, read, computed));
+            const rejection = captureRejection(() => Reflect.apply(validateAuthMutation, undefined, [command, read, computed]));
 
             expect(rejection).toBeInstanceOf(AuthMutationRejectedError);
             expect(rejection).toMatchObject({ message, status, code: 'auth-mutation-rejected' });

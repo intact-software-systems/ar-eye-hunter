@@ -1,4 +1,4 @@
-import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
@@ -359,12 +359,12 @@ describe('group lifecycle transition computation', () => {
         const computed = computeGroupMutation({ command, read, facts });
         expect(computed).toMatchObject({ outcome: 'rejected', rejectionCode: 'group-policy-denied' });
         const serialized: GroupMutationComputed = JSON.parse(JSON.stringify(computed));
-        expect(() => assertGroupMutation({ command, read, facts, computed: serialized })).not.toThrow();
+        expect(() => requireValidGroupMutation({ command, read, facts, computed: serialized })).not.toThrow();
         if (computed.outcome !== 'rejected' || computed.rejectionCode !== 'group-policy-denied') {
             throw new Error('Expected a policy rejection');
         }
         expect(() =>
-            assertGroupMutation({
+            requireValidGroupMutation({
                 command,
                 read,
                 facts,
@@ -673,4 +673,11 @@ function criterionFacts(): GroupMutationFacts {
         internalAuthority: 'formation-criterion',
         authenticatedAuthority: null
     };
+}
+
+function requireValidGroupMutation(input: Parameters<typeof validateGroupMutation>[0]): void {
+    const issues = validateGroupMutation(input);
+    if (issues.length > 0) {
+        throw issues[0].cause;
+    }
 }

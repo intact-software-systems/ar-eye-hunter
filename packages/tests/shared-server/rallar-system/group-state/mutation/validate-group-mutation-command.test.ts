@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { assertGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/assert-group-mutation-command.ts';
+import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
 import { type GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { ConnectGroupPresenceSessionRequest, GroupJoinCodeResponse, HeartbeatGroupPresenceSessionRequest } from '@shared/api/state-types.ts';
 
@@ -49,10 +49,10 @@ describe('group mutation command validation', () => {
             },
             commandHash: `sha256:${'0'.repeat(64)}`
         };
-        expect(() => assertGroupMutationCommand(command)).toThrow(/command|key|hash/i);
+        expect(() => requireValidGroupMutationCommand(command)).toThrow(/command|key|hash/i);
 
         expect(() =>
-            assertGroupMutationCommand(
+            requireValidGroupMutationCommand(
                 {
                     ...createMutationCommand(),
                     input: { ...createMutationCommand().input, unexpected: true }
@@ -61,7 +61,7 @@ describe('group mutation command validation', () => {
         ).toThrow(/unexpected|key/i);
 
         expect(() =>
-            assertGroupMutationCommand(
+            requireValidGroupMutationCommand(
                 createMutationCommand({
                     operation: 'rotateGroupJoinCode',
                     input: {
@@ -87,7 +87,7 @@ describe('group mutation command validation', () => {
         };
 
         expect(() =>
-            assertGroupMutationCommand(
+            requireValidGroupMutationCommand(
                 createMutationCommand({
                     operation: 'startGroupFormation',
                     input: startFormationInput
@@ -96,7 +96,7 @@ describe('group mutation command validation', () => {
         ).not.toThrow();
 
         expect(() =>
-            assertGroupMutationCommand(
+            requireValidGroupMutationCommand(
                 {
                     ...createMutationCommand(),
                     operation: 'startGroupFormation',
@@ -108,7 +108,7 @@ describe('group mutation command validation', () => {
 
     it('accepts presence commands without lifecycle fields', () => {
         expect(() =>
-            assertGroupMutationCommand(
+            requireValidGroupMutationCommand(
                 createMutationCommand({
                     operation: 'connectPresence',
                     sessionId: 'presence-session',
@@ -128,3 +128,10 @@ describe('group mutation command validation', () => {
         ).not.toThrow();
     });
 });
+
+function requireValidGroupMutationCommand(command: unknown): void {
+    const issues = validateGroupMutationCommand(command);
+    if (issues.length > 0) {
+        throw issues[0].cause;
+    }
+}

@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     toAdminPruneOutbox,
     type AdminPrunePageWork,
@@ -56,7 +56,8 @@ describe('admin prune retry lifetime', () => {
             aggregate,
             expectedAggregate: JSON.stringify(aggregate),
             authority: { allowed: true, code: 'allowed' },
-            nowEpochMs: NOW
+            nowEpochMs: NOW,
+            serviceId: 'server-1'
         };
 
         const computed = service.compute(command, read);
@@ -86,11 +87,21 @@ describe('admin prune retry lifetime', () => {
             finishes: 0,
             wakes: 0
         };
-        const transaction = (() => undefined) as never;
+        const transaction = (async <Result>(
+            stringsOrValues: TemplateStringsArray | readonly PSqlParameter[]
+        ): Promise<Result> => {
+            const statement = stringsOrValues.join(' ');
+            if (!statement.includes('update resource_inbox_results')) {
+                throw new Error('Admin prune retry must stop at the progress conflict');
+            }
+            calls.progressWrites += 1;
+            return [] as Result;
+        }) as PSqlSql;
+        transaction.begin = () => Promise.reject(new Error('Admin prune retry must use the caller transaction'));
         const database = Object.assign((() => undefined) as never, {
             begin: async <T>(write: (sql: PSqlSql) => Promise<T>): Promise<T> => await write(transaction)
         }) as PSqlSql;
-        const repository: AdminPrunePageRepository = {
+        const repository: Pick<AdminPrunePageRepository, 'readPage' | 'readAggregate'> = {
             readPage: () => {
                 calls.pageReads += 1;
                 return Promise.resolve({ rowIds: ['1', '2'], hasMore: false });
@@ -101,24 +112,6 @@ describe('admin prune retry lifetime', () => {
                     aggregate,
                     resource: toAdminPruneAggregateEntry(aggregate).resource
                 });
-            },
-            writeProgress: () => {
-                calls.progressWrites += 1;
-                throw Object.assign(new Error('Admin prune aggregate changed before commit'), {
-                    code: 'admin-prune-progress-conflict'
-                });
-            },
-            deletePage: () => {
-                calls.deletes += 1;
-                return Promise.resolve(2);
-            },
-            writeOutbox: () => {
-                calls.outboxWrites += 1;
-                return Promise.resolve();
-            },
-            finishReserved: () => {
-                calls.finishes += 1;
-                return Promise.resolve(true);
             }
         };
         const worker = new AdminPrunePageWorker({

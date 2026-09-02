@@ -1,149 +1,140 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { describe, expect, it } from 'vitest';
+
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { computeGroupPresenceSummaryEntry, type GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { describe, expect, it, vi } from 'vitest';
-import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createAppInboxTestDatabase } from '../../app-inbox/test-support/app-inbox-test-database.ts';
-import { TestResourceInbox, TestResourceInboxResults } from '../inbox/group-state-inbox-resource-fixtures.ts';
 
-const BASE_EPOCH_MS = Date.now();
+import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../../app-inbox/test-support/app-inbox-test-database.ts';
+import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { TestResourceInbox, TestResourceInboxResults } from '../inbox/group-state-inbox-resource-fixtures.ts';
+import { groupRef } from '../mutation/group-mutation-test-runtime.ts';
+import { seedOpenGroup } from './group-presence-test-runtime.ts';
+
+const BASE_EPOCH_MS = 1_900_000_000_000;
+
+interface RecordedFormationEvent {
+    readonly downstreamTopicIds: readonly string[];
+    readonly committedOutboxEntries: number;
+}
+
+interface FormationScenario {
+    readonly worker: GroupPresenceSummaryWork;
+    readonly database: AppInboxTestDatabase;
+    readonly queue: TestResourceInbox;
+    readonly runtime: GroupBarrierRepository;
+    readonly message: ALMessage;
+    readonly entry: ResourceEntry;
+    readonly effects: string[];
+    readonly formationEvents: RecordedFormationEvent[];
+}
 
 describe('GroupPresenceSummaryWork formation metrics', () => {
     it('records one summary expansion metric only after the transaction commits', async () => {
-        const { message, entry } = createCanonicalReservation();
-        const queue = new TestResourceInbox();
-        await queue.enqueue(entry);
-        const database = createAppInboxTestDatabase(queue, new TestResourceInboxResults());
-        const formationEvents: Array<Readonly<{ downstreamTopicIds: readonly string[]; }>> = [];
-        let wakeCount = 0;
-        const worker = new GroupPresenceSummaryWork({
-            outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
-            recomputeDebounceMs: 0,
-            runtimeRepository: new FakeRuntimeStateRepository(),
-            database: database as never,
-            serviceId: 'summary-handler',
-            wakeQueue: () => {
-                wakeCount += 1;
-            },
-            now: () => BASE_EPOCH_MS + 5_000,
-            formationMetrics: (event) => {
-                formationEvents.push(event);
-            }
-        });
-        vi.spyOn(worker, 'read').mockResolvedValue({} as never);
-        vi.spyOn(worker, 'compute').mockReturnValue(
-            createComputedWorkWithDownstreamTopics([
-                AppTopics.groupStateEvent
-            ])
-        );
-        vi.spyOn(worker, 'validate').mockReturnValue(undefined);
-        vi.spyOn(worker, 'write').mockResolvedValue(undefined);
+        const scenario = await createFormationScenario(false);
 
-        await worker.processReservedEntry(message, entry);
+        await scenario.worker.processReservedEntry(scenario.message, scenario.entry);
 
-        expect(formationEvents).toEqual([
-            {
-                downstreamTopicIds: [
-                    AppTopics.groupStateEvent,
-                    APP_OUTBOX_RTC_TOPOLOGY_TOPIC
-                ]
-            }
-        ]);
-        expect(wakeCount).toBe(1);
+        expect(scenario.effects).toEqual(['wake', 'metric']);
+        expect(scenario.formationEvents).toEqual([{
+            downstreamTopicIds: [AppTopics.groupStateEvent, APP_OUTBOX_RTC_TOPOLOGY_TOPIC],
+            committedOutboxEntries: 2
+        }]);
+        expect((await scenario.queue.getItem(scenario.entry.key))?.status).toBe(EntityStatus.COMPLETED);
     });
 
-    it('records no summary expansion metric when the transaction fails', async () => {
-        const { message, entry } = createCanonicalReservation();
-        const database = createAppInboxTestDatabase(new TestResourceInbox(), new TestResourceInboxResults());
-        const formationEvents: Array<Readonly<{ downstreamTopicIds: readonly string[]; }>> = [];
-        const worker = new GroupPresenceSummaryWork({
-            outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
-            recomputeDebounceMs: 0,
-            runtimeRepository: new FakeRuntimeStateRepository(),
-            database: database as never,
-            serviceId: 'summary-handler',
-            now: () => BASE_EPOCH_MS + 5_000,
-            formationMetrics: (event) => formationEvents.push(event)
+    it('records no summary expansion metric or wake after a late reservation failure', async () => {
+        const scenario = await createFormationScenario(false);
+        await scenario.queue.enqueue({
+            ...scenario.entry,
+            dequeueAudit: { ...scenario.entry.dequeueAudit, attempts: 2 }
         });
-        vi.spyOn(worker, 'read').mockResolvedValue({} as never);
-        vi.spyOn(worker, 'compute').mockReturnValue(createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent]));
-        vi.spyOn(worker, 'validate').mockReturnValue(undefined);
-        vi.spyOn(worker, 'write').mockResolvedValue(undefined);
+        const before = new Map(scenario.runtime.data);
 
-        await expect(worker.processReservedEntry(message, entry)).rejects.toThrow('Presence-summary reservation changed before commit');
-        expect(formationEvents).toEqual([]);
+        await expect(scenario.worker.processReservedEntry(scenario.message, scenario.entry))
+            .rejects.toThrow('Presence-summary reservation changed before commit');
+
+        expect(scenario.effects).toEqual([]);
+        expect(scenario.formationEvents).toEqual([]);
+        expect(scenario.database.outboxEntries.size).toBe(0);
+        expect(scenario.runtime.data).toEqual(before);
+    });
+
+    it('does not turn committed success into failure when the optional metrics sink throws', async () => {
+        const scenario = await createFormationScenario(true);
+
+        await scenario.worker.processReservedEntry(scenario.message, scenario.entry);
+
+        expect(scenario.effects).toEqual(['wake', 'metric']);
+        expect(scenario.database.outboxEntries.size).toBe(2);
+        expect((await scenario.queue.getItem(scenario.entry.key))?.status).toBe(EntityStatus.COMPLETED);
     });
 });
 
-function createComputedWorkWithDownstreamTopics(topicIds: readonly string[]) {
-    return {
-        downstreamOutboxEntries: topicIds.map((topicId, index) => ({
-            key: {
-                topicId,
-                resourceId: `downstream-${index}`,
-                contextId: 'summary-context'
+async function createFormationScenario(throwFromMetrics: boolean): Promise<FormationScenario> {
+    const runtime = new GroupBarrierRepository();
+    await seedOpenGroup(runtime, 'summary-group');
+    const entry = await createCanonicalReservation(runtime);
+    const queue = new TestResourceInbox();
+    await queue.enqueue(entry);
+    const database = createAppInboxTestDatabase(queue, new TestResourceInboxResults(), { runtimeRepository: runtime });
+    const effects: string[] = [];
+    const formationEvents: RecordedFormationEvent[] = [];
+    const worker = new GroupPresenceSummaryWork({
+        outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+        recomputeDebounceMs: 0,
+        runtimeRepository: runtime,
+        database,
+        serviceId: 'summary-handler',
+        wakeQueue: () => {
+            effects.push('wake');
+        },
+        now: () => BASE_EPOCH_MS,
+        formationMetrics: (event) => {
+            effects.push('metric');
+            formationEvents.push({ ...event, committedOutboxEntries: database.outboxEntries.size });
+            if (throwFromMetrics) {
+                throw new Error('Metrics unavailable');
             }
-        })),
-        coalescedTopologyWork: null
-    } as never;
+        }
+    });
+    return {
+        worker,
+        database,
+        queue,
+        runtime,
+        entry,
+        message: decodePersistedALMessage(entry.resource),
+        effects,
+        formationEvents
+    };
 }
 
-interface CanonicalSummaryReservation {
-    readonly entry: ResourceEntry;
-    readonly message: ALMessage;
-}
-
-function createCanonicalReservation(): CanonicalSummaryReservation {
+async function createCanonicalReservation(runtime: GroupBarrierRepository): Promise<ResourceEntry> {
+    const ref = groupRef('summary-group');
+    const event = (await createTestGroupStateRepository(runtime).listEvents(ref)).at(-1);
+    if (!event) {
+        throw new Error('Expected group creation event');
+    }
     const work: GroupPresenceSummaryWorkData = {
         effectKind: 'group-presence-summary',
-        aggregateRef: {
-            applicationId: 'summary-app',
-            workspaceId: 'main',
-            groupId: 'summary-group'
-        },
+        aggregateRef: ref,
         commandId: 'summary-command',
-        createdAtEpochMs: BASE_EPOCH_MS,
-        expireAtEpochMs: BASE_EPOCH_MS + 600_000,
-        acceptedCausalRevision: {
-            groupRevision: 4,
-            presenceRevision: 3
-        },
-        event: {
-            applicationId: 'summary-app',
-            workspaceId: 'main',
-            groupId: 'summary-group',
-            eventId: 'summary-event',
-            eventType: 'session-connected',
-            snapshotVersion: 4,
-            causalRevision: {
-                groupRevision: 4,
-                presenceRevision: 3
-            },
-            occurredAtEpochMs: BASE_EPOCH_MS,
-            actor: { kind: 'service', serviceId: 'summary-handler' },
-            reason: null,
-            traceId: null,
-            requestId: 'summary-command',
-            payload: {}
-        }
-    };
-    const queued = computeGroupPresenceSummaryEntry(work, 'summary-handler');
-    const entry: ResourceEntry = {
-        ...queued,
-        status: EntityStatus.RESERVED,
-        dequeueAudit: {
-            attempts: 1,
-            startTs: Temporal.Instant.fromEpochMilliseconds(BASE_EPOCH_MS + 2_000)
-        }
+        createdAtEpochMs: event.occurredAtEpochMs,
+        expireAtEpochMs: 253_402_300_799_999,
+        acceptedCausalRevision: event.causalRevision,
+        event
     };
     return {
-        entry,
-        message: JSON.parse(entry.resource) as ALMessage
+        ...computeGroupPresenceSummaryEntry(work, 'summary-handler'),
+        status: EntityStatus.RESERVED,
+        dequeueAudit: { attempts: 1, startTs: Temporal.Instant.fromEpochMilliseconds(BASE_EPOCH_MS) }
     };
 }

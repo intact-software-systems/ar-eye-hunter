@@ -1,17 +1,48 @@
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { computeRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/compute-runtime-state-guarded-batch.ts';
+import { decodeRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/decode-runtime-state-guarded-batch-result.ts';
 import { type RuntimeStateGuardedBatch, type RuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
-import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
+import {
+    assertRuntimeStateGuardedBatch,
+    validateRuntimeStateGuardedBatch
+} from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { describe, expect, it } from 'vitest';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
 describe('runtime-state guarded batches', () => {
+    it('collects independent descriptor failures without replacing the input', () => {
+        const guard = { ...createInsertGuard(), namespace: '', key: '' };
+        const input = { guard, effects: [] };
+
+        const issues = validateRuntimeStateGuardedBatch(input);
+
+        expect(issues.map(({ path }) => path)).toEqual(expect.arrayContaining(['guard.namespace', 'guard.key', 'effects']));
+        expect(input.guard).toBe(guard);
+        expect(input.effects).toEqual([]);
+    });
+
+    it('snapshots expected receipts and SQL bytes together during compute', () => {
+        const guard = { operation: 'insert' as const, namespace: 'guard', key: 'one', value: 'original', expireAtTimestamp: FUTURE_MS };
+        const effects = [{ effectId: 'one', operation: 'put' as const, namespace: 'effect', key: 'one', value: 'original', expireAtTimestamp: FUTURE_MS }];
+        const computed = computeRuntimeStateGuardedBatch({ guard, effects });
+
+        guard.value = 'changed';
+        effects[0].value = 'changed';
+        effects.push({ ...effects[0], effectId: 'two', key: 'two' });
+
+        expect(computed.batch.guard).toMatchObject({ value: 'original' });
+        expect(computed.batch.effects).toHaveLength(1);
+        expect(computed.batch.effects[0]).toMatchObject({ value: 'original' });
+        expect(computed.guardJson).not.toContain('changed');
+        expect(computed.effectsJson).not.toContain('changed');
+    });
+
     it('accepts dense mandatory descriptors at operation-specific revision bounds', () => {
         const batch = createBatch();
 
-        expect(validateRuntimeStateGuardedBatch(batch)).toEqual(batch);
+        expect(validateRuntimeStateGuardedBatch(batch)).toEqual([]);
         expect(validateRuntimeStateGuardedBatch({
             guard: {
                 operation: 'delete',
@@ -28,7 +59,7 @@ describe('runtime-state guarded batches', () => {
                 value: 'updated',
                 expireAtTimestamp: FUTURE_MS
             }]
-        })).toBeDefined();
+        })).toEqual([]);
     });
 
     const invalidBatches: ReadonlyArray<
@@ -83,7 +114,7 @@ describe('runtime-state guarded batches', () => {
     ];
 
     it.each(invalidBatches)('rejects %s before SQL', (_label, input) => {
-        expect(() => validateRuntimeStateGuardedBatch(input)).toThrow(
+        expect(() => assertRuntimeStateGuardedBatch(input)).toThrow(
             /runtime state guarded batch/iu
         );
     });
@@ -93,7 +124,7 @@ describe('runtime-state guarded batches', () => {
         sparseEffects[0] = createInsertEffect('one', 'one');
 
         expect(() =>
-            validateRuntimeStateGuardedBatch({
+            assertRuntimeStateGuardedBatch({
                 guard: createInsertGuard(),
                 effects: sparseEffects
             })
@@ -113,7 +144,7 @@ describe('runtime-state guarded batches', () => {
                 [mutation.field]: mutation.value
             };
             expect(() =>
-                validateRuntimeStateGuardedBatch({
+                assertRuntimeStateGuardedBatch({
                     guard: createInsertGuard(),
                     effects: [effect]
                 })
@@ -151,7 +182,7 @@ describe('runtime-state guarded batches', () => {
                 };
 
             expect(() =>
-                validateRuntimeStateGuardedBatch({
+                assertRuntimeStateGuardedBatch({
                     guard,
                     effects: [createInsertEffect('effect', 'one')]
                 })
@@ -200,7 +231,7 @@ describe('runtime-state guarded batches', () => {
             }]
         };
 
-        expect(validateRuntimeStateGuardedBatchResult(batch, result)).toEqual(result);
+        expect(decodeRuntimeStateGuardedBatchResult(batch, result)).toEqual(result);
     });
 
     it('accepts explicit guard-conflict skips and rejects sparse or inexact results', () => {
@@ -223,7 +254,7 @@ describe('runtime-state guarded batches', () => {
             }))
         };
 
-        expect(validateRuntimeStateGuardedBatchResult(batch, result)).toEqual(result);
+        expect(decodeRuntimeStateGuardedBatchResult(batch, result)).toEqual(result);
 
         for (
             const malformed of [
@@ -238,7 +269,7 @@ describe('runtime-state guarded batches', () => {
                 }
             ]
         ) {
-            expect(() => validateRuntimeStateGuardedBatchResult(batch, malformed))
+            expect(() => decodeRuntimeStateGuardedBatchResult(batch, malformed))
                 .toThrow(/runtime state guarded batch result/iu);
         }
     });
@@ -257,7 +288,7 @@ describe('runtime-state guarded batches', () => {
         };
 
         expect(() =>
-            validateRuntimeStateGuardedBatchResult(batch, {
+            decodeRuntimeStateGuardedBatchResult(batch, {
                 guard: {
                     status: 'applied',
                     operation: 'insert',
@@ -277,7 +308,7 @@ describe('runtime-state guarded batches', () => {
         ).toThrow(/put/iu);
 
         expect(() =>
-            validateRuntimeStateGuardedBatchResult(batch, {
+            decodeRuntimeStateGuardedBatchResult(batch, {
                 guard: {
                     status: 'applied',
                     operation: 'insert',
@@ -302,12 +333,13 @@ describe('runtime-state guarded batches', () => {
         const sql = createTransactionalSql(captured, []);
         const repository = new PSqlRuntimeStateRepository(sql);
 
-        await expect(repository.executeGuardedBatch(createBatch())).rejects.toThrow(
+        const computed = computeRuntimeStateGuardedBatch(createBatch());
+        await expect(repository.executeGuardedBatch(computed)).rejects.toThrow(
             /transaction/iu
         );
 
         await repository.begin(async (transactionRepository) => {
-            await transactionRepository.executeGuardedBatch(createBatch());
+            await transactionRepository.executeGuardedBatch(computed);
         });
         expect(captured).toHaveLength(1);
     });
@@ -342,8 +374,9 @@ describe('runtime-state guarded batches', () => {
         }]);
         const repository = new PSqlRuntimeStateRepository(sql);
 
+        const computed = computeRuntimeStateGuardedBatch(batch);
         const result = await repository.begin(async (transactionRepository) => {
-            return await transactionRepository.executeGuardedBatch(batch);
+            return await transactionRepository.executeGuardedBatch(computed);
         });
 
         expect(result).toEqual({
@@ -389,20 +422,7 @@ describe('runtime-state guarded batches', () => {
         ) {
             expect(query.source).not.toContain(secret);
         }
-        expect(query.values).toContainEqual({
-            ...batch.guard,
-            expireAtTimestamp: new Date(FUTURE_MS).toISOString()
-        });
-        expect(query.values).toContainEqual(batch.effects.map((effect) =>
-            'expireAtTimestamp' in effect
-                ? {
-                    ...effect,
-                    expireAtTimestamp: new Date(
-                        effect.expireAtTimestamp
-                    ).toISOString()
-                }
-                : effect
-        ));
+        expect(query.values).toEqual([computed.guardJson, computed.effectsJson]);
     });
 
     it.each([
@@ -449,8 +469,9 @@ describe('runtime-state guarded batches', () => {
             createTransactionalSql([], rows)
         );
 
+        const computed = computeRuntimeStateGuardedBatch(createBatch());
         await expect(repository.begin(async (transactionRepository) => {
-            return await transactionRepository.executeGuardedBatch(createBatch());
+            return await transactionRepository.executeGuardedBatch(computed);
         })).rejects.toThrow(/guarded batch database result/iu);
     });
 });

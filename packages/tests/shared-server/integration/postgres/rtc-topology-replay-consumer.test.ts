@@ -143,24 +143,26 @@ async function append(
     streamId: string,
     name: string
 ): Promise<void> {
+    const retainUntilEpochMs = Date.now() + 60_000;
+    const appendInput = {
+        publisherStreamId: streamId,
+        groupRef: {
+            applicationId: `replay-${name}`,
+            workspaceId: 'postgres',
+            groupId: 'room'
+        },
+        publicationId: `${name}-${crypto.randomUUID()}`,
+        outboxKey: {
+            topicId: 'rallar.overlay-topology.v1',
+            resourceId: `${name}-outbox`,
+            contextId: `${name}-room`
+        },
+        retainUntilEpochMs,
+        retainUntil: new Date(retainUntilEpochMs)
+    };
     await expect(
         sql.begin(
-            async (transaction) =>
-                await repository.appendOrValidate(transaction, {
-                    publisherStreamId: streamId,
-                    groupRef: {
-                        applicationId: `replay-${name}`,
-                        workspaceId: 'postgres',
-                        groupId: 'room'
-                    },
-                    publicationId: `${name}-${crypto.randomUUID()}`,
-                    outboxKey: {
-                        topicId: 'rallar.overlay-topology.v1',
-                        resourceId: `${name}-outbox`,
-                        contextId: `${name}-room`
-                    },
-                    retainUntilEpochMs: Date.now() + 60_000
-                })
+            async (transaction) => await repository.appendOrValidate(transaction, appendInput)
         )
     ).resolves.toMatchObject({ status: 'appended', entry: { sequence: 1 } });
 }

@@ -209,18 +209,18 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number
+        expireAtIsoTimestamp: string
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.conditionalOperations.push(`insert:${namespace}`);
         this.recordGuard(namespace);
-        return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
+        return super.insertIfAbsent(namespace, key, value, expireAtIsoTimestamp);
     }
 
     override async upsertIfRevision(
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtIsoTimestamp: string,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.conditionalOperations.push(`update:${namespace}`);
@@ -247,7 +247,7 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
             this.presenceSummaryConflictsRemaining -= 1;
             return { status: 'conflict' };
         }
-        return await super.upsertIfRevision(namespace, key, value, expireAtTimestamp, expectedRevision);
+        return await super.upsertIfRevision(namespace, key, value, expireAtIsoTimestamp, expectedRevision);
     }
 
     override deleteIfRevision(

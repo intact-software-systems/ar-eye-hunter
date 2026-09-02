@@ -1,4 +1,3 @@
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
@@ -9,7 +8,7 @@ describe('convergent group and presence state', () => {
     it('does not make a stale no-op receipt durable', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'ephemeral-no-op-room');
-        const service = createService(runtime, 2_000);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: 2_000 });
         await service.updateGroup(SCOPE, 'ephemeral-no-op-room', {
             displayName: 'ephemeral-no-op-room',
             actorPrincipalId: 'alice',

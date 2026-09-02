@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { validateClientEvent } from '@shared-server/rallar-system/client-state/client-state-contract-validation.ts';
@@ -126,14 +127,14 @@ async function insertRuntimeState(input: ClientStateTestSqlInput): Promise<PSqlR
     const namespace = requireStringParameter(input.values[0], 'runtime-state namespace');
     const key = requireStringParameter(input.values[1], 'runtime-state key');
     const value = requireStringParameter(input.values[2], 'runtime-state value');
-    const expireAt = requireDateParameter(input.values[3], 'runtime-state expiry');
-    const result = await input.runtime.insertIfAbsent(namespace, key, value, expireAt.getTime());
+    const expireAtIsoTimestamp = requireStringParameter(input.values[3], 'runtime-state expiry');
+    const result = await input.runtime.insertIfAbsent(namespace, key, value, expireAtIsoTimestamp);
     return result.status === 'applied' ? [{ revision: result.revision }] : [];
 }
 
 async function updateRuntimeState(input: ClientStateTestSqlInput): Promise<PSqlRows> {
     const value = requireStringParameter(input.values[0], 'runtime-state value');
-    const expireAt = requireDateParameter(input.values[1], 'runtime-state expiry');
+    const expireAtIsoTimestamp = requireStringParameter(input.values[1], 'runtime-state expiry');
     const namespace = requireStringParameter(input.values[2], 'runtime-state namespace');
     const key = requireStringParameter(input.values[3], 'runtime-state key');
     const expectedRevision = requireIntegerParameter(
@@ -144,7 +145,7 @@ async function updateRuntimeState(input: ClientStateTestSqlInput): Promise<PSqlR
         namespace,
         key,
         value,
-        expireAt.getTime(),
+        expireAtIsoTimestamp,
         expectedRevision
     );
     return result.status === 'applied' ? [{ revision: result.revision }] : [];
@@ -275,13 +276,6 @@ function isTemplateStringsArray(
 function requireStringParameter(value: PSqlParameter, label: string): string {
     if (typeof value !== 'string') {
         throw new TypeError(`${label} must be a string`);
-    }
-    return value;
-}
-
-function requireDateParameter(value: PSqlParameter, label: string): Date {
-    if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
-        throw new TypeError(`${label} must be a valid Date`);
     }
     return value;
 }

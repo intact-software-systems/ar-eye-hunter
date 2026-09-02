@@ -16,8 +16,9 @@ export interface RtcTopologyReplayFixture {
 }
 
 export function createRtcTopologyReplayFixture(): RtcTopologyReplayFixture {
-    const publication = topologyPublication();
-    const outbox = computeRtcTopologyPublicationOutbox(publication);
+    const currentSnapshot = createReplaySnapshot();
+    const publication = createReplayPublication(currentSnapshot);
+    const outbox = computeRtcTopologyPublicationOutbox(publication).entry;
     return {
         entry: {
             publisherStreamId: '00000000-0000-4000-8000-000000000002',
@@ -25,19 +26,17 @@ export function createRtcTopologyReplayFixture(): RtcTopologyReplayFixture {
             groupRef: publication.groupRef,
             publicationId: publication.publicationId,
             outboxKey: outbox.key,
-            retainUntilEpochMs: publication.message.constraints!.expiresAtMs!,
+            retainUntilEpochMs: 86_401_000,
             insertedAtEpochMs: publication.createdAtEpochMs
         },
         publication,
         outbox,
-        currentSnapshot: JSON.parse(
-            publication.message.payload.resource
-        ) as RallarOverlayTopologySnapshot,
+        currentSnapshot,
         databaseNowEpochMs: publication.createdAtEpochMs
     };
 }
 
-function topologyPublication(): RtcTopologyPublication {
+function createReplaySnapshot(): RallarOverlayTopologySnapshot {
     const groupRef = {
         applicationId: 'replay-app',
         workspaceId: 'replay-workspace',
@@ -45,9 +44,7 @@ function topologyPublication(): RtcTopologyPublication {
     };
     const causalRevision = { groupRevision: 4, presenceRevision: 6 };
     const createdAtEpochMs = 1_000;
-    const expiresAtMs = 86_401_000;
-    const workId = 'replay-work';
-    const snapshot: RallarOverlayTopologySnapshot = {
+    return {
         sourceGroupStateCausalRevision: causalRevision,
         state: 'active',
         overlayId: toScopedOverlayId(groupRef),
@@ -62,15 +59,20 @@ function topologyPublication(): RtcTopologyPublication {
         createdAtEpochMs,
         updatedAtEpochMs: createdAtEpochMs
     };
+}
+
+function createReplayPublication(snapshot: RallarOverlayTopologySnapshot): RtcTopologyPublication {
+    const { groupRef, sourceGroupStateCausalRevision, createdAtEpochMs } = snapshot;
+    const workId = 'replay-work';
     return {
         publicationId: toRtcTopologyPublicationId({
             workId,
-            sourceGroupStateCausalRevision: causalRevision,
+            sourceGroupStateCausalRevision,
             overlayVersion: snapshot.version
         }),
         workId,
         groupRef,
-        sourceGroupStateCausalRevision: causalRevision,
+        sourceGroupStateCausalRevision,
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: 10,
         recipientSessionIds: snapshot.activeSessionIds,
@@ -86,7 +88,7 @@ function topologyPublication(): RtcTopologyPublication {
                 resourceId: `${snapshot.overlayId}:4:6:8`,
                 contextId: groupRef.groupId
             },
-            constraints: { expiresAtMs },
+            constraints: { expiresAtMs: 86_401_000 },
             targets: {
                 mode: 'broadcast',
                 scope: 'room',

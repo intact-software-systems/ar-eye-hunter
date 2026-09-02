@@ -52,21 +52,22 @@ describe('RTC topology APP_OUTBOX work', () => {
         const acceptedWrite = handler.slice(handler.indexOf('async function writeAcceptedRtcTopologyWork'));
         expect(acceptedWrite).not.toMatch(/waitForRuntimeStateWriteRetry/);
         expect(acceptedWrite).not.toMatch(/\bfor\s*\([^)]*attempt/);
-        expect(acceptedWrite).toMatch(/writeTopologyMutation\(\s*transaction/);
-        expect(acceptedWrite.indexOf('writeTopologyMutation')).toBeLessThan(
+        expect(acceptedWrite).toMatch(/runInPSqlTransaction\(options\.database/);
+        expect(acceptedWrite).toMatch(/writeRtcTopologyMutation\(transaction, computed\)/);
+        expect(acceptedWrite.indexOf('writeRtcTopologyMutation')).toBeLessThan(
             acceptedWrite.indexOf('writePublicationDelivery')
         );
-        expect(transaction).toMatch(/runInPSqlTransaction/);
-        expect(transaction).toMatch(/appendOrValidate\(/);
-        expect(transaction.indexOf('await write(transaction)')).toBeGreaterThanOrEqual(0);
-        expect(transaction.indexOf('await write(transaction)')).toBeLessThan(
-            transaction.indexOf('finishRtcTopologyReservation(transaction, entry)')
+        expect(acceptedWrite.indexOf('writePublicationDelivery')).toBeLessThan(
+            acceptedWrite.indexOf('writeRtcTopologyReservationFinish')
         );
+        expect(transaction).not.toMatch(/runInPSqlTransaction/);
+        expect(transaction).toMatch(/writeRtcTopologyPublicationOutbox\(transaction, computed\.outboxWrite\)/);
+        expect(transaction).toMatch(/appendOrValidateRtcTopologyDelivery\(\s*transaction,\s*computed\.appendInput/);
         expect(completion).not.toMatch(/waitForRuntimeStateWriteRetry/);
         expect(completion).not.toMatch(/\bfor\s*\([^)]*attempt/);
-        expect(completion).toMatch(
-            /new PSqlResourceInboxFinalizationRepository\(\s*transaction\s*,?\s*\)\.finishReserved\(/
-        );
+        expect(completion).toMatch(/computeRtcTopologyReservationFinish\(entry, new Date\(\)\)/);
+        expect(completion).toMatch(/writeRtcTopologyReservationFinish\(transaction, computed\)/);
+        expect(completion).toMatch(/writeResourceInboxReservationFinish\(transaction, computed\)/);
         expect(completion).toMatch(/throw new RuntimeStateWriteConflictError\(\)/);
     });
 

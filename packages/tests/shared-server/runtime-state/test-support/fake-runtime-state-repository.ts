@@ -1,13 +1,13 @@
+import { decodeRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/decode-runtime-state-guarded-batch-result.ts';
 import type {
-    RuntimeStateGuardedBatch,
+    RuntimeStateGuardedBatchComputed,
     RuntimeStateGuardedBatchEffect,
     RuntimeStateGuardedBatchEffectResult,
     RuntimeStateGuardedBatchGuard,
     RuntimeStateGuardedBatchGuardResult,
     RuntimeStateGuardedBatchResult
 } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
-import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
+import { assertRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
 import type {
@@ -185,7 +185,7 @@ export class FakeRuntimeStateRepository
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number
+        expireAtIsoTimestamp: string
     ): Promise<RuntimeStateConditionalWriteResult> {
         await this.beforeConditionalWrite?.('insertIfAbsent', namespace, key);
         const compositeKey = this.toKey(namespace, key);
@@ -196,7 +196,7 @@ export class FakeRuntimeStateRepository
         this.data.set(compositeKey, {
             key,
             value,
-            expireAtTimestamp,
+            expireAtTimestamp: new Date(expireAtIsoTimestamp).getTime(),
             updatedTimestamp: new Date().toISOString(),
             revision: 0
         });
@@ -207,7 +207,7 @@ export class FakeRuntimeStateRepository
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtIsoTimestamp: string,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
         assertRuntimeStateUpsertExpectedRevision(expectedRevision);
@@ -222,7 +222,7 @@ export class FakeRuntimeStateRepository
         this.data.set(compositeKey, {
             key,
             value,
-            expireAtTimestamp,
+            expireAtTimestamp: new Date(expireAtIsoTimestamp).getTime(),
             updatedTimestamp: new Date().toISOString(),
             revision
         });
@@ -247,15 +247,16 @@ export class FakeRuntimeStateRepository
     }
 
     async executeGuardedBatch(
-        input: RuntimeStateGuardedBatch
+        input: RuntimeStateGuardedBatchComputed
     ): Promise<RuntimeStateGuardedBatchResult> {
         if (this.activeTransactionCount === 0) {
             throw new Error('Guarded runtime state batch requires an active transaction');
         }
-        const batch = validateRuntimeStateGuardedBatch(input);
+        const batch = input.batch;
+        assertRuntimeStateGuardedBatch(batch);
         const guard = await applyGuardedBatchGuard(this, batch.guard);
         if (guard.status === 'conflict') {
-            return validateRuntimeStateGuardedBatchResult(batch, {
+            return decodeRuntimeStateGuardedBatchResult(batch, {
                 guard,
                 effects: batch.effects.map((effect) => ({
                     status: 'skipped',
@@ -271,7 +272,7 @@ export class FakeRuntimeStateRepository
         for (const effect of batch.effects) {
             effects.push(await applyGuardedBatchEffect(this, effect));
         }
-        return validateRuntimeStateGuardedBatchResult(batch, { guard, effects });
+        return decodeRuntimeStateGuardedBatchResult(batch, { guard, effects });
     }
 
     deleteByKey(namespace: string, key: string): Promise<void> {
@@ -320,14 +321,14 @@ async function applyGuardedBatchGuard(
             guard.namespace,
             guard.key,
             guard.value,
-            guard.expireAtTimestamp
+            new Date(guard.expireAtTimestamp).toISOString()
         )
         : guard.operation === 'update'
         ? await repository.upsertIfRevision(
             guard.namespace,
             guard.key,
             guard.value,
-            guard.expireAtTimestamp,
+            new Date(guard.expireAtTimestamp).toISOString(),
             guard.expectedRevision
         )
         : await repository.deleteIfRevision(guard.namespace, guard.key, guard.expectedRevision);
@@ -366,33 +367,21 @@ async function applyGuardedBatchEffect(
     effect: RuntimeStateGuardedBatchEffect
 ): Promise<RuntimeStateGuardedBatchEffectResult> {
     if (effect.operation === 'put') {
-        await repository.upsert(effect.namespace, effect.key, effect.value, effect.expireAtTimestamp);
-        const stored = await repository.findEntry(effect.namespace, effect.key);
-        if (!stored) {
-            throw new Error(`Guarded runtime state put result is missing: ${effect.effectId}`);
-        }
-        return {
-            status: 'applied',
-            effectId: effect.effectId,
-            operation: effect.operation,
-            namespace: effect.namespace,
-            key: effect.key,
-            resultingRevision: stored.revision
-        };
+        return await applyGuardedBatchPut(repository, effect);
     }
     const result = effect.operation === 'insert'
         ? await repository.insertIfAbsent(
             effect.namespace,
             effect.key,
             effect.value,
-            effect.expireAtTimestamp
+            new Date(effect.expireAtTimestamp).toISOString()
         )
         : effect.operation === 'update'
         ? await repository.upsertIfRevision(
             effect.namespace,
             effect.key,
             effect.value,
-            effect.expireAtTimestamp,
+            new Date(effect.expireAtTimestamp).toISOString(),
             effect.expectedRevision
         )
         : await repository.deleteIfRevision(effect.namespace, effect.key, effect.expectedRevision);
@@ -426,6 +415,25 @@ async function applyGuardedBatchEffect(
         namespace: effect.namespace,
         key: effect.key,
         resultingRevision: result.revision
+    };
+}
+
+async function applyGuardedBatchPut(
+    repository: FakeRuntimeStateRepository,
+    effect: Extract<RuntimeStateGuardedBatchEffect, { operation: 'put'; }>
+): Promise<RuntimeStateGuardedBatchEffectResult> {
+    await repository.upsert(effect.namespace, effect.key, effect.value, effect.expireAtTimestamp);
+    const stored = await repository.findEntry(effect.namespace, effect.key);
+    if (!stored) {
+        throw new Error(`Guarded runtime state put result is missing: ${effect.effectId}`);
+    }
+    return {
+        status: 'applied',
+        effectId: effect.effectId,
+        operation: effect.operation,
+        namespace: effect.namespace,
+        key: effect.key,
+        resultingRevision: stored.revision
     };
 }
 

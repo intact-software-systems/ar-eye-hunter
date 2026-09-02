@@ -1,8 +1,18 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+// dprint-ignore
+import type {
+    PSqlParameter,
+    PSqlRows,
+    PSqlSql
+} from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+// dprint-ignore
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { validateRuntimeStateReadBatchSelectors } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-selectors.ts';
 import { validateAuthoritativeClientEvent, validateAuthoritativeGroupEvent } from '@shared/api/authoritative-state-validation.ts';
@@ -137,20 +147,25 @@ async function executeRuntimeStateWriteSql({
         query.includes('returning revision');
     if (insertsAbsentEntry) {
         const repository = requireTransactionRuntime(runtime);
-        const namespace = readStringParameter(values[0], 'Runtime-state namespace');
-        const key = readStringParameter(values[1], 'Runtime-state key');
-        const value = readStringParameter(values[2], 'Runtime-state value');
-        const expireAt = readDateParameter(values[3], 'Runtime-state expiry');
-        const result = await repository.insertIfAbsent(namespace, key, value, expireAt.getTime());
+        const namespace = decodeStringParameter(values[0], 'Runtime-state namespace');
+        const key = decodeStringParameter(values[1], 'Runtime-state key');
+        const value = decodeStringParameter(values[2], 'Runtime-state value');
+        const expireAtIsoTimestamp = decodeStringParameter(values[3], 'Runtime-state expiry');
+        const result = await repository.insertIfAbsent(
+            namespace,
+            key,
+            value,
+            expireAtIsoTimestamp
+        );
         return result.status === 'applied' ? [{ revision: result.revision }] : [];
     }
     if (query.includes('insert into runtime_state_store') && query.includes('do update set')) {
         const repository = requireTransactionRuntime(runtime);
-        const namespace = readStringParameter(values[0], 'Runtime-state namespace');
-        const key = readStringParameter(values[1], 'Runtime-state key');
-        const value = readStringParameter(values[2], 'Runtime-state value');
-        const expireAt = readDateParameter(values[3], 'Runtime-state expiry');
-        await repository.upsert(namespace, key, value, expireAt.getTime());
+        const namespace = decodeStringParameter(values[0], 'Runtime-state namespace');
+        const key = decodeStringParameter(values[1], 'Runtime-state key');
+        const value = decodeStringParameter(values[2], 'Runtime-state value');
+        const expireAtEpochMs = toInstant(values[3]).epochMilliseconds;
+        await repository.upsert(namespace, key, value, expireAtEpochMs);
         return [];
     }
     return undefined;
@@ -165,7 +180,7 @@ async function executeRuntimeStateSelectionSql({
         return undefined;
     }
     const repository = requireTransactionRuntime(runtime);
-    const selectors = readRuntimeStateSqlSelectors(values[0]);
+    const selectors = decodeRuntimeStateSqlSelectors(values[0]);
     const selections = [];
     for (const selector of selectors) {
         const entries = selector.kind === 'key'
@@ -190,21 +205,21 @@ async function executeStateEventSql(
     input: AppInboxTestSqlExecution
 ): Promise<PSqlRows | undefined> {
     if (input.query.includes('insert into client_state_events')) {
-        const event = readClientStateEvent(input.values);
+        const event = decodeClientStateEvent(input.values);
         input.pending.clientEvents.push(event);
         return [{ event_id: event.eventId }];
     }
     if (input.query.includes('insert into group_state_events')) {
-        const event = readGroupStateEvent(input.values);
+        const event = decodeGroupStateEvent(input.values);
         input.pending.groupEvents.push(event);
         return [{ event_id: event.eventId }];
     }
     if (!input.query.includes('from group_state_events')) {
         return undefined;
     }
-    const applicationId = readStringParameter(input.values[0], 'Group event application ID');
-    const workspaceKey = readStringParameter(input.values[1], 'Group event workspace key');
-    const groupId = readStringParameter(input.values[2], 'Group event group ID');
+    const applicationId = decodeStringParameter(input.values[0], 'Group event application ID');
+    const workspaceKey = decodeStringParameter(input.values[1], 'Group event workspace key');
+    const groupId = decodeStringParameter(input.values[2], 'Group event group ID');
     const workspaceId = workspaceKey === '_' ? undefined : workspaceKey;
     return [...input.state.groupEventStore.events, ...input.pending.groupEvents]
         .filter(
@@ -222,19 +237,19 @@ async function executeStateEventSql(
         }));
 }
 
-function readClientStateEvent(values: readonly PSqlParameter[]): ClientEvent {
-    const event = readStateEventValue(values, 'Client');
+function decodeClientStateEvent(values: readonly PSqlParameter[]): ClientEvent {
+    const event = decodeStateEventValue(values, 'Client');
     validateAuthoritativeClientEvent(event);
     return event;
 }
 
-function readGroupStateEvent(values: readonly PSqlParameter[]): GroupEvent {
-    const event = readStateEventValue(values, 'Group');
+function decodeGroupStateEvent(values: readonly PSqlParameter[]): GroupEvent {
+    const event = decodeStateEventValue(values, 'Group');
     validateAuthoritativeGroupEvent(event);
     return event;
 }
 
-function readStateEventValue(
+function decodeStateEventValue(
     values: readonly PSqlParameter[],
     family: 'Client' | 'Group'
 ): JsonWireValue {
@@ -261,12 +276,12 @@ async function executeResultAndReservationSql(
         return undefined;
     }
     await input.options.onStage?.('reservation-finish');
-    const status = readEntityStatus(input.values[0], 'Reservation status');
-    const completedAt = readDateParameter(input.values[1], 'Reservation completion');
-    const topicId = readStringParameter(input.values[2], 'Reservation topic ID');
-    const resourceId = readStringParameter(input.values[3], 'Reservation resource ID');
-    const contextId = readStringParameter(input.values[4], 'Reservation context ID');
-    const attempts = readNonNegativeIntegerParameter(input.values[5], 'Reservation attempts');
+    const status = decodeEntityStatus(input.values[0], 'Reservation status');
+    const completedAt = decodeDateParameter(input.values[1], 'Reservation completion');
+    const topicId = decodeStringParameter(input.values[2], 'Reservation topic ID');
+    const resourceId = decodeStringParameter(input.values[3], 'Reservation resource ID');
+    const contextId = decodeStringParameter(input.values[4], 'Reservation context ID');
+    const attempts = decodeNonNegativeIntegerParameter(input.values[5], 'Reservation attempts');
     const current = await input.repositories.inbox.getItem({ topicId, resourceId, contextId });
     if (
         !current ||
@@ -313,11 +328,28 @@ function executeOutboxSql(input: AppInboxTestSqlExecution): PSqlRows | undefined
         return [toInboxRow(entry)];
     }
     if (input.query.includes('from resource_inbox') && input.query.includes('where ri_topic_id')) {
-        const topicId = readStringParameter(input.values[0], 'Outbox topic ID');
-        const resourceId = readStringParameter(input.values[1], 'Outbox resource ID');
-        const contextId = readStringParameter(input.values[2], 'Outbox context ID');
+        const matchQuery = input.query.includes('immutable_matches');
+        const keyOffset = matchQuery ? 5 : 0;
+        const topicId = decodeStringParameter(input.values[keyOffset], 'Outbox topic ID');
+        const resourceId = decodeStringParameter(input.values[keyOffset + 1], 'Outbox resource ID');
+        const contextId = decodeStringParameter(input.values[keyOffset + 2], 'Outbox context ID');
         const entry = input.pending.outbox.get(`${contextId}:${topicId}:${resourceId}`);
-        return entry ? [toInboxRow(entry)] : [];
+        if (!entry) {
+            return [];
+        }
+        if (!matchQuery) {
+            return [toInboxRow(entry)];
+        }
+        const immutableMatches = entry.typeId === decodeStringParameter(input.values[0], 'Outbox type ID') &&
+            entry.resource === decodeStringParameter(input.values[1], 'Outbox resource') &&
+            entry.audit.createdBy === decodeStringParameter(input.values[2], 'Outbox creator') &&
+            entry.audit.createdTs.round({ smallestUnit: 'microsecond', roundingMode: 'halfEven' }).equals(
+                toPlainDateTime(input.values[3])
+            ) &&
+            entry.audit.expiryTs.toZonedDateTimeISO('UTC').toPlainDateTime()
+                .round({ smallestUnit: 'microsecond', roundingMode: 'halfEven' })
+                .equals(toPlainDateTime(input.values[4]));
+        return [{ ...toInboxRow(entry), immutable_matches: immutableMatches }];
     }
     return undefined;
 }
@@ -341,18 +373,18 @@ function toInboxEntry(values: readonly PSqlParameter[]): ResourceEntry {
     ] = values;
     return {
         key: {
-            resourceId: readStringParameter(resourceId, 'Outbox resource ID'),
-            topicId: readStringParameter(topicId, 'Outbox topic ID'),
-            contextId: readStringParameter(contextId, 'Outbox context ID')
+            resourceId: decodeStringParameter(resourceId, 'Outbox resource ID'),
+            topicId: decodeStringParameter(topicId, 'Outbox topic ID'),
+            contextId: decodeStringParameter(contextId, 'Outbox context ID')
         },
-        resource: readStringParameter(resource, 'Outbox resource'),
-        typeId: readStringParameter(typeId, 'Outbox type ID'),
-        status: readEntityStatus(status, 'Outbox status'),
+        resource: decodeStringParameter(resource, 'Outbox resource'),
+        typeId: decodeStringParameter(typeId, 'Outbox type ID'),
+        status: decodeEntityStatus(status, 'Outbox status'),
         audit: {
-            date: Temporal.PlainDate.from(readStringParameter(systemDate, 'Outbox system date'))
+            date: Temporal.PlainDate.from(decodeStringParameter(systemDate, 'Outbox system date'))
                 .toPlainDateTime()
                 .toPlainTime(),
-            createdBy: readStringParameter(createdBy, 'Outbox creator'),
+            createdBy: decodeStringParameter(createdBy, 'Outbox creator'),
             createdTs: toPlainDateTime(createdTs),
             expiryTs: toInstant(expiryTs)
         },
@@ -360,7 +392,7 @@ function toInboxEntry(values: readonly PSqlParameter[]): ResourceEntry {
             startTs: startTs === null ? undefined : toInstant(startTs),
             endTs: endTs === null ? undefined : toInstant(endTs),
             nextTs: nextTs === null ? undefined : toInstant(nextTs),
-            attempts: readNonNegativeIntegerParameter(attempts, 'Outbox attempts')
+            attempts: decodeNonNegativeIntegerParameter(attempts, 'Outbox attempts')
         }
     };
 }
@@ -380,18 +412,18 @@ function toResultEntry(values: readonly PSqlParameter[]): ResourceEntry {
     ] = values;
     return {
         key: {
-            resourceId: readStringParameter(resourceId, 'Result resource ID'),
-            topicId: readStringParameter(topicId, 'Result topic ID'),
-            contextId: readStringParameter(contextId, 'Result context ID')
+            resourceId: decodeStringParameter(resourceId, 'Result resource ID'),
+            topicId: decodeStringParameter(topicId, 'Result topic ID'),
+            contextId: decodeStringParameter(contextId, 'Result context ID')
         },
-        resource: readStringParameter(resource, 'Result resource'),
-        typeId: readStringParameter(typeId, 'Result type ID'),
-        status: readEntityStatus(status, 'Result status'),
+        resource: decodeStringParameter(resource, 'Result resource'),
+        typeId: decodeStringParameter(typeId, 'Result type ID'),
+        status: decodeEntityStatus(status, 'Result status'),
         audit: {
-            date: Temporal.PlainDate.from(readStringParameter(systemDate, 'Result system date'))
+            date: Temporal.PlainDate.from(decodeStringParameter(systemDate, 'Result system date'))
                 .toPlainDateTime()
                 .toPlainTime(),
-            createdBy: readStringParameter(createdBy, 'Result creator'),
+            createdBy: decodeStringParameter(createdBy, 'Result creator'),
             createdTs: toPlainDateTime(createdTs),
             expiryTs: toInstant(expiryTs)
         },
@@ -458,7 +490,7 @@ function toInstant(value: PSqlParameter): Temporal.Instant {
     return Temporal.Instant.from(text.endsWith('Z') ? text : `${text}Z`);
 }
 
-function readRuntimeStateSqlSelectors(
+function decodeRuntimeStateSqlSelectors(
     value: PSqlParameter
 ): readonly RuntimeStateReadBatchSelector[] {
     const decoded = decodeJsonWireValue(
@@ -469,15 +501,15 @@ function readRuntimeStateSqlSelectors(
         throw new TypeError('Runtime-state SQL selectors must be an array');
     }
     const selectors = decoded.map((selector, index): RuntimeStateReadBatchSelector => {
-        const record = readJsonWireObject(selector, `Runtime-state SQL selector ${index}`);
-        const selectorId = readJsonWireString(record.selectorId, 'Runtime-state selector ID');
-        const namespace = readJsonWireString(record.namespace, 'Runtime-state selector namespace');
+        const record = decodeJsonWireObject(selector, `Runtime-state SQL selector ${index}`);
+        const selectorId = decodeJsonWireString(record.selectorId, 'Runtime-state selector ID');
+        const namespace = decodeJsonWireString(record.namespace, 'Runtime-state selector namespace');
         if (record.kind === 'key') {
             return {
                 selectorId,
                 kind: record.kind,
                 namespace,
-                key: readJsonWireString(record.key, 'Runtime-state selector key')
+                key: decodeJsonWireString(record.key, 'Runtime-state selector key')
             };
         }
         if (record.kind === 'prefix') {
@@ -485,7 +517,7 @@ function readRuntimeStateSqlSelectors(
                 selectorId,
                 kind: record.kind,
                 namespace,
-                keyPrefix: readJsonWireString(
+                keyPrefix: decodeJsonWireString(
                     record.keyPrefix,
                     'Runtime-state selector key prefix'
                 )
@@ -496,35 +528,35 @@ function readRuntimeStateSqlSelectors(
     return validateRuntimeStateReadBatchSelectors(selectors);
 }
 
-function readJsonWireObject(value: JsonWireValue, label: string): JsonWireObject {
+function decodeJsonWireObject(value: JsonWireValue, label: string): JsonWireObject {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError(`${label} must be an object`);
     }
     return value as JsonWireObject;
 }
 
-function readJsonWireString(value: JsonWireValue | undefined, label: string): string {
+function decodeJsonWireString(value: JsonWireValue | undefined, label: string): string {
     if (typeof value !== 'string') {
         throw new TypeError(`${label} must be a string`);
     }
     return value;
 }
 
-function readStringParameter(value: PSqlParameter, label: string): string {
+function decodeStringParameter(value: PSqlParameter, label: string): string {
     if (typeof value !== 'string') {
         throw new TypeError(`${label} must be a string`);
     }
     return value;
 }
 
-function readDateParameter(value: PSqlParameter, label: string): Date {
+function decodeDateParameter(value: PSqlParameter, label: string): Date {
     if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
         throw new TypeError(`${label} must be a valid Date`);
     }
     return value;
 }
 
-function readEntityStatus(value: PSqlParameter, label: string): EntityStatus {
+function decodeEntityStatus(value: PSqlParameter, label: string): EntityStatus {
     if (
         typeof value !== 'string' ||
         !Object.values(EntityStatus).some((status) => status === value)
@@ -534,7 +566,7 @@ function readEntityStatus(value: PSqlParameter, label: string): EntityStatus {
     return value as EntityStatus;
 }
 
-function readNonNegativeIntegerParameter(value: PSqlParameter, label: string): number {
+function decodeNonNegativeIntegerParameter(value: PSqlParameter, label: string): number {
     if (typeof value !== 'number' && typeof value !== 'bigint') {
         throw new TypeError(`${label} must be a non-negative safe integer`);
     }

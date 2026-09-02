@@ -1,8 +1,5 @@
-import {
-    GroupStateEventRepositoryInvariantCorruptionError,
-    toValidatedGroupStateEvent,
-    type GroupStateEventRow
-} from '@shared-server/rallar-system/state-events/postgres/group-state-event-row-codec.ts';
+import { GroupStateEventRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
+import { toValidatedGroupStateEvent, type GroupStateEventRow } from '@shared-server/rallar-system/state-events/postgres/group-state-event-row-codec.ts';
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 

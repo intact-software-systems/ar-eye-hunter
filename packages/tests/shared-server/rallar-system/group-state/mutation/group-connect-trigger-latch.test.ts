@@ -16,7 +16,6 @@ import { createAuthorityHarness } from '../inbox/group-state-inbox-test-runtime.
 
 import type { GroupMutationCommand, GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import {
     GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
     GroupConnectTriggerLatchCorruptionError,
@@ -50,7 +49,7 @@ describe('automatic retry connect intent', () => {
         if (computed.outcome !== 'write') {
             throw new Error('Automatic retry must plan');
         }
-        const batch = materializeGroupStateGuardedBatch(computed);
+        const batch = computed.guardedBatch.batch;
         const latch = batch.effects.find((effect) => effect.effectId === 'connect-trigger-latch');
         expect(latch?.operation).toBe('insert');
         expect(latch && 'value' in latch ? JSON.parse(latch.value) : null).toEqual({
@@ -139,7 +138,7 @@ describe('connect intent handoff', () => {
         if (computed.outcome !== 'write') {
             throw new Error('Expected connect');
         }
-        const batch = materializeGroupStateGuardedBatch(computed);
+        const batch = computed.guardedBatch.batch;
         expect(JSON.parse('value' in batch.guard ? batch.guard.value : '{}').lifecycleState).toBe('connecting');
         expect(batch.effects.find((effect) => effect.effectId === 'planned-layout-fence')).toMatchObject({ operation: 'update', expectedRevision: 1 });
         const latch = batch.effects.find((effect) => effect.effectId === 'connect-trigger-latch');
@@ -201,7 +200,7 @@ async function connectWriteHarness() {
     if (computed.outcome !== 'write') {
         throw new Error('Expected connect write');
     }
-    const batch = materializeGroupStateGuardedBatch(computed);
+    const batch = computed.guardedBatch.batch;
     await harness.runtimeRepository.upsert(batch.guard.namespace, batch.guard.key, JSON.stringify(read.group!.value), NEVER_EXPIRE_AT_TIMESTAMP);
     for (const effect of batch.effects) {
         if (effect.effectId !== 'planned-layout-fence' && effect.effectId !== 'connect-trigger-latch') {
@@ -288,7 +287,7 @@ describe('retry handoff commit races and replay', () => {
         });
         const requests = computePublicationConnectTriggerRequests({ automation: port, target: PLANNED, entry: source });
         expect(requests).toHaveLength(1);
-        expect(decodeGroupConnectTriggerWork(requests[0]!.resource).kind).toBe('publication');
+        expect(decodeGroupConnectTriggerWork(requests[0]!.entry.resource).kind).toBe('publication');
         await harness.runtimeRepository.upsert(
             GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
             toGroupConnectTriggerStorageKey(IDENTITY),
@@ -323,7 +322,7 @@ describe('retry handoff commit races and replay', () => {
         });
         const first = computePublicationConnectTriggerRequests({ automation: port, target: PLANNED, entry: source });
         const next = computePublicationConnectTriggerRequests({ automation: port, target: { ...PLANNED, version: 2 }, entry: source });
-        expect(first[0]!.key).not.toEqual(next[0]!.key);
+        expect(first[0]!.entry.key).not.toEqual(next[0]!.entry.key);
         await expect(harness.database.begin(async (tx) => {
             await writeGroupConnectTriggerRequests(tx, first);
             throw new Error('publication rollback');

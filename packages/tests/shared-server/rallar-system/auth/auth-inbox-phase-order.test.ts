@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -11,16 +12,16 @@ import { toAuthAppInboxType, toAuthIntentContextId } from '@shared-server/rallar
 import { AuthInboxHandler } from '@shared-server/rallar-system/auth/inbox/auth-inbox-handler.ts';
 import type {
     AuthMutationCommand,
-    AuthMutationComputed,
     AuthMutationIntent,
     AuthMutationRead,
-    AuthMutationResult
+    AuthMutationResult,
+    IssueAuthSessionIntent
 } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { decodeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-intent.ts';
 
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
-import type { AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
+import type { AppInboxExecutionMetadata } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { AppInboxCompletionComputed, AppInboxCompletionFacts } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import type {
     AppInboxMutationTransactionResult,
     AppInboxMutationTransactionWriter
@@ -32,14 +33,15 @@ const decodeOrderCase = 'decodes before queue identity validation and exits befo
 describe('auth inbox mutation phase order', () => {
     it('materializes worker facts before mutation phases', async () => {
         const actions: string[] = [];
-        const transaction = {} as PSqlSql;
+        const write = createRecordingAuthTransaction(actions);
         const intent = createIssueSessionIntent();
-        const command = (
-            await materializeAuthMutationIntent(intent, {
-                credentialIssuer: createCredentialIssuer([]),
-                nowEpochMs: () => 1_000
-            })
-        ).command as Extract<AuthMutationCommand, { kind: 'issue-session'; }>;
+        const { command } = await materializeAuthMutationIntent(intent, {
+            credentialIssuer: createCredentialIssuer([]),
+            nowEpochMs: () => 1_000
+        });
+        if (command.kind !== 'issue-session') {
+            throw new Error('Expected an issue-session command');
+        }
         const read: AuthMutationRead = {
             kind: 'issue-session',
             userByUsername: null,
@@ -54,37 +56,65 @@ describe('auth inbox mutation phase order', () => {
             kind: 'session-issued',
             ...command.session
         };
-        const computed: AuthMutationComputed = {
-            command,
-            read,
-            result,
-            sessions: [{ session: command.session }],
-            agentTickets: [],
-            logoutOutbox: null,
-            outcome: 'write'
-        };
-        const written: Array<readonly [PSqlSql, AuthMutationComputed]> = [];
         const handler = new AuthInboxHandler({
-            mutationService: createMutationService({ actions, read, computed, result, written }),
+            mutationService: createMutationService({ actions, read }),
             credentialIssuer: createCredentialIssuer(actions),
-            transactionWriter: new RecordingTransactionWriter(actions, transaction),
+            transactionWriter: new RecordingTransactionWriter(actions, write.transaction),
             nowEpochMs: () => {
                 actions.push('clock');
                 return 1_000;
             }
         });
 
-        await expect(handler.processAuthMutation(intent, createContext(intent))).resolves.toBe(result);
+        await expect(handler.processAuthMutation(intent, createContext(intent))).resolves.toEqual(result);
         expect(actions).toEqual([
             'clock',
             'facts',
             'read',
-            'compute',
-            'validate',
+            'completion-facts',
             'transaction',
             'write'
         ]);
-        expect(written).toEqual([[transaction, computed]]);
+        expect(write.statementCount()).toBe(2);
+    });
+
+    it('rejects an expired-row revision overflow before opening the mutation transaction', async () => {
+        const actions: string[] = [];
+        const intent = createIssueSessionIntent();
+        const { command } = await materializeAuthMutationIntent(intent, {
+            credentialIssuer: createCredentialIssuer([]),
+            nowEpochMs: () => 1_000
+        });
+        if (command.kind !== 'issue-session') {
+            throw new Error('Expected an issue-session command');
+        }
+        const read: AuthMutationRead = {
+            kind: 'issue-session',
+            userByUsername: null,
+            userByClientId: null,
+            byToken: null,
+            bySession: null,
+            expiredByTokenEntry: null,
+            expiredBySessionEntry: {
+                key: `session=${encodeURIComponent(command.session.sessionId)}`,
+                value: '{}',
+                revision: Number.MAX_SAFE_INTEGER,
+                expireAtTimestamp: 500,
+                updatedTimestamp: '1970-01-01T00:00:00.000Z'
+            }
+        };
+        const handler = new AuthInboxHandler({
+            mutationService: createMutationService({ actions, read }),
+            credentialIssuer: createCredentialIssuer(actions),
+            transactionWriter: new RecordingTransactionWriter(actions, {} as PSqlSql),
+            nowEpochMs: () => 1_000
+        });
+
+        await expect(handler.processAuthMutation(intent, createContext(intent))).rejects.toThrow(
+            new Error(`Invalid runtime state upsert expected revision: ${Number.MAX_SAFE_INTEGER}`)
+        );
+        // The invalid guard must fail before either owned persistence port is entered.
+        expect(actions).not.toContain('transaction');
     });
 });
 
@@ -114,7 +144,7 @@ describe('auth inbox routing rejection', () => {
     });
 });
 
-function createIssueSessionIntent(): Extract<AuthMutationIntent, { kind: 'issue-session'; }> {
+function createIssueSessionIntent(): IssueAuthSessionIntent {
     return {
         version: 1,
         kind: 'issue-session',
@@ -133,42 +163,51 @@ function createIssueSessionIntent(): Extract<AuthMutationIntent, { kind: 'issue-
 interface MutationServiceRecording {
     readonly actions: string[];
     readonly read: AuthMutationRead;
-    readonly computed: AuthMutationComputed;
-    readonly result: AuthMutationResult;
-    readonly written: Array<readonly [PSqlSql, AuthMutationComputed]>;
 }
 
-function createMutationService(input: MutationServiceRecording): AuthMutationService {
+function createMutationService(
+    input: MutationServiceRecording
+): Pick<AuthMutationService, 'serviceId' | 'read'> {
     return {
+        serviceId: 'auth-test-service',
         read: async () => {
             input.actions.push('read');
             return input.read;
-        },
-        compute: () => {
-            input.actions.push('compute');
-            return input.computed;
-        },
-        validate: () => {
-            input.actions.push('validate');
-        },
-        write: async (transaction, candidate) => {
-            input.actions.push('write');
-            input.written.push([transaction, candidate]);
-            return input.result;
         }
     };
 }
 
-function createUnreachableMutationService(actions: string[]): AuthMutationService {
+function createUnreachableMutationService(
+    actions: string[]
+): Pick<AuthMutationService, 'serviceId' | 'read'> {
     const unreachable = (): never => {
         actions.push('unexpected-mutation-phase');
         throw new Error('Mutation phase must not run');
     };
     return {
-        read: async () => unreachable(),
-        compute: unreachable,
-        validate: unreachable,
-        write: async () => unreachable()
+        serviceId: 'auth-test-service',
+        read: async () => unreachable()
+    };
+}
+
+function createRecordingAuthTransaction(actions: string[]): {
+    readonly transaction: PSqlSql;
+    statementCount(): number;
+} {
+    let statements = 0;
+    const transaction = (async <Result>(_strings: TemplateStringsArray): Promise<Result> => {
+        if (statements === 0) {
+            actions.push('write');
+        }
+        statements += 1;
+        return [{ revision: 0 }] as Result;
+    }) as PSqlSql;
+    transaction.begin = async () => {
+        throw new Error('Auth writes must use the caller transaction');
+    };
+    return {
+        transaction,
+        statementCount: () => statements
     };
 }
 
@@ -196,19 +235,32 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
         this.transaction = transaction;
     }
 
+    readCompletionFacts(context: AppInboxExecutionMetadata): AppInboxCompletionFacts {
+        this.actions.push('completion-facts');
+        return { entry: context.entry, completedAtEpochMs: 1_010 };
+    }
+
     async writeMutation<Result>(
-        _context: AppInboxMessageContext<Result>,
-        write: (transaction: PSqlSql) => Promise<Result>
+        _context: AppInboxExecutionMetadata,
+        computed: AppInboxCompletionComputed<Result>,
+        write: (transaction: PSqlSql) => Promise<void>
     ): Promise<Result> {
         this.actions.push('transaction');
-        return await write(this.transaction);
+        expect(computed.encodedResult).toEqual(computed.durableResult);
+        expect(computed.reservationFinish).toMatchObject({
+            expectedAttempts: 1,
+            status: EntityStatus.COMPLETED,
+            completedAt: new Date(1_010)
+        });
+        expect(computed.resultReplacement).toBeDefined();
+        await write(this.transaction);
+        return computed.durableResult;
     }
 
     async writeMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
-        _context: AppInboxMessageContext<DurableResult>,
-        _write: (
-            transaction: PSqlSql
-        ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>
+        _context: AppInboxExecutionMetadata,
+        _computed: AppInboxCompletionComputed<DurableResult>,
+        _write: (transaction: PSqlSql) => Promise<AfterCommitResult>
     ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>> {
         throw new Error('After-commit transaction must not run');
     }
@@ -217,7 +269,7 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
 function createContext(
     intent: AuthMutationIntent,
     contextId: string = toAuthIntentContextId(intent)
-): AppInboxMessageContext<AuthMutationResult> {
+): AppInboxExecutionMetadata {
     const enqueue = decodeAppInboxEnqueue({
         type: toAuthAppInboxType(intent),
         topicId: toAuthAppInboxType(intent),
@@ -244,9 +296,13 @@ function createContext(
     };
     return {
         enqueue,
-        message: { id: { ts: 1_000 } } as never,
-        entry,
-        encodeResult: (result) => encodeAppInboxResult(result, 'Auth handler test result')
+        message: newALUntargetedMessage(
+            'auth-test-service',
+            newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
+            enqueue.type,
+            enqueue
+        ),
+        entry
     };
 }
 

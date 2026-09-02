@@ -1,6 +1,6 @@
 import type { GroupMutationFacts } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { describe, expect, it } from 'vitest';
 import { createMutationCommand, createMutationFacts, createMutationRead } from '../group-state-concurrency-test-fixtures.ts';
 
@@ -12,8 +12,8 @@ describe('group aggregate mutation computation', () => {
 
         const first = computeGroupMutation({ command, read, facts });
         const second = computeGroupMutation({ command, read, facts });
-        assertGroupMutation({ command, read, facts, computed: first });
-        assertGroupMutation({ command, read, facts, computed: second });
+        expect(validateGroupMutation({ command, read, facts, computed: first })).toEqual([]);
+        expect(validateGroupMutation({ command, read, facts, computed: second })).toEqual([]);
 
         expect(first).toEqual(second);
         expect(command).toEqual(createMutationCommand());

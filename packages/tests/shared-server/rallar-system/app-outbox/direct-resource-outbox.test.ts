@@ -1,32 +1,41 @@
 import { Temporal } from '@js-temporal/polyfill';
+// dprint-ignore
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+// dprint-ignore
 import type {
     PSqlParameter,
     PSqlRows,
     PSqlSql
 } from '@shared-server/postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
+import { computeAppOutboxInsert, writeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import { validateCoalescedAppOutboxWrite, writeCoalescedAppOutboxWork } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
+import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     computeClientStateSyncEntries,
     computeGroupStateSyncEntries,
     type ComputedClientStateSync,
     type ComputedGroupStateSync
 } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
-import { writeClientStateSync, writeGroupStateSync } from '@shared-server/rallar-system/state-sync/state-sync-transaction-writer.ts';
 import { computeRtcTopologyEntry, type ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
-import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
+import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+// dprint-ignore
 import type {
     AuditStamp,
-    GroupEvent,
+    GroupMember,
+    GroupPresenceSession,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
+// dprint-ignore
 import {
     CircuitBreakerPolicy,
     EnqueuedType,
@@ -35,27 +44,48 @@ import {
 } from '@shared/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { WsOutboxDeliveryOutcome } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import { createDefaultWsQueueBoxServerService, WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
 import {
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+    createDefaultWsQueueBoxServerService,
+    WsQueueBoxServerService
+} from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
+import { JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
+
 import { createTestGroup } from '../../../create-test-group.ts';
 import { createDeltaEnvelopeFixture } from '../group-state/presence/group-state-delta-envelope-fixtures.ts';
 import { createOpenTestWebSocket } from '../websocket/test-support/open-test-websocket.ts';
+
+interface TestResourceInboxRow {
+    ri_row_id: bigint;
+    ri_resource_id: string;
+    ri_topic_id: string;
+    ri_resource: string;
+    ri_type_id: string;
+    ri_status: string;
+    fk_ext_bank_id: string;
+    system_date: string;
+    created_by: string;
+    created_ts: string;
+    expire_ts: string;
+    start_ts: string | null;
+    end_ts: string | null;
+    next_ts: string | null;
+    ri_attempts: bigint;
+}
+
+interface ResourceInboxTestDatabase {
+    readonly sql: PSqlSql;
+    readonly rows: Map<string, TestResourceInboxRow>;
+    readonly beginCalls: number;
+    readonly nestedBeginCalls: number;
+    reserve(entry: ResourceEntry): void;
+}
 
 const CREATED_AT_EPOCH_MS = 1_800_000_000_000;
 const EXPIRE_AT_EPOCH_MS = 1_800_000_060_000;
 
 describe('direct resource outbox writes', () => {
-    const topologyOutboxWriter = new RtcTopologyOutboxWriter({ recordWrite: () => undefined });
-
-    it('rejects an incomplete canonical client event payload', async () => {
+    it('rejects an incomplete canonical client event payload before producing outbox entries', () => {
         const incomplete = {
             ...createComputedClientEventStateSync(createClientEvent()),
             effects: [{
@@ -64,17 +94,10 @@ describe('direct resource outbox writes', () => {
                 payload: { ...createClientEvent(), eventType: undefined }
             }]
         };
-        expect(() => validateUntrustedClientStateSync(incomplete)).toThrow();
-        const database = createResourceInboxDatabase();
-        await expect(
-            runInPSqlTransaction(database.sql, async (transaction) => {
-                await validateAndWriteUntrustedClientStateSync(transaction, incomplete);
-            })
-        ).rejects.toThrow();
-        expect(database.rows.size).toBe(0);
+        expect(() => Reflect.apply(computeClientStateSyncEntries, undefined, [incomplete, 'server-1'])).toThrow();
     });
 
-    it('rejects an incomplete canonical client snapshot payload', async () => {
+    it('rejects an incomplete canonical client snapshot payload before producing outbox entries', () => {
         const snapshot = createClientSnapshot();
         const incompleteSnapshot = {
             ...snapshot,
@@ -88,17 +111,10 @@ describe('direct resource outbox writes', () => {
                 payload: incompleteSnapshot
             }]
         };
-        expect(() => validateUntrustedClientStateSync(incomplete)).toThrow();
-        const database = createResourceInboxDatabase();
-        await expect(
-            runInPSqlTransaction(database.sql, async (transaction) => {
-                await validateAndWriteUntrustedClientStateSync(transaction, incomplete);
-            })
-        ).rejects.toThrow();
-        expect(database.rows.size).toBe(0);
+        expect(() => Reflect.apply(computeClientStateSyncEntries, undefined, [incomplete, 'server-1'])).toThrow();
     });
 
-    it('rejects an incomplete canonical group event payload', async () => {
+    it('rejects an incomplete canonical group event payload before producing outbox entries', () => {
         const valid = createComputedGroupEventStateSync();
         const effect = valid.effects.find((candidate) => candidate.payloadKind === 'delta-envelope');
         if (effect === undefined || effect.payloadKind !== 'delta-envelope') {
@@ -114,17 +130,10 @@ describe('direct resource outbox writes', () => {
                 }
             }]
         };
-        expect(() => validateUntrustedGroupStateSync(incomplete)).toThrow();
-        const database = createResourceInboxDatabase();
-        await expect(
-            runInPSqlTransaction(database.sql, async (transaction) => {
-                await validateAndWriteUntrustedGroupStateSync(transaction, incomplete);
-            })
-        ).rejects.toThrow();
-        expect(database.rows.size).toBe(0);
+        expect(() => Reflect.apply(computeGroupStateSyncEntries, undefined, [incomplete, 'server-1'])).toThrow();
     });
 
-    it('rejects an incomplete canonical group snapshot payload', async () => {
+    it('rejects an incomplete canonical group snapshot payload before producing outbox entries', () => {
         const snapshot = createGroupSnapshot();
         const incompleteSnapshot = {
             ...snapshot,
@@ -135,14 +144,7 @@ describe('direct resource outbox writes', () => {
             ...valid,
             effects: valid.effects.map((effect) => ({ ...effect, payload: incompleteSnapshot }))
         };
-        expect(() => validateUntrustedGroupStateSync(incomplete)).toThrow();
-        const database = createResourceInboxDatabase();
-        await expect(
-            runInPSqlTransaction(database.sql, async (transaction) => {
-                await validateAndWriteUntrustedGroupStateSync(transaction, incomplete);
-            })
-        ).rejects.toThrow();
-        expect(database.rows.size).toBe(0);
+        expect(() => Reflect.apply(computeGroupStateSyncEntries, undefined, [incomplete, 'server-1'])).toThrow();
     });
 
     it('rejects a non-canonical state-sync effect kind', () => {
@@ -156,7 +158,7 @@ describe('direct resource outbox writes', () => {
             }]
         };
 
-        expect(() => validateUntrustedClientStateSync(forged)).toThrow();
+        expect(() => Reflect.apply(computeClientStateSyncEntries, undefined, [forged, 'server-1'])).toThrow();
     });
 
     it('replays all canonical state-sync payload families identically', () => {
@@ -179,83 +181,57 @@ describe('direct resource outbox writes', () => {
         );
     });
 
-    it('rejects wrong audience and mandatory scalar facts before a write', async () => {
+    it('rejects wrong audience and mandatory scalar facts before producing outbox entries', () => {
         const valid = createComputedGroupStateSync(createGroupSnapshot());
         const wrongAudience = {
             ...valid,
             audience: { ...valid.audience, resourceId: 'wrong-group' }
-        } as ComputedGroupStateSync;
+        };
         const missingCommandId = {
             ...valid,
             commandId: undefined
         };
-        const database = createResourceInboxDatabase();
-
-        await expect(
-            runInPSqlTransaction(database.sql, async (transaction) => {
-                await writeGroupStateSync(transaction, wrongAudience, 'server-1');
-            })
-        ).rejects.toThrow();
-        await expect(
-            runInPSqlTransaction(database.sql, async (transaction) => {
-                await validateAndWriteUntrustedGroupStateSync(transaction, missingCommandId);
-            })
-        ).rejects.toThrow();
-        expect(database.rows.size).toBe(0);
+        expect(() => computeGroupStateSyncEntries(wrongAudience, 'server-1')).toThrow();
+        expect(() => Reflect.apply(computeGroupStateSyncEntries, undefined, [missingCommandId, 'server-1'])).toThrow();
     });
 
-    it('rejects a client state sync whose audience contradicts its aggregate', async () => {
+    it('rejects a client state sync whose audience contradicts its aggregate', () => {
         const computed = createComputedClientEventStateSync(createClientEvent());
         const forged: ComputedClientStateSync = {
             ...computed,
             audience: { ...computed.audience, applicationId: 'other-application' }
         };
-        const database = createResourceInboxDatabase();
-
-        await expect(
-            runInPSqlTransaction(database.sql, async (transaction) => {
-                await writeClientStateSync(transaction, forged, 'server-1');
-            })
-        ).rejects.toThrow('Computed state sync facts are invalid');
-        expect(database.rows.size).toBe(0);
+        expect(() => computeClientStateSyncEntries(forged, 'server-1')).toThrow('Computed state sync facts are invalid');
     });
 
-    it('rejects a group state sync whose audience contradicts its aggregate', async () => {
+    it('rejects a group state sync whose audience contradicts its aggregate', () => {
         const computed = createComputedGroupStateSync(createGroupSnapshot());
         const forged: ComputedGroupStateSync = {
             ...computed,
             audience: { ...computed.audience, workspaceId: 'other-workspace' }
         };
-        const database = createResourceInboxDatabase();
-
-        await expect(
-            runInPSqlTransaction(database.sql, async (transaction) => {
-                await writeGroupStateSync(transaction, forged, 'server-1');
-            })
-        ).rejects.toThrow('Computed state sync facts are invalid');
-        expect(database.rows.size).toBe(0);
+        expect(() => computeGroupStateSyncEntries(forged, 'server-1')).toThrow('Computed state sync facts are invalid');
     });
 
-    it('computes and revalidates valid client and group work inside public writes', async () => {
+    it('writes the exact precomputed client and group bytes through the received transaction', async () => {
         const database = createResourceInboxDatabase();
         const client = createComputedClientEventStateSync(createClientEvent());
         const group = createComputedGroupStateSync(createGroupSnapshot());
 
-        const clientEntries = await runInPSqlTransaction(
-            database.sql,
-            async (transaction) => await writeClientStateSync(transaction, client, 'server-1')
-        );
-        const groupEntries = await runInPSqlTransaction(
-            database.sql,
-            async (transaction) => await writeGroupStateSync(transaction, group, 'server-1')
-        );
-
-        expect(clientEntries).toEqual(computeClientStateSyncEntries(client, 'server-1'));
-        expect(groupEntries).toEqual(computeGroupStateSyncEntries(group, 'server-1'));
+        const entries = [
+            ...computeClientStateSyncEntries(client, 'server-1'),
+            ...computeGroupStateSyncEntries(group, 'server-1')
+        ];
+        const inserts = entries.map(computeAppOutboxInsert);
         await runInPSqlTransaction(database.sql, async (transaction) => {
-            await writeClientStateSync(transaction, client, 'server-1');
-            await writeGroupStateSync(transaction, group, 'server-1');
+            for (const insert of inserts) {
+                await writeAppOutboxInsert(transaction, insert);
+            }
         });
+
+        expect([...database.rows.values()].map((row) => row.ri_resource)).toEqual(entries.map((entry) => entry.resource));
+        expect([...database.rows.values()].map((row) => row.ri_type_id)).toEqual(['WS_OUTBOX', 'WS_OUTBOX', 'WS_OUTBOX']);
+        expect(database.beginCalls).toBe(1);
         expect(database.nestedBeginCalls).toBe(0);
     });
 
@@ -289,7 +265,7 @@ describe('direct resource outbox writes', () => {
         const [entry] = computeClientStateSyncEntries(computed, 'server-1');
 
         expect(entry.typeId).toBe(EnqueuedType.WS_OUTBOX);
-        const message = JSON.parse(entry.resource);
+        const message = decodePersistedALMessage(entry.resource);
         expect(message).toMatchObject({
             id: {
                 msgId: expect.stringContaining('client-command-1'),
@@ -309,45 +285,51 @@ describe('direct resource outbox writes', () => {
             payload: { typeId: 'client-state.event' }
         });
         const database = createResourceInboxDatabase();
+        const insert = computeAppOutboxInsert(entry);
         await runInPSqlTransaction(database.sql, async (transaction) => {
-            await writeClientStateSync(transaction, computed, 'server-1');
+            await writeAppOutboxInsert(transaction, insert);
         });
         expect(database.rows.get(toRowKey(entry))?.ri_resource).toBe(entry.resource);
         expect(database.nestedBeginCalls).toBe(0);
     });
 
-    it('writes final WS_OUTBOX entries through the received transaction', async () => {
+    it.each(['identical', 'different'] as const)('rolls back a %s WS_OUTBOX collision without reading a winner', async (content) => {
         const database = createResourceInboxDatabase();
         const computed = createComputedGroupStateSync(createGroupSnapshot());
-
-        const entries = await runInPSqlTransaction(
-            database.sql,
-            async (transaction) => await writeGroupStateSync(transaction, computed, 'server-1')
+        const entries = computeGroupStateSyncEntries(computed, 'server-1');
+        const existing = computeAppOutboxInsert(entries[0]);
+        const preceding = computeAppOutboxInsert(entries[1]);
+        const collision = computeAppOutboxInsert(
+            content === 'identical' ? entries[0] : {
+                ...entries[0],
+                resource: JSON.stringify({ corrupt: true })
+            }
         );
-
-        expect(database.beginCalls).toBe(1);
-        expect(database.nestedBeginCalls).toBe(0);
-        expect(database.rows.size).toBe(entries.length);
-        expect(
-            [...database.rows.values()].every((row) => row.ri_type_id === EnqueuedType.WS_OUTBOX)
-        ).toBe(true);
-
         await runInPSqlTransaction(database.sql, async (transaction) => {
-            await writeGroupStateSync(transaction, computed, 'server-1');
+            await writeAppOutboxInsert(transaction, existing);
         });
-        expect(database.rows.size).toBe(entries.length);
+        let winnerReads = 0;
 
         await expect(
             runInPSqlTransaction(database.sql, async (transaction) => {
-                await createPSqlResourceInboxRepository(transaction).entries.writeIfAbsentOrMatch({
-                    ...entries[0]!,
-                    resource: JSON.stringify({ corrupt: true })
+                const observed = new Proxy(transaction, {
+                    apply(target, receiver, argumentsList) {
+                        const strings = argumentsList[0];
+                        if (Array.isArray(strings) && /\bfrom\s+resource_inbox\b/iu.test(strings.join(' '))) {
+                            winnerReads += 1;
+                        }
+                        return Reflect.apply(target, receiver, argumentsList);
+                    }
                 });
+                await writeAppOutboxInsert(observed, preceding);
+                await writeAppOutboxInsert(observed, collision);
             })
         ).rejects.toMatchObject({
             code: 'resource-inbox-invariant-corruption'
         });
-        expect(database.rows.get(toRowKey(entries[0]!))?.ri_resource).toBe(entries[0]!.resource);
+        expect(winnerReads).toBe(0);
+        expect([...database.rows.values()].map((row) => row.ri_resource)).toEqual([entries[0].resource]);
+        expect(database.nestedBeginCalls).toBe(0);
     });
 
     it('computes deterministic logical websocket work without a live local route', () => {
@@ -374,22 +356,18 @@ describe('direct resource outbox writes', () => {
             first.every((entry) => entry.audit.expiryTs.equals(Temporal.Instant.fromEpochMilliseconds(EXPIRE_AT_EPOCH_MS)))
         ).toBe(true);
 
-        const messages = first.map((entry) => JSON.parse(entry.resource));
+        const messages = first.map((entry) => decodePersistedALMessage(entry.resource));
         expect(messages.map((message) => message.payload.typeId)).toEqual([
             'group-state.snapshot',
             'group-directory.snapshot'
         ]);
-        expect(
-            messages.every(
-                (message) =>
-                    message.targets.mode === 'broadcast' &&
-                    message.targets.scope === 'room' &&
-                    message.targets.groupRef.applicationId === 'app-1' &&
-                    message.ordering.epoch === 4 &&
-                    message.ordering.seq === 3 &&
-                    message.constraints.expiresAtMs === EXPIRE_AT_EPOCH_MS
-            )
-        ).toBe(true);
+        for (const message of messages) {
+            expect(message).toMatchObject({
+                targets: { mode: 'broadcast', scope: 'room', groupRef: { applicationId: 'app-1' } },
+                ordering: { epoch: 4, seq: 3 },
+                constraints: { expiresAtMs: EXPIRE_AT_EPOCH_MS }
+            });
+        }
     });
 
     it('computes immutable APP_OUTBOX topology work from accepted causal data', async () => {
@@ -414,8 +392,8 @@ describe('direct resource outbox writes', () => {
 
         expect(first).toEqual(replay);
         expect(first.typeId).toBe(EnqueuedType.APP_OUTBOX);
-        const message = JSON.parse(first.resource);
-        const envelope = JSON.parse(message.payload.resource);
+        const message = decodePersistedALMessage(first.resource);
+        const envelope = decodeJsonWireText(message.payload.resource);
         expect(envelope).toMatchObject({
             senderId: expect.any(String),
             data: {
@@ -427,8 +405,9 @@ describe('direct resource outbox writes', () => {
         });
         expect(message.id.msgId).toContain('group-command-1');
         const database = createResourceInboxDatabase();
+        const insert = computeAppOutboxInsert(first);
         await runInPSqlTransaction(database.sql, async (transaction) => {
-            await topologyOutboxWriter.write(transaction, computed);
+            await writeAppOutboxInsert(transaction, insert);
         });
         expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(first.resource);
         expect(database.nestedBeginCalls).toBe(0);
@@ -437,7 +416,7 @@ describe('direct resource outbox writes', () => {
     it.each([
         ['missing', undefined],
         ['wrong', 'snapshot']
-    ])('rejects %s RTC topology payload kind', async (_label, payloadKind) => {
+    ])('rejects %s RTC topology payload kind', (_label, payloadKind) => {
         const { payloadKind: canonicalPayloadKind, ...withoutPayloadKind } = createComputedRtcTopologyOutbox();
         void canonicalPayloadKind;
         const computed = {
@@ -445,27 +424,15 @@ describe('direct resource outbox writes', () => {
             ...(payloadKind === undefined ? {} : { payloadKind })
         };
 
-        expect(() => validateUntrustedRtcTopologyOutbox(computed)).toThrow(
-            'Computed RTC topology outbox facts are invalid'
-        );
-        const database = createResourceInboxDatabase();
-        await expect(
-            runInPSqlTransaction(database.sql, async (transaction) => {
-                await validateAndWriteUntrustedRtcTopologyOutbox(
-                    transaction,
-                    topologyOutboxWriter,
-                    computed
-                );
-            })
-        ).rejects.toThrow('Computed RTC topology outbox facts are invalid');
-        expect(database.rows.size).toBe(0);
+        expect(() => Reflect.apply(computeRtcTopologyEntry, undefined, [computed]))
+            .toThrow('Computed RTC topology outbox facts are invalid');
     });
 
     it('includes canonical RTC topology payload kind in deterministic identity', () => {
         const computed = createComputedRtcTopologyOutbox();
 
         const entry = computeRtcTopologyEntry(computed);
-        const message = JSON.parse(entry.resource);
+        const message = decodePersistedALMessage(entry.resource);
 
         expect(message.id.msgId).toContain(':rtc-topology-recompute:group-revision:group=4;presence=3');
         expect(message.route).toEqual(entry.key);
@@ -481,36 +448,31 @@ describe('direct resource outbox writes', () => {
             requestOptions
         };
 
-        expect(() => validateUntrustedRtcTopologyOutbox(computed)).toThrow();
+        expect(() => Reflect.apply(computeRtcTopologyEntry, undefined, [computed])).toThrow();
     });
 
-    it('rejects RTC topology work whose aggregate contradicts its snapshot', async () => {
+    it('rejects RTC topology work whose aggregate contradicts its snapshot', () => {
         const computed = createComputedRtcTopologyOutbox();
         const forged: ComputedRtcTopologyOutbox = {
             ...computed,
             aggregateRef: { ...computed.aggregateRef, groupId: 'other-group' }
         };
-        const database = createResourceInboxDatabase();
-
-        await expect(
-            runInPSqlTransaction(database.sql, async (transaction) => {
-                await topologyOutboxWriter.write(transaction, forged);
-            })
-        ).rejects.toThrow('Computed RTC topology outbox facts are invalid');
-        expect(database.rows.size).toBe(0);
+        expect(() => computeRtcTopologyEntry(forged)).toThrow(
+            'Computed RTC topology outbox facts are invalid'
+        );
     });
 
-    it('computes and revalidates RTC topology work inside its public write', async () => {
+    it('writes RTC topology work computed before transaction entry', async () => {
         const computed = createComputedRtcTopologyOutbox();
         const database = createResourceInboxDatabase();
+        const computedEntry = computeRtcTopologyEntry(computed);
+        const insert = computeAppOutboxInsert(computedEntry);
 
-        const entry = await runInPSqlTransaction(
-            database.sql,
-            async (transaction) => await topologyOutboxWriter.write(transaction, computed)
-        );
+        await runInPSqlTransaction(database.sql, async (transaction) => {
+            await writeAppOutboxInsert(transaction, insert);
+        });
 
-        expect(entry).toEqual(computeRtcTopologyEntry(computed));
-        expect(database.rows.get(toRowKey(entry))?.ri_resource).toBe(entry.resource);
+        expect(database.rows.get(toRowKey(computedEntry))?.ri_resource).toBe(computedEntry.resource);
         expect(database.nestedBeginCalls).toBe(0);
     });
 
@@ -539,10 +501,6 @@ describe('direct resource outbox writes', () => {
         expect(socket.sent).toEqual([]);
 
         await outbox.enqueue(entry);
-        const wake = vi.fn(() => {
-            throw new Error('wake failed');
-        });
-        expect(wake).toThrow('wake failed');
         expect(await outbox.getItem(entry.key)).toBeDefined();
         expect(socket.sent).toEqual([]);
 
@@ -553,113 +511,80 @@ describe('direct resource outbox writes', () => {
 
     it('treats no current websocket recipient as a post-commit delivery outcome', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
-        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
-        const [entry] = computeGroupStateSyncEntries(
-            createComputedGroupStateSync(createGroupSnapshot()),
-            'server-1'
-        );
-        const outbox = new InMemoryQueueBox();
-        const socket = createSocket();
-        const resolveBroadcastRecipients = vi.fn(() => []);
-        const deliveryOutcomes: WsOutboxDeliveryOutcome[] = [];
-        const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
-            outbox: outbox,
-            socket: socket,
-            name: 'server-1',
-            targetResolver: { resolveBroadcastRecipients },
-            outboundDeliveryOutcome: (outcome) => deliveryOutcomes.push(outcome)
-        });
-        await outbox.enqueue(entry);
-        await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
-        vi.useRealTimers();
-        expect(socket.sent).toEqual([]);
-        expect(deliveryOutcomes).toEqual([
-            {
-                status: 'no-current-recipient',
-                messageId: JSON.parse(entry.resource).id.msgId
-            }
-        ]);
+        try {
+            vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+            const [entry] = computeGroupStateSyncEntries(
+                createComputedGroupStateSync(createGroupSnapshot()),
+                'server-1'
+            );
+            const outbox = new InMemoryQueueBox();
+            const socket = createSocket();
+            const resolveBroadcastRecipients = vi.fn(() => []);
+            const deliveryOutcomes: WsOutboxDeliveryOutcome[] = [];
+            const service = createDefaultWsQueueBoxServerService({
+                inbox: new InMemoryQueueBox(),
+                outbox,
+                socket,
+                name: 'server-1',
+                targetResolver: { resolveBroadcastRecipients },
+                outboundDeliveryOutcome: (outcome) => deliveryOutcomes.push(outcome)
+            });
+            await outbox.enqueue(entry);
+            await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
+            expect(socket.sent).toEqual([]);
+            expect(deliveryOutcomes).toEqual([
+                {
+                    status: 'no-current-recipient',
+                    messageId: decodePersistedALMessage(entry.resource).id.msgId
+                }
+            ]);
+        }
+        finally {
+            vi.useRealTimers();
+        }
     });
     it('fences coalescing and inserts a deterministic successor instead of overwriting reserved work', async () => {
         const database = createResourceInboxDatabase();
-        const stagingService = new CoalescedAppOutboxWorkService(
-            new OutboxQueueReader(new InMemoryQueueBox()),
-            'server-1',
-            () => CREATED_AT_EPOCH_MS
-        );
+        const groupSnapshot = createGroupSnapshot();
         const coalescedInput = {
-            type: 'RTC_TOPOLOGY_RECOMPUTE',
-            topicId: 'app-outbox.rtc-topology',
-            resourceId: 'overlay-1',
-            contextId: 'room-1'
+            aggregateRef: groupSnapshot.group,
+            groupSnapshot,
+            requestedAtEpochMs: CREATED_AT_EPOCH_MS,
+            expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+            recomputeDebounceMs: 0,
+            senderId: 'server-1',
+            origin: 'automatic'
         } as const;
-        const first = (
-            await stagingService.enqueue({
-                ...coalescedInput,
-                data: { overlayId: 'overlay-1', snapshotVersion: 1 }
-            })
-        ).entry;
-        const next = (
-            await stagingService.enqueue({
-                ...coalescedInput,
-                data: { overlayId: 'overlay-1', snapshotVersion: 2 }
-            })
-        ).entry;
-        const third = (
-            await stagingService.enqueue({
-                ...coalescedInput,
-                data: { overlayId: 'overlay-1', snapshotVersion: 3 }
-            })
-        ).entry;
-        const successor = (
-            await new CoalescedAppOutboxWorkService(
-                new OutboxQueueReader(new InMemoryQueueBox()),
-                'server-1',
-                () => CREATED_AT_EPOCH_MS
-            ).enqueue({
-                ...coalescedInput,
-                resourceId: 'overlay-1-successor-2',
-                data: { overlayId: 'overlay-1', snapshotVersion: 3 }
-            })
-        ).entry;
+        const initial = computeCoalescedRtcTopologyGroupRevisionWork({ ...coalescedInput, previousEntry: null });
+        const first = initial.entryWrite.entry;
+        const replacement = computeCoalescedRtcTopologyGroupRevisionWork({ ...coalescedInput, previousEntry: first });
+        const next = replacement.entryWrite.entry;
+        expect(validateCoalescedAppOutboxWrite(null, initial)).toEqual([]);
+        expect(validateCoalescedAppOutboxWrite(first, replacement)).toEqual([]);
         await runInPSqlTransaction(database.sql, async (transaction) => {
-            await createPSqlResourceInboxRepository(transaction).entries.writeIfAbsentOrMatch(first);
+            await writeCoalescedAppOutboxWork(transaction, initial);
         });
-        const updated = await runInPSqlTransaction(
+        await runInPSqlTransaction(
             database.sql,
-            async (transaction) =>
-                await stagingService.write(transaction, {
-                    expectedEntry: first,
-                    entry: next,
-                    successorEntry: successor
-                })
+            async (transaction) => await writeCoalescedAppOutboxWork(transaction, replacement)
         );
-        expect(updated).toMatchObject({
-            action: 'updated',
-            blockedByReserved: false
-        });
         expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(next.resource);
+        expect(database.rows.get(toRowKey(first))?.ri_status).toBe(EntityStatus.NEW);
+        expect(database.rows.size).toBe(1);
 
         database.reserve(next);
-        const result = await runInPSqlTransaction(
+        const reservedReplacement = computeCoalescedRtcTopologyGroupRevisionWork({ ...coalescedInput, previousEntry: next });
+        const successor = reservedReplacement.successorWrite.entry;
+        expect(validateCoalescedAppOutboxWrite(next, reservedReplacement)).toEqual([]);
+        await runInPSqlTransaction(
             database.sql,
-            async (transaction) =>
-                await stagingService.write(transaction, {
-                    expectedEntry: next,
-                    entry: third,
-                    successorEntry: successor
-                })
+            async (transaction) => await writeCoalescedAppOutboxWork(transaction, reservedReplacement)
         );
 
-        expect(result).toMatchObject({
-            action: 'successor',
-            blockedByReserved: true,
-            entry: successor
-        });
         expect(database.rows.get(toRowKey(next))?.ri_resource).toBe(next.resource);
         expect(database.rows.get(toRowKey(next))?.ri_status).toBe(EntityStatus.RESERVED);
         expect(database.rows.get(toRowKey(successor))?.ri_resource).toBe(successor.resource);
+        expect(database.rows.size).toBe(2);
         expect(database.nestedBeginCalls).toBe(0);
     });
 });
@@ -746,19 +671,9 @@ function createComputedClientSnapshotStateSync(snapshot: ClientSnapshot): Comput
     };
 }
 
-// The group event row carries a delta envelope; the bare GroupEvent payload was
-// retired with snapshot-per-change. The envelope is internally consistent, so
-// the identity comes from it rather than from a separately built event, and a
-// corruption is applied to that identity so the only thing under test is the
-// corruption itself.
-function createComputedGroupEventStateSync(
-    corruptEvent?: (event: GroupEvent) => GroupEvent
-): ComputedGroupStateSync {
-    const fixture = createDeltaEnvelopeFixture({ audienceSessionIds: [] });
-    const event = fixture.event;
-    const envelope: GroupStateDeltaEnvelope = corruptEvent === undefined
-        ? fixture
-        : { ...fixture, event: corruptEvent(event) };
+function createComputedGroupEventStateSync(): ComputedGroupStateSync {
+    const envelope = createDeltaEnvelopeFixture({ audienceSessionIds: [] });
+    const event = envelope.event;
     return {
         commandId: 'group-command-1',
         aggregateRef: {
@@ -792,8 +707,8 @@ function createComputedRtcTopologyOutbox(): ComputedRtcTopologyOutbox {
         aggregateRef: groupSnapshot.group,
         acceptedCausalRevision: groupSnapshot.causalRevision,
         groupSnapshot,
-        effectKind: 'rtc-topology-recompute' as const,
-        payloadKind: 'group-revision' as const,
+        effectKind: 'rtc-topology-recompute',
+        payloadKind: 'group-revision',
         senderId: 'server-1',
         resourceId: 'group-command-1:rtc-topology-recompute:group-revision:group=4;presence=3',
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),
@@ -860,42 +775,46 @@ function createGroupSnapshot(): GroupSnapshot {
             created: audit,
             updated: audit
         }),
-        members: [
-            {
-                applicationId: 'app-1',
-                workspaceId: 'workspace-1',
-                groupId: 'room-1',
-                principalId: 'alice',
-                role: 'owner',
-                status: 'active',
-                joined: audit,
-                updated: audit,
-                invitedByPrincipalId: null,
-                invitationExpiresAtEpochMs: null,
-                left: null,
-                removed: null,
-                banned: null
-            }
-        ],
-        activeSessions: [
-            {
-                applicationId: 'app-1',
-                workspaceId: 'workspace-1',
-                groupId: 'room-1',
-                principalId: 'alice',
-                sessionId: 'session-alice',
-                generationId: 'generation-alice',
-                generationVersion: 1,
-                status: 'active',
-                disconnectedAtEpochMs: null,
-                disconnectReason: null,
-                connectedAtEpochMs: 1,
-                lastHeartbeatAtEpochMs: 1,
-                expiresAtEpochMs: EXPIRE_AT_EPOCH_MS
-            }
-        ],
+        members: [createGroupMember(audit)],
+        activeSessions: [createGroupPresenceSession()],
         memberCount: 1,
         onlineMemberCount: 1
+    };
+}
+
+function createGroupMember(audit: AuditStamp): GroupMember {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'room-1',
+        principalId: 'alice',
+        role: 'owner',
+        status: 'active',
+        joined: audit,
+        updated: audit,
+        invitedByPrincipalId: null,
+        invitationExpiresAtEpochMs: null,
+        left: null,
+        removed: null,
+        banned: null
+    };
+}
+
+function createGroupPresenceSession(): GroupPresenceSession {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'room-1',
+        principalId: 'alice',
+        sessionId: 'session-alice',
+        generationId: 'generation-alice',
+        generationVersion: 1,
+        status: 'active',
+        disconnectedAtEpochMs: null,
+        disconnectReason: null,
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: 1,
+        expiresAtEpochMs: EXPIRE_AT_EPOCH_MS
     };
 }
 
@@ -932,24 +851,6 @@ function createClientSnapshot(): ClientSnapshot {
     };
 }
 
-function createGroupEvent(): GroupEvent {
-    return {
-        applicationId: 'app-1',
-        workspaceId: 'workspace-1',
-        groupId: 'room-1',
-        eventId: 'group-event-1',
-        eventType: 'group-updated',
-        snapshotVersion: 7,
-        causalRevision: { groupRevision: 4, presenceRevision: 3 },
-        occurredAtEpochMs: CREATED_AT_EPOCH_MS,
-        actor: { kind: 'service', serviceId: 'test' },
-        reason: null,
-        traceId: null,
-        requestId: 'group-command-1',
-        payload: {}
-    };
-}
-
 function createAuditStamp(): AuditStamp {
     return {
         atEpochMs: 1,
@@ -977,66 +878,6 @@ function createClientEvent(): ClientEvent {
         requestId: 'client-command-1',
         payload: {}
     };
-}
-
-function validateUntrustedClientStateSync(computed: object): void {
-    Reflect.apply(computeClientStateSyncEntries, undefined, [computed, 'server-1']);
-}
-
-async function validateAndWriteUntrustedClientStateSync(
-    transaction: PSqlSql,
-    computed: object
-): Promise<void> {
-    await Reflect.apply(writeClientStateSync, undefined, [transaction, computed, 'server-1']);
-}
-
-function validateUntrustedGroupStateSync(computed: object): void {
-    Reflect.apply(computeGroupStateSyncEntries, undefined, [computed, 'server-1']);
-}
-
-async function validateAndWriteUntrustedGroupStateSync(
-    transaction: PSqlSql,
-    computed: object
-): Promise<void> {
-    await Reflect.apply(writeGroupStateSync, undefined, [transaction, computed, 'server-1']);
-}
-
-function validateUntrustedRtcTopologyOutbox(computed: object): void {
-    Reflect.apply(computeRtcTopologyEntry, undefined, [computed]);
-}
-
-async function validateAndWriteUntrustedRtcTopologyOutbox(
-    transaction: PSqlSql,
-    writer: RtcTopologyOutboxWriter,
-    computed: object
-): Promise<void> {
-    await Reflect.apply(writer.write, writer, [transaction, computed]);
-}
-
-interface TestResourceInboxRow {
-    ri_row_id: bigint;
-    ri_resource_id: string;
-    ri_topic_id: string;
-    ri_resource: string;
-    ri_type_id: string;
-    ri_status: string;
-    fk_ext_bank_id: string;
-    system_date: string;
-    created_by: string;
-    created_ts: string;
-    expire_ts: string;
-    start_ts: string | null;
-    end_ts: string | null;
-    next_ts: string | null;
-    ri_attempts: bigint;
-}
-
-interface ResourceInboxTestDatabase {
-    readonly sql: PSqlSql;
-    readonly rows: Map<string, TestResourceInboxRow>;
-    readonly beginCalls: number;
-    readonly nestedBeginCalls: number;
-    reserve(entry: ResourceEntry): void;
 }
 
 function createResourceInboxDatabase(): ResourceInboxTestDatabase {
@@ -1132,9 +973,6 @@ function executeResourceInboxQuery(
     if (query.startsWith('insert into resource_inbox')) {
         return insertResourceInboxTestRow(rows, values);
     }
-    if (query.startsWith('select ri_row_id')) {
-        return readResourceInboxTestRow(rows, values);
-    }
     if (query.startsWith('update resource_inbox')) {
         return updateResourceInboxTestRow(rows, values);
     }
@@ -1154,84 +992,73 @@ function insertResourceInboxTestRow(
     return [row];
 }
 
-function readResourceInboxTestRow(
-    rows: Map<string, TestResourceInboxRow>,
-    values: readonly PSqlParameter[]
-): PSqlRows {
-    const topicId = readStringParameter(values[0], 'topic id');
-    const resourceId = readStringParameter(values[1], 'resource id');
-    const contextId = readStringParameter(values[2], 'context id');
-    const row = rows.get(`${contextId}::${topicId}::${resourceId}`);
-    return row ? [{ ...row }] : [];
-}
-
 function updateResourceInboxTestRow(
     rows: Map<string, TestResourceInboxRow>,
     values: readonly PSqlParameter[]
 ): PSqlRows {
-    const resource = readStringParameter(values[0], 'resource');
-    const status = readStringParameter(values[1], 'status');
+    const resource = toStringSqlParameter(values[0], 'resource');
+    const status = toStringSqlParameter(values[1], 'status');
     const nextTimestamp = values[2];
-    const topicId = readStringParameter(values[3], 'topic id');
-    const resourceId = readStringParameter(values[4], 'resource id');
-    const contextId = readStringParameter(values[5], 'context id');
-    const typeId = readStringParameter(values[6], 'type id');
-    const expectedStatus = readStringParameter(values[7], 'expected status');
-    const expectedResource = readStringParameter(values[8], 'expected resource');
-    const expectedGeneration = readNumberParameter(values[9], 'expected generation');
-    const attempts = readBigIntParameter(values[10], 'attempts');
+    const topicId = toStringSqlParameter(values[3], 'topic id');
+    const resourceId = toStringSqlParameter(values[4], 'resource id');
+    const contextId = toStringSqlParameter(values[5], 'context id');
+    const typeId = toStringSqlParameter(values[6], 'type id');
+    const expectedStatus = toStringSqlParameter(values[7], 'expected status');
+    const expectedResource = toStringSqlParameter(values[8], 'expected resource');
+    const expectedGeneration = toNumberSqlParameter(values[9], 'expected generation');
+    const attempts = toBigIntSqlParameter(values[10], 'attempts');
     const row = rows.get(`${contextId}::${topicId}::${resourceId}`);
     if (
         !row ||
         row.ri_type_id !== typeId ||
         row.ri_status !== expectedStatus ||
         row.ri_resource !== expectedResource ||
-        readCoalescedGeneration(row.ri_resource) !== expectedGeneration ||
+        toCoalescedGeneration(row.ri_resource) !== expectedGeneration ||
         row.ri_attempts !== attempts
     ) {
         return [];
     }
     row.ri_resource = resource;
     row.ri_status = status;
-    row.next_ts = nextTimestamp === null ? null : withoutZone(String(nextTimestamp));
+    row.next_ts = nextTimestamp === null ? null : toTimestampWithoutZone(String(nextTimestamp));
     return [{ ...row }];
 }
 
 function toTestRow(values: readonly PSqlParameter[], rowId: bigint): TestResourceInboxRow {
     return {
         ri_row_id: rowId,
-        ri_resource_id: readStringParameter(values[0], 'resource id'),
-        ri_topic_id: readStringParameter(values[1], 'topic id'),
-        ri_resource: readStringParameter(values[2], 'resource'),
-        ri_type_id: readStringParameter(values[3], 'type id'),
-        ri_status: readStringParameter(values[4], 'status'),
-        fk_ext_bank_id: readStringParameter(values[5], 'context id'),
-        system_date: readStringParameter(values[6], 'system date'),
-        created_by: readStringParameter(values[7], 'created by'),
-        created_ts: withoutZone(String(values[8])),
-        expire_ts: withoutZone(String(values[9])),
-        start_ts: values[10] === null ? null : withoutZone(String(values[10])),
-        end_ts: values[11] === null ? null : withoutZone(String(values[11])),
-        next_ts: values[12] === null ? null : withoutZone(String(values[12])),
-        ri_attempts: readBigIntParameter(values[13], 'attempts')
+        ri_resource_id: toStringSqlParameter(values[0], 'resource id'),
+        ri_topic_id: toStringSqlParameter(values[1], 'topic id'),
+        ri_resource: toStringSqlParameter(values[2], 'resource'),
+        ri_type_id: toStringSqlParameter(values[3], 'type id'),
+        ri_status: toStringSqlParameter(values[4], 'status'),
+        fk_ext_bank_id: toStringSqlParameter(values[5], 'context id'),
+        system_date: toStringSqlParameter(values[6], 'system date'),
+        created_by: toStringSqlParameter(values[7], 'created by'),
+        created_ts: toTimestampWithoutZone(String(values[8])),
+        expire_ts: toTimestampWithoutZone(String(values[9])),
+        start_ts: values[10] === null ? null : toTimestampWithoutZone(String(values[10])),
+        end_ts: values[11] === null ? null : toTimestampWithoutZone(String(values[11])),
+        next_ts: values[12] === null ? null : toTimestampWithoutZone(String(values[12])),
+        ri_attempts: toBigIntSqlParameter(values[13], 'attempts')
     };
 }
 
-function readStringParameter(value: PSqlParameter, label: string): string {
+function toStringSqlParameter(value: PSqlParameter, label: string): string {
     if (typeof value !== 'string') {
         throw new TypeError(`Expected ${label} SQL parameter to be a string`);
     }
     return value;
 }
 
-function readNumberParameter(value: PSqlParameter, label: string): number {
+function toNumberSqlParameter(value: PSqlParameter, label: string): number {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
         throw new TypeError(`Expected ${label} SQL parameter to be a finite number`);
     }
     return value;
 }
 
-function readBigIntParameter(value: PSqlParameter, label: string): bigint {
+function toBigIntSqlParameter(value: PSqlParameter, label: string): bigint {
     if (typeof value === 'bigint') {
         return value;
     }
@@ -1241,14 +1068,25 @@ function readBigIntParameter(value: PSqlParameter, label: string): bigint {
     throw new TypeError(`Expected ${label} SQL parameter to be an integer`);
 }
 
-function withoutZone(value: string): string {
+function toTimestampWithoutZone(value: string): string {
     return value.replace(/Z$/u, '');
 }
 
-function readCoalescedGeneration(resource: string): number {
-    const message = JSON.parse(resource);
-    const envelope = JSON.parse(message.payload.resource);
-    return envelope.data.__rallarCoalescedWork.generation;
+function toCoalescedGeneration(resource: string): number {
+    const message = decodePersistedALMessage(resource);
+    const envelope = decodeJsonWireText(message.payload.resource);
+    if (!envelope || typeof envelope !== 'object' || !('data' in envelope)) {
+        throw new TypeError('Expected coalesced envelope data');
+    }
+    const data = envelope.data;
+    if (!data || typeof data !== 'object' || !('__rallarCoalescedWork' in data)) {
+        throw new TypeError('Expected coalesced work metadata');
+    }
+    const metadata = data.__rallarCoalescedWork;
+    if (!metadata || typeof metadata !== 'object' || !('generation' in metadata) || typeof metadata.generation !== 'number') {
+        throw new TypeError('Expected coalesced work generation');
+    }
+    return metadata.generation;
 }
 
 function toRowKey(value: ResourceEntry | TestResourceInboxRow): string {

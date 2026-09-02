@@ -59,6 +59,37 @@ export interface PostgresAppInboxWorkerServices {
     readonly inbox: InboxQueueReader;
 }
 
+interface PostgresAppInboxWorkerStateServices {
+    readonly clientState: ReturnType<typeof createClientStateService>;
+    readonly groupState: ReturnType<typeof createGroupStateService>;
+}
+
+interface PostgresAppInboxWorkerInboxServicesInput {
+    readonly worker: CreatePostgresAppInboxWorkerServicesInput;
+    readonly inbox: InboxQueueReader;
+    readonly resourceInbox: PSqlResourceInboxRepository;
+    readonly resourceInboxResults: ResourceInboxResultsRepository;
+    readonly waitOptions: ReturnType<typeof createPostgresAppInboxWorkerWaitOptions>;
+    readonly stateServices: PostgresAppInboxWorkerStateServices;
+}
+
+interface CreatePostgresAppInboxWorkerStateServicesInput {
+    readonly worker: CreatePostgresAppInboxWorkerServicesInput;
+    readonly runtimeRepository: PSqlRuntimeStateRepository;
+    readonly authSessions: AuthSessionRepository;
+}
+
+interface CreatePostgresAppInboxWorkerTopologyServiceInput {
+    readonly worker: CreatePostgresAppInboxWorkerServicesInput;
+    readonly inbox: InboxQueueReader;
+    readonly resourceInbox: PSqlResourceInboxRepository;
+    readonly resourceInboxResults: ResourceInboxResultsRepository;
+    readonly runtimeRepository: PSqlRuntimeStateRepository;
+    readonly topologyRuntimeRepository: PSqlRuntimeStateRepository;
+    readonly waitOptions: ReturnType<typeof createPostgresAppInboxWorkerWaitOptions>;
+    readonly groupState: ReturnType<typeof createGroupStateService>;
+}
+
 export function createPostgresAppInboxWorkerServices(
     input: CreatePostgresAppInboxWorkerServicesInput
 ): PostgresAppInboxWorkerServices {
@@ -69,86 +100,124 @@ export function createPostgresAppInboxWorkerServices(
     const inbox = createPostgresAppInboxWorkerInbox(resourceInbox, input.trace);
     const resourceInboxResults = new ResourceInboxResultsRepository(input.sql);
     const waitOptions = createPostgresAppInboxWorkerWaitOptions(input.atEpochMs);
-    const clientState = createClientStateService({
+    const stateServices = createPostgresAppInboxWorkerStateServices({
+        worker: input,
         runtimeRepository,
-        clientStateEventStore: new PSqlClientStateEventRepository(input.sql),
-        serviceId: input.serviceId
+        authSessions
     });
-    const groupState = createGroupStateService({
+    const inboxServices = createPostgresAppInboxWorkerInboxServices({
+        worker: input,
+        inbox,
+        resourceInbox,
+        resourceInboxResults,
+        waitOptions,
+        stateServices
+    });
+    const topology = createPostgresAppInboxWorkerTopologyService({
+        worker: input,
+        inbox,
+        resourceInbox,
+        resourceInboxResults,
         runtimeRepository,
-        groupStateEventStore: new PSqlGroupStateEventRepository(input.sql),
-        authSessionRepository: authSessions,
-        now: () => input.atEpochMs,
-        serviceId: input.serviceId,
-        readPlannedLayoutRow: async () => null,
-        readAcceptedLayoutRow: async () => null
+        topologyRuntimeRepository,
+        waitOptions,
+        groupState: stateServices.groupState
     });
+    return {
+        ...inboxServices,
+        topology,
+        authSessions,
+        resourceInbox,
+        resourceInboxResults,
+        inbox
+    };
+}
+
+function createPostgresAppInboxWorkerStateServices(
+    input: CreatePostgresAppInboxWorkerStateServicesInput
+): PostgresAppInboxWorkerStateServices {
+    return {
+        clientState: createClientStateService({
+            runtimeRepository: input.runtimeRepository,
+            clientStateEventStore: new PSqlClientStateEventRepository(input.worker.sql),
+            serviceId: input.worker.serviceId
+        }),
+        groupState: createGroupStateService({
+            runtimeRepository: input.runtimeRepository,
+            groupStateEventStore: new PSqlGroupStateEventRepository(input.worker.sql),
+            authSessionRepository: input.authSessions,
+            now: () => input.worker.atEpochMs,
+            serviceId: input.worker.serviceId,
+            readPlannedLayoutRow: async () => null,
+            readAcceptedLayoutRow: async () => null
+        })
+    };
+}
+
+function createPostgresAppInboxWorkerInboxServices(
+    input: PostgresAppInboxWorkerInboxServicesInput
+): Readonly<{ client: AppClientInboxService; group: GroupStateInboxService; }> {
     const client = new AppClientInboxService(
         {
-            inboxQueueReader: inbox,
-            resourceInboxRepository: resourceInbox.entries,
-            resourceInboxResultsRepository: resourceInboxResults,
-            database: input.transactionSql,
-            clientStateService: clientState
+            inboxQueueReader: input.inbox,
+            resourceInboxRepository: input.resourceInbox.entries,
+            resourceInboxResultsRepository: input.resourceInboxResults,
+            database: input.worker.transactionSql,
+            clientStateService: input.stateServices.clientState
         },
-        {
-            serviceId: input.serviceId,
-            timing: undefined,
-            options: waitOptions
-        }
+        { serviceId: input.worker.serviceId, timing: undefined, options: input.waitOptions }
     );
     const group = new GroupStateInboxService(
         {
-            inboxQueueReader: inbox,
-            resourceInboxRepository: resourceInbox.entries,
-            resourceInboxResultsRepository: resourceInboxResults,
-            database: input.transactionSql,
-            groupStateService: groupState
+            inboxQueueReader: input.inbox,
+            resourceInboxRepository: input.resourceInbox.entries,
+            resourceInboxResultsRepository: input.resourceInboxResults,
+            database: input.worker.transactionSql,
+            groupStateService: input.stateServices.groupState,
+            resultReader: input.stateServices.groupState
         },
-        {
-            serviceId: input.serviceId,
-            timing: undefined,
-            options: waitOptions
-        }
+        { serviceId: input.worker.serviceId, timing: undefined, options: input.waitOptions }
     );
-    const topologyGroupStateRepository = createTestGroupStateRepository(
-        runtimeRepository,
-        new PSqlGroupStateEventRepository(input.sql)
+    return { client, group };
+}
+
+function createPostgresAppInboxWorkerTopologyService(
+    input: CreatePostgresAppInboxWorkerTopologyServiceInput
+): TopologyInboxService {
+    const groupStateRepository = createTestGroupStateRepository(
+        input.runtimeRepository,
+        new PSqlGroupStateEventRepository(input.worker.sql)
     );
-    const topologyConfigRepository = new GroupTopologyConfigRepository(topologyRuntimeRepository);
-    const topologyRuntimeOwners = createGroupTopologyRuntimeOwners({
-        findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
-        readCurrentGroupSnapshot: async (ref) => await topologyGroupStateRepository.readSnapshot(ref),
+    const configRepository = new GroupTopologyConfigRepository(input.topologyRuntimeRepository);
+    const runtimeOwners = createGroupTopologyRuntimeOwners({
+        findGroupSnapshotByRef: (ref) => input.groupState.readSnapshot(ref),
+        readCurrentGroupSnapshot: async (ref) => await groupStateRepository.readSnapshot(ref),
         readRttMeasurements: () => [],
-        configRepository: topologyConfigRepository,
+        configRepository,
         topologyService: new RallarRtcTopologyService()
     });
-    const topologyMutationOwners = createGroupTopologyMutationOwners({
-        groupStateRepository: topologyGroupStateRepository,
-        configRepository: topologyConfigRepository,
-        planning: topologyRuntimeOwners.planning,
-        nowEpochMs: () => input.atEpochMs,
+    const mutationOwners = createGroupTopologyMutationOwners({
+        groupStateRepository,
+        configRepository,
+        planning: runtimeOwners.planning,
+        nowEpochMs: () => input.worker.atEpochMs,
         isPlatformAdmin: () => false,
         outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
     });
-    const topology = new TopologyInboxService(
+    return new TopologyInboxService(
         {
-            inboxQueueReader: inbox,
-            resourceInboxRepository: resourceInbox.entries,
-            resourceInboxResultsRepository: resourceInboxResults,
-            database: input.transactionSql,
-            groupStateService: groupState,
+            inboxQueueReader: input.inbox,
+            resourceInboxRepository: input.resourceInbox.entries,
+            resourceInboxResultsRepository: input.resourceInboxResults,
+            database: input.worker.transactionSql,
+            groupStateService: input.groupState,
             mutationOwners: {
-                configMutationService: topologyMutationOwners.configMutation,
-                reconfigureMutation: topologyMutationOwners.reconfigureMutation
+                configMutationService: mutationOwners.configMutation,
+                reconfigureMutation: mutationOwners.reconfigureMutation
             }
         },
-        {
-            serviceId: input.serviceId,
-            options: waitOptions
-        }
+        { serviceId: input.worker.serviceId, options: input.waitOptions }
     );
-    return { client, group, topology, authSessions, resourceInbox, resourceInboxResults, inbox };
 }
 
 function createTopologyRuntimeRepository(

@@ -1,7 +1,13 @@
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
+import {
+    computeGroupLifecyclePolicyWrite,
+    GROUP_LIFECYCLE_POLICIES_NAMESPACE
+} from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
+import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { toGroupMutationErrorResponse } from '../../../../../../apps/api-v1/src/group-state/group-state-route-errors.ts';
 import { toApiMutationRouteFailure } from '../../../../../../apps/api-v1/src/routes/api-mutation-route-failure.ts';
@@ -45,9 +51,8 @@ describe('lifecycle policy denial boundary', () => {
         const created = await createRoom(harness, groupId, scenario.name);
         const original = { ...created.result.snapshot.group, lifecycleState: scenario.lifecycleState, formationAttemptCount: scenario.attempts };
         await harness.repository.putGroup(original);
-        const policies = new GroupLifecyclePolicyRepository(harness.runtimeRepository);
         const managed = resolveGroupLifecyclePolicyPreset('managed');
-        await policies.writePolicy(ref, {
+        await writeTestPolicy(harness.runtimeRepository, ref, {
             ...managed,
             initiator: scenario.name === 'authority' ? 'server-auto' : 'manager',
             establishment: { ...managed.establishment, planTrigger: { kind: 'immediate' } }
@@ -86,7 +91,7 @@ describe('lifecycle policy denial boundary', () => {
             lifecycleState: scenario.code === 'formation-attempts-exhausted' ? 'dormant' : 'forming',
             formationAttemptCount: 0
         });
-        await policies.writePolicy(ref, resolveGroupLifecyclePolicyPreset('managed'));
+        await writeTestPolicy(harness.runtimeRepository, ref, resolveGroupLifecyclePolicyPreset('managed'));
         const replay = await processAuthenticated({ service: harness.service, reader: harness.reader, authority: harness.sessions[scenario.actor], input });
         expect(replay.left).toEqual(firstFailure);
         expect(await harness.repository.listEvents(ref)).toHaveLength(1);
@@ -112,3 +117,17 @@ describe('lifecycle policy denial boundary', () => {
         });
     });
 });
+
+async function writeTestPolicy(
+    runtime: RuntimeStateRepositoryLike,
+    ref: GroupRef,
+    policy: GroupLifecyclePolicy
+): Promise<void> {
+    const computed = computeGroupLifecyclePolicyWrite(ref, policy);
+    await runtime.upsert(
+        GROUP_LIFECYCLE_POLICIES_NAMESPACE,
+        computed.key,
+        computed.value,
+        Date.parse(computed.expireAtIsoTimestamp)
+    );
+}

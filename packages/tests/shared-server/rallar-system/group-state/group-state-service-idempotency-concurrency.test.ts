@@ -1,5 +1,4 @@
 import { GroupMutationIdempotencyConflictError } from '@shared-server/rallar-system/group-state/group-state-service.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
@@ -15,12 +14,12 @@ describe('convergent group and presence state', () => {
         runtime.armGroupReadBarrier(2);
 
         const results = await Promise.all([
-            createService(runtime, BASE_EPOCH_MS + 2_000).rotateGroupJoinCode(
+            createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 2_000 }).rotateGroupJoinCode(
                 SCOPE,
                 'concurrent-default-code-room',
                 { actorPrincipalId: 'alice', requestId: 'concurrent-default-code' }
             ),
-            createService(runtime, BASE_EPOCH_MS + 3_000).rotateGroupJoinCode(
+            createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS + 3_000 }).rotateGroupJoinCode(
                 SCOPE,
                 'concurrent-default-code-room',
                 { actorPrincipalId: 'alice', requestId: 'concurrent-default-code' }
@@ -49,12 +48,11 @@ describe('convergent group and presence state', () => {
         await seedOpenGroup(runtime, 'retry-default-code-room');
         runtime.failNextGroupCas(1);
         let randomCalls = 0;
-        const service = createService(
-            runtime,
-            BASE_EPOCH_MS + 2_000,
-            undefined,
-            () => `retry-default-${++randomCalls}`
-        );
+        const service = createService({
+            runtimeRepository: runtime,
+            nowEpochMs: BASE_EPOCH_MS + 2_000,
+            injectedRandomId: () => `retry-default-${++randomCalls}`
+        });
         const result = requireJoinCodeResult(
             await service.rotateGroupJoinCode(SCOPE, 'retry-default-code-room', {
                 actorPrincipalId: 'alice',
@@ -75,7 +73,7 @@ describe('convergent group and presence state', () => {
     it('stores compact first-writer receipts and exact canonical digest outbox identity', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'digest-room');
-        const service = createService(runtime, 2_000);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: 2_000 });
         await service.updateGroup(SCOPE, 'digest-room', {
             displayName: 'After',
             metadata: { alpha: 1, beta: 2 },
@@ -113,12 +111,12 @@ describe('convergent group and presence state', () => {
         await seedOpenGroup(runtime, 'same-request-race');
         runtime.armGroupReadBarrier(2);
         const results = await Promise.allSettled([
-            createService(runtime, 2_000).updateGroup(SCOPE, 'same-request-race', {
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_000 }).updateGroup(SCOPE, 'same-request-race', {
                 displayName: 'Winner A',
                 actorPrincipalId: 'alice',
                 requestId: 'shared-semantic-request'
             }),
-            createService(runtime, 2_001).updateGroup(SCOPE, 'same-request-race', {
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_001 }).updateGroup(SCOPE, 'same-request-race', {
                 displayName: 'Winner B',
                 actorPrincipalId: 'alice',
                 requestId: 'shared-semantic-request'
@@ -147,7 +145,7 @@ describe('convergent group and presence state', () => {
             return Promise.resolve();
         };
         await expect(
-            createService(runtime, 2_000, sleep).updateGroup(SCOPE, 'retry-exhaustion-room', {
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_000, sleep }).updateGroup(SCOPE, 'retry-exhaustion-room', {
                 displayName: 'Never committed',
                 actorPrincipalId: 'alice',
                 requestId: 'retry-exhaustion'

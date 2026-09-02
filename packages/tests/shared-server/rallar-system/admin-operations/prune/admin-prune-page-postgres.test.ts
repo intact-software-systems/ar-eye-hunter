@@ -4,6 +4,7 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { AdminPruneAppData } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import { PSqlAdminPruneRepository } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-prune-repository.ts';
 import type { AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+import { toAdminPrunePageDelete } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
@@ -168,8 +169,9 @@ async function deletePage(
     rowIds: readonly string[]
 ): Promise<number> {
     const repository = new PSqlAdminPruneRepository(sql);
+    const deletion = toAdminPrunePageDelete(work, rowIds);
     return await sql.begin(async (transaction) => {
-        return await repository.deletePage(transaction, work, rowIds);
+        return await repository.deletePage(transaction, deletion);
     });
 }
 

@@ -1,15 +1,14 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
-import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
+import { AppInboxType, type AppInboxExecutionMetadata } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { computeAppInboxCompletion, validateAppInboxCompletion } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { GroupMutationPreparation } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import { decodeGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
-import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -53,7 +52,7 @@ const EXPECTED_CREATE_GROUP_DURABLE_JSON = '{"status":"created","result":{"snaps
     '"traceId":null,"requestId":"create-transaction-boundary-room","payload":{}}}}';
 
 describe('group-state AppInbox transaction result boundary', () => {
-    it('persists the real durable result before exposing the committed snapshot', async () => {
+    it('persists the real durable result without installing a snapshot in the summary cache', async () => {
         const harness = await createGroupStateTransactionBoundaryHarness();
 
         const created = await harness.handler.processGroupStateMutation(harness.context);
@@ -77,9 +76,7 @@ describe('group-state AppInbox transaction result boundary', () => {
             status: EntityStatus.COMPLETED,
             result: created
         });
-        expect(harness.observedSnapshots).toHaveLength(1);
-        expect(harness.observedSnapshots[0]).toEqual(created.result.snapshot);
-        expect(harness.observedSnapshots[0]).toBe(created.result.snapshot);
+        expect(harness.observedSnapshots).toEqual([]);
         expect(harness.readWakeCount()).toBe(1);
         expect(harness.outboxEntries.size).toBe(1);
     });
@@ -121,9 +118,11 @@ describe('group-state AppInbox transaction result boundary', () => {
     it('persists an inactive presence result once without active mutation effects', async () => {
         const actions: string[] = [];
         const transactionWriter: AppInboxMutationTransactionWriter = {
-            writeMutation: async (_context, write) => {
+            readCompletionFacts: (context) => ({ entry: context.entry, completedAtEpochMs: 2_000 }),
+            writeMutation: async (_context, computed, write) => {
                 actions.push('inactive-transaction');
-                return await write(createUnusedTransaction());
+                await write(createUnusedTransaction());
+                return computed.durableResult;
             },
             writeMutationWithAfterCommitResult: () =>
                 Promise.reject(
@@ -151,6 +150,10 @@ describe('group-state AppInbox transaction result boundary', () => {
                     throw new Error('Inactive presence must not write group mutation state');
                 }
             },
+            resultReader: {
+                readSnapshot: async () => undefined,
+                readEvent: async () => undefined
+            },
             sessionGenerationLifecycle: {
                 read: async (identity) => ({
                     identity,
@@ -167,13 +170,14 @@ describe('group-state AppInbox transaction result boundary', () => {
                 computeConnectGuard: () => {
                     throw new Error('Inactive presence must not compute a connect guard');
                 },
+                validateClosed: () => {
+                    throw new Error('Inactive presence must not validate a close state');
+                },
+                validateConnectGuard: () => {
+                    throw new Error('Inactive presence must not validate a connect guard');
+                },
                 write: async () => {
                     throw new Error('Inactive presence must not write lifecycle state');
-                }
-            },
-            snapshotObserver: {
-                observeSnapshot: async () => {
-                    throw new Error('Inactive presence must not observe a snapshot');
                 }
             },
             transactionWriter,
@@ -190,98 +194,130 @@ describe('group-state AppInbox transaction result boundary', () => {
             status: 'durable-only',
             result: { value: 0, omitted: null }
         } as const;
-        const durableContext = {
-            ...harness.context,
-            encodeResult: (result: typeof durableResult) => encodeAppInboxResult(result, 'Durable-only transaction test result')
-        };
+        const input = {
+            ...harness.transactionWriter.readCompletionFacts(harness.context),
+            durableResult,
+            status: EntityStatus.COMPLETED
+        } as const;
+        const computed = computeAppInboxCompletion(input);
+        expect(validateAppInboxCompletion(input, computed)).toEqual([]);
 
         const returned = await harness.transactionWriter.writeMutation(
-            durableContext,
-            async () => durableResult
+            harness.context,
+            computed,
+            async () => {}
         );
         const persisted = await harness.results.findByKey(harness.context.entry.key);
 
+        expectTypeOf(returned).toEqualTypeOf<typeof durableResult>();
         expect(returned).toBe(durableResult);
         expect(persisted?.resource).toBe('{"status":"durable-only","result":{"value":0,"omitted":null}}');
-        expect(harness.transactionWriter.read(durableContext)).toEqual({
+        expect(harness.transactionWriter.read(harness.context)).toEqual({
             state: 'transaction-finalized',
             status: EntityStatus.COMPLETED,
             result: durableResult
         });
     });
+
+    it('infers durable and after-commit results independently from data-only metadata', async () => {
+        const harness = await createGroupStateTransactionBoundaryHarness();
+        const durableResult = { status: 'accepted', revision: 2 } as const;
+        const afterCommitResult = { observed: true } as const;
+        const input = {
+            ...harness.transactionWriter.readCompletionFacts(harness.context),
+            durableResult,
+            status: EntityStatus.COMPLETED
+        } as const;
+        const computed = computeAppInboxCompletion(input);
+        expect(validateAppInboxCompletion(input, computed)).toEqual([]);
+
+        const returned = await harness.transactionWriter.writeMutationWithAfterCommitResult(
+            harness.context,
+            computed,
+            async () => afterCommitResult
+        );
+
+        expectTypeOf(returned.durableResult).toEqualTypeOf<typeof durableResult>();
+        expectTypeOf(returned.afterCommitResult).toEqualTypeOf<typeof afterCommitResult>();
+        expect(returned.durableResult).toBe(durableResult);
+        expect(returned.afterCommitResult).toBe(afterCommitResult);
+        expect((await harness.results.findByKey(harness.context.entry.key))?.resource)
+            .toBe('{"status":"accepted","revision":2}');
+    });
 });
 
-function inactiveConnectContext(): AppInboxMessageContext<GroupStateInboxDurableResult> {
-    const authority: GroupMutationPreparation = {
-        authorityProof: {
-            version: 1,
-            principalId: 'owner',
-            sessionId: 'inactive-session',
-            sessionIssuedAtEpochMs: 1_000,
-            sessionExpiresAtEpochMs: 61_000,
-            commandMac: 'a'.repeat(64)
+const INACTIVE_CONNECT_AUTHORITY: GroupMutationPreparation = {
+    authorityProof: {
+        version: 1,
+        principalId: 'owner',
+        sessionId: 'inactive-session',
+        sessionIssuedAtEpochMs: 1_000,
+        sessionExpiresAtEpochMs: 61_000,
+        commandMac: 'a'.repeat(64)
+    },
+    descriptor: {
+        operation: 'connectPresence',
+        scope: {
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default'
         },
-        descriptor: {
-            operation: 'connectPresence',
-            scope: {
-                applicationId: 'ar-eye-hunter',
-                workspaceId: 'default'
-            },
-            groupId: 'inactive-group',
-            targetPrincipalId: null,
-            sessionId: 'inactive-session',
-            request: {
-                requestId: 'inactive-request',
-                actorPrincipalId: 'owner',
-                actorSessionId: 'inactive-session',
-                principalId: 'owner',
-                generationId: 'inactive-generation',
-                connectedAtEpochMs: 1_000,
-                lastHeartbeatAtEpochMs: 1_000,
-                expiresAtEpochMs: 61_000
-            }
-        },
-        command: {
-            operation: 'connectPresence',
-            aggregateRef: {
-                applicationId: 'ar-eye-hunter',
-                workspaceId: 'default',
-                groupId: 'inactive-group'
-            },
-            commandId: 'inactive-command',
+        groupId: 'inactive-group',
+        targetPrincipalId: null,
+        sessionId: 'inactive-session',
+        request: {
             requestId: 'inactive-request',
-            sessionId: 'inactive-session',
-            input: {
-                principalId: 'owner',
-                generationId: 'inactive-generation',
-                connectedAtEpochMs: 1_000,
-                lastHeartbeatAtEpochMs: 1_000,
-                expiresAtEpochMs: 61_000,
-                actorPrincipalId: 'owner',
-                actorSessionId: 'inactive-session',
-                reason: null,
-                traceId: null
-            }
+            actorPrincipalId: 'owner',
+            actorSessionId: 'inactive-session',
+            principalId: 'owner',
+            generationId: 'inactive-generation',
+            connectedAtEpochMs: 1_000,
+            lastHeartbeatAtEpochMs: 1_000,
+            expiresAtEpochMs: 61_000
+        }
+    },
+    command: {
+        operation: 'connectPresence',
+        aggregateRef: {
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            groupId: 'inactive-group'
         },
-        facts: {
-            nowEpochMs: 2_000,
-            expireAtEpochMs: 604_802_000,
-            serviceId: 'server-1',
-            eventId: 'event-1',
-            commandHash: `sha256:${'a'.repeat(64)}`,
-            resolvedJoinCode: null,
-            joinCodeVerifier: null,
-            internalAuthority: 'none',
-            authenticatedAuthority: { principalId: 'owner', sessionId: 'inactive-session' }
-        },
-        causalToken: 'causal-token',
-        queueResourceId: 'inactive-queue-resource'
-    };
+        commandId: 'inactive-command',
+        requestId: 'inactive-request',
+        sessionId: 'inactive-session',
+        input: {
+            principalId: 'owner',
+            generationId: 'inactive-generation',
+            connectedAtEpochMs: 1_000,
+            lastHeartbeatAtEpochMs: 1_000,
+            expiresAtEpochMs: 61_000,
+            actorPrincipalId: 'owner',
+            actorSessionId: 'inactive-session',
+            reason: null,
+            traceId: null
+        }
+    },
+    facts: {
+        nowEpochMs: 2_000,
+        expireAtEpochMs: 604_802_000,
+        serviceId: 'server-1',
+        eventId: 'event-1',
+        commandHash: `sha256:${'a'.repeat(64)}`,
+        resolvedJoinCode: null,
+        joinCodeVerifier: null,
+        internalAuthority: 'none',
+        authenticatedAuthority: { principalId: 'owner', sessionId: 'inactive-session' }
+    },
+    causalToken: 'causal-token',
+    queueResourceId: 'inactive-queue-resource'
+};
+
+function inactiveConnectContext(): AppInboxExecutionMetadata {
     const enqueue = decodeAppInboxEnqueue({
         type: AppInboxType.GROUP_PRESENCE_CONNECT,
         resourceId: 'inactive-command',
         contextId: 'inactive-group',
-        authority,
+        authority: INACTIVE_CONNECT_AUTHORITY,
         data: { requestId: 'inactive-request' }
     });
     const createdAt = Temporal.Instant.fromEpochMilliseconds(1_000);
@@ -310,8 +346,7 @@ function inactiveConnectContext(): AppInboxMessageContext<GroupStateInboxDurable
             newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
             entry.typeId,
             enqueue
-        ),
-        encodeResult: (result) => encodeAppInboxResult(result, 'Inactive group presence result')
+        )
     };
 }
 
@@ -340,13 +375,9 @@ function requireJsonWireObject(
 ): JsonWireObject {
     if (
         value === null || value === undefined || typeof value !== 'object' ||
-        isJsonWireArray(value)
+        Array.isArray(value)
     ) {
         throw new TypeError(`${label} must be an object`);
     }
-    return value;
-}
-
-function isJsonWireArray(value: JsonWireValue): value is readonly JsonWireValue[] {
-    return Array.isArray(value);
+    return value as JsonWireObject;
 }

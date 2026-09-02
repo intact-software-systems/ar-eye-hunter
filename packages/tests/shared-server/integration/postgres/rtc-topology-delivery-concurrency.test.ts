@@ -214,12 +214,13 @@ describe('Postgres RTC topology delivery concurrency', () => {
             streams.push(streamId);
             const repository = new PSqlRtcTopologyDeliveryRepository(sqlA);
             await registerStream(repository, streamId);
+            const expiredInput = {
+                ...appendInput(streamId, 'expired-for-compaction'),
+                retainUntilEpochMs: 0,
+                retainUntil: new Date(0)
+            };
             await sqlA.begin(
-                async (transaction) =>
-                    await repository.appendOrValidate(transaction, {
-                        ...appendInput(streamId, 'expired-for-compaction'),
-                        retainUntilEpochMs: 0
-                    })
+                async (transaction) => await repository.appendOrValidate(transaction, expiredInput)
             );
 
             await expect(repository.compactExpiredEntries({ pageSize: 1_000 })).resolves.toMatchObject({
@@ -284,6 +285,7 @@ function appendInput(
     publisherStreamId: string,
     publicationName: string
 ): RtcTopologyDeliveryAppendInput {
+    const retainUntilEpochMs = Date.now() + 60_000;
     return {
         publisherStreamId,
         groupRef: {
@@ -297,7 +299,8 @@ function appendInput(
             resourceId: publicationName,
             contextId: 'postgres:room'
         },
-        retainUntilEpochMs: Date.now() + 60_000
+        retainUntilEpochMs,
+        retainUntil: new Date(retainUntilEpochMs)
     };
 }
 

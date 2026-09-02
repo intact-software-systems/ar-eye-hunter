@@ -1,5 +1,10 @@
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import {
+    decodeCurrentGroupLifecyclePolicy,
+    validateCurrentGroupLifecyclePolicy
+} from '@shared-server/rallar-system/group-state/persistence/decode-stored-group-lifecycle-policy.ts';
+import {
+    computeGroupLifecyclePolicyWrite,
     GROUP_LIFECYCLE_POLICIES_NAMESPACE,
     GroupLifecyclePolicyRepository
 } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
@@ -34,6 +39,63 @@ async function storeRaw(
 }
 
 describe('GroupLifecyclePolicyRepository', () => {
+    it('computes the same canonical persisted policy bytes regardless of input key order', () => {
+        const original = resolveGroupLifecyclePolicyPreset('managed');
+        const policy = {
+            data: original.data,
+            topology: original.topology,
+            admission: original.admission,
+            activation: original.activation,
+            establishment: original.establishment,
+            manager: original.manager,
+            initiator: original.initiator,
+            formation: original.formation
+        };
+
+        expect(computeGroupLifecyclePolicyWrite(GROUP, policy).value).toBe(
+            '{"groupRef":{"applicationId":"app-1","workspaceId":"ws-1","groupId":"group-1"},' +
+                '"policy":{"formation":"phased","initiator":"manager",' +
+                '"manager":{"selection":"creator","assignedPrincipalIds":[],"count":1,"succession":"next-by-selection"},' +
+                '"establishment":{"transports":"rtc-and-ws","maxConcurrentEdgeSetups":32,' +
+                '"planTrigger":{"kind":"manual"},"connectTrigger":{"kind":"immediate"}},' +
+                '"activation":{"mode":"threshold-or-deadline","successRate":0.95,"minimumViableRate":0.5,' +
+                '"deadlineMs":30000,"maxFormationAttempts":3,"strictConfirmation":false},' +
+                '"admission":{"mode":"manager-approval","untilEpochMs":null,"untilMemberCount":null},' +
+                '"topology":{"replanning":"debounced","reconfigureLanding":"apply",' +
+                '"debounceWindowMs":500,"maxReplanWaitMs":5000},"data":{"preActivationAppData":"allowed"}}}'
+        );
+    });
+
+    it('collects independent persisted policy issues and preserves the decoder first error', () => {
+        const policy = {
+            ...createDefaultGroupLifecyclePolicy(),
+            formation: 'unsupported',
+            manager: null,
+            topology: null
+        };
+
+        const issues = validateCurrentGroupLifecyclePolicy(policy);
+
+        expect(issues.map((issue) => issue.cause.message)).toEqual(expect.arrayContaining([
+            'Policy formation is invalid',
+            'Group lifecycle manager policy must be an object',
+            'Group lifecycle topology policy must be an object'
+        ]));
+        expect(() => decodeCurrentGroupLifecyclePolicy(policy)).toThrow('Policy formation is invalid');
+    });
+
+    it('keeps canonical policy decoding isolated from its accepted input', () => {
+        const policy = resolveGroupLifecyclePolicyPreset('managed');
+        expect(validateCurrentGroupLifecyclePolicy(policy)).toEqual([]);
+
+        const decoded = decodeCurrentGroupLifecyclePolicy(policy);
+
+        expect(decoded).toEqual(policy);
+        expect(decoded).not.toBe(policy);
+        expect(decoded.manager).not.toBe(policy.manager);
+        expect(decoded.manager.assignedPrincipalIds).not.toBe(policy.manager.assignedPrincipalIds);
+        expect(decoded.establishment.planTrigger).not.toBe(policy.establishment.planTrigger);
+    });
     // Absent is the common case and has to stay cheap and unambiguous: every
     // group that exists today has no stored policy.
     it('reads an unwritten group as absent', async () => {
@@ -44,7 +106,7 @@ describe('GroupLifecyclePolicyRepository', () => {
         const repository = createRepository();
         const policy = resolveGroupLifecyclePolicyPreset('managed');
 
-        await repository.writePolicy(GROUP, policy);
+        await storeRaw(repository, GROUP, { groupRef: GROUP, policy });
 
         expect(await repository.readPolicy(GROUP)).toEqual({ status: 'present', policy });
     });
@@ -63,7 +125,7 @@ describe('GroupLifecyclePolicyRepository', () => {
             }
         };
 
-        await repository.writePolicy(GROUP, policy);
+        await storeRaw(repository, GROUP, { groupRef: GROUP, policy });
 
         expect(await repository.readPolicy(GROUP)).toEqual({ status: 'present', policy });
     });
@@ -90,7 +152,7 @@ describe('GroupLifecyclePolicyRepository', () => {
         const repository = createRepository();
         const other: GroupRef = { ...GROUP, groupId: 'group-2' };
 
-        await repository.writePolicy(GROUP, resolveGroupLifecyclePolicyPreset('match'));
+        await storeRaw(repository, GROUP, { groupRef: GROUP, policy: resolveGroupLifecyclePolicyPreset('match') });
 
         expect(await repository.readPolicy(other)).toEqual({ status: 'absent' });
     });
@@ -198,8 +260,8 @@ describe('GroupLifecyclePolicyRepository', () => {
         const repository = createRepository();
         const replacement = resolveGroupLifecyclePolicyPreset('drop-in-social');
 
-        await repository.writePolicy(GROUP, resolveGroupLifecyclePolicyPreset('match'));
-        await repository.writePolicy(GROUP, replacement);
+        await storeRaw(repository, GROUP, { groupRef: GROUP, policy: resolveGroupLifecyclePolicyPreset('match') });
+        await storeRaw(repository, GROUP, { groupRef: GROUP, policy: replacement });
 
         expect(await repository.readPolicy(GROUP)).toEqual({ status: 'present', policy: replacement });
     });

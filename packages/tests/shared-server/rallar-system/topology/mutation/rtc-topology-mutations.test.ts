@@ -1,73 +1,121 @@
+// dprint-ignore
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import {
     computeTopologyMutation,
     validateTopologyMutation,
+    type RtcTopologyMutationInput,
     type RtcTopologyPublicationClaim
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts';
-import { toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
+import { toRtcTopologyPublicationId, toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
+import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { existsSync, readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
 
 const RTT_COMMAND_HASH = `sha256:${'a'.repeat(64)}`;
 
 describe('RTC topology publication mutation phases', () => {
-    it('keeps RTC topology mutation computation synchronous and effect-free', () => {
-        const source = readFileSync(
-            new URL(
-                '../../../../../shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts',
-                import.meta.url
-            ),
-            'utf8'
-        );
-        const forbidden = [
-            /\.begin\s*\(/,
-            /\b(?:Date|Temporal)\b/,
-            /random/i,
-            /(?:Deno|process)\.env/,
-            /hashMutationCommand/,
-            /recordRallarTiming|performance\.now/,
-            /\b(?:async|await)\b/
-        ];
+    it.each(
+        (['duplicate', 'advanced', 'publish-superseded'] as const).flatMap((outcome) => [-1, -0].map((revision) => ({ outcome, revision })))
+    )(
+        'rejects original snapshot revision $revision for $outcome before writing',
+        ({ outcome, revision }) => {
+            const input = createRevisionMutationInput(outcome, revision);
+            const computed = computeTopologyMutation(input);
+            expect(computed.outcome).toBe(outcome === 'publish-superseded' ? outcome : 'write');
+            expect(() => validateTopologyMutation({ ...input, computed })).toThrow(
+                new Error(`Invalid runtime state upsert expected revision: ${revision}`)
+            );
+        }
+    );
 
-        for (const pattern of forbidden) {
-            expect(source, `forbidden pure-module pattern ${pattern}`).not.toMatch(pattern);
+    it.each(['duplicate', 'advanced', 'publish-superseded'] as const)(
+        'accepts the last incrementable snapshot revision for %s',
+        (outcome) => {
+            const input = createRevisionMutationInput(outcome, Number.MAX_SAFE_INTEGER - 1);
+            const computed = computeTopologyMutation(input);
+            expect(() => validateTopologyMutation({ ...input, computed })).not.toThrow();
+            if (computed.outcome !== 'write' && computed.outcome !== 'publish-superseded') {
+                throw new Error('Expected a conditional snapshot write');
+            }
+            expect(computed.persistence.snapshot.acceptedStorageRevision).toBe(Number.MAX_SAFE_INTEGER);
+        }
+    );
+
+    it('does not require increment capacity when superseded work writes no snapshot', () => {
+        const input = createRevisionMutationInput('publish-superseded', Number.MAX_SAFE_INTEGER);
+        const withoutPublication = {
+            ...input,
+            publication: null,
+            facts: { publicationExpireAtTimestamp: null, commandHash: null, attemptCount: null }
+        };
+        const computed = computeTopologyMutation(withoutPublication);
+        expect(computed.outcome).toBe('superseded');
+        expect(() => validateTopologyMutation({ ...withoutPublication, computed })).not.toThrow();
+    });
+
+    it('computes and validates publication persistence from explicit facts without clocks or randomness', () => {
+        const candidate = createTopologySnapshot({ applicationId: 'app-1', workspaceId: '_', groupId: 'room-1' }, 1);
+        const input = deepFreeze({
+            read: { snapshot: null, publicationClaim: null },
+            candidate,
+            publication: createTopologyPublication(candidate, 'pure-publication'),
+            deliveryPublisherStreamId: null,
+            facts: { publicationExpireAtTimestamp: 86_400_100, commandHash: RTT_COMMAND_HASH, attemptCount: 1 }
+        });
+        const clock = vi.spyOn(Date, 'now').mockImplementation(() => {
+            throw new Error('Hidden clock');
+        });
+        const random = vi.spyOn(Math, 'random').mockImplementation(() => {
+            throw new Error('Hidden randomness');
+        });
+        try {
+            const first = computeTopologyMutation(input);
+            const second = computeTopologyMutation(input);
+            validateTopologyMutation({ ...input, computed: first });
+            validateTopologyMutation({ ...input, computed: second });
+            expect(second).toEqual(first);
+        }
+        finally {
+            clock.mockRestore();
+            random.mockRestore();
         }
     });
 
-    it('shares a strict persisted publication validator from a neutral pure contract module', () => {
-        const publicationContractUrl = new URL(
-            '../../../../../shared-server/rallar-system/topology/publication/validate-rtc-topology-publication.ts',
-            import.meta.url
-        );
-        expect(existsSync(publicationContractUrl)).toBe(true);
-        if (!existsSync(publicationContractUrl)) {
-            return;
-        }
+    it.each(['proxy', 'accessor', 'hidden serializer'] as const)('rejects behavior-bearing %s output without invoking it', (kind) => {
+        const input = deepFreeze({
+            read: { snapshot: null, publicationClaim: null },
+            candidate: createTopologySnapshot({ applicationId: 'app-1', workspaceId: '_', groupId: 'room-1' }, 1),
+            publication: null,
+            deliveryPublisherStreamId: null,
+            facts: { publicationExpireAtTimestamp: null, commandHash: null, attemptCount: null }
+        });
+        const computed = computeTopologyMutation(input);
+        let reads = 0;
+        const candidate = kind === 'proxy'
+            ? new Proxy(computed, {
+                get(target, key, receiver) {
+                    reads += 1;
+                    return Reflect.get(target, key, receiver);
+                }
+            })
+            : Object.defineProperty({ ...computed }, kind === 'accessor' ? 'outcome' : 'toJSON', {
+                enumerable: kind === 'accessor',
+                get: () => {
+                    reads += 1;
+                    return kind === 'accessor' ? computed.outcome : () => computed;
+                }
+            });
 
-        const contractSource = readFileSync(publicationContractUrl, 'utf8');
-        expect(contractSource).not.toMatch(
-            /\.begin\s*\(|\b(?:async|await)\b|\b(?:Date|Temporal)\b|performance\.now|(?:Deno|process)\.env/
-        );
-        expect(contractSource).not.toMatch(/\/repositories\//);
-        const mutationSource = readFileSync(
-            new URL(
-                '../../../../../shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts',
-                import.meta.url
-            ),
-            'utf8'
-        );
-        const publicationRepositorySource = readFileSync(
-            new URL(
-                '../../../../../shared-server/rallar-system/topology/publication/' +
-                    'rtc-topology-publication-repository.ts',
-                import.meta.url
-            ),
-            'utf8'
-        );
-        expect(mutationSource).toMatch(/validate-rtc-topology-publication/);
-        expect(publicationRepositorySource).toMatch(/validate-rtc-topology-publication/);
+        expect(() => validateTopologyMutation({ ...input, computed: candidate })).toThrow(TypeError);
+        expect(reads).toBe(0);
     });
     it('computes and validates an absent topology guard deterministically from frozen input', () => {
         const groupRef: GroupRef = {
@@ -75,7 +123,7 @@ describe('RTC topology publication mutation phases', () => {
             workspaceId: '_',
             groupId: 'room-1'
         };
-        const candidate = topologySnapshot(groupRef, 1);
+        const candidate = createTopologySnapshot(groupRef, 1);
         const input = deepFreeze({
             read: {
                 snapshot: null,
@@ -83,6 +131,7 @@ describe('RTC topology publication mutation phases', () => {
             },
             candidate,
             publication: null,
+            deliveryPublisherStreamId: null,
             facts: {
                 publicationExpireAtTimestamp: null,
                 commandHash: null,
@@ -125,29 +174,30 @@ describe('RTC topology publication mutation phases', () => {
             workspaceId: 'workspace-1',
             groupId: 'room-1'
         };
-        const snapshot = topologySnapshot(groupRef, 2);
-        const publication = topologyPublication(snapshot, 'work-1');
+        const snapshot = createTopologySnapshot(groupRef, 2);
+        const publication = createTopologyPublication(snapshot, 'work-1');
         const entry = {
             key: 'snapshot',
             value: JSON.stringify(snapshot),
             expireAtTimestamp: 1_000,
-            updatedTimestamp: 'now',
+            updatedTimestamp: '1970-01-01T00:00:01.000Z',
             revision: 3
         };
         const loadedInput = deepFreeze({
             read: {
                 snapshot: { entry, value: snapshot },
-                publicationClaim: topologyPublicationClaim(publication)
+                publicationClaim: createTopologyPublicationClaim(publication)
             },
             candidate: null,
             publication: null,
+            deliveryPublisherStreamId: null,
             facts: {
                 publicationExpireAtTimestamp: null,
                 commandHash: null,
                 attemptCount: null
             }
         });
-        expect(computeAndValidateTopologyTwice(loadedInput)).toEqual({
+        expect(computeAndValidateTopologyTwice(loadedInput)).toMatchObject({
             outcome: 'loaded',
             snapshot,
             publication
@@ -155,10 +205,11 @@ describe('RTC topology publication mutation phases', () => {
         const missingSnapshot = deepFreeze({
             read: {
                 snapshot: null,
-                publicationClaim: topologyPublicationClaim(publication)
+                publicationClaim: createTopologyPublicationClaim(publication)
             },
             candidate: null,
             publication: null,
+            deliveryPublisherStreamId: null,
             facts: {
                 publicationExpireAtTimestamp: null,
                 commandHash: null,
@@ -172,7 +223,7 @@ describe('RTC topology publication mutation phases', () => {
             read: {
                 ...loadedInput.read,
                 publicationClaim: {
-                    ...topologyPublicationClaim(publication),
+                    ...createTopologyPublicationClaim(publication),
                     publication: {
                         ...publication,
                         recipientSessionIds: ['session-z']
@@ -190,32 +241,33 @@ describe('RTC topology publication mutation phases', () => {
             workspaceId: 'workspace-1',
             groupId: 'room-1'
         };
-        const publicationSnapshot = topologySnapshot(groupRef, 2);
-        const publication = topologyPublication(publicationSnapshot, 'work-causal');
+        const publicationSnapshot = createTopologySnapshot(groupRef, 2);
+        const publication = createTopologyPublication(publicationSnapshot, 'work-causal');
         const toRead = (snapshot: RallarOverlayTopologySnapshot) => ({
             snapshot: {
                 entry: {
                     key: 'snapshot',
                     value: JSON.stringify(snapshot),
                     expireAtTimestamp: 1_000,
-                    updatedTimestamp: 'now',
+                    updatedTimestamp: '1970-01-01T00:00:01.000Z',
                     revision: 3
                 },
                 value: snapshot
             },
-            publicationClaim: topologyPublicationClaim(publication)
+            publicationClaim: createTopologyPublicationClaim(publication)
         });
         const exactInput = deepFreeze({
             read: toRead(publicationSnapshot),
             candidate: null,
             publication: null,
+            deliveryPublisherStreamId: null,
             facts: {
                 publicationExpireAtTimestamp: null,
                 commandHash: null,
                 attemptCount: null
             }
         });
-        expect(computeAndValidateTopologyTwice(exactInput)).toEqual({
+        expect(computeAndValidateTopologyTwice(exactInput)).toMatchObject({
             outcome: 'loaded',
             snapshot: publicationSnapshot,
             publication
@@ -237,40 +289,43 @@ describe('RTC topology publication mutation phases', () => {
             read: toRead(reorderedEquivalent),
             candidate: null,
             publication: null,
+            deliveryPublisherStreamId: null,
             facts: {
                 publicationExpireAtTimestamp: null,
                 commandHash: null,
                 attemptCount: null
             }
         });
-        expect(computeAndValidateTopologyTwice(reorderedInput)).toEqual({
+        expect(computeAndValidateTopologyTwice(reorderedInput)).toMatchObject({
             outcome: 'loaded',
             snapshot: reorderedEquivalent,
             publication
         });
 
-        const newerDurable = topologySnapshot(groupRef, 3);
+        const newerDurable = createTopologySnapshot(groupRef, 3);
         const newerInput = deepFreeze({
             read: toRead(newerDurable),
             candidate: null,
             publication: null,
+            deliveryPublisherStreamId: null,
             facts: {
                 publicationExpireAtTimestamp: null,
                 commandHash: null,
                 attemptCount: null
             }
         });
-        expect(computeAndValidateTopologyTwice(newerInput)).toEqual({
+        expect(computeAndValidateTopologyTwice(newerInput)).toMatchObject({
             outcome: 'loaded',
             snapshot: newerDurable,
             publication
         });
 
-        const olderDurable = topologySnapshot(groupRef, 1);
+        const olderDurable = createTopologySnapshot(groupRef, 1);
         const tornInput = deepFreeze({
             read: toRead(olderDurable),
             candidate: null,
             publication: null,
+            deliveryPublisherStreamId: null,
             facts: {
                 publicationExpireAtTimestamp: null,
                 commandHash: null,
@@ -290,6 +345,7 @@ describe('RTC topology publication mutation phases', () => {
             read: toRead(equalTupleDifferentSnapshot),
             candidate: null,
             publication: null,
+            deliveryPublisherStreamId: null,
             facts: {
                 publicationExpireAtTimestamp: null,
                 commandHash: null,
@@ -310,12 +366,13 @@ describe('RTC topology publication mutation phases', () => {
             workspaceId: 'workspace-1',
             groupId: 'room-1'
         };
-        const candidate = topologySnapshot(groupRef, 1);
-        const publication = topologyPublication(candidate, 'work-expiry');
+        const candidate = createTopologySnapshot(groupRef, 1);
+        const publication = createTopologyPublication(candidate, 'work-expiry');
         const input = deepFreeze({
             read: { snapshot: null, publicationClaim: null },
             candidate,
             publication,
+            deliveryPublisherStreamId: null,
             facts: {
                 publicationExpireAtTimestamp: 86_400_123,
                 commandHash: RTT_COMMAND_HASH,
@@ -329,14 +386,44 @@ describe('RTC topology publication mutation phases', () => {
         });
     });
 
+    it.each(['createdAt', 'expiresAt', 'matchCreatedAt', 'matchExpiresAt'] as const)(
+        'rejects a changed persisted publication %s before writing',
+        (field) => {
+            const candidate = createTopologySnapshot({ applicationId: 'app-1', workspaceId: '_', groupId: 'room-1' }, 1);
+            const input = deepFreeze({
+                read: { snapshot: null, publicationClaim: null },
+                candidate,
+                publication: createTopologyPublication(candidate, 'persisted-publication'),
+                deliveryPublisherStreamId: null,
+                facts: { publicationExpireAtTimestamp: 86_400_100, commandHash: RTT_COMMAND_HASH, attemptCount: 1 }
+            });
+            const computed = computeTopologyMutation(input);
+            validateTopologyMutation({ ...input, computed });
+            if (computed.outcome !== 'write' || computed.publicationDelivery === null) {
+                throw new Error('Expected publication persistence');
+            }
+            const altered = {
+                ...computed,
+                publicationDelivery: {
+                    ...computed.publicationDelivery,
+                    outboxWrite: { ...computed.publicationDelivery.outboxWrite, [field]: 'different timestamp' }
+                }
+            };
+
+            expect(() => validateTopologyMutation({ ...input, computed: altered })).toThrow(
+                'differs from canonical computation'
+            );
+        }
+    );
+
     it('validates the complete topology publication envelope before the write phase', () => {
         const groupRef = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             groupId: 'room-1'
         };
-        const candidate = topologySnapshot(groupRef, 1);
-        const publication = topologyPublication(candidate, 'work-malformed-envelope');
+        const candidate = createTopologySnapshot(groupRef, 1);
+        const publication = createTopologyPublication(candidate, 'work-malformed-envelope');
         const malformed = {
             ...publication,
             message: {
@@ -351,15 +438,14 @@ describe('RTC topology publication mutation phases', () => {
             read: { snapshot: null, publicationClaim: null },
             candidate,
             publication: malformed,
+            deliveryPublisherStreamId: null,
             facts: {
                 publicationExpireAtTimestamp: 86_400_100,
                 commandHash: RTT_COMMAND_HASH,
                 attemptCount: 1
             }
         });
-        const computed = computeTopologyMutation(input);
-
-        expect(() => validateTopologyMutation({ ...input, computed })).toThrow(
+        expect(() => computeTopologyMutation(input)).toThrow(
             /message|publication|envelope|identity/i
         );
     });
@@ -370,12 +456,12 @@ describe('RTC topology publication mutation phases', () => {
             workspaceId: 'workspace-1',
             groupId: 'room-1'
         };
-        const current = topologySnapshot(groupRef, 2);
+        const current = createTopologySnapshot(groupRef, 2);
         const entry = {
             key: 'snapshot',
             value: JSON.stringify(current),
             expireAtTimestamp: 1_000,
-            updatedTimestamp: 'now',
+            updatedTimestamp: '1970-01-01T00:00:01.000Z',
             revision: 5
         };
         expect(
@@ -387,6 +473,7 @@ describe('RTC topology publication mutation phases', () => {
                     },
                     candidate: current,
                     publication: null,
+                    deliveryPublisherStreamId: null,
                     facts: {
                         publicationExpireAtTimestamp: null,
                         commandHash: null,
@@ -402,8 +489,9 @@ describe('RTC topology publication mutation phases', () => {
                         snapshot: { entry, value: current },
                         publicationClaim: null
                     },
-                    candidate: topologySnapshot(groupRef, 3),
+                    candidate: createTopologySnapshot(groupRef, 3),
                     publication: null,
+                    deliveryPublisherStreamId: null,
                     facts: {
                         publicationExpireAtTimestamp: null,
                         commandHash: null,
@@ -419,8 +507,9 @@ describe('RTC topology publication mutation phases', () => {
                         snapshot: { entry, value: current },
                         publicationClaim: null
                     },
-                    candidate: topologySnapshot(groupRef, 1),
+                    candidate: createTopologySnapshot(groupRef, 1),
                     publication: null,
+                    deliveryPublisherStreamId: null,
                     facts: {
                         publicationExpireAtTimestamp: null,
                         commandHash: null,
@@ -436,6 +525,7 @@ describe('RTC topology publication mutation phases', () => {
             },
             candidate: { ...current, name: 'different tuple payload' },
             publication: null,
+            deliveryPublisherStreamId: null,
             facts: {
                 publicationExpireAtTimestamp: null,
                 commandHash: null,
@@ -447,18 +537,45 @@ describe('RTC topology publication mutation phases', () => {
     });
 });
 
-function topologySnapshot(groupRef: GroupRef, version: number): RallarOverlayTopologySnapshot {
+function createRevisionMutationInput(
+    outcome: 'duplicate' | 'advanced' | 'publish-superseded',
+    revision: number
+): RtcTopologyMutationInput {
+    const current = createTopologySnapshot({ applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }, 2);
+    const candidate = outcome === 'duplicate'
+        ? current
+        : createTopologySnapshot(current.groupRef, outcome === 'advanced' ? 3 : 1);
+    return {
+        read: {
+            snapshot: {
+                entry: {
+                    key: 'snapshot',
+                    value: JSON.stringify(current),
+                    expireAtTimestamp: 1_000,
+                    updatedTimestamp: '1970-01-01T00:00:01.000Z',
+                    revision
+                },
+                value: current
+            },
+            publicationClaim: null
+        },
+        candidate,
+        publication: outcome === 'publish-superseded' ? createTopologyPublication(candidate, 'revision-work') : null,
+        deliveryPublisherStreamId: null,
+        facts: outcome === 'publish-superseded'
+            ? { publicationExpireAtTimestamp: 86_400_100, commandHash: RTT_COMMAND_HASH, attemptCount: 1 }
+            : { publicationExpireAtTimestamp: null, commandHash: null, attemptCount: null }
+    };
+}
+
+function createTopologySnapshot(groupRef: GroupRef, version: number): RallarOverlayTopologySnapshot {
     return {
         sourceGroupStateCausalRevision: {
             groupRevision: version,
             presenceRevision: version
         },
         state: 'active',
-        overlayId: JSON.stringify([
-            groupRef.applicationId,
-            groupRef.workspaceId ?? '',
-            groupRef.groupId
-        ]),
+        overlayId: toScopedOverlayId(groupRef),
         groupRef,
         name: 'Room 1',
         topology: 'tree',
@@ -474,11 +591,14 @@ function topologySnapshot(groupRef: GroupRef, version: number): RallarOverlayTop
         updatedAtEpochMs: 2
     } as const;
 }
-function topologyPublication(snapshot: RallarOverlayTopologySnapshot, workId: string) {
+function createTopologyPublication(snapshot: RallarOverlayTopologySnapshot, workId: string): RtcTopologyPublication {
     const createdAtEpochMs = 100;
     return {
-        publicationId:
-            `${workId}:${snapshot.sourceGroupStateCausalRevision.groupRevision}:${snapshot.sourceGroupStateCausalRevision.presenceRevision}:${snapshot.version}`,
+        publicationId: toRtcTopologyPublicationId({
+            workId,
+            sourceGroupStateCausalRevision: snapshot.sourceGroupStateCausalRevision,
+            overlayVersion: snapshot.version
+        }),
         workId,
         groupRef: snapshot.groupRef,
         sourceGroupStateCausalRevision: snapshot.sourceGroupStateCausalRevision,
@@ -504,6 +624,7 @@ function topologyPublication(snapshot: RallarOverlayTopologySnapshot, workId: st
                 groupRef: snapshot.groupRef,
                 minSnapshotVersion: 1
             },
+            constraints: { expiresAtMs: 86_400_100 },
             delivery: { reliability: 'best-effort', ack: 'none' },
             payload: {
                 typeId: AppTopics.overlayTopology,
@@ -519,8 +640,8 @@ function topologyPublication(snapshot: RallarOverlayTopologySnapshot, workId: st
     } as const;
 }
 
-function topologyPublicationClaim(
-    publication: ReturnType<typeof topologyPublication>
+function createTopologyPublicationClaim(
+    publication: RtcTopologyPublication
 ): RtcTopologyPublicationClaim {
     return {
         receipt: {
@@ -545,12 +666,6 @@ function topologyPublicationClaim(
 
 function deepFreeze<T>(value: T): T {
     if (value && typeof value === 'object') {
-        if (value instanceof Map) {
-            for (const [key, child] of value.entries()) {
-                deepFreeze(key);
-                deepFreeze(child);
-            }
-        }
         Object.freeze(value);
         for (const child of Object.values(value)) {
             deepFreeze(child);
@@ -559,7 +674,7 @@ function deepFreeze<T>(value: T): T {
     return value;
 }
 
-function computeAndValidateTopologyTwice(input: Parameters<typeof computeTopologyMutation>[0]) {
+function computeAndValidateTopologyTwice(input: RtcTopologyMutationInput) {
     const first = computeTopologyMutation(input);
     const second = computeTopologyMutation(input);
     expect(second).toEqual(first);

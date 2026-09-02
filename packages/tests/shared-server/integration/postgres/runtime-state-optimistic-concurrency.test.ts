@@ -29,7 +29,7 @@ describe('Postgres runtime-state optimistic concurrency', () => {
                     ]
                 ) {
                     await expect(
-                        repository.insertIfAbsent(namespace, key, '{}', expiredAtEpochMs)
+                        repository.insertIfAbsent(namespace, key, '{}', new Date(expiredAtEpochMs).toISOString())
                     ).resolves.toMatchObject({ status: 'applied' });
                 }
 
@@ -78,7 +78,7 @@ describe('Postgres runtime-state optimistic concurrency', () => {
 
                     expect(firstSql).not.toBe(secondSql);
                     await expect(
-                        firstRepository.insertIfAbsent(namespace, key, 'seed', NEVER_EXPIRE_AT_TIMESTAMP)
+                        firstRepository.insertIfAbsent(namespace, key, 'seed', new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString())
                     ).resolves.toEqual({ status: 'applied', revision: 0 });
 
                     const [firstObservation, secondObservation] = await Promise.all([
@@ -93,14 +93,14 @@ describe('Postgres runtime-state optimistic concurrency', () => {
                             namespace,
                             key,
                             updateValues[0],
-                            NEVER_EXPIRE_AT_TIMESTAMP,
+                            new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString(),
                             firstObservation?.revision ?? -1
                         ),
                         secondRepository.upsertIfRevision(
                             namespace,
                             key,
                             updateValues[1],
-                            NEVER_EXPIRE_AT_TIMESTAMP,
+                            new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString(),
                             secondObservation?.revision ?? -1
                         )
                     ]);
@@ -154,7 +154,7 @@ describe('Postgres runtime-state optimistic concurrency', () => {
                                 namespace,
                                 'outer',
                                 'outer-value',
-                                NEVER_EXPIRE_AT_TIMESTAMP
+                                new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
                             )
                         ).resolves.toEqual({ status: 'applied', revision: 0 });
 
@@ -164,7 +164,7 @@ describe('Postgres runtime-state optimistic concurrency', () => {
                                     namespace,
                                     'rolled-back',
                                     'nested-value',
-                                    NEVER_EXPIRE_AT_TIMESTAMP
+                                    new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
                                 );
                                 throw new Error('rollback nested savepoint');
                             })
@@ -177,7 +177,7 @@ describe('Postgres runtime-state optimistic concurrency', () => {
                                         namespace,
                                         'committed',
                                         'nested-value',
-                                        NEVER_EXPIRE_AT_TIMESTAMP
+                                        new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
                                     )
                             )
                         ).resolves.toEqual({ status: 'applied', revision: 0 });
@@ -238,10 +238,10 @@ describe('Postgres runtime-state optimistic concurrency', () => {
                             namespace,
                             key,
                             'changed',
-                            NEVER_EXPIRE_AT_TIMESTAMP,
+                            new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString(),
                             Number.MAX_SAFE_INTEGER
                         )
-                    ).rejects.toThrow();
+                    ).resolves.toEqual({ status: 'conflict' });
 
                     const rows = await sql<
                         Array<{

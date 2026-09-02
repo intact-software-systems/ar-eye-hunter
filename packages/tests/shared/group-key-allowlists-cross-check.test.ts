@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { validatePersistedGroup } from '@shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts';
+import { validateStoredGroup } from '@shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import { createTestGroup } from '../create-test-group.ts';
@@ -36,7 +36,7 @@ describe('group key allowlists against keyof Group', () => {
 
     it('accepts a compile-complete group through the stored list', () => {
         const group = JSON.parse(JSON.stringify(createTestGroup(ref)));
-        expect(() => validatePersistedGroup(group, ref)).not.toThrow();
+        expect(validateStoredGroup(group, ref)).toEqual([]);
     });
 
     it('rejects a group missing a registered key in every list', () => {
@@ -44,7 +44,10 @@ describe('group key allowlists against keyof Group', () => {
             JSON.stringify(createTestGroup(ref))
         );
         expect(omitted).toBe('flowing');
-        expect(() => validatePersistedGroup(withoutTransport, ref))
-            .toThrow('missing mandatory key: transportState');
+        expect(validateStoredGroup(withoutTransport, ref)).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                cause: expect.objectContaining({ message: expect.stringContaining('missing mandatory key: transportState') })
+            })
+        ]));
     });
 });

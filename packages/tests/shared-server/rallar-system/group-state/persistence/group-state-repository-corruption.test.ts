@@ -11,7 +11,7 @@ import {
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
-import { validatePersistedGroupMember } from '@shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts';
+import { validateStoredMember } from '@shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
@@ -50,9 +50,10 @@ describe('GroupStateRepository persistence', () => {
         ];
 
         for (const contradictoryMember of contradictoryMembers) {
-            expect(() => validatePersistedGroupMember(contradictoryMember, ref)).toThrow(
-                /lifecycle|audit/
-            );
+            expect(
+                validateStoredMember(contradictoryMember, ref, 'Stored group member')
+                    .map((issue) => issue.cause.message)
+            ).toEqual(expect.arrayContaining([expect.stringMatching(/lifecycle|audit/)]));
             expect(() => decodePersistedGroupMember(contradictoryMember, ref)).toThrow(
                 /lifecycle|audit/
             );

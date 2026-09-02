@@ -16,13 +16,13 @@ describe('stored group lifecycleState acceptance', () => {
     it.each([...GROUP_LIFECYCLE_STATES])('accepts a stored group in %s', (lifecycleState) => {
         const group = createTestGroup({ ...GROUP_REF, lifecycleState });
 
-        expect(() => validateStoredGroup(group, GROUP_REF)).not.toThrow();
+        expect(validateStoredGroup(group, GROUP_REF)).toEqual([]);
     });
 
     it('rejects the retired establishing value', () => {
         const group = { ...createTestGroup(GROUP_REF), lifecycleState: 'establishing' };
 
-        expect(() => validateStoredGroup(group, GROUP_REF))
-            .toThrow('Stored group lifecycleState');
+        expect(validateStoredGroup(group, GROUP_REF).map((issue) => issue.cause.message))
+            .toEqual(expect.arrayContaining([expect.stringContaining('Stored group lifecycleState')]));
     });
 });

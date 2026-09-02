@@ -5,16 +5,18 @@ import type {
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
+import type { GroupStateEventWrite } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
+import { decodeRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/decode-runtime-state-guarded-batch-result.ts';
 import {
     type RuntimeStateGuardedBatch,
+    type RuntimeStateGuardedBatchComputed,
     type RuntimeStateGuardedBatchEffect,
     type RuntimeStateGuardedBatchEffectResult,
     type RuntimeStateGuardedBatchGuard,
     type RuntimeStateGuardedBatchGuardResult,
     type RuntimeStateGuardedBatchResult
 } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
-import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
+import { assertRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import type {
@@ -24,7 +26,7 @@ import type {
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-import type { AuditStamp, Group, GroupEvent, GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
+import type { AuditStamp, Group, GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -337,12 +339,13 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
     }
 
     override async executeGuardedBatch(
-        input: RuntimeStateGuardedBatch
+        input: RuntimeStateGuardedBatchComputed
     ): Promise<RuntimeStateGuardedBatchResult> {
         if (this.transactionDepth === 0) {
             throw new Error('Guarded batch requires an active transaction');
         }
-        const batch = validateRuntimeStateGuardedBatch(input);
+        const batch = input.batch;
+        assertRuntimeStateGuardedBatch(batch);
         this.batches.push(batch);
         this.readCountsBeforeBatch.push(this.outsideTransactionReadCount);
         this.transactionOrder.push('batch');
@@ -350,7 +353,7 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
             ? forcedGuardConflict(batch.guard)
             : await applyGuard(this, batch.guard);
         if (guard.status === 'conflict') {
-            return validateRuntimeStateGuardedBatchResult(batch, {
+            return decodeRuntimeStateGuardedBatchResult(batch, {
                 guard,
                 effects: batch.effects.map((effect) => ({
                     status: 'skipped',
@@ -376,9 +379,7 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
             }
         }
         const result = { guard, effects };
-        return omittedResult
-            ? (result as RuntimeStateGuardedBatchResult)
-            : validateRuntimeStateGuardedBatchResult(batch, result);
+        return omittedResult ? result : decodeRuntimeStateGuardedBatchResult(batch, result);
     }
 
     private consume(targets: string[], target: string): boolean {
@@ -436,12 +437,12 @@ export class OrderedGroupEventStore extends TestGroupStateEventStore {
         this.runtime = runtime;
     }
 
-    override async appendGroupEvent(event: GroupEvent): Promise<void> {
+    override async appendGroupEvent(computed: GroupStateEventWrite): Promise<void> {
         if (this.runtime.activeTransactionDepth !== 1) {
             throw new Error('Group event append must stay inside the transaction');
         }
         this.runtime.transactionOrder.push('event');
-        await super.appendGroupEvent(event);
+        await super.appendGroupEvent(computed);
     }
 }
 
@@ -482,14 +483,14 @@ async function applyGuard(
             guard.namespace,
             guard.key,
             guard.value,
-            guard.expireAtTimestamp
+            toExpireAtIsoTimestamp(guard.expireAtTimestamp)
         )
         : guard.operation === 'update'
         ? await repository.upsertIfRevision(
             guard.namespace,
             guard.key,
             guard.value,
-            guard.expireAtTimestamp,
+            toExpireAtIsoTimestamp(guard.expireAtTimestamp),
             guard.expectedRevision
         )
         : await repository.deleteIfRevision(guard.namespace, guard.key, guard.expectedRevision);
@@ -534,14 +535,14 @@ async function applyEffect(
             effect.namespace,
             effect.key,
             effect.value,
-            effect.expireAtTimestamp
+            toExpireAtIsoTimestamp(effect.expireAtTimestamp)
         )
         : effect.operation === 'update'
         ? await repository.upsertIfRevision(
             effect.namespace,
             effect.key,
             effect.value,
-            effect.expireAtTimestamp,
+            toExpireAtIsoTimestamp(effect.expireAtTimestamp),
             effect.expectedRevision
         )
         : await repository.deleteIfRevision(effect.namespace, effect.key, effect.expectedRevision);
@@ -569,6 +570,10 @@ async function applyEffect(
         key: effect.key,
         resultingRevision: result.revision
     };
+}
+
+function toExpireAtIsoTimestamp(expireAtEpochMs: number): string {
+    return new Date(expireAtEpochMs).toISOString();
 }
 
 function appliedPutResult(

@@ -1,11 +1,11 @@
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AppInboxType, type AppInboxExecutionMetadata } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
     createRegisteredHandlerHarness,
     createResilience,
@@ -24,20 +24,29 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
         expect(() => harness.service.assertRegistrationComplete([AppInboxType.GROUP_CREATE])).not.toThrow();
     });
 
-    it('skips duplicate result persistence after a transaction-owned commit', async () => {
+    it('passes data-only metadata and persists the computed transaction result without registration encoding', async () => {
         const timing: RallarTimingEvent[] = [];
         const harness = createRegisteredHandlerHarness({
             failResultWriteAfter: 1,
             timing: (event) => timing.push(event)
         });
-        harness.service.onStateMessage(
-            AppInboxType.GROUP_CREATE,
-            async (_data, context) =>
-                await harness.service.commit(context, async () => ({
-                    status: 'accepted',
-                    source: 'transaction'
-                }))
-        );
+        const contexts: AppInboxExecutionMetadata[] = [];
+        harness.service.registerHandler({
+            type: AppInboxType.GROUP_CREATE,
+            decodeCommand: (value) => value,
+            encodeResult: () => {
+                throw new Error('Transaction result must not use registration encoding');
+            },
+            handle: async (_data, context) => {
+                expectTypeOf(context).toEqualTypeOf<AppInboxExecutionMetadata>();
+                contexts.push(context);
+                return await harness.service.commit(
+                    context,
+                    { status: 'accepted', source: 'transaction' },
+                    async () => {}
+                );
+            }
+        });
 
         const pending = harness.service.enqueueAndWait(harness.enqueue);
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
@@ -46,6 +55,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
             right: { status: 'accepted', source: 'transaction' }
         });
         expect(harness.results.replaceCalls).toBe(1);
+        expect(Object.values(contexts[0]).some((value) => typeof value === 'function')).toBe(false);
         expect((await harness.readEntry())?.status).toBe(EntityStatus.COMPLETED);
         expect(timing).not.toEqual(
             expect.arrayContaining([expect.objectContaining({ operation: 'queue-retry' })])
@@ -58,10 +68,11 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
             timing: (event) => timing.push(event)
         });
         harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
-            await harness.service.commit(context, async () => ({
-                status: 'accepted',
-                source: 'transaction'
-            }));
+            await harness.service.commit(
+                context,
+                { status: 'accepted', source: 'transaction' },
+                async () => {}
+            );
             throw new Error('secret-after-commit');
         });
 
@@ -77,8 +88,9 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
         );
     });
 
-    it('persists a non-transactional handler result exactly once', async () => {
+    it('passes data-only metadata while preserving custom non-transactional registration encoding', async () => {
         const harness = createRegisteredHandlerHarness();
+        const contexts: AppInboxExecutionMetadata[] = [];
         harness.service.registerHandler({
             type: AppInboxType.GROUP_CREATE,
             decodeCommand: (value) => {
@@ -87,8 +99,12 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
                 }
                 return { requestId: value.requestId };
             },
-            encodeResult: (result) => ({ status: result.outcome, source: 'handler' }),
-            handle: async () => ({ outcome: 'accepted' as const })
+            handle: async (_command, context) => {
+                expectTypeOf(context).toEqualTypeOf<AppInboxExecutionMetadata>();
+                contexts.push(context);
+                return { outcome: 'accepted' as const };
+            },
+            encodeResult: (result) => ({ status: result.outcome, source: 'handler' })
         });
 
         const pending = harness.service.enqueueAndWait(harness.enqueue);
@@ -98,6 +114,7 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
             right: { status: 'accepted', source: 'handler' }
         });
         expect(harness.results.replaceCalls).toBe(1);
+        expect(Object.values(contexts[0]).some((value) => typeof value === 'function')).toBe(false);
     });
 
     it('rejects malformed domain commands before handler invocation', async () => {
@@ -245,10 +262,13 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
             });
             let acceptedMutationExecutions = 0;
             const handler = async (_data: JsonWireValue, context: Parameters<typeof harness.service.commit>[0]) =>
-                await harness.service.commit(context, async () => {
-                    acceptedMutationExecutions += 1;
-                    return { status: 'accepted' };
-                });
+                await harness.service.commit(
+                    context,
+                    { status: 'accepted' },
+                    async () => {
+                        acceptedMutationExecutions += 1;
+                    }
+                );
             harness.service.onStateMessage(outerType as AppInboxType, handler);
             harness.service.enqueueWithoutWaiting(harness.enqueue);
             const entry = await waitForRegisteredHandlerEntry(harness.queue);
@@ -298,10 +318,13 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
         const harness = createRegisteredHandlerHarness();
         let mutationCommitted = false;
         const handler = async (_data: JsonWireValue, context: Parameters<typeof harness.service.commit>[0]) =>
-            await harness.service.commit(context, async () => {
-                mutationCommitted = true;
-                return { status: 'accepted' };
-            });
+            await harness.service.commit(
+                context,
+                { status: 'accepted' },
+                async () => {
+                    mutationCommitted = true;
+                }
+            );
         harness.service.onStateMessage(AppInboxType.GROUP_UPDATE, handler);
         harness.service.enqueueWithoutWaiting(harness.enqueue);
         const entry = await waitForRegisteredHandlerEntry(harness.queue);

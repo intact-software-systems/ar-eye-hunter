@@ -1,5 +1,6 @@
 import { type GroupMutationCommand, type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { describe, expect, it } from 'vitest';
 import {
     admissionFor,
@@ -34,19 +35,19 @@ describe('convergent group and presence state', () => {
             }
         };
 
-        expect(() =>
-            computeGroupMutation({
-                command,
-                read: forgedRead,
-                facts: createMutationFacts()
-            })
-        ).toThrow(/scope|groupId|group/i);
+        const facts = createMutationFacts();
+        const computed = computeGroupMutation({ command, read, facts });
+        expect(
+            validateGroupMutation({ command, read: forgedRead, facts, computed })
+                .map((issue) => issue.cause.message)
+        ).toEqual(expect.arrayContaining([expect.stringMatching(/scope|groupId|group/i)]));
     });
 
     it('rejects corrupt persisted entry envelopes and domain values before compute', () => {
         const command = createMutationCommand();
         const facts = createMutationFacts();
         const base = createMutationRead();
+        const computed = computeGroupMutation({ command, read: base, facts });
         const cases: readonly GroupMutationRead[] = [
             {
                 ...base,
@@ -86,9 +87,10 @@ describe('convergent group and presence state', () => {
         ];
 
         for (const read of cases) {
-            expect(() => computeGroupMutation({ command, read, facts })).toThrow(
-                /revision|entry|role|stored/i
-            );
+            expect(
+                validateGroupMutation({ command, read, facts, computed })
+                    .map((issue) => issue.cause.message)
+            ).toEqual(expect.arrayContaining([expect.stringMatching(/revision|entry|role|stored/i)]));
         }
     });
 
@@ -328,11 +330,16 @@ describe('convergent group and presence state', () => {
                 }
             ]
         ];
+        const computed = computeGroupMutation({ command: targetCommand, read: targetRead, facts });
 
         for (const [label, command, read] of cases) {
-            expect(() => computeGroupMutation({ command, read, facts }), label).toThrow(
-                /canonical|identity|slot|key|request|principal|session|referenced/i
-            );
+            expect(
+                validateGroupMutation({ command, read, facts, computed })
+                    .map((issue) => issue.cause.message),
+                label
+            ).toEqual(expect.arrayContaining([
+                expect.stringMatching(/canonical|identity|slot|key|request|principal|session|referenced/i)
+            ]));
         }
     });
 });

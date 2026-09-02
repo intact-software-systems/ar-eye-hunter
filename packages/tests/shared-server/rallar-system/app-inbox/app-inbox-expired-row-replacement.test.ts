@@ -240,7 +240,8 @@ describe('AppInbox expired row replacement', () => {
                     resourceInboxRepository: queue,
                     resourceInboxResultsRepository: results,
                     database: database,
-                    groupStateService: groupState
+                    groupStateService: groupState,
+                    resultReader: groupState
                 },
                 {
                     serviceId: 'expired-group-service'

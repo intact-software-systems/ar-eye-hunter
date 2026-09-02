@@ -17,7 +17,8 @@ const APPEND_INPUT: RtcTopologyDeliveryAppendInput = {
         resourceId: 'delivery-resource',
         contextId: 'delivery-context'
     },
-    retainUntilEpochMs: 86_401_000
+    retainUntilEpochMs: 86_401_000,
+    retainUntil: new Date(86_401_000)
 };
 
 const APPENDED_ROW = {
@@ -43,7 +44,11 @@ describe('RTC topology delivery append query', () => {
         await expect(repository.appendOrValidate(transaction, APPEND_INPUT)).resolves.toEqual({
             status: 'appended',
             entry: {
-                ...APPEND_INPUT,
+                publisherStreamId: APPEND_INPUT.publisherStreamId,
+                groupRef: APPEND_INPUT.groupRef,
+                publicationId: APPEND_INPUT.publicationId,
+                outboxKey: APPEND_INPUT.outboxKey,
+                retainUntilEpochMs: APPEND_INPUT.retainUntilEpochMs,
                 sequence: 1,
                 insertedAtEpochMs: 1_000
             }

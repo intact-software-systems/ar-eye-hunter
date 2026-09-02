@@ -7,18 +7,41 @@ import { toRtcTopologyPublicationId, toRtcTopologyPublicationMessageId } from '@
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/topology/publication/rtc-topology-ws-outbox-entry.ts';
 import {
+    computeRtcTopologyDeliveryAppendInput,
+    computeRtcTopologyPublicationDelivery,
     isRtcTopologyDeliveryRetryableConflict,
     readRtcTopologyDeliverySafeInteger,
-    RtcTopologyDeliveryCorruptionError,
-    toRtcTopologyDeliveryAppendInput
+    RtcTopologyDeliveryCorruptionError
 } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { createPGliteSqlClient, type PGliteSql } from '../../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
 
 describe('RTC topology delivery log boundary', () => {
+    it('computes matching publication bytes and delivery identity before persistence', () => {
+        const publication = topologyPublication();
+        const computed = computeRtcTopologyPublicationDelivery(
+            publication,
+            '00000000-0000-4000-8000-000000000001'
+        );
+
+        expect(computed.outboxWrite).toMatchObject({
+            createdAt: '1970-01-01T00:00:01Z',
+            expiresAt: '1970-01-02T00:00:01Z',
+            matchCreatedAt: '1970-01-01T00:00:01Z',
+            matchExpiresAt: '1970-01-02T00:00:01Z'
+        });
+        expect(computed.appendInput).toMatchObject({
+            publicationId: publication.publicationId,
+            outboxKey: computed.outboxWrite.entry.key,
+            retainUntilEpochMs: 86_401_000,
+            retainUntil: new Date(86_401_000)
+        });
+    });
+
     it('accepts only non-negative safe integer database values without coercion', () => {
         expect(readRtcTopologyDeliverySafeInteger(0, 'HEAD')).toBe(0);
         expect(readRtcTopologyDeliverySafeInteger(Number.MAX_SAFE_INTEGER, 'HEAD')).toBe(
@@ -34,10 +57,10 @@ describe('RTC topology delivery log boundary', () => {
 
     it('materializes one exact append input from a valid publication and WS outbox', () => {
         const publication = topologyPublication();
-        const outbox = computeRtcTopologyPublicationOutbox(publication);
+        const outbox = computeRtcTopologyPublicationOutbox(publication).entry;
 
         expect(
-            toRtcTopologyDeliveryAppendInput('00000000-0000-4000-8000-000000000001', publication, outbox)
+            computeRtcTopologyDeliveryAppendInput('00000000-0000-4000-8000-000000000001', publication, outbox)
         ).toEqual({
             publisherStreamId: '00000000-0000-4000-8000-000000000001',
             groupRef: {
@@ -47,19 +70,20 @@ describe('RTC topology delivery log boundary', () => {
             },
             publicationId: publication.publicationId,
             outboxKey: outbox.key,
-            retainUntilEpochMs: 86_401_000
+            retainUntilEpochMs: 86_401_000,
+            retainUntil: new Date(86_401_000)
         });
     });
 
     it('rejects malformed stream identity and outbox identity before persistence', () => {
         const publication = topologyPublication();
-        const outbox = computeRtcTopologyPublicationOutbox(publication);
+        const outbox = computeRtcTopologyPublicationOutbox(publication).entry;
 
-        expect(() => toRtcTopologyDeliveryAppendInput('not-a-uuid', publication, outbox)).toThrow(
+        expect(() => computeRtcTopologyDeliveryAppendInput('not-a-uuid', publication, outbox)).toThrow(
             'RTC topology publisher stream ID must be a UUID'
         );
         expect(() =>
-            toRtcTopologyDeliveryAppendInput('00000000-0000-4000-8000-000000000001', publication, {
+            computeRtcTopologyDeliveryAppendInput('00000000-0000-4000-8000-000000000001', publication, {
                 ...outbox,
                 key: { ...outbox.key, resourceId: 'different-resource' }
             })
@@ -123,10 +147,10 @@ describe('RTC topology delivery log boundary', () => {
             ).toEqual({ status: 'conflict' });
 
             const publication = topologyPublication();
-            const appendInput = toRtcTopologyDeliveryAppendInput(
+            const appendInput = computeRtcTopologyDeliveryAppendInput(
                 publisherStreamId,
                 publication,
-                computeRtcTopologyPublicationOutbox(publication)
+                computeRtcTopologyPublicationOutbox(publication).entry
             );
             const appended = await sql.begin(
                 async (transaction) => await repository.appendOrValidate(transaction, appendInput)
@@ -155,17 +179,15 @@ describe('RTC topology delivery log boundary', () => {
                 leaseDurationMs: 30_000
             });
             const publication = topologyPublication();
+            const appendInput = computeRtcTopologyDeliveryAppendInput(
+                publisherStreamId,
+                publication,
+                computeRtcTopologyPublicationOutbox(publication).entry
+            );
 
             await expect(
                 sql.begin(async (transaction) => {
-                    await repository.appendOrValidate(
-                        transaction,
-                        toRtcTopologyDeliveryAppendInput(
-                            publisherStreamId,
-                            publication,
-                            computeRtcTopologyPublicationOutbox(publication)
-                        )
-                    );
+                    await repository.appendOrValidate(transaction, appendInput);
                     throw new Error('abort surrounding topology transaction');
                 })
             ).rejects.toThrow('abort surrounding topology transaction');
@@ -190,16 +212,13 @@ describe('RTC topology delivery log boundary', () => {
                 ] as const
             ) {
                 const publication = topologyPublication({ workId });
+                const appendInput = computeRtcTopologyDeliveryAppendInput(
+                    streamId,
+                    publication,
+                    computeRtcTopologyPublicationOutbox(publication).entry
+                );
                 await sql.begin(
-                    async (transaction) =>
-                        await repository.appendOrValidate(
-                            transaction,
-                            toRtcTopologyDeliveryAppendInput(
-                                streamId,
-                                publication,
-                                computeRtcTopologyPublicationOutbox(publication)
-                            )
-                        )
+                    async (transaction) => await repository.appendOrValidate(transaction, appendInput)
                 );
             }
 
@@ -218,20 +237,14 @@ describe('RTC topology delivery log boundary', () => {
                 await repository.registerStream({ streamId, leaseDurationMs: 30_000 });
             }
             const publication = topologyPublication();
-            const outbox = computeRtcTopologyPublicationOutbox(publication);
+            const outbox = computeRtcTopologyPublicationOutbox(publication).entry;
+            const appendInputA = computeRtcTopologyDeliveryAppendInput(publisherA, publication, outbox);
+            const appendInputB = computeRtcTopologyDeliveryAppendInput(publisherB, publication, outbox);
             const winner = await sql.begin(
-                async (transaction) =>
-                    await repository.appendOrValidate(
-                        transaction,
-                        toRtcTopologyDeliveryAppendInput(publisherA, publication, outbox)
-                    )
+                async (transaction) => await repository.appendOrValidate(transaction, appendInputA)
             );
             const loser = await sql.begin(
-                async (transaction) =>
-                    await repository.appendOrValidate(
-                        transaction,
-                        toRtcTopologyDeliveryAppendInput(publisherB, publication, outbox)
-                    )
+                async (transaction) => await repository.appendOrValidate(transaction, appendInputB)
             );
 
             expect(winner).toMatchObject({
@@ -255,20 +268,20 @@ describe('RTC topology delivery log boundary', () => {
                 leaseDurationMs: 30_000
             });
             const publication = topologyPublication();
-            const input = toRtcTopologyDeliveryAppendInput(
+            const input = computeRtcTopologyDeliveryAppendInput(
                 publisherStreamId,
                 publication,
-                computeRtcTopologyPublicationOutbox(publication)
+                computeRtcTopologyPublicationOutbox(publication).entry
             );
             await sql.begin(async (transaction) => await repository.appendOrValidate(transaction, input));
+            const conflictingInput = {
+                ...input,
+                outboxKey: { ...input.outboxKey, resourceId: 'conflicting-resource' }
+            };
 
             await expect(
                 sql.begin(
-                    async (transaction) =>
-                        await repository.appendOrValidate(transaction, {
-                            ...input,
-                            outboxKey: { ...input.outboxKey, resourceId: 'conflicting-resource' }
-                        })
+                    async (transaction) => await repository.appendOrValidate(transaction, conflictingInput)
                 )
             ).rejects.toBeInstanceOf(RtcTopologyDeliveryCorruptionError);
         });
@@ -287,18 +300,15 @@ describe('RTC topology delivery log boundary', () => {
         where stream_id = ${publisherStreamId}
       `;
             const publication = topologyPublication();
+            const appendInput = computeRtcTopologyDeliveryAppendInput(
+                publisherStreamId,
+                publication,
+                computeRtcTopologyPublicationOutbox(publication).entry
+            );
 
             await expect(
                 sql.begin(
-                    async (transaction) =>
-                        await repository.appendOrValidate(
-                            transaction,
-                            toRtcTopologyDeliveryAppendInput(
-                                publisherStreamId,
-                                publication,
-                                computeRtcTopologyPublicationOutbox(publication)
-                            )
-                        )
+                    async (transaction) => await repository.appendOrValidate(transaction, appendInput)
                 )
             ).resolves.toEqual({ status: 'lease-lost' });
             expect(await readStreamHead(sql, publisherStreamId)).toBe(0);
@@ -362,16 +372,13 @@ describe('RTC topology delivery log boundary', () => {
                 expiresAtMs: 253_402_300_799_000
             });
             for (const publication of [expiredPublication, livePublication]) {
+                const appendInput = computeRtcTopologyDeliveryAppendInput(
+                    publisherStreamId,
+                    publication,
+                    computeRtcTopologyPublicationOutbox(publication).entry
+                );
                 await sql.begin(
-                    async (transaction) =>
-                        await repository.appendOrValidate(
-                            transaction,
-                            toRtcTopologyDeliveryAppendInput(
-                                publisherStreamId,
-                                publication,
-                                computeRtcTopologyPublicationOutbox(publication)
-                            )
-                        )
+                    async (transaction) => await repository.appendOrValidate(transaction, appendInput)
                 );
             }
 
@@ -394,16 +401,13 @@ describe('RTC topology delivery log boundary', () => {
             });
             for (const workId of ['first-work', 'second-work']) {
                 const publication = topologyPublication({ workId, expiresAtMs: 2_000 });
+                const appendInput = computeRtcTopologyDeliveryAppendInput(
+                    publisherStreamId,
+                    publication,
+                    computeRtcTopologyPublicationOutbox(publication).entry
+                );
                 await sql.begin(
-                    async (transaction) =>
-                        await repository.appendOrValidate(
-                            transaction,
-                            toRtcTopologyDeliveryAppendInput(
-                                publisherStreamId,
-                                publication,
-                                computeRtcTopologyPublicationOutbox(publication)
-                            )
-                        )
+                    async (transaction) => await repository.appendOrValidate(transaction, appendInput)
                 );
             }
             await sql`
@@ -467,12 +471,7 @@ async function readLogSequences(sql: PGliteSql, streamId: string): Promise<numbe
     return rows.map((row) => row.sequence);
 }
 
-function topologyPublication(
-    options: Readonly<{
-        workId?: string;
-        expiresAtMs?: number;
-    }> = {}
-): RtcTopologyPublication {
+function createDeliverySnapshot(): RallarOverlayTopologySnapshot {
     const groupRef = {
         applicationId: 'delivery-app',
         workspaceId: 'delivery-workspace',
@@ -480,9 +479,7 @@ function topologyPublication(
     };
     const causalRevision = { groupRevision: 4, presenceRevision: 6 };
     const createdAtEpochMs = 1_000;
-    const expiresAtMs = options.expiresAtMs ?? 86_401_000;
-    const workId = options.workId ?? 'delivery-work';
-    const snapshot: RallarOverlayTopologySnapshot = {
+    return {
         sourceGroupStateCausalRevision: causalRevision,
         state: 'active',
         overlayId: toScopedOverlayId(groupRef),
@@ -497,9 +494,17 @@ function topologyPublication(
         createdAtEpochMs,
         updatedAtEpochMs: createdAtEpochMs
     };
-    const message = {
+}
+
+function createDeliveryMessage(
+    snapshot: RallarOverlayTopologySnapshot,
+    workId: string,
+    expiresAtMs: number
+): ALMessage {
+    const { groupRef, createdAtEpochMs } = snapshot;
+    return {
         id: {
-            v: 2 as const,
+            v: 2,
             msgId: toRtcTopologyPublicationMessageId(workId),
             ts: createdAtEpochMs,
             senderId: 'rallar-server'
@@ -511,36 +516,46 @@ function topologyPublication(
         },
         constraints: { expiresAtMs },
         targets: {
-            mode: 'broadcast' as const,
-            scope: 'room' as const,
+            mode: 'broadcast',
+            scope: 'room',
             groupRef,
             minSnapshotVersion: 10
         },
         delivery: {
-            reliability: 'best-effort' as const,
-            ack: 'none' as const
+            reliability: 'best-effort',
+            ack: 'none'
         },
         payload: {
             typeId: AppTopics.overlayTopology,
-            contentType: 'application/json' as const,
+            contentType: 'application/json',
             resource: JSON.stringify(snapshot)
         },
         audit: { createdBy: 'rallar-server', createdTs: createdAtEpochMs }
     };
+}
 
+interface DeliveryPublicationOptions {
+    readonly workId?: string;
+    readonly expiresAtMs?: number;
+}
+
+function topologyPublication(options: DeliveryPublicationOptions = {}): RtcTopologyPublication {
+    const snapshot = createDeliverySnapshot();
+    const { groupRef, sourceGroupStateCausalRevision, createdAtEpochMs } = snapshot;
+    const workId = options.workId ?? 'delivery-work';
     return {
         publicationId: toRtcTopologyPublicationId({
             workId,
-            sourceGroupStateCausalRevision: causalRevision,
+            sourceGroupStateCausalRevision,
             overlayVersion: snapshot.version
         }),
         workId,
         groupRef,
-        sourceGroupStateCausalRevision: causalRevision,
+        sourceGroupStateCausalRevision,
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: 10,
         recipientSessionIds: snapshot.activeSessionIds,
-        message,
+        message: createDeliveryMessage(snapshot, workId, options.expiresAtMs ?? 86_401_000),
         createdAtEpochMs
     };
 }

@@ -5,7 +5,6 @@ import { executeRtcRttMutation as executeRtcRttMutationService } from '@shared-s
 import type { RtcRttMutationCommand } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { RTC_RTT_LATEST_NAMESPACE } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
-import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -19,7 +18,7 @@ import {
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
 type TestExecuteRtcRttMutationInput =
-    & Omit<Parameters<typeof executeRtcRttMutationService>[0], 'request' | 'readCommand' | 'outboxWriter'>
+    & Omit<Parameters<typeof executeRtcRttMutationService>[0], 'request' | 'readCommand'>
     & Readonly<{
         command: RtcRttMutationCommand;
         readCommand?: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;
@@ -119,7 +118,6 @@ function executeRtcRttMutation(input: TestExecuteRtcRttMutationInput) {
     const { command, readCommand, ...rest } = input;
     return executeRtcRttMutationService({
         ...rest,
-        outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined }),
         request: { rtt: command.rtt, alSenderId: command.alSenderId },
         readCommand: readCommand ?? (() => command)
     });

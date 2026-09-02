@@ -1,21 +1,77 @@
+// dprint-ignore
+import {
+    describe,
+    expect,
+    expectTypeOf,
+    it
+} from 'vitest';
+
 import { ClientStateRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import { groupStatePresenceSessionStorageKey } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
+import { computeGroupStateEventWrite, validateGroupStateEventWrite } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 import { readStateEventListQuery } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
-import type { RuntimeStateEntry, RuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type {
+    RuntimeStateConditionalDeleteResult,
+    RuntimeStateConditionalRepositoryLike,
+    RuntimeStateConditionalWriteResult,
+    RuntimeStateEntry,
+    RuntimeStateEntryPageOptions,
+    RuntimeStateTransactionalRepositoryLike
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
-import type { AuditStamp as ClientAuditStamp, ClientEvent, ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
-import type { AuditStamp as GroupAuditStamp, Group, GroupEvent, GroupMember, GroupPresenceSession, GroupPresenceSummary } from '@shared/api/group-types.ts';
+import type * as ClientTypes from '@shared/api/client-types.ts';
+// dprint-ignore
+import type {
+    ClientEvent,
+    ClientInstance,
+    ClientPrincipal,
+    ClientSession
+} from '@shared/api/client-types.ts';
+import type * as GroupTypes from '@shared/api/group-types.ts';
+// dprint-ignore
+import type {
+    Group,
+    GroupEvent,
+    GroupMember,
+    GroupPresenceSession,
+    GroupPresenceSummary
+} from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { describe, expect, expectTypeOf, it } from 'vitest';
+
 import { createTestGroup } from '../create-test-group.ts';
+
+interface ClientEventFixtureOptions {
+    readonly eventType?: ClientEvent['eventType'];
+    readonly snapshotVersion?: number;
+}
+
+interface GroupSessionFixtureOptions {
+    readonly groupId?: string;
+    readonly generationId?: string;
+    readonly generationVersion?: number;
+    readonly connectedAtEpochMs?: number;
+    readonly lastHeartbeatAtEpochMs?: number;
+    readonly expiresAtEpochMs?: number;
+    readonly disconnected?: GroupSessionFixtureDisconnection;
+}
+
+interface GroupSessionFixtureDisconnection {
+    readonly atEpochMs: number;
+    readonly reason: string;
+}
+
+interface RuntimeStatePrefixPageRead extends RuntimeStateEntryPageOptions {
+    readonly namespace: string;
+    readonly keyPrefix: string;
+}
 
 describe('ClientStateRepository', () => {
     it('exposes only conditional client-state mutation methods', () => {
@@ -40,19 +96,8 @@ describe('ClientStateRepository', () => {
         const repository = new FakeRuntimeStateRepository();
         const clientRepository = createTestClientStateRepository(repository, new TestClientStateEventStore());
         const canonical = createClientPrincipal();
-        const noncanonical = {
-            applicationId: canonical.applicationId,
-            principalId: canonical.principalId,
-            username: canonical.username,
-            status: canonical.status,
-            roles: canonical.roles,
-            metadata: canonical.metadata,
-            snapshotVersion: canonical.snapshotVersion,
-            profileVersion: canonical.profileVersion,
-            presenceVersion: canonical.presenceVersion,
-            created: { atEpochMs: 1, byServiceId: 'seed' },
-            updated: { atEpochMs: 2, byServiceId: 'seed' }
-        };
+        const noncanonical = structuredClone(canonical);
+        Reflect.deleteProperty(noncanonical, 'workspaceId');
         await repository.upsert(
             'client-state:principals',
             'app=app-1:ws=workspace-1:principal=principal-1',
@@ -165,10 +210,10 @@ describe('ClientStateRepository', () => {
             createClientEvent('evt-2', now + 2_000)
         ]);
 
-        expect(repository.findStoredEntry('client-state:principals')).toMatchObject({
+        expect(repository.getStoredEntry('client-state:principals')).toMatchObject({
             expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
         });
-        expect(repository.findStoredEntry('client-state:events')).toBeUndefined();
+        expect(repository.getStoredEntry('client-state:events')).toBeUndefined();
     });
 
     it('exposes the durable principal-row revision without changing snapshotVersion', async () => {
@@ -454,70 +499,8 @@ describe('ClientStateRepository', () => {
     });
 });
 
-async function insertClientPrincipal(
-    repository: ClientStateRepository,
-    principal: ClientPrincipal
-): Promise<void> {
-    expect(await repository.insertPrincipal(principal)).toEqual({
-        status: 'applied',
-        revision: 0
-    });
-}
-
-async function updateClientPrincipal(
-    repository: ClientStateRepository,
-    principal: ClientPrincipal,
-    expectedRevision: number
-): Promise<void> {
-    expect(await repository.updatePrincipal(principal, expectedRevision)).toEqual({
-        status: 'applied',
-        revision: expectedRevision + 1
-    });
-}
-
-async function deleteClientPrincipal(
-    repository: ClientStateRepository,
-    principal: ClientPrincipal,
-    expectedRevision: number
-): Promise<void> {
-    expect(await repository.deletePrincipal(principal, expectedRevision)).toEqual({
-        status: 'applied'
-    });
-}
-
-async function insertClientInstance(
-    repository: ClientStateRepository,
-    instance: ClientInstance
-): Promise<void> {
-    expect(await repository.insertInstance(instance)).toEqual({
-        status: 'applied',
-        revision: 0
-    });
-}
-
-async function updateClientInstance(
-    repository: ClientStateRepository,
-    instance: ClientInstance,
-    expectedRevision: number
-): Promise<void> {
-    expect(await repository.updateInstance(instance, expectedRevision)).toEqual({
-        status: 'applied',
-        revision: expectedRevision + 1
-    });
-}
-
-async function insertClientSession(
-    repository: ClientStateRepository,
-    session: ClientSession
-): Promise<void> {
-    expect(await repository.insertSession(session)).toEqual({
-        status: 'applied',
-        revision: 0
-    });
-}
-
 describe('GroupStateRepository', () => {
-    it('rejects group rows that omit current identity and audit fields', async () => {
+    it('rejects noncanonical persisted group, member and session records', async () => {
         const repository = new FakeRuntimeStateRepository();
         const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const ref = {
@@ -647,8 +630,11 @@ describe('GroupStateRepository', () => {
         await groupRepository.insertPresenceSummary(
             createGroupPresenceSummary(group.groupId, [activeSession], 3)
         );
-        await groupRepository.appendEvent(createGroupEvent('evt-2', now + 2_000));
-        await groupRepository.appendEvent(createGroupEvent('evt-1', now + 1_000));
+        for (const event of [createGroupEvent('evt-2', now + 2_000), createGroupEvent('evt-1', now + 1_000)]) {
+            const computed = computeGroupStateEventWrite(event);
+            expect(validateGroupStateEventWrite(event, computed)).toEqual([]);
+            await groupRepository.appendEvent(computed);
+        }
 
         expect(
             await groupRepository.findPresenceSession({
@@ -694,7 +680,7 @@ describe('GroupStateRepository', () => {
                 groupId: group.groupId
             })
         ).toEqual([createGroupEvent('evt-1', now + 1_000), createGroupEvent('evt-2', now + 2_000)]);
-        expect(repository.findStoredEntry('group-state:events')).toBeUndefined();
+        expect(repository.getStoredEntry('group-state:events')).toBeUndefined();
     });
 
     it('exposes the canonical causal group revision without changing snapshotVersion', async () => {
@@ -718,7 +704,7 @@ describe('GroupStateRepository', () => {
         expect(page.snapshots[0]?.causalRevision.groupRevision).toBe(6);
     });
 
-    it('assigns distinct causal revisions to concurrent group writes with one domain version', async () => {
+    it('retains the causal group revision when concurrent fixture writes keep the domain version', async () => {
         const repository = new FakeRuntimeStateRepository();
         const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const group = createGroup();
@@ -735,7 +721,7 @@ describe('GroupStateRepository', () => {
         expect(snapshot?.group.snapshotVersion).toBe(group.snapshotVersion);
     });
 
-    it('retries a group snapshot when the aggregate revision changes during child reads', async () => {
+    it('returns the current group and members after a change before the authority batch read', async () => {
         const repository = new FakeRuntimeStateRepository();
         const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const group = { ...createGroup(), activeMemberCount: 2 };
@@ -1082,9 +1068,11 @@ describe('GroupStateRepository', () => {
             workspaceId: 'workspace-1',
             groupId: 'group-1'
         };
-        await groupRepository.appendEvent(createGroupEvent('evt-1', 1_000));
-        await groupRepository.appendEvent(createGroupEvent('evt-2', 2_000));
-        await groupRepository.appendEvent(createGroupEvent('evt-3', 3_000));
+        for (const event of [createGroupEvent('evt-1', 1_000), createGroupEvent('evt-2', 2_000), createGroupEvent('evt-3', 3_000)]) {
+            const computed = computeGroupStateEventWrite(event);
+            expect(validateGroupStateEventWrite(event, computed)).toEqual([]);
+            await groupRepository.appendEvent(computed);
+        }
 
         const firstPage = await groupRepository.listEventPage(
             ref,
@@ -1124,15 +1112,17 @@ describe('GroupStateRepository', () => {
             workspaceId: 'workspace-1',
             groupId: 'group-1'
         };
-        await groupRepository.appendEvent(
-            createGroupEvent('evt-late-snapshot', 1_000, 30)
-        );
-        await groupRepository.appendEvent(
-            createGroupEvent('evt-early-snapshot', 2_000, 10)
-        );
-        await groupRepository.appendEvent(
-            createGroupEvent('evt-middle-snapshot', 3_000, 20)
-        );
+        for (
+            const event of [
+                createGroupEvent('evt-late-snapshot', 1_000, 30),
+                createGroupEvent('evt-early-snapshot', 2_000, 10),
+                createGroupEvent('evt-middle-snapshot', 3_000, 20)
+            ]
+        ) {
+            const computed = computeGroupStateEventWrite(event);
+            expect(validateGroupStateEventWrite(event, computed)).toEqual([]);
+            await groupRepository.appendEvent(computed);
+        }
 
         const firstPage = await groupRepository.listEventPage(ref, { limit: 2 });
         const secondPage = await groupRepository.listEventPage(ref, {
@@ -1151,6 +1141,68 @@ describe('GroupStateRepository', () => {
         expect(secondPage.hasMore).toBe(false);
     });
 });
+
+async function insertClientPrincipal(
+    repository: ClientStateRepository,
+    principal: ClientPrincipal
+): Promise<void> {
+    expect(await repository.insertPrincipal(principal)).toEqual({
+        status: 'applied',
+        revision: 0
+    });
+}
+
+async function updateClientPrincipal(
+    repository: ClientStateRepository,
+    principal: ClientPrincipal,
+    expectedRevision: number
+): Promise<void> {
+    expect(await repository.updatePrincipal(principal, expectedRevision)).toEqual({
+        status: 'applied',
+        revision: expectedRevision + 1
+    });
+}
+
+async function deleteClientPrincipal(
+    repository: ClientStateRepository,
+    principal: ClientPrincipal,
+    expectedRevision: number
+): Promise<void> {
+    expect(await repository.deletePrincipal(principal, expectedRevision)).toEqual({
+        status: 'applied'
+    });
+}
+
+async function insertClientInstance(
+    repository: ClientStateRepository,
+    instance: ClientInstance
+): Promise<void> {
+    expect(await repository.insertInstance(instance)).toEqual({
+        status: 'applied',
+        revision: 0
+    });
+}
+
+async function updateClientInstance(
+    repository: ClientStateRepository,
+    instance: ClientInstance,
+    expectedRevision: number
+): Promise<void> {
+    expect(await repository.updateInstance(instance, expectedRevision)).toEqual({
+        status: 'applied',
+        revision: expectedRevision + 1
+    });
+}
+
+async function insertClientSession(
+    repository: ClientStateRepository,
+    session: ClientSession
+): Promise<void> {
+    expect(await repository.insertSession(session)).toEqual({
+        status: 'applied',
+        revision: 0
+    });
+}
 
 function createClientPrincipal(principalId = 'principal-1'): ClientPrincipal {
     return {
@@ -1237,11 +1289,6 @@ function createClientSession(
     };
 }
 
-interface ClientEventFixtureOptions {
-    readonly eventType?: ClientEvent['eventType'];
-    readonly snapshotVersion?: number;
-}
-
 function createClientEvent(
     eventId: string,
     occurredAtEpochMs: number,
@@ -1275,7 +1322,7 @@ function createGroup(groupId = 'group-1'): Group {
         kind: 'party',
         joinMode: 'invite-only',
         activeMemberCount: 1,
-        ownerPrincipalId: ownerPrincipalIdFor(groupId),
+        ownerPrincipalId: resolveOwnerPrincipalId(groupId),
         snapshotVersion: 6,
         metadataVersion: 1,
         rosterVersion: 2,
@@ -1291,7 +1338,7 @@ function createGroupMember(
     groupId = 'group-1'
 ): GroupMember {
     const updated = createGroupAuditStamp(2);
-    const role: GroupMember['role'] = principalId === ownerPrincipalIdFor(groupId)
+    const role: GroupMember['role'] = principalId === resolveOwnerPrincipalId(groupId)
         ? 'owner'
         : 'member';
     const base = {
@@ -1353,7 +1400,7 @@ function createGroupOwner(group: Group): GroupMember {
     };
 }
 
-function ownerPrincipalIdFor(groupId: string): string {
+function resolveOwnerPrincipalId(groupId: string): string {
     if (groupId === 'group-1' || groupId === 'group-delete') {
         return 'principal-a';
     }
@@ -1370,15 +1417,7 @@ function ownerPrincipalIdFor(groupId: string): string {
 function createGroupSession(
     principalId: string,
     sessionId: string,
-    overrides: Readonly<{
-        groupId?: string;
-        generationId?: string;
-        generationVersion?: number;
-        connectedAtEpochMs?: number;
-        lastHeartbeatAtEpochMs?: number;
-        expiresAtEpochMs?: number;
-        disconnected?: Readonly<{ atEpochMs: number; reason: string; }>;
-    }> = {}
+    overrides: GroupSessionFixtureOptions = {}
 ): GroupPresenceSession {
     const connectedAtEpochMs = overrides.connectedAtEpochMs ?? 10;
     const base = {
@@ -1458,7 +1497,7 @@ function createGroupEvent(
     };
 }
 
-function createClientAuditStamp(atEpochMs: number): ClientAuditStamp {
+function createClientAuditStamp(atEpochMs: number): ClientTypes.AuditStamp {
     return {
         atEpochMs,
         actor: { kind: 'service', serviceId: 'seed' },
@@ -1468,7 +1507,7 @@ function createClientAuditStamp(atEpochMs: number): ClientAuditStamp {
     };
 }
 
-function createGroupAuditStamp(atEpochMs: number): GroupAuditStamp {
+function createGroupAuditStamp(atEpochMs: number): GroupTypes.AuditStamp {
     return {
         atEpochMs,
         actor: { kind: 'service', serviceId: 'seed' },
@@ -1478,13 +1517,10 @@ function createGroupAuditStamp(atEpochMs: number): GroupAuditStamp {
     };
 }
 
-class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
-    readonly data = new Map<string, RuntimeStateEntry>();
+class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike, RuntimeStateConditionalRepositoryLike {
+    private readonly data = new Map<string, RuntimeStateEntry>();
     findEntryCalls = 0;
     findEntriesByPrefixCalls = 0;
-    readonly findEntriesByPrefixCallsByNamespace = new Map<string, number>();
-    findEntriesByKeysCalls = 0;
-    maxRowsReturnedPerFindEntriesByPrefix = 0;
     readRuntimeStateBatchCalls = 0;
     readonly readRuntimeStateBatchSelectors: RuntimeStateReadBatchSelector[][] = [];
     maxRowsReturnedPerBatchSelection = 0;
@@ -1492,19 +1528,10 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         namespace: string,
         key: string
     ) => void | Promise<void>;
-    onFindEntriesByPrefix?: () => void | Promise<void>;
-    onFindEntriesByKeys?: () => void | Promise<void>;
     onReadRuntimeStateBatch?: (
         selectors: readonly RuntimeStateReadBatchSelector[]
     ) => void | Promise<void>;
-    findEntriesByPrefixPageCalls: Array<
-        Readonly<{
-            namespace: string;
-            keyPrefix: string;
-            afterKey?: string;
-            limit: number;
-        }>
-    > = [];
+    readonly findEntriesByPrefixPageCalls: RuntimeStatePrefixPageRead[] = [];
 
     async begin<T>(
         fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>
@@ -1554,12 +1581,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         keyPrefix: string
     ): Promise<readonly RuntimeStateEntry[]> {
         this.findEntriesByPrefixCalls += 1;
-        this.findEntriesByPrefixCallsByNamespace.set(
-            namespace,
-            (this.findEntriesByPrefixCallsByNamespace.get(namespace) ?? 0) + 1
-        );
-        await this.onFindEntriesByPrefix?.();
-        const rows = [...this.data.entries()]
+        return [...this.data.entries()]
             .filter(
                 ([compositeKey]) =>
                     this.toNamespace(compositeKey) === namespace &&
@@ -1567,19 +1589,12 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
             )
             .map(([, entry]) => ({ ...entry }))
             .sort((left, right) => left.key.localeCompare(right.key));
-        this.maxRowsReturnedPerFindEntriesByPrefix = Math.max(
-            this.maxRowsReturnedPerFindEntriesByPrefix,
-            rows.length
-        );
-        return rows;
     }
 
     async findEntriesByKeys(
         namespace: string,
         keys: readonly string[]
     ): Promise<readonly RuntimeStateEntry[]> {
-        this.findEntriesByKeysCalls += 1;
-        await this.onFindEntriesByKeys?.();
         const keySet = new Set(keys);
         return [...this.data.entries()]
             .filter(
@@ -1594,10 +1609,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     async findEntriesByPrefixPage(
         namespace: string,
         keyPrefix: string,
-        options: Readonly<{
-            afterKey?: string;
-            limit: number;
-        }>
+        options: RuntimeStateEntryPageOptions
     ): Promise<readonly RuntimeStateEntry[]> {
         this.findEntriesByPrefixPageCalls.push({
             namespace,
@@ -1642,13 +1654,13 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number
-    ): Promise<{ status: 'applied'; revision: number; } | { status: 'conflict'; }> {
+        expireAtIsoTimestamp: string
+    ): Promise<RuntimeStateConditionalWriteResult> {
         const compositeKey = this.toKey(namespace, key);
         if (this.data.has(compositeKey)) {
             return { status: 'conflict' };
         }
-        await this.upsert(namespace, key, value, expireAtTimestamp);
+        await this.upsert(namespace, key, value, Date.parse(expireAtIsoTimestamp));
         return { status: 'applied', revision: 0 };
     }
 
@@ -1656,14 +1668,14 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtIsoTimestamp: string,
         expectedRevision: number
-    ): Promise<{ status: 'applied'; revision: number; } | { status: 'conflict'; }> {
+    ): Promise<RuntimeStateConditionalWriteResult> {
         const current = this.data.get(this.toKey(namespace, key));
         if (!current || current.revision !== expectedRevision) {
             return { status: 'conflict' };
         }
-        await this.upsert(namespace, key, value, expireAtTimestamp);
+        await this.upsert(namespace, key, value, Date.parse(expireAtIsoTimestamp));
         return { status: 'applied', revision: expectedRevision + 1 };
     }
 
@@ -1671,7 +1683,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         namespace: string,
         key: string,
         expectedRevision: number
-    ): Promise<{ status: 'applied'; } | { status: 'conflict'; }> {
+    ): Promise<RuntimeStateConditionalDeleteResult> {
         const current = this.data.get(this.toKey(namespace, key));
         if (!current || current.revision !== expectedRevision) {
             return { status: 'conflict' };
@@ -1703,7 +1715,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         return deleted;
     }
 
-    findStoredEntry(namespace: string): RuntimeStateEntry | undefined {
+    getStoredEntry(namespace: string): RuntimeStateEntry | undefined {
         return [...this.data.entries()].find(
             ([compositeKey]) => this.toNamespace(compositeKey) === namespace
         )?.[1];
@@ -1712,9 +1724,6 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     resetCounters(): void {
         this.findEntryCalls = 0;
         this.findEntriesByPrefixCalls = 0;
-        this.findEntriesByPrefixCallsByNamespace.clear();
-        this.findEntriesByKeysCalls = 0;
-        this.maxRowsReturnedPerFindEntriesByPrefix = 0;
         this.readRuntimeStateBatchCalls = 0;
         this.readRuntimeStateBatchSelectors.length = 0;
         this.maxRowsReturnedPerBatchSelection = 0;

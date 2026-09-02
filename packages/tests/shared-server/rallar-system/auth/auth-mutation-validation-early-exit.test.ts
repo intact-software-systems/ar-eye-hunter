@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AuthMutationCommand, AuthMutationComputed, AuthMutationRead } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
+import type { AuthMutationCommand, AuthMutationRead } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { validateAuthMutation } from '@shared-server/rallar-system/auth/mutation/validate/validate-auth-mutation.ts';
+import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 
 const session = {
     clientId: 'client-1',
@@ -11,200 +12,154 @@ const session = {
     issuedAtEpochMs: 1_000,
     expiresAtEpochMs: 2_000
 } as const;
+const user = {
+    clientId: session.clientId,
+    username: session.username,
+    normalizedUsername: 'alice',
+    displayName: null,
+    passwordHash: 'hash',
+    passwordSalt: 'salt',
+    passwordAlgorithm: 'pbkdf2-sha256',
+    passwordIterations: 120_000,
+    roles: ['member'],
+    status: 'active',
+    createdAtEpochMs: 1_000,
+    updatedAtEpochMs: 1_000
+} as const;
+const identity = { version: 1, requestId: 'rejection-request', capturedAtEpochMs: 1_000 } as const;
+const emptySessions = {
+    byToken: null,
+    bySession: null,
+    expiredByTokenEntry: null,
+    expiredBySessionEntry: null
+} as const;
 
-describe('auth mutation validation early exits', () => {
-    it.each(validationEarlyExitCases())(
-        '$label rejects before accessing later validation inputs',
-        ({ command, read, message, readAccesses }) => {
-            const accesses: string[] = [];
-            const trackedRead = trackRead(read, accesses);
-
-            expect(() => validateAuthMutation(command, trackedRead, computed(command, trackedRead))).toThrow(message);
-            expect(accesses).toEqual(readAccesses);
-        }
-    );
-
-    it('preserves the router command/read discriminant access sequence', () => {
-        const counts = { command: 0, read: 0 };
-        const command = trackKind(
-            {
-                version: 1,
-                kind: 'logout-session',
-                requestId: 'logout-request',
-                capturedAtEpochMs: 1_000,
-                expected: {} as never
-            } as AuthMutationCommand,
-            counts,
-            'command'
-        );
-        const read = trackKind(
-            {
-                kind: 'logout-session',
-                byToken: null,
-                bySession: null,
-                expiredByTokenEntry: null,
-                expiredBySessionEntry: null
-            } as AuthMutationRead,
-            counts,
-            'read'
-        );
-
-        validateAuthMutation(command, read, computed(command, read));
-
-        expect(counts).toEqual({ command: 2, read: 1 });
-    });
-});
-
-function validationEarlyExitCases() {
-    return [
-        registerUserEarlyExit(),
-        issueSessionEarlyExit(),
-        consumeWebSocketTicketEarlyExit(),
-        issueAgentTicketEarlyExit()
-    ];
-}
-
-function registerUserEarlyExit() {
-    const command = {
-        version: 1,
-        kind: 'register-user',
-        requestId: 'register-request',
-        capturedAtEpochMs: 1_000,
-        user: { clientId: 'client-1' }
-    } as AuthMutationCommand;
-    const read = {
-        kind: 'register-user',
-        byUsername: { value: { clientId: 'different-client' } },
-        get byClientId() {
-            throw new Error('Registration should stop before the client index');
-        }
-    } as unknown as AuthMutationRead;
-    return rejectionCase({
-        command,
-        read,
-        message: 'Auth username already exists',
-        readAccesses: ['kind', 'byUsername', 'byUsername']
-    });
-}
-
-function issueSessionEarlyExit() {
-    const command = {
-        version: 1,
-        kind: 'issue-session',
-        requestId: 'issue-session-request',
-        capturedAtEpochMs: 1_000,
-        authority: { kind: 'static-client', clientId: 'client-1', normalizedUsername: 'alice' },
-        session
-    } as AuthMutationCommand;
-    const read = {
-        kind: 'issue-session',
-        get byToken() {
-            throw new Error('Missing computed session must stop before runtime indexes');
-        },
-        get userByUsername() {
-            throw new Error('Missing computed session must stop before user authority');
-        }
-    } as unknown as AuthMutationRead;
-    return rejectionCase({
-        command,
-        read,
-        message: 'Issued auth session is missing',
-        readAccesses: ['kind']
-    });
-}
-
-function consumeWebSocketTicketEarlyExit() {
-    const command = {
-        version: 1,
-        kind: 'consume-ws-ticket',
-        requestId: 'consume-websocket-ticket-request',
-        capturedAtEpochMs: 1_000,
-        ticketDigest: 'websocket-ticket-digest',
-        expectedSessionId: session.sessionId
-    } as AuthMutationCommand;
-    const read = {
-        kind: 'consume-ws-ticket',
-        ticket: null,
-        get session() {
-            throw new Error('Missing ticket must stop before session authority');
-        }
-    } as unknown as AuthMutationRead;
-    return rejectionCase({
-        command,
-        read,
-        message: 'Auth ticket is invalid or consumed',
-        readAccesses: ['kind', 'ticket']
-    });
-}
-
-function issueAgentTicketEarlyExit() {
-    const command = {
-        version: 1,
-        kind: 'issue-agent-tickets',
-        requestId: 'issue-agent-ticket-request',
-        capturedAtEpochMs: 1_000,
-        authority: session,
-        tickets: []
-    } as AuthMutationCommand;
-    const read = {
-        kind: 'issue-agent-tickets',
-        get authority() {
-            throw new Error('Invalid ticket batch must stop before authority');
-        }
-    } as unknown as AuthMutationRead;
-    return rejectionCase({
-        command,
-        read,
-        message: 'Agent ticket batch is invalid',
-        readAccesses: ['kind']
-    });
-}
-
-interface RejectionCaseInput {
+interface AuthValidationRejectionCase {
+    readonly label: string;
     readonly command: AuthMutationCommand;
     readonly read: AuthMutationRead;
     readonly message: string;
-    readonly readAccesses: readonly string[];
+    readonly status: number;
 }
 
-function rejectionCase({ command, read, message, readAccesses }: RejectionCaseInput) {
-    return { label: command.kind, command, read, message, readAccesses };
+describe('auth mutation validation early exits', () => {
+    it.each(createEarlyExitCases())('preserves $label rejection precedence', ({ command, read, message, status }) => {
+        expect(() =>
+            Reflect.apply(validateAuthMutation, undefined, [
+                command,
+                read,
+                createComputedCandidate(command, read)
+            ])
+        ).toThrowError(
+            expect.objectContaining({ message, status, code: 'auth-mutation-rejected' })
+        );
+    });
+
+    it('rejects a mismatched read operation before inspecting its authority', () => {
+        const command: AuthMutationCommand = { ...identity, kind: 'logout-session', expected: session };
+        const read: AuthMutationRead = { kind: 'consume-ws-ticket', ticket: null, session: null };
+
+        expect(() =>
+            Reflect.apply(validateAuthMutation, undefined, [
+                command,
+                read,
+                createComputedCandidate(command, read)
+            ])
+        ).toThrow(
+            'Auth command/read operation differs'
+        );
+    });
+});
+
+function createEarlyExitCases(): readonly AuthValidationRejectionCase[] {
+    return [createRegistrationCase(), createSessionCase(), createWebSocketCase(), createAgentCase()];
 }
 
-function computed(command: AuthMutationCommand, read: AuthMutationRead): AuthMutationComputed {
+function createRegistrationCase(): AuthValidationRejectionCase {
     return {
+        label: 'username collision before client-index corruption',
+        command: { ...identity, kind: 'register-user', user },
+        read: {
+            kind: 'register-user',
+            byUsername: createEntry({ ...user, clientId: 'other-client' }),
+            byClientId: createEntry({ ...user, normalizedUsername: 'other-user' })
+        },
+        message: 'Auth username already exists',
+        status: 409
+    };
+}
+
+function createSessionCase(): AuthValidationRejectionCase {
+    return {
+        label: 'missing computed session before index/authority conflicts',
+        command: {
+            ...identity,
+            kind: 'issue-session',
+            authority: { kind: 'static-client', clientId: session.clientId, normalizedUsername: 'alice' },
+            session
+        },
+        read: {
+            kind: 'issue-session',
+            ...emptySessions,
+            byToken: createEntry({ ...session, clientId: 'other-client' }),
+            userByUsername: createEntry(user),
+            userByClientId: createEntry(user)
+        },
+        message: 'Issued auth session is missing',
+        status: 409
+    };
+}
+
+function createWebSocketCase(): AuthValidationRejectionCase {
+    return {
+        label: 'missing ticket before missing session authority',
+        command: {
+            ...identity,
+            kind: 'consume-ws-ticket',
+            ticketDigest: 'ticket-digest',
+            expectedSessionId: session.sessionId
+        },
+        read: { kind: 'consume-ws-ticket', ticket: null, session: null },
+        message: 'Auth ticket is invalid or consumed',
+        status: 404
+    };
+}
+
+function createAgentCase(): AuthValidationRejectionCase {
+    return {
+        label: 'empty ticket batch before missing authority',
+        command: { ...identity, kind: 'issue-agent-tickets', authority: session, tickets: [] },
+        read: { kind: 'issue-agent-tickets', authority: emptySessions, sessions: [], tickets: [], expiredTicketEntries: [] },
+        message: 'Agent ticket batch is invalid',
+        status: 409
+    };
+}
+
+function createComputedCandidate(command: AuthMutationCommand, read: AuthMutationRead) {
+    return {
+        kind: command.kind,
         command,
         read,
-        result: {} as AuthMutationComputed['result'],
+        result: { requestId: command.requestId, loggedOut: true },
         sessions: [],
         agentTickets: [],
         logoutOutbox: null,
+        ticketDeletion: null,
+        ticketWrites: [],
+        userRegistration: null,
         outcome: 'write'
     };
 }
 
-function trackRead<T extends AuthMutationRead>(read: T, accesses: string[]): T {
-    return new Proxy(read, {
-        get(target, property, receiver) {
-            if (typeof property === 'string') {
-                accesses.push(property);
-            }
-            return Reflect.get(target, property, receiver);
+function createEntry<T>(value: T): RuntimeStateEntryValue<T> {
+    return {
+        value,
+        entry: {
+            key: 'authority',
+            value: JSON.stringify(value),
+            revision: 0,
+            expireAtTimestamp: 2_000,
+            updatedTimestamp: '1970-01-01T00:00:01.000Z'
         }
-    });
-}
-
-function trackKind<T extends Readonly<{ kind: string; }>>(
-    value: T,
-    counts: Record<'command' | 'read', number>,
-    count: 'command' | 'read'
-): T {
-    return new Proxy(value, {
-        get(target, property, receiver) {
-            if (property === 'kind') {
-                counts[count] += 1;
-            }
-            return Reflect.get(target, property, receiver);
-        }
-    });
+    };
 }

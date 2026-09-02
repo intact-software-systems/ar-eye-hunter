@@ -103,13 +103,13 @@ export class AlwaysConflictingPrincipalRepository extends AggregateBarrierReposi
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number
+        expireAtIsoTimestamp: string
     ): Promise<RuntimeStateConditionalWriteResult> {
         if (namespace === 'client-state:principals') {
             this.principalGuardCount += 1;
             return Promise.resolve({ status: 'conflict' });
         }
-        return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
+        return super.insertIfAbsent(namespace, key, value, expireAtIsoTimestamp);
     }
 }
 
@@ -135,21 +135,21 @@ export class StatementRecordingRepository extends AggregateBarrierRepository {
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number
+        expireAtIsoTimestamp: string
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.record('insertIfAbsent', namespace);
-        return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
+        return super.insertIfAbsent(namespace, key, value, expireAtIsoTimestamp);
     }
 
     override upsertIfRevision(
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtIsoTimestamp: string,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.record('upsertIfRevision', namespace);
-        return super.upsertIfRevision(namespace, key, value, expireAtTimestamp, expectedRevision);
+        return super.upsertIfRevision(namespace, key, value, expireAtIsoTimestamp, expectedRevision);
     }
 
     resetInstrumentation(): void {

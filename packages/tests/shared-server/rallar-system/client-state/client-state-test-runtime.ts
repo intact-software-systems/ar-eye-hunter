@@ -6,6 +6,7 @@ import {
     type ClientStateService,
     type ClientStateWritten
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { timeClientStateMutationCommit } from '@shared-server/rallar-system/client-state/client-state-service-timing.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import {
     toClientMutationIssuedSessionAuthority,
@@ -157,26 +158,30 @@ async function writeClientStateTestMutation(
     context: ClientStateTestExecutorInput,
     computed: Parameters<ClientStateService['write']>[1]
 ): Promise<void> {
-    await context.runtimeRepository.begin(async (runtime) => {
-        const outboxBefore = captureClientStateTestOutbox(context.runtimeRepository);
-        const eventsBefore = [...context.eventStore.events];
-        try {
-            await context.service.write(
-                createClientStateTestTransaction({
-                    runtime,
-                    runtimeRepository: context.runtimeRepository,
-                    eventStore: context.eventStore
-                }),
-                computed
-            );
-        }
-        catch (error) {
-            restoreClientStateTestOutbox(context.runtimeRepository, outboxBefore);
-            context.eventStore.events.length = 0;
-            context.eventStore.events.push(...eventsBefore);
-            throw error;
-        }
-    });
+    await timeClientStateMutationCommit(
+        { timing: context.service.mutationTiming, writes: [computed] },
+        async () =>
+            await context.runtimeRepository.begin(async (runtime) => {
+                const outboxBefore = captureClientStateTestOutbox(context.runtimeRepository);
+                const eventsBefore = [...context.eventStore.events];
+                try {
+                    await context.service.write(
+                        createClientStateTestTransaction({
+                            runtime,
+                            runtimeRepository: context.runtimeRepository,
+                            eventStore: context.eventStore
+                        }),
+                        computed
+                    );
+                }
+                catch (error) {
+                    restoreClientStateTestOutbox(context.runtimeRepository, outboxBefore);
+                    context.eventStore.events.length = 0;
+                    context.eventStore.events.push(...eventsBefore);
+                    throw error;
+                }
+            })
+    );
 }
 
 async function toTestAuthority(

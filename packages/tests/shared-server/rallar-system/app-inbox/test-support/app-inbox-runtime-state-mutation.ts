@@ -1,7 +1,9 @@
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { computeRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/compute-runtime-state-guarded-batch.ts';
 import { type RuntimeStateGuardedBatch, type RuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
+import { assertRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import type { RuntimeStateGuardedBatchDatabaseRow } from '@shared-server/runtime-state/postgres/decode-runtime-state-guarded-batch-rows.ts';
+
 import type { AppInboxTestSqlExecution } from './app-inbox-test-database-contracts.ts';
 
 export async function tryExecuteRuntimeStateGuardedBatch(
@@ -15,7 +17,7 @@ export async function tryExecuteRuntimeStateGuardedBatch(
         throw new Error('Guarded runtime-state SQL requires a transaction runtime');
     }
     const batch = decodeRuntimeStateGuardedBatchSqlValues(values);
-    return toRuntimeStateGuardedBatchRows(await runtime.executeGuardedBatch(batch));
+    return toRuntimeStateGuardedBatchRows(await runtime.executeGuardedBatch(computeRuntimeStateGuardedBatch(batch)));
 }
 
 export async function tryExecuteRuntimeStateConditionalMutation(
@@ -33,11 +35,11 @@ export async function tryExecuteRuntimeStateConditionalMutation(
         throw new Error('Runtime-state SQL requires a transaction runtime');
     }
     if (isUpdate) {
-        const value = readString(values[0], 'Conditional runtime-state value');
-        const expireAt = readDate(values[1], 'Conditional runtime-state expiry');
-        const namespace = readString(values[2], 'Conditional runtime-state namespace');
-        const key = readString(values[3], 'Conditional runtime-state key');
-        const expectedRevision = readRevision(
+        const value = decodeStringParameter(values[0], 'Conditional runtime-state value');
+        const expireAtIsoTimestamp = decodeStringParameter(values[1], 'Conditional runtime-state expiry');
+        const namespace = decodeStringParameter(values[2], 'Conditional runtime-state namespace');
+        const key = decodeStringParameter(values[3], 'Conditional runtime-state key');
+        const expectedRevision = decodeRevisionParameter(
             values[4],
             'Conditional runtime-state expected revision'
         );
@@ -45,14 +47,14 @@ export async function tryExecuteRuntimeStateConditionalMutation(
             namespace,
             key,
             value,
-            expireAt.getTime(),
+            expireAtIsoTimestamp,
             expectedRevision
         );
         return result.status === 'applied' ? [{ revision: result.revision }] : [];
     }
-    const namespace = readString(values[0], 'Conditional runtime-state namespace');
-    const key = readString(values[1], 'Conditional runtime-state key');
-    const expectedRevision = readRevision(
+    const namespace = decodeStringParameter(values[0], 'Conditional runtime-state namespace');
+    const key = decodeStringParameter(values[1], 'Conditional runtime-state key');
+    const expectedRevision = decodeRevisionParameter(
         values[2],
         'Conditional runtime-state expected revision'
     );
@@ -63,27 +65,23 @@ export async function tryExecuteRuntimeStateConditionalMutation(
 function decodeRuntimeStateGuardedBatchSqlValues(
     values: AppInboxTestSqlExecution['values']
 ): RuntimeStateGuardedBatch {
-    const rawEffects = values[1];
+    const rawEffects = decodeJsonWireValue(JSON.parse(decodeStringParameter(values[1], 'Guarded runtime-state effects')), 'Guarded runtime-state effects');
     if (!Array.isArray(rawEffects)) {
         throw new TypeError('Guarded runtime-state SQL effects are required');
     }
-    return validateRuntimeStateGuardedBatch({
-        guard: normalizeRuntimeStateGuardedBatchSqlDescriptor(values[0]),
+    const batch = {
+        guard: normalizeRuntimeStateGuardedBatchSqlDescriptor(
+            decodeJsonWireValue(JSON.parse(decodeStringParameter(values[0], 'Guarded runtime-state guard')), 'Guarded runtime-state guard')
+        ),
         effects: rawEffects.map(normalizeRuntimeStateGuardedBatchSqlDescriptor)
-    });
+    };
+    assertRuntimeStateGuardedBatch(batch);
+    return batch;
 }
 
 function normalizeRuntimeStateGuardedBatchSqlDescriptor(
-    input: AppInboxTestSqlExecution['values'][number]
+    parsed: JsonWireValue
 ): JsonWireObject {
-    const serialized = JSON.stringify(input);
-    if (serialized === undefined) {
-        throw new TypeError('Guarded runtime-state SQL descriptor is required');
-    }
-    const parsed = decodeJsonWireValue(
-        JSON.parse(serialized),
-        'Guarded runtime-state SQL descriptor'
-    );
     if (!isJsonWireObject(parsed)) {
         throw new TypeError('Guarded runtime-state SQL descriptor must be an object');
     }
@@ -140,7 +138,7 @@ function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function readString(
+function decodeStringParameter(
     value: AppInboxTestSqlExecution['values'][number],
     label: string
 ): string {
@@ -150,17 +148,7 @@ function readString(
     return value;
 }
 
-function readDate(
-    value: AppInboxTestSqlExecution['values'][number],
-    label: string
-): Date {
-    if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
-        throw new TypeError(`${label} must be a valid Date`);
-    }
-    return value;
-}
-
-function readRevision(
+function decodeRevisionParameter(
     value: AppInboxTestSqlExecution['values'][number],
     label: string
 ): number {

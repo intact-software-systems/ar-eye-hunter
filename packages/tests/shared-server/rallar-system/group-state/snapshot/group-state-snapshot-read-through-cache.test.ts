@@ -1,9 +1,3 @@
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
-
 import { type GroupSnapshotPageOptions } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
@@ -21,10 +15,15 @@ import type {
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { createGroupStateServiceFixture } from '../../state-sync/create-group-state-service-fixture.ts';
+import { createGroupStateServiceStub } from '../../state-sync/test-support/group-state-service-stub.ts';
+import { createReservedSummaryEntry } from '../presence/group-presence-test-runtime.ts';
 import { createGroupSnapshot } from './group-state-snapshot-test-fixtures.ts';
 
 interface CacheConvergenceCommandConstruction {
@@ -97,7 +96,7 @@ describe('GroupStateSnapshotReadThroughCache', () => {
         }
 
         const durable = {
-            ...createGroupStateServiceFixture(),
+            ...createGroupStateServiceStub(),
             readSnapshot: (groupRef: GroupRef) => repository.readSnapshot(groupRef),
             listSnapshots: (scope: GroupScope) => repository.listSnapshots(scope),
             listSnapshotsPage: (scope: GroupScope, options: GroupSnapshotPageOptions) => repository.listSnapshotsPage(scope, options)
@@ -218,9 +217,12 @@ async function convergePresenceSummaryForCacheTest(
         now: () => 2_001,
         serviceId: 'cache-convergence-test'
     });
-    const read = await work.read(command);
+    const read = await work.read(command, createReservedSummaryEntry(command));
     const computed = work.compute(command, read);
-    work.validate(command, read, computed);
+    const issues = work.validate(command, read, computed);
+    if (issues.length > 0) {
+        throw issues[0].cause;
+    }
     await runtime.begin(async (transaction) => {
         if (computed.summary.outcome === 'no-op') {
             return;
@@ -229,15 +231,14 @@ async function convergePresenceSummaryForCacheTest(
             transaction,
             runtime.groupStateEventStore
         );
-        const expectedRevision = computed.summary.expectedRevision;
-        if (computed.summary.operation === 'insert') {
-            requireConditionalWrite(await transactionRepository.insertPresenceSummary(computed.summary.summary));
-            return;
-        }
-        if (expectedRevision === null) {
-            throw new Error('Expected a prior revision for presence summary update');
-        }
-        requireConditionalWrite(await transactionRepository.updatePresenceSummary(computed.summary.summary, expectedRevision));
+        requireConditionalWrite(
+            computed.summary.operation === 'insert'
+                ? await transactionRepository.insertPresenceSummary(computed.summary.summary)
+                : await transactionRepository.updatePresenceSummary(
+                    computed.summary.summary,
+                    computed.summary.expectedRevision!
+                )
+        );
     });
 }
 

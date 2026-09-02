@@ -1,6 +1,5 @@
 import { groupStateMaintenanceRequestId } from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
 import { GroupMutationIdempotencyConflictError } from '@shared-server/rallar-system/group-state/group-state-service.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 import { BASE_EPOCH_MS, requireJoinCodeResult } from './group-state-concurrency-test-fixtures.ts';
@@ -194,17 +193,16 @@ describe('convergent group and presence state', () => {
             let randomCalls = 0;
             let rejectVolatileMaterialization = false;
             const requestId = `default-code-${index}`;
-            const service = createService(
-                runtime,
-                () => nowEpochMs,
-                undefined,
-                () => {
+            const service = createService({
+                runtimeRepository: runtime,
+                nowEpochMs: () => nowEpochMs,
+                injectedRandomId: () => {
                     if (rejectVolatileMaterialization) {
                         throw new Error('replay invoked random materialization');
                     }
                     return `generated-${index}-${++randomCalls}`;
                 }
-            );
+            });
             const request = {
                 ...testCase.request,
                 actorPrincipalId: 'alice',
@@ -240,11 +238,15 @@ describe('convergent group and presence state', () => {
         await seedOpenGroup(runtime, 'semantic-code-room');
         let randomCalls = 0;
         let rejectVolatileMaterialization = false;
-        const service = createService(runtime, BASE_EPOCH_MS + 2_000, undefined, () => {
-            if (rejectVolatileMaterialization) {
-                throw new Error('conflict invoked random materialization');
+        const service = createService({
+            runtimeRepository: runtime,
+            nowEpochMs: BASE_EPOCH_MS + 2_000,
+            injectedRandomId: () => {
+                if (rejectVolatileMaterialization) {
+                    throw new Error('conflict invoked random materialization');
+                }
+                return `semantic-code-${++randomCalls}`;
             }
-            return `semantic-code-${++randomCalls}`;
         });
         const requestId = 'semantic-code-request';
         const winner = requireJoinCodeResult(

@@ -14,7 +14,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './app-inbox-resource-fixtures.ts';
-import { createAppInboxTestDatabase, type AppInboxTestDatabase } from './app-inbox-test-database.ts';
+import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 
 // Anchor the seed clock to the real processing clock. The AppInbox stamps and
 // captures messages at Date.now(), so a fixed far-future base would make seeded
@@ -22,10 +22,19 @@ import { createAppInboxTestDatabase, type AppInboxTestDatabase } from './app-inb
 const NOW_EPOCH_MS = Date.now();
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
-interface AuthorisedWsConnectFacts extends StateScope {
-    readonly connectedAtEpochMs: number;
-    readonly expiresAtEpochMs: number;
+export interface AuthorisedWsCloseFacts {
+    readonly authSession: IssuedAuthSession;
+    readonly generationId: string;
+    readonly input: Readonly<{
+        applicationId: string;
+        workspaceId: string;
+        connectedAtEpochMs: number;
+        expiresAtEpochMs: number;
+    }>;
+    readonly disconnectedAtEpochMs: number;
+    readonly reason: string;
 }
+
 export interface AppInboxWsCloseHarness {
     readonly queue: TestResourceInbox;
     readonly reader: InboxQueueReader;
@@ -38,21 +47,29 @@ export interface AppInboxWsCloseHarness {
     readonly clients: ClientStateRepository;
     readonly groups: GroupStateRepository;
 }
-interface AppInboxWsCloseHarnessOptions {
+
+interface CreateAppInboxWsCloseHarnessInput {
     readonly onRollback?: () => void;
-    readonly onConditionalWrite?: FakeRuntimeStateRepository['beforeConditionalWrite'];
-}
-interface PausedLifecycleRead {
-    readonly reached: Promise<void>;
-    resume(): void;
+    readonly onConditionalWrite?: (
+        operation: 'insertIfAbsent' | 'upsertIfRevision' | 'deleteIfRevision',
+        namespace: string,
+        key: string
+    ) => void;
 }
 
-export interface AuthorisedWsCloseFacts {
+interface AppInboxWsCloseState {
+    readonly queue: TestResourceInbox;
+    readonly results: TestResourceInboxResults;
+    readonly runtimeRepository: FakeRuntimeStateRepository;
+    readonly database: ReturnType<typeof createAppInboxTestDatabase>;
     readonly authSession: IssuedAuthSession;
-    readonly generationId: string;
-    readonly input: AuthorisedWsConnectFacts;
-    readonly disconnectedAtEpochMs: number;
-    readonly reason: string;
+    readonly clientState: ReturnType<typeof createClientStateService>;
+    readonly groupState: ReturnType<typeof createGroupStateService>;
+}
+
+interface AppInboxWsCloseServiceRegistrationInput {
+    readonly reader: InboxQueueReader;
+    readonly state: AppInboxWsCloseState;
 }
 
 export function createAuthorisedWsCloseFacts(
@@ -75,11 +92,32 @@ export function createAuthorisedWsCloseFacts(
 }
 
 export async function createAppInboxWsCloseHarness(
-    options: AppInboxWsCloseHarnessOptions = {}
+    options: CreateAppInboxWsCloseHarnessInput = {}
 ): Promise<AppInboxWsCloseHarness> {
+    const state = await createAppInboxWsCloseState(options);
+    const reader = new InboxQueueReader(state.queue);
+    const secondReader = new InboxQueueReader(state.queue);
+    const services = createAppInboxWsCloseServices({ reader, state });
+    createAppInboxWsCloseServices({ reader: secondReader, state });
+
+    return {
+        queue: state.queue,
+        reader,
+        secondReader,
+        authSession: state.authSession,
+        client: services.client,
+        group: services.group,
+        clientState: state.clientState,
+        groupState: state.groupState,
+        clients: createTestClientStateRepository(state.runtimeRepository),
+        groups: createTestGroupStateRepository(state.runtimeRepository, state.database.groupEventStore)
+    };
+}
+
+async function createAppInboxWsCloseState(
+    options: CreateAppInboxWsCloseHarnessInput
+): Promise<AppInboxWsCloseState> {
     const queue = new TestResourceInbox();
-    const reader = new InboxQueueReader(queue);
-    const secondReader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
     const runtimeRepository = new FakeRuntimeStateRepository();
     runtimeRepository.beforeConditionalWrite = options.onConditionalWrite;
@@ -104,61 +142,43 @@ export async function createAppInboxWsCloseHarness(
         clientStateEventStore: database.clientEventStore,
         serviceId: 'server-12345678'
     });
-    const dependencies = { queue, results, database, clientState, groupState };
-    const { client, group } = installWsCloseReader(reader, dependencies);
-    installWsCloseReader(secondReader, dependencies);
-    return {
-        queue,
-        reader,
-        secondReader,
-        authSession,
-        client,
-        group,
-        clientState,
-        groupState,
-        clients: createTestClientStateRepository(runtimeRepository),
-        groups: createTestGroupStateRepository(runtimeRepository, database.groupEventStore)
-    };
+    return { queue, results, runtimeRepository, database, authSession, clientState, groupState };
 }
 
-interface WsCloseReaderDependencies {
-    readonly queue: TestResourceInbox;
-    readonly results: TestResourceInboxResults;
-    readonly database: AppInboxTestDatabase;
-    readonly clientState: ClientStateService;
-    readonly groupState: GroupStateService;
-}
-
-interface WsCloseReaderServices {
-    readonly client: AppClientInboxService;
-    readonly group: GroupStateInboxService;
-}
-
-function installWsCloseReader(
-    reader: InboxQueueReader,
-    dependencies: WsCloseReaderDependencies
-): WsCloseReaderServices {
-    const shared = {
-        inboxQueueReader: reader,
-        resourceInboxRepository: dependencies.queue,
-        resourceInboxResultsRepository: dependencies.results,
-        database: dependencies.database
-    };
-    return {
-        client: new AppClientInboxService(
-            { ...shared, clientStateService: dependencies.clientState },
-            { serviceId: 'server-12345678' }
-        ),
-        group: new GroupStateInboxService(
-            { ...shared, groupStateService: dependencies.groupState },
-            { serviceId: 'server-12345678' }
-        )
-    };
+function createAppInboxWsCloseServices(
+    input: AppInboxWsCloseServiceRegistrationInput
+): Readonly<{ client: AppClientInboxService; group: GroupStateInboxService; }> {
+    const client = new AppClientInboxService(
+        {
+            inboxQueueReader: input.reader,
+            resourceInboxRepository: input.state.queue,
+            resourceInboxResultsRepository: input.state.results,
+            database: input.state.database,
+            clientStateService: input.state.clientState
+        },
+        {
+            serviceId: 'server-12345678'
+        }
+    );
+    const group = new GroupStateInboxService(
+        {
+            inboxQueueReader: input.reader,
+            resourceInboxRepository: input.state.queue,
+            resourceInboxResultsRepository: input.state.results,
+            database: input.state.database,
+            groupStateService: input.state.groupState,
+            resultReader: input.state.groupState
+        },
+        {
+            serviceId: 'server-12345678'
+        }
+    );
+    return { client, group };
 }
 
 export function pauseNextLifecycleRead(
     state: Pick<ClientStateService | GroupStateService, 'sessionGenerationLifecycle'>
-): PausedLifecycleRead {
+): Readonly<{ reached: Promise<void>; resume(): void; }> {
     const lifecycle = state.sessionGenerationLifecycle;
     const originalRead = lifecycle.read.bind(lifecycle);
     const reached = Promise.withResolvers<void>();

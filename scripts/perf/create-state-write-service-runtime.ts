@@ -122,7 +122,8 @@ export function createStateWriteServiceRuntime({
             resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: results,
             database: instrumentedSql,
-            groupStateService: groupState
+            groupStateService: groupState,
+            resultReader: groupState
         },
         {
             serviceId,

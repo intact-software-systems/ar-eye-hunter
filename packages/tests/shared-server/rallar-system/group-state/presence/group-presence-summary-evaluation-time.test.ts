@@ -42,13 +42,11 @@ describe('group presence summary evaluation time', () => {
             evaluatedAtEpochMs: 2_000,
             summary: read.current?.value
         });
-        expect(() =>
-            validateGroupPresenceSummary({
-                ref: REF,
-                read,
-                computed
-            })
-        ).not.toThrow();
+        expect(validateGroupPresenceSummary({
+            ref: REF,
+            read,
+            computed
+        })).toEqual([]);
     });
 
     it('rebases stale presence-summary reads and validates dominating writes', () => {
@@ -103,13 +101,11 @@ describe('group presence summary evaluation time', () => {
             nowEpochMs: 2_000
         });
         expect(canonical).toEqual({ outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: base });
-        expect(() =>
-            validateGroupPresenceSummary({
-                ref: groupRef('pure-room'),
-                read,
-                computed: canonical
-            })
-        ).not.toThrow();
+        expect(validateGroupPresenceSummary({
+            ref: groupRef('pure-room'),
+            read,
+            computed: canonical
+        })).toEqual([]);
         const staleSession = presenceFor('alice', 'stale-session', 'stale-generation');
         const divergentValue = {
             ...base,
@@ -138,13 +134,11 @@ describe('group presence summary evaluation time', () => {
                 causalRevision: { groupRevision: 1, presenceRevision: 1 }
             }
         });
-        expect(() =>
-            validateGroupPresenceSummary({
-                ref: groupRef('pure-room'),
-                read: divergent,
-                computed: write
-            })
-        ).not.toThrow();
+        expect(validateGroupPresenceSummary({
+            ref: groupRef('pure-room'),
+            read: divergent,
+            computed: write
+        })).toEqual([]);
         const aheadValue = {
             ...divergentValue,
             causalRevision: { groupRevision: 2, presenceRevision: 1 }
@@ -167,14 +161,12 @@ describe('group presence summary evaluation time', () => {
             evaluatedAtEpochMs: 2_000,
             summary: aheadValue
         });
-        expect(() =>
-            validateGroupPresenceSummary({
-                ref: groupRef('pure-room'),
-                read: ahead,
-                computed: concurrent
-            })
-        ).not.toThrow();
-        expect(() =>
+        expect(validateGroupPresenceSummary({
+            ref: groupRef('pure-room'),
+            read: ahead,
+            computed: concurrent
+        })).toEqual([]);
+        expect(
             validateGroupPresenceSummary({
                 ref: groupRef('pure-room'),
                 read: {
@@ -185,8 +177,8 @@ describe('group presence summary evaluation time', () => {
                     )
                 },
                 computed: { outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: base }
-            })
-        ).toThrow(/canonical|key/i);
+            }).map((issue) => issue.cause.message)
+        ).toEqual(expect.arrayContaining([expect.stringMatching(/canonical|key/i)]));
     });
 });
 

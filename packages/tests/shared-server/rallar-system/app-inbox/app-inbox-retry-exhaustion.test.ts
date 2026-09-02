@@ -1,11 +1,10 @@
+import { describe, expect, it } from 'vitest';
+
 import { AppInboxReservationConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { createAppInboxRetryFinalizer } from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { DequeueResourceEntryController, type ResourceInboxRetryExhaustion } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { EntityStatus, toKeyAsString, type Key } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it } from 'vitest';
-
-const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 
 import {
     createAtomicHarness,
@@ -14,6 +13,8 @@ import {
     toPersistedAppInboxResource,
     toRecovery
 } from './test-support/app-inbox-transaction-test-runtime.ts';
+
+const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 
 describe('AppInbox retry exhaustion', () => {
     it('persists attempt-20 diagnostics and FAILED completion in one transaction', async () => {
@@ -213,6 +214,31 @@ describe('AppInbox retry exhaustion', () => {
             expect(stored?.resource).not.toContain('password');
         }
     );
+
+    it('materializes the reservation-conflict diagnostic before transaction entry', async () => {
+        const harness = createAtomicHarness({ attempts: 21, loseReservation: true });
+        const recover = createAppInboxRetryFinalizer({ database: harness.database.sql });
+        const key = new Proxy(harness.entry.key, {
+            ownKeys(target) {
+                if (harness.database.activeTransaction !== undefined) {
+                    throw new Error('Reservation key serialized inside transaction');
+                }
+                return Reflect.ownKeys(target);
+            }
+        });
+        const recovery = toRecovery({ ...harness.entry, key }, 21);
+
+        await expect(recover(recovery)).rejects.toMatchObject({
+            name: 'AppInboxReservationConflictError',
+            code: 'app-inbox-reservation-conflict',
+            key: harness.entry.key,
+            message: `App inbox reservation changed before completion: ${JSON.stringify(harness.entry.key)}`
+        });
+        expect(harness.database.state.results.size).toBe(0);
+        expect(harness.database.state.inbox.get(toKeyAsString(harness.entry.key))?.status).toBe(
+            EntityStatus.RESERVED
+        );
+    });
 
     it('rolls back a lost recovery reservation and finalizes its successor', async () => {
         const harness = createAtomicHarness({ attempts: 21, loseReservation: true });

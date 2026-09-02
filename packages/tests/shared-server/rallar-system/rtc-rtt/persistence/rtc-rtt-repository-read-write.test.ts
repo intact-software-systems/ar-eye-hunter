@@ -109,7 +109,7 @@ describe('RTC RTT repository reads and writes', () => {
                 return;
             }
             runtimeRepository.beforeConditionalWrite = undefined;
-            await runtimeRepository.insertIfAbsent(namespace, key, JSON.stringify(competing), 100);
+            await runtimeRepository.insertIfAbsent(namespace, key, JSON.stringify(competing), new Date(100).toISOString());
         };
 
         await expect(

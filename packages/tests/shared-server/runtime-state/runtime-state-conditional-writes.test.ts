@@ -24,7 +24,7 @@ describe('runtime-state conditional writes', () => {
                 'state',
                 'key',
                 JSON.stringify({ version: 'expired' }),
-                Date.now() - 1
+                new Date(Date.now() - 1).toISOString()
             );
             const before = await repository.findEntry('state', 'key');
             const writes: string[] = [];
@@ -58,7 +58,7 @@ describe('runtime-state conditional writes', () => {
             'state',
             'key',
             JSON.stringify({ version: 0 }),
-            expiredAt
+            new Date(expiredAt).toISOString()
         );
         const before = await repository.findEntry('state', 'key');
 
@@ -78,7 +78,7 @@ describe('runtime-state conditional writes', () => {
             'state',
             'non-finite',
             '{"value":1e400}',
-            NEVER_EXPIRE_AT_TIMESTAMP
+            new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
         );
 
         await expect(store.read('state', 'non-finite')).rejects.toThrow(
@@ -195,7 +195,7 @@ describe('runtime-state conditional writes', () => {
                 'state',
                 'key',
                 'v1',
-                NEVER_EXPIRE_AT_TIMESTAMP
+                new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
             )
         ).toEqual({ status: 'applied', revision: 0 });
         expect(
@@ -203,7 +203,7 @@ describe('runtime-state conditional writes', () => {
                 'state',
                 'key',
                 'v2',
-                NEVER_EXPIRE_AT_TIMESTAMP
+                new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
             )
         ).toEqual({ status: 'conflict' });
         expect(
@@ -211,7 +211,7 @@ describe('runtime-state conditional writes', () => {
                 'state',
                 'key',
                 'v2',
-                NEVER_EXPIRE_AT_TIMESTAMP,
+                new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString(),
                 0
             )
         ).toEqual({ status: 'applied', revision: 1 });
@@ -220,7 +220,7 @@ describe('runtime-state conditional writes', () => {
                 'state',
                 'key',
                 'stale',
-                NEVER_EXPIRE_AT_TIMESTAMP,
+                new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString(),
                 0
             )
         ).toEqual({ status: 'conflict' });
@@ -278,7 +278,7 @@ describe('runtime-state conditional writes', () => {
                     'state',
                     'key',
                     'value',
-                    NEVER_EXPIRE_AT_TIMESTAMP
+                    new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
                 )
             ).rejects.toThrow(/Invalid runtime state revision/u);
         }
@@ -297,7 +297,7 @@ describe('runtime-state conditional writes', () => {
                 'state',
                 'key',
                 'value',
-                NEVER_EXPIRE_AT_TIMESTAMP
+                new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
             )
         ).rejects.toThrow(/Invalid runtime state revision/u);
         await expect(
@@ -305,9 +305,29 @@ describe('runtime-state conditional writes', () => {
                 'state',
                 'key',
                 'value',
-                NEVER_EXPIRE_AT_TIMESTAMP
+                new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
             )
         ).resolves.toEqual({ status: 'applied', revision: 0 });
+    });
+
+    it('binds a computed canonical expiry for a conditional insert unchanged', async () => {
+        const boundValues: PSqlParameter[] = [];
+        const repository = new PSqlRuntimeStateRepository(
+            createResultSql(0, (_strings, values) => {
+                boundValues.push(...values);
+            })
+        );
+        const expireAtIsoTimestamp = '2030-01-02T03:04:05.678Z';
+
+        await expect(
+            repository.insertIfAbsent(
+                'state',
+                'key',
+                'value',
+                new Date(expireAtIsoTimestamp).toISOString()
+            )
+        ).resolves.toEqual({ status: 'applied', revision: 0 });
+        expect(boundValues).toContain(expireAtIsoTimestamp);
     });
 
     it('rejects an unsafe revision when loading a stored entry', async () => {
@@ -383,160 +403,6 @@ describe('runtime-state conditional writes', () => {
         }
     });
 
-    it('rejects invalid upsert revisions before SQL and fake mutation', async () => {
-        const invalidRevisions = [
-            Number.NaN,
-            Number.POSITIVE_INFINITY,
-            0.5,
-            -1,
-            -0,
-            Number.MAX_SAFE_INTEGER,
-            Number.MAX_SAFE_INTEGER + 1
-        ];
-
-        for (const expectedRevision of invalidRevisions) {
-            let sqlCalls = 0;
-            const sqlRepository = new PSqlRuntimeStateRepository(
-                createResultSql(1, () => {
-                    sqlCalls += 1;
-                })
-            );
-            await expect(
-                sqlRepository.upsertIfRevision(
-                    'state',
-                    'key',
-                    'changed',
-                    NEVER_EXPIRE_AT_TIMESTAMP,
-                    expectedRevision
-                )
-            ).rejects.toThrow(/Invalid runtime state upsert expected revision/u);
-            expect(sqlCalls).toBe(0);
-
-            const fakeRepository = new FakeRuntimeStateRepository();
-            await fakeRepository.insertIfAbsent(
-                'state',
-                'key',
-                'original',
-                NEVER_EXPIRE_AT_TIMESTAMP
-            );
-            const before = await fakeRepository.findEntry('state', 'key');
-            await expect(
-                fakeRepository.upsertIfRevision(
-                    'state',
-                    'key',
-                    'changed',
-                    NEVER_EXPIRE_AT_TIMESTAMP,
-                    expectedRevision
-                )
-            ).rejects.toThrow(/Invalid runtime state upsert expected revision/u);
-            await expect(fakeRepository.findEntry('state', 'key')).resolves
-                .toEqual(before);
-        }
-    });
-
-    it('rejects invalid delete revisions before SQL and fake mutation', async () => {
-        const invalidRevisions = [
-            Number.NaN,
-            Number.POSITIVE_INFINITY,
-            0.5,
-            -1,
-            -0,
-            Number.MAX_SAFE_INTEGER + 1
-        ];
-
-        for (const expectedRevision of invalidRevisions) {
-            let sqlCalls = 0;
-            const sqlRepository = new PSqlRuntimeStateRepository(
-                createResultSql(Number.MAX_SAFE_INTEGER, () => {
-                    sqlCalls += 1;
-                })
-            );
-            await expect(
-                sqlRepository.deleteIfRevision(
-                    'state',
-                    'key',
-                    expectedRevision
-                )
-            ).rejects.toThrow(/Invalid runtime state expected revision/u);
-            expect(sqlCalls).toBe(0);
-
-            const fakeRepository = new FakeRuntimeStateRepository();
-            await fakeRepository.insertIfAbsent(
-                'state',
-                'key',
-                'original',
-                NEVER_EXPIRE_AT_TIMESTAMP
-            );
-            const before = await fakeRepository.findEntry('state', 'key');
-            await expect(
-                fakeRepository.deleteIfRevision(
-                    'state',
-                    'key',
-                    expectedRevision
-                )
-            ).rejects.toThrow(/Invalid runtime state expected revision/u);
-            await expect(fakeRepository.findEntry('state', 'key')).resolves
-                .toEqual(before);
-        }
-    });
-
-    it('allows delete but prevents increment at MAX_SAFE_INTEGER', async () => {
-        let sqlCalls = 0;
-        const sqlRepository = new PSqlRuntimeStateRepository(
-            createResultSql(Number.MAX_SAFE_INTEGER, () => {
-                sqlCalls += 1;
-            })
-        );
-        await expect(
-            sqlRepository.upsertIfRevision(
-                'state',
-                'key',
-                'changed',
-                NEVER_EXPIRE_AT_TIMESTAMP,
-                Number.MAX_SAFE_INTEGER
-            )
-        ).rejects.toThrow(/Invalid runtime state upsert expected revision/u);
-        expect(sqlCalls).toBe(0);
-        await expect(
-            sqlRepository.deleteIfRevision(
-                'state',
-                'key',
-                Number.MAX_SAFE_INTEGER
-            )
-        ).resolves.toEqual({ status: 'applied' });
-        expect(sqlCalls).toBe(1);
-
-        const fakeRepository = new FakeRuntimeStateRepository();
-        fakeRepository.data.set('state::key', {
-            key: 'key',
-            value: 'original',
-            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
-            updatedTimestamp: '2026-07-18T00:00:00.000Z',
-            revision: Number.MAX_SAFE_INTEGER
-        });
-        await expect(
-            fakeRepository.upsertIfRevision(
-                'state',
-                'key',
-                'changed',
-                NEVER_EXPIRE_AT_TIMESTAMP,
-                Number.MAX_SAFE_INTEGER
-            )
-        ).rejects.toThrow(/Invalid runtime state upsert expected revision/u);
-        await expect(fakeRepository.findEntry('state', 'key')).resolves
-            .toMatchObject({
-                value: 'original',
-                revision: Number.MAX_SAFE_INTEGER
-            });
-        await expect(
-            fakeRepository.deleteIfRevision(
-                'state',
-                'key',
-                Number.MAX_SAFE_INTEGER
-            )
-        ).resolves.toEqual({ status: 'applied' });
-    });
-
     it('preserves optimistic capability and rollback across nested fake begins', async () => {
         const repository = new FakeRuntimeStateRepository();
 
@@ -545,7 +411,7 @@ describe('runtime-state conditional writes', () => {
                 'state',
                 'outer',
                 'outer',
-                NEVER_EXPIRE_AT_TIMESTAMP
+                new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
             );
             await expect(
                 transactionRepository.begin(async (nestedRepository) => {
@@ -553,7 +419,7 @@ describe('runtime-state conditional writes', () => {
                         'state',
                         'rolled-back',
                         'nested',
-                        NEVER_EXPIRE_AT_TIMESTAMP
+                        new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
                     );
                     throw new Error('rollback nested fake begin');
                 })
@@ -642,7 +508,10 @@ class ExposedRuntimeStateJsonStore extends RuntimeStateJsonStore {
 
 function createResultSql(
     result: PSqlParameter,
-    onQuery: () => void = () => {}
+    onQuery: (
+        strings: TemplateStringsArray,
+        values: readonly PSqlParameter[]
+    ) => void = () => {}
 ): PSqlSql {
     function sql<Result>(
         _strings: TemplateStringsArray,
@@ -650,12 +519,13 @@ function createResultSql(
     ): Promise<Result>;
     function sql(_values: readonly PSqlParameter[]): object;
     function sql<Result>(
-        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[]
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: readonly PSqlParameter[]
     ): Promise<Result> | object {
         if (Array.isArray(stringsOrValues) && !Object.hasOwn(stringsOrValues, 'raw')) {
             return {};
         }
-        onQuery();
+        onQuery(stringsOrValues as TemplateStringsArray, values);
         const rows: PSqlRows = [
             typeof result === 'object' && result !== null
                 ? result

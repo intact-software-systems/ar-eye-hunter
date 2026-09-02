@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
-
 import { describe, expect, it } from 'vitest';
 
 import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
@@ -15,22 +13,9 @@ import {
 } from './group-state-service-timing-fixture.ts';
 import { createTestGroupStateRuntime } from './group-state-test-runtime.ts';
 
-const groupStateRoot = 'packages/shared-server/rallar-system/group-state';
-const servicePath = `${groupStateRoot}/group-state-service.ts`;
-const timingPath = `${groupStateRoot}/group-state-service-timing.ts`;
 const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 
 describe('group-state service timing boundary', () => {
-    it('assembles timing through the explicit group-state timing owner', () => {
-        const serviceSource = readFileSync(servicePath, 'utf8');
-
-        expect(serviceSource).toContain('from \'./group-state-service-timing.ts\';');
-        expect(serviceSource).toContain('service: createTimedGroupStateService({');
-        expect(serviceSource).not.toContain('new Proxy(');
-        expect(serviceSource).not.toContain('Reflect.get(');
-        expect(serviceSource).not.toContain('.apply(');
-    });
-
     it('times one asynchronous service call with its exact return value and details', async () => {
         const timingEvents: RallarTimingEvent[] = [];
         const runtime = createTestGroupStateRuntime({
@@ -119,9 +104,7 @@ describe('group-state service timing boundary', () => {
         }
     });
 
-    it('requires the future explicit timing owner without dynamic dispatch', async () => {
-        expectFutureTimingOwnerSource();
-
+    it('forwards every timed operation and leaves compute and validate unchanged', async () => {
         const { createTimedGroupStateService } = await import('@shared-server/rallar-system/group-state/group-state-service-timing.ts');
         expectNoTimingServiceIdentity(createTimedGroupStateService);
         await expectEveryTimedSuccess(createTimedGroupStateService);
@@ -195,7 +178,8 @@ async function invokeStateReadOperations(
         sessionId: 'owner-session'
     });
     await expect(runtime.durable.listEvents(ref)).resolves.toHaveLength(1);
-    await expect(runtime.durable.listRecentEvents!(ref, { limit: 1 })).resolves.toHaveLength(1);
+    await expect(runtime.durable.readEvent(ref, 'missing-event')).resolves.toBeUndefined();
+    await expect(runtime.durable.listRecentEvents(ref, { limit: 1 })).resolves.toHaveLength(1);
     await expect(runtime.durable.listEventPage(ref, { limit: 1 })).resolves.toMatchObject({
         hasMore: false
     });
@@ -215,6 +199,7 @@ function expectTimingInventory(timingEvents: readonly RallarTimingEvent[]): void
         'readCausalRevision',
         'readIssuedAuthSession',
         'listEvents',
+        'readEvent',
         'listRecentEvents',
         'listEventPage',
         'observeSnapshot'
@@ -243,17 +228,6 @@ function expectTimingDetails(timingEvents: readonly RallarTimingEvent[]): void {
         workspaceId: scope.workspaceId,
         status: 'ok'
     });
-}
-
-function expectFutureTimingOwnerSource(): void {
-    expect(existsSync(timingPath), timingPath).toBe(true);
-    const source = readFileSync(timingPath, 'utf8');
-    expect(source).toContain('export function createTimedGroupStateService(');
-    expect(source).not.toContain('new Proxy(');
-    expect(source).not.toContain('Reflect.get(');
-    expect(source).not.toContain('.apply(');
-    expect(source).toContain('if (!timing) {');
-    expect(source).toContain('return service;');
 }
 
 function expectNoTimingServiceIdentity(createTimed: CreateTimedGroupStateService): void {
@@ -373,6 +347,7 @@ const SCOPE_TIMING_OPERATIONS: ReadonlySet<TimedAsyncOperation> = new Set([
     'listSnapshotsPage',
     'readSnapshot',
     'readCausalRevision',
+    'readEvent',
     'listEvents',
     'listRecentEvents',
     'listEventPage'

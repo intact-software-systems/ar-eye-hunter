@@ -13,7 +13,7 @@ const BASE_EPOCH_MS = Date.now();
 describe('group presence summary validation', () => {
     it('filters a stale admitted generation through the latest inactive membership', async () => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, BASE_EPOCH_MS);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS });
         await service.createGroup(SCOPE, {
             groupId: 'inactive-summary-filter',
             displayName: 'Inactive summary filter',
@@ -109,7 +109,7 @@ describe('group presence summary validation', () => {
         ] as const
     )('rejects %s before the summary CAS', async (_label, namespace, corrupt) => {
         const runtime = new GroupBarrierRepository();
-        const service = createService(runtime, BASE_EPOCH_MS);
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: BASE_EPOCH_MS });
         await service.createGroup(SCOPE, {
             groupId: `corrupt-summary-${namespace}`,
             displayName: 'Corrupt summary',

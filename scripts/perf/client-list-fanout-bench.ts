@@ -241,7 +241,7 @@ class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactio
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number
+        expireAtIsoTimestamp: string
     ): Promise<RuntimeStateConditionalWriteResult> {
         const compositeKey = this.toKey(namespace, key);
         if (this.data.has(compositeKey)) {
@@ -250,7 +250,7 @@ class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactio
         this.data.set(compositeKey, {
             key,
             value,
-            expireAtTimestamp,
+            expireAtTimestamp: Date.parse(expireAtIsoTimestamp),
             updatedTimestamp: new Date().toISOString(),
             revision: 0
         });
@@ -261,7 +261,7 @@ class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactio
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtIsoTimestamp: string,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
         const compositeKey = this.toKey(namespace, key);
@@ -273,7 +273,7 @@ class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactio
         this.data.set(compositeKey, {
             key,
             value,
-            expireAtTimestamp,
+            expireAtTimestamp: Date.parse(expireAtIsoTimestamp),
             updatedTimestamp: new Date().toISOString(),
             revision
         });

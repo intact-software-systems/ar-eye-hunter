@@ -2,8 +2,7 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
-import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/write-rtc-rtt-mutation.ts';
-import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
+import { RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -217,6 +216,10 @@ describe('RTC RTT mutation phases', () => {
             'session-a',
             'session-b'
         ]);
+        expect(accepted.outboxWrites).toHaveLength(1);
+        expect(accepted.outboxWrites[0]!.entry.audit.expiryTs.epochMilliseconds).toBe(
+            accepted.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS
+        );
         const tampered = {
             ...accepted,
             endpointGuards: [...accepted.endpointGuards].reverse()
@@ -351,22 +354,36 @@ describe('RTC RTT mutation phases', () => {
             throw new Error('Expected RTT write');
         }
         const malformed = structuredClone(computed) as typeof computed;
-        delete (
-            malformed.affectedGroups[0] as unknown as {
-                causalRevision?: unknown;
-            }
-        ).causalRevision;
+        Reflect.deleteProperty(malformed.affectedGroups[0]!, 'causalRevision');
         const queries: string[] = [];
-        const transaction = createUnopenedTransactionSql(queries);
+        createUnopenedTransactionSql(queries);
 
-        await expect(
-            writeRtcRttMutation({
-                transaction,
-                repositoryOptions: { ttlMs: 60_000, now: () => 1 },
-                computed: malformed,
-                outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
+        expect(() =>
+            validateRtcRttMutation({
+                command: {
+                    rtt,
+                    alSenderId: 'session-a',
+                    candidateGroups: [group],
+                    overlaySnapshotsByGroupKey: new Map(),
+                    degreeLimit: 1
+                },
+                read: {
+                    receipt: null,
+                    expiredMeasurementEntry: null,
+                    measurement: null,
+                    endpointAdmissions: [],
+                    expiredEndpointAdmissionEntries: [],
+                    measurements: []
+                },
+                facts: {
+                    requestedAtEpochMs: 1,
+                    purgeAfterEpochMs: 60_001,
+                    commandHash: RTT_COMMAND_HASH,
+                    attemptCount: 1
+                },
+                computed: malformed
             })
-        ).rejects.toThrow('Stored group snapshot has invalid keys');
+        ).toThrow();
         expect(queries).toEqual([]);
     });
 

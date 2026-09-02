@@ -42,7 +42,7 @@ describe('group topology config mutation record corruption', () => {
                     outboxIds: []
                 }
             }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
         );
 
         await expect(repository.findMutationRecord(groupRef, requestId)).rejects.toThrow(
@@ -121,7 +121,7 @@ describe('group topology config mutation record corruption', () => {
                     ...receipt
                 }
             }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
         );
 
         await expect(repository.findMutationRecord(groupRef, requestId)).rejects.toThrow(message);
@@ -162,7 +162,7 @@ describe('group topology config mutation record corruption', () => {
                         outboxIds: []
                     }
                 }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
             );
 
             await expect(repository.findMutationRecord(groupRef, requestId)).rejects.toBeInstanceOf(
@@ -232,7 +232,7 @@ describe('group topology config mutation record corruption', () => {
                     ...receipt
                 }
             }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
         );
 
         await expect(repository.findMutationRecord(groupRef, requestId)).rejects.toThrow(message);

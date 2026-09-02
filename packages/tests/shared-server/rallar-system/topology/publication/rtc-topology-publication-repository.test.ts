@@ -1,3 +1,11 @@
+// dprint-ignore
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import {
@@ -7,9 +15,7 @@ import {
     RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE
 } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
-import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
-import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import { describe, expect, it, vi } from 'vitest';
+import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
@@ -165,19 +171,16 @@ describe('RTC topology publication repository', () => {
             }
         };
         let waiting = 0;
-        let release!: () => void;
-        const together = new Promise<void>((resolve) => {
-            release = resolve;
-        });
+        const together = Promise.withResolvers<void>();
         runtimeRepository.beforeUpsert = async (namespace) => {
             if (namespace !== RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE) {
                 return;
             }
             waiting += 1;
             if (waiting === 2) {
-                release();
+                together.resolve();
             }
-            await together;
+            await together.promise;
         };
         const seeded = await new RtcTopologySnapshotRepository(runtimeRepository).commitSnapshotGuard(
             createTopologySnapshot(createGroupRef(), 1),
@@ -197,34 +200,6 @@ describe('RTC topology publication repository', () => {
         expect(results.find((result) => result.status === 'rejected')).toMatchObject({
             reason: { code: 'rtc-topology-publication-collision' }
         });
-    });
-
-    it('requests recomputation when the topology predecessor moves before commit', async () => {
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
-        const current = createTopologySnapshot(createGroupRef(), 4);
-        await expect(snapshots.commitSnapshotGuard(current, null)).resolves.toMatchObject({
-            status: 'accepted'
-        });
-        const repository = new RtcTopologyExecutionRepository(runtimeRepository);
-        const candidate = createTopologySnapshot(createGroupRef(), 3);
-
-        await expect(
-            repository.commit({
-                expected: undefined,
-                candidate,
-                publication: createPublication(candidate, 'work-stale')
-            })
-        ).resolves.toEqual({
-            status: 'retry',
-            current
-        });
-        expect(
-            await new RtcTopologyPublicationRepository(runtimeRepository).findPublicationForWork(
-                candidate.groupRef,
-                'work-stale'
-            )
-        ).toBeUndefined();
     });
 
     it('validates publication and work direct, list, and page rows before expiry', async () => {

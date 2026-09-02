@@ -5,7 +5,7 @@ import {
     toFormationActivateCommand,
     toFormationRetryPlanCommand
 } from '@shared-server/rallar-system/group-state/group-formation-mutation-command.ts';
-import { assertGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/assert-group-mutation-authority.ts';
+import { validateGroupMutationAuthority } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-authority.ts';
 import type { GroupMutationCommand, GroupMutationFacts } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 
@@ -63,12 +63,14 @@ describe('internal authority capability matrix', () => {
             expectedLayout: LAYOUT_A
         });
 
-        expect(() => assertGroupMutationAuthority(command, internalFacts('formation-criterion')))
+        expect(() => requireValidGroupMutationAuthority(command, internalFacts('formation-criterion')))
             .not.toThrow();
     });
 
     it('fails formation-criterion closed outside its two transitions', () => {
-        expect(() => assertGroupMutationAuthority(internalJoinCommand(), internalFacts('formation-criterion'))).toThrow('limited to criterion transitions');
+        expect(() => requireValidGroupMutationAuthority(internalJoinCommand(), internalFacts('formation-criterion'))).toThrow(
+            'limited to criterion transitions'
+        );
     });
 
     // Each mode fails closed outside its exact operation inventory.
@@ -76,13 +78,13 @@ describe('internal authority capability matrix', () => {
         { mode: 'topology-publication' as const, message: 'applyPlannedLayout' },
         { mode: 'activation-status' as const, message: 'status update' }
     ])('fails $mode closed on every current operation', (row) => {
-        expect(() => assertGroupMutationAuthority(internalJoinCommand(), internalFacts(row.mode)))
+        expect(() => requireValidGroupMutationAuthority(internalJoinCommand(), internalFacts(row.mode)))
             .toThrow(row.message);
         const criterionShaped = toFormationRetryPlanCommand({
             groupRef: GROUP_REF,
             formationEpoch: 2
         });
-        expect(() => assertGroupMutationAuthority(criterionShaped, internalFacts(row.mode)))
+        expect(() => requireValidGroupMutationAuthority(criterionShaped, internalFacts(row.mode)))
             .toThrow(row.message);
     });
 
@@ -92,7 +94,7 @@ describe('internal authority capability matrix', () => {
             input: { ...internalJoinCommand().input, actorPrincipalId: 'alice' }
         } as GroupMutationCommand;
 
-        expect(() => assertGroupMutationAuthority(command, internalFacts('formation-criterion')))
+        expect(() => requireValidGroupMutationAuthority(command, internalFacts('formation-criterion')))
             .toThrow('cannot claim semantic actor authority');
     });
 
@@ -103,7 +105,7 @@ describe('internal authority capability matrix', () => {
         };
         const command = toFormationRetryPlanCommand({ groupRef: GROUP_REF, formationEpoch: 1 });
 
-        expect(() => assertGroupMutationAuthority(command, facts))
+        expect(() => requireValidGroupMutationAuthority(command, facts))
             .toThrow('cannot use authenticated authority facts');
     });
 
@@ -129,9 +131,9 @@ describe('internal authority capability matrix', () => {
             input: { ...fenced.input, expectedFormationEpoch: null }
         };
 
-        expect(() => assertGroupMutationAuthority(withoutLayout, internalFacts('formation-criterion')))
+        expect(() => requireValidGroupMutationAuthority(withoutLayout, internalFacts('formation-criterion')))
             .toThrow('expected layout fence');
-        expect(() => assertGroupMutationAuthority(withoutEpoch, internalFacts('formation-criterion')))
+        expect(() => requireValidGroupMutationAuthority(withoutEpoch, internalFacts('formation-criterion')))
             .toThrow('expected formation epoch fence');
     });
 });
@@ -174,3 +176,13 @@ describe('criterion request identity v2', () => {
         expect(command.input.expectedFormationEpoch).toBe(4);
     });
 });
+
+function requireValidGroupMutationAuthority(
+    command: GroupMutationCommand,
+    facts: GroupMutationFacts
+): void {
+    const issues = validateGroupMutationAuthority(command, facts);
+    if (issues.length > 0) {
+        throw issues[0].cause;
+    }
+}

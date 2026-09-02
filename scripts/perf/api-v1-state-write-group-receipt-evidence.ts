@@ -10,12 +10,12 @@ import { decodeGroupMutationDescriptor } from '@shared-server/rallar-system/grou
 import {
     toGroupMutationDescriptorTargetIdentity
 } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
-import { assertGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/assert-group-mutation-command.ts';
+import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
 import {
     type GroupMutationCommand,
     type GroupMutationIdempotencyRecord
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/assert-group-mutation-result.ts';
+import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/validate-group-mutation-result.ts';
 import {
     toScopedGroupMutationCommandIdFromIdentity
 } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
@@ -178,9 +178,12 @@ function decodeScopedGroupPreparation(
         return undefined;
     }
     try {
-        assertGroupMutationCommand(preparation.command);
+        if (validateGroupMutationCommand(preparation.command).length > 0) {
+            return undefined;
+        }
+        const command = preparation.command as unknown as GroupMutationCommand;
         return {
-            command: preparation.command,
+            command,
             descriptor: decodeGroupMutationDescriptor(descriptor),
             commandHash: facts.commandHash
         };
@@ -262,18 +265,16 @@ export function readValidatedGroupReceiptIdentity({
     ref,
     scopedCommand
 }: ReadValidatedGroupReceiptIdentityInput): GroupMutationIdempotencyRecord | undefined {
-    try {
-        assertGroupMutationIdempotencyRecord(value, ref);
-    }
-    catch {
+    if (validateGroupMutationIdempotencyRecord(value, ref).length > 0) {
         return undefined;
     }
-    return value.requestId === scopedCommand.commandId &&
-            value.commandHash === scopedCommand.commandHash &&
-            value.receipt.commandId === scopedCommand.commandId &&
-            value.receipt.requestId === scopedCommand.requestId &&
-            value.receipt.commandHash === scopedCommand.commandHash
-        ? value
+    const record = value as GroupMutationIdempotencyRecord;
+    return record.requestId === scopedCommand.commandId &&
+            record.commandHash === scopedCommand.commandHash &&
+            record.receipt.commandId === scopedCommand.commandId &&
+            record.receipt.requestId === scopedCommand.requestId &&
+            record.receipt.commandHash === scopedCommand.commandHash
+        ? record
         : undefined;
 }
 

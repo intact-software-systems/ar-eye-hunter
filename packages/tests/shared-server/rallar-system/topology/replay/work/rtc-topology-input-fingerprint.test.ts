@@ -1,11 +1,18 @@
-import { describe, expect, it } from 'vitest';
+// dprint-ignore
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
 import {
     computeRtcTopologyInputFingerprint,
+    computeRtcTopologyInputFingerprintRow,
     RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
     RtcTopologyInputFingerprintRepository,
+    validateRtcTopologyInputFingerprintRow,
     type RtcTopologyInputFingerprintFacts
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
@@ -21,14 +28,51 @@ const GROUP_REF = {
     groupId: 'room-1'
 } as const;
 const FINGERPRINT = `sha256:${'a'.repeat(64)}`;
+const EFFECTIVE_CONFIG: EffectiveGroupTopologyConfig = {
+    topologyKind: 'auto',
+    degreeLimit: 4,
+    treeMinSize: 3,
+    meshMinSize: 2,
+    meshParamK: 2
+};
 
 describe('RTC topology input fingerprint persistence', () => {
-    it('round-trips the exact current fingerprint row', async () => {
-        const repository = new RtcTopologyInputFingerprintRepository(
-            new FakeRuntimeStateRepository()
-        );
+    it.each([
+        '2026-01-01T00:00:00.000Z',
+        '9999-12-31T23:59:59.998Z',
+        'not-a-timestamp'
+    ])('rejects altered fingerprint expiry %s before writing', (expireAtIsoTimestamp) => {
+        const computed = computeRtcTopologyInputFingerprintRow(GROUP_REF, FINGERPRINT);
+        expect(validateRtcTopologyInputFingerprintRow(GROUP_REF, FINGERPRINT, computed)).toEqual([]);
 
-        await repository.putFingerprint(GROUP_REF, FINGERPRINT);
+        const altered = { ...computed, expireAtIsoTimestamp };
+        expect(validateRtcTopologyInputFingerprintRow(GROUP_REF, FINGERPRINT, altered)).not.toEqual([]);
+    });
+
+    it('validates the exact computed fingerprint key and persisted bytes before writing', () => {
+        const computed = computeRtcTopologyInputFingerprintRow(GROUP_REF, FINGERPRINT);
+        expect(validateRtcTopologyInputFingerprintRow(GROUP_REF, FINGERPRINT, computed)).toEqual([]);
+        for (
+            const changed of [
+                { ...computed, key: groupStateGroupStorageKey({ ...GROUP_REF, groupId: 'another-room' }) },
+                { ...computed, value: JSON.stringify({ groupRef: GROUP_REF, fingerprint: `sha256:${'b'.repeat(64)}` }) },
+                { ...computed, value: JSON.stringify({ groupRef: GROUP_REF, fingerprint: FINGERPRINT, extra: true }) }
+            ]
+        ) {
+            expect(validateRtcTopologyInputFingerprintRow(GROUP_REF, FINGERPRINT, changed).length)
+                .toBeGreaterThan(0);
+        }
+    });
+
+    it('reads the exact current fingerprint row', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyInputFingerprintRepository(runtime);
+        await runtime.upsert(
+            RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE,
+            groupStateGroupStorageKey(GROUP_REF),
+            JSON.stringify({ groupRef: GROUP_REF, fingerprint: FINGERPRINT }),
+            NEVER_EXPIRE_AT_TIMESTAMP
+        );
 
         await expect(repository.findFingerprint(GROUP_REF)).resolves.toBe(FINGERPRINT);
     });
@@ -84,39 +128,31 @@ describe('RTC topology input fingerprint persistence', () => {
         );
     });
 
-    it('rejects an invalid fingerprint before writing', async () => {
-        const runtime = new FakeRuntimeStateRepository();
-        const repository = new RtcTopologyInputFingerprintRepository(runtime);
-
-        await expect(repository.putFingerprint(GROUP_REF, 'not-a-digest')).rejects.toThrow(
+    it('rejects an invalid input fingerprint during computation', () => {
+        expect(() => computeRtcTopologyInputFingerprintRow(GROUP_REF, 'not-a-digest')).toThrow(
             'RTC topology input fingerprint is invalid'
         );
-        await expect(
-            runtime.findAllEntries(RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE)
-        ).resolves.toEqual([]);
     });
 });
 
 describe('RTC topology input fingerprint inputs', () => {
-    // The valve bumps the group's snapshot version, which the planner would
-    // otherwise read as a fresh authority. The digest hashes the planning
-    // inputs alone, so a pause leaves change suppression latched and an
-    // outstanding connect fence still names the stored plan (decision 25).
+    // A transport pause changes the group revision but not the planning inputs,
+    // so it must preserve change suppression and the stored connection fence.
     it('is unchanged by a transport halt and its snapshot version bump', async () => {
         const flowing = await computeRtcTopologyInputFingerprint(
-            fingerprintFacts({ transportState: 'flowing', snapshotVersion: 4 })
+            createFingerprintFacts({ transportState: 'flowing', snapshotVersion: 4 })
         );
         const halted = await computeRtcTopologyInputFingerprint(
-            fingerprintFacts({ transportState: 'halted', snapshotVersion: 5 })
+            createFingerprintFacts({ transportState: 'halted', snapshotVersion: 5 })
         );
 
         expect(halted).toBe(flowing);
     });
 
     it('changes when a planning input changes', async () => {
-        const narrow = await computeRtcTopologyInputFingerprint(fingerprintFacts({}));
+        const narrow = await computeRtcTopologyInputFingerprint(createFingerprintFacts({}));
         const wide = await computeRtcTopologyInputFingerprint({
-            ...fingerprintFacts({}),
+            ...createFingerprintFacts({}),
             effectiveConfig: { ...EFFECTIVE_CONFIG, degreeLimit: EFFECTIVE_CONFIG.degreeLimit + 1 }
         });
 
@@ -124,15 +160,7 @@ describe('RTC topology input fingerprint inputs', () => {
     });
 });
 
-const EFFECTIVE_CONFIG: EffectiveGroupTopologyConfig = {
-    topologyKind: 'auto',
-    degreeLimit: 4,
-    treeMinSize: 3,
-    meshMinSize: 2,
-    meshParamK: 2
-};
-
-function fingerprintFacts(groupOverrides: Partial<Group>): RtcTopologyInputFingerprintFacts {
+function createFingerprintFacts(groupOverrides: Partial<Group>): RtcTopologyInputFingerprintFacts {
     return {
         group: {
             causalRevision: { groupRevision: 1, presenceRevision: 0 },

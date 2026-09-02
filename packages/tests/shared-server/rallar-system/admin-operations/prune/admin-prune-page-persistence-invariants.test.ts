@@ -6,7 +6,13 @@ import {
     toAdminPruneOutbox,
     type AdminPrunePageWork
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
-import { AdminPrunePageWorker, type AdminPrunePageComputed } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
+import {
+    AdminPrunePageWorker,
+    AdminPruneProgressConflictError,
+    toAdminPrunePageDelete,
+    type AdminPrunePageComputed,
+    type AdminPruneProgressWrite
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
 import {
     createAdminPruneAggregate,
     decodeAdminPruneAggregate,
@@ -29,8 +35,10 @@ describe('admin prune page persistence invariants', () => {
         const repository = new PSqlAdminPruneRepository((() => undefined) as never);
         const deleted = await repository.deletePage(
             transaction,
-            pageWork({ category: 'resource-inbox' }),
-            ['1', '2', '3']
+            toAdminPrunePageDelete(
+                pageWork({ category: 'resource-inbox' }),
+                ['1', '2', '3']
+            )
         );
 
         expect(deleted).toBe(3);
@@ -77,7 +85,8 @@ describe('admin prune page persistence invariants', () => {
             aggregate,
             expectedAggregate: JSON.stringify(aggregate),
             authority: { allowed: true, code: 'allowed' },
-            nowEpochMs: NOW
+            nowEpochMs: NOW,
+            serviceId: 'server-1'
         } as const;
         const computed = service.compute(command, read);
 
@@ -133,16 +142,28 @@ describe('admin prune page persistence invariants', () => {
             revision: 1
         } as const;
         const successorEntry = toAdminPruneAggregateEntry(aggregateSuccessor);
+        const aggregateSuccessorExpiryAtIsoTimestamp = successorEntry.audit.expiryTs.toString();
         const computed: AdminPrunePageComputed = {
             kind: 'page',
             jobId: aggregate.jobId,
             category: 'runtime-state',
             rowIds: [],
             deletedRows: 0,
+            deletion: toAdminPrunePageDelete(pageWork(), []),
             next: null,
+            successorOutboxWrite: null,
             expectedAggregate: JSON.stringify(aggregate),
             aggregateSuccessor: successorEntry,
-            finishedAtEpochMs: NOW
+            aggregateSuccessorExpiryAtIsoTimestamp,
+            progressConflictError: new AdminPruneProgressConflictError(),
+            pageChangedError: new Error('Admin prune page changed before delete'),
+            reservationChangedError: new Error('Admin prune reservation changed before commit'),
+            reservationFinish: {
+                key: { topicId: 'admin-prune', resourceId: aggregate.jobId, contextId: aggregate.jobId },
+                expectedAttempts: 1,
+                status: EntityStatus.COMPLETED,
+                completedAt: new Date(NOW)
+            }
         };
         const boundValues: Array<Parameters<PSqlSql>[0][number]> = [];
         const transaction = ((parts: TemplateStringsArray, ...values: Parameters<PSqlSql>[0]) => {
@@ -150,17 +171,56 @@ describe('admin prune page persistence invariants', () => {
             return Promise.resolve([{ ris_row_id: 1 }]);
         }) as never;
         const repository = new PSqlAdminPruneRepository((() => undefined) as never);
+        const instantFormat = Temporal.Instant.prototype.toString;
 
-        await repository.writeProgress(transaction, computed);
+        Temporal.Instant.prototype.toString = rejectTimestampFormattingDuringWrite;
+        try {
+            await repository.writeProgress(transaction, computed);
+        }
+        finally {
+            Temporal.Instant.prototype.toString = instantFormat;
+        }
 
         expect(boundValues).toContain(successorEntry.resource);
         expect(boundValues).toContain(successorEntry.status);
+        expect(boundValues).toContain(aggregateSuccessorExpiryAtIsoTimestamp);
         expect(boundValues).toContain(successorEntry.key.topicId);
         expect(boundValues).toContain(successorEntry.key.resourceId);
         expect(boundValues).toContain(successorEntry.key.contextId);
         expect(boundValues).toContain(computed.expectedAggregate);
     });
+
+    it('throws the exact computed progress conflict after a lost aggregate CAS', async () => {
+        const aggregate = createAdminPruneAggregate({
+            jobId: 'job-conflict',
+            generatedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            serverId: 'server-1',
+            requestedBy: 'admin-1',
+            requestedSessionId: 'session-1',
+            categories: ['runtime-state'],
+            expiredRows: { 'runtime-state': 0 }
+        });
+        const aggregateSuccessor = toAdminPruneAggregateEntry({ ...aggregate, revision: 1 });
+        const progressConflictError = new AdminPruneProgressConflictError();
+        const computed = {
+            expectedAggregate: JSON.stringify(aggregate),
+            aggregateSuccessor,
+            aggregateSuccessorExpiryAtIsoTimestamp: aggregateSuccessor.audit.expiryTs.toString(),
+            progressConflictError
+        } satisfies AdminPruneProgressWrite;
+        const transaction = (() => Promise.resolve([])) as never;
+        const repository = new PSqlAdminPruneRepository((() => undefined) as never);
+
+        await expect(repository.writeProgress(transaction, computed)).rejects.toBe(
+            progressConflictError
+        );
+    });
 });
+
+function rejectTimestampFormattingDuringWrite(): never {
+    throw new TypeError('Admin prune progress timestamp formatted inside write');
+}
 
 function pageWork(
     overrides: Partial<AdminPrunePageWork> = {}

@@ -1,6 +1,6 @@
 import { type GroupMutationFacts, type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import {
     groupStatePresenceAdmissionStorageKey,
@@ -67,14 +67,14 @@ describe('convergent group and presence state', () => {
             }
         };
 
-        expect(() =>
-            assertGroupMutation({
+        expect(
+            validateGroupMutation({
                 command,
                 read,
                 facts,
                 computed: malformed as never
-            })
-        ).toThrow(/command target|candidate identity|principal/i);
+            }).map((issue) => issue.cause.message)
+        ).toEqual(expect.arrayContaining([expect.stringMatching(/command target|candidate identity|principal/i)]));
     });
 
     it('binds heartbeat and disconnect read principals independently from corrupt rows', () => {
@@ -164,7 +164,7 @@ describe('convergent group and presence state', () => {
             const groupId = 'trusted-heartbeat-slot-room';
             const sessionId = 'alice-trusted-slot-session';
             const generationId = 'alice-trusted-slot-generation';
-            const service = createService(runtime, 2_000);
+            const service = createService({ runtimeRepository: runtime, nowEpochMs: 2_000 });
             await seedOpenGroup(runtime, groupId);
             await service.connectPresenceSession(SCOPE, groupId, sessionId, {
                 principalId: 'alice',

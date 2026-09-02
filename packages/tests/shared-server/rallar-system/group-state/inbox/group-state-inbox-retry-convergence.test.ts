@@ -10,7 +10,7 @@ describe('convergent group and presence state', () => {
         await seedOpenGroup(runtime, 'authorization-room');
 
         await expect(
-            createService(runtime, 2_000).updateGroup(SCOPE, 'authorization-room', {
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_000 }).updateGroup(SCOPE, 'authorization-room', {
                 displayName: 'Unauthorized',
                 actorPrincipalId: 'mallory',
                 requestId: 'unauthorized-update'
@@ -24,7 +24,7 @@ describe('convergent group and presence state', () => {
     it('re-authorizes a queued admin update after a concurrent demotion', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'demotion-race-room');
-        await createService(runtime, 1_100).upsertMember(SCOPE, 'demotion-race-room', 'bob', {
+        await createService({ runtimeRepository: runtime, nowEpochMs: 1_100 }).upsertMember(SCOPE, 'demotion-race-room', 'bob', {
             status: 'active',
             role: 'admin',
             actorPrincipalId: 'alice',
@@ -33,12 +33,12 @@ describe('convergent group and presence state', () => {
         runtime.conflictNextGroupDisplayName('Must not commit after demotion');
         runtime.armGroupReadBarrier(2);
         const [demotion, staleUpdate] = await Promise.allSettled([
-            createService(runtime, 2_000).setGroupMemberRole(SCOPE, 'demotion-race-room', 'bob', {
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_000 }).setGroupMemberRole(SCOPE, 'demotion-race-room', 'bob', {
                 role: 'member',
                 actorPrincipalId: 'alice',
                 requestId: 'demote-bob'
             }),
-            createService(runtime, 2_001).updateGroup(SCOPE, 'demotion-race-room', {
+            createService({ runtimeRepository: runtime, nowEpochMs: 2_001 }).updateGroup(SCOPE, 'demotion-race-room', {
                 displayName: 'Must not commit after demotion',
                 actorPrincipalId: 'bob',
                 requestId: 'queued-admin-update'
@@ -61,13 +61,7 @@ describe('convergent group and presence state', () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'group-phase-room');
         const timing: RallarTimingEvent[] = [];
-        const service = createService(
-            runtime,
-            2_000,
-            () => Promise.resolve(),
-            undefined,
-            (event) => timing.push(event)
-        );
+        const service = createService({ runtimeRepository: runtime, nowEpochMs: 2_000, sleep: () => Promise.resolve(), timing: (event) => timing.push(event) });
         const request = {
             displayName: 'Timed write',
             actorPrincipalId: 'alice',

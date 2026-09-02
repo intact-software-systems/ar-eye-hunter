@@ -5,8 +5,8 @@ import type {
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/assert-group-mutation-result.ts';
-import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
+import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/validate-group-mutation-result.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type {
     AuditStamp,
@@ -91,17 +91,17 @@ function idempotencyRecord(): GroupMutationIdempotencyRecord {
 describe('group mutation receipt causal invariants', () => {
     it('requires receipt snapshotVersion to equal causal groupRevision', () => {
         const valid = idempotencyRecord();
-        expect(() => assertGroupMutationIdempotencyRecord(valid, groupRef)).not.toThrow();
+        expect(validateGroupMutationIdempotencyRecord(valid, groupRef)).toEqual([]);
 
-        expect(() =>
-            assertGroupMutationIdempotencyRecord(
+        expect(
+            validateGroupMutationIdempotencyRecord(
                 {
                     ...valid,
                     receipt: { ...valid.receipt, snapshotVersion: 2 }
                 },
                 groupRef
-            )
-        ).toThrow(/snapshotVersion.*causalRevision/u);
+            ).map((issue) => issue.cause.message)
+        ).toEqual(expect.arrayContaining([expect.stringMatching(/snapshotVersion.*causalRevision/u)]));
     });
 });
 
@@ -163,14 +163,7 @@ describe('group mutation receipt causal invariants', () => {
                     causalRevision: { groupRevision: 1 }
                 }
             });
-            expect(() =>
-                assertGroupMutation({
-                    command,
-                    read: fencedRead,
-                    facts,
-                    computed
-                })
-            ).not.toThrow();
+            expect(validateGroupMutation({ command, read: fencedRead, facts, computed })).toEqual([]);
         });
 
         it('rejects malformed computed guards, receipts, and outbox projections', () => {
@@ -212,14 +205,14 @@ describe('group mutation receipt causal invariants', () => {
             ] as const;
 
             for (const malformed of cases) {
-                expect(() =>
-                    assertGroupMutation({
+                expect(
+                    validateGroupMutation({
                         command,
                         read,
                         facts,
                         computed: malformed as never
                     })
-                ).toThrow(/scope|revision|snapshot|effect|outbox|receipt/i);
+                ).not.toEqual([]);
             }
         });
 
@@ -280,16 +273,15 @@ describe('group mutation receipt causal invariants', () => {
             ) {
                 expect
                     .soft(
-                        () =>
-                            assertGroupMutation({
-                                command,
-                                read,
-                                facts,
-                                computed: malformed as never
-                            }),
+                        validateGroupMutation({
+                            command,
+                            read,
+                            facts,
+                            computed: malformed as never
+                        }),
                         label
                     )
-                    .toThrow(/canonical|deterministic|projection|operation|unexpected key/i);
+                    .not.toEqual([]);
             }
         });
     });

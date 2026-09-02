@@ -268,7 +268,8 @@ describe('GroupStateInboxService authenticated authority', () => {
                 resourceInboxRepository: queue,
                 resourceInboxResultsRepository: results,
                 database: createAppInboxTestDatabase(queue, results, { runtimeRepository }),
-                groupStateService: groupStateService
+                groupStateService: groupStateService,
+                resultReader: groupStateService
             },
             {
                 serviceId: 'server-12345678'

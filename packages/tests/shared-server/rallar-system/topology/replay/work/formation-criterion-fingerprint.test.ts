@@ -269,7 +269,7 @@ async function reserveGroupRevision(queue: InMemoryQueueBox, input: ProcessGroup
         senderId: 'criterion-server',
         previousEntry: await queue.getItem(toCoalescedGroupRevisionKey(input.group.group)) ?? null
     });
-    const entry = { ...work.entry, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } };
+    const entry = { ...work.entryWrite.entry, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } };
     await queue.enqueue(entry);
     return entry;
 }

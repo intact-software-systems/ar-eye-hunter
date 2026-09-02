@@ -42,7 +42,7 @@ describe('group topology config repository scope isolation', () => {
                 updatedByPrincipalId: 'owner',
                 requestId: null
             }),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
         );
 
         await expect(repository.listGenerationSources('config')).rejects.toThrow('not canonical');
@@ -76,7 +76,7 @@ describe('group topology config repository scope isolation', () => {
                 boundary.namespace,
                 boundary.key,
                 JSON.stringify(boundary.value),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
             );
             await expect(boundary.read(), boundary.label).rejects.toBeInstanceOf(
                 GroupTopologyConfigRepositoryInvariantCorruptionError

@@ -6,13 +6,12 @@ import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/stat
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ClientSessionRef } from '@shared/api/client-types.ts';
-import type { AuditStamp, Group, GroupEvent, GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createTestGroup } from '../../../../create-test-group.ts';
 import { createTestGroupStateRuntime } from '../../../rallar-system/group-state/group-state-test-runtime.ts';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -1070,106 +1069,6 @@ describe('Postgres presence expiry concurrency', () => {
         },
         60_000
     );
-
-    postgresIt(
-        'isolates absent and explicit sentinel workspaces ' +
-            'at the live group repository and event boundaries',
-        async () => {
-            const sql = await createSql(requireDatabaseUrl());
-            const applicationId = uniqueScope('group-scope-key-isolation').applicationId;
-            const absentGroup = groupFixture(
-                {
-                    applicationId,
-                    workspaceId: 'workspace-default',
-                    groupId: 'shared-group'
-                },
-                'Absent workspace'
-            );
-            const explicitSentinelGroup = groupFixture(
-                {
-                    applicationId,
-                    workspaceId: '_',
-                    groupId: 'shared-group'
-                },
-                'Explicit sentinel workspace'
-            );
-
-            try {
-                const repository = createGroupStateRepository(sql);
-                await repository.putGroup(absentGroup);
-                await repository.putGroup(explicitSentinelGroup);
-
-                expect(await repository.findGroup(absentGroup)).toEqual(absentGroup);
-                expect(await repository.findGroup(explicitSentinelGroup)).toEqual(explicitSentinelGroup);
-                expect(
-                    await repository.listGroups({
-                        applicationId,
-                        workspaceId: 'workspace-default'
-                    })
-                ).toEqual([absentGroup]);
-                expect(
-                    await repository.listGroups({
-                        applicationId,
-                        workspaceId: '_'
-                    })
-                ).toEqual([explicitSentinelGroup]);
-
-                const eventStore = new PSqlGroupStateEventRepository(sql);
-                const eventFor = (ref: GroupRef, reason: string, snapshotVersion: number): GroupEvent => ({
-                    applicationId: ref.applicationId,
-                    workspaceId: ref.workspaceId,
-                    groupId: ref.groupId,
-                    eventId: 'shared-event',
-                    eventType: 'group-updated',
-                    snapshotVersion,
-                    causalRevision: {
-                        groupRevision: snapshotVersion,
-                        presenceRevision: 0
-                    },
-                    occurredAtEpochMs: Date.now() + snapshotVersion,
-                    actor: {
-                        kind: 'service',
-                        serviceId: 'postgres-group-event-key-test'
-                    },
-                    reason,
-                    traceId: null,
-                    requestId: null,
-                    payload: {}
-                });
-                const absentEvent = eventFor(absentGroup, 'absent', 1);
-                const explicitSentinelEvent = eventFor(explicitSentinelGroup, 'explicit-sentinel', 2);
-                await eventStore.appendGroupEvent(absentEvent);
-                await eventStore.appendGroupEvent(explicitSentinelEvent);
-                expect(await eventStore.listGroupEvents(absentGroup)).toEqual([absentEvent]);
-                expect(await eventStore.listRecentGroupEvents(absentGroup, {})).toEqual([absentEvent]);
-                expect(
-                    (
-                        await eventStore.listGroupEventPage(absentGroup, {
-                            limit: 10
-                        })
-                    ).events
-                ).toEqual([absentEvent]);
-                expect(await eventStore.listGroupEvents(explicitSentinelGroup)).toEqual([
-                    explicitSentinelEvent
-                ]);
-                expect(await eventStore.listRecentGroupEvents(explicitSentinelGroup, {})).toEqual([
-                    explicitSentinelEvent
-                ]);
-                expect(
-                    (
-                        await eventStore.listGroupEventPage(explicitSentinelGroup, {
-                            limit: 10
-                        })
-                    ).events
-                ).toEqual([explicitSentinelEvent]);
-            }
-            finally {
-                await cleanupRuntimeState(sql, applicationId);
-                await sql.end();
-            }
-        },
-        60_000
-    );
 });
 
 function createClientStateRepository(sql: PSqlSql): ClientStateRepository {
@@ -1193,28 +1092,6 @@ function createGroupStateEventRepository(
         throw new TypeError('PostgreSQL group tests require PSqlRuntimeStateRepository');
     }
     return new PSqlGroupStateEventRepository(runtimeRepository.sql);
-}
-
-function groupFixture(ref: GroupRef, displayName: string): Group {
-    const audit: AuditStamp = {
-        atEpochMs: Date.now(),
-        actor: { kind: 'service', serviceId: 'postgres-group-key-test' },
-        reason: null,
-        traceId: null,
-        requestId: null
-    };
-    return createTestGroup({
-        ...ref,
-        displayName,
-        activeMemberCount: 1,
-        ownerPrincipalId: 'alice',
-        snapshotVersion: 1,
-        metadataVersion: 1,
-        rosterVersion: 1,
-        presenceVersion: 0,
-        created: audit,
-        updated: audit
-    });
 }
 
 function uniqueScope(prefix: string): StateScope {

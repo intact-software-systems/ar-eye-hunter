@@ -1,30 +1,28 @@
-import type { GroupRef } from '@shared/api/group-types.ts';
-
-import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
-
-import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import type { Sql } from 'postgres';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { type ClientMutationIdempotencyRecord } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-
-import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { readTopologyConfigMutationRecordBoundary } from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
-import type { Sql } from 'postgres';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
+import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
 import { toApiV1PostgresClient } from '../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
 import { parsePersistedResult } from './api-v1-state-write-attempt-evidence.ts';
 import {
+    decodeValidatedGroupReceiptIdentity,
     readScopedGroupCommandsByRequestId,
-    readValidatedGroupReceiptIdentity,
-    type ScopedGroupCommandExpectation
+    type ScopedGroupCommandExpectation,
+    type ScopedGroupCommandIdentity
 } from './api-v1-state-write-group-receipt-evidence.ts';
 import {
     computeProductionOutboxEvidence,
@@ -46,7 +44,9 @@ import {
     readStateWriteBenchmarkClientIndex,
     toStateWriteAppInboxExpectations,
     toStateWriteBenchmarkGroupContextId,
-    type StateWriteAppInboxExpectation
+    type PersistedStateWriteAppInboxIdentityRow,
+    type StateWriteAppInboxExpectation,
+    type StateWriteAppInboxIdentity
 } from './state-write/api-v1-state-write-app-inbox-evidence.ts';
 
 export interface StateWriteBenchmarkCommand {
@@ -72,6 +72,14 @@ export interface StateWriteDurableEvidence {
     readonly atomicCompletionFailures: number;
 }
 
+export interface QueryStateWriteDurableEvidenceInput {
+    readonly sql: Sql;
+    readonly scope: StateScope;
+    readonly commands: readonly StateWriteBenchmarkCommand[];
+    readonly groupCount: number;
+    readonly timingEvents: readonly RallarTimingEvent[];
+}
+
 interface AppInboxAttemptEvidence {
     readonly commandId: string;
     readonly operationId: string;
@@ -89,33 +97,48 @@ interface AppInboxAttemptEvidence {
     readonly durableResult: ReturnType<typeof parsePersistedResult>;
 }
 
-export interface QueryStateWriteDurableEvidenceInput {
+interface ReadAppInboxEvidenceInput {
     readonly sql: Sql;
-    readonly scope: StateScope;
-    readonly commands: readonly StateWriteBenchmarkCommand[];
-    readonly groupCount: number;
+    readonly expectations: readonly StateWriteAppInboxExpectation[];
     readonly timingEvents: readonly RallarTimingEvent[];
 }
 
-export async function queryStateWriteDurableEvidence({
-    sql,
-    scope,
-    commands,
-    groupCount,
-    timingEvents
-}: QueryStateWriteDurableEvidenceInput): Promise<StateWriteDurableEvidence> {
+interface ReadStateWriteCommandReceiptInput {
+    readonly command: StateWriteBenchmarkCommand;
+    readonly scope: StateScope;
+    readonly groupCount: number;
+    readonly clients: ClientStateRepository;
+    readonly groups: GroupStateRepository;
+    readonly topology: GroupTopologyConfigRepository;
+    readonly scopedGroupCommands: ReadonlyMap<string, ScopedGroupCommandIdentity>;
+}
+
+interface StateWriteAppInboxEvidenceRow extends PersistedStateWriteAppInboxIdentityRow {
+    readonly ri_status: string;
+    readonly ri_attempts: number | string;
+    readonly retry_delay_ms: number | string;
+    readonly due_age_ms: number | string;
+    readonly result_status: string | null;
+    readonly result_resource: string | null;
+}
+
+interface ToAppInboxAttemptEvidenceInput {
+    readonly row: StateWriteAppInboxEvidenceRow;
+    readonly identity: StateWriteAppInboxIdentity;
+    readonly expectation: StateWriteAppInboxExpectation;
+    readonly timingEvents: readonly RallarTimingEvent[];
+}
+
+export async function queryStateWriteDurableEvidence(
+    { sql, scope, commands, groupCount, timingEvents }: QueryStateWriteDurableEvidenceInput
+): Promise<StateWriteDurableEvidence> {
     const database = toApiV1PostgresClient(sql);
     const runtime = new PSqlRuntimeStateRepository(database);
-    const clients = new ClientStateRepository(
-        runtime,
-        new PSqlClientStateEventRepository(database)
-    );
-    const groups = new GroupStateRepository(
-        runtime,
-        new PSqlGroupStateEventRepository(database)
-    );
+    const clients = new ClientStateRepository(runtime, new PSqlClientStateEventRepository(database));
+    const groups = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(database));
     const topology = new GroupTopologyConfigRepository(runtime);
     const outbox = createProductionOutboxRepository(sql);
+
     const acceptedCommands = commands.filter((command) => command.status === 'accepted');
     const appInboxExpectations = toStateWriteAppInboxExpectations(
         acceptedCommands,
@@ -129,54 +152,16 @@ export async function queryStateWriteDurableEvidence({
     const receiptResults = await mapWithConcurrency(
         acceptedCommands,
         25,
-        async (command): Promise<ProductionReceiptEvidence | undefined> => {
-            const clientIndex = readStateWriteBenchmarkClientIndex(command.commandId);
-            const productionCommandIds = productionCommandIdsForRaw(command);
-
-            if (command.kind === 'profile-instance') {
-                const receipts = await Promise.all(
-                    productionCommandIds.map(
-                        async (requestId) =>
-                            await clients.findIdempotentClientMutationReceipt(
-                                { ...scope, principalId: `client-${clientIndex}` },
-                                requestId
-                            )
-                    )
-                );
-                if (
-                    !receipts.every((receipt, index) => isValidProductionReceipt(receipt, productionCommandIds[index]!))
-                ) {
-                    return undefined;
-                }
-                return projectClientReceiptEvidence(command.commandId, receipts);
-            }
-            if (command.kind === 'topology-source') {
-                const groupRef = { ...scope, groupId: `group-${clientIndex % groupCount}` };
-                const receipt = readValidatedTopologyMutationReceipt(
-                    await topology.findMutationRecord(groupRef, command.commandId),
-                    groupRef,
-                    command.commandId
-                );
-                return receipt ? projectTopologyReceiptEvidence(command.commandId, receipt) : undefined;
-            }
-            const groupRef = { ...scope, groupId: `group-${clientIndex % groupCount}` };
-            const scopedCommand = scopedGroupCommands.get(command.commandId);
-            if (scopedCommand === undefined) {
-                return undefined;
-            }
-            const receipt = await groups.findIdempotentGroupMutationReceipt(
-                groupRef,
-                scopedCommand.commandId
-            );
-            const validatedReceipt = readValidatedGroupReceiptIdentity({
-                value: receipt,
-                ref: groupRef,
-                scopedCommand
-            });
-            return validatedReceipt !== undefined
-                ? projectGroupReceiptEvidence(command.commandId, validatedReceipt)
-                : undefined;
-        }
+        (command) =>
+            readStateWriteCommandReceipt({
+                command,
+                scope,
+                groupCount,
+                clients,
+                groups,
+                topology,
+                scopedGroupCommands
+            })
     );
     const receipts = receiptResults.filter(
         (receipt): receipt is ProductionReceiptEvidence => receipt !== undefined
@@ -237,10 +222,130 @@ function createScopedGroupCommandExpectations(
     });
 }
 
-interface ReadAppInboxEvidenceInput {
-    readonly sql: Sql;
-    readonly expectations: readonly StateWriteAppInboxExpectation[];
-    readonly timingEvents: readonly RallarTimingEvent[];
+function toAppInboxAttemptEvidence({
+    row,
+    identity,
+    expectation,
+    timingEvents
+}: ToAppInboxAttemptEvidenceInput): AppInboxAttemptEvidence {
+    const transaction = timingEvents
+        .filter(
+            (event) =>
+                event.component === 'app-inbox-phase' &&
+                event.operation === 'transaction' &&
+                (
+                    event.requestId === row.ri_resource_id ||
+                    event.requestId === expectation.logicalResourceId
+                )
+        )
+        .at(-1);
+    const dueAgeMs = Number(transaction?.details?.dueAgeMs ?? row.due_age_ms);
+    return {
+        commandId: identity.commandId,
+        operationId: identity.operationId,
+        resourceId: row.ri_resource_id,
+        topicId: row.ri_topic_id,
+        contextId: row.fk_ext_bank_id,
+        status: row.ri_status,
+        resultStatus: row.result_status ?? 'MISSING',
+        attempts: Number(row.ri_attempts),
+        retryDelayMs: Number(row.retry_delay_ms),
+        dueAgeMs,
+        selectedLane: dueAgeMs >= 30_000 ? ('fairness' as const) : ('fast' as const),
+        transactionDurationMs: transaction?.durationMs ?? 0,
+        commandType: identity.commandType,
+        durableResult: parsePersistedResult(row.result_resource)
+    };
+}
+
+function toPhysicalKey(input: Key): string {
+    return [input.resourceId, input.topicId, input.contextId].join('\0');
+}
+
+export function isValidProductionReceipt(
+    value: Parameters<typeof validateClientMutationIdempotencyRecord>[0],
+    requestId: string
+): value is ClientMutationIdempotencyRecord {
+    try {
+        validateClientMutationIdempotencyRecord(value);
+    }
+    catch {
+        return false;
+    }
+    return value.requestId === requestId && value.receipt.commandId === requestId;
+}
+
+function decodeValidatedTopologyMutationReceipt(
+    value: Parameters<typeof readTopologyConfigMutationRecordBoundary>[0],
+    groupRef: GroupRef,
+    requestId: string
+): GroupTopologyConfigMutationReceipt | undefined {
+    try {
+        const record = readTopologyConfigMutationRecordBoundary(value, { groupRef, requestId });
+        return record.requestId === requestId && record.receipt.commandId === requestId
+            ? record.receipt
+            : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
+
+async function readStateWriteCommandReceipt({
+    command,
+    scope,
+    groupCount,
+    clients,
+    groups,
+    topology,
+    scopedGroupCommands
+}: ReadStateWriteCommandReceiptInput): Promise<ProductionReceiptEvidence | undefined> {
+    const clientIndex = readStateWriteBenchmarkClientIndex(command.commandId);
+    const productionCommandIds = productionCommandIdsForRaw(command);
+
+    if (command.kind === 'profile-instance') {
+        const receipts = await Promise.all(
+            productionCommandIds.map(
+                async (requestId) =>
+                    await clients.findIdempotentClientMutationReceipt(
+                        { ...scope, principalId: `client-${clientIndex}` },
+                        requestId
+                    )
+            )
+        );
+        if (
+            !receipts.every((receipt, index) => isValidProductionReceipt(receipt, productionCommandIds[index]!))
+        ) {
+            return undefined;
+        }
+        return projectClientReceiptEvidence(command.commandId, receipts);
+    }
+    if (command.kind === 'topology-source') {
+        const groupRef = { ...scope, groupId: `group-${clientIndex % groupCount}` };
+        const receipt = decodeValidatedTopologyMutationReceipt(
+            await topology.findMutationRecord(groupRef, command.commandId),
+            groupRef,
+            command.commandId
+        );
+        return receipt ? projectTopologyReceiptEvidence(command.commandId, receipt) : undefined;
+    }
+    const groupRef = { ...scope, groupId: `group-${clientIndex % groupCount}` };
+    const scopedCommand = scopedGroupCommands.get(command.commandId);
+    if (scopedCommand === undefined) {
+        return undefined;
+    }
+    const receipt = await groups.findIdempotentGroupMutationReceipt(
+        groupRef,
+        scopedCommand.commandId
+    );
+    const validatedReceipt = decodeValidatedGroupReceiptIdentity({
+        value: receipt,
+        ref: groupRef,
+        scopedCommand
+    });
+    return validatedReceipt !== undefined
+        ? projectGroupReceiptEvidence(command.commandId, validatedReceipt)
+        : undefined;
 }
 
 async function readAppInboxEvidence({
@@ -251,20 +356,7 @@ async function readAppInboxEvidence({
     if (expectations.length === 0) {
         return [];
     }
-    const rows = await sql<
-        readonly {
-            ri_resource_id: string;
-            ri_topic_id: string;
-            fk_ext_bank_id: string;
-            ri_resource: string;
-            ri_status: string;
-            ri_attempts: number | string;
-            retry_delay_ms: number | string;
-            due_age_ms: number | string;
-            result_status: string | null;
-            result_resource: string | null;
-        }[]
-    >`
+    const rows = await sql<readonly StateWriteAppInboxEvidenceRow[]>`
     select i.ri_resource_id, i.ri_topic_id, i.fk_ext_bank_id, i.ri_resource,
            i.ri_status, i.ri_attempts,
            coalesce(
@@ -303,70 +395,6 @@ async function readAppInboxEvidence({
                 `Benchmark AppInbox row differs from its expected command identity: ${expectation.commandId}`
             );
         }
-        const transaction = timingEvents
-            .filter(
-                (event) =>
-                    event.component === 'app-inbox-phase' &&
-                    event.operation === 'transaction' &&
-                    (
-                        event.requestId === row.ri_resource_id ||
-                        event.requestId === expectation.logicalResourceId
-                    )
-            )
-            .at(-1);
-        const dueAgeMs = Number(transaction?.details?.dueAgeMs ?? row.due_age_ms);
-        return [
-            {
-                commandId: identity.commandId,
-                operationId: identity.operationId,
-                resourceId: row.ri_resource_id,
-                topicId: row.ri_topic_id,
-                contextId: row.fk_ext_bank_id,
-                status: row.ri_status,
-                resultStatus: row.result_status ?? 'MISSING',
-                attempts: Number(row.ri_attempts),
-                retryDelayMs: Number(row.retry_delay_ms),
-                dueAgeMs,
-                selectedLane: dueAgeMs >= 30_000 ? ('fairness' as const) : ('fast' as const),
-                transactionDurationMs: transaction?.durationMs ?? 0,
-                commandType: identity.commandType,
-                durableResult: parsePersistedResult(row.result_resource)
-            }
-        ];
+        return [toAppInboxAttemptEvidence({ row, identity, expectation, timingEvents })];
     });
-}
-
-function toPhysicalKey(
-    input: Readonly<{ resourceId: string; topicId: string; contextId: string; }>
-): string {
-    return [input.resourceId, input.topicId, input.contextId].join('\0');
-}
-
-export function isValidProductionReceipt(
-    value: Parameters<typeof validateClientMutationIdempotencyRecord>[0],
-    requestId: string
-): value is ClientMutationIdempotencyRecord {
-    try {
-        validateClientMutationIdempotencyRecord(value);
-    }
-    catch {
-        return false;
-    }
-    return value.requestId === requestId && value.receipt.commandId === requestId;
-}
-
-function readValidatedTopologyMutationReceipt(
-    value: Parameters<typeof readTopologyConfigMutationRecordBoundary>[0],
-    groupRef: GroupRef,
-    requestId: string
-): GroupTopologyConfigMutationReceipt | undefined {
-    try {
-        const record = readTopologyConfigMutationRecordBoundary(value, { groupRef, requestId });
-        return record.requestId === requestId && record.receipt.commandId === requestId
-            ? record.receipt
-            : undefined;
-    }
-    catch {
-        return undefined;
-    }
 }

@@ -62,7 +62,7 @@ export class FakeRuntimeStateRepository extends RuntimeStateTestSupport.FakeRunt
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number
+        expireAtIsoTimestamp: string
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.conditionalWrites.push({
             operation: 'insert',
@@ -80,14 +80,14 @@ export class FakeRuntimeStateRepository extends RuntimeStateTestSupport.FakeRunt
             this.conflictCount += 1;
             return { status: 'conflict' };
         }
-        return await super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
+        return await super.insertIfAbsent(namespace, key, value, expireAtIsoTimestamp);
     }
 
     override async upsertIfRevision(
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtIsoTimestamp: string,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.conditionalWrites.push({
@@ -100,7 +100,7 @@ export class FakeRuntimeStateRepository extends RuntimeStateTestSupport.FakeRunt
             namespace,
             key,
             value,
-            expireAtTimestamp,
+            expireAtIsoTimestamp,
             expectedRevision
         );
     }

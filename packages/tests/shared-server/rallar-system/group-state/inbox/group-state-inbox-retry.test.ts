@@ -13,6 +13,7 @@ import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/gr
 import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { createTestGroup } from '../../../../create-test-group.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import {
     createAuthorityHarness,
@@ -44,6 +45,37 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             const results = new TestResourceInboxResults();
             const attempts: RetryAttempt[] = [];
             let authorized = true;
+            const currentGroup = createTestGroup({
+                applicationId: SCOPE.applicationId,
+                workspaceId: SCOPE.workspaceId,
+                groupId: 'outer-retry-room',
+                displayName: 'Before retry',
+                ownerPrincipalId: 'owner'
+            });
+            const currentSnapshot = {
+                causalRevision: { groupRevision: currentGroup.snapshotVersion, presenceRevision: 0 },
+                group: currentGroup,
+                members: [
+                    {
+                        applicationId: currentGroup.applicationId,
+                        workspaceId: currentGroup.workspaceId,
+                        groupId: currentGroup.groupId,
+                        principalId: 'owner',
+                        role: 'owner' as const,
+                        status: 'active' as const,
+                        joined: currentGroup.created,
+                        updated: currentGroup.updated,
+                        invitedByPrincipalId: null,
+                        invitationExpiresAtEpochMs: null,
+                        left: null,
+                        removed: null,
+                        banned: null
+                    }
+                ],
+                activeSessions: [],
+                memberCount: 1,
+                onlineMemberCount: 0
+            };
             const authorizedMutation = {
                 authorityProof: {
                     version: 1 as const,
@@ -112,10 +144,25 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     causalToken: 'causal-token',
                     queueResourceId: 'outer-retry-authority-change'
                 }),
-                read: async (command: Readonly<{ facts: { attemptCount: number; }; }>) => ({
-                    authorized,
-                    command
-                }),
+                read: async (command: Readonly<{ facts: { attemptCount: number; }; }>) => {
+                    if (!authorized) {
+                        attempts.push({
+                            attempt: command.facts.attemptCount,
+                            outcome: 'denied',
+                            authorized: false
+                        });
+                        throw new GroupMutationAuthorizationError(
+                            'Authenticated session changed before retry.'
+                        );
+                    }
+                    attempts.push({
+                        attempt: command.facts.attemptCount,
+                        outcome: 'conflict',
+                        authorized: true
+                    });
+                    authorized = false;
+                    throw new RuntimeStateWriteConflictError();
+                },
                 compute: (
                     _command: never,
                     read: Readonly<{
@@ -124,7 +171,50 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     }>
                 ) => ({
                     outcome: 'write',
-                    receipt: { commandId: 'outer-retry-authority-change' },
+                    guard: {
+                        kind: 'group',
+                        value: {
+                            ...currentGroup,
+                            displayName: 'Must Not Apply',
+                            snapshotVersion: currentGroup.snapshotVersion + 1
+                        }
+                    },
+                    members: [],
+                    event: {
+                        applicationId: SCOPE.applicationId,
+                        workspaceId: SCOPE.workspaceId,
+                        groupId: currentGroup.groupId,
+                        eventId: 'outer-retry-event',
+                        eventType: 'group-updated',
+                        snapshotVersion: currentGroup.snapshotVersion + 1,
+                        causalRevision: { groupRevision: 2, presenceRevision: 0 },
+                        occurredAtEpochMs: nowEpochMs,
+                        actor: {
+                            kind: 'session',
+                            sessionId: 'owner-session',
+                            principalId: 'owner'
+                        },
+                        reason: null,
+                        traceId: null,
+                        requestId: 'outer-retry-authority-change',
+                        payload: {}
+                    },
+                    receipt: {
+                        commandId: 'outer-retry-authority-change',
+                        requestId: 'outer-retry-authority-change',
+                        commandHash: `sha256:${'a'.repeat(64)}`,
+                        aggregateRef: { ...SCOPE, groupId: 'outer-retry-room' },
+                        outcome: 'applied',
+                        attemptCount: read.command.facts.attemptCount,
+                        acceptedStorageRevision: 2,
+                        snapshotVersion: 2,
+                        causalRevision: { groupRevision: 2, presenceRevision: 0 },
+                        eventId: 'outer-retry-event',
+                        outboxIds: [],
+                        joinCode: null,
+                        joinCodeExpiresAtEpochMs: null,
+                        rejection: null
+                    },
                     read
                 }),
                 validate: (
@@ -161,7 +251,9 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     attempts.push({ attempt, outcome: 'conflict', authorized: true });
                     authorized = false;
                     throw new RuntimeStateWriteConflictError();
-                }
+                },
+                readSnapshot: async () => currentSnapshot,
+                readEvent: async () => undefined
             };
             const service = new GroupStateInboxService(
                 {
@@ -169,7 +261,8 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     resourceInboxRepository: queue,
                     resourceInboxResultsRepository: results,
                     database: createAppInboxTestDatabase(queue, results),
-                    groupStateService: phaseService as never
+                    groupStateService: phaseService as never,
+                    resultReader: phaseService
                 },
                 {
                     serviceId: 'server-12345678'

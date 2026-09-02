@@ -3,9 +3,8 @@ import { Temporal } from '@js-temporal/polyfill';
 import {
     AppInboxType,
     type AppInboxEnqueueInput,
-    type AppInboxMessageContext
+    type AppInboxExecutionMetadata
 } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
-import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import type {
     ClientStateMutationService,
@@ -37,7 +36,7 @@ interface ClientMutationTransactionBoundaryOptions {
 interface ClientMutationTransactionBoundaryFixture {
     readonly actions: string[];
     readonly computedSnapshots: ClientSnapshot[];
-    readonly context: AppInboxMessageContext<ClientStateWritten>;
+    readonly context: AppInboxExecutionMetadata;
     readonly handler: ClientStateInboxHandler;
     readonly observedSnapshots: ClientSnapshot[];
     readonly results: TestResourceInboxResults;
@@ -68,6 +67,7 @@ export async function createClientMutationTransactionBoundaryFixture(
     const durable = createAutoAuthorizingClientStateService(runtimeRepository, database);
     const handler = new ClientStateInboxHandler({
         mutationService: observeMutationWrites(durable, { actions, computedSnapshots }),
+        mutationTiming: durable.mutationTiming,
         sessionGenerationLifecycle: durable.sessionGenerationLifecycle,
         expiryCandidates: durable,
         snapshotObserver: {
@@ -111,7 +111,7 @@ function observeMutationWrites(
     };
 }
 
-function createReservedClientContext(): AppInboxMessageContext<ClientStateWritten> {
+function createReservedClientContext(): AppInboxExecutionMetadata {
     const now = Date.now();
     const enqueue: AppInboxEnqueueInput = {
         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -153,7 +153,6 @@ function createReservedClientContext(): AppInboxMessageContext<ClientStateWritte
             route: { ...entry.key },
             payload: { typeId: enqueue.type, contentType: 'application/json', resource: entry.resource }
         },
-        entry,
-        encodeResult: (result) => encodeAppInboxResult(result, 'Client transaction test result')
+        entry
     };
 }

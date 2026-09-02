@@ -71,7 +71,7 @@ describe('group topology config repository reads and writes', () => {
                     updatedByPrincipalId: 'owner',
                     requestId: null
                 }),
-                NEVER_EXPIRE_AT_TIMESTAMP
+                new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
             );
         }
 
@@ -129,7 +129,7 @@ describe('group topology config repository reads and writes', () => {
             namespace,
             key,
             JSON.stringify(predecessor),
-            NEVER_EXPIRE_AT_TIMESTAMP
+            new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
         );
 
         await expect(
