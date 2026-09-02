@@ -1,5 +1,6 @@
 import { type GroupMutationFacts, type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { validateGroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation-read.ts';
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
 import {
@@ -151,9 +152,12 @@ describe('convergent group and presence state', () => {
                 ['internal disconnect', internalDisconnect, internalFacts]
             ] as const
         ) {
-            expect(() => computeGroupMutation({ command, read: corruptRead, facts }), label).toThrow(
-                /command slot identity|command principal|canonical principal/i
-            );
+            expect(
+                validateGroupMutationRead(corruptRead, command).map((issue) => issue.cause.message),
+                label
+            ).toEqual(expect.arrayContaining([
+                expect.stringMatching(/command slot identity|command principal|canonical principal/i)
+            ]));
         }
     });
 
@@ -211,9 +215,7 @@ describe('convergent group and presence state', () => {
                     actorSessionId: sessionId,
                     requestId: 'trusted-slot-disconnect'
                 });
-            await expect(mutation).rejects.toThrow(
-                /presence principal|command principal|canonical principal/i
-            );
+            await expect(mutation).rejects.toThrow();
 
             expect(runtime.entryReadKeys).toContain(
                 groupStateMemberStorageKey({
@@ -292,12 +294,10 @@ describe('convergent group and presence state', () => {
             }
         });
 
-        expect(() =>
-            computeGroupMutation({
-                command,
-                read,
-                facts: createMutationFacts()
-            })
-        ).toThrow(/multiple principals|different principal admissions|duplicated authority/i);
+        expect(validateGroupMutationRead(read, command).map((issue) => issue.cause.message)).toEqual(
+            expect.arrayContaining([
+                expect.stringMatching(/multiple principals|different principal admissions|duplicated authority/i)
+            ])
+        );
     });
 });

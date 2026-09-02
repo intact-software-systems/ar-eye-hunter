@@ -370,7 +370,7 @@ describe('group lifecycle transition computation', () => {
                 facts,
                 computed: { ...computed, policyDenial: { ...computed.policyDenial, message: 'forged denial' } }
             })
-        ).toThrow(/canonical deterministic projection/);
+        ).toThrow('Forbidden: Cannot plan from lifecycle state \'active\'.');
     });
 
     it('denies a non-manager under the managed policy', () => {

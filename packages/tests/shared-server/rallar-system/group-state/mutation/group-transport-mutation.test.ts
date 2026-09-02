@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GROUP_MUTATION_INTERNAL_AUTHORITY_MODES } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 import type { Group } from '@shared/api/group-types.ts';
@@ -215,13 +216,14 @@ describe('group transport mutation computation', () => {
     it.each(
         GROUP_MUTATION_INTERNAL_AUTHORITY_MODES.filter((mode) => mode !== 'none')
     )('refuses a transport command carried by %s authority', (internalAuthority) => {
-        expect(() =>
-            computeGroupMutation({
-                command: internalTransportCommand(),
-                read: createGroupAuthorityRead({ transportState: 'flowing' }),
-                facts: { ...createGroupAuthorityFacts(), internalAuthority, authenticatedAuthority: null }
-            })
-        ).toThrowError(TypeError);
+        const command = internalTransportCommand();
+        const read = createGroupAuthorityRead({ transportState: 'flowing' });
+        const facts = { ...createGroupAuthorityFacts(), internalAuthority, authenticatedAuthority: null };
+        const computed = computeGroupMutation({ command, read, facts });
+
+        expect(validateGroupMutation({ command, read, facts, computed })).toEqual(expect.arrayContaining([
+            expect.objectContaining({ cause: expect.any(TypeError) })
+        ]));
     });
 });
 

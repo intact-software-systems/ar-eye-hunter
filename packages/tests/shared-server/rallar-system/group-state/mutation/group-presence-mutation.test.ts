@@ -1,5 +1,7 @@
-import type { GroupMutationFacts, GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type { GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { validateGroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation-read.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { describe, expect, it } from 'vitest';
 import { createMutationCommand, createMutationFacts, createMutationRead } from '../group-state-concurrency-test-fixtures.ts';
 
@@ -38,11 +40,6 @@ describe('group presence mutation computation', () => {
                 expiresAtEpochMs: null
             }
         });
-        const facts: GroupMutationFacts = {
-            ...createMutationFacts(),
-            internalAuthority: 'session-cleanup',
-            authenticatedAuthority: null
-        };
         const appointment = createMutationCommand({
             operation: 'appointDirector',
             input: {
@@ -54,20 +51,16 @@ describe('group presence mutation computation', () => {
             }
         });
 
-        expect(() =>
-            computeGroupMutation({
-                command: disconnect,
-                read: internalRead,
-                facts
-            })
-        ).toThrow(/target presence principal.*command|command slot identity/i);
-        expect(() =>
-            computeGroupMutation({
-                command: appointment,
-                read,
-                facts: createMutationFacts()
-            })
-        ).toThrow(/target presence principal.*command|command slot identity/i);
+        expect(validateGroupMutationRead(internalRead, disconnect).map((issue) => issue.cause.message)).toEqual(
+            expect.arrayContaining([
+                expect.stringMatching(/target presence principal.*command|command slot identity/i)
+            ])
+        );
+        expect(validateGroupMutationRead(read, appointment).map((issue) => issue.cause.message)).toEqual(
+            expect.arrayContaining([
+                expect.stringMatching(/target presence principal.*command|command slot identity/i)
+            ])
+        );
     });
 });
 

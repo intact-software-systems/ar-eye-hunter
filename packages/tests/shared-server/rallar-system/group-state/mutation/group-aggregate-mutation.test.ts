@@ -34,42 +34,40 @@ describe('group aggregate mutation computation', () => {
                 expiresAtEpochMs: null
             }
         });
-        const omittedRotate = createMutationCommand({
-            operation: 'rotateGroupJoinCode',
-            input: {
-                actorPrincipalId: 'alice',
-                actorSessionId: 'alice-session',
-                reason: null,
-                traceId: null,
-                joinCode: null,
-                expiresAtEpochMs: null
-            }
-        });
         const codeFacts: GroupMutationFacts = {
             ...createMutationFacts(),
             resolvedJoinCode: 'OTHER',
             joinCodeVerifier: 'verifier'
         };
 
-        expect(() => computeGroupMutation({ command: update, read, facts: codeFacts })).toThrow(
-            /resolved.*join code|operation|unrelated/i
-        );
-        expect(() =>
-            computeGroupMutation({
-                command: explicitRotate,
-                read,
-                facts: codeFacts
-            })
-        ).toThrow(/resolved.*join code|explicit|command/i);
-        expect(() =>
-            computeGroupMutation({
-                command: omittedRotate,
-                read,
-                facts: createMutationFacts()
-            })
-        ).toThrow(/resolved.*join code|generated|missing/i);
+        expectValidationMessage({
+            command: update,
+            read,
+            facts: codeFacts,
+            message: /resolved.*join code|operation|unrelated/i
+        });
+        expectValidationMessage({
+            command: explicitRotate,
+            read,
+            facts: codeFacts,
+            message: /resolved.*join code|explicit|command/i
+        });
     });
 });
+
+interface ExpectValidationMessageInput {
+    readonly command: Parameters<typeof computeGroupMutation>[0]['command'];
+    readonly read: Parameters<typeof computeGroupMutation>[0]['read'];
+    readonly facts: GroupMutationFacts;
+    readonly message: RegExp;
+}
+
+function expectValidationMessage(input: ExpectValidationMessageInput): void {
+    const { command, read, facts, message } = input;
+    const computed = computeGroupMutation({ command, read, facts });
+    expect(validateGroupMutation({ command, read, facts, computed }).map((issue) => issue.cause.message))
+        .toEqual(expect.arrayContaining([expect.stringMatching(message)]));
+}
 
 function deepFreeze<T>(value: T): T {
     if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {

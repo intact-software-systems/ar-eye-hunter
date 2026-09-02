@@ -19,6 +19,7 @@ import {
 } from '../../persistence/validate-persisted-group-presence.ts';
 import { validateStoredGroup } from '../../persistence/validate-persisted-group.ts';
 import { validateGroupExpiredStateAuthority } from '../../presence/group-expired-state-authority.ts';
+import { validateInitialGroupSnapshotPredecessor } from '../../presence/group-initial-presence-summary.ts';
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
 import { resolveGroupMutationReadIdentities } from '../read/resolve-group-mutation-read-identities.ts';
@@ -71,6 +72,9 @@ export function validateGroupMutationRead(
     const groupIssues = validateStoredGroupRead(read, ref);
     issues.push(...groupIssues, ...validateGroupMutationAuthorityPresenceReads(read, ref));
     issues.push(...validateSummaryAndIdempotencyReads(read, command, ref));
+    if (command.operation === 'createGroup') {
+        issues.push(...validateInitialGroupSnapshotPredecessor(read.expiredGroupEntry, read.presenceSummary));
+    }
     issues.push(...validateGroupMutationOperationReads(read, command));
     if (groupIssues.length > 0) {
         return issues;
@@ -220,4 +224,3 @@ function validateSummaryAndIdempotencyReads(
     issues.push(...validateGroupMutationIdempotencyRecord(read.idempotency.value, ref));
     return issues;
 }
-
