@@ -204,6 +204,9 @@ checker does not substitute for following production symbols.
   validation, sorting, candidate/event/outbox construction, arbitrary helpers,
   and other precomputable work before transaction entry. Deterministic work is
   non-waivable even when cheap or under deadline pressure.
+- Run `npm run check:transaction-writes` for authored package or API mutation
+  paths. Treat its lexical findings as blocking; helper provenance and SQL
+  semantics remain required human review boundaries.
 - Treat transaction timing and value provenance as separate facts. A value
   desired only for a transaction winner is not thereby database-derived. Only
   actual database-returned facts justify inside-transaction refinement. One

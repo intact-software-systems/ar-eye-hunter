@@ -62,6 +62,9 @@ compute, validate, and write. Prove through transaction and redelivery behavior
 that the handler and persistence helper do not own an inner retry loop. Prove that
 inside-transaction refinement starts from actual database-returned facts, and
 keep human review responsible for PostgreSQL semantics.
+Run `npm run check:transaction-writes` for affected authored package or API
+mutation paths. The check supplements semantic tests; helper provenance and
+PostgreSQL business semantics remain human review boundaries.
 
 For both phases, the same explicit input produces the same result. They perform
 no repository reads, clocks, randomness, mutable dependency lookups, or hidden
