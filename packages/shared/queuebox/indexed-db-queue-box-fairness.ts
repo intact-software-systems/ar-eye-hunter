@@ -73,5 +73,5 @@ function earlierFairnessState(left: FairnessState, right: FairnessState): Fairne
     if (dueOrder !== 0) {
         return dueOrder < 0 ? left : right;
     }
-    return indexedDB.cmp(leftEntry.keyString, rightEntry.keyString) <= 0 ? left : right;
+    return leftEntry.keyString <= rightEntry.keyString ? left : right;
 }

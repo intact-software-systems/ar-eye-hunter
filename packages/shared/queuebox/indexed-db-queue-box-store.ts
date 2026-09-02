@@ -1,5 +1,5 @@
-import { EntityStatus, type ResourceEntryKeyString } from './ResourceEntry.ts';
 import type { StoredResourceEntry } from './indexed-db-queue-box-entry.ts';
+import { EntityStatus, type ResourceEntryKeyString } from './ResourceEntry.ts';
 
 export type ReadFairnessStoredQueueEntriesInput = Readonly<{
     db: IDBDatabase;

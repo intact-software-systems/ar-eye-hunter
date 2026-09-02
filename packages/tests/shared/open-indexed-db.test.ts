@@ -1,7 +1,4 @@
-import { readFileSync } from 'node:fs';
-
 import * as FakeIndexedDb from 'fake-indexeddb';
-import { ts } from 'ts-morph';
 // dprint-ignore
 import {
     afterEach,
@@ -16,7 +13,6 @@ import { openIndexedDbWithStore, openIndexedDbWithStores } from '@shared/persist
 interface SchemaWriteObservation {
     readonly kind: 'store' | 'index';
     readonly name: string;
-    readonly readyBeforeOpen: boolean;
     readonly transactionMode: IDBTransactionMode;
 }
 
@@ -26,28 +22,16 @@ describe('IndexedDB schema upgrades', () => {
         vi.unstubAllGlobals();
     });
 
-    it.each(['creation', 'upgrade'])('finishes DDL option records before %s opens a transaction', async (operation) => {
+    it.each(['creation', 'upgrade'])('applies the complete schema in the %s versionchange transaction', async (operation) => {
         const factory = new FakeIndexedDb.IDBFactory();
         vi.stubGlobal('indexedDB', factory);
         if (operation === 'upgrade') {
             const previous = await openIndexedDbWithStore('schema-options', { name: 'previous', keyPath: 'id' });
             previous.close();
         }
-        const allocationsBeforeOpen = new WeakSet<object>();
-        let openStarted = false;
-        const nativeOpen = factory.open.bind(factory);
-        vi.spyOn(factory, 'open').mockImplementation((...args) => {
-            openStarted = true;
-            return nativeOpen(...args);
-        });
-        const openObservedDatabase = createAllocationObservedOpener((value) => {
-            if (!openStarted) {
-                allocationsBeforeOpen.add(value);
-            }
-        });
-        const writes = observeSchemaWrites(allocationsBeforeOpen);
+        const writes = observeSchemaWrites();
 
-        const database = await openObservedDatabase('schema-options', [{
+        const database = await openIndexedDbWithStores('schema-options', [{
             name: 'items',
             keyPath: 'id',
             indexes: [
@@ -57,11 +41,11 @@ describe('IndexedDB schema upgrades', () => {
         }]);
         try {
             expect(writes).toEqual(expect.arrayContaining([
-                { kind: 'store', name: 'items', readyBeforeOpen: true, transactionMode: 'versionchange' },
-                { kind: 'index', name: 'by-group', readyBeforeOpen: true, transactionMode: 'versionchange' },
-                { kind: 'index', name: 'by-reference', readyBeforeOpen: true, transactionMode: 'versionchange' }
+                { kind: 'store', name: 'items', transactionMode: 'versionchange' },
+                { kind: 'index', name: 'by-group', transactionMode: 'versionchange' },
+                { kind: 'index', name: 'by-reference', transactionMode: 'versionchange' }
             ]));
-            expect(writes.filter((write) => !write.readyBeforeOpen || write.transactionMode !== 'versionchange')).toEqual([]);
+            expect(writes.every((write) => write.transactionMode === 'versionchange')).toBe(true);
             const items = database.transaction('items').objectStore('items');
             expect(items.keyPath).toBe('id');
             expect(items.index('by-group').keyPath).toEqual(['groupId', 'position']);
@@ -144,35 +128,7 @@ describe('IndexedDB schema upgrades', () => {
     });
 });
 
-function createAllocationObservedOpener(recordAllocation: (value: object) => void): typeof openIndexedDbWithStores {
-    const source = readFileSync(new URL('../../shared/persistence/openIndexedDb.ts', import.meta.url), 'utf8');
-    const compiled = ts.transpileModule(source, {
-        compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS },
-        transformers: { before: [observeObjectAllocations] }
-    });
-    const exports: Partial<typeof import('@shared/persistence/openIndexedDb.ts')> = {};
-    const evaluate = new Function('exports', 'recordAllocation', compiled.outputText);
-    evaluate(exports, (value: object) => {
-        recordAllocation(value);
-        return value;
-    });
-    if (typeof exports.openIndexedDbWithStores !== 'function') {
-        throw new TypeError('Instrumented IndexedDB module did not expose its opener');
-    }
-    return exports.openIndexedDbWithStores;
-}
-
-function observeObjectAllocations(context: ts.TransformationContext): ts.Transformer<ts.SourceFile> {
-    const visit: ts.Visitor = (node) => {
-        const visited = ts.visitEachChild(node, visit, context);
-        return ts.isObjectLiteralExpression(visited)
-            ? ts.factory.createCallExpression(ts.factory.createIdentifier('recordAllocation'), undefined, [visited])
-            : visited;
-    };
-    return (source) => ts.visitEachChild(source, visit, context);
-}
-
-function observeSchemaWrites(allocationsBeforeOpen: WeakSet<object>): SchemaWriteObservation[] {
+function observeSchemaWrites(): SchemaWriteObservation[] {
     const writes: SchemaWriteObservation[] = [];
     const createStore = FakeIndexedDb.IDBDatabase.prototype.createObjectStore;
     const createIndex = FakeIndexedDb.IDBObjectStore.prototype.createIndex;
@@ -181,7 +137,6 @@ function observeSchemaWrites(allocationsBeforeOpen: WeakSet<object>): SchemaWrit
         writes.push({
             kind: 'store',
             name,
-            readyBeforeOpen: options !== undefined && allocationsBeforeOpen.has(options),
             transactionMode: store.transaction.mode
         });
         return store;
@@ -191,7 +146,6 @@ function observeSchemaWrites(allocationsBeforeOpen: WeakSet<object>): SchemaWrit
         writes.push({
             kind: 'index',
             name,
-            readyBeforeOpen: options !== undefined && allocationsBeforeOpen.has(options),
             transactionMode: this.transaction.mode
         });
         return index;

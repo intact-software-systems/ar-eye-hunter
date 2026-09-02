@@ -5,10 +5,11 @@ import '../setup-browser-indexeddb.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
 import { encodeStoredResourceEntry } from '@shared/queuebox/indexed-db-queue-box-entry.ts';
+import { computeIndexedDbFairnessReservation } from '@shared/queuebox/indexed-db-queue-box-fairness.ts';
 import { readStoredQueueEntry } from '@shared/queuebox/indexed-db-queue-box-store.ts';
 import { writeComputedIndexedDbQueueMutations } from '@shared/queuebox/indexed-db-queue-box-write.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, ResourceEntry, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('IndexedDbQueueBox computed writes', () => {
     it('allows only one writer to commit a computed revision', async () => {
@@ -76,6 +77,39 @@ describe('IndexedDbQueueBox computed writes', () => {
         expect(committed).toBe(false);
         expect((await readStoredQueueEntry(db, storeName, firstKey))?.resource).toBe(first.resource);
         expect((await readStoredQueueEntry(db, storeName, secondKey))?.resource).toBe(second.resource);
+    });
+
+    it('computes fairness ordering without reading the IndexedDB global', () => {
+        const dueAt = Temporal.Instant.from('2026-01-01T12:00:00Z');
+        const stored = ['z-type', 'a-type'].map((typeId) => ({
+            ...encodeStoredResourceEntry(createEntry(typeId, typeId), 0),
+            typeId,
+            status: EntityStatus.RETRY,
+            fairnessDueEpochMs: Number(dueAt.epochMilliseconds),
+            dequeueAudit: {
+                attempts: 0,
+                nextTs: dueAt.toString()
+            }
+        }));
+        vi.stubGlobal('indexedDB', undefined);
+        try {
+            const computed = computeIndexedDbFairnessReservation({
+                entriesByType: new Map([
+                    ['z-type', [stored[0]]],
+                    ['a-type', [stored[1]]]
+                ]),
+                maxAttempts: 3,
+                maxToReserve: 1,
+                maxToScan: 2,
+                now: dueAt,
+                requestedTypes: ['z-type', 'a-type']
+            });
+
+            expect([...computed.result.values()][0]?.entry.typeId).toBe('a-type');
+        }
+        finally {
+            vi.unstubAllGlobals();
+        }
     });
 });
 
