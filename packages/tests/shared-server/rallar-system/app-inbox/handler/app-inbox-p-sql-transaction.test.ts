@@ -18,6 +18,10 @@ import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres
 
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion
+} from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
@@ -141,17 +145,24 @@ describe('Postgres transaction write boundary', () => {
             encodeResult: (result) => encodeAppInboxResult(result, 'Postgres transaction test result')
         };
 
-        const result = await transactionWriter.writeMutation(context, async (transaction) => {
+        const durableResult = { status: 'accepted' };
+        const completionInput = {
+            ...transactionWriter.readCompletionFacts(context),
+            status: EntityStatus.COMPLETED,
+            durableResult
+        } as const;
+        const completion = computeAppInboxCompletion(completionInput);
+        expect(validateAppInboxCompletion(completionInput, completion)).toEqual([]);
+        const result = await transactionWriter.writeComputedMutation(context, completion, async (transaction) => {
             await new PSqlRuntimeStateRepository(transaction).insertIfAbsent(
                 'app-inbox-transaction',
                 'aggregate-1',
                 JSON.stringify({ state: 'accepted' }),
                 NEVER_EXPIRE_AT_TIMESTAMP
             );
-            return { status: 'accepted' };
         });
 
-        expect(result).toEqual({ status: 'accepted' });
+        expect(result).toEqual(durableResult);
         expect(database.beginCalls).toBe(1);
         expect(new Set(database.statementTransactions).size).toBe(1);
         expect(database.committed.inbox.get(toKey(incomingEntry.key))?.ri_status).toBe(

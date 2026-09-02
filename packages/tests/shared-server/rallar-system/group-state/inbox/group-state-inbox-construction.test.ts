@@ -52,16 +52,6 @@ type ExpectedTransactionWriter = {
         computed: AppInboxCompletionComputed<Durable>,
         write: (transaction: PSqlSql) => Promise<AfterCommit>
     ): Promise<AppInboxMutationTransactionResult<Durable, AfterCommit>>;
-    writeMutation<Result>(
-        context: AppInboxMessageContext<Result>,
-        write: (transaction: PSqlSql) => Promise<Result>
-    ): Promise<Result>;
-    writeMutationWithAfterCommitResult<Durable, AfterCommit>(
-        context: AppInboxMessageContext<Durable>,
-        write: (
-            transaction: PSqlSql
-        ) => Promise<AppInboxMutationTransactionResult<Durable, AfterCommit>>
-    ): Promise<AppInboxMutationTransactionResult<Durable, AfterCommit>>;
 };
 type ExpectedHandlerDependencies = {
     readonly mutationService: GroupStateMutationService;
@@ -94,7 +84,7 @@ describe('convergent group and presence state', () => {
     it('returns immutable committed snapshot data through the named transaction result', () => {
         expectTypeOf<TransactionResult['durableResult']>().toEqualTypeOf<DurableResult>();
         expectTypeOf<TransactionResult['afterCommitResult']>().toEqualTypeOf<AfterCommitResult>();
-        expectTypeOf<ReturnType<AppInboxMutationTransactionWriter['writeMutationWithAfterCommitResult']>>().toMatchTypeOf<
+        expectTypeOf<ReturnType<AppInboxMutationTransactionWriter['writeComputedMutationWithAfterCommitResult']>>().toMatchTypeOf<
             Promise<AppInboxMutationTransactionResult<unknown, unknown>>
         >();
     });
@@ -104,8 +94,8 @@ describe('convergent group and presence state', () => {
         expectTypeOf<TransactionResult['durableResult']>().toEqualTypeOf<DurableResult>();
         expectTypeOf<TransactionResult['afterCommitResult']>().toEqualTypeOf<AfterCommitResult>();
         expectTypeOf<AppInboxMutationTransactionWriter>().toEqualTypeOf<ExpectedTransactionWriter>();
-        expectTypeOf<AppInboxMutationTransactionWriter['writeMutationWithAfterCommitResult']>().toEqualTypeOf<
-            ExpectedTransactionWriter['writeMutationWithAfterCommitResult']
+        expectTypeOf<AppInboxMutationTransactionWriter['writeComputedMutationWithAfterCommitResult']>().toEqualTypeOf<
+            ExpectedTransactionWriter['writeComputedMutationWithAfterCommitResult']
         >();
         expectTypeOf<AppInboxTransactionWriter>().toMatchTypeOf<AppInboxMutationTransactionWriter>();
     });

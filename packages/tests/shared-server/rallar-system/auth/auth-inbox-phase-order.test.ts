@@ -227,22 +227,6 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
     ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>> {
         throw new Error('Computed after-commit transaction path must not run');
     }
-
-    async writeMutation<Result>(
-        _context: AppInboxMessageContext<Result>,
-        _write: (transaction: PSqlSql) => Promise<Result>
-    ): Promise<Result> {
-        throw new Error('Legacy compute-in-write transaction path must not run');
-    }
-
-    async writeMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
-        _context: AppInboxMessageContext<DurableResult>,
-        _write: (
-            transaction: PSqlSql
-        ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>
-    ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>> {
-        throw new Error('After-commit transaction must not run');
-    }
 }
 
 function createContext(

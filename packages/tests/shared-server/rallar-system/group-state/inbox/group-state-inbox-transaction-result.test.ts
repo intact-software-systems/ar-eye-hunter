@@ -142,12 +142,7 @@ describe('group-state AppInbox transaction result boundary', () => {
             },
             writeComputedMutationWithAfterCommitResult: async () => {
                 throw new Error('Inactive presence must not use computed after-commit transaction');
-            },
-            writeMutation: () => Promise.reject(new Error('Inactive presence must not use legacy mutation transaction')),
-            writeMutationWithAfterCommitResult: () =>
-                Promise.reject(
-                    new Error('Inactive presence must not enter the active mutation transaction')
-                )
+            }
         };
         const handler = new GroupStateInboxHandler({
             prepareMutation: async () => {
