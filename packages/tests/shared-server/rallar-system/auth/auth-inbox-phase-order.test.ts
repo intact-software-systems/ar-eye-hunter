@@ -89,6 +89,7 @@ describe('auth inbox mutation phase order', () => {
             'read',
             'compute',
             'validate',
+            'completion',
             'transaction',
             'write'
         ]);
@@ -204,16 +205,19 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
         this.transaction = transaction;
     }
 
-    readCompletionFacts(_context: AppInboxExecutionMetadata): AppInboxCompletionFacts {
-        throw new Error('Computed transaction path must not run');
+    readCompletionFacts(context: AppInboxExecutionMetadata): AppInboxCompletionFacts {
+        this.actions.push('completion');
+        return { entry: context.entry, completedAtEpochMs: context.message.id.ts };
     }
 
     async writeComputedMutation<Result>(
         _context: AppInboxExecutionMetadata,
-        _computed: AppInboxCompletionComputed<Result>,
-        _write: (transaction: PSqlSql) => Promise<void>
+        computed: AppInboxCompletionComputed<Result>,
+        write: (transaction: PSqlSql) => Promise<void>
     ): Promise<Result> {
-        throw new Error('Computed transaction path must not run');
+        this.actions.push('transaction');
+        await write(this.transaction);
+        return computed.durableResult;
     }
 
     async writeComputedMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
@@ -226,10 +230,9 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
 
     async writeMutation<Result>(
         _context: AppInboxMessageContext<Result>,
-        write: (transaction: PSqlSql) => Promise<Result>
+        _write: (transaction: PSqlSql) => Promise<Result>
     ): Promise<Result> {
-        this.actions.push('transaction');
-        return await write(this.transaction);
+        throw new Error('Legacy compute-in-write transaction path must not run');
     }
 
     async writeMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
