@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { ResourceInboxReservationFinish } from '@shared-server/queuebox/postgres/resource-inbox-reservation-write.ts';
 import { createAdminPruneCommand, decodeAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import {
     ADMIN_PRUNE_APP_OUTBOX_TOPIC,
@@ -6,8 +7,13 @@ import {
     toAdminPruneOutbox,
     type AdminPrunePageWork
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
-import { AdminPrunePageWorker, type AdminPrunePageRepository } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
+import {
+    AdminPrunePageWorker,
+    type AdminPrunePageDelete,
+    type AdminPrunePageRepository
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
 import { createAdminPruneAggregate, toAdminPruneAggregateEntry } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
+import type { AppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { describe, expect, it } from 'vitest';
@@ -82,7 +88,7 @@ describe('AdminPrunePageWorker', () => {
             }
         });
 
-        await work.write(repository.transaction, computed, entry);
+        await work.write(repository.transaction, computed);
 
         expect(repository.deleted).toEqual(['1', '2']);
         expect(repository.calls[0]).toBe('progress');
@@ -409,7 +415,7 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
         }
     });
     readonly deleted: string[] = [];
-    readonly writtenEntries: ResourceEntry[] = [];
+    readonly writtenEntries: Array<Readonly<ResourceEntry>> = [];
     readonly finished: ResourceEntry['key'][] = [];
     readonly calls: string[] = [];
     lastExcludedResourceKey: ResourceEntry['key'] | null = null;
@@ -459,15 +465,15 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
         return Promise.resolve({ aggregate, resource: entry.resource });
     }
 
-    deletePage(_transaction: never, _command: unknown, rowIds: readonly string[]) {
+    deletePage(_transaction: never, deletion: AdminPrunePageDelete) {
         this.calls.push('delete');
-        this.deleted.push(...rowIds);
-        return Promise.resolve(rowIds.length);
+        this.deleted.push(...deletion.rowIds);
+        return Promise.resolve(deletion.rowIds.length);
     }
 
-    writeOutbox(_transaction: never, entry: ResourceEntry) {
+    writeOutbox(_transaction: never, computed: AppOutboxInsert) {
         this.calls.push('outbox');
-        this.writtenEntries.push(entry);
+        this.writtenEntries.push(computed.entry);
         if (this.rejectOutbox) {
             throw new Error('Admin prune outbox collision');
         }
@@ -486,11 +492,11 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
         return Promise.resolve();
     }
 
-    finishReserved(_transaction: never, entry: ResourceEntry) {
+    finishReserved(_transaction: never, completion: ResourceInboxReservationFinish) {
         if (this.loseReservation) {
             return Promise.resolve(false);
         }
-        this.finished.push(entry.key);
+        this.finished.push(completion.key);
         return Promise.resolve(true);
     }
 }

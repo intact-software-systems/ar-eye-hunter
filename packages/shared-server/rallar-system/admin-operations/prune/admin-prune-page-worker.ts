@@ -1,8 +1,13 @@
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
-import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
+import type { ResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import {
+    computeAppOutboxInsert,
+    type AppOutboxInsert
+} from '../../app-outbox/app-outbox-insert.ts';
 import { requireAdminPrunePageSize, type AdminPruneAppData } from '../inbox/admin-prune-command-codec.ts';
 import {
     decodeAdminPruneWork,
@@ -29,19 +34,39 @@ export type AdminPrunePageRead =
         expectedAggregate: string;
         authority: Readonly<{ allowed: boolean; code: string; }>;
         nowEpochMs: number;
+        serviceId: string;
     }>;
 
-export type AdminPrunePageComputed = Readonly<{
-    kind: 'page';
-    jobId: string;
-    category: AdminPruneExpiredCategory;
-    rowIds: readonly string[];
-    deletedRows: number;
-    next: AdminPrunePageWork | null;
+interface AdminPrunePageDeleteBase {
+    readonly rowIds: readonly string[];
+    readonly capturedAt: Date;
+}
+
+export type AdminPrunePageDelete =
+    | Readonly<AdminPrunePageDeleteBase & { category: 'runtime-state'; }>
+    | Readonly<AdminPrunePageDeleteBase & { category: 'resource-inbox'; }>
+    | Readonly<AdminPrunePageDeleteBase & { category: 'resource-inbox-results'; }>
+    | Readonly<AdminPrunePageDeleteBase & { category: 'app-data'; appData: AdminPruneAppData; }>;
+
+export type AdminPruneProgressWrite = Readonly<{
     expectedAggregate: string;
     aggregateSuccessor: ResourceEntry;
-    finishedAtEpochMs: number;
+    aggregateSuccessorExpiryAtIsoTimestamp: string;
 }>;
+
+export type AdminPrunePageComputed =
+    & AdminPruneProgressWrite
+    & Readonly<{
+        kind: 'page';
+        jobId: string;
+        category: AdminPruneExpiredCategory;
+        rowIds: readonly string[];
+        deletedRows: number;
+        deletion: AdminPrunePageDelete;
+        next: AdminPrunePageWork | null;
+        successorOutboxWrite: AppOutboxInsert | null;
+        reservationFinish: ResourceInboxReservationFinish;
+    }>;
 
 export type AdminPrunePageRepository = Readonly<{
     readPage(
@@ -62,18 +87,16 @@ export type AdminPrunePageRepository = Readonly<{
     >;
     deletePage(
         transaction: PSqlSql,
-        command: AdminPrunePageWork,
-        rowIds: readonly string[]
+        deletion: AdminPrunePageDelete
     ): Promise<number>;
-    writeOutbox(transaction: PSqlSql, entry: ResourceEntry): Promise<void>;
+    writeOutbox(transaction: PSqlSql, computed: AppOutboxInsert): Promise<void>;
     writeProgress(
         transaction: PSqlSql,
-        computed: AdminPrunePageComputed
+        computed: AdminPruneProgressWrite
     ): Promise<void>;
     finishReserved(
         transaction: PSqlSql,
-        entry: ResourceEntry,
-        finishedAtEpochMs: number
+        completion: ResourceInboxReservationFinish
     ): Promise<boolean>;
 }>;
 
@@ -133,7 +156,8 @@ export class AdminPrunePageWorker {
             aggregate: aggregateRead.aggregate,
             expectedAggregate: aggregateRead.resource,
             authority,
-            nowEpochMs
+            nowEpochMs,
+            serviceId: this.options.serviceId
         };
     }
 
@@ -168,28 +192,40 @@ export class AdminPrunePageWorker {
                 appData: command.appData
             }
             : null;
+        const deletion = toAdminPrunePageDelete(command, read.rowIds);
         const page = {
             kind: 'page',
             jobId: command.jobId,
             category: command.category,
-            rowIds: read.rowIds,
-            deletedRows: read.rowIds.length,
+            rowIds: deletion.rowIds,
+            deletedRows: deletion.rowIds.length,
+            deletion,
             next
         } as const;
         const aggregate = advanceAdminPruneAggregate(read.aggregate, page);
+        const aggregateSuccessor = toAdminPruneAggregateEntry(
+            {
+                ...aggregate,
+                expireAtEpochMs: Math.max(
+                    aggregate.expireAtEpochMs,
+                    resourceInboxRetryExpiryAtEpochMs(read.nowEpochMs)
+                )
+            }
+        );
         return {
             ...page,
+            successorOutboxWrite: next
+                ? computeAppOutboxInsert(toAdminPruneOutbox(next, read.serviceId))
+                : null,
             expectedAggregate: read.expectedAggregate,
-            aggregateSuccessor: toAdminPruneAggregateEntry(
-                {
-                    ...aggregate,
-                    expireAtEpochMs: Math.max(
-                        aggregate.expireAtEpochMs,
-                        resourceInboxRetryExpiryAtEpochMs(read.nowEpochMs)
-                    )
-                }
-            ),
-            finishedAtEpochMs: read.nowEpochMs
+            aggregateSuccessor,
+            aggregateSuccessorExpiryAtIsoTimestamp: aggregateSuccessor.audit.expiryTs.toString(),
+            reservationFinish: {
+                key: command.reservation.key,
+                expectedAttempts: command.reservation.dequeueAudit.attempts,
+                status: EntityStatus.COMPLETED,
+                completedAt: new Date(read.nowEpochMs)
+            }
         };
     }
 
@@ -213,32 +249,31 @@ export class AdminPrunePageWorker {
         ) {
             throw new TypeError('Admin prune computed aggregate differs from read predecessor');
         }
+        if (
+            computed.deletion.category !== command.category ||
+            computed.deletion.rowIds.length !== read.rowIds.length ||
+            computed.deletion.capturedAt.getTime() !== command.capturedAtEpochMs ||
+            (computed.next === null) !== (computed.successorOutboxWrite === null) ||
+            computed.reservationFinish.expectedAttempts !== command.reservation.dequeueAudit.attempts ||
+            computed.reservationFinish.completedAt.getTime() !== read.nowEpochMs
+        ) {
+            throw new TypeError('Admin prune computed persistence differs from read facts');
+        }
     }
 
     async write(
         transaction: PSqlSql,
-        computed: AdminPrunePageComputed,
-        entry: ResourceEntry
+        computed: AdminPrunePageComputed
     ): Promise<void> {
-        const command = decodeAdminPruneWork(entry);
         await this.options.repository.writeProgress(transaction, computed);
-        const deleted = await this.options.repository.deletePage(transaction, command, computed.rowIds);
+        const deleted = await this.options.repository.deletePage(transaction, computed.deletion);
         if (deleted !== computed.deletedRows) {
             throw new Error('Admin prune page changed before delete');
         }
-        if (computed.next) {
-            await this.options.repository.writeOutbox(
-                transaction,
-                toAdminPruneOutbox(computed.next, this.options.serviceId)
-            );
+        if (computed.successorOutboxWrite !== null) {
+            await this.options.repository.writeOutbox(transaction, computed.successorOutboxWrite);
         }
-        if (
-            !await this.options.repository.finishReserved(
-                transaction,
-                entry,
-                computed.finishedAtEpochMs
-            )
-        ) {
+        if (!await this.options.repository.finishReserved(transaction, computed.reservationFinish)) {
             throw new Error('Admin prune reservation changed before commit');
         }
     }
@@ -249,8 +284,29 @@ export class AdminPrunePageWorker {
         const computed = this.compute(command, read);
         this.validate(command, read, computed);
         await runInPSqlTransaction(this.options.database, async (transaction) => {
-            await this.write(transaction, computed, entry);
+            await this.write(transaction, computed);
         });
         this.options.wakeQueue?.();
+    }
+}
+
+export function toAdminPrunePageDelete(
+    command: AdminPrunePageWork,
+    rowIds: readonly string[]
+): AdminPrunePageDelete {
+    const base = {
+        rowIds: [...rowIds],
+        capturedAt: new Date(command.capturedAtEpochMs)
+    };
+    switch (command.category) {
+        case 'runtime-state':
+        case 'resource-inbox':
+        case 'resource-inbox-results':
+            return { ...base, category: command.category };
+        case 'app-data':
+            if (!command.appData) {
+                throw new TypeError('App-data prune requires namespace');
+            }
+            return { ...base, category: command.category, appData: command.appData };
     }
 }
