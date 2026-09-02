@@ -2306,6 +2306,17 @@ remediation clause is carried there and 10a asserts on the two fields the plan n
 so the promotion reconcile the skipped cycle used to re-run on those deltas now runs only on
 commanded-origin cycles; a stale promotion request is still re-derived by every commanded cycle.
 
+**Validation (2026-09-02, head `5a2662cfd`).** Baseline: dprint, `check:repo-style:changed` (no new
+findings), test-structure coupling, `check:retained-legacy` (five candidates: three "predecessor
+path" rows for composition files the slice only extends and the pre-existing `fallback` identifier
+in the topology routes), `check:repo-structure`, the governed test typecheck, `typecheck`, `build`,
+`test:deno` (772 tests) and `test:unit` unsandboxed (1043 files, no failures). Black-box: the
+in-memory profile 33/33 with the new recipe at 45 steps, the Postgres profile 33/33 plus the
+six-recipe cluster profile, medium-scale, and topology replay. Not run: the state-write A-B-B-A
+comparison, blocked while a foreign perf-bench container holds the pinned port; the slice adds one
+runtime-state read to the promotion commands and two to the presence-summary path, recorded here
+for the next run.
+
 ## Slice 11 — Automation triggers
 
 The canonical exhausted-failure landing remains an unactivated prerequisite: the current mutation
