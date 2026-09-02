@@ -132,9 +132,10 @@ it.each([
         owner: 'processCommand',
         calls: [
             'this.mutationService.read(command)',
-            'this.mutationService.compute({ command, read })',
-            'this.mutationService.validate({ command, read, computed })',
-            'this.mutationService.write(transaction, computed)'
+            'computeCrdtInboxMutation(read)',
+            'validateCrdtInboxMutation(read, computed)',
+            'this.transactionWriter.writeComputedMutation(',
+            'writePSqlCrdtMutation(transaction, computed.mutation)'
         ]
     },
     {
