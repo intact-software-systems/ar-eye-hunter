@@ -4,10 +4,12 @@ import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.t
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
-import type {
-    WsSessionGenerationCloseFacts,
-    WsSessionGenerationLifecycleComputed,
-    WsSessionHighWaterIdentity
+import {
+    validateWsSessionConnectGuard,
+    validateWsSessionGenerationClosed,
+    type WsSessionGenerationCloseFacts,
+    type WsSessionGenerationLifecycleComputed,
+    type WsSessionHighWaterIdentity
 } from '../../websocket/ws-session-generation-computation.ts';
 import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
 import type {
@@ -106,15 +108,14 @@ export async function processGroupPresenceConnect(
     const read = await input.mutationService.read(input.command);
     const computed = input.mutationService.compute(input.command, read);
     input.mutationService.validate(input.command, read, computed);
-    const lifecycleGuard = lifecycle.computeConnectGuard(
-        {
-            ...identity,
-            generationId: operation.input.generationId,
-            generationStartedAtEpochMs: observedAtEpochMs,
-            expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(observedAtEpochMs)
-        },
-        lifecycleRead
-    );
+    const lifecycleGuardFacts = {
+        ...identity,
+        generationId: operation.input.generationId,
+        generationStartedAtEpochMs: observedAtEpochMs,
+        expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(observedAtEpochMs)
+    };
+    const lifecycleGuard = lifecycle.computeConnectGuard(lifecycleGuardFacts, lifecycleRead);
+    validateWsSessionConnectGuard(lifecycleGuardFacts, lifecycleRead, lifecycleGuard);
     return { status: 'ready-to-commit', computed, lifecycleGuard };
 }
 
@@ -131,6 +132,7 @@ export async function processGroupSessionCleanup(
     const lifecycle = input.groupStateService.sessionGenerationLifecycle;
     const lifecycleRead = await lifecycle.read(closeFacts);
     const lifecycleComputed = lifecycle.computeClosed(closeFacts, lifecycleRead);
+    validateWsSessionGenerationClosed(closeFacts, lifecycleRead, lifecycleComputed);
     const preparations = await input.groupStateService.prepareSessionCleanupMutations({
         scope: input.facts.connection.scope,
         authSession: input.facts.connection.authSession,

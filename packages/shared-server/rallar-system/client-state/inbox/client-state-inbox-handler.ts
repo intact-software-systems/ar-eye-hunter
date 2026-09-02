@@ -3,6 +3,8 @@ import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { AppInboxExecutionMetadata, AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import {
+    validateWsSessionConnectGuard,
+    validateWsSessionGenerationClosed,
     type WsSessionGenerationFacts,
     type WsSessionGenerationLifecycleComputed
 } from '../../websocket/ws-session-generation-computation.ts';
@@ -86,16 +88,18 @@ export class ClientStateInboxHandler {
         }
         const command = await this.toAuthorisedWsConnectCommand(context, connection);
         const computed = await this.computeValidatedMutation(command);
+        const lifecycleGuardFacts = {
+            ...lifecycleFacts,
+            expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(
+                connection.generationStartedAtEpochMs,
+                connection.expiresAtEpochMs
+            )
+        };
         const lifecycleComputed = this.dependencies.sessionGenerationLifecycle.computeConnectGuard(
-            {
-                ...lifecycleFacts,
-                expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(
-                    connection.generationStartedAtEpochMs,
-                    connection.expiresAtEpochMs
-                )
-            },
+            lifecycleGuardFacts,
             lifecycleRead
         );
+        validateWsSessionConnectGuard(lifecycleGuardFacts, lifecycleRead, lifecycleComputed);
         return await this.commitComputed(context, computed, lifecycleComputed);
     }
 
@@ -233,10 +237,13 @@ export class ClientStateInboxHandler {
                 Math.max(input.disconnectedAtEpochMs, connection.expiresAtEpochMs)
             )
         };
-        return this.dependencies.sessionGenerationLifecycle.computeClosed(
+        const lifecycleRead = await this.dependencies.sessionGenerationLifecycle.read(lifecycleFacts);
+        const computed = this.dependencies.sessionGenerationLifecycle.computeClosed(
             lifecycleFacts,
-            await this.dependencies.sessionGenerationLifecycle.read(lifecycleFacts)
+            lifecycleRead
         );
+        validateWsSessionGenerationClosed(lifecycleFacts, lifecycleRead, computed);
+        return computed;
     }
 
     private async writeMissingSessionDisconnect({
