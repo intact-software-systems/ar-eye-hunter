@@ -15,6 +15,11 @@ const PRECOMPUTABLE_METHODS = new Set(['sort', 'toSorted']);
 const PRECOMPUTABLE_NAME = /^(?:compute|prepare|serialize|canonicalize|hash|encode)(?:$|[A-Z_])/u;
 const TRANSACTION_TYPE = /(?:PSqlSql|IDBTransaction)/u;
 const DATABASE_RECEIVER_TYPE = /(?:Sql|Database|Repository|Runtime|PGlite)/u;
+const APP_INBOX_TRANSACTION_WRITER_TYPE = /AppInbox(?:Mutation)?TransactionWriter/u;
+const APP_INBOX_WRITE_METHODS = new Set([
+    'writeComputedMutation',
+    'writeComputedMutationWithAfterCommitResult'
+]);
 const SPECIALIZED_RESOURCE_INBOX_ROOT = 'packages/shared-server/queuebox/postgres/';
 
 export function analyzeTransactionWrites(project, sourceFiles = project.getSourceFiles()) {
@@ -41,6 +46,12 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
             }
         }
         for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+            const appInboxWrite = appInboxWriteBoundary(call);
+            if (!specialized && appInboxWrite) {
+                for (const callback of resolveCallbackBodies(appInboxWrite, project)) {
+                    roots.push(analysisRoot(callback));
+                }
+            }
             const boundary = transactionBoundary(call);
             if (!boundary) {
                 continue;
@@ -148,6 +159,18 @@ function precomputableOperation(call, operation) {
         return undefined;
     }
     return PRECOMPUTABLE_NAME.test(name) ? name : undefined;
+}
+
+function appInboxWriteBoundary(call) {
+    const expression = call.getExpression();
+    if (!Node.isPropertyAccessExpression(expression) || !APP_INBOX_WRITE_METHODS.has(expression.getName())) {
+        return undefined;
+    }
+    const receiver = expression.getExpression();
+    if (!APP_INBOX_TRANSACTION_WRITER_TYPE.test(receiver.getType().getText(receiver))) {
+        return undefined;
+    }
+    return call.getArguments()[2];
 }
 
 function transactionBoundary(call) {

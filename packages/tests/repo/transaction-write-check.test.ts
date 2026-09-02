@@ -45,6 +45,33 @@ describe('transaction write check', () => {
         expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
     });
 
+    it('inspects AppInbox domain write callbacks', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql { query(value: unknown): Promise<void>; }
+            interface AppInboxMutationTransactionWriter {
+                writeComputedMutation<Result>(
+                    context: object,
+                    computed: Result,
+                    write: (transaction: PSqlSql) => Promise<void>
+                ): Promise<Result>;
+            }
+            declare const transactionWriter: AppInboxMutationTransactionWriter;
+            declare const context: object;
+            declare const computed: { value: number };
+            export async function process(): Promise<void> {
+                await transactionWriter.writeComputedMutation(
+                    context,
+                    computed,
+                    async (transaction) => {
+                        await transaction.query(JSON.stringify(computed));
+                    }
+                );
+            }
+        `);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+    });
+
     it('inspects inferred object-property write implementations', () => {
         const findings = analyzeFixture(`
             interface PSqlSql { query(value: unknown): Promise<void>; }

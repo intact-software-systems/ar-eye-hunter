@@ -14,7 +14,8 @@ The checker reports:
 
 It recognizes PostgreSQL/PGlite `begin` and `transaction` callbacks, the
 `runInPSqlTransaction` wrapper, IndexedDB `readwrite` transactions, IndexedDB
-upgrade callbacks, and callback identifiers that resolve to authored source.
+upgrade callbacks, AppInbox computed-write callbacks, and callback identifiers
+that resolve to authored source.
 It inspects the lexical transaction body rather than expanding arbitrary helper
 graphs; suspiciously named compute/prepare/serialize/hash helpers still fail at
 their call site. Readonly IndexedDB transactions, tests, fixtures,
