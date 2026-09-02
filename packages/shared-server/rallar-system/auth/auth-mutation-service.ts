@@ -10,7 +10,7 @@ import type {
 import { computeAuthMutation } from './mutation/compute/compute-auth-mutation.ts';
 import { readAuthMutation } from './mutation/read/read-auth-mutation.ts';
 import { validateAuthMutation } from './mutation/validate/validate-auth-mutation.ts';
-import { writeAuthMutation } from './mutation/write/write-auth-mutation.ts';
+import { writeAuthMutation } from './mutation/write-auth-mutation.ts';
 import { AuthSessionRepository } from './persistence/auth-session-repository.ts';
 import { AuthUserRepository } from './persistence/auth-user-repository.ts';
 

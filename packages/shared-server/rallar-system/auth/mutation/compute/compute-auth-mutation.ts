@@ -7,6 +7,7 @@ import type {
 import { AuthMutationRejectedError } from '../auth-mutation-rejected-error.ts';
 import { requireMatchingAuthKind } from '../validate/auth-mutation-validation.ts';
 import { computeAuthAgentTicketMutation } from './compute-auth-agent-ticket-mutation.ts';
+import { computeAuthPersistence } from './compute-auth-persistence.ts';
 import { computeAuthSessionMutation } from './compute-auth-session-mutation.ts';
 import { computeAuthTicketMutation } from './compute-auth-ticket-mutation.ts';
 import { computeAuthUserRegistration } from './compute-auth-user-registration.ts';
@@ -22,35 +23,38 @@ export function computeAuthMutation(input: ComputeAuthMutationInput): AuthMutati
     requireMatchingAuthKind(input.command, input.read);
     requireMatchingFacts(input.command, input.facts);
     const commandKind = input.command.kind;
-    switch (commandKind) {
-        case 'register-user':
-            return computeAuthUserRegistration(
-                input.command as Extract<AuthMutationCommand, { kind: 'register-user'; }>,
-                input.read as Extract<AuthMutationRead, { kind: 'register-user'; }>
-            );
-        case 'issue-session':
-        case 'logout-session':
-            return computeAuthSessionMutation({
-                kind: commandKind,
-                command: input.command,
-                read: input.read,
-                serviceId: input.serviceId
-            });
-        case 'issue-ws-ticket':
-        case 'consume-ws-ticket':
-            return computeAuthTicketMutation({
-                kind: commandKind,
-                command: input.command,
-                read: input.read
-            });
-        case 'issue-agent-tickets':
-        case 'consume-agent-ticket':
-            return computeAuthAgentTicketMutation({
-                kind: commandKind,
-                command: input.command,
-                read: input.read
-            });
-    }
+    const computed = (() => {
+        switch (commandKind) {
+            case 'register-user':
+                return computeAuthUserRegistration(
+                    input.command as Extract<AuthMutationCommand, { kind: 'register-user'; }>,
+                    input.read as Extract<AuthMutationRead, { kind: 'register-user'; }>
+                );
+            case 'issue-session':
+            case 'logout-session':
+                return computeAuthSessionMutation({
+                    kind: commandKind,
+                    command: input.command,
+                    read: input.read,
+                    serviceId: input.serviceId
+                });
+            case 'issue-ws-ticket':
+            case 'consume-ws-ticket':
+                return computeAuthTicketMutation({
+                    kind: commandKind,
+                    command: input.command,
+                    read: input.read
+                });
+            case 'issue-agent-tickets':
+            case 'consume-agent-ticket':
+                return computeAuthAgentTicketMutation({
+                    kind: commandKind,
+                    command: input.command,
+                    read: input.read
+                });
+        }
+    })();
+    return { ...computed, persistence: computeAuthPersistence(computed, commandKind) };
 }
 
 function requireMatchingFacts(command: AuthMutationCommand, facts: AuthMutationFacts): void {

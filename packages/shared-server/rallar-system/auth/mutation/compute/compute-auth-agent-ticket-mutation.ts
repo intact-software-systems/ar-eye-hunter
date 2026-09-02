@@ -3,7 +3,7 @@ import type { PersistedAgentSessionTicket } from '../../persistence/persisted-au
 import type {
     AuthComputedSession,
     AuthMutationCommand,
-    AuthMutationComputed,
+    AuthMutationDomainComputed,
     AuthMutationRead,
     IssueAuthAgentTicketsCommand
 } from '../auth-mutation-contracts.ts';
@@ -35,7 +35,7 @@ interface AuthAgentTicketComputation {
 
 export function computeAuthAgentTicketMutation(
     input: ComputeAuthAgentTicketMutationInput
-): AuthMutationComputed {
+): AuthMutationDomainComputed {
     switch (input.kind) {
         case 'issue-agent-tickets':
             return computeIssueAuthAgentTickets(
@@ -73,7 +73,7 @@ export function computeAuthAgentTicketMutation(
 function computeIssueAuthAgentTickets(
     command: IssueAuthAgentTicketsCommand,
     read: Extract<AuthMutationRead, { kind: 'issue-agent-tickets'; }>
-): AuthMutationComputed {
+): AuthMutationDomainComputed {
     const ticketComputations = command.tickets.map(toAuthAgentTicketComputation);
     const sessions = ticketComputations.map(({ session }) => session);
     const agentTickets = ticketComputations.map(({ agentTicket }) => agentTicket);

@@ -245,7 +245,8 @@ describe('auth mutation compute operation matrix', () => {
                 'agentTickets',
                 'logoutOutbox',
                 'result',
-                'outcome'
+                'outcome',
+                'persistence'
             ]);
         }
     });
@@ -310,7 +311,7 @@ describe('auth mutation compute rejections', () => {
     });
 });
 
-function catchComputeRejection(command: AuthMutationCommand, read: AuthMutationRead): unknown {
+function catchComputeRejection(command: AuthMutationCommand, read: AuthMutationRead): Error {
     try {
         computeAuthMutation({
             command,
@@ -320,7 +321,10 @@ function catchComputeRejection(command: AuthMutationCommand, read: AuthMutationR
         });
     }
     catch (error) {
-        return error;
+        if (error instanceof Error) {
+            return error;
+        }
+        throw new TypeError('Auth compute rejected with a non-Error value');
     }
     throw new Error('Expected auth compute rejection');
 }
