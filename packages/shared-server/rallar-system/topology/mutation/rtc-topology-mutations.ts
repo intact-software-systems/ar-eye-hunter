@@ -8,6 +8,10 @@ import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-e
 import { compareTopologyTuple, decideTopologySnapshot } from '../persistence/rtc-topology-snapshot-contract.ts';
 import type { RtcTopologyPublication } from '../publication/rtc-topology-publication.ts';
 import { validateRtcTopologyPublication } from '../publication/validate-rtc-topology-publication.ts';
+import {
+    computeRtcTopologyPersistence,
+    type RtcTopologyPersistenceComputed
+} from './compute-rtc-topology-persistence.ts';
 import { computeStaleTopologyPublication } from './rtc-topology-stale-publication.ts';
 import type { RtcTopologyStaleMutationComputed } from './rtc-topology-stale-publication.ts';
 
@@ -51,6 +55,7 @@ export type RtcTopologyMutationComputed =
         & Readonly<{
             outcome: 'write';
             observation: 'inserted' | 'advanced' | 'duplicate';
+            persistence: RtcTopologyPersistenceComputed;
             snapshotGuard: Readonly<{
                 expectedRevision: number | null;
                 candidate: RallarOverlayTopologySnapshot;
@@ -138,6 +143,12 @@ export function computeTopologyMutation(
     const write = {
         outcome: 'write',
         observation,
+        persistence: computeRtcTopologyPersistence({
+            snapshot: input.candidate,
+            expectedRevision: input.read.snapshot?.entry.revision ?? null,
+            publication: input.publication,
+            ...input.facts
+        }),
         snapshotGuard: {
             expectedRevision: input.read.snapshot?.entry.revision ?? null,
             candidate: input.candidate
