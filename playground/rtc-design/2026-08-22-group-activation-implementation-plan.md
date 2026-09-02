@@ -2388,6 +2388,18 @@ What 10b lands:
   freezes under `commanded`; the per-command producer census is the first step of Slice 11's
   trigger work, where the origin belongs with the command.
 
+**Validation (2026-09-02, corrected head `c91c6407b`).** Baseline on the correction commits: dprint on
+the touched files, `check:repo-style:changed` (no new findings), `check-test-structure-coupling
+--changed`, `check:retained-legacy` (no changed candidates), the governed test typecheck,
+`typecheck`, `build`, `test:deno` (544, 84 and 146 tests green), the app-outbox, topology, presence,
+recipe-matrix, black-box-runner and shared-API vitest suites (733 tests), the migration's PGlite test
+(a seeded legacy row gains the anchor, an anchored row and a plain row are untouched), the in-memory
+black-box profile (34 of 34, the regenerated recipe executing 53 steps), the Postgres profile (34 of
+34 plus the 6-recipe cluster profile), the medium-scale convergence gate and the topology replay
+profile. `test:unit` unsandboxed: 1 044 files and 9 012 tests, no failures. Not run: the state-write A-B-B-A comparison — the
+pinned perf-bench port is still held by a container from another worktree; the widened read
+population is registered as a regression reason.
+
 ## Slice 11 — Automation triggers
 
 The canonical exhausted-failure landing remains an unactivated prerequisite: the current mutation
