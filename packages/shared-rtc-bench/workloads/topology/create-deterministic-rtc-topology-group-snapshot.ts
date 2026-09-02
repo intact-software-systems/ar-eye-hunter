@@ -1,3 +1,5 @@
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 
 export function createDeterministicRtcTopologyGroupSnapshot(
@@ -50,7 +52,8 @@ export function createDeterministicRtcTopologyGroupSnapshot(
             establishmentStartedAtEpochMs: null,
             formationElectorate: [],
             acceptedLayoutIdentity: null,
-            transportState: 'flowing'
+            transportState: 'flowing',
+            memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy())
         },
         members: memberSessionIds.map((sessionId): GroupMember => ({
             applicationId,

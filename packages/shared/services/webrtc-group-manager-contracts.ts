@@ -37,6 +37,15 @@ export interface WebRtcRttReportingPeerOptions {
  * two reasons. Eviction order is defined across reasons: expired entries
  * first, then oldest `retainedOrder` regardless of reason.
  */
+/** Which groups want each desired peer, and each group's in-flight setup bound (product decision 18). */
+export interface WebRtcPeerOwnership {
+    readonly groupsByPeerId: ReadonlyMap<PeerId, readonly GroupId[]>;
+    readonly dialAllowedPeerIds: ReadonlySet<PeerId>;
+    /** The same ownership by the scoped group key, which the bound is keyed on. */
+    readonly groupKeysByPeerId: ReadonlyMap<PeerId, readonly string[]>;
+    readonly maxConcurrentEdgeSetupsByGroupKey: ReadonlyMap<string, number>;
+}
+
 export type RetainedPeerConnectionReason = 'left-group' | 'overlay-transition' | 'commanded';
 
 export interface RetainedPeerConnection {
@@ -68,6 +77,7 @@ export interface MutableWebRtcGroupManagerDiagnostics {
     connectAttemptCount: number;
     connectFailureCount: number;
     connectDeferredBudgetCount: number;
+    connectDeferredPacingCount: number;
     disconnectCount: number;
     retainedCreatedCount: number;
     retainedExpiredCount: number;
@@ -85,6 +95,7 @@ export function emptyGroupManagerDiagnostics(): MutableWebRtcGroupManagerDiagnos
         connectAttemptCount: 0,
         connectFailureCount: 0,
         connectDeferredBudgetCount: 0,
+        connectDeferredPacingCount: 0,
         disconnectCount: 0,
         retainedCreatedCount: 0,
         retainedExpiredCount: 0,

@@ -1,13 +1,18 @@
 import { onTestFinished } from 'vitest';
 
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
-import { installNativeRtcRuntime, NativeRtcRuntime } from './native-rtc-connection-fixture.ts';
+import {
+    createNativeRtcConnectionFixture,
+    installNativeRtcRuntime,
+    NativeRtcRuntime,
+    SimulatedNativeRtcPeerConnection
+} from './native-rtc-connection-fixture.ts';
 
 let nativeRuntime: NativeRtcRuntime | undefined;
 
-function installSimulationNativeRuntime(): void {
+function installSimulationNativeRuntime(): NativeRtcRuntime {
     if (nativeRuntime) {
-        return;
+        return nativeRuntime;
     }
     const runtime = installNativeRtcRuntime();
     nativeRuntime = runtime;
@@ -15,27 +20,51 @@ function installSimulationNativeRuntime(): void {
         runtime.dispose();
         nativeRuntime = undefined;
     });
+    return runtime;
 }
 
 export interface SimulatedRtcConnections {
     readonly service: WebRtcConnectionService;
     markReconnectable(peerId: string): boolean;
+    /** The simulated native connection behind a started setup; `setConnected()` establishes it. */
+    nativePeer(peerId: string): SimulatedNativeRtcPeerConnection;
 }
 
-/** Real peer ownership and dial results with simulated native transport readiness. */
+/**
+ * Real peer ownership and dial results over the native connection fixture,
+ * with simulated lane readiness. A dial starts a setup that stays in flight
+ * until the test establishes its native connection, which is what lets pacing
+ * tests observe the bound.
+ */
 export function createSimulatedRtcConnections(
     sessionId: string,
     connect: (peerId: string) => boolean = () => true
 ): SimulatedRtcConnections {
-    installSimulationNativeRuntime();
-    const connectedPeerIds = new Set<string>();
-    const service = new WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
+    const runtime = installSimulationNativeRuntime();
+    const fixture = createNativeRtcConnectionFixture({
         sessionId,
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
         dataChannelName: 'test',
         rtcSignalingTopicId: 'rtc'
-    });
+    }, runtime);
+    const { service } = fixture;
+    const connectedPeerIds = installSimulatedLaneTransport(service, connect);
+    // Group scenarios control lane readiness independently of the complete native
+    // peer fixture; like the real predicate, only a live peer can report its lanes.
+    service.peerIdsWithNoReconnectableLanes = () => service.activePeerIds().filter((peerId) => connectedPeerIds.has(peerId));
+    return {
+        service,
+        markReconnectable: (peerId) => connectedPeerIds.delete(peerId),
+        nativePeer: fixture.nativePeer
+    };
+}
+
+function installSimulatedLaneTransport(
+    service: WebRtcConnectionService,
+    connect: (peerId: string) => boolean
+): Set<string> {
+    const connectedPeerIds = new Set<string>();
     service.onRtcPeerLifecycleDo('simulated-native-transport', {
         onCreated: (peer) => {
             for (const channel of peer.channels.values()) {
@@ -56,10 +85,5 @@ export function createSimulatedRtcConnections(
             connectedPeerIds.delete(peer.peerId);
         }
     });
-    // Group scenarios control lane readiness independently of the complete native peer fixture.
-    service.peerIdsWithNoReconnectableLanes = () => [...connectedPeerIds];
-    return {
-        service,
-        markReconnectable: (peerId) => connectedPeerIds.delete(peerId)
-    };
+    return connectedPeerIds;
 }

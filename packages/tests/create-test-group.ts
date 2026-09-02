@@ -1,3 +1,5 @@
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { AuditStamp, Group } from '@shared/api/group-types.ts';
 
 /**
@@ -49,7 +51,8 @@ export function createTestGroup(overrides: Partial<Group> = {}): Group {
         establishmentStartedAtEpochMs: null,
         formationElectorate: ['alice'],
         acceptedLayoutIdentity: null,
-        transportState: 'flowing'
+        transportState: 'flowing',
+        memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy())
     };
 
     // `Group` correlates `status` with `archived`/`deleted`, and a spread of

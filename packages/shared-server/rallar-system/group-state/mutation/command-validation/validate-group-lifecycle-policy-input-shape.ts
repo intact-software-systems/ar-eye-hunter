@@ -1,4 +1,7 @@
-import { GROUP_LIFECYCLE_POLICY_PRESET_NAMES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import {
+    GROUP_ESTABLISHMENT_TRANSPORTS,
+    GROUP_LIFECYCLE_POLICY_PRESET_NAMES
+} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 import { isGroupInputRecord, validateGroupInputJson } from './group-input-validation-issues.ts';
 
@@ -29,7 +32,7 @@ const POLICY_FIELDS: readonly PolicyShapeField[] = [
         key: 'establishment',
         kind: 'object',
         fields: [
-            { key: 'transports', kind: 'enum', values: ['rtc-and-ws', 'ws-only', 'rtc-preferred'] },
+            { key: 'transports', kind: 'enum', values: GROUP_ESTABLISHMENT_TRANSPORTS },
             { key: 'maxConcurrentEdgeSetups', kind: 'number' },
             { key: 'planTrigger', kind: 'trigger' },
             { key: 'connectTrigger', kind: 'trigger' }

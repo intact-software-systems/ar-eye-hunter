@@ -1,7 +1,13 @@
 import { validateAuthoritativeGroupEvent } from './authoritative-state-validation.ts';
 import { compareGroupCausalRevision } from './group-client-views.ts';
 import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
-import { GROUP_LIFECYCLE_STATES, GROUP_TRANSPORT_STATES } from './group-lifecycle/group-lifecycle-policy.ts';
+import {
+    GROUP_ESTABLISHMENT_TRANSPORTS,
+    GROUP_LIFECYCLE_STATES,
+    GROUP_MEMBER_POLICY_KEYS,
+    GROUP_TRANSPORT_STATES
+} from './group-lifecycle/group-lifecycle-policy.ts';
+import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from './group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { Group, GroupEvent, GroupMember, GroupPresenceSession, GroupStateCausalRevision } from './group-types.ts';
 import type { StateScope } from './state-types.ts';
 
@@ -78,7 +84,8 @@ const GROUP_KEYS = [
     'establishmentStartedAtEpochMs',
     'formationElectorate',
     'acceptedLayoutIdentity',
-    'transportState'
+    'transportState',
+    'memberPolicy'
 ];
 const GROUP_MEMBER_KEYS = [
     'applicationId',
@@ -153,6 +160,8 @@ export function validateGroupStateDeltaEnvelope(
         fail('GroupStateDeltaEnvelope inactive group has active sessions');
     }
 }
+
+type DeltaRecord = Record<string, unknown>;
 
 function validateDeltaGroup(
     value: unknown,
@@ -245,10 +254,20 @@ function validateDeltaGroup(
         enumValue(accepted.state, GROUP_LAYOUT_IDENTITY_STATES, `${label}.acceptedLayoutIdentity.state`);
     }
     enumValue(group.transportState, GROUP_TRANSPORT_STATES, `${label}.transportState`);
+    validateDeltaGroupMemberPolicy(record(group.memberPolicy, `${label}.memberPolicy`), `${label}.memberPolicy`);
     return { activeMemberCount: group.activeMemberCount, status: group.status };
 }
 
-function validateGroupLifecycle(group: Record<string, unknown>, label: string): void {
+function validateDeltaGroupMemberPolicy(memberPolicy: DeltaRecord, label: string): void {
+    exact(memberPolicy, GROUP_MEMBER_POLICY_KEYS, label);
+    positiveInteger(memberPolicy.maxConcurrentEdgeSetups, `${label}.maxConcurrentEdgeSetups`);
+    if (memberPolicy.maxConcurrentEdgeSetups > MAX_GROUP_CONCURRENT_EDGE_SETUPS) {
+        fail(`${label}.maxConcurrentEdgeSetups exceeds the policy bound`);
+    }
+    enumValue(memberPolicy.transports, GROUP_ESTABLISHMENT_TRANSPORTS, `${label}.transports`);
+}
+
+function validateGroupLifecycle(group: DeltaRecord, label: string): void {
     if (group.status === 'active' && (group.archived !== null || group.deleted !== null)) {
         fail(`${label} lifecycle is invalid`);
     }

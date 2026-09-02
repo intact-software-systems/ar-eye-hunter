@@ -2,6 +2,8 @@ import { dirname } from 'node:path';
 
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
@@ -288,7 +290,8 @@ function createGroupSnapshotGroup(
             version: 1,
             state: 'active'
         },
-        transportState: 'flowing'
+        transportState: 'flowing',
+        memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy())
     };
 }
 

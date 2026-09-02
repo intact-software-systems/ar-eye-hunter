@@ -272,6 +272,9 @@ describe('Browser transport cleanup', () => {
         vi.mocked(middleware.middleware.rtcRxStreamer.dispose).mockImplementation(() => {
             effects.push('rtc-disposed');
         });
+        vi.mocked(middleware.middleware.webRtcGroupManager.stopReconcileWakes).mockImplementation(() => {
+            effects.push('reconcile-wakes-stopped');
+        });
         vi.mocked(middleware.middleware.webRtcConnectionService.knownPeerIds).mockReturnValue(['peer-1']);
         vi.mocked(middleware.middleware.webRtcConnectionService.disconnectPeer).mockImplementation(() => {
             effects.push('rtc-peer');
@@ -328,6 +331,7 @@ describe('Browser transport cleanup', () => {
             'state-cache-detached',
             'heartbeat',
             'rtc-disposed',
+            'reconcile-wakes-stopped',
             'rtc-peer',
             'media',
             'multicast',

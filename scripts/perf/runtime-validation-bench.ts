@@ -22,6 +22,8 @@ import type {
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { AuditStamp as ClientAuditStamp, ClientSnapshot } from '@shared/api/client-types.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { ObservableLatestRepository } from '@shared/cache/ObservableLatestRepository.ts';
@@ -675,7 +677,8 @@ function makeGroupSnapshot(
                 (_, index) => `principal-${index}`
             ),
             acceptedLayoutIdentity: null,
-            transportState: 'flowing'
+            transportState: 'flowing',
+            memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy())
         },
         members: Array.from({ length: memberCount }, (_, index) => ({
             ...ref,

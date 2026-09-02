@@ -113,6 +113,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     ): void {
         runShutdownStep(() => middleware.heartbeat?.stop());
         runShutdownStep(() => middleware.rtcRxStreamer.dispose());
+        runShutdownStep(() => middleware.webRtcGroupManager.stopReconcileWakes());
         runShutdownStep(() => {
             for (const peerId of middleware.webRtcConnectionService.knownPeerIds()) {
                 middleware.webRtcConnectionService.disconnectPeer(peerId);

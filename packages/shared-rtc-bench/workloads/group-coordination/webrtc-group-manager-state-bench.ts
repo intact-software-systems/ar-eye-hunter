@@ -1,6 +1,8 @@
 import { dirname } from 'node:path';
 
 import type { ClientInfo } from '@shared/api/api-config.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts';
@@ -330,7 +332,8 @@ function createGroupSnapshotGroup(
         establishmentStartedAtEpochMs: null,
         formationElectorate: [],
         acceptedLayoutIdentity: null,
-        transportState: 'flowing'
+        transportState: 'flowing',
+        memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy())
     };
 }
 

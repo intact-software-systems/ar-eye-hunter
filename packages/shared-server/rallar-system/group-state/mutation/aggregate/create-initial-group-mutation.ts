@@ -1,3 +1,5 @@
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSummary } from '@shared/api/group-types.ts';
 
 import type { GroupMutationCommand, GroupMutationFacts, GroupMutationRead } from '../group-mutation-contracts.ts';
@@ -13,6 +15,7 @@ export function createInitialGroup({
     audit,
     snapshotVersion
 }: CreateInitialGroupInput): Group {
+    const lifecyclePolicy = command.input.lifecyclePolicy ?? createDefaultGroupLifecyclePolicy();
     return {
         ...command.aggregateRef,
         slug: command.input.slug,
@@ -37,14 +40,15 @@ export function createInitialGroup({
         expiresAtEpochMs: command.input.expiresAtEpochMs,
         emptySinceEpochMs: null,
         purgeAfterEpochMs: command.input.purgeAfterEpochMs,
-        lifecycleState: command.input.lifecyclePolicy?.formation === 'phased' ? 'forming' : 'active',
+        lifecycleState: lifecyclePolicy.formation === 'phased' ? 'forming' : 'active',
         formationEpoch: 0,
         formationAttemptCount: 0,
         lastFormationOutcome: null,
         establishmentStartedAtEpochMs: null,
         formationElectorate: [command.input.createdByPrincipalId],
         acceptedLayoutIdentity: null,
-        transportState: 'flowing'
+        transportState: 'flowing',
+        memberPolicy: toGroupMemberPolicy(lifecyclePolicy)
     };
 }
 

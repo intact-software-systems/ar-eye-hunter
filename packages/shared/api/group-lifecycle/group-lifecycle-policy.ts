@@ -54,6 +54,29 @@ export type GroupEstablishmentTransports =
     | 'ws-only'
     | 'rtc-preferred';
 
+/** The runtime registry the validators check against. */
+export const GROUP_ESTABLISHMENT_TRANSPORTS = [
+    'rtc-and-ws',
+    'ws-only',
+    'rtc-preferred'
+] as const satisfies readonly GroupEstablishmentTransports[];
+
+/**
+ * The member tier of the policy (product decision 26), copied onto the group
+ * at creation so every member's browser bounds its own RTC setups from the
+ * snapshot it already holds (implementation decision I13). Declared at group
+ * scope, executed per member; write-once like the policy it comes from.
+ */
+export type GroupMemberPolicy = Readonly<{
+    maxConcurrentEdgeSetups: number;
+    transports: GroupEstablishmentTransports;
+}>;
+
+export const GROUP_MEMBER_POLICY_KEYS = [
+    'maxConcurrentEdgeSetups',
+    'transports'
+] as const satisfies readonly (keyof GroupMemberPolicy)[];
+
 /**
  * Who may issue the eight application-facing group-authority commands. One
  * policy governs all of them (product decision 12), and the field lives on the

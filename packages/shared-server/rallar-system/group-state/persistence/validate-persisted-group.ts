@@ -2,7 +2,13 @@ import {
     GROUP_LAYOUT_IDENTITY_KEYS,
     GROUP_LAYOUT_IDENTITY_STATES
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
-import { GROUP_LIFECYCLE_STATES, GROUP_TRANSPORT_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import {
+    GROUP_ESTABLISHMENT_TRANSPORTS,
+    GROUP_LIFECYCLE_STATES,
+    GROUP_MEMBER_POLICY_KEYS,
+    GROUP_TRANSPORT_STATES
+} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 
@@ -51,7 +57,8 @@ const STORED_GROUP_KEYS = [
     'establishmentStartedAtEpochMs',
     'formationElectorate',
     'acceptedLayoutIdentity',
-    'transportState'
+    'transportState',
+    'memberPolicy'
 ] as const;
 
 const FORMATION_OUTCOME_KEYS = ['outcome', 'observedRate', 'atEpochMs', 'formationEpoch'] as const;
@@ -71,6 +78,8 @@ const STORED_MEMBER_KEYS = [
     'invitedByPrincipalId',
     'invitationExpiresAtEpochMs'
 ] as const;
+
+type StoredGroupRecord = Readonly<Record<string, unknown>>;
 
 export function validateStoredGroup(group: unknown, ref: GroupRef): asserts group is Group {
     const value = requireRecord(group, 'Stored group value');
@@ -168,6 +177,24 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
         );
     }
     requireOneOf(value.transportState, GROUP_TRANSPORT_STATES, 'Stored group transportState');
+    validateStoredGroupMemberPolicy(requireRecord(value.memberPolicy, 'Stored group memberPolicy'));
+}
+
+function validateStoredGroupMemberPolicy(memberPolicy: StoredGroupRecord): void {
+    assertExactKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
+    assertRequiredKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
+    requirePositiveSafeInteger(
+        memberPolicy.maxConcurrentEdgeSetups,
+        'Stored group memberPolicy maxConcurrentEdgeSetups'
+    );
+    if (memberPolicy.maxConcurrentEdgeSetups > MAX_GROUP_CONCURRENT_EDGE_SETUPS) {
+        throw new TypeError('Stored group memberPolicy maxConcurrentEdgeSetups exceeds the policy bound');
+    }
+    requireOneOf(
+        memberPolicy.transports,
+        GROUP_ESTABLISHMENT_TRANSPORTS,
+        'Stored group memberPolicy transports'
+    );
 }
 
 export function validateStoredMember(
@@ -249,7 +276,7 @@ export function validateScopedValue(
 }
 
 export function validateScopedRecord(
-    value: Readonly<Record<string, unknown>>,
+    value: StoredGroupRecord,
     ref: GroupRef,
     label: string
 ): void {

@@ -4688,6 +4688,7 @@ components:
         - formationElectorate
         - acceptedLayoutIdentity
         - transportState
+        - memberPolicy
       discriminator:
         propertyName: status
       oneOf:
@@ -4811,6 +4812,26 @@ components:
         transportState:
           type: string
           enum: [flowing, halted]
+        memberPolicy:
+          $ref: '#/components/schemas/GroupMemberPolicy'
+
+    GroupMemberPolicy:
+      type: object
+      description: >-
+        The member tier of the group's lifecycle policy, resolved once at
+        creation (product decision 26).
+      required:
+        - maxConcurrentEdgeSetups
+        - transports
+      properties:
+        maxConcurrentEdgeSetups:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 256
+        transports:
+          type: string
+          enum: [rtc-and-ws, ws-only, rtc-preferred]
 
     GroupLayoutIdentity:
       type: object

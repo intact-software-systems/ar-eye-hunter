@@ -40,6 +40,8 @@ export function createDefaultApiMiddlewareTestDouble(
             ),
             rtcRxStreamer: createRtcRxStreamerDouble(middlewareOverrides.rtcRxStreamer),
             webRtcGroupManager: toServiceTestDouble<RallarBrowserMiddleware['webRtcGroupManager']>({
+                startReconcileWakes: vi.fn(),
+                stopReconcileWakes: vi.fn(),
                 ...middlewareOverrides.webRtcGroupManager
             }),
             webRtcOverlayMulticastManager: toServiceTestDouble<RallarBrowserMiddleware['webRtcOverlayMulticastManager']>({

@@ -2,7 +2,13 @@ import { toScopedOverlayId } from './api-type-utils.ts';
 import type { ClientEvent, ClientSnapshot } from './client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from './group-client-views.ts';
 import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
-import { GROUP_LIFECYCLE_STATES, GROUP_TRANSPORT_STATES } from './group-lifecycle/group-lifecycle-policy.ts';
+import {
+    GROUP_ESTABLISHMENT_TRANSPORTS,
+    GROUP_LIFECYCLE_STATES,
+    GROUP_MEMBER_POLICY_KEYS,
+    GROUP_TRANSPORT_STATES
+} from './group-lifecycle/group-lifecycle-policy.ts';
+import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from './group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from './group-types.ts';
 import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
 import type { StateEventPage } from './state-event-types.ts';
@@ -97,7 +103,8 @@ const GROUP_KEYS = [
     'establishmentStartedAtEpochMs',
     'formationElectorate',
     'acceptedLayoutIdentity',
-    'transportState'
+    'transportState',
+    'memberPolicy'
 ];
 const GROUP_MEMBER_KEYS = [
     'applicationId',
@@ -373,6 +380,24 @@ export function validateAuthoritativeClientSnapshot(
     }
 }
 
+type ValidatedRecord = Readonly<Record<string, unknown>>;
+
+function validateGroupSnapshotMemberPolicy(memberPolicy: ValidatedRecord): void {
+    exact(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'GroupSnapshot.group.memberPolicy');
+    positiveInteger(
+        memberPolicy.maxConcurrentEdgeSetups,
+        'GroupSnapshot.group.memberPolicy.maxConcurrentEdgeSetups'
+    );
+    if (memberPolicy.maxConcurrentEdgeSetups > MAX_GROUP_CONCURRENT_EDGE_SETUPS) {
+        fail('GroupSnapshot.group.memberPolicy.maxConcurrentEdgeSetups exceeds the policy bound');
+    }
+    enumValue(
+        memberPolicy.transports,
+        GROUP_ESTABLISHMENT_TRANSPORTS,
+        'GroupSnapshot.group.memberPolicy.transports'
+    );
+}
+
 export function validateAuthoritativeGroupSnapshot(
     value: unknown,
     scope?: StateScope
@@ -498,6 +523,7 @@ export function validateAuthoritativeGroupSnapshot(
         GROUP_TRANSPORT_STATES,
         'GroupSnapshot.group.transportState'
     );
+    validateGroupSnapshotMemberPolicy(record(group.memberPolicy, 'GroupSnapshot.group.memberPolicy'));
     const members = array(snapshot.members, 'GroupSnapshot.members');
     const memberIds = new Set<string>();
     const activeMemberIds = new Set<string>();
@@ -685,7 +711,7 @@ function assertCanonicalTopologyIdentifiers(values: readonly string[], label: st
 }
 
 function validateActiveTopologyGraph(
-    nextHops: Readonly<Record<string, unknown>>,
+    nextHops: ValidatedRecord,
     activeSessionIds: ReadonlySet<string>,
     degreeLimit: number
 ): void {
