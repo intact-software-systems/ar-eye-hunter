@@ -180,7 +180,16 @@
         }
       },
       "expect": {
-        "status": 201
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{policyGroupId}",
+            "memberPolicy": {
+              "maxConcurrentEdgeSetups": 32,
+              "transports": "rtc-and-ws"
+            }
+          }
+        }
       }
     },
     {
@@ -208,7 +217,11 @@
           "group": {
             "groupId": "{plainGroupId}",
             "lifecycleState": "active",
-            "formationEpoch": 0
+            "formationEpoch": 0,
+            "memberPolicy": {
+              "maxConcurrentEdgeSetups": 64,
+              "transports": "rtc-and-ws"
+            }
           }
         }
       }
@@ -241,7 +254,11 @@
           "group": {
             "groupId": "{optimisticGroupId}",
             "lifecycleState": "active",
-            "formationEpoch": 0
+            "formationEpoch": 0,
+            "memberPolicy": {
+              "maxConcurrentEdgeSetups": 64,
+              "transports": "rtc-and-ws"
+            }
           }
         }
       }

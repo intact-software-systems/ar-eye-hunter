@@ -68,6 +68,7 @@ export interface MutableWebRtcGroupManagerDiagnostics {
     connectAttemptCount: number;
     connectFailureCount: number;
     connectDeferredBudgetCount: number;
+    connectDeferredPacingCount: number;
     disconnectCount: number;
     retainedCreatedCount: number;
     retainedExpiredCount: number;
@@ -85,6 +86,7 @@ export function emptyGroupManagerDiagnostics(): MutableWebRtcGroupManagerDiagnos
         connectAttemptCount: 0,
         connectFailureCount: 0,
         connectDeferredBudgetCount: 0,
+        connectDeferredPacingCount: 0,
         disconnectCount: 0,
         retainedCreatedCount: 0,
         retainedExpiredCount: 0,

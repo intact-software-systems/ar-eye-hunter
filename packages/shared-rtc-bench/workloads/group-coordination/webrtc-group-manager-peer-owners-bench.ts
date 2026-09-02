@@ -288,7 +288,8 @@ function createGroupSnapshotGroup(
             version: 1,
             state: 'active'
         },
-        transportState: 'flowing'
+        transportState: 'flowing',
+        memberPolicy: { maxConcurrentEdgeSetups: 64, transports: 'rtc-and-ws' }
     };
 }
 

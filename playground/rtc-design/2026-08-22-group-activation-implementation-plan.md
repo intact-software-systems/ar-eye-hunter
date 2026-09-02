@@ -2,7 +2,8 @@
 
 Status: **implementation in progress — Slices 1–8 are merged, the last through PR #396 on
 2026-09-01. Slice 9a, the truthful RTC lifecycle signals, is in delivery on
-`codex/group-activation-rtc-lifecycle-signals`; Slice 9b is the next outcome. Re-baselined
+`codex/group-activation-rtc-lifecycle-signals` (PR #404), and Slice 9b, the wire path and the
+per-group in-flight bound, is stacked on it on `codex/group-activation-in-flight-bound`. Re-baselined
 against product decisions 1–42. The product decisions are settled;
 the implementation decisions record current reasoning, while ownership, decomposition, file and
 symbol inventories, dependencies and gates must be refreshed against the actual delivery head before
@@ -2310,6 +2311,41 @@ native runtime. The sandboxed unit run reports six files that bind ports or `/tm
 unsandboxed and are environment evidence, not slice evidence. Seventeen pre-existing unformatted
 files on `main` are untouched and outside this closure, as is the legacy scan's vocabulary hit on
 the benches' pre-existing CLI default parameter.
+
+### Slice 9b start checkpoint — the wire path and the per-group in-flight bound (2026-09-02)
+
+Stacked on 9a's reviewed head. The Slice 0 material-change review found nothing new on `main`
+beyond 9a's own base. Ownership recovery confirmed the "five-list edit" I13 predicted, and it is
+exactly five: the persisted group validator's key list, the authoritative snapshot validator's,
+the delta envelope validator's, the OpenAPI `Group` required block, and the compile-complete test
+fixture — the aggregate cross-check test drives one `Group` through the first three, so a list
+that drifts fails there before any recipe runs. Six benchmark and diagnostic workloads build a
+`Group` literal by hand and joined the closure as compile errors, which is the fixture's design
+working as intended.
+
+What 9b lands:
+
+- **`Group.memberPolicy`** (I13, product decision 26): `{ maxConcurrentEdgeSetups, transports }`,
+  resolved by `toGroupMemberPolicy` from the normalized policy at creation and from the default
+  preset when the request carries no policy, so every group read, delta and hydration carries the
+  bound each member enforces on itself. Last in wire order (I4); no persisted-row migration
+  because the key lists are exact and the cutover is clean-database, as every earlier aggregate
+  field was.
+- **`computePacedOutboundDialPlan`**, the pure in-flight dial plan over the budgeted plan: known
+  peers pass because their ensure starts nothing; a new dial is admitted only while every owning
+  group is below its bound, counting setups already in flight for that group plus the dials
+  admitted earlier in the same pass; a paced peer waits. Product decision 18's shared-peer rule
+  falls out of `computeInFlightDialAdmission` unchanged.
+- **Wake-on-completion**: the manager registers one lifecycle observer on the connection service
+  and re-reconciles when a setup ends by establishment, timeout or removal — but only while a
+  paced dial is waiting, and never for the endings a pass causes itself. The browser transport
+  shutdown stops the wakes before it tears peers down, because shutdown removes peers their groups
+  still want; without that, every teardown would dial them back.
+- **The completable harness dial**: the simulated connection harness now exposes `establish`, so
+  browser tests drive a setup from in flight to established and observe the bound release.
+
+Refreshed next two slices. 9b is this PR. The 6/20/50 sweep manifests (`pacing-sweep`) follow as
+their own PR once 9b's live-RTC evidence exists; Slice 10a is the outcome after that.
 
 ## Slice 10 — Replanning modes and landing go live
 

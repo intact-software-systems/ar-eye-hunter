@@ -214,7 +214,8 @@ function createGroupSnapshot(groupId: string, memberSessionIds: readonly string[
             establishmentStartedAtEpochMs: null,
             formationElectorate: [],
             acceptedLayoutIdentity: null,
-            transportState: 'flowing'
+            transportState: 'flowing',
+            memberPolicy: { maxConcurrentEdgeSetups: 64, transports: 'rtc-and-ws' }
         },
         members: memberSessionIds.map((sessionId) => ({
             applicationId,

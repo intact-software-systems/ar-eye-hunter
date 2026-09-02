@@ -1,7 +1,12 @@
 import { validateAuthoritativeGroupEvent } from './authoritative-state-validation.ts';
 import { compareGroupCausalRevision } from './group-client-views.ts';
 import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
-import { GROUP_LIFECYCLE_STATES, GROUP_TRANSPORT_STATES } from './group-lifecycle/group-lifecycle-policy.ts';
+import {
+    GROUP_ESTABLISHMENT_TRANSPORTS,
+    GROUP_LIFECYCLE_STATES,
+    GROUP_MEMBER_POLICY_KEYS,
+    GROUP_TRANSPORT_STATES
+} from './group-lifecycle/group-lifecycle-policy.ts';
 import type { Group, GroupEvent, GroupMember, GroupPresenceSession, GroupStateCausalRevision } from './group-types.ts';
 import type { StateScope } from './state-types.ts';
 
@@ -78,7 +83,8 @@ const GROUP_KEYS = [
     'establishmentStartedAtEpochMs',
     'formationElectorate',
     'acceptedLayoutIdentity',
-    'transportState'
+    'transportState',
+    'memberPolicy'
 ];
 const GROUP_MEMBER_KEYS = [
     'applicationId',
@@ -245,6 +251,10 @@ function validateDeltaGroup(
         enumValue(accepted.state, GROUP_LAYOUT_IDENTITY_STATES, `${label}.acceptedLayoutIdentity.state`);
     }
     enumValue(group.transportState, GROUP_TRANSPORT_STATES, `${label}.transportState`);
+    const memberPolicy = record(group.memberPolicy, `${label}.memberPolicy`);
+    exact(memberPolicy, GROUP_MEMBER_POLICY_KEYS, `${label}.memberPolicy`);
+    positiveInteger(memberPolicy.maxConcurrentEdgeSetups, `${label}.memberPolicy.maxConcurrentEdgeSetups`);
+    enumValue(memberPolicy.transports, GROUP_ESTABLISHMENT_TRANSPORTS, `${label}.memberPolicy.transports`);
     return { activeMemberCount: group.activeMemberCount, status: group.status };
 }
 

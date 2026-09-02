@@ -1,4 +1,4 @@
-import { computeOutboundDialPlan } from '@shared/services/webrtc-outbound-dial-plan.ts';
+import { computeOutboundDialPlan, computePacedOutboundDialPlan } from '@shared/services/webrtc-outbound-dial-plan.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('computeOutboundDialPlan', () => {
@@ -78,5 +78,85 @@ describe('computeOutboundDialPlan', () => {
 
         expect(plan.peersToConnect).toEqual(['peer-a', 'peer-b']);
         expect(plan.deferredPeerIds).toEqual(['peer-c']);
+    });
+});
+
+describe('computePacedOutboundDialPlan', () => {
+    it('admits new dials until each owning group reaches its in-flight bound and paces the rest', () => {
+        const paced = computePacedOutboundDialPlan({
+            peersToConnect: ['peer-a', 'peer-b', 'peer-c', 'peer-d'],
+            knownPeerIds: new Set(),
+            inFlightPeerIds: new Set(),
+            ownerGroupIdsByPeerId: new Map([
+                ['peer-a', ['group-1']],
+                ['peer-b', ['group-1']],
+                ['peer-c', ['group-1']],
+                ['peer-d', ['group-1']]
+            ]),
+            groupSetupBudgets: new Map([
+                ['group-1', { desiredPeerIds: new Set(['peer-a', 'peer-b', 'peer-c', 'peer-d']), maxConcurrentEdgeSetups: 2 }]
+            ])
+        });
+
+        expect(paced.peersToConnect).toEqual(['peer-a', 'peer-b']);
+        expect(paced.pacedPeerIds).toEqual(['peer-c', 'peer-d']);
+    });
+
+    it('charges setups already in flight to their owners before admitting new dials', () => {
+        const paced = computePacedOutboundDialPlan({
+            peersToConnect: ['peer-in-flight', 'peer-new-1', 'peer-new-2'],
+            knownPeerIds: new Set(['peer-in-flight']),
+            inFlightPeerIds: new Set(['peer-in-flight']),
+            ownerGroupIdsByPeerId: new Map([
+                ['peer-in-flight', ['group-1']],
+                ['peer-new-1', ['group-1']],
+                ['peer-new-2', ['group-1']]
+            ]),
+            groupSetupBudgets: new Map([
+                ['group-1', { desiredPeerIds: new Set(['peer-in-flight', 'peer-new-1', 'peer-new-2']), maxConcurrentEdgeSetups: 2 }]
+            ])
+        });
+
+        expect(paced.peersToConnect).toEqual(['peer-in-flight', 'peer-new-1']);
+        expect(paced.pacedPeerIds).toEqual(['peer-new-2']);
+    });
+
+    it('lets a peer shared by two groups start only when every owner has a free slot', () => {
+        const paced = computePacedOutboundDialPlan({
+            peersToConnect: ['peer-a', 'peer-shared', 'peer-b'],
+            knownPeerIds: new Set(),
+            inFlightPeerIds: new Set(),
+            ownerGroupIdsByPeerId: new Map([
+                ['peer-a', ['group-saturated']],
+                ['peer-shared', ['group-saturated', 'group-idle']],
+                ['peer-b', ['group-idle']]
+            ]),
+            groupSetupBudgets: new Map([
+                ['group-saturated', { desiredPeerIds: new Set(['peer-a', 'peer-shared']), maxConcurrentEdgeSetups: 1 }],
+                ['group-idle', { desiredPeerIds: new Set(['peer-shared', 'peer-b']), maxConcurrentEdgeSetups: 5 }]
+            ])
+        });
+
+        expect(paced.peersToConnect).toEqual(['peer-a', 'peer-b']);
+        expect(paced.pacedPeerIds).toEqual(['peer-shared']);
+    });
+
+    it('never paces a peer whose setup already exists, established or not', () => {
+        const paced = computePacedOutboundDialPlan({
+            peersToConnect: ['peer-established', 'peer-in-flight', 'peer-new'],
+            knownPeerIds: new Set(['peer-established', 'peer-in-flight']),
+            inFlightPeerIds: new Set(['peer-in-flight']),
+            ownerGroupIdsByPeerId: new Map([
+                ['peer-established', ['group-1']],
+                ['peer-in-flight', ['group-1']],
+                ['peer-new', ['group-1']]
+            ]),
+            groupSetupBudgets: new Map([
+                ['group-1', { desiredPeerIds: new Set(['peer-established', 'peer-in-flight', 'peer-new']), maxConcurrentEdgeSetups: 1 }]
+            ])
+        });
+
+        expect(paced.peersToConnect).toEqual(['peer-established', 'peer-in-flight']);
+        expect(paced.pacedPeerIds).toEqual(['peer-new']);
     });
 });

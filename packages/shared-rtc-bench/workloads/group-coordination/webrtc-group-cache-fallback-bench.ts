@@ -317,7 +317,8 @@ function createGroupSnapshotGroup(input: CreateGroupSnapshotInput): GroupSnapsho
         establishmentStartedAtEpochMs: null,
         formationElectorate: [],
         acceptedLayoutIdentity: null,
-        transportState: 'flowing'
+        transportState: 'flowing',
+        memberPolicy: { maxConcurrentEdgeSetups: 64, transports: 'rtc-and-ws' }
     };
 }
 

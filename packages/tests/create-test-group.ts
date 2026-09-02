@@ -49,7 +49,8 @@ export function createTestGroup(overrides: Partial<Group> = {}): Group {
         establishmentStartedAtEpochMs: null,
         formationElectorate: ['alice'],
         acceptedLayoutIdentity: null,
-        transportState: 'flowing'
+        transportState: 'flowing',
+        memberPolicy: { maxConcurrentEdgeSetups: 64, transports: 'rtc-and-ws' }
     };
 
     // `Group` correlates `status` with `archived`/`deleted`, and a spread of

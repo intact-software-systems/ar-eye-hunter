@@ -2,7 +2,12 @@ import { toScopedOverlayId } from './api-type-utils.ts';
 import type { ClientEvent, ClientSnapshot } from './client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from './group-client-views.ts';
 import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
-import { GROUP_LIFECYCLE_STATES, GROUP_TRANSPORT_STATES } from './group-lifecycle/group-lifecycle-policy.ts';
+import {
+    GROUP_ESTABLISHMENT_TRANSPORTS,
+    GROUP_LIFECYCLE_STATES,
+    GROUP_MEMBER_POLICY_KEYS,
+    GROUP_TRANSPORT_STATES
+} from './group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from './group-types.ts';
 import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
 import type { StateEventPage } from './state-event-types.ts';
@@ -97,7 +102,8 @@ const GROUP_KEYS = [
     'establishmentStartedAtEpochMs',
     'formationElectorate',
     'acceptedLayoutIdentity',
-    'transportState'
+    'transportState',
+    'memberPolicy'
 ];
 const GROUP_MEMBER_KEYS = [
     'applicationId',
@@ -497,6 +503,17 @@ export function validateAuthoritativeGroupSnapshot(
         group.transportState,
         GROUP_TRANSPORT_STATES,
         'GroupSnapshot.group.transportState'
+    );
+    const memberPolicy = record(group.memberPolicy, 'GroupSnapshot.group.memberPolicy');
+    exact(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'GroupSnapshot.group.memberPolicy');
+    positiveInteger(
+        memberPolicy.maxConcurrentEdgeSetups,
+        'GroupSnapshot.group.memberPolicy.maxConcurrentEdgeSetups'
+    );
+    enumValue(
+        memberPolicy.transports,
+        GROUP_ESTABLISHMENT_TRANSPORTS,
+        'GroupSnapshot.group.memberPolicy.transports'
     );
     const members = array(snapshot.members, 'GroupSnapshot.members');
     const memberIds = new Set<string>();

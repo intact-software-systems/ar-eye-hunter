@@ -2,7 +2,12 @@ import {
     GROUP_LAYOUT_IDENTITY_KEYS,
     GROUP_LAYOUT_IDENTITY_STATES
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
-import { GROUP_LIFECYCLE_STATES, GROUP_TRANSPORT_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import {
+    GROUP_ESTABLISHMENT_TRANSPORTS,
+    GROUP_LIFECYCLE_STATES,
+    GROUP_MEMBER_POLICY_KEYS,
+    GROUP_TRANSPORT_STATES
+} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 
@@ -51,7 +56,8 @@ const STORED_GROUP_KEYS = [
     'establishmentStartedAtEpochMs',
     'formationElectorate',
     'acceptedLayoutIdentity',
-    'transportState'
+    'transportState',
+    'memberPolicy'
 ] as const;
 
 const FORMATION_OUTCOME_KEYS = ['outcome', 'observedRate', 'atEpochMs', 'formationEpoch'] as const;
@@ -168,6 +174,18 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
         );
     }
     requireOneOf(value.transportState, GROUP_TRANSPORT_STATES, 'Stored group transportState');
+    const memberPolicy = requireRecord(value.memberPolicy, 'Stored group memberPolicy');
+    assertExactKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
+    assertRequiredKeys(memberPolicy, GROUP_MEMBER_POLICY_KEYS, 'Stored group memberPolicy');
+    requirePositiveSafeInteger(
+        memberPolicy.maxConcurrentEdgeSetups,
+        'Stored group memberPolicy maxConcurrentEdgeSetups'
+    );
+    requireOneOf(
+        memberPolicy.transports,
+        GROUP_ESTABLISHMENT_TRANSPORTS,
+        'Stored group memberPolicy transports'
+    );
 }
 
 export function validateStoredMember(

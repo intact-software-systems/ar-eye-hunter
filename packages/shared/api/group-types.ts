@@ -3,6 +3,7 @@ import type { GroupLayoutIdentity } from './group-lifecycle/group-layout-identit
 import type {
     GroupFormationOutcome,
     GroupLifecycleState,
+    GroupMemberPolicy,
     GroupTransportState
 } from './group-lifecycle/group-lifecycle-policy.ts';
 import type { MutationActor } from './mutation-actor.ts';
@@ -116,6 +117,14 @@ type GroupBase =
          * Creation is always `flowing`.
          */
         transportState: GroupTransportState;
+
+        /**
+         * The member-tier policy values resolved at creation (product decision
+         * 26, implementation decision I13): the in-flight setup bound each
+         * member enforces on itself, and the declared transports. A group
+         * created without a policy carries the default preset's values.
+         */
+        memberPolicy: GroupMemberPolicy;
     }>;
 
 export type Group =

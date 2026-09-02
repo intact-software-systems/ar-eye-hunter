@@ -157,6 +157,7 @@ function createGroup(groupId: string, ownerPrincipalId: string): Group {
         formationElectorate: [ownerPrincipalId],
         acceptedLayoutIdentity: null,
         transportState: 'flowing',
+        memberPolicy: { maxConcurrentEdgeSetups: 64, transports: 'rtc-and-ws' },
         snapshotVersion: 1,
         metadataVersion: 1,
         rosterVersion: 1,

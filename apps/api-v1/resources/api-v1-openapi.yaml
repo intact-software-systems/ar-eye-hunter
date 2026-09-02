@@ -4688,6 +4688,7 @@ components:
         - formationElectorate
         - acceptedLayoutIdentity
         - transportState
+        - memberPolicy
       discriminator:
         propertyName: status
       oneOf:
@@ -4811,6 +4812,28 @@ components:
         transportState:
           type: string
           enum: [flowing, halted]
+        memberPolicy:
+          $ref: '#/components/schemas/GroupMemberPolicy'
+
+    GroupMemberPolicy:
+      type: object
+      description: >-
+        The member tier of the lifecycle policy (product decision 26), resolved
+        at creation and carried on every group read and delta so each member's
+        browser bounds its own concurrent RTC setups from the snapshot it
+        already holds. A group created without a policy carries the default
+        preset's values.
+      required:
+        - maxConcurrentEdgeSetups
+        - transports
+      properties:
+        maxConcurrentEdgeSetups:
+          type: integer
+          format: int64
+          minimum: 1
+        transports:
+          type: string
+          enum: [rtc-and-ws, ws-only, rtc-preferred]
 
     GroupLayoutIdentity:
       type: object

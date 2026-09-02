@@ -10,6 +10,7 @@ import {
     MAX_GROUP_STAGE_TRIGGER_DELAY_MS,
     MAX_GROUP_TOPOLOGY_DEBOUNCE_WINDOW_MS,
     MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS,
+    toGroupMemberPolicy,
     toNormalizedGroupLifecyclePolicy
 } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
@@ -72,6 +73,24 @@ describe('group lifecycle policy defaults', () => {
 
         expect(managed.establishment.planTrigger).toEqual({ kind: 'manual' });
         expect(managed.establishment.connectTrigger).toEqual({ kind: 'immediate' });
+    });
+});
+
+describe('group member policy', () => {
+    it('carries exactly the establishment values of the resolved policy', () => {
+        expect(toGroupMemberPolicy(resolveGroupLifecyclePolicyPreset('match'))).toEqual({
+            maxConcurrentEdgeSetups: 16,
+            transports: 'rtc-preferred'
+        });
+        expect(toGroupMemberPolicy(toNormalizedGroupLifecyclePolicy({ establishment: { maxConcurrentEdgeSetups: 3 } })))
+            .toEqual({ maxConcurrentEdgeSetups: 3, transports: 'rtc-and-ws' });
+    });
+
+    it('gives a group created without a policy the default preset values', () => {
+        expect(toGroupMemberPolicy(createDefaultGroupLifecyclePolicy())).toEqual({
+            maxConcurrentEdgeSetups: 64,
+            transports: 'rtc-and-ws'
+        });
     });
 });
 

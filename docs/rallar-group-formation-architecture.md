@@ -69,6 +69,9 @@ response and in every WS delta envelope:
 - `formationAttemptCount` — incremented by failure; activation and reset clear the series.
 - `transportState` — flowing or halted independently of lifecycle stage.
 - `acceptedLayoutIdentity` — the last accepted layout; reconfiguration preserves it until replacement.
+- `memberPolicy` — the member tier of the lifecycle policy (`maxConcurrentEdgeSetups`, `transports`)
+  resolved at creation; a group created without a policy carries the default preset's values. The
+  browser bounds its own concurrent RTC setups per group from this field.
 - `lastFormationOutcome` — `null` until the criterion first decides, then the recorded decision:
   `{ outcome: 'activated' | 'activated-degraded' | 'below-floor', observedRate, atEpochMs,
   formationEpoch }`. Operator activation records nothing; only criterion-commanded transitions do.
