@@ -6,10 +6,6 @@ import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
     toStoredRtcTopologySnapshotRow
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
-import {
-    toRtcTopologyFingerprintNamespace,
-    toStoredRtcTopologyInputFingerprintValue
-} from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { PlannedLayoutPromotion } from '../../mutation/aggregate/compute-planned-layout-promotion.ts';
 import type { GroupLayoutTombstones } from '../../mutation/group-mutation-contracts.ts';
@@ -89,7 +85,7 @@ export function toGroupLayoutPromotionEffects(
         value: row.value,
         expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
     } as const;
-    const effects: RuntimeStateGuardedBatchEffect[] = [
+    return [
         {
             effectId: 'planned-layout-fence',
             operation: 'update',
@@ -112,20 +108,4 @@ export function toGroupLayoutPromotionEffects(
                 ...stored
             }
     ];
-    if (promotion.acceptedInputFingerprint !== null) {
-        // Unguarded on purpose: the fingerprint row is derived from the planned
-        // row the fence above already guards, so it can only follow that fence.
-        effects.push({
-            effectId: 'accepted-layout-fingerprint',
-            operation: 'put',
-            namespace: toRtcTopologyFingerprintNamespace('accepted'),
-            key: row.key,
-            value: toStoredRtcTopologyInputFingerprintValue(
-                promotion.acceptedSnapshot.groupRef,
-                promotion.acceptedInputFingerprint
-            ),
-            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
-        });
-    }
-    return effects;
 }

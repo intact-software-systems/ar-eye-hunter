@@ -2280,31 +2280,51 @@ override and changing the planned gate's meaning.
 What 10a lands:
 
 - **`resolveTopologyReplanEnqueue`**, the enqueue-side twin of the planning gate, beside it in
-  `resolve-topology-plan-action.ts`: automatic work for a stage that follows the replanning policy
-  is held when the mode is `commanded` or the policy is unreadable and the planned slot holds an
-  active layout; commanded-origin work and every establishment case still enqueue. The
-  presence-summary read carries the stored policy and the planned slot; compute decides; the write
-  and the formation metric follow the decision.
-- **One stored fingerprint per layout slot** (product decision 11): the repository takes a slot,
-  the planned row's reader loads the planned fingerprint, the canonical promotion copies it into the
-  accepted slot as an unguarded `put` beside the guarded accepted row, and an unchanged replan of
-  the layout the group already runs on refreshes both — the path that lets a `reconfigure` with an
-  unchanged graph clear the obligation. Reset keeps both fingerprints, as the reset scenario
-  requires.
-- **`layoutStale` and `pending` on `GroupFormationView`** and its OpenAPI schema: the route's
-  planning port widens to the effective config and hysteresis widths the fingerprint hashes, the
-  route reads the accepted slot, and `pending` is the topology view's queued-replan row.
+  `resolve-topology-plan-action.ts`: it asks `resolveTopologyPlanAction` the planner's own question
+  on the stored policy and planned slot and holds what the planner would freeze. Four cases never
+  hold: an inactive group (its removal must publish), a delta with a queued row to merge into, the
+  lifecycle `reconfigure` family's commanded-origin follow-ups, and an `apply` landing with a
+  promotion outstanding, whose frozen cycle is what re-derives the promotion. The presence-summary
+  read consults the policy and the planned slot only when the gate will, tolerates a corrupt
+  planned row (the planner reports it), compute decides, validate re-derives the decision, and the
+  write and the formation metric follow it.
+- **Staleness by derivation (I27).** Decision 11's second stored fingerprint is unnecessary: the
+  accepted layout is always a promoted planned layout, so its inputs are the planned slot's whenever
+  the identities agree, and a planned layout the group does not run on means the authority has
+  already moved past the accepted one. `computeLayoutStale` takes both identities and the planned
+  slot's stored fingerprint against the authority's; nothing is copied at promotion and no refresh
+  path exists to race.
+- **`layoutStale` and `pending` on `GroupFormationView`** and its OpenAPI schema (`pending` is the
+  shared `PendingTopologyReplan` component): the route reads the planner's authority as the planner
+  owns it and hashes it with the planner's own function, reads the planned slot's fingerprint, and
+  `pending` is the topology view's queued-replan row.
 - **The `commanded-replanning` recipe**: a closed match group reaches `active` on an accepted
   layout, a replacing session moves the authority, the hold leaves `pending` empty while
   `layoutStale` latches, `reconfigure` under the `hold` landing republishes without clearing it, and
   the promotion after `connect` and `activate` clears it.
 
-Two consequences are accepted. The remediation axis (`awaiting-application`) is not read anywhere
-yet: `resolveGroupActivationRemediation` waits for Slice 12's status projection, so the scenario's
-remediation clause is carried there and 10a asserts on the two fields the plan named. And
-`connectPresenceSession` under the hold no longer enqueues topology work for `commanded` groups,
-so the promotion reconcile the skipped cycle used to re-run on those deltas now runs only on
-commanded-origin cycles; a stale promotion request is still re-derived by every commanded cycle.
+**Review correction (2026-09-02).** The first head stored an accepted-slot fingerprint copied at
+promotion and refreshed on unchanged replans; the ten-angle review found the copy racing an
+unchanged refresh that rewrites the planned fingerprint without moving the fenced row, the refresh
+judging the accepted identity from a pre-promotion snapshot, `skipped-fingerprint` cycles never
+refreshing it, and pre-existing groups reading fresh with no row at all — all gone with I27. It also
+found the hold suppressing the removal publication an archive or delete relies on, dropping a delta
+that used to merge into a queued commanded row, and orphaning an `apply` landing's promotion
+reconcile; the four never-hold cases above are the fix, each pinned by a test. The first head also
+mirrored the planner's rule instead of asking it, read the policy and the planned slot on every
+summary, and let a corrupt planned row fail the presence path.
+
+Accepted rather than changed: the remediation axis (`awaiting-application`) waits for Slice 12's
+status projection, so 10a asserts on the two fields the plan named; a topology-inbox `reconfigure`
+with unpersisted request options plans from inputs the authority does not persist, so the view
+reports that layout stale until an option-less replan — the planner already treats such a layout as
+one-off; the topology-inbox `reconfigure` route enqueues its work as automatic origin (pre-existing),
+so under `commanded` only the lifecycle `reconfigure` replans on command, an open item for 10b; held
+work records no metric because the formation-metrics contract is a shared admin surface, also open;
+and under I27 an authority that returns to the accepted layout's inputs while a newer planned layout
+awaits application still reads stale, the conservative answer. The state-write A-B-B-A run stays
+blocked, so the gate's two reads on active groups are registered as the
+`commanded-replan-gate-reads` regression reason profile for the next run.
 
 **Validation (2026-09-02, head `5a2662cfd`).** Baseline: dprint, `check:repo-style:changed` (no new
 findings), test-structure coupling, `check:retained-legacy` (five candidates: three "predecessor

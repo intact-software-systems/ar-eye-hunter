@@ -1,5 +1,5 @@
 import { compareGroupCausalRevision, readGroupCausalRevision } from '@shared/api/group-client-views.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { Group, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isTuplePreservingGroupLivenessReduction } from '@shared/repository/group-state-snapshot-revision.ts';
 import { GroupStateSnapshotIncomparableError } from '@shared/repository/group-state-snapshots-repository.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
@@ -11,10 +11,14 @@ export function isGroupTopologyActiveAt(
     snapshot: GroupSnapshot,
     observedAtEpochMs: number
 ): boolean {
+    return isGroupAggregateTopologyActiveAt(snapshot.group, observedAtEpochMs);
+}
+
+/** The same activity rule on the stored aggregate, for readers that hold no assembled snapshot yet. */
+export function isGroupAggregateTopologyActiveAt(group: Group, observedAtEpochMs: number): boolean {
     return (
-        snapshot.group.status === 'active' &&
-        (snapshot.group.expiresAtEpochMs === null ||
-            snapshot.group.expiresAtEpochMs > observedAtEpochMs)
+        group.status === 'active' &&
+        (group.expiresAtEpochMs === null || group.expiresAtEpochMs > observedAtEpochMs)
     );
 }
 

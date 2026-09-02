@@ -1,4 +1,4 @@
-import type { GroupLayoutIdentity } from './group-layout-identity.ts';
+import { isSameGroupLayoutIdentity, type GroupLayoutIdentity } from './group-layout-identity.ts';
 import type { GroupLifecycleState, GroupTopologyReplanningMode } from './group-lifecycle-policy.ts';
 import { resolveDialLayoutRoles } from './resolve-dial-layout-roles.ts';
 
@@ -155,18 +155,27 @@ export function resolveCoverageBasisLayoutIdentity(
 }
 
 export interface ComputeLayoutStaleInput {
-    readonly acceptedFingerprint: string | undefined;
-    readonly planningAuthorityFingerprint: string | undefined;
+    readonly acceptedIdentity: GroupLayoutIdentity | null;
+    readonly plannedIdentity: GroupLayoutIdentity | null;
+    /** The planned slot's stored topology-input fingerprint; null when no cycle stored one. */
+    readonly plannedFingerprint: string | null;
+    readonly planningAuthorityFingerprint: string;
 }
 
 /**
- * The latched staleness obligation (product decision 11): the accepted
- * layout's stored topology-input fingerprint no longer matches the planning
- * authority's. With no accepted layout there is nothing to be stale.
+ * The latched staleness obligation (product decision 11, implementation
+ * decision I27): the accepted layout is always a promoted planned layout, so
+ * its topology inputs are the planned slot's whenever the two identities
+ * agree; a planned layout the group does not yet run on means the authority
+ * has already moved past the accepted one. With no accepted layout there is
+ * nothing to be stale.
  */
 export function computeLayoutStale(input: ComputeLayoutStaleInput): boolean {
-    if (input.acceptedFingerprint === undefined || input.planningAuthorityFingerprint === undefined) {
+    if (input.acceptedIdentity === null) {
         return false;
     }
-    return input.acceptedFingerprint !== input.planningAuthorityFingerprint;
+    if (input.plannedIdentity === null || !isSameGroupLayoutIdentity(input.acceptedIdentity, input.plannedIdentity)) {
+        return true;
+    }
+    return input.plannedFingerprint !== input.planningAuthorityFingerprint;
 }

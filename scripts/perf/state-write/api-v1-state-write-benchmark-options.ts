@@ -1,6 +1,7 @@
 import { normalize } from 'node:path';
 
 import {
+    COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE,
     GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE,
     PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE,
     RTC_TOPOLOGY_REGRESSION_REASON_PROFILE
@@ -30,7 +31,8 @@ export interface StateWriteBenchmarkOptions {
     readonly regressionReasonProfile?:
         | typeof RTC_TOPOLOGY_REGRESSION_REASON_PROFILE
         | typeof GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE
-        | typeof PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE;
+        | typeof PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE
+        | typeof COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE;
 }
 
 export function parseBenchmarkOptions(args: readonly string[]): StateWriteBenchmarkOptions {
@@ -49,7 +51,8 @@ export function parseBenchmarkOptions(args: readonly string[]): StateWriteBenchm
         regressionReasonProfile !== undefined &&
         regressionReasonProfile !== RTC_TOPOLOGY_REGRESSION_REASON_PROFILE &&
         regressionReasonProfile !== GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE &&
-        regressionReasonProfile !== PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE
+        regressionReasonProfile !== PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE &&
+        regressionReasonProfile !== COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE
     ) {
         throw new Error(
             `Unsupported state-write regression reason profile: ${regressionReasonProfile}`

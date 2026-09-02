@@ -4857,23 +4857,12 @@ components:
         layoutStale:
           type: boolean
           description: >-
-            The accepted layout's stored topology-input fingerprint differs from
-            the planning authority's (product decision 11). Latched: under
-            `commanded` replanning it clears only through `reconfigure`. A
-            temporary topology override is part of the authority, so its expiry
-            can raise this on wall-clock time alone.
+            The accepted layout no longer matches the planning authority's
+            topology inputs (product decision 11); false without an accepted
+            layout.
         pending:
-          type: object
+          $ref: '#/components/schemas/PendingTopologyReplan'
           nullable: true
-          description: A replan is queued and due; null when none is.
-          required: [reconfigureQueued, dueAtEpochMs]
-          properties:
-            reconfigureQueued:
-              type: boolean
-            dueAtEpochMs:
-              type: integer
-              format: int64
-              nullable: true
         groupRef:
           $ref: '#/components/schemas/GroupRef'
         lifecycleState:
@@ -5934,16 +5923,20 @@ components:
         config:
           $ref: '#/components/schemas/GroupTopologyConfigView'
         pending:
-          type: object
+          $ref: '#/components/schemas/PendingTopologyReplan'
           nullable: true
-          required: [reconfigureQueued, dueAtEpochMs]
-          properties:
-            reconfigureQueued:
-              type: boolean
-            dueAtEpochMs:
-              type: integer
-              format: int64
-              nullable: true
+
+    PendingTopologyReplan:
+      type: object
+      description: A replan is queued and due; carried as null when none is.
+      required: [reconfigureQueued, dueAtEpochMs]
+      properties:
+        reconfigureQueued:
+          type: boolean
+        dueAtEpochMs:
+          type: integer
+          format: int64
+          nullable: true
 
     RallarOverlayTopologySnapshot:
       type: object

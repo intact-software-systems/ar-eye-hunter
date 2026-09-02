@@ -407,53 +407,12 @@
       }
     },
     {
-      "name": "readCurrentArenaManager",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/formation",
-        "headers": {
-          "Authorization": "{carolAuthHeader}",
-          "x-client-id": "{carolClientId}"
+      "include": {
+        "fragment": "manager-authority",
+        "variables": {
+          "expectedLifecycleState": "planned"
         },
-        "outputs": {
-          "arenaManagerPrincipalId": "body.managerPrincipalIds[0]"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "lifecycleState": "planned",
-          "formationEpoch": 1
-        }
-      }
-    },
-    {
-      "name": "deriveCurrentArenaManagerAuthHeader",
-      "type": "set",
-      "output": "arenaManagerAuthHeader",
-      "secret": true,
-      "redactAs": "arenaManagerAuthHeader",
-      "transform": {
-        "if": {
-          "condition": {
-            "equals": [
-              {
-                "path": "outputs.arenaManagerPrincipalId"
-              },
-              {
-                "path": "outputs.carolClientId"
-              }
-            ]
-          },
-          "then": {
-            "path": "outputs.carolAuthHeader"
-          },
-          "else": {
-            "path": "outputs.danAuthHeader"
-          }
-        }
+        "nameSuffix": "ForConnect"
       }
     },
     {
@@ -497,8 +456,8 @@
         "method": "POST",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/lifecycle/connect/requests/connect-plan-match-arena-cr-{runId}",
         "headers": {
-          "Authorization": "{arenaManagerAuthHeader}",
-          "x-client-id": "{arenaManagerPrincipalId}"
+          "Authorization": "{managerAuthHeader}",
+          "x-client-id": "{managerPrincipalId}"
         },
         "body": {
           "expectedFormationEpoch": "{electedManagerPlansTheArenaPlannedEpoch}",
@@ -775,10 +734,10 @@
           "x-client-id": "{carolClientId}"
         },
         "poll": {
-          "maxAttempts": 30,
-          "maxDurationMs": 45000,
-          "backoffMs": 1500,
-          "backoffMultiplier": 1
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
         }
       },
       "expect": {
@@ -812,52 +771,12 @@
       }
     },
     {
-      "name": "readReconfiguringManager",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/formation",
-        "headers": {
-          "Authorization": "{carolAuthHeader}",
-          "x-client-id": "{carolClientId}"
+      "include": {
+        "fragment": "manager-authority",
+        "variables": {
+          "expectedLifecycleState": "active"
         },
-        "outputs": {
-          "reconfiguringManagerPrincipalId": "body.managerPrincipalIds[0]"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "lifecycleState": "active"
-        }
-      }
-    },
-    {
-      "name": "deriveReconfiguringManagerAuthHeader",
-      "type": "set",
-      "output": "reconfiguringManagerAuthHeader",
-      "secret": true,
-      "redactAs": "reconfiguringManagerAuthHeader",
-      "transform": {
-        "if": {
-          "condition": {
-            "equals": [
-              {
-                "path": "outputs.reconfiguringManagerPrincipalId"
-              },
-              {
-                "path": "outputs.carolClientId"
-              }
-            ]
-          },
-          "then": {
-            "path": "outputs.carolAuthHeader"
-          },
-          "else": {
-            "path": "outputs.danAuthHeader"
-          }
-        }
+        "nameSuffix": "ForReconfigure"
       }
     },
     {
@@ -868,8 +787,8 @@
         "method": "POST",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/lifecycle/reconfigure/requests/bb-1af6eb960983aa1bcba61abe-{runId}",
         "headers": {
-          "Authorization": "{reconfiguringManagerAuthHeader}",
-          "x-client-id": "{reconfiguringManagerPrincipalId}"
+          "Authorization": "{managerAuthHeader}",
+          "x-client-id": "{managerPrincipalId}"
         },
         "body": {
           "landing": "hold"
@@ -951,52 +870,12 @@
       }
     },
     {
-      "name": "readConnectingManager",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/formation",
-        "headers": {
-          "Authorization": "{carolAuthHeader}",
-          "x-client-id": "{carolClientId}"
+      "include": {
+        "fragment": "manager-authority",
+        "variables": {
+          "expectedLifecycleState": "reconfiguring"
         },
-        "outputs": {
-          "connectingManagerPrincipalId": "body.managerPrincipalIds[0]"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "lifecycleState": "reconfiguring"
-        }
-      }
-    },
-    {
-      "name": "deriveConnectingManagerAuthHeader",
-      "type": "set",
-      "output": "connectingManagerAuthHeader",
-      "secret": true,
-      "redactAs": "connectingManagerAuthHeader",
-      "transform": {
-        "if": {
-          "condition": {
-            "equals": [
-              {
-                "path": "outputs.connectingManagerPrincipalId"
-              },
-              {
-                "path": "outputs.carolClientId"
-              }
-            ]
-          },
-          "then": {
-            "path": "outputs.carolAuthHeader"
-          },
-          "else": {
-            "path": "outputs.danAuthHeader"
-          }
-        }
+        "nameSuffix": "ForConnectReplanned"
       }
     },
     {
@@ -1007,8 +886,8 @@
         "method": "POST",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/lifecycle/connect/requests/bb-d5997f77eb049a61226dc222-{runId}",
         "headers": {
-          "Authorization": "{connectingManagerAuthHeader}",
-          "x-client-id": "{connectingManagerPrincipalId}"
+          "Authorization": "{managerAuthHeader}",
+          "x-client-id": "{managerPrincipalId}"
         },
         "body": {
           "expectedFormationEpoch": "{reconfigureEpoch}",
@@ -1030,52 +909,12 @@
       }
     },
     {
-      "name": "readActivatingManager",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/formation",
-        "headers": {
-          "Authorization": "{carolAuthHeader}",
-          "x-client-id": "{carolClientId}"
+      "include": {
+        "fragment": "manager-authority",
+        "variables": {
+          "expectedLifecycleState": "reconnecting"
         },
-        "outputs": {
-          "activatingManagerPrincipalId": "body.managerPrincipalIds[0]"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "lifecycleState": "reconnecting"
-        }
-      }
-    },
-    {
-      "name": "deriveActivatingManagerAuthHeader",
-      "type": "set",
-      "output": "activatingManagerAuthHeader",
-      "secret": true,
-      "redactAs": "activatingManagerAuthHeader",
-      "transform": {
-        "if": {
-          "condition": {
-            "equals": [
-              {
-                "path": "outputs.activatingManagerPrincipalId"
-              },
-              {
-                "path": "outputs.carolClientId"
-              }
-            ]
-          },
-          "then": {
-            "path": "outputs.carolAuthHeader"
-          },
-          "else": {
-            "path": "outputs.danAuthHeader"
-          }
-        }
+        "nameSuffix": "ForActivate"
       }
     },
     {
@@ -1086,8 +925,8 @@
         "method": "POST",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/lifecycle/activate/requests/bb-e0ae07d408f96ce815532775-{runId}",
         "headers": {
-          "Authorization": "{activatingManagerAuthHeader}",
-          "x-client-id": "{activatingManagerPrincipalId}"
+          "Authorization": "{managerAuthHeader}",
+          "x-client-id": "{managerPrincipalId}"
         },
         "body": {}
       },
@@ -1134,5 +973,60 @@
       "path": "summary.failure",
       "eq": 0
     }
-  ]
+  ],
+  "fragments": {
+    "manager-authority": {
+      "steps": [
+        {
+          "name": "readManager",
+          "type": "http",
+          "connection": "primary",
+          "request": {
+            "method": "GET",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{arenaGroupId}/formation",
+            "headers": {
+              "Authorization": "{carolAuthHeader}",
+              "x-client-id": "{carolClientId}"
+            },
+            "outputs": {
+              "managerPrincipalId": "body.managerPrincipalIds[0]"
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "lifecycleState": "{expectedLifecycleState}"
+            }
+          }
+        },
+        {
+          "name": "deriveManagerAuthHeader",
+          "type": "set",
+          "output": "managerAuthHeader",
+          "secret": true,
+          "redactAs": "managerAuthHeader",
+          "transform": {
+            "if": {
+              "condition": {
+                "equals": [
+                  {
+                    "path": "outputs.managerPrincipalId"
+                  },
+                  {
+                    "path": "outputs.carolClientId"
+                  }
+                ]
+              },
+              "then": {
+                "path": "outputs.carolAuthHeader"
+              },
+              "else": {
+                "path": "outputs.danAuthHeader"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
 }

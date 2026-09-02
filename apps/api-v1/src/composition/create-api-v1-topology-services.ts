@@ -69,7 +69,7 @@ export interface ApiV1TopologyServices {
     readonly rtcTopologyOptions: RallarRtcTopologyServiceOptions;
     readonly topologyQuery: GroupTopologyConfigQueryService;
     readonly topologyPlanning: GroupTopologyPlanningService;
-    readonly readAcceptedLayoutFingerprint: (ref: GroupRef) => Promise<string | null>;
+    readonly readPlannedLayoutFingerprint: (ref: GroupRef) => Promise<string | null>;
     readonly topologyConfigMutation: GroupTopologyConfigMutationService;
     readonly topologyReconfigureMutation: GroupTopologyReconfigureMutation;
     readonly topologyMutationOwners: TopologyAppInboxMutationOwners;
@@ -113,6 +113,7 @@ export function createApiV1TopologyServices(
         RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
     );
 
+    const plannedLayoutFingerprints = new RtcTopologyInputFingerprintRepository(input.runtimeStateRepository);
     const rttRepository = new RtcRttRepository(input.runtimeStateRepository, {
         now: nowEpochMs
     });
@@ -215,8 +216,7 @@ export function createApiV1TopologyServices(
         rtcTopologyOptions,
         topologyQuery: topologyRuntimeOwners.query,
         topologyPlanning: topologyRuntimeOwners.planning,
-        readAcceptedLayoutFingerprint: (ref: GroupRef) =>
-            new RtcTopologyInputFingerprintRepository(input.runtimeStateRepository, 'accepted').findFingerprint(ref),
+        readPlannedLayoutFingerprint: (ref: GroupRef) => plannedLayoutFingerprints.findFingerprint(ref),
         topologyConfigMutation,
         topologyReconfigureMutation,
         topologyMutationOwners: {

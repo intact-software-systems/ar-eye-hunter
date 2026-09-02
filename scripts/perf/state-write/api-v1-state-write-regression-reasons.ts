@@ -64,6 +64,22 @@ export const PLANNED_LAYOUT_PROMOTION_REASONS = (['uncontended', 'shared', 'hot'
 
 export const PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE = 'planned-layout-promotion' as const;
 
+const COMMANDED_REPLAN_GATE_READS_REASON = 'Slice 10a consults the stored lifecycle policy and the planned ' +
+    'topology slot before it queues an automatic replan for an active group, ' +
+    'two point reads per presence summary of an active group; the bench\'s ' +
+    'groups are active and default-policied, so every summary pays them.';
+
+export const COMMANDED_REPLAN_GATE_READS_REASONS = (['uncontended', 'shared', 'hot'] as const).flatMap(
+    (workload) =>
+        ['sql.statements', 'sql.rowsRead', 'postgres.transactionDurationMs'].map((metric) => ({
+            workload,
+            metric,
+            reason: COMMANDED_REPLAN_GATE_READS_REASON
+        }))
+);
+
+export const COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE = 'commanded-replan-gate-reads' as const;
+
 export function selectStateWriteRegressionReasons(
     profile: string | undefined,
     precommittedReasons: readonly StateWriteBenchmarkRegressionReason[]
@@ -82,6 +98,9 @@ export function selectStateWriteRegressionReasons(
     }
     if (profile === PLANNED_LAYOUT_PROMOTION_REGRESSION_REASON_PROFILE) {
         return PLANNED_LAYOUT_PROMOTION_REASONS;
+    }
+    if (profile === COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE) {
+        return COMMANDED_REPLAN_GATE_READS_REASONS;
     }
     throw new Error('State-write regression reason selection is inconsistent');
 }
