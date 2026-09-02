@@ -318,7 +318,7 @@ function readCoalescedWorkMetadata(value: JsonWireValue): CoalescedAppOutboxWork
     requireWorkKeys({
         value: metadata,
         required: ['generation', 'requestedAtEpochMs', 'dueAtEpochMs', 'reasons'],
-        allowed: ['generation', 'requestedAtEpochMs', 'dueAtEpochMs', 'reasons'],
+        allowed: ['generation', 'requestedAtEpochMs', 'windowOpenedAtEpochMs', 'dueAtEpochMs', 'reasons'],
         label: 'RTC topology coalescing metadata'
     });
     requireWorkInteger(metadata.generation, 'RTC topology coalescing generation');
@@ -327,9 +327,16 @@ function readCoalescedWorkMetadata(value: JsonWireValue): CoalescedAppOutboxWork
     if (!isNonEmptyStringArray(metadata.reasons)) {
         throw new TypeError('RTC topology coalescing reasons are invalid');
     }
+    // A row written before the series anchor existed opened its series at its
+    // own request; rows written since always carry the anchor (plan slice 10b).
+    const windowOpenedAtEpochMs = metadata.windowOpenedAtEpochMs === undefined
+        ? metadata.requestedAtEpochMs
+        : metadata.windowOpenedAtEpochMs;
+    requireWorkInteger(windowOpenedAtEpochMs, 'RTC topology coalescing windowOpenedAtEpochMs');
     return {
         generation: metadata.generation,
         requestedAtEpochMs: metadata.requestedAtEpochMs,
+        windowOpenedAtEpochMs,
         dueAtEpochMs: metadata.dueAtEpochMs,
         reasons: metadata.reasons
     };

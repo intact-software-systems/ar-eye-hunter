@@ -28,17 +28,53 @@ import { groupStateGroupStorageKey } from '../../../group-state/persistence/aggr
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { RtcTopologyGroupRevisionWork } from '../../mutation/rtc-topology-outbox-work.ts';
 import type { TopologyWorkOrigin } from '../../planning/resolve-topology-plan-action.ts';
+import type { TopologyReplanWindow } from '../../planning/resolve-topology-replan-window.ts';
 import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
+
+/** The timing facts a replan's due time is computed from (product decision 31, I28). */
+export interface TopologyReplanTiming {
+    readonly window: TopologyReplanWindow;
+    /** The stored planned layout's last write, which the minimum layout age floors the due time against. */
+    readonly plannedLayoutUpdatedAtEpochMs: number | null;
+    readonly minimumLayoutAgeMs: number;
+}
 
 export interface RtcTopologyCoalescedGroupRevisionInput {
     readonly aggregateRef: GroupRef;
     readonly groupSnapshot: GroupSnapshot;
     readonly requestedAtEpochMs: number;
     readonly expireAtEpochMs: number;
-    readonly recomputeDebounceMs: number;
+    readonly timing: TopologyReplanTiming;
     readonly senderId: string;
     readonly origin: TopologyWorkOrigin;
     readonly previousEntry: ResourceEntry | null;
+}
+
+export interface ComputeTopologyReplanDueAtInput {
+    readonly requestedAtEpochMs: number;
+    readonly windowOpenedAtEpochMs: number;
+    /** The queued row's due time this change extends; null for the first change of a series. */
+    readonly previousDueAtEpochMs: number | null;
+    readonly timing: TopologyReplanTiming;
+}
+
+/**
+ * The extending window keeps its coalescing benefit but can no longer defer a
+ * replan past the series' maximum wait (product decision 31), and a layout
+ * younger than the minimum layout age is never replanned before it has aged.
+ */
+export function computeTopologyReplanDueAt(input: ComputeTopologyReplanDueAtInput): number {
+    const { timing } = input;
+    const extended = Math.max(
+        input.previousDueAtEpochMs ?? 0,
+        input.requestedAtEpochMs + timing.window.debounceMs
+    );
+    const bounded = timing.window.maxWaitMs === null
+        ? extended
+        : Math.min(extended, input.windowOpenedAtEpochMs + timing.window.maxWaitMs);
+    return timing.plannedLayoutUpdatedAtEpochMs === null
+        ? bounded
+        : Math.max(bounded, timing.plannedLayoutUpdatedAtEpochMs + timing.minimumLayoutAgeMs);
 }
 
 export function toRtcTopologyCoalescedGroupRevisionResourceId(overlayId: string): string {
@@ -62,7 +98,13 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
         [COALESCED_APP_OUTBOX_WORK_FIELD]: {
             generation: 1,
             requestedAtEpochMs: input.requestedAtEpochMs,
-            dueAtEpochMs: input.requestedAtEpochMs + input.recomputeDebounceMs,
+            windowOpenedAtEpochMs: input.requestedAtEpochMs,
+            dueAtEpochMs: computeTopologyReplanDueAt({
+                requestedAtEpochMs: input.requestedAtEpochMs,
+                windowOpenedAtEpochMs: input.requestedAtEpochMs,
+                previousDueAtEpochMs: null,
+                timing: input.timing
+            }),
             reasons: ['group-revision']
         }
     };
@@ -94,7 +136,7 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
     const previous = readPreviousCoalescedGroupRevisionEnvelope(input.previousEntry);
     const previousGeneration = previous.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation;
     const merged = isMutableCoalescedStatus(input.previousEntry.status)
-        ? mergeRtcTopologyGroupRevisionWork(previous.data, incoming)
+        ? mergeRtcTopologyGroupRevisionWork(previous.data, incoming, input.timing)
         : incoming;
     const nextData: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork> = {
         ...merged,
@@ -217,7 +259,8 @@ export function isChangeGatedGroupRevisionWork(work: PersistedRtcTopologyWork): 
 
 export function mergeRtcTopologyGroupRevisionWork(
     existing: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>,
-    incoming: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>
+    incoming: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>,
+    timing: TopologyReplanTiming
 ): CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork> {
     const previous = existing[COALESCED_APP_OUTBOX_WORK_FIELD];
     const next = incoming[COALESCED_APP_OUTBOX_WORK_FIELD];
@@ -239,7 +282,13 @@ export function mergeRtcTopologyGroupRevisionWork(
             : 'automatic',
         [COALESCED_APP_OUTBOX_WORK_FIELD]: {
             ...next,
-            dueAtEpochMs: Math.max(previous.dueAtEpochMs, next.dueAtEpochMs),
+            windowOpenedAtEpochMs: previous.windowOpenedAtEpochMs,
+            dueAtEpochMs: computeTopologyReplanDueAt({
+                requestedAtEpochMs: next.requestedAtEpochMs,
+                windowOpenedAtEpochMs: previous.windowOpenedAtEpochMs,
+                previousDueAtEpochMs: previous.dueAtEpochMs,
+                timing
+            }),
             reasons: [...new Set([...previous.reasons, ...next.reasons])]
         }
     };
@@ -262,7 +311,18 @@ function readPreviousCoalescedGroupRevisionEnvelope(
                 previousEntry.key.resourceId
         );
     }
-    return envelope;
+    const metadata = envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD];
+    // The same compatibility read as the work codec: a row written before the
+    // series anchor existed opened its series at its own request.
+    return metadata.windowOpenedAtEpochMs === undefined
+        ? {
+            ...envelope,
+            data: {
+                ...envelope.data,
+                [COALESCED_APP_OUTBOX_WORK_FIELD]: { ...metadata, windowOpenedAtEpochMs: metadata.requestedAtEpochMs }
+            }
+        }
+        : envelope;
 }
 
 interface CoalescedMessageIdentity {
@@ -365,9 +425,8 @@ function assertCoalescedGroupRevisionInput(input: RtcTopologyCoalescedGroupRevis
         input.senderId.length === 0 ||
         !Number.isSafeInteger(input.requestedAtEpochMs) ||
         !Number.isSafeInteger(input.expireAtEpochMs) ||
-        !Number.isSafeInteger(input.recomputeDebounceMs) ||
         input.requestedAtEpochMs < 0 ||
-        input.recomputeDebounceMs < 0 ||
+        !isValidTopologyReplanTiming(input.timing) ||
         input.expireAtEpochMs <= input.requestedAtEpochMs ||
         input.aggregateRef.applicationId !== snapshot.group.applicationId ||
         input.aggregateRef.workspaceId !== snapshot.group.workspaceId ||
@@ -375,4 +434,12 @@ function assertCoalescedGroupRevisionInput(input: RtcTopologyCoalescedGroupRevis
     ) {
         throw new TypeError('Coalesced RTC topology group-revision facts are invalid');
     }
+}
+
+function isValidTopologyReplanTiming(timing: TopologyReplanTiming): boolean {
+    const { window } = timing;
+    return Number.isSafeInteger(window.debounceMs) && window.debounceMs >= 0 &&
+        (window.maxWaitMs === null || (Number.isSafeInteger(window.maxWaitMs) && window.maxWaitMs >= 0)) &&
+        Number.isSafeInteger(timing.minimumLayoutAgeMs) && timing.minimumLayoutAgeMs >= 0 &&
+        (timing.plannedLayoutUpdatedAtEpochMs === null || Number.isSafeInteger(timing.plannedLayoutUpdatedAtEpochMs));
 }

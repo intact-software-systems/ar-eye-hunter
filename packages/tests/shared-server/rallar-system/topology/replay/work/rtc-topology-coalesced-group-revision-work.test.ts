@@ -9,10 +9,12 @@ import {
 import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
+    computeTopologyReplanDueAt,
     isChangeGatedGroupRevisionWork,
     mergeRtcTopologyGroupRevisionWork,
     readPendingTopologyReplan,
-    toRtcTopologyCoalescedGroupRevisionResourceId
+    toRtcTopologyCoalescedGroupRevisionResourceId,
+    type TopologyReplanTiming
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import {
@@ -39,6 +41,15 @@ const BASE_EPOCH_MS = 1_000_000;
 const EXPIRE_AT_EPOCH_MS = BASE_EPOCH_MS + 3_600_000;
 const DEBOUNCE_MS = 500;
 
+/** The pre-window behaviour: the server debounce, no maximum wait, no layout to age. */
+function unboundedTiming(debounceMs: number): TopologyReplanTiming {
+    return {
+        window: { debounceMs, maxWaitMs: null },
+        plannedLayoutUpdatedAtEpochMs: null,
+        minimumLayoutAgeMs: 0
+    };
+}
+
 describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
     it('keeps a commanded reconfigure outside the automatic change gate', () => {
         const computed = computeCoalescedRtcTopologyGroupRevisionWork({
@@ -46,7 +57,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'commanded',
             previousEntry: null
@@ -68,7 +79,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: firstOrigin,
             previousEntry: null
@@ -78,7 +89,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 4),
             requestedAtEpochMs: BASE_EPOCH_MS + 1,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: secondOrigin,
             previousEntry: first.entry
@@ -93,7 +104,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: null
@@ -122,7 +133,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
-            recomputeDebounceMs: 0,
+            timing: unboundedTiming(0),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: null
@@ -138,7 +149,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: null
@@ -148,7 +159,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 5),
             requestedAtEpochMs: BASE_EPOCH_MS + 200,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: first.entry
@@ -176,7 +187,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: unexpiredBaseEpochMs,
             expireAtEpochMs: unexpiredExpireAtEpochMs,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: null
@@ -186,7 +197,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 5),
             requestedAtEpochMs: unexpiredBaseEpochMs + 200,
             expireAtEpochMs: unexpiredExpireAtEpochMs + 200,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: first.entry
@@ -228,7 +239,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: unexpiredBaseEpochMs,
             expireAtEpochMs: unexpiredExpireAtEpochMs,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: null
@@ -243,7 +254,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 5),
             requestedAtEpochMs: unexpiredBaseEpochMs + 5_000,
             expireAtEpochMs: unexpiredExpireAtEpochMs + 5_000,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: completedFirst
@@ -264,7 +275,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         const newer = createCoalescedData(createGroupSnapshot(4, 6), BASE_EPOCH_MS + 100);
         const older = createCoalescedData(createGroupSnapshot(4, 5), BASE_EPOCH_MS + 300);
 
-        const merged = mergeRtcTopologyGroupRevisionWork(newer, older);
+        const merged = mergeRtcTopologyGroupRevisionWork(newer, older, unboundedTiming(DEBOUNCE_MS));
 
         expect(merged.sourceGroupStateCausalRevision).toEqual({
             groupRevision: 4,
@@ -283,7 +294,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: null
@@ -299,7 +310,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(5, 5),
             requestedAtEpochMs: BASE_EPOCH_MS + 60_000,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS + 60_000,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: completed
@@ -324,7 +335,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: null
@@ -336,7 +347,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 5),
             requestedAtEpochMs: BASE_EPOCH_MS + 1_000,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: reserved
@@ -361,7 +372,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: null
@@ -374,7 +385,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
                 groupSnapshot: createGroupSnapshot(4, 5),
                 requestedAtEpochMs: BASE_EPOCH_MS + 1_000,
                 expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
-                recomputeDebounceMs: DEBOUNCE_MS,
+                timing: unboundedTiming(DEBOUNCE_MS),
                 senderId: 'server-1',
                 origin: 'automatic',
                 previousEntry: corrupted
@@ -425,6 +436,7 @@ function createCoalescedData(
         [COALESCED_APP_OUTBOX_WORK_FIELD]: {
             generation: 1,
             requestedAtEpochMs,
+            windowOpenedAtEpochMs: requestedAtEpochMs,
             dueAtEpochMs: requestedAtEpochMs + DEBOUNCE_MS,
             reasons: ['group-revision']
         }
@@ -591,7 +603,7 @@ describe('readPendingTopologyReplan', () => {
             groupSnapshot: createGroupSnapshot(4, 3),
             requestedAtEpochMs: BASE_EPOCH_MS,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
-            recomputeDebounceMs: DEBOUNCE_MS,
+            timing: unboundedTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: null
@@ -642,5 +654,118 @@ describe('readPendingTopologyReplan', () => {
         await expect(
             readPendingTopologyReplan({ findByKey: async () => corrupt }, GROUP_REF)
         ).resolves.toEqual({ reconfigureQueued: true, dueAtEpochMs: null });
+    });
+});
+
+describe('computeTopologyReplanDueAt', () => {
+    const timing: TopologyReplanTiming = {
+        window: { debounceMs: 500, maxWaitMs: 2_000 },
+        plannedLayoutUpdatedAtEpochMs: null,
+        minimumLayoutAgeMs: 1_000
+    };
+
+    it('extends the window with each change until the series reaches its maximum wait', () => {
+        const opened = BASE_EPOCH_MS;
+        const first = computeTopologyReplanDueAt({
+            requestedAtEpochMs: opened,
+            windowOpenedAtEpochMs: opened,
+            previousDueAtEpochMs: null,
+            timing
+        });
+        expect(first).toBe(opened + 500);
+        const extended = computeTopologyReplanDueAt({
+            requestedAtEpochMs: opened + 400,
+            windowOpenedAtEpochMs: opened,
+            previousDueAtEpochMs: first,
+            timing
+        });
+        expect(extended).toBe(opened + 900);
+        const bounded = computeTopologyReplanDueAt({
+            requestedAtEpochMs: opened + 1_900,
+            windowOpenedAtEpochMs: opened,
+            previousDueAtEpochMs: extended,
+            timing
+        });
+        expect(bounded).toBe(opened + 2_000);
+    });
+
+    it('never replans a layout younger than the minimum layout age, even past the maximum wait', () => {
+        const opened = BASE_EPOCH_MS;
+        expect(computeTopologyReplanDueAt({
+            requestedAtEpochMs: opened + 2_500,
+            windowOpenedAtEpochMs: opened,
+            previousDueAtEpochMs: opened + 2_000,
+            timing: { ...timing, plannedLayoutUpdatedAtEpochMs: opened + 2_400 }
+        })).toBe(opened + 3_400);
+    });
+
+    it('keeps the pre-window behaviour when the window is unbounded', () => {
+        expect(computeTopologyReplanDueAt({
+            requestedAtEpochMs: BASE_EPOCH_MS + 60_000,
+            windowOpenedAtEpochMs: BASE_EPOCH_MS,
+            previousDueAtEpochMs: BASE_EPOCH_MS + 500,
+            timing: unboundedTiming(DEBOUNCE_MS)
+        })).toBe(BASE_EPOCH_MS + 60_500);
+    });
+});
+
+describe('the series anchor on coalesced rows', () => {
+    const bounded: TopologyReplanTiming = {
+        window: { debounceMs: DEBOUNCE_MS, maxWaitMs: 1_200 },
+        plannedLayoutUpdatedAtEpochMs: null,
+        minimumLayoutAgeMs: 0
+    };
+
+    function replan(requestedAtEpochMs: number, previousEntry: ResourceEntry | null) {
+        return computeCoalescedRtcTopologyGroupRevisionWork({
+            aggregateRef: GROUP_REF,
+            groupSnapshot: createGroupSnapshot(4, previousEntry === null ? 3 : 4),
+            requestedAtEpochMs,
+            expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+            timing: bounded,
+            senderId: 'server-1',
+            origin: 'automatic',
+            previousEntry
+        });
+    }
+
+    it('keeps the first request of the series through every merge and bounds the due time by it', () => {
+        const first = replan(BASE_EPOCH_MS, null);
+        const second = replan(BASE_EPOCH_MS + 400, first.entry);
+        const third = replan(BASE_EPOCH_MS + 900, second.entry);
+
+        expect(readPersistedGroupRevisionEnvelope(third.entry).data[COALESCED_APP_OUTBOX_WORK_FIELD]).toMatchObject({
+            generation: 3,
+            windowOpenedAtEpochMs: BASE_EPOCH_MS,
+            dueAtEpochMs: BASE_EPOCH_MS + 1_200
+        });
+    });
+
+    it('restarts the series on the successor row minted behind a reserved head', () => {
+        const first = replan(BASE_EPOCH_MS, null);
+        const reserved = { ...first.entry, status: EntityStatus.RESERVED };
+        const behind = replan(BASE_EPOCH_MS + 5_000, reserved);
+
+        expect(readPersistedGroupRevisionEnvelope(behind.successorEntry).data[COALESCED_APP_OUTBOX_WORK_FIELD])
+            .toMatchObject({ generation: 1, windowOpenedAtEpochMs: BASE_EPOCH_MS + 5_000 });
+    });
+
+    it('treats a predecessor written before the anchor existed as one that opened its own series', () => {
+        const first = replan(BASE_EPOCH_MS, null);
+        const message = JSON.parse(first.entry.resource);
+        const envelope = JSON.parse(message.payload.resource);
+        delete envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].windowOpenedAtEpochMs;
+        const legacy = {
+            ...first.entry,
+            resource: JSON.stringify({ ...message, payload: { ...message.payload, resource: JSON.stringify(envelope) } })
+        };
+
+        const merged = replan(BASE_EPOCH_MS + 400, legacy);
+
+        expect(readPersistedGroupRevisionEnvelope(merged.entry).data[COALESCED_APP_OUTBOX_WORK_FIELD]).toMatchObject({
+            generation: 2,
+            windowOpenedAtEpochMs: BASE_EPOCH_MS,
+            dueAtEpochMs: BASE_EPOCH_MS + 900
+        });
     });
 });

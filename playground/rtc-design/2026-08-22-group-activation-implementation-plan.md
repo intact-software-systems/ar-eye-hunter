@@ -2337,6 +2337,35 @@ A-B-B-A comparison, blocked while a foreign perf-bench container holds the pinne
 two reads on active groups are registered as the `commanded-replan-gate-reads` reason profile for
 that run.
 
+### Slice 10b start checkpoint — per-group replanning windows (2026-09-02)
+
+Stacked on 10a's corrected head (`962d28bb8`): the window is decided where 10a decides the hold,
+on the policy facts the presence-summary read already consults. The census confirmed the draft's
+two footings and sharpened both. The coalesced row's due time is `Math.max`-extended with no
+anchor, so a maximum wait needs a series anchor in the coalescing metadata, whose codec is
+exact-key on both lists; and the policy's `debounceWindowMs` / `maxReplanWaitMs` have no reader at
+all, while every preset carries the same 500 / 5 000 values, so preset selection changes nothing
+until the reader exists. The minimum layout age (I24, 1 000 ms) had a constant and no owner.
+
+What 10b lands:
+
+- **`resolveTopologyReplanWindow`** (I28): `debounced` carries the policy's window and maximum
+  wait; `auto` carries no policy window — it keeps the server's `formationDebounceMs` — but its
+  extension is bounded by the policy's maximum wait too, because decision 31 bounds the extending
+  window as such; `commanded` coalesces its commanded follow-ups under the policy's window; a stage
+  outside the policy and an unreadable policy keep the server window unbounded, as before.
+- **The series anchor** `windowOpenedAtEpochMs` on the coalescing metadata: the first request of
+  a merged series, kept by every merge, restarted by a successor row behind a reserved head. The
+  due time is the extended window bounded by `anchor + maxWait`, then floored by the planned
+  layout's last write plus the minimum layout age (I29: a layout younger than 1 000 ms is never
+  replanned before it has aged; the floor wins over the bound because it is short). The codec
+  accepts a row without the anchor as one that opened its series at its own request, the
+  backwards-compatible read the draft allowed instead of a database drop; the compatibility
+  default retires with the next coalescing-metadata change.
+- **The gate's read predicate widens** to every delta of an active group whose stage follows the
+  replanning policy, because the window needs the policy where 10a's hold did not (a merge into a
+  queued row, and commanded-origin work); the hold itself keeps 10a's exceptions.
+
 ## Slice 11 — Automation triggers
 
 The canonical exhausted-failure landing remains an unactivated prerequisite: the current mutation

@@ -97,7 +97,7 @@ describe('group presence summary replan hold', () => {
             groupSnapshot: before.snapshot,
             requestedAtEpochMs: BASE_EPOCH_MS,
             expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
-            recomputeDebounceMs: 60_000,
+            timing: { window: { debounceMs: 60_000, maxWaitMs: null }, plannedLayoutUpdatedAtEpochMs: null, minimumLayoutAgeMs: 0 },
             senderId: 'reconfigure',
             origin: 'commanded',
             previousEntry: null

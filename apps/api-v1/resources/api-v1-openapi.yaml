@@ -5377,9 +5377,12 @@ components:
         topology:
           type: object
           description: >-
-            Replanning policy after a layout exists. Stored and validated, not
-            yet behavioural: replanning modes and the stage triggers take
-            effect in a later release.
+            Replanning policy after a layout exists. `commanded` holds automatic
+            replans until `reconfigure`; `debounced` coalesces changes under
+            `debounceWindowMs` and replans no later than `maxReplanWaitMs` after
+            the first change of a burst; `auto` coalesces under the server's
+            window with the same bound. Stage triggers take effect in a later
+            release.
           properties:
             replanning:
               type: string

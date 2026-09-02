@@ -152,6 +152,16 @@ I27): the accepted layout is always a promoted planned layout, so the formation 
 stale when its identity differs from the planned slot's or when the planned slot's stored
 topology-input fingerprint differs from the authority's fingerprint computed at read time.
 
+The replan window (product decision 31, `resolveTopologyReplanWindow`) is decided on the same
+consulted policy: `debounced` coalesces under the policy's `debounceWindowMs` and replans no later
+than `maxReplanWaitMs` after the first change of a series; `auto` keeps the server's
+`topology.recompute.formationDebounceMs` window but its extension is bounded the same way;
+`commanded` coalesces its commanded follow-ups under the policy window; a stage outside the policy
+keeps the server window unbounded, as before. The coalesced row carries the series anchor
+(`windowOpenedAtEpochMs`), which every merge keeps and a successor row restarts; a row written
+before the anchor existed reads as one that opened its series at its own request. A planned layout
+younger than the minimum layout age (1 000 ms) is never replanned before it has aged.
+
 Two fields are carried but enforced by nothing in v1: `establishment.transports` and
 `establishment.maxConcurrentEdgeSetups` are normalized, clamped, and persisted, and no server path
 reads them. Establishment pacing is whatever the browser's existing dial budget provides.

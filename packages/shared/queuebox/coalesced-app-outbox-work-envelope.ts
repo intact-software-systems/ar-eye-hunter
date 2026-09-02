@@ -6,6 +6,8 @@ export const COALESCED_APP_OUTBOX_WORK_FIELD = '__rallarCoalescedWork';
 export type CoalescedAppOutboxWorkMetadata = Readonly<{
     generation: number;
     requestedAtEpochMs: number;
+    /** The first request of the series the merged row coalesces; the maximum wait is measured from here. */
+    windowOpenedAtEpochMs: number;
     dueAtEpochMs: number;
     reasons: readonly string[];
 }>;

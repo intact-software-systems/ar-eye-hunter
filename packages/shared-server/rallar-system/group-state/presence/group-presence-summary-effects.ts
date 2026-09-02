@@ -1,3 +1,4 @@
+import { GROUP_MINIMUM_LAYOUT_AGE_MS } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type {
     Group,
@@ -25,8 +26,10 @@ import {
     type TopologyReplanPolicyFacts,
     type TopologyWorkOrigin
 } from '../../topology/planning/resolve-topology-plan-action.ts';
+import { resolveTopologyReplanWindow } from '../../topology/planning/resolve-topology-replan-window.ts';
 import {
-    computeCoalescedRtcTopologyGroupRevisionWork
+    computeCoalescedRtcTopologyGroupRevisionWork,
+    type TopologyReplanTiming
 } from '../../topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { assembleGroupStateSnapshot } from '../persistence/assemble-group-state-snapshot.ts';
 import {
@@ -168,11 +171,28 @@ function computeTopologyReplan(input: ToGroupPresenceSummaryOutboxInputInput): T
             groupSnapshot: snapshot,
             requestedAtEpochMs: summary.summary.computedAtEpochMs,
             expireAtEpochMs: work.expireAtEpochMs,
-            recomputeDebounceMs: options.recomputeDebounceMs,
+            timing: toTopologyReplanTiming(read.topologyReplanPolicyFacts, options.recomputeDebounceMs),
             senderId: options.serviceId,
             origin: toTopologyReplanOrigin(work),
             previousEntry: read.coalescedTopologyEntry
         })
+    };
+}
+
+/** The replan window and layout-age facts, from the policy facts the read consulted for this stage. */
+export function toTopologyReplanTiming(
+    policyFacts: TopologyReplanPolicyFacts,
+    serverDebounceMs: number
+): TopologyReplanTiming {
+    return {
+        window: resolveTopologyReplanWindow({
+            lifecyclePolicy: policyFacts.consulted ? policyFacts.lifecyclePolicy : null,
+            serverDebounceMs
+        }),
+        plannedLayoutUpdatedAtEpochMs: policyFacts.consulted
+            ? policyFacts.plannedLayout?.updatedAtEpochMs ?? null
+            : null,
+        minimumLayoutAgeMs: GROUP_MINIMUM_LAYOUT_AGE_MS
     };
 }
 

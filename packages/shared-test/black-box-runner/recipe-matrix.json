@@ -1024,6 +1024,29 @@
       "description": "No-browser API-v1 group create recipe covering the optional lifecyclePolicy request field: a normalized preset with overrides, and a create that omits it."
     },
     {
+      "id": "api-v1-debounced-replanning",
+      "recipe": "tests/api-v1/api-v1-debounced-replanning.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-debounced-replanning",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Debounced replanning on a managed group: a burst of replacing sessions extends the queued replan's window, the policy's maximum wait stops the extension, and the single replan covers the burst's last change."
+    },
+    {
       "id": "api-v1-commanded-replanning",
       "recipe": "tests/api-v1/api-v1-commanded-replanning.json",
       "category": "api-v1-black-box",

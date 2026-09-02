@@ -111,15 +111,13 @@ export interface ResolveTopologyReplanEnqueueInput extends TopologyReplanEnqueue
 }
 
 /**
- * Whether the enqueue gate needs the stored policy and planned slot at all:
- * an inactive group publishes its removal whatever the policy says, a delta
- * with a queued row to merge into keeps merging, commanded-origin work always
- * runs, and only the stage that follows the replanning policy consults it.
+ * Whether the presence-summary path needs the stored policy and planned slot
+ * at all: an inactive group publishes its removal whatever the policy says,
+ * and only the stage that follows the replanning policy consults it — for
+ * the hold decision and for the replan window (product decision 31).
  */
 export function consultsTopologyReplanPolicy(facts: TopologyReplanEnqueueFacts): boolean {
     return isGroupAggregateTopologyActiveAt(facts.group, facts.nowEpochMs) &&
-        !facts.mergeableHeadRow &&
-        facts.workOrigin === 'automatic' &&
         consultsReplanningPolicy(facts.group.lifecycleState);
 }
 
@@ -137,6 +135,11 @@ export function resolveTopologyReplanEnqueue(input: ResolveTopologyReplanEnqueue
     }
     if (!input.policyFacts.consulted) {
         throw new Error('Topology replan enqueue needs the stored policy facts for this group');
+    }
+    // A delta with a queued row to merge into keeps merging, and commanded-origin
+    // work always runs; only fresh automatic work can be held.
+    if (input.mergeableHeadRow || input.workOrigin === 'commanded') {
+        return 'enqueue';
     }
     const { lifecyclePolicy, plannedLayout } = input.policyFacts;
     const action = resolveTopologyPlanAction({
