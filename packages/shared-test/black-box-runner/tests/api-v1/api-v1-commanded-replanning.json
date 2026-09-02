@@ -413,7 +413,8 @@
           "expectedLifecycleState": "planned"
         },
         "nameSuffix": "ForConnect"
-      }
+      },
+      "type": "include"
     },
     {
       "name": "electedManagerPlansTheArenaPublication",
@@ -777,7 +778,8 @@
           "expectedLifecycleState": "active"
         },
         "nameSuffix": "ForReconfigure"
-      }
+      },
+      "type": "include"
     },
     {
       "name": "managerReconfiguresOnCommand",
@@ -876,7 +878,8 @@
           "expectedLifecycleState": "reconfiguring"
         },
         "nameSuffix": "ForConnectReplanned"
-      }
+      },
+      "type": "include"
     },
     {
       "name": "managerConnectsTheReplannedLayout",
@@ -915,7 +918,8 @@
           "expectedLifecycleState": "reconnecting"
         },
         "nameSuffix": "ForActivate"
-      }
+      },
+      "type": "include"
     },
     {
       "name": "managerActivatesTheReplannedLayout",
