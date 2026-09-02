@@ -9,6 +9,7 @@ import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../../app
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { groupStateUpdatePresenceSummaryDescriptor } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-write-descriptors.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -111,6 +112,56 @@ describe('GroupStateInboxService authenticated authority', () => {
             }
         });
         expect(requireGroupStateResult(joined).status).toBe('ok');
+    });
+
+    it('writes a group mutation after presence advances the projected snapshot revision', async () => {
+        const harness = await createAuthorityHarness(['owner']);
+        const groupId = 'presence-revision-room';
+        await createRoom(harness, groupId, 'Before presence');
+        const summaryWrite = groupStateUpdatePresenceSummaryDescriptor({
+            ...SCOPE,
+            groupId,
+            causalRevision: { groupRevision: 1, presenceRevision: 1 },
+            activePrincipalIds: [],
+            activeSessionIds: [],
+            activeSessions: [],
+            activePrincipalCount: 0,
+            activeSessionCount: 0,
+            computedAtEpochMs: harness.nowEpochMs
+        }, 0);
+        await harness.runtimeRepository.upsert(
+            summaryWrite.namespace,
+            summaryWrite.key,
+            summaryWrite.value,
+            summaryWrite.expireAtTimestamp
+        );
+
+        const updated = await processAuthenticated({
+            service: harness.service,
+            reader: harness.reader,
+            authority: harness.sessions.owner,
+            input: {
+                type: AppInboxType.GROUP_UPDATE,
+                resourceId: 'update-after-presence-revision',
+                contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
+                senderId: 'owner',
+                data: {
+                    scope: SCOPE,
+                    groupId,
+                    request: {
+                        displayName: 'After presence',
+                        actorPrincipalId: 'owner',
+                        actorSessionId: 'owner-session',
+                        requestId: 'update-after-presence-revision'
+                    }
+                }
+            }
+        });
+
+        expect(requireGroupStateResult(updated).result.snapshot).toMatchObject({
+            causalRevision: { groupRevision: 2, presenceRevision: 1 },
+            group: { displayName: 'After presence', presenceVersion: 1 }
+        });
     });
 
     it('rejects a dequeued user command whose authority proof has extra fields', async () => {

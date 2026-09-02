@@ -80,12 +80,16 @@ function assertSnapshotMatchesRead(
         }
         return;
     }
+    const presenceRevision = read.presenceSummary?.value.causalRevision.presenceRevision ?? 0;
+    const expectedSnapshotGroup = {
+        ...read.group.value,
+        presenceVersion: presenceRevision
+    };
     if (
         snapshot === undefined ||
-        !jsonEquals(snapshot.group, read.group.value) ||
+        !jsonEquals(snapshot.group, expectedSnapshotGroup) ||
         snapshot.causalRevision.groupRevision !== read.group.value.snapshotVersion ||
-        snapshot.causalRevision.presenceRevision !==
-            (read.presenceSummary?.value.causalRevision.presenceRevision ?? 0)
+        snapshot.causalRevision.presenceRevision !== presenceRevision
     ) {
         throw new GroupStateInboxResultReadConflictError();
     }
