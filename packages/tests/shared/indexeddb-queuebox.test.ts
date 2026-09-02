@@ -27,8 +27,18 @@ describe('IndexedDbQueueBox', () => {
                 dbName: `indexeddb-summary-finalized-${crypto.randomUUID()}`
             });
             const { reserved, current } = entries();
-            await queue.enqueue(current);
-            // IndexedDB serialization normalizes malformed inputs; release must still fence a malformed runtime row.
+            const persistedCurrent = {
+                ...current,
+                audit: {
+                    ...current.audit,
+                    date: current.audit.date instanceof Temporal.PlainTime ||
+                            typeof current.audit.date === 'string'
+                        ? current.audit.date
+                        : reserved.audit.date
+                }
+            };
+            await queue.enqueue(persistedCurrent);
+            // Inject malformed runtime data at the release boundary without relying on persistence normalization.
             vi.spyOn(queue as unknown as IndexedDbRuntimeDecoder, 'toResourceEntry')
                 .mockReturnValue(current);
 
