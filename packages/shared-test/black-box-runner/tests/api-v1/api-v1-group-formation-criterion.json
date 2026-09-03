@@ -316,7 +316,9 @@
           },
           "managerPrincipalIds": [
             "{aliceClientId}"
-          ]
+          ],
+          "condition": "active",
+          "remediation": "none"
         }
       }
     },
@@ -542,7 +544,10 @@
           },
           "managerPrincipalIds": [
             "{aliceClientId}"
-          ]
+          ],
+          "maxFormationAttempts": 1,
+          "condition": "failed",
+          "remediation": "awaiting-application"
         }
       }
     },

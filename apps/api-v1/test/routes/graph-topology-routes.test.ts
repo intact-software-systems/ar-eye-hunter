@@ -8,6 +8,8 @@ import assert from 'node:assert/strict';
 import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import type { PendingTopologyReplan } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
+import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { GroupLifecyclePolicy, GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
@@ -606,6 +608,7 @@ function createRouteApp(options: {
     readonly graphDiagnostics?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['graphDiagnostics']>;
     readonly topologyQuery?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyQuery']>;
     readonly readPlannedLayoutFingerprint?: graphTopologyRoutes.GraphTopologyRouteDependencies['readPlannedLayoutFingerprint'];
+    readonly readLifecyclePolicy?: graphTopologyRoutes.GraphTopologyRouteDependencies['readLifecyclePolicy'];
     readonly topologyPlanning?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyPlanning']>;
     readonly processTopologyAppInbox?: graphTopologyRoutes.ProcessTopologyAppInbox;
     readonly onCurrentGroupRead?: () => void;
@@ -630,7 +633,8 @@ function createRouteApp(options: {
             (() => Promise.resolve(options.session ?? createIssuedSession('owner', 'owner-session'))),
         adminClientIds: options.adminClientIds ?? [],
         strictReadAuthorization: options.strictReadAuthorization ?? false,
-        readLifecyclePolicy: () => Promise.resolve({ status: 'absent' as const }),
+        readLifecyclePolicy: options.readLifecyclePolicy ??
+            (() => Promise.resolve({ status: 'absent' as const })),
         graphDiagnostics: {
             readScopedGlobalGraphDiagnostic: options.graphDiagnostics?.readScopedGlobalGraphDiagnostic ??
                 ((scope) => Either.ofRight(createGraphResponse({ ...scope, groupId: '__global__' }))),
@@ -843,6 +847,15 @@ async function readFormationView(app: Hono): Promise<GroupFormationView> {
     return await response.json() as GroupFormationView;
 }
 
+function withLifecycleState(snapshot: GroupSnapshot, lifecycleState: GroupLifecycleState): GroupSnapshot {
+    return { ...snapshot, group: { ...snapshot.group, lifecycleState } };
+}
+
+function commandedReplanningPolicy(): GroupLifecyclePolicy {
+    const policy = resolveGroupLifecyclePolicyPreset('optimistic');
+    return { ...policy, topology: { ...policy.topology, replanning: 'commanded' } };
+}
+
 function withAcceptedLayout(snapshot: GroupSnapshot): GroupSnapshot {
     return { ...snapshot, group: { ...snapshot.group, acceptedLayoutIdentity: ACCEPTED_IDENTITY } };
 }
@@ -940,6 +953,94 @@ Deno.test('formation view latches layoutStale while a newer planned layout await
     const view = await readFormationView(app);
 
     assert.equal(view.layoutStale, true);
+});
+
+Deno.test('formation view reports the condition of the accepted layout it names as the basis', async () => {
+    const app = createRouteApp({
+        group: withAcceptedLayout(createGroupSnapshot('room-1', ['owner'])),
+        topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.condition, 'active');
+    assert.equal(view.remediation, 'none');
+    assert.deepEqual(view.coverageBasisLayoutIdentity, ACCEPTED_IDENTITY);
+    assert.equal(view.maxFormationAttempts, 1);
+});
+
+// Before first activation the basis is the candidate the group is dialing;
+// a stage that dials nothing has no basis and claims no coverage.
+Deno.test('formation view names the dialed candidate as the basis before the first activation', async () => {
+    const app = createRouteApp({
+        group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'connecting'),
+        topologyQuery: topologyQueryWithPlanned(4)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.coverageBasisLayoutIdentity?.version, 4);
+    assert.equal(view.condition, 'active');
+});
+
+Deno.test('formation view names no basis in a stage that dials nothing', async () => {
+    const app = createRouteApp({
+        group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'planned'),
+        topologyQuery: topologyQueryWithPlanned(4)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.coverageBasisLayoutIdentity, null);
+    assert.equal(view.condition, 'inactive');
+});
+
+// The whole policy-answered surface fails closed together: no manager, no
+// budget, no coverage basis, and no claim about replanning.
+Deno.test('formation view claims nothing the stored policy cannot answer', async () => {
+    const app = createRouteApp({
+        group: withAcceptedLayout(createGroupSnapshot('room-1', ['owner'])),
+        topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version),
+        readLifecyclePolicy: () => Promise.resolve({ status: 'corrupt' as const, reason: 'stored policy is not an object' })
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.maxFormationAttempts, null);
+    assert.equal(view.coverageBasisLayoutIdentity, null);
+    assert.equal(view.condition, 'inactive');
+    assert.equal(view.remediation, 'none');
+    assert.deepEqual(view.managerPrincipalIds, []);
+});
+
+// The two branches slice 11c made reachable: a parked series reads failed on
+// the condition axis and hands the next move to the application.
+Deno.test('formation view reports a parked series as failed and awaiting the application', async () => {
+    const parked = withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'dormant');
+    const app = createRouteApp({
+        group: { ...parked, group: { ...parked.group, formationAttemptCount: 1 } },
+        topologyQuery: topologyQueryWithPlanned(4)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.condition, 'failed');
+    assert.equal(view.remediation, 'awaiting-application');
+});
+
+Deno.test('formation view hands a stale layout to the application only under commanded replanning', async () => {
+    const group = withAcceptedLayout(createGroupSnapshot('room-1', ['owner']));
+    const app = createRouteApp({
+        group,
+        topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version + 1),
+        readPlannedLayoutFingerprint: async () => await authorityFingerprintFor(group),
+        readLifecyclePolicy: () => Promise.resolve({ status: 'present' as const, policy: commandedReplanningPolicy() })
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.layoutStale, true);
+    assert.equal(view.remediation, 'awaiting-application');
 });
 
 Deno.test('formation view carries the queued replan the topology view reports', async () => {

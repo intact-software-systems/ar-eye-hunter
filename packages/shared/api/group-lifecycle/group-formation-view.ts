@@ -1,6 +1,11 @@
 import type { PendingTopologyReplan } from '../graph-topology-management-types.ts';
 import type { GroupRef } from '../group-types.ts';
+import type {
+    GroupActivationCondition,
+    GroupActivationRemediation
+} from './compute-group-activation-condition.ts';
 import type { GroupFormationReadiness } from './compute-group-formation-readiness.ts';
+import type { GroupLayoutIdentity } from './group-layout-identity.ts';
 import type { GroupFormationOutcome, GroupLifecycleState } from './group-lifecycle-policy.ts';
 
 /**
@@ -32,4 +37,27 @@ export type GroupFormationView = Readonly<{
     layoutStale: boolean;
     /** The transient half: a replan is queued and due; null when none is. */
     pending: PendingTopologyReplan | null;
+    /**
+     * The attempt budget the series is spending, so an application can explain
+     * `formation-attempts-exhausted` (product decision 39). The numerator is
+     * `formationAttemptCount`; the attempt that reaches this parks the group.
+     * Null when the stored policy is unreadable, which is also when no manager
+     * resolves -- the read surface claims nothing it cannot read.
+     */
+    maxFormationAttempts: number | null;
+    /**
+     * The observed condition of the layout carrying traffic, computed at this
+     * read (product decision 30). `degraded` and the dwell-held `failed` band
+     * need a dwell clock, which the status writer slice owns, so neither is
+     * reported yet.
+     */
+    condition: GroupActivationCondition;
+    /** Whose move it is, naming only work the server performs. */
+    remediation: GroupActivationRemediation;
+    /**
+     * The layout the condition is measured against: the accepted one whenever
+     * one exists, and before first activation the frozen planned candidate
+     * being dialed. Null when no layout carries traffic or is being dialed.
+     */
+    coverageBasisLayoutIdentity: GroupLayoutIdentity | null;
 }>;

@@ -401,6 +401,8 @@ Decisions I21–I25 were taken while delivering and reviewing PR 2 (1b + 1c) on 
 | I34 | **The exhaustion landing moves the stage and nothing else** (2026-09-03, Slice 11c): the mutation owner asks the attempt budget about the attempt the failure is recording, so a series' last failure parks in `dormant` instead of following the transition table. It clears no layout identity and closes no transport valve — decision 36 assigns both to `reset`, and the `dormant` row of the dial, topology-disposition and closed-admission tables already makes a parked group inert. _Alternative rejected:_ clearing `acceptedLayoutIdentity` here too, which would give one field two owners for the sake of a stage description decision 35 states as how the group arrives, not as an invariant the stage enforces.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | I35 | **The connect latch names the candidate it supersedes** (2026-09-03, Slice 11d): a `reconfigure` commands its own replan, so at arming time the planned slot still holds the layout it means to replace; the latch carries that identity and the petition refuses it, which is what makes `reconfiguring → reconnecting` automatic without dialing the stale candidate and freezing the replan. A `plan` names nothing, and deliberately: only `reconfigure` and `reset` enqueue commanded-origin replan work, and a `plan`'s automatic-origin work can be skipped as unchanged, so requiring a different publication there would strand a group in `planned` whenever its inputs did not move. Both stages that hold a candidate now answer to the connect trigger, `presence` included: `resolveGroupStageTrigger` and the topology cycle's petition cover `reconfiguring` as they cover `planned`, so the threshold fires ahead of the fallback at either. _Alternative rejected:_ a publication instant on the latch, which a lagging node's clock could strand exactly as the settle could before I31. _Accepted rather than changed:_ the superseded identity is read outside the write transaction and the reconfigure takes no fence from the row, so a publication landing between that read and the commit leaves the latch naming the older candidate and the petition dials the newer one — bounded, because that candidate already dominates the accepted layout, and unreachable under `commanded` replanning. Fencing the row would make a user-facing command conflict-retry against a busy `auto` replan stream, which is the worse trade. |
 
+| I36 | **The status axes report derived; the persisted fields wait for their writer** (2026-09-03, Slice 12a): 12a puts both axes and the coverage basis on the formation view, computed at read from facts the route already loads, and adds nothing to the group row. I4's second key-list edit moves to 12b, which is the slice that needs somewhere to put a banded change and which already carries the state-write gate. The evidence is 9b's: one required field (`memberPolicy`) cost a registered row-width regression on every group write, and the A-B-B-A run that would measure three more — two enums and a nullable identity — is still blocked by a foreign container on the pinned port. Deriving also keeps one owner per fact, where persisting now would leave a stored value and a read-time value free to disagree between transitions. _Also here:_ `group-activation-status-changed` registers with its first emitter in 12b rather than dark in 12a (product decision 14), and `degraded` stays unreachable at read until 12b's dwell clock exists — a band no clock has observed cannot honestly be reported as dwelt. |
+
 The held-layout capability is the next milestone under current evidence, but every checkpoint selects
 only its next two independently reviewable PRs. Later labels below are capability-analysis anchors used
 for dependencies and navigation; I20 permits their owners, boundaries, grouping, order and even their
@@ -2964,6 +2966,54 @@ status → topology work → petition → status from becoming a self-sustaining
 
 **Gates:** baseline, both profiles, **medium-scale**, **state-write**, `formation-large`, plus the
 `status-lifecycle`, `status-convergence` and `status-on-connect` recipes.
+
+### Slice 12a start checkpoint — the status axes on the read surface (2026-09-03)
+
+Branched from `main` @ `b7ab8c972`, with 10a–11d landed. The census confirmed 12a is a read-surface
+slice and sharpened its boundary in three places.
+
+**Both computers already exist and are tested.** `computeGroupActivationCondition` and
+`resolveGroupActivationRemediation` (slice 3) take exactly the facts the formation-view route already
+loads: the group snapshot, the stored policy, the planned and accepted layouts, the readiness
+fraction and the queued replan. 11c made their two `dormant` branches reachable in production. What
+is missing is a caller and one pure resolver: nothing turns a group's business plane into
+`GroupBusinessLiveness`, because `requireActiveGroup` answers that question as a policy denial in
+shared-server rather than as a value in shared.
+
+**The key-list edit is not 12a's (I36).** The section's 12a summary adds condition, remediation and
+the coverage basis to the group row's key lists. The census argues that edit belongs with 12b: 9b's
+single `memberPolicy` field is a registered state-write regression reason for row width on every
+group write, three more fields repeat it, the A-B-B-A run that would measure it is still blocked, and
+until 12b's writer exists nothing reads a stored value that a derived read already answers
+correctly. Persisting now would also give one fact two owners with no gate able to catch them
+diverging.
+
+**`degraded` is honestly unreachable until 12b.** The condition's `degraded` and dwell-held `failed`
+bands both require `dwellSatisfied`, and the dwell clock is 12b's. At read with no clock, the honest
+input is `false`, so 12a reports `active`, `inactive`, `failed` (the exhausted-in-`dormant` branch
+11c made reachable) and `initialising`. Recorded rather than faked: a band no clock has observed
+cannot be reported as dwelt.
+
+What 12a lands:
+
+- **`resolveGroupBusinessLiveness`** beside `GroupBusinessLiveness` in shared: the one pure
+  translation from `status` plus expiry to the axis input, so the read surface and 12b's writer
+  cannot disagree about what "the business plane is frozen" means.
+- **`condition`, `remediation` and `coverageBasisLayoutIdentity` on `GroupFormationView`** and its
+  OpenAPI schema, derived at read. The basis is the accepted layout whenever one exists and the
+  frozen planned candidate being dialed before first activation, which is the single definition the
+  section fixes for every later consumer.
+- **`maxFormationAttempts` beside `formationAttemptCount`** on the view and in OpenAPI (product
+  decision 39). Today the budget appears only inside `CreateGroupRequest`, so the numerator is
+  published everywhere and the denominator nowhere, which makes `start`'s
+  `formation-attempts-exhausted` denial undiagnosable — and 11c's parked landing is exactly when an
+  application needs to explain it.
+- **Recipe coverage** on the existing lifecycle recipes rather than a new one: the axes are read
+  facts, so they assert beside the stage each recipe already polls.
+
+**Not here:** no persisted field, no new writer, no event type, and no pushed fraction (product
+decision 40). The fingerprint skip in the topology work handler stays exactly as it is — it is what
+stops status from feeding itself.
 
 ## Slice 13 — Operator and observability surfaces (C9)
 

@@ -4874,7 +4874,35 @@ components:
         - managerPrincipalIds
         - layoutStale
         - pending
+        - maxFormationAttempts
+        - condition
+        - remediation
+        - coverageBasisLayoutIdentity
       properties:
+        maxFormationAttempts:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+          description: >-
+            The attempt budget this series is spending (product decision 39);
+            the attempt that reaches it parks the group in DORMANT. Null when
+            the stored policy is unreadable, which is also when no manager
+            resolves.
+        condition:
+          type: string
+          enum: [failed, inactive, degraded, active, initialising]
+          description: >-
+            Coverage of the layout carrying traffic, computed at this read
+            (product decision 30). degraded and the dwell-held failed band
+            need the status writer's dwell clock and are not reported yet.
+        remediation:
+          type: string
+          enum: [none, replan-queued, awaiting-application]
+          description: Whose move it is, naming only work the server performs.
+        coverageBasisLayoutIdentity:
+          $ref: '#/components/schemas/GroupLayoutIdentity'
+          nullable: true
         layoutStale:
           type: boolean
           description: >-

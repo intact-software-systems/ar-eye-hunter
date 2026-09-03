@@ -7,6 +7,7 @@ import {
     GROUP_ACTIVATION_STATUS_DWELL_MS,
     resolveCoverageBasisLayoutIdentity,
     resolveGroupActivationRemediation,
+    resolveGroupBusinessLiveness,
     type ComputeGroupActivationConditionInput,
     type GroupCoverageObservation
 } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
@@ -238,6 +239,27 @@ describe('computeLayoutStale', () => {
             plannedFingerprint: null,
             planningAuthorityFingerprint: 'aa'
         })).toBe(true);
+    });
+});
+
+describe('resolveGroupBusinessLiveness', () => {
+    // The value form of `requireActiveGroup`, so a read surface answers the
+    // business plane the same way a policy denial does.
+    it.each([
+        ['an archived group', 'archived' as const, null, 'archived'],
+        ['a deleted group', 'deleted' as const, null, 'deleted'],
+        ['a live group with no expiry', 'active' as const, null, 'active'],
+        ['a live group before its expiry', 'active' as const, 2_001, 'active'],
+        ['a group at its expiry instant', 'active' as const, 2_000, 'expired'],
+        ['a group past its expiry', 'active' as const, 1_999, 'expired']
+    ])('reads %s as %s', (_label, status, expiresAtEpochMs, expected) => {
+        expect(resolveGroupBusinessLiveness({ status, expiresAtEpochMs }, 2_000)).toBe(expected);
+    });
+
+    // Archival wins over expiry: both freeze the routing plane, and the
+    // recorded reason is the one an operator acted on.
+    it('reports an archived group as archived even after it expired', () => {
+        expect(resolveGroupBusinessLiveness({ status: 'archived', expiresAtEpochMs: 1 }, 2_000)).toBe('archived');
     });
 });
 

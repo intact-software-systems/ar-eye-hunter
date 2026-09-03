@@ -1,3 +1,4 @@
+import type { Group } from '../group-types.ts';
 import { isSameGroupLayoutIdentity, type GroupLayoutIdentity } from './group-layout-identity.ts';
 import type { GroupLifecycleState, GroupTopologyReplanningMode } from './group-lifecycle-policy.ts';
 import { resolveDialLayoutRoles } from './resolve-dial-layout-roles.ts';
@@ -22,6 +23,22 @@ export type GroupBusinessLiveness =
     | 'archived'
     | 'deleted'
     | 'expired';
+
+/**
+ * The business plane resolved from the stored group: `requireActiveGroup`
+ * answers the same question as a policy denial, which a read surface cannot
+ * use, so the value form lives here beside the axis it feeds. Expiry is a
+ * clock fact, so it is asked at the reader's instant, not stored.
+ */
+export function resolveGroupBusinessLiveness(
+    group: Pick<Group, 'status' | 'expiresAtEpochMs'>,
+    nowEpochMs: number
+): GroupBusinessLiveness {
+    if (group.status === 'archived' || group.status === 'deleted') {
+        return group.status;
+    }
+    return group.expiresAtEpochMs !== null && group.expiresAtEpochMs <= nowEpochMs ? 'expired' : 'active';
+}
 
 export type GroupActivationCondition =
     | 'failed'
