@@ -318,7 +318,11 @@
             "{aliceClientId}"
           ],
           "condition": "active",
-          "remediation": "none"
+          "remediation": "none",
+          "maxFormationAttempts": 1,
+          "coverageBasisLayoutIdentity": {
+            "state": "active"
+          }
         }
       }
     },

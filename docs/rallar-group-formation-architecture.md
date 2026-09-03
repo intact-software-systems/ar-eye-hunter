@@ -843,7 +843,10 @@ writing this document:
   The `match` preset therefore has no per-edge audit trail — a disputed session has "we were at
   94%" rather than "edge (A, B) never confirmed at T" — and no server-controlled establishment
   ordering.
-- **The six-state RTC activation status projection.** Only the readiness fraction exists.
+- **The stored activation status projection.** Both axes and their coverage basis are derived at
+  read on the formation view; what is missing is the writer that bands them — the dwell clock,
+  the hysteresis, decision 33's evidence watermark, the `group-activation-status-changed` event
+  and the persisted group fields. `degraded` is therefore not reported yet.
 - **The `elected-by-rank` rank source.** The selection is in the vocabulary and resolves zero
   managers; `resolveGroupLifecycleManagers` already takes `rankByPrincipalId`, so the remaining work
   is a `GroupMember` rank field, its join plumbing, and switching the `match` preset back.

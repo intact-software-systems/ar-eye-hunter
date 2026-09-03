@@ -57,7 +57,10 @@ export type GroupFormationView = Readonly<{
     /**
      * The layout the condition is measured against: the accepted one whenever
      * one exists, and before first activation the frozen planned candidate
-     * being dialed. Null when no layout carries traffic or is being dialed.
+     * being dialed. Null when no layout carries traffic or is being dialed,
+     * and null whenever the stored policy is unreadable. A parked group keeps
+     * the identity of the layout its spent series ran on, so a non-null basis
+     * is not itself a claim that traffic is flowing.
      */
     coverageBasisLayoutIdentity: GroupLayoutIdentity | null;
 }>;

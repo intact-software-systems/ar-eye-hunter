@@ -1,3 +1,4 @@
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { EffectiveGroupTopologyConfig, GraphDiagnosticReadResponse } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -882,6 +883,61 @@ function plannedLayout(groupRef: GroupRef, version: number): RallarOverlayTopolo
     };
 }
 
+/** A layout with one real edge, so readiness is a measured fraction rather than the empty-plan shortcut. */
+function layoutWithEdge(
+    groupRef: GroupRef,
+    version: number,
+    sessionIdTo: string,
+    state: 'active' | 'removed' = 'active'
+): RallarOverlayTopologySnapshot {
+    return {
+        ...plannedLayout(groupRef, version),
+        state,
+        activeSessionIds: ['session-a', sessionIdTo],
+        nextHopsBySessionId: { 'session-a': [sessionIdTo], [sessionIdTo]: ['session-a'] }
+    };
+}
+
+function rttFor(sessionIdTo: string): RttMeasurementInfo {
+    return { sessionIdFrom: 'session-a', sessionIdTo, rttMs: 5, createdAtEpochMs: 123_456, version: 1 };
+}
+
+function allOrNothingPolicy(): GroupLifecyclePolicy {
+    const policy = resolveGroupLifecyclePolicyPreset('optimistic');
+    return { ...policy, activation: { ...policy.activation, successRate: 1, minimumViableRate: 1 } };
+}
+
+function planningAuthorityWith(rttMeasurements: readonly RttMeasurementInfo[]) {
+    return {
+        readTopologyPlanningAuthority: (input: { readonly knownGroup?: GroupSnapshot; readonly groupRef: GroupRef; }) =>
+            Promise.resolve({
+                group: input.knownGroup ?? createGroupSnapshot(input.groupRef.groupId, ['alice']),
+                config: createTopologyConfigView(),
+                kindHysteresisWidths: { meshExitWidth: 0, treeExitWidth: 0 },
+                rttMeasurements,
+                replanning: 'auto' as const,
+                nowEpochMs: 123_456
+            })
+    };
+}
+
+function topologyQueryWith(
+    planned: RallarOverlayTopologySnapshot | null,
+    acceptedSnapshot: RallarOverlayTopologySnapshot | null
+) {
+    return {
+        readTopologyView: (groupRef: GroupRef) =>
+            Promise.resolve({
+                groupRef,
+                overlayId: 'overlay',
+                snapshot: planned,
+                acceptedSnapshot,
+                config: createTopologyConfigView(),
+                pending: null
+            })
+    };
+}
+
 function topologyQueryWithPlanned(version: number, pending: PendingTopologyReplan | null = null) {
     return {
         readTopologyView: (groupRef: GroupRef) =>
@@ -1009,8 +1065,24 @@ Deno.test('formation view claims nothing the stored policy cannot answer', async
     assert.equal(view.maxFormationAttempts, null);
     assert.equal(view.coverageBasisLayoutIdentity, null);
     assert.equal(view.condition, 'inactive');
-    assert.equal(view.remediation, 'none');
     assert.deepEqual(view.managerPrincipalIds, []);
+    // A policy the server cannot read is also a policy its automation cannot
+    // replan under, so the stale layout is the application's move.
+    assert.equal(view.layoutStale, true);
+    assert.equal(view.remediation, 'awaiting-application');
+});
+
+Deno.test('formation view reports no obligation under an unreadable policy with nothing stale', async () => {
+    const app = createRouteApp({
+        group: createGroupSnapshot('room-1', ['owner']),
+        topologyQuery: topologyQueryWithPlanned(1),
+        readLifecyclePolicy: () => Promise.resolve({ status: 'corrupt' as const, reason: 'stored policy is not an object' })
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.layoutStale, false);
+    assert.equal(view.remediation, 'none');
 });
 
 // The two branches slice 11c made reachable: a parked series reads failed on
@@ -1041,6 +1113,75 @@ Deno.test('formation view hands a stale layout to the application only under com
 
     assert.equal(view.layoutStale, true);
     assert.equal(view.remediation, 'awaiting-application');
+});
+
+// The condition must measure the layout the basis names. A held candidate
+// runs ahead of the accepted layout, so measuring the planned slot reports a
+// number about a layout the group is not carrying traffic on.
+Deno.test('formation view measures the accepted layout, not the candidate running ahead of it', async () => {
+    const groupRef = { ...TEST_SCOPE, groupId: 'room-1' };
+    const accepted = layoutWithEdge(groupRef, ACCEPTED_IDENTITY.version, 'session-b');
+    const group = withAcceptedLayout(createGroupSnapshot('room-1', ['owner']));
+    const app = createRouteApp({
+        group,
+        topologyQuery: topologyQueryWith(layoutWithEdge(groupRef, ACCEPTED_IDENTITY.version + 1, 'session-c'), accepted),
+        topologyPlanning: planningAuthorityWith([rttFor('session-b')]),
+        readLifecyclePolicy: () => Promise.resolve({ status: 'present' as const, policy: allOrNothingPolicy() })
+    });
+
+    const view = await readFormationView(app);
+
+    assert.deepEqual(view.coverageBasisLayoutIdentity, ACCEPTED_IDENTITY);
+    assert.equal(view.condition, 'active');
+});
+
+Deno.test('formation view reports a partly dialed candidate as initialising', async () => {
+    const groupRef = { ...TEST_SCOPE, groupId: 'room-1' };
+    const app = createRouteApp({
+        group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'connecting'),
+        topologyQuery: topologyQueryWith(layoutWithEdge(groupRef, 7, 'session-b'), null),
+        topologyPlanning: planningAuthorityWith([]),
+        readLifecyclePolicy: () => Promise.resolve({ status: 'present' as const, policy: allOrNothingPolicy() })
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.coverageBasisLayoutIdentity?.version, 7);
+    assert.equal(view.condition, 'initialising');
+});
+
+// A torn-down plan has an empty edge set, which reads as trivially complete;
+// the criterion path refuses to petition from one for the same reason.
+Deno.test('formation view claims no coverage against a torn-down plan', async () => {
+    const groupRef = { ...TEST_SCOPE, groupId: 'room-1' };
+    const app = createRouteApp({
+        group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'connecting'),
+        topologyQuery: topologyQueryWith(layoutWithEdge(groupRef, 7, 'session-b', 'removed'), null),
+        topologyPlanning: planningAuthorityWith([]),
+        readLifecyclePolicy: () => Promise.resolve({ status: 'present' as const, policy: allOrNothingPolicy() })
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.coverageBasisLayoutIdentity, null);
+    assert.equal(view.condition, 'inactive');
+});
+
+// Without the accepted snapshot loaded there is nothing to measure the named
+// basis on, so the surface reports no coverage rather than the wrong layout's.
+Deno.test('formation view claims no coverage when the accepted layout is not loaded', async () => {
+    const groupRef = { ...TEST_SCOPE, groupId: 'room-1' };
+    const app = createRouteApp({
+        group: withAcceptedLayout(createGroupSnapshot('room-1', ['owner'])),
+        topologyQuery: topologyQueryWith(layoutWithEdge(groupRef, ACCEPTED_IDENTITY.version + 1, 'session-c'), null),
+        topologyPlanning: planningAuthorityWith([rttFor('session-b')]),
+        readLifecyclePolicy: () => Promise.resolve({ status: 'present' as const, policy: allOrNothingPolicy() })
+    });
+
+    const view = await readFormationView(app);
+
+    assert.deepEqual(view.coverageBasisLayoutIdentity, ACCEPTED_IDENTITY);
+    assert.equal(view.condition, 'inactive');
 });
 
 Deno.test('formation view carries the queued replan the topology view reports', async () => {

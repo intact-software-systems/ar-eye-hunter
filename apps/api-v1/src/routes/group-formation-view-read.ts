@@ -1,5 +1,6 @@
-import type {
-    GroupLifecyclePolicyRead
+import {
+    toReadGroupLifecyclePolicy,
+    type GroupLifecyclePolicyRead
 } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { computeAuthorityTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
@@ -18,8 +19,11 @@ import {
     type GroupFormationReadiness
 } from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
-import { toGroupLayoutIdentity, type GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
-import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import {
+    isSameGroupLayoutIdentity,
+    toGroupLayoutIdentity,
+    type GroupLayoutIdentity
+} from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { isFormationAttemptBudgetExhausted } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import {
@@ -59,16 +63,16 @@ export async function readGroupFormationView(
     // One resolution for every field the policy answers: a corrupt stored
     // policy resolves no manager, no budget and no coverage thresholds, so
     // the whole surface fails closed together rather than per field.
-    const policy = resolveReadablePolicy(policyRead);
+    const policy = toReadGroupLifecyclePolicy(policyRead);
     const readiness = toFormationReadiness(view.snapshot, authority);
     const status = computeActivationStatus({
         group,
         policy,
         planned: view.snapshot,
-        readiness,
+        accepted: view.acceptedSnapshot,
+        authority,
         layoutStale,
-        replanQueued: view.pending !== null,
-        nowEpochMs: authority.nowEpochMs
+        replanQueued: view.pending !== null
     });
     return {
         groupRef,
@@ -88,22 +92,14 @@ export async function readGroupFormationView(
     };
 }
 
-/** The stored policy as a value, or null when it is unreadable. */
-function resolveReadablePolicy(policyRead: GroupLifecyclePolicyRead): GroupLifecyclePolicy | null {
-    if (policyRead.status === 'corrupt') {
-        return null;
-    }
-    return policyRead.status === 'present' ? policyRead.policy : createDefaultGroupLifecyclePolicy();
-}
-
 interface ComputeActivationStatusInput {
     readonly group: Group;
     readonly policy: GroupLifecyclePolicy | null;
     readonly planned: RallarOverlayTopologySnapshot | null;
-    readonly readiness: GroupFormationReadiness;
+    readonly accepted: RallarOverlayTopologySnapshot | null;
+    readonly authority: GroupTopologyPlanningAuthority;
     readonly layoutStale: boolean;
     readonly replanQueued: boolean;
-    readonly nowEpochMs: number;
 }
 
 interface GroupActivationStatus {
@@ -114,17 +110,15 @@ interface GroupActivationStatus {
 
 /**
  * Both axes at this read (product decision 30). An unreadable policy carries
- * no thresholds and no budget, so it reports no coverage and no replanning
- * obligation -- the same fail-closed answer the manager resolution gives.
+ * no thresholds and no budget, so it reports no coverage and hands a stale
+ * layout to the application -- the same fail-closed answer the manager
+ * resolution gives, and the honest one, because a corrupt policy is also what
+ * stops the automation from replanning.
  */
 function computeActivationStatus(input: ComputeActivationStatusInput): GroupActivationStatus {
-    const { group, policy, readiness, layoutStale, replanQueued } = input;
-    const business = resolveGroupBusinessLiveness(group, input.nowEpochMs);
-    const coverageBasisLayoutIdentity = policy === null ? null : resolveCoverageBasisLayoutIdentity({
-        lifecycleState: group.lifecycleState,
-        accepted: group.acceptedLayoutIdentity ?? undefined,
-        plannedCandidate: input.planned === null ? undefined : toGroupLayoutIdentity(input.planned)
-    }) ?? null;
+    const { group, policy, layoutStale, replanQueued } = input;
+    const business = resolveGroupBusinessLiveness(group, input.authority.nowEpochMs);
+    const basisSnapshot = resolveCoverageBasisSnapshot(input);
     const attemptBudgetExhausted = policy !== null && isFormationAttemptBudgetExhausted({
         activation: policy.activation,
         formationAttemptCount: group.formationAttemptCount
@@ -134,20 +128,59 @@ function computeActivationStatus(input: ComputeActivationStatusInput): GroupActi
             business,
             lifecycleState: group.lifecycleState,
             attemptBudgetExhausted,
-            coverage: toCoverageObservation(policy, readiness, coverageBasisLayoutIdentity)
+            coverage: toCoverageObservation(policy, basisSnapshot, input.authority)
         }),
         remediation: resolveGroupActivationRemediation({
             business,
             lifecycleState: group.lifecycleState,
             attemptBudgetExhausted,
-            // Without the stored policy the mode is unknown, and only the
-            // `commanded` mode turns a stale layout into an obligation.
-            replanning: policy?.topology.replanning ?? 'auto',
+            replanning: policy?.topology.replanning ?? 'corrupt',
             layoutStale,
             replanQueued
         }),
-        coverageBasisLayoutIdentity
+        coverageBasisLayoutIdentity: resolveCoverageBasisIdentity(input)
     };
+}
+
+/** The basis identity, whether or not its snapshot is loaded here. */
+function resolveCoverageBasisIdentity(input: ComputeActivationStatusInput): GroupLayoutIdentity | null {
+    if (input.policy === null) {
+        return null;
+    }
+    return resolveCoverageBasisLayoutIdentity({
+        lifecycleState: input.group.lifecycleState,
+        accepted: input.group.acceptedLayoutIdentity ?? undefined,
+        plannedCandidate: isActiveLayoutSnapshot(input.planned)
+            ? toGroupLayoutIdentity(input.planned)
+            : undefined
+    }) ?? null;
+}
+
+/**
+ * The loaded snapshot the basis names. The condition is measured on that
+ * snapshot or not at all: measuring the planned slot while naming the accepted
+ * layout reports a number about a layout the group is not carrying traffic on,
+ * which a held candidate makes routine. A layout that is not `active` is a
+ * tombstone whose empty edge set reads as trivially complete, so it is neither
+ * a basis nor a measurement subject -- the criterion path refuses one for the
+ * same reason.
+ */
+function resolveCoverageBasisSnapshot(
+    input: ComputeActivationStatusInput
+): RallarOverlayTopologySnapshot | undefined {
+    const basis = resolveCoverageBasisIdentity(input);
+    if (basis === null) {
+        return undefined;
+    }
+    return [input.accepted, input.planned]
+        .filter(isActiveLayoutSnapshot)
+        .find((snapshot) => isSameGroupLayoutIdentity(toGroupLayoutIdentity(snapshot), basis));
+}
+
+function isActiveLayoutSnapshot(
+    snapshot: RallarOverlayTopologySnapshot | null
+): snapshot is RallarOverlayTopologySnapshot {
+    return snapshot !== null && snapshot.state === 'active';
 }
 
 /**
@@ -157,14 +190,18 @@ function computeActivationStatus(input: ComputeActivationStatusInput): GroupActi
  */
 function toCoverageObservation(
     policy: GroupLifecyclePolicy | null,
-    readiness: GroupFormationReadiness,
-    coverageBasisLayoutIdentity: GroupLayoutIdentity | null
+    basisSnapshot: RallarOverlayTopologySnapshot | undefined,
+    authority: GroupTopologyPlanningAuthority
 ): GroupCoverageObservation | undefined {
-    if (policy === null || coverageBasisLayoutIdentity === null) {
+    if (policy === null || basisSnapshot === undefined) {
         return undefined;
     }
     return {
-        coverageRate: readiness.observedRate,
+        coverageRate: computeGroupFormationReadiness({
+            planned: basisSnapshot,
+            rttMeasurements: authority.rttMeasurements,
+            nowEpochMs: authority.nowEpochMs
+        }).observedRate,
         successRate: policy.activation.successRate,
         minimumViableRate: policy.activation.minimumViableRate,
         dwellSatisfied: false
