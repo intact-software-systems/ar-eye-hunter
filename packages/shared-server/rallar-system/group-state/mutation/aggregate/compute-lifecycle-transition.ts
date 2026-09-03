@@ -355,7 +355,8 @@ interface LifecycleTransitionWriteInput extends LifecycleTransitionDecisionInput
 function computeLifecycleTransitionWrite(
     { command, read, facts, next, policy, promotion }: LifecycleTransitionWriteInput
 ): GroupMutationComputed {
-    const connectTrigger = computeGroupConnectTrigger({ command, read, facts, next });
+    const previous = read.group!.value.lifecycleState;
+    const connectTrigger = computeGroupConnectTrigger({ command, read, facts, next, policy, previous });
     return computeGroupMutationWriteResult({
         connectTriggerLatchEffect: connectTrigger.effect,
         acceptedLayoutPromotion: promotion?.outcome === 'apply' ? promotion : null,
@@ -390,7 +391,7 @@ function computeLifecycleTransitionWrite(
         eventType: 'group-updated',
         presenceSummaryWork: 'enqueue',
         extraOutboxEntries: [
-            ...computeFormationTimerEntries({ command, next, policy, facts }),
+            ...computeFormationTimerEntries({ command, previous, next, policy, facts }),
             ...connectTrigger.outboxEntries
         ]
     });

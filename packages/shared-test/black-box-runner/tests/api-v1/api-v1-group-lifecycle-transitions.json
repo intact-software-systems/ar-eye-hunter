@@ -522,29 +522,24 @@
       "type": "http",
       "connection": "primary",
       "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/connect/requests/connect-plan-managed-group-{runId}",
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/formation",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "expectedFormationEpoch": "{managerPlansEpoch}",
-          "expectedLayout": {
-            "groupRevision": "{managerPlansLayoutGroupRevision}",
-            "presenceRevision": "{managerPlansLayoutPresenceRevision}",
-            "version": "{managerPlansLayoutVersion}",
-            "state": "{managerPlansLayoutState}"
-          }
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 8000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.2
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "group": {
-            "lifecycleState": "connecting",
-            "formationEpoch": 2
-          }
+          "lifecycleState": "connecting",
+          "formationEpoch": 2
         }
       }
     },

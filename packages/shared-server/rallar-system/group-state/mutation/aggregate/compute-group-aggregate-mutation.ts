@@ -9,6 +9,7 @@ import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';
 import { toExpiredAwareInsertCandidate } from '../../presence/group-expired-state-authority.ts';
 import {
     nextInitialGroupSnapshotVersion,
@@ -32,7 +33,8 @@ import {
 import {
     createInitialGroup,
     createInitialOwner,
-    createInitialPresenceSummary
+    createInitialPresenceSummary,
+    resolveCreateGroupLifecyclePolicy
 } from './create-initial-group-mutation.ts';
 import { assertActive, assertGovernance, toPolicySnapshot } from './group-aggregate-mutation-policy.ts';
 
@@ -106,7 +108,14 @@ export function computeCreate(
         initialPresenceSummary: toInitialGroupPresenceSummaryCandidate(summary, read.presenceSummary),
         presenceAdmission: null,
         eventType: 'group-created',
-        presenceSummaryWork: 'enqueue'
+        presenceSummaryWork: 'enqueue',
+        extraOutboxEntries: computeFormationTimerEntries({
+            command,
+            previous: null,
+            next: group,
+            policy: resolveCreateGroupLifecyclePolicy(command),
+            facts
+        })
     });
 }
 

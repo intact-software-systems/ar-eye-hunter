@@ -1,6 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 import { toRtcTopologyPublicationMessageId } from '../persistence/rtc-topology-identifiers.ts';
@@ -36,7 +36,7 @@ export function materializeRtcOverlayTopologyBroadcastMessage(
         targets: {
             mode: 'broadcast',
             scope: 'room',
-            groupRef: canonicalGroupRef(group),
+            groupRef: toCanonicalGroupRef(group.group),
             minSnapshotVersion: group.group.snapshotVersion
         },
         delivery: { reliability: 'best-effort', ack: 'none' },
@@ -59,12 +59,4 @@ function validateRtcOverlayTopologyMessageFacts(facts: RtcOverlayTopologyMessage
     ) {
         throw new TypeError('RTC topology publication message facts are invalid');
     }
-}
-
-function canonicalGroupRef(group: GroupSnapshot) {
-    return {
-        applicationId: group.group.applicationId,
-        workspaceId: group.group.workspaceId,
-        groupId: group.group.groupId
-    };
 }

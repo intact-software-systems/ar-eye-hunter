@@ -21,6 +21,8 @@ export interface OperationMatrixCase {
     readonly operation: string;
     readonly authority: IssuedAuthSession;
     readonly data: JsonWireValue;
+    /** Outbox rows the operation writes beside its presence summary; absent means the summary alone. */
+    readonly extraOutboxEntries?: number;
     assertDomain(): Promise<void>;
 }
 
@@ -141,7 +143,7 @@ export async function runOperationMatrix(
         expect(
             harness.database.outboxEntries.size,
             `${testCase.operation} outbox entry`
-        ).toBe(previousOutboxCount + 1);
+        ).toBe(previousOutboxCount + 1 + (testCase.extraOutboxEntries ?? 0));
         expect(
             (await harness.queueEntries()).some(
                 (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 1

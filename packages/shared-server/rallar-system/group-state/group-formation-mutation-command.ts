@@ -49,7 +49,8 @@ export function toFailFormationCommand(
         groupRef: GroupRef;
         formationEpoch: number;
         observedRate: number;
-        expectedLayout: GroupLayoutIdentity;
+        /** Null when no layout is left to fence: the deadline's plan-less failure (plan slice 11a). */
+        expectedLayout: GroupLayoutIdentity | null;
     }>
 ): GroupMutationCommand {
     const semanticCommand = {
@@ -74,20 +75,77 @@ export function toFailFormationCommand(
     return { ...semanticCommand, commandId, requestId: commandId };
 }
 
+export interface FormationAutomationPlanInput {
+    readonly groupRef: GroupRef;
+    readonly formationEpoch: number;
+}
+
+export interface FormationTriggerPlanInput extends FormationAutomationPlanInput {
+    /** The write that armed the trigger: a re-created group restarts its epochs, and must not replay its previous life's plan. */
+    readonly groupSnapshotVersion: number;
+}
+
 /**
- * The retry leg replans after a below-floor return: the same
- * automation that was sanctioned by the original plan/connect, bounded
- * by maxFormationAttempts and paced by the backoff that scheduled this.
+ * The retry leg replans after a below-floor return: the same automation
+ * that was sanctioned by the original plan/connect, bounded by
+ * maxFormationAttempts and paced by the backoff that scheduled this.
  */
-export function toFormationRetryPlanCommand(
-    input: Readonly<{
-        groupRef: GroupRef;
-        formationEpoch: number;
-    }>
-): GroupMutationCommand {
-    const semanticCommand = {
+export function toFormationRetryPlanCommand(input: FormationAutomationPlanInput): GroupMutationCommand {
+    return toAutomationPlanCommand(input, toAutomationPlanCommandId('retry-plan', input, {}));
+}
+
+/** The plan trigger's command (product decision 8): the automation plan, keyed as the trigger's own. */
+export function toFormationTriggerPlanCommand(input: FormationTriggerPlanInput): GroupMutationCommand {
+    return toAutomationPlanCommand(
+        input,
+        toAutomationPlanCommandId('trigger-plan', input, { groupSnapshotVersion: input.groupSnapshotVersion })
+    );
+}
+
+export interface FormationPresencePlanInput extends FormationAutomationPlanInput {
+    /** The group's presence version when the threshold was observed. */
+    readonly presenceVersion: number;
+}
+
+/**
+ * The plan trigger's command when a met presence threshold fires it rather
+ * than its fallback timer (product decision 8). It is keyed on the presence
+ * version the threshold was observed at, so repeated cycles for one presence
+ * change collapse to one command while a later change can retry a plan that
+ * was rejected; the fallback timer's own command stays distinct and,
+ * whichever lands second, the epoch fence rejects it.
+ */
+export function toFormationPresencePlanCommand(input: FormationPresencePlanInput): GroupMutationCommand {
+    return toAutomationPlanCommand(
+        input,
+        toAutomationPlanCommandId('presence-plan', input, { presenceVersion: input.presenceVersion })
+    );
+}
+
+/**
+ * One id shape for every automation plan leg: the causal identity the leg
+ * deduplicates on, under the leg's own name so two legs never replay each
+ * other.
+ */
+function toAutomationPlanCommandId(
+    leg: 'retry-plan' | 'trigger-plan' | 'presence-plan',
+    input: FormationAutomationPlanInput,
+    causalIdentity: Readonly<Record<string, number>>
+): string {
+    const identity = serializeCanonicalJson({
+        groupRef: input.groupRef,
+        formationEpoch: input.formationEpoch,
+        ...causalIdentity
+    });
+    return `formation-automation:v2:${leg}:${identity}`;
+}
+
+function toAutomationPlanCommand(input: FormationAutomationPlanInput, commandId: string): GroupMutationCommand {
+    return {
         operation: 'planGroupLayout',
         aggregateRef: input.groupRef,
+        commandId,
+        requestId: commandId,
         input: {
             actorPrincipalId: null,
             actorSessionId: null,
@@ -95,9 +153,7 @@ export function toFormationRetryPlanCommand(
             traceId: null,
             expectedFormationEpoch: input.formationEpoch
         }
-    } as const;
-    const commandId = `formation-automation:v2:retry-plan:${serializeCanonicalJson(input)}`;
-    return { ...semanticCommand, commandId, requestId: commandId };
+    };
 }
 
 /**

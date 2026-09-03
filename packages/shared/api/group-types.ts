@@ -257,6 +257,15 @@ export type GroupPresenceAdmission =
         updatedAtEpochMs: number;
     }>;
 
+/** A group's identity alone, narrowed from any value that carries the three scope fields. */
+export function toCanonicalGroupRef(ref: GroupRef): GroupRef {
+    return {
+        applicationId: ref.applicationId,
+        workspaceId: ref.workspaceId,
+        groupId: ref.groupId
+    };
+}
+
 export interface GroupSnapshot {
     readonly causalRevision: GroupStateCausalRevision;
     readonly group: Group;

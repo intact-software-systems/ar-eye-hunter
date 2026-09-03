@@ -1,15 +1,28 @@
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
+import {
+    evaluateGroupStageTrigger,
+    resolveGroupStageTrigger
+} from '@shared/api/group-lifecycle/evaluate-group-stage-trigger.ts';
 import { consumesFormationDeadlineAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import { toCanonicalGroupRef, type Group } from '@shared/api/group-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { toFormationPresencePlanCommand } from '../../../group-state/group-formation-mutation-command.ts';
 import type { GroupMutationCommand } from '../../../group-state/mutation/group-mutation-contracts.ts';
-import type { GroupLifecyclePolicyRead } from '../../../group-state/persistence/group-lifecycle-policy-repository.ts';
+import {
+    toReadGroupLifecyclePolicy,
+    type GroupLifecyclePolicyRead
+} from '../../../group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { RtcTopologyMutationRead } from '../../mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
 import type { GroupTopologyPlanningService } from '../../planning/group-topology-planning-service.ts';
 import { computeFormationCriterionCommand } from './compute-formation-criterion-command.ts';
+import {
+    petitionAwaitingGroupConnectTriggers,
+    type GroupFormationAutomationPort
+} from './create-group-connect-trigger-work-handler.ts';
 import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
 
 export interface FormationCriterionPort {
@@ -63,6 +76,101 @@ export async function petitionFormationCriterion(
         return;
     }
     await dependencies.formationCriterion.submitCommand(command, authority.nowEpochMs);
+}
+
+export interface StageTriggerPetitionDependencies {
+    readonly formationCriterion?: Pick<FormationCriterionPort, 'readLifecyclePolicy'>;
+    readonly formationAutomation?: GroupFormationAutomationPort;
+}
+
+/**
+ * The presence trigger's evidence leg (product decision 8). Every presence
+ * change of a group already reaches this cycle — the topology input
+ * fingerprint hashes the live session set — so the threshold half of
+ * `presence` is answered here, where the policy read and the automation
+ * submit already are, while its fallback half stays with the durable timer
+ * the stage entry armed. The other kinds have no evidence to observe: they
+ * fire from that timer or from the publication that petitions the latch.
+ *
+ * The count is the one the work's own revision carries, so a member who
+ * leaves between the presence write and this cycle can still be counted;
+ * the dial that follows is evidence for the activation criterion like any
+ * other, and a group that cannot reach its floor fails its attempt. What
+ * the petition must not do is carry that evidence across a series, so a
+ * met threshold names the formation epoch it was observed at.
+ */
+export async function petitionGroupStageTrigger(
+    dependencies: StageTriggerPetitionDependencies,
+    authority: GroupTopologyPlanningAuthority
+): Promise<void> {
+    const automation = dependencies.formationAutomation;
+    if (!dependencies.formationCriterion || automation === undefined) {
+        return;
+    }
+    const group = authority.group.group;
+    if (!isFreshFormingSeries(group) && group.lifecycleState !== 'planned') {
+        return;
+    }
+    const policyRead = await dependencies.formationCriterion.readLifecyclePolicy(group);
+    const policy = toReadGroupLifecyclePolicy(policyRead);
+    if (policy === null || policy.formation !== 'phased') {
+        return;
+    }
+    const trigger = resolveGroupStageTrigger(policy, group.lifecycleState);
+    if (trigger?.kind !== 'presence') {
+        return;
+    }
+    const decision = evaluateGroupStageTrigger({
+        trigger,
+        // The elapsed half belongs to the timer leg this stage entry armed.
+        stageEnteredAtEpochMs: null,
+        nowEpochMs: authority.nowEpochMs,
+        livePresenceMemberCount: authority.group.onlineMemberCount
+    });
+    if (decision !== 'fire') {
+        return;
+    }
+    try {
+        await submitSatisfiedStageTrigger(automation, group, authority.nowEpochMs);
+    }
+    catch (error) {
+        // The work item is already committed and finished: a failed petition
+        // must not lose it. The trigger's own fallback timer is the backstop,
+        // and the next presence change petitions again.
+        console.warn('Group stage trigger petition failed', error);
+    }
+}
+
+/**
+ * Only a series that has spent no attempt is planned by its trigger: a
+ * below-floor return to `forming` belongs to the retry leg, which paces the
+ * next attempt under backoff and stops at the attempt budget.
+ */
+function isFreshFormingSeries(group: Group): boolean {
+    return group.lifecycleState === 'forming' && group.formationAttemptCount === 0;
+}
+
+async function submitSatisfiedStageTrigger(
+    automation: GroupFormationAutomationPort,
+    group: Group,
+    nowEpochMs: number
+): Promise<void> {
+    const groupRef = toCanonicalGroupRef(group);
+    if (group.lifecycleState === 'planned') {
+        await petitionAwaitingGroupConnectTriggers(automation, groupRef, {
+            kind: 'satisfied',
+            observedFormationEpoch: group.formationEpoch
+        });
+        return;
+    }
+    await automation.submitCommand(
+        toFormationPresencePlanCommand({
+            groupRef,
+            formationEpoch: group.formationEpoch,
+            presenceVersion: group.presenceVersion
+        }),
+        nowEpochMs
+    );
 }
 
 /**

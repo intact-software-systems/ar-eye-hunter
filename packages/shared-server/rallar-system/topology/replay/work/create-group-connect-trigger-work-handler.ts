@@ -1,5 +1,6 @@
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { holdsPlannedCandidateAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
@@ -37,31 +38,64 @@ async function petitionGroupConnectTriggerWork(
     work: GroupConnectTriggerWork
 ): Promise<void> {
     if (work.kind === 'intent') {
-        await petitionGroupConnectTrigger(port, work);
+        await petitionGroupConnectTrigger(port, work, { kind: 'clock', atEpochMs: port.nowEpochMs() });
         return;
     }
-    const group = await port.readGroup(work.groupRef);
+    await petitionAwaitingGroupConnectTriggers(port, work.groupRef, { kind: 'clock', atEpochMs: port.nowEpochMs() });
+}
+
+/**
+ * What satisfied the trigger the latch is waiting on: an instant the caller
+ * vouches for — this node's clock for a publication, the timer's own due
+ * time for the connect timer, so a node whose clock lags the one that
+ * latched cannot strand a settle the queue already served — or the trigger's
+ * own condition, met before any of that (product decision 8's threshold).
+ * Satisfaction names the formation epoch it was observed at, because it
+ * overrides the latch's own instant and must not fire a later series' latch
+ * on an earlier series' evidence.
+ */
+export type GroupConnectTriggerSettle =
+    | Readonly<{ kind: 'clock'; atEpochMs: number; }>
+    | Readonly<{ kind: 'satisfied'; observedFormationEpoch: number; }>;
+
+/** Every latch still awaiting publication in the group's current epoch, petitioned in turn. */
+export async function petitionAwaitingGroupConnectTriggers(
+    port: GroupFormationAutomationPort,
+    groupRef: GroupRef,
+    settle: GroupConnectTriggerSettle
+): Promise<void> {
+    const group = await port.readGroup(groupRef);
     if (group === null) {
         return;
     }
-    const latches = await port.latches.listAwaiting(work.groupRef, group.formationEpoch);
+    const latches = await port.latches.listAwaiting(groupRef, group.formationEpoch);
     for (const { latch } of latches) {
-        await petitionGroupConnectTrigger(port, latch);
+        await petitionGroupConnectTrigger(port, latch, settle);
     }
 }
 
 export async function petitionGroupConnectTrigger(
     port: GroupFormationAutomationPort,
-    identity: GroupConnectTriggerIdentity
+    identity: GroupConnectTriggerIdentity,
+    settle: GroupConnectTriggerSettle
 ): Promise<void> {
     const row = await port.latches.read(identity);
     if (row === null || row.latch.state !== 'awaiting-publication') {
         return;
     }
+    if (settle.kind === 'clock' && settle.atEpochMs < row.latch.notBeforeEpochMs) {
+        // A publication ahead of the settle leaves the intent latched; the
+        // connect timer petitions again at the settle instant, and a met
+        // presence threshold petitions sooner still.
+        return;
+    }
+    if (settle.kind === 'satisfied' && settle.observedFormationEpoch !== identity.formationEpoch) {
+        return;
+    }
     const group = await port.readGroup(identity.groupRef);
     if (
         group === null || group.formationEpoch !== identity.formationEpoch ||
-        (group.lifecycleState !== 'planned' && group.lifecycleState !== 'reconfiguring')
+        !holdsPlannedCandidateAt(group.lifecycleState)
     ) {
         return;
     }

@@ -858,6 +858,12 @@ function toGroupCreationCommand(
                     },
                     activation: {
                         mode: 'manual'
+                    },
+                    // The driver commands every boundary itself; the stage
+                    // triggers would dial the layout before it does.
+                    establishment: {
+                        planTrigger: { kind: 'manual' },
+                        connectTrigger: { kind: 'manual' }
                     }
                 }
             }

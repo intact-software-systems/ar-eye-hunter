@@ -1,0 +1,381 @@
+{
+  "description": "The presence stage trigger (product decision 8, plan slice 11b): a phased group whose plan and connect triggers wait for two live members holds in `forming` while one member is live, then plans and dials itself as the second arrives \u2014 reaching `connecting` at the epoch two automatic transitions produce, far inside the ten-minute fallback either trigger carries.",
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": "presence-formation-{runId}",
+    "workspaceId": "default-{runId}",
+    "groupId": "presence-room-{runId}",
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-273a2c9d9fc23957d563de07-{runId}",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-6d9ad84c71017db78e0312e6-{runId}",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createAliceClientState",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal/requests/bb-a6711f7c1b6edcc1d91ac0ab-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "username": "{aliceUsername}",
+          "displayName": "Lifecycle manager {runId}",
+          "status": "active",
+          "roles": []
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "createPresenceGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/bb-79b6554a45e346edfe8ca476-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Presence formation group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "activation": {
+              "mode": "manual"
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "presence",
+                "memberCount": 2,
+                "fallbackMs": 600000
+              },
+              "connectTrigger": {
+                "kind": "presence",
+                "memberCount": 2,
+                "fallbackMs": 600000
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "lifecycleState": "forming",
+            "formationEpoch": 0,
+            "formationElectorate": [
+              "{aliceClientId}"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "aliceInvitesBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{bobClientId}/requests/bb-d6372fd06465b9af380b6808-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "invited"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobAcceptsTheInvite",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/accept/requests/bb-ff57af5dbb6475fd385f8431-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectAlicePresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/bb-fab86c21661a83172c317272-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "oneLiveMemberLeavesTheGroupForming",
+      "type": "loop",
+      "count": 4,
+      "intervalMs": 400,
+      "steps": [
+        {
+          "name": "stillFormingWithOneMember{loop.iteration}",
+          "type": "http",
+          "connection": "primary",
+          "request": {
+            "method": "GET",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
+            "headers": {
+              "Authorization": "{aliceAuthHeader}",
+              "x-client-id": "{aliceClientId}"
+            }
+          },
+          "expect": {
+            "status": 200,
+            "body": {
+              "lifecycleState": "forming",
+              "formationEpoch": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "connectBobPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/bb-18be439a3f71dc2588168774-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "presenceThresholdDialsBeforeTheFallback",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "connecting",
+          "formationEpoch": 2
+        }
+      }
+    },
+    {
+      "name": "theDialedLayoutIsThePlannedOne",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 8000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}
