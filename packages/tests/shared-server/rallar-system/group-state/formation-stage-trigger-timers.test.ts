@@ -22,7 +22,7 @@ import {
 } from '@shared-server/rallar-system/topology/replay/work/create-group-connect-trigger-work-handler.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import { type GroupLayoutIdentity, toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { toGroupLayoutIdentity, type GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy, GroupLifecycleState, GroupStageTrigger } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { Group } from '@shared/api/group-types.ts';
