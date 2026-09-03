@@ -319,7 +319,7 @@
           ],
           "condition": "active",
           "remediation": "none",
-          "maxFormationAttempts": 1,
+          "maxFormationAttempts": 3,
           "coverageBasisLayoutIdentity": {
             "state": "active"
           }
