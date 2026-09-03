@@ -23,7 +23,6 @@ import {
     readStoredQueueEntries,
     readStoredQueueEntry
 } from './indexed-db-queue-box-store.ts';
-import { writeComputedIndexedDbQueueMutations } from './indexed-db-queue-box-write.ts';
 import {
     QueueBoxResourceEntryRepository,
     ResourceInboxFairnessReservationInput,
@@ -49,6 +48,7 @@ import {
     toKeyAsString
 } from './ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from './ResourceInboxRetryPolicy.ts';
+import { writeComputedIndexedDbQueueMutations } from './write-computed-indexed-db-queue-mutations.ts';
 
 type IndexedDbQueueWriteOperation<Result> = Readonly<{
     mutations: readonly ComputedIndexedDbQueueMutation[];

@@ -61,10 +61,10 @@ export function computeIndexedDbFairnessReservation(
     return { mutations, result };
 }
 
-type FairnessState = {
+interface FairnessState {
     readonly entries: readonly StoredResourceEntry[];
     offset: number;
-};
+}
 
 function earlierFairnessState(left: FairnessState, right: FairnessState): FairnessState {
     const leftEntry = left.entries[left.offset];
