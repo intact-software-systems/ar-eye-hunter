@@ -1,15 +1,13 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import {
-    computeALAckControlMessage,
-    computeALNackControlMessage,
-    computeALRepairControlMessage,
+    computeALControlMessage,
     type ALControlMessageConstructionFacts
-} from '../../al-contracts/al-control.ts';
+} from '../../al-contracts/al-control-message-computation.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import {
     computeResourceEntryFromALMessage,
     type ALMessageResourceEntryFacts
-} from '../../queuebox/ResourceEntry.ts';
+} from '../../queuebox/al-message-resource-entry-computation.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundBufferedReleaseReadDto,
@@ -185,38 +183,40 @@ function computeALInboundDurableEffect(
         case 'send-ack':
             return {
                 kind: 'send-control',
-                msg: computeALAckControlMessage(
-                    facts.selfPeerId,
-                    payload.toPeerId,
-                    payload.ackedMsgId,
-                    payload.status,
-                    toControlMessageFacts(effectId, facts)
-                )
+                msg: computeALControlMessage({
+                    kind: 'ack',
+                    senderId: facts.selfPeerId,
+                    toPeerId: payload.toPeerId,
+                    ackedMsgId: payload.ackedMsgId,
+                    status: payload.status,
+                    facts: toControlMessageFacts(effectId, facts)
+                })
             };
         case 'send-nack':
             return {
                 kind: 'send-control',
-                msg: computeALNackControlMessage(
-                    facts.selfPeerId,
-                    payload.toPeerId,
-                    payload.msgId,
-                    payload.reason,
-                    payload.ordering,
-                    {},
-                    toControlMessageFacts(effectId, facts)
-                )
+                msg: computeALControlMessage({
+                    kind: 'nack',
+                    senderId: facts.selfPeerId,
+                    toPeerId: payload.toPeerId,
+                    msgId: payload.msgId,
+                    reason: payload.reason,
+                    ordering: payload.ordering,
+                    facts: toControlMessageFacts(effectId, facts)
+                })
             };
         case 'send-repair':
             return {
                 kind: 'send-control',
-                msg: computeALRepairControlMessage(
-                    facts.selfPeerId,
-                    payload.toPeerId,
-                    payload.msgId,
-                    payload.reason,
-                    payload.ordering,
-                    toControlMessageFacts(effectId, facts)
-                )
+                msg: computeALControlMessage({
+                    kind: 'repair',
+                    senderId: facts.selfPeerId,
+                    toPeerId: payload.toPeerId,
+                    msgId: payload.msgId,
+                    reason: payload.reason,
+                    ordering: payload.ordering,
+                    facts: toControlMessageFacts(effectId, facts)
+                })
             };
         case 'forward-message':
         case 'release-buffered':

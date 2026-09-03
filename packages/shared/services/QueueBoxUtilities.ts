@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { ALMessage } from '../al-contracts/al-contract.ts';
+import { computeResourceEntryFromALMessage } from '../queuebox/al-message-resource-entry-computation.ts';
 import { DequeueController } from '../queuebox/DequeueController.ts';
 import {
     DequeueResourceEntryController,
@@ -7,13 +8,7 @@ import {
     type DequeueResourceEntryOptions
 } from '../queuebox/DequeueResourceEntryController.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
-import {
-    computeResourceEntryFromALMessage,
-    EntityStatus,
-    Key,
-    NEVER_EXPIRE_TS,
-    ResourceEntry
-} from '../queuebox/ResourceEntry.ts';
+import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '../queuebox/ResourceEntry.ts';
 
 export class QueueBoxUtilities {
     static readonly RETRY_DISPOSITION_ERROR = 'Queue entry requested retry';

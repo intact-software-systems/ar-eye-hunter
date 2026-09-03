@@ -1,5 +1,6 @@
 import type { ClientPrincipalRef } from '../api/client-types.ts';
 import type { GroupRef } from '../api/group-types.ts';
+import { computeALMessage, computeALUnicastMessage } from './al-message-computation.ts';
 import type { ALQosPolicyRequest } from './al-policy.ts';
 
 // -------------------------------------------------------
@@ -160,11 +161,6 @@ type ALMessageBuilderOptions = Readonly<{
     ttlMs?: number;
 }>;
 
-export interface ALMessageConstructionFacts {
-    readonly msgId: string;
-    readonly nowEpochMs: number;
-}
-
 export function newALRoute(
     topicId: string,
     contextId: string,
@@ -185,42 +181,6 @@ export function newALEventRoute(
     return newALRoute(topicId, contextId, resourceId);
 }
 
-function computeALMessage<T>(
-    senderId: string,
-    route: ALRoute,
-    typeId: string,
-    resource: T,
-    facts: ALMessageConstructionFacts,
-    options?: ALMessageBuilderOptions
-): ALMessage {
-    const expiresAtMs = options?.ttlMs !== undefined
-        ? facts.nowEpochMs + options.ttlMs
-        : undefined;
-
-    return {
-        id: {
-            v: 2,
-            msgId: facts.msgId,
-            ts: facts.nowEpochMs,
-            senderId: senderId
-        },
-        route,
-        constraints: expiresAtMs !== undefined
-            ? { expiresAtMs }
-            : undefined,
-        qos: options?.qos,
-        payload: {
-            typeId: typeId,
-            contentType: 'application/json',
-            resource: JSON.stringify(resource)
-        },
-        audit: {
-            createdBy: senderId,
-            createdTs: facts.nowEpochMs
-        }
-    };
-}
-
 export function newALUntargetedMessage<T>(
     senderId: string,
     route: ALRoute,
@@ -228,32 +188,14 @@ export function newALUntargetedMessage<T>(
     resource: T,
     options?: ALMessageBuilderOptions
 ): ALMessage {
-    return computeALMessage(
+    return computeALMessage({
         senderId,
         route,
         typeId,
         resource,
-        { msgId: crypto.randomUUID(), nowEpochMs: Date.now() },
+        facts: { msgId: crypto.randomUUID(), nowEpochMs: Date.now() },
         options
-    );
-}
-
-export function computeALUnicastMessage<T>(
-    senderId: string,
-    route: ALRoute,
-    toPeerId: string,
-    typeId: string,
-    resource: T,
-    facts: ALMessageConstructionFacts,
-    options?: ALMessageBuilderOptions
-): ALMessage {
-    return {
-        ...computeALMessage(senderId, route, typeId, resource, facts, options),
-        targets: {
-            mode: 'unicast',
-            toPeerId
-        }
-    };
+    });
 }
 
 export function newALUnicastMessage<T>(
@@ -264,15 +206,15 @@ export function newALUnicastMessage<T>(
     resource: T,
     options?: ALMessageBuilderOptions
 ): ALMessage {
-    return computeALUnicastMessage(
+    return computeALUnicastMessage({
         senderId,
         route,
         toPeerId,
         typeId,
         resource,
-        { msgId: crypto.randomUUID(), nowEpochMs: Date.now() },
+        facts: { msgId: crypto.randomUUID(), nowEpochMs: Date.now() },
         options
-    );
+    });
 }
 
 export function newALMulticastMessage<T>(

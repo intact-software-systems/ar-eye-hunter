@@ -1,15 +1,18 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP, type PersistenceProvider } from '../persistence/PersistenceProvider.ts';
+import type { ALMessage } from './al-contract.ts';
 import {
-    computeALUnicastMessage,
-    type ALMessage,
-    type ALMessageConstructionFacts,
-    type ALRoute
-} from './al-contract.ts';
+    AL_CONTROL_ACK_TYPE_ID,
+    AL_CONTROL_NACK_TYPE_ID,
+    AL_CONTROL_REPAIR_TYPE_ID,
+    computeALControlMessage
+} from './al-control-message-computation.ts';
 import type { ALOrderingObservation, ALReadyable } from './al-runtime.ts';
 
-export const AL_CONTROL_ACK_TYPE_ID = 'al.control.ack.v1';
-export const AL_CONTROL_NACK_TYPE_ID = 'al.control.nack.v1';
-export const AL_CONTROL_REPAIR_TYPE_ID = 'al.control.repair.v1';
+export {
+    AL_CONTROL_ACK_TYPE_ID,
+    AL_CONTROL_NACK_TYPE_ID,
+    AL_CONTROL_REPAIR_TYPE_ID
+} from './al-control-message-computation.ts';
 
 export type ALAckStatus = 'accepted' | 'delivered' | 'forwarded' | 'subtree-complete';
 export type ALNackReason =
@@ -22,10 +25,6 @@ export type ALNackReason =
     | 'stale'
     | 'not-yet-in-sync';
 export type ALRepairReason = 'missing-seq' | 'retransmit' | 'resync';
-
-export interface ALControlMessageConstructionFacts extends ALMessageConstructionFacts {
-    readonly observedAtEpochMs: number;
-}
 
 export type ALAckPayload = Readonly<{
     ackedMsgId: string;
@@ -157,54 +156,14 @@ export function newALAckControlMessage(
     status: ALAckStatus = 'accepted'
 ): ALMessage {
     const nowEpochMs = Date.now();
-    return computeALAckControlMessage(
+    return computeALControlMessage({
+        kind: 'ack',
         senderId,
         toPeerId,
         ackedMsgId,
         status,
-        { msgId: crypto.randomUUID(), nowEpochMs, observedAtEpochMs: nowEpochMs }
-    );
-}
-
-export function computeALAckControlMessage(
-    senderId: string,
-    toPeerId: string,
-    ackedMsgId: string,
-    status: ALAckStatus,
-    facts: ALControlMessageConstructionFacts
-): ALMessage {
-    const payload: ALAckPayload = {
-        ackedMsgId,
-        fromPeerId: senderId,
-        toPeerId,
-        status,
-        observedAtEpochMs: facts.observedAtEpochMs
-    };
-
-    return computeALUnicastMessage(
-        senderId,
-        toControlRoute(senderId, toPeerId, ackedMsgId, AL_CONTROL_ACK_TYPE_ID),
-        toPeerId,
-        AL_CONTROL_ACK_TYPE_ID,
-        payload,
-        facts,
-        {
-            qos: {
-                delivery: {
-                    algo: 'best-effort'
-                },
-                durability: {
-                    algo: 'volatile'
-                },
-                ack: {
-                    algo: 'none',
-                    opts: {
-                        timeoutMs: 250
-                    }
-                }
-            }
-        }
-    );
+        facts: { msgId: crypto.randomUUID(), nowEpochMs, observedAtEpochMs: nowEpochMs }
+    });
 }
 
 export function newALNackControlMessage(
@@ -218,68 +177,16 @@ export function newALNackControlMessage(
     }> = {}
 ): ALMessage {
     const nowEpochMs = Date.now();
-    return computeALNackControlMessage(
+    return computeALControlMessage({
+        kind: 'nack',
         senderId,
         toPeerId,
         msgId,
         reason,
         ordering,
-        options,
-        { msgId: crypto.randomUUID(), nowEpochMs, observedAtEpochMs: nowEpochMs }
-    );
-}
-
-export function computeALNackControlMessage(
-    senderId: string,
-    toPeerId: string,
-    msgId: string,
-    reason: ALNackReason,
-    ordering: ALOrderingObservation | undefined,
-    options: Readonly<{ serverSnapshotVersion?: number; }>,
-    facts: ALControlMessageConstructionFacts
-): ALMessage {
-    const payload: ALNackPayload = {
-        msgId,
-        fromPeerId: senderId,
-        toPeerId,
-        reason,
-        observedAtEpochMs: facts.observedAtEpochMs,
-        orderingKey: ordering?.trackKey,
-        expectedSeq: ordering?.expectedSeq,
-        missingSeqs: ordering?.missingSeqs,
-        serverSnapshotVersion: options.serverSnapshotVersion
-    };
-
-    return computeALUnicastMessage(
-        senderId,
-        toControlRoute(senderId, toPeerId, msgId, AL_CONTROL_NACK_TYPE_ID),
-        toPeerId,
-        AL_CONTROL_NACK_TYPE_ID,
-        payload,
-        facts,
-        {
-            qos: {
-                delivery: {
-                    algo: 'at-least-once'
-                },
-                durability: {
-                    algo: 'local-outbox'
-                },
-                retry: {
-                    algo: 'exp-backoff',
-                    opts: {
-                        maxAttempts: 3
-                    }
-                },
-                ack: {
-                    algo: 'none',
-                    opts: {
-                        timeoutMs: 250
-                    }
-                }
-            }
-        }
-    );
+        serverSnapshotVersion: options.serverSnapshotVersion,
+        facts: { msgId: crypto.randomUUID(), nowEpochMs, observedAtEpochMs: nowEpochMs }
+    });
 }
 
 export function newALRepairControlMessage(
@@ -290,65 +197,15 @@ export function newALRepairControlMessage(
     ordering?: ALOrderingObservation
 ): ALMessage {
     const nowEpochMs = Date.now();
-    return computeALRepairControlMessage(
+    return computeALControlMessage({
+        kind: 'repair',
         senderId,
         toPeerId,
         msgId,
         reason,
         ordering,
-        { msgId: crypto.randomUUID(), nowEpochMs, observedAtEpochMs: nowEpochMs }
-    );
-}
-
-export function computeALRepairControlMessage(
-    senderId: string,
-    toPeerId: string,
-    msgId: string,
-    reason: ALRepairReason,
-    ordering: ALOrderingObservation | undefined,
-    facts: ALControlMessageConstructionFacts
-): ALMessage {
-    const payload: ALRepairPayload = {
-        msgId,
-        fromPeerId: senderId,
-        toPeerId,
-        reason,
-        observedAtEpochMs: facts.observedAtEpochMs,
-        orderingKey: ordering?.trackKey,
-        expectedSeq: ordering?.expectedSeq,
-        missingSeqs: ordering?.missingSeqs
-    };
-
-    return computeALUnicastMessage(
-        senderId,
-        toControlRoute(senderId, toPeerId, msgId, AL_CONTROL_REPAIR_TYPE_ID),
-        toPeerId,
-        AL_CONTROL_REPAIR_TYPE_ID,
-        payload,
-        facts,
-        {
-            qos: {
-                delivery: {
-                    algo: 'at-least-once'
-                },
-                durability: {
-                    algo: 'local-outbox'
-                },
-                retry: {
-                    algo: 'exp-backoff',
-                    opts: {
-                        maxAttempts: 3
-                    }
-                },
-                ack: {
-                    algo: 'none',
-                    opts: {
-                        timeoutMs: 250
-                    }
-                }
-            }
-        }
-    );
+        facts: { msgId: crypto.randomUUID(), nowEpochMs, observedAtEpochMs: nowEpochMs }
+    });
 }
 
 type ALPendingAckState = {
@@ -900,18 +757,5 @@ function deserializePendingAckState(
         localReady: pending.localReady,
         expectedFromPeerIds: new Set<string>(pending.expectedFromPeerIds),
         ackedFromPeerIds: new Set<string>(pending.ackedFromPeerIds)
-    };
-}
-
-function toControlRoute(
-    senderId: string,
-    toPeerId: string,
-    msgId: string,
-    controlTypeId: string
-): ALRoute {
-    return {
-        topicId: 'al-control',
-        resourceId: `${msgId}:${controlTypeId}`,
-        contextId: `${senderId}:${toPeerId}`
     };
 }
