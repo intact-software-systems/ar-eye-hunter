@@ -79,8 +79,8 @@ export class ClientStateInboxHandler {
     ): Promise<ClientStateWritten> {
         const command = await this.toCommand(context, input);
         const read = await this.dependencies.mutationService.read(command);
-        const computed = this.compute(command, read);
-        this.validate(command, read, computed);
+        const computed = this.computeMutation(command, read);
+        this.validateMutation(command, read, computed);
         return await this.commitComputed(context, computed);
     }
 
@@ -128,8 +128,8 @@ export class ClientStateInboxHandler {
                 lifecycleComputed
             });
         }
-        const computed = this.compute(command, read);
-        this.validate(command, read, computed);
+        const computed = this.computeMutation(command, read);
+        this.validateMutation(command, read, computed);
         return await this.commitComputed(context, computed, lifecycleComputed);
     }
 
@@ -164,8 +164,8 @@ export class ClientStateInboxHandler {
         command: ClientMutationCommand
     ): Promise<ClientMutationComputed> {
         const read = await this.dependencies.mutationService.read(command);
-        const computed = this.compute(command, read);
-        this.validate(command, read, computed);
+        const computed = this.computeMutation(command, read);
+        this.validateMutation(command, read, computed);
         return computed;
     }
 
@@ -196,7 +196,7 @@ export class ClientStateInboxHandler {
         return result;
     }
 
-    private compute(
+    private computeMutation(
         command: ClientMutationCommand,
         read: Awaited<ReturnType<ClientStateMutationService['read']>>
     ): ClientMutationComputed {
@@ -206,7 +206,7 @@ export class ClientStateInboxHandler {
         );
     }
 
-    private validate(
+    private validateMutation(
         command: ClientMutationCommand,
         read: Awaited<ReturnType<ClientStateMutationService['read']>>,
         computed: ClientMutationComputed

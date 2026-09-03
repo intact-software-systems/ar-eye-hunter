@@ -7,7 +7,13 @@ import {
     type DequeueResourceEntryOptions
 } from '../queuebox/DequeueResourceEntryController.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
-import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import {
+    computeResourceEntryFromALMessage,
+    EntityStatus,
+    Key,
+    NEVER_EXPIRE_TS,
+    ResourceEntry
+} from '../queuebox/ResourceEntry.ts';
 
 export class QueueBoxUtilities {
     static readonly RETRY_DISPOSITION_ERROR = 'Queue entry requested retry';
@@ -82,30 +88,9 @@ export class QueueBoxUtilities {
     }
 
     static toResourceEntryFromMsg(msg: ALMessage, typeId: string): ResourceEntry {
-        const expireAtMs = msg.constraints?.expiresAtMs ?? msg.qos?.expiry?.opts?.expiresAtMs;
-        const expiryTs = expireAtMs !== undefined
-            ? Temporal.Instant.fromEpochMilliseconds(expireAtMs)
-            : NEVER_EXPIRE_TS;
-
-        return {
-            key: {
-                topicId: msg.route.topicId,
-                resourceId: msg.route.resourceId,
-                contextId: msg.route.contextId
-            },
-            resource: JSON.stringify(msg),
-            typeId: typeId,
-            audit: {
-                date: Temporal.Now.plainTimeISO(),
-                createdBy: msg.audit?.createdBy ?? 'test',
-                createdTs: Temporal.Now.plainDateTimeISO(),
-                expiryTs
-            },
-            status: EntityStatus.NEW,
-            dequeueAudit: {
-                attempts: 0
-            },
-            db: undefined
-        };
+        return computeResourceEntryFromALMessage(msg, typeId, {
+            date: Temporal.Now.plainTimeISO(),
+            createdTs: Temporal.Now.plainDateTimeISO()
+        });
     }
 }

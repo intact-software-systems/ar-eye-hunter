@@ -1,20 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import {
-    newALAckControlMessage,
-    newALNackControlMessage,
-    newALRepairControlMessage,
-    parseALControlMessage
-} from '@shared/al-contracts/al-control.ts';
+import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALInboundAdmissionStore, ALInboundCommitBundle } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundAdmission, computeALInboundBufferedRelease } from '@shared/alm/inbound/compute-al-inbound-admission.ts';
-import { prepareALInboundCommitBundle, type ALInboundEffectPreparationDependencies } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import {
     afterEach,
     describe,
@@ -29,7 +22,7 @@ describe('inbound admission preparation boundary', () => {
         vi.useRealTimers();
     });
 
-    it('computes repeatable admission values without materializing clocks, control IDs, or inbox entries', async () => {
+    it('computes the complete repeatable admission bundle from explicit facts', async () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const message = createMessage(1);
         const read = await stores.admissionStore.readIncomingMessage(message, 'sender', planIncomingMessage);
@@ -38,17 +31,21 @@ describe('inbound admission preparation boundary', () => {
             throw new Error('Admission computation must not read the clock');
         });
 
-        const first = computeALInboundAdmission(read, false);
+        const facts = createComputationFacts('candidate');
+        const first = computeALInboundAdmission(read, false, facts);
         vi.spyOn(Date, 'now').mockReturnValue(200);
-        const second = computeALInboundAdmission(read, false);
+        const second = computeALInboundAdmission(read, false, facts);
 
         expect(second).toEqual(first);
-        expect(first.effects.map((effect) => effect.payload.kind)).toEqual([
+        expect(first.durableEffects.map((effect) => effect.payload.kind)).toEqual([
             'dispatch-local',
-            'send-ack',
-            'send-repair'
+            'send-control',
+            'send-control'
         ]);
-        expect(first.effects[0]?.payload).not.toHaveProperty('entry');
+        expect(first.durableEffects[0]?.payload).toMatchObject({
+            kind: 'dispatch-local',
+            entry: { resource: JSON.stringify(message), typeId: 'inbox' }
+        });
     });
 
     it('computes repeatable buffered release values without generating a local entry or ACK envelope', async () => {
@@ -66,88 +63,39 @@ describe('inbound admission preparation boundary', () => {
             throw new Error('Buffered computation must not read the clock');
         });
 
-        const first = computeALInboundBufferedRelease(release, read.plan);
-        const second = computeALInboundBufferedRelease(release, read.plan);
+        const facts = createComputationFacts('buffered');
+        const first = computeALInboundBufferedRelease(release, read.plan, facts);
+        const second = computeALInboundBufferedRelease(release, read.plan, facts);
 
         expect(second).toEqual(first);
-        expect(first.effects[0]?.payload).not.toHaveProperty('entry');
+        expect(first.durableEffects[0]?.payload).toHaveProperty('entry');
     });
 
-    it('materializes ordered durable payloads through the canonical control builders', async () => {
-        vi.useFakeTimers();
-        vi.setSystemTime(1_800_000_000_000);
+    it('uses only explicit facts for durable control-message identity and time', async () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const message = createMessage(1);
         const read = await stores.admissionStore.readIncomingMessage(message, 'sender', planIncomingMessage);
-        const ordering = { status: 'gap' as const, trackKey: 'chat-order', expectedSeq: 1, missingSeqs: [1], releasableSeqs: [] };
-        const computed = {
-            ...computeALInboundAdmission(read, false),
-            effects: [
-                { effectId: 'dispatch', expireAtTimestamp: 1_800_000_010_000, payload: { kind: 'dispatch-local' as const, msg: message, plan: read.plan } },
-                { effectId: 'inbox', expireAtTimestamp: undefined, payload: { kind: 'enqueue-inbox' as const, msg: message, plan: read.plan } },
-                {
-                    effectId: 'ack',
-                    expireAtTimestamp: undefined,
-                    payload: { kind: 'send-ack' as const, toPeerId: 'sender', ackedMsgId: message.id.msgId, status: 'delivered' as const }
-                },
-                {
-                    effectId: 'nack',
-                    expireAtTimestamp: undefined,
-                    payload: {
-                        kind: 'send-nack' as const,
-                        toPeerId: 'sender',
-                        msgId: message.id.msgId,
-                        reason: 'gap' as const,
-                        ordering
-                    }
-                },
-                {
-                    effectId: 'repair',
-                    expireAtTimestamp: undefined,
-                    payload: { kind: 'send-repair' as const, toPeerId: 'sender', msgId: message.id.msgId, reason: 'missing-seq' as const, ordering }
-                },
-                {
-                    effectId: 'forward',
-                    expireAtTimestamp: undefined,
-                    payload: { kind: 'forward-message' as const, msg: message, fromPeerId: 'sender', plan: read.plan }
-                },
-                { effectId: 'release', expireAtTimestamp: undefined, payload: { kind: 'release-buffered' as const, trackKey: 'chat-order', seq: 2 } }
-            ]
-        };
+        const bundle = computeALInboundAdmission(read, false, createComputationFacts('candidate'));
+        const controlMessages = bundle.durableEffects.flatMap((effect) => effect.payload.kind === 'send-control' ? [effect.payload.msg] : []);
+        const controls = controlMessages.map(parseALControlMessage);
 
-        const bundle = prepareALInboundCommitBundle(computed, createPreparationDependencies());
-
-        expect(bundle.senderId).toBe('sender');
-        expect(bundle.durableEffects.map((effect) => effect.effectId)).toEqual(['dispatch', 'inbox', 'ack', 'nack', 'repair', 'forward', 'release']);
-        expect(bundle.durableEffects.map((effect) => effect.payload.kind)).toEqual([
-            'dispatch-local',
-            'enqueue-inbox',
-            'send-control',
-            'send-control',
-            'send-control',
-            'forward-message',
-            'release-buffered'
+        expect(controlMessages.map((control) => control.id.msgId)).toEqual([
+            expect.stringMatching(/^candidate:/),
+            expect.stringMatching(/^candidate:/)
         ]);
-        expect(bundle.durableEffects[0]).toMatchObject({
-            expireAtTimestamp: 1_800_000_010_000,
-            payload: { entry: { resource: JSON.stringify(message), typeId: 'inbox' } }
-        });
-        expect(
-            bundle.durableEffects
-                .filter((effect) => effect.payload.kind === 'dispatch-local' || effect.payload.kind === 'enqueue-inbox')
-                .map((effect) => Object.keys(effect.payload).sort())
-        ).toEqual([
-            ['entry', 'kind'],
-            ['entry', 'kind']
+        expect(controlMessages.map((control) => control.id.ts)).toEqual([
+            1_800_000_000_000,
+            1_800_000_000_000
         ]);
-        const controls = bundle.durableEffects.flatMap((effect) => effect.payload.kind === 'send-control' ? [parseALControlMessage(effect.payload.msg)] : []);
         expect(controls).toMatchObject([
             {
                 type: 'ack',
                 payload: { ackedMsgId: message.id.msgId, fromPeerId: 'receiver', toPeerId: 'sender', status: 'delivered', observedAtEpochMs: 1_800_000_000_000 }
             },
-            { type: 'nack', payload: { msgId: message.id.msgId, reason: 'gap', orderingKey: 'chat-order', expectedSeq: 1, missingSeqs: [1] } },
-            { type: 'repair', payload: { msgId: message.id.msgId, reason: 'missing-seq', orderingKey: 'chat-order', expectedSeq: 1, missingSeqs: [1] } }
+            {
+                type: 'repair',
+                payload: { msgId: message.id.msgId, reason: 'retransmit', observedAtEpochMs: 1_800_000_000_000 }
+            }
         ]);
     });
 
@@ -252,13 +200,16 @@ class TestEffectScheduler implements ALInboundMessageRuntime.Scheduler {
     }
 }
 
-function createPreparationDependencies(): ALInboundEffectPreparationDependencies {
+function createComputationFacts(messageIdentitySeed: string) {
     return {
         selfPeerId: 'receiver',
-        createInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'),
-        createAckMessage: newALAckControlMessage,
-        createNackMessage: newALNackControlMessage,
-        createRepairMessage: newALRepairControlMessage
+        inboxEntryTypeId: 'inbox',
+        messageIdentitySeed,
+        observedAtEpochMs: 1_800_000_000_000,
+        inboxAudit: {
+            date: Temporal.PlainTime.from('12:00:00'),
+            createdTs: Temporal.PlainDateTime.from('2027-01-15T12:00:00')
+        }
     };
 }
 
@@ -270,7 +221,8 @@ function createRuntimeDependencies(admissionStore: ALInboundAdmissionStore): ALI
         readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         dispatchInboxEntry: async () => {},
         sendControlMessage: async () => {},
-        effectPreparation: createPreparationDependencies(),
+        selfPeerId: 'receiver',
+        inboxEntryTypeId: 'inbox',
         effectWorkerId: 'test-worker',
         clock: { nowMs: () => Date.now() },
         scheduler: new TestEffectScheduler()

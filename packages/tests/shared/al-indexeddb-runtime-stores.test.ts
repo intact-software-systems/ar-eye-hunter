@@ -121,7 +121,7 @@ describe('IndexedDB AL runtime stores', () => {
                     supersedenceStore: runtime.supersedenceStore
                 }),
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
-            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+            inboxEntryTypeId: 'inbox',
             dispatchInboxEntry: async (entry) => {
                 const msg = decodePersistedALMessage(entry.resource);
                 dispatchedMsgIds.push(msg.id.msgId);
@@ -645,7 +645,7 @@ function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput) {
                 supersedenceStore: runtime.supersedenceStore
             }),
         readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        inboxEntryTypeId: 'inbox',
         dispatchInboxEntry: async (entry: ResourceEntry) => {
             const msg = decodePersistedALMessage(entry.resource);
             dispatchedMsgIds.push(msg.id.msgId);
@@ -778,8 +778,7 @@ function createFlakyOutboundAdmissionStore(
                 ? hooks.commitBundle(bundle, decode)
                 : inner.commitBundle(bundle, decode),
         acceptControlMessage: (msg, decode) => inner.acceptControlMessage(msg, decode),
-        scheduleNotYetInSyncRetry: (schedule, decode) =>
-            inner.scheduleNotYetInSyncRetry(schedule, decode),
+        scheduleNotYetInSyncRetry: (schedule, decode) => inner.scheduleNotYetInSyncRetry(schedule, decode),
         claimReadyEffects: <TPrepared>(input: ClaimALOutboundEffectsInput, decode: ALOutboundPreparedMessageDecoder<TPrepared>) =>
             hooks.claimReadyEffects
                 ? hooks.claimReadyEffects(input, decode)

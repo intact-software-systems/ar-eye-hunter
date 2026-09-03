@@ -1,8 +1,20 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import {
+    computeALAckControlMessage,
+    computeALNackControlMessage,
+    computeALRepairControlMessage,
+    type ALControlMessageConstructionFacts
+} from '../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import {
+    computeResourceEntryFromALMessage,
+    type ALMessageResourceEntryFacts
+} from '../../queuebox/ResourceEntry.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundBufferedReleaseReadDto,
+    ALInboundCommitBundle,
+    ALInboundDurableEffect,
     ALInboundMessageReadDto
 } from './al-inbound-admission-store.ts';
 import {
@@ -20,10 +32,18 @@ import {
     type ALPendingAckTransition
 } from './transition-al-pending-ack.ts';
 
-export interface ALInboundAdmissionComputed {
+interface ALInboundAdmissionDecision {
     readonly read: ALInboundMessageReadDto | ALInboundBufferedReleaseReadDto;
     readonly mutations: readonly ALInboundAdmissionMutation[];
     readonly effects: readonly ALInboundEffectIntent[];
+}
+
+export interface ALInboundComputationFacts {
+    readonly selfPeerId: string;
+    readonly inboxEntryTypeId: string;
+    readonly messageIdentitySeed: string;
+    readonly observedAtEpochMs: number;
+    readonly inboxAudit: ALMessageResourceEntryFacts;
 }
 
 interface InboundAcknowledgementChanges {
@@ -40,8 +60,16 @@ interface InboundPendingAckInput {
 
 export function computeALInboundAdmission(
     read: ALInboundMessageReadDto,
+    canForward: boolean,
+    facts: ALInboundComputationFacts
+): ALInboundCommitBundle {
+    return computeALInboundCommitBundle(computeALInboundAdmissionDecision(read, canForward), facts);
+}
+
+function computeALInboundAdmissionDecision(
+    read: ALInboundMessageReadDto,
     canForward: boolean
-): ALInboundAdmissionComputed {
+): ALInboundAdmissionDecision {
     const controls: ALInboundControlEffectInput = {
         msg: read.msg,
         plan: read.plan,
@@ -81,8 +109,16 @@ export function computeALInboundAdmission(
 
 export function computeALInboundBufferedRelease(
     read: ALInboundBufferedReleaseReadDto,
+    plan: ALMessageHandlingPlan,
+    facts: ALInboundComputationFacts
+): ALInboundCommitBundle {
+    return computeALInboundCommitBundle(computeALInboundBufferedReleaseDecision(read, plan), facts);
+}
+
+function computeALInboundBufferedReleaseDecision(
+    read: ALInboundBufferedReleaseReadDto,
     plan: ALMessageHandlingPlan
-): ALInboundAdmissionComputed {
+): ALInboundAdmissionDecision {
     const superseded = read.supersedenceAcceptance?.observation.status === 'superseded';
     const deliverable = !plan.dropReason && plan.localDelivery.enabled && !superseded;
     const acknowledgements = deliverable
@@ -114,6 +150,88 @@ export function computeALInboundBufferedRelease(
             ...acknowledgements.immediateEffects,
             ...acknowledgements.completedEffects
         ]
+    };
+}
+
+function computeALInboundCommitBundle(
+    computed: ALInboundAdmissionDecision,
+    facts: ALInboundComputationFacts
+): ALInboundCommitBundle {
+    const msg = computed.read.kind === 'incoming' ? computed.read.msg : computed.read.snapshot.msg;
+    return {
+        senderId: msg.id.senderId,
+        expectedVersion: computed.read.clientRecord?.version,
+        mutations: computed.mutations,
+        durableEffects: computed.effects.map((effect) => ({
+            effectId: effect.effectId,
+            expireAtTimestamp: effect.expireAtTimestamp,
+            payload: computeALInboundDurableEffect(effect.effectId, effect.payload, facts)
+        }))
+    };
+}
+
+function computeALInboundDurableEffect(
+    effectId: string,
+    payload: ALInboundEffectIntent['payload'],
+    facts: ALInboundComputationFacts
+): ALInboundDurableEffect {
+    switch (payload.kind) {
+        case 'dispatch-local':
+        case 'enqueue-inbox':
+            return {
+                kind: payload.kind,
+                entry: computeResourceEntryFromALMessage(payload.msg, facts.inboxEntryTypeId, facts.inboxAudit)
+            };
+        case 'send-ack':
+            return {
+                kind: 'send-control',
+                msg: computeALAckControlMessage(
+                    facts.selfPeerId,
+                    payload.toPeerId,
+                    payload.ackedMsgId,
+                    payload.status,
+                    toControlMessageFacts(effectId, facts)
+                )
+            };
+        case 'send-nack':
+            return {
+                kind: 'send-control',
+                msg: computeALNackControlMessage(
+                    facts.selfPeerId,
+                    payload.toPeerId,
+                    payload.msgId,
+                    payload.reason,
+                    payload.ordering,
+                    {},
+                    toControlMessageFacts(effectId, facts)
+                )
+            };
+        case 'send-repair':
+            return {
+                kind: 'send-control',
+                msg: computeALRepairControlMessage(
+                    facts.selfPeerId,
+                    payload.toPeerId,
+                    payload.msgId,
+                    payload.reason,
+                    payload.ordering,
+                    toControlMessageFacts(effectId, facts)
+                )
+            };
+        case 'forward-message':
+        case 'release-buffered':
+            return payload;
+    }
+}
+
+function toControlMessageFacts(
+    effectId: string,
+    facts: ALInboundComputationFacts
+): ALControlMessageConstructionFacts {
+    return {
+        msgId: `${facts.messageIdentitySeed}:${effectId}`,
+        nowEpochMs: facts.observedAtEpochMs,
+        observedAtEpochMs: facts.observedAtEpochMs
     };
 }
 

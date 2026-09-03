@@ -98,7 +98,7 @@ describe('PSql admission optimistic retry', () => {
             stores: createDefaultPSqlALInboundRuntimeStores({ namespace, repository }),
             planIncomingMessage: plan,
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
-            toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+            inboxEntryTypeId: 'inbox',
             dispatchInboxEntry: () => Promise.resolve(undefined),
             sendControlMessage: () => Promise.resolve(undefined)
         });

@@ -19,7 +19,7 @@ describe('inbound durable effect worker lifecycle', () => {
         vi.spyOn(console, 'error').mockImplementation(() => {});
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            inboxEntryTypeId: 'inbox'
         });
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', { text: 'hello' });
         await resources.admissionStore.commitBundle({
@@ -46,7 +46,8 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             ...resources,
             inbox: new InMemoryQueueBox(new Map()),
-            planIncomingMessage: (plannedMessage, fromPeerId, stores) => planALMessageHandling(plannedMessage, { ...stores, selfPeerId: 'receiver', fromPeerId }),
+            planIncomingMessage: (plannedMessage, fromPeerId, stores) =>
+                planALMessageHandling(plannedMessage, { ...stores, selfPeerId: 'receiver', fromPeerId }),
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async (entry) => {
                 deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
@@ -72,7 +73,7 @@ describe('inbound durable effect worker lifecycle', () => {
         vi.useFakeTimers();
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            inboxEntryTypeId: 'inbox'
         });
         vi.spyOn(resources.admissionStore, 'claimReadyEffects').mockRejectedValue(
             new ALAdmissionCorruptionError('inbound:effect:broken', new TypeError('invalid effect'))
@@ -98,7 +99,7 @@ describe('inbound durable effect worker lifecycle', () => {
         vi.useFakeTimers();
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            inboxEntryTypeId: 'inbox'
         });
         const message = newALUnicastMessage(
             'sender',
@@ -145,7 +146,7 @@ describe('inbound durable effect worker lifecycle', () => {
         vi.useFakeTimers();
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            inboxEntryTypeId: 'inbox'
         });
         await resources.admissionStore.commitBundle({
             senderId: 'sender',
@@ -168,8 +169,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             ...resources,
             inbox: new InMemoryQueueBox(new Map()),
-            planIncomingMessage: (message, fromPeerId, stores) =>
-                planALMessageHandling(message, { ...stores, selfPeerId: 'receiver', fromPeerId }),
+            planIncomingMessage: (message, fromPeerId, stores) => planALMessageHandling(message, { ...stores, selfPeerId: 'receiver', fromPeerId }),
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async () => {},
             sendControlMessage: async () => {}
@@ -186,7 +186,7 @@ describe('inbound durable effect worker lifecycle', () => {
     it('drains an effect committed while the current drain is finishing', async () => {
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            inboxEntryTypeId: 'inbox'
         });
         const emptyRead = Promise.withResolvers<void>();
         const releaseEmptyRead = Promise.withResolvers<void>();
@@ -236,7 +236,7 @@ describe('inbound durable effect worker lifecycle', () => {
         vi.useFakeTimers();
         const resources = createDefaultALInboundRuntimeResources({
             selfPeerId: 'receiver',
-            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
+            inboxEntryTypeId: 'inbox'
         });
         let attempts = 0;
         const runtime = new ALInboundMessageRuntime({

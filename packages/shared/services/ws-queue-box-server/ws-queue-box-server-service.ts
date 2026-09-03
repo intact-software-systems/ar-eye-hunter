@@ -10,9 +10,9 @@ import {
     type ALMessageHandlingPlan,
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
+import type { ALInboundPlanner, ALInboundPlannerState } from '../../alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundRuntimeStores } from '../../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../../alm/inbound/al-inbound-message-runtime.ts';
-import type { ALInboundPlanner, ALInboundPlannerState } from '../../alm/inbound/al-inbound-admission-store.ts';
 import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type {
     ALOutboundEnqueueResult,
@@ -586,8 +586,7 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
             selfPeerId: input.name,
-            toInboxEntry: (message) =>
-                QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxServerService.INBOX_ENQUEUE_TYPE)
+            inboxEntryTypeId: WsQueueBoxServerService.INBOX_ENQUEUE_TYPE
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({ stores: input.outboundStores }),
         outboundDiagnostics: input.outboundDiagnostics,
