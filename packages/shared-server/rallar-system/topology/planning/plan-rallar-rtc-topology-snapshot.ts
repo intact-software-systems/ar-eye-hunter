@@ -6,7 +6,7 @@ import {
     readGroupDisplayName,
     readGroupMemberSessionIds
 } from '@shared/api/group-client-views.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { toCanonicalGroupRef, type GroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 
 import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
@@ -37,7 +37,7 @@ export function planRallarRtcTopologySnapshot(
         sourceGroupStateCausalRevision: readGroupCausalRevision(input.group),
         state: 'active',
         overlayId: toScopedOverlayId(input.group.group),
-        groupRef: canonicalGroupRef(input.group.group),
+        groupRef: toCanonicalGroupRef(input.group.group),
         name,
         topology: input.topology,
         activeSessionIds,
@@ -52,14 +52,6 @@ export function planRallarRtcTopologySnapshot(
         ? input.previous
         : candidate;
     return { snapshot, changed, previous: input.previous ?? null };
-}
-
-function canonicalGroupRef(ref: GroupRef): GroupRef {
-    return {
-        applicationId: ref.applicationId,
-        workspaceId: ref.workspaceId,
-        groupId: ref.groupId
-    };
 }
 
 function isSameNextHopMap(

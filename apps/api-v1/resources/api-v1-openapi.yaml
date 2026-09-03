@@ -5398,9 +5398,11 @@ components:
         topology:
           type: object
           description: >-
-            Replanning policy after a layout exists. Stored and validated, not
-            yet behavioural: replanning modes and the stage triggers take
-            effect in a later release.
+            Replanning policy after a layout exists. `commanded` holds automatic
+            replans until `reconfigure`; `debounced` coalesces changes under
+            `debounceWindowMs` and replans no later than `maxReplanWaitMs` after
+            the first change of a burst; `auto` carries no policy window and
+            replans on the server's first opportunity after a change.
           properties:
             replanning:
               type: string
@@ -5467,8 +5469,7 @@ components:
         settleMs has elapsed; presence fires at memberCount live members or at
         the fallbackMs timer, whichever is first. Each kind accepts exactly its
         own fields — after requires settleMs, presence requires memberCount and
-        fallbackMs, and unknown keys are rejected. Stored and validated, not
-        yet behavioural.
+        fallbackMs, and unknown keys are rejected.
       properties:
         kind:
           type: string
@@ -5950,7 +5951,7 @@ components:
     PendingTopologyReplan:
       type: object
       description: A replan is queued and due; carried as null when none is.
-      required: [reconfigureQueued, dueAtEpochMs]
+      required: [reconfigureQueued, dueAtEpochMs, generation]
       properties:
         reconfigureQueued:
           type: boolean
@@ -5958,6 +5959,13 @@ components:
           type: integer
           format: int64
           nullable: true
+        generation:
+          type: integer
+          format: int64
+          nullable: true
+          description: >-
+            Up by one for every change merged into the queued replan; null
+            when the queued row no longer decodes.
 
     RallarOverlayTopologySnapshot:
       type: object

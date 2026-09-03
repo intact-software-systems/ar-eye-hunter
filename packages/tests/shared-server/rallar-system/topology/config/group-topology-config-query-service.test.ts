@@ -76,14 +76,14 @@ describe('GroupTopologyConfigQueryService', () => {
             readLocalTopologySnapshot: () => undefined,
             readPersistedTopologySnapshot: async () => persistedSnapshot,
             readPersistedAcceptedTopologySnapshot: async () => acceptedSnapshot,
-            readPendingTopologyReplan: async () => ({ reconfigureQueued: true, dueAtEpochMs: 4_500 }),
+            readPendingTopologyReplan: async () => ({ reconfigureQueued: true, dueAtEpochMs: 4_500, generation: 3 }),
             serverDefaults: { topologyKind: 'tree', degreeLimit: 7 }
         });
 
         await expect(query.readTopologyView(GROUP_REF)).resolves.toMatchObject({
             snapshot: persistedSnapshot,
             acceptedSnapshot,
-            pending: { reconfigureQueued: true, dueAtEpochMs: 4_500 }
+            pending: { reconfigureQueued: true, dueAtEpochMs: 4_500, generation: 3 }
         });
     });
 

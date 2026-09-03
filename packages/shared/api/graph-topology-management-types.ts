@@ -163,6 +163,8 @@ export type GroupTopologyManagementView = Readonly<{
 export interface PendingTopologyReplan {
     readonly reconfigureQueued: boolean;
     readonly dueAtEpochMs: number | null;
+    /** Up by one for every change merged into the queued replan; null when the queued row no longer decodes. */
+    readonly generation: number | null;
 }
 
 export type PutGroupTopologyConfigRequest = Readonly<{

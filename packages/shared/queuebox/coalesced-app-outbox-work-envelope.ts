@@ -3,9 +3,18 @@ import { COMPLETED_STATUSES, EntityStatus, isFailed, type ResourceEntry } from '
 
 export const COALESCED_APP_OUTBOX_WORK_FIELD = '__rallarCoalescedWork';
 
+/**
+ * The row's message identity (`audit.createdTs`, `id.ts`) is never rewritten,
+ * not even when a terminal row is revived, so it cannot anchor the series a
+ * revived row starts: the anchor lives here, where every write owns it. A
+ * merge keeps the previous anchor; a fresh or revived row opens its series at
+ * its own request.
+ */
 export type CoalescedAppOutboxWorkMetadata = Readonly<{
     generation: number;
     requestedAtEpochMs: number;
+    /** The first request of the series the row coalesces; a bounded wait is measured from here. */
+    windowOpenedAtEpochMs: number;
     dueAtEpochMs: number;
     reasons: readonly string[];
 }>;
@@ -68,5 +77,6 @@ function isCoalescedEnvelope(
         typeof maybe.senderId === 'string' &&
         typeof metadata?.generation === 'number' &&
         typeof metadata.requestedAtEpochMs === 'number' &&
+        typeof metadata.windowOpenedAtEpochMs === 'number' &&
         typeof metadata.dueAtEpochMs === 'number';
 }

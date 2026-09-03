@@ -72,7 +72,7 @@ export function installTopologyAppOutbox(
                 topologyPlanning: options.topologyPlanning,
                 readLifecyclePolicy: options.formationCriterion.readLifecyclePolicy,
                 submitCommand: options.formationCriterion.submitCommand,
-                submitAutomationCommand: options.formationAutomation.submitCommand,
+                formationAutomation: options.formationAutomation,
                 nowEpochMs: options.nowEpochMs
             })
         );

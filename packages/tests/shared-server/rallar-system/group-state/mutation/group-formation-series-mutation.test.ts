@@ -115,8 +115,9 @@ describe('group formation series computation', () => {
         const written = computed.guard.value as Group;
         expect(written.lifecycleState).toBe('forming');
         expect(written.formationEpoch).toBe(5);
-        // Opening a series neither spends nor clears the budget, and `forming`
-        // consumes no deadline, so the write arms no timer.
+        // Opening a series neither spends nor clears the budget, `forming`
+        // consumes no deadline, and the default preset forms immediately, so
+        // the stage triggers arm nothing either: the write arms no timer.
         expect(written.formationAttemptCount).toBe(0);
         expect(computed.outboxEntries.map((entry) => entry.key.topicId))
             .not.toContain(APP_OUTBOX_FORMATION_TIMER_TOPIC);

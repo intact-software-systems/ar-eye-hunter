@@ -1,10 +1,12 @@
 import { jsonEquals } from '@shared/repository/state-utils.ts';
-import { computeGroupConnectTrigger } from '../aggregate/compute-group-connect-trigger.ts';
-import type {
-    GroupMutationCommand,
-    GroupMutationComputed,
-    GroupMutationFacts,
-    GroupMutationRead
+import { computeGroupConnectTrigger, type GroupConnectTriggerComputed } from '../aggregate/compute-group-connect-trigger.ts';
+import { resolveGroupAuthorityPolicy } from '../aggregate/resolve-group-authority-policy.ts';
+import {
+    isGroupLifecycleTransitionOperation,
+    type GroupMutationCommand,
+    type GroupMutationComputed,
+    type GroupMutationFacts,
+    type GroupMutationRead
 } from '../group-mutation-contracts.ts';
 import { assertComputedGroupMutationEvent } from './assert-computed-group-mutation-event.ts';
 import { assertComputedGroupMutationGuard } from './assert-computed-group-mutation-guard.ts';
@@ -22,9 +24,7 @@ export interface AssertComputedGroupMutationWriteInput {
 export function assertComputedGroupMutationWrite(
     input: AssertComputedGroupMutationWriteInput
 ): void {
-    const trigger = input.computed.guard.kind === 'group'
-        ? computeGroupConnectTrigger({ ...input, next: input.computed.guard.value })
-        : { effect: null };
+    const trigger = computeWrittenConnectTrigger(input);
     if (!jsonEquals(input.computed.connectTriggerLatchEffect, trigger.effect)) {
         throw new TypeError('Computed connect trigger effect differs from canonical intent');
     }
@@ -33,4 +33,28 @@ export function assertComputedGroupMutationWrite(
     assertComputedGroupMutationEvent(input);
     assertComputedGroupMutationReceipt(input);
     assertComputedGroupMutationOutbox(input);
+}
+
+/**
+ * The connect trigger is a lifecycle transition's effect on the group row; a
+ * corrupt stored policy never reaches a write because the transition compute
+ * rejects it first.
+ */
+function computeWrittenConnectTrigger(
+    input: AssertComputedGroupMutationWriteInput
+): Pick<GroupConnectTriggerComputed, 'effect'> {
+    const { command, read, computed } = input;
+    if (!isGroupLifecycleTransitionOperation(command.operation) || computed.guard.kind !== 'group' || read.group === null) {
+        return { effect: null };
+    }
+    const resolution = resolveGroupAuthorityPolicy(read);
+    if (resolution.status === 'corrupt') {
+        return { effect: null };
+    }
+    return computeGroupConnectTrigger({
+        ...input,
+        next: computed.guard.value,
+        policy: resolution.policy,
+        previous: read.group.value.lifecycleState
+    });
 }

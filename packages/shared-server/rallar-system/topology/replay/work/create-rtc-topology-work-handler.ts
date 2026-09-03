@@ -1,7 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { toCanonicalGroupRef, type GroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
@@ -59,6 +59,7 @@ type AcceptedRtcTopologyMutation = Exclude<RtcTopologyMutationComputed, Readonly
 import {
     createDeferredCriterionPetitioner,
     petitionFormationCriterion,
+    petitionGroupStageTrigger,
     type DeferredCriterionPetitioner,
     type FormationCriterionPort
 } from './formation-criterion-observer.ts';
@@ -431,6 +432,12 @@ async function writeAcceptedRtcTopologyWork(
     if (computed.outcome === 'superseded') {
         await finishRtcTopologyWork(options.database, entry);
         options.topologyPlanning.observeCommittedTopology(accepted.group, computed.current);
+        // The winning cycle publishes, but it petitions from its own
+        // revision: this one still carries presence evidence the winner may
+        // not have seen, and the trigger fences that evidence itself.
+        if (accepted.criterionPetition !== null) {
+            await petitionGroupStageTrigger(options, accepted.criterionPetition.authority);
+        }
         return;
     }
     // Read outside, mint inside: the gate reads use the shared database
@@ -547,6 +554,7 @@ async function petitionCommittedCriterion(
         return;
     }
     await petitionFormationCriterion(options, petition.authority, petition.planned);
+    await petitionGroupStageTrigger(options, petition.authority);
 }
 
 function toTopologyPublication(input: ToTopologyPublicationInput): RtcTopologyPublication {
@@ -559,20 +567,12 @@ function toTopologyPublication(input: ToTopologyPublicationInput): RtcTopologyPu
             overlayVersion: snapshot.version
         }),
         workId,
-        groupRef: canonicalGroupRef(group.group),
+        groupRef: toCanonicalGroupRef(group.group),
         sourceGroupStateCausalRevision: snapshot.sourceGroupStateCausalRevision,
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: group.group.snapshotVersion,
         recipientSessionIds: snapshot.activeSessionIds,
         message: materializeRtcOverlayTopologyBroadcastMessage(group, snapshot, facts),
         createdAtEpochMs: facts.createdAtEpochMs
-    };
-}
-
-function canonicalGroupRef(ref: GroupRef): GroupRef {
-    return {
-        applicationId: ref.applicationId,
-        workspaceId: ref.workspaceId,
-        groupId: ref.groupId
     };
 }

@@ -383,13 +383,21 @@ only so the reasoning survives; the product plan is now the authority.
 
 Decisions I21–I25 were taken while delivering and reviewing PR 2 (1b + 1c) on 2026-08-27:
 
-| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| I21 | **The trigger vocabulary carries a `manual` member, and the presets choose their triggers by character.** `manual` mirrors `GroupActivationMode`'s use of the word — no automation at that boundary. Presets: `optimistic` and `drop-in-social` are `immediate`/`immediate` (inert under immediate formation); `managed` is `manual`/`immediate`, so the manager's one `plan` command starts the wiring, preserving today's single manager action; `match` is `manual`/`manual`. _Alternatives rejected:_ nullable trigger fields (null handling at every consumer for a semantic a discriminant states), and `immediate`/`immediate` for `managed`, which would auto-plan a group whose preset exists to let the manager decide when it starts.        |
-| I22 | **The new policy fields are validated-but-inert, not input-rejected** — refining I8's gating sentence. The sparse input's only shared seam across the HTTP and JSON-wire paths sits inside the AppInbox compute where a policy-style rejection does not fit; the product plan mandates input rejection only for `strictConfirmation`; and a temporary rejection gate is exactly the temporary machinery product decision 14 rejects. Honesty is kept by the cross-field rules (`server-auto-requires-automatic-trigger`, `server-auto-cannot-command-replanning`, `replan-window-exceeds-maximum-wait`), the OpenAPI "stored and validated, not yet behavioural" descriptions, and the recipes. I8's route-cutover core is untouched.                   |
-| I23 | **The business-plane rows of both status axes read `inactive` / `none`.** An archived, deleted or expired group's routing plane is frozen, so no coverage claim and no remediation claim is honest — the C5 row values I10 requires, now encoded in `computeGroupActivationCondition` and `resolveGroupActivationRemediation` as precedence zero.                                                                                                                                                                                                                                                                                                                                                                                                       |
-| I24 | **The settled numeric constants**: status dwell 3 000 ms, `active ↔ degraded` hysteresis width 0.05, evidence expiry 30 000 ms, minimum layout age 1 000 ms, RTC setup timeout 15 000 ms (`compute-group-activation-condition.ts`); per-group debounce window default 500 ms — matching today's `topology.recompute.formationDebounceMs` server default, an unbounded operator knob the clamped per-group field supersedes for replanning when slice 10 lands — clamped at 30 000 ms, maximum replan wait default 5 000 ms clamped at 600 000 ms, trigger delay clamp 600 000 ms (`to-normalized-group-lifecycle-policy.ts`). Pinned by the policy and status matrices so no later slice invents values under pressure.                                 |
-| I25 | **Supersedes I16: the `mutationDescriptor` refactor had already landed on `main` via #338** (`MutationDescriptorInput`, one named parameter), one day after this plan's last edit, so slice 5a carries no refactor. What survives of I16 is its own closing observation: the function's remaining job is defaulting `targetPrincipalId` and `sessionId` to `null` on a type that declares both required, so the honest outcome may be deletion. That question is decided in slice 5a with the four new commands in hand, where the call-site shape is being edited anyway. _Alternative rejected:_ deleting it during a governance pass — 36 live call sites across 9 files edited outside any behavioural slice, with no gate that exercises them all. |
+| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| I21 | **The trigger vocabulary carries a `manual` member, and the presets choose their triggers by character.** `manual` mirrors `GroupActivationMode`'s use of the word — no automation at that boundary. Presets: `optimistic` and `drop-in-social` are `immediate`/`immediate` (inert under immediate formation); `managed` is `manual`/`immediate`, so the manager's one `plan` command starts the wiring, preserving today's single manager action; `match` is `manual`/`manual`. _Alternatives rejected:_ nullable trigger fields (null handling at every consumer for a semantic a discriminant states), and `immediate`/`immediate` for `managed`, which would auto-plan a group whose preset exists to let the manager decide when it starts.                                                                                                                                                                                             |
+| I22 | **The new policy fields are validated-but-inert, not input-rejected** — refining I8's gating sentence. The sparse input's only shared seam across the HTTP and JSON-wire paths sits inside the AppInbox compute where a policy-style rejection does not fit; the product plan mandates input rejection only for `strictConfirmation`; and a temporary rejection gate is exactly the temporary machinery product decision 14 rejects. Honesty is kept by the cross-field rules (`server-auto-requires-automatic-trigger`, `server-auto-cannot-command-replanning`, `replan-window-exceeds-maximum-wait`), the OpenAPI "stored and validated, not yet behavioural" descriptions, and the recipes. I8's route-cutover core is untouched.                                                                                                                                                                                                        |
+| I23 | **The business-plane rows of both status axes read `inactive` / `none`.** An archived, deleted or expired group's routing plane is frozen, so no coverage claim and no remediation claim is honest — the C5 row values I10 requires, now encoded in `computeGroupActivationCondition` and `resolveGroupActivationRemediation` as precedence zero.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| I24 | **The settled numeric constants**: status dwell 3 000 ms, `active ↔ degraded` hysteresis width 0.05, evidence expiry 30 000 ms, minimum layout age 1 000 ms, RTC setup timeout 15 000 ms (`compute-group-activation-condition.ts`); per-group debounce window default 500 ms — matching today's `topology.recompute.formationDebounceMs` server default, an unbounded operator knob the clamped per-group field supersedes for replanning when slice 10 lands — clamped at 30 000 ms, maximum replan wait default 5 000 ms clamped at 600 000 ms, trigger delay clamp 600 000 ms (`to-normalized-group-lifecycle-policy.ts`). Pinned by the policy and status matrices so no later slice invents values under pressure.                                                                                                                                                                                                                      |
+| I25 | **Supersedes I16: the `mutationDescriptor` refactor had already landed on `main` via #338** (`MutationDescriptorInput`, one named parameter), one day after this plan's last edit, so slice 5a carries no refactor. What survives of I16 is its own closing observation: the function's remaining job is defaulting `targetPrincipalId` and `sessionId` to `null` on a type that declares both required, so the honest outcome may be deletion. That question is decided in slice 5a with the four new commands in hand, where the call-site shape is being edited anyway. _Alternative rejected:_ deleting it during a governance pass — 36 live call sites across 9 files edited outside any behavioural slice, with no gate that exercises them all.                                                                                                                                                                                      |
+| I26 | **The member-policy field lands with its first reader** (2026-09-02, Slice 9b): `Group.memberPolicy` is a 9b field, not a 9a one, so 9a carries no wire change.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| I27 | **Layout staleness is derived, not stored** (2026-09-02, Slice 10a). The accepted layout is always a promoted planned layout, so `layoutStale` = the accepted identity differs from the planned slot's, or the planned slot's stored topology-input fingerprint differs from the authority's computed at read time. Decision 11's second stored fingerprint is unnecessary; the flip-flop edge (authority back at the accepted inputs while a newer planned layout awaits application) reads stale, the conservative answer.                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| I28 | **The replan window per mode** (2026-09-02, Slice 10b): `debounced` uses the policy's `debounceWindowMs` and `maxReplanWaitMs`; `auto` carries no policy window and keeps the server's `topology.recompute.formationDebounceMs`, unbounded, so it replans on the first opportunity after a change (decision 31's own statement); `commanded` coalesces its commanded follow-ups under the policy window; a stage outside the policy and an unreadable policy keep the server window unbounded. The series anchor lives on the coalescing metadata, minted and kept by the generic coalescing service, and a migration backfilled it onto stored rows so every reader requires it. RTT refreshes keep the server's unbounded window.                                                                                                                                                                                                          |
+| I29 | **Minimum layout age** (2026-09-02, Slice 10b): a queued replan of a live planned layout is due no earlier than the layout's last write plus 1 000 ms (I24), decided when the change is queued from the planned slot the presence-summary read saw; the floor wins over the maximum-wait bound because it is short. It is a scheduling floor, not a planner invariant: a replan that commits between that read and the due time is not re-checked at execution, a removal tombstone does not age, and stages that do not follow the policy (`planned`, `reconfiguring`) keep the bare server window.                                                                                                                                                                                                                                                                                                                                         |
+| I30 | **The stage triggers are the phased vocabulary; a started series stays automatic** (2026-09-02, Slice 11a): for a `phased` group the plan trigger arms on the first entry into `forming` and the connect trigger on every plan that lands a candidate in a stage that holds one, when the trigger is `immediate` or `after`; `manual` and `presence` arm nothing, and a group whose formation is `immediate` arms nothing at all (product decision 17). _Amended 2026-09-02 (Slice 11b): `presence` arms both legs at its `fallbackMs` and fires sooner on its threshold; only `manual` arms nothing._ A re-plan behind a spent attempt latches its connect regardless of trigger or formation mode — it continues a series the application started, which is what the attempt budget bounds (decision 37), and the plan trigger only ever plans a fresh series at attempt zero, so the two are told apart by the group's own attempt count. |
+| I31 | **A settle is latched, not deferred** (2026-09-02, Slice 11a): the latch carries `notBeforeEpochMs` (0 for `immediate` and for a sanctioned re-plan, the plan instant plus `settleMs` for `after`); a publication ahead of it leaves the intent latched, and a `connect` timer entry due at the settle petitions the group's awaiting latches. The petition takes the settled instant from its caller — the timer's own due time, which the queue served, rather than the petitioning node's clock — so a lagging node cannot strand a settle. A migration backfills the settle instant onto stored latches, and the PGlite bootstrap replays the data migrations so file-backed runtimes carry them too.                                                                                                                                                                                                                                    |
+| I32 | **A deadline with no live layout fails its attempt at once** (2026-09-02, Slice 11a): a dialing group whose planned layout is gone at its deadline — torn down, or never published in a whole deadline — has nothing to fence and no readiness to measure, so the attempt fails with `expectedLayout: null` instead of retrying the durable entry without bound. The criterion authority matrix accepts a null layout fence on failure only; activation still requires one. A grace period was considered and rejected: implemented as re-throws it is a retry loop the queue's own attempt budget (20 attempts, ~5 minutes) cuts short well before a long deadline elapses, so it would promise a bound it cannot keep. The failure lands where the transition table puts it, `forming`; the exhausted-series `dormant` landing (`resolveFormationFailureLanding`) still has no caller and remains Slice 11's automation-completion work.   |
+| I33 | **The presence trigger is answered where the presence evidence already lands** (2026-09-02, Slice 11b): its threshold half is evaluated in the topology work cycle beside the criterion petition — every presence change reaches that cycle, because the topology input fingerprint hashes the live session set — and its fallback half stays with the durable timer the stage entry armed, so `presence` arms `plan`/`connect` at `fallbackMs` and fires sooner when the members arrive. The one evaluator answers all four kinds; a caller whose elapsed half belongs to the timer passes no stage-entry instant. A met threshold petitions the connect latch as satisfied rather than by the clock, so the settle gate cannot hold back a trigger the policy says has fired.                                                                                                                                                              |
 
 Decision I26 was taken at the Slice 9a start checkpoint on 2026-09-02 and is recorded in that
 checkpoint under Slice 9: the I13 member-policy field lands in 9b with its first reader, so 9a
@@ -2506,6 +2514,65 @@ A-B-B-A comparison, blocked while a foreign perf-bench container holds the pinne
 two reads on active groups are registered as the `commanded-replan-gate-reads` reason profile for
 that run.
 
+### Slice 10b start checkpoint — per-group replanning windows (2026-09-02)
+
+Stacked on 10a's corrected head (`962d28bb8`): the window is decided where 10a decides the hold,
+on the policy facts the presence-summary read already consults. The census confirmed the draft's
+two footings and sharpened both. The coalesced row's due time is `Math.max`-extended with no
+anchor, so a maximum wait needs a series anchor in the coalescing metadata, whose codec is
+exact-key on both lists; and the policy's `debounceWindowMs` / `maxReplanWaitMs` have no reader at
+all, while every preset carries the same 500 / 5 000 values, so preset selection changes nothing
+until the reader exists. The minimum layout age (I24, 1 000 ms) had a constant and no owner.
+
+What 10b lands:
+
+- **`resolveTopologyReplanWindow`** (I28): `debounced` carries the policy's window and maximum
+  wait; `auto` carries no policy window and keeps the server's `formationDebounceMs`, unbounded,
+  which is decision 31's own statement — the review's first cut bounded `auto` by the policy's
+  maximum wait too, which made `optimistic` and `managed` compute identical due times under every
+  shipped preset (all 500 / 5 000) and silently truncated an operator window above 5 000 ms;
+  `commanded` coalesces its commanded follow-ups under the policy's window; a stage outside the
+  policy and an unreadable policy keep the server window unbounded, as before.
+- **The series anchor** `windowOpenedAtEpochMs` on the coalescing metadata: minted by the generic
+  coalescing service at the first request of a series, kept by every pending merge, restarted by a
+  successor row behind a reserved head and by a revived terminal row (the row's message identity is
+  never rewritten, so it cannot anchor a revived series). The due time is the extended window
+  bounded by `anchor + maxWait`, then floored by the planned layout's last write plus the minimum
+  layout age (I29). Rather than a compatibility read in two decoders, migration
+  `20260902150000_coalesced_work_window_anchor` backfills the anchor onto stored rows (at their
+  stored latest request, the closest fact a merged legacy row carries), so the codec and the
+  in-memory envelope reader both require it; a row without it fails closed as corrupt. The codec's
+  compatibility is one-directional — a server before this slice rejects the new key — so the
+  rollout follows the stop-drain-deploy runbook (Slice 14), never a mixed cluster.
+- **A merge that the bound makes due at once keeps its lifecycle shape**: a head that already
+  failed an attempt stays `RETRY` with a past `next_ts` (immediately eligible) instead of flipping
+  to `NEW` with `attempts > 0`, a shape the row lifecycle validator rejects.
+- **`pending.generation`** on the formation view: the queued row's generation, up by one per merged
+  change, so a reader can see a change land on the queued replan; the debounced-replanning recipe
+  asserts strictly increasing generations across its churn to prove its due-time reads were fresh.
+- **The gate's read predicate widens** to every delta of an active group whose stage follows the
+  replanning policy, because the window needs the policy where 10a's hold did not (a merge into a
+  queued row, and commanded-origin work); the hold itself keeps 10a's exceptions. The registered
+  state-write reason profile `commanded-replan-gate-reads` now describes that population (two point
+  reads per active-group summary, merges included); the A-B-B-A run itself stays blocked locally by
+  the foreign perf container on port 5433.
+- **Carried forward, not addressed here**: 10a's open item that a topology-inbox `reconfigure`
+  enqueues per-command work as `automatic` origin (`computeRtcTopologyEntry`), which the planner
+  freezes under `commanded`; the per-command producer census is the first step of Slice 11's
+  trigger work, where the origin belongs with the command.
+
+**Validation (2026-09-02, corrected head `c91c6407b`).** Baseline on the correction commits: dprint on
+the touched files, `check:repo-style:changed` (no new findings), `check-test-structure-coupling
+--changed`, `check:retained-legacy` (no changed candidates), the governed test typecheck,
+`typecheck`, `build`, `test:deno` (544, 84 and 146 tests green), the app-outbox, topology, presence,
+recipe-matrix, black-box-runner and shared-API vitest suites (733 tests), the migration's PGlite test
+(a seeded legacy row gains the anchor, an anchored row and a plain row are untouched), the in-memory
+black-box profile (34 of 34, the regenerated recipe executing 53 steps), the Postgres profile (34 of
+34 plus the 6-recipe cluster profile), the medium-scale convergence gate and the topology replay
+profile. `test:unit` unsandboxed: 1 044 files and 9 012 tests, no failures. Not run: the state-write A-B-B-A comparison — the
+pinned perf-bench port is still held by a container from another worktree; the widened read
+population is registered as a regression reason.
+
 ## Slice 11 — Automation triggers
 
 The canonical exhausted-failure landing remains an unactivated prerequisite: the current mutation
@@ -2589,6 +2656,86 @@ construction restructure and its own state-write verdict). **Write the first uni
 ever had in 11a.**
 
 **Gates:** baseline, both profiles, **medium-scale**, **state-write**, `formation-large`.
+
+### Slice 11a start checkpoint — plan and connect triggers on the durable timer path (2026-09-02)
+
+Stacked on 10b's corrected head (`b4b0c449b`). The census confirmed the section above and settled
+three things it left open. The stored trigger vocabulary had no consumer at all: every preset
+carries `planTrigger`/`connectTrigger`, the OpenAPI text said "not yet behavioural", and a phased
+group waited for an application `plan` and `connect` whatever its policy said. The formation timer
+already owned the shape the triggers need — a durable, epoch-fenced entry the queue holds invisible
+until its due time, armed by the write that enters the stage and mirrored byte-exactly by the outbox
+validator — so the triggers are two more timer kinds, not a construction graph. And Slice 8d's
+connect latch was armed by automation authority alone, so an application plan never auto-connected
+whatever the policy said, while every automation re-plan did.
+
+What 11a lands:
+
+- **Timer kinds `plan` and `connect`** beside `deadline` and `retry`, for `phased` groups only
+  (product decision 17). The first entry into `forming` (creation, or `start`) arms `plan` at the
+  trigger's settle (`immediate` is due at once); an entry into a stage that holds a planned
+  candidate under an `after` connect trigger arms `connect` at its settle. Arming stays a pure
+  function of `(command, previous stage, next group, policy, facts)`, which the outbox mirror
+  recomputes; creation is now a mirrored arming site.
+- **The plan trigger's command** `toFormationTriggerPlanCommand`, the retry leg's automation plan
+  under its own command-id family, consumed only while the group is still at the timer's formation
+  epoch — every transition but the idempotent replan advances that epoch, so the epoch check is the
+  whole staleness test and the consumer needs no second stage table. The id carries the arming
+  write's snapshot version, as the timer's own resource key now does: a re-created group restarts
+  its epochs while its previous life's rows never expire, so kind and epoch alone would collide
+  with them at the very first write.
+- **The connect latch follows the policy** (I30) and carries its settle instant (I31), through the
+  one `holdsPlannedCandidateAt` predicate that the arming site, the timer and the petition share.
+  The publication-driven petition returns before the settle; the `connect` timer petitions at the
+  settle the queue served it. The `reconfigure` that opens `reconfiguring` is deliberately not an
+  arming site: its own replan has not published yet, so a latch armed there petitions against the
+  layout the reconfigure means to replace and freezes it by dialing — the lifecycle recipe caught
+  exactly that. `reconfiguring` therefore still waits for an application `connect`.
+- **A deadline with no live layout fails its attempt** (I32), so the unbounded retry the initial
+  checkpoint recorded has a fail path; `toFailFormationCommand` and the criterion authority matrix
+  accept a null layout fence for that case, activation still requires one.
+- **Shared where the vocabulary already lived**: `toStageTriggerSettleMs` beside the (still
+  unwired) pure `evaluateGroupStageTrigger`, `holdsPlannedCandidateAt` beside the other stage
+  predicates, `requireOneOf` for the timer kind, and one `resolveCreateGroupLifecyclePolicy` /
+  `resolveGroupAuthorityPolicy` per write for the policy the mirror must agree on.
+- **Not here**: the `presence` trigger (11b, one branch beside the criterion petition plus a pure
+  `forming`-stage evaluator); the automatic `reconfiguring → reconnecting` boundary the product's
+  table gives the connect trigger, which needs the latch to name the publication it waits for
+  (decision 32's identity, one slice deeper than 11a); the exhausted-series `dormant` landing,
+  which still has no caller; no authority mode, and no widening of `formation-criterion` beyond
+  the plan-less failure fence.
+- **Carried forward from 10a**: a topology-inbox `reconfigure` still enqueues per-command work as
+  `automatic` origin, which the planner freezes under `commanded`.
+
+### Slice 11b start checkpoint — the presence trigger (2026-09-02)
+
+Stacked on 11a. The census confirmed the section's costing: no construction graph is needed. The
+topology work handler already funnels every accepted, skipped-unchanged and skipped-fingerprint
+decision through one petition call that carries the planning authority, and the authority carries
+the group snapshot with its `onlineMemberCount`. The presence trigger is therefore one branch
+beside `petitionFormationCriterion`, reading the policy through the port that read is already
+wired to.
+
+What 11b lands:
+
+- **`petitionGroupStageTrigger`** beside the criterion petition: for a phased group it resolves the
+  boundary its stage governs (`forming` plans, a stage holding a planned candidate connects),
+  selects that boundary's trigger, and evaluates it through the pure `evaluateGroupStageTrigger`
+  the vocabulary has carried unused since slice 1b. Only `presence` can fire here; the other kinds
+  have no evidence to observe.
+- **The fallback half stays durable** (I33): `toStageTriggerTimerDelayMs` gives `presence` its
+  `fallbackMs`, so the same `plan` and `connect` timer entries 11a introduced carry it, and the
+  connect latch is armed at that instant. A met threshold petitions the latch as satisfied, which
+  the settle gate now distinguishes from a clock reading.
+- **`toFormationPresencePlanCommand`**, keyed on the group's creation stamp and formation epoch so
+  every presence delta of one series submits the same command and the inbox receipt deduplicates
+  them; the fallback timer keeps its own id, and whichever fires second is a typed stale-epoch
+  rejection.
+- **Recipe `api-v1-presence-formation-trigger`**: a phased group whose triggers wait for two live
+  members stays `forming` with one, then plans and dials as the second arrives, far inside a
+  ten-minute fallback.
+- **Not here**: the automatic `reconfiguring → reconnecting` boundary and the exhausted-series
+  `dormant` landing, both still Slice 11's remaining automation work.
 
 ## Slice 12 — The living observed status
 

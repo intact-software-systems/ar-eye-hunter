@@ -5,10 +5,10 @@ import { resolveDialLayoutRoles } from './resolve-dial-layout-roles.ts';
 /**
  * Server defaults settled once so no later slice invents values under
  * pressure (product decisions 7 and 41). Nothing in this file applies them:
- * the status writer slice owns the dwell, the hysteresis band (exit sitting
- * one width below entry) and evidence expiry, the replanning slice owns the
- * minimum layout age, and the browser pacing slice owns the RTC setup
- * timeout. Until those land, the pinning matrix test is their only consumer.
+ * the presence-summary worker floors a queued replan by the minimum layout
+ * age, the status writer slice owns the dwell, the hysteresis band (exit
+ * sitting one width below entry) and evidence expiry, and the browser
+ * pacing slice owns the RTC setup timeout.
  */
 export const GROUP_ACTIVATION_STATUS_DWELL_MS = 3_000;
 export const GROUP_ACTIVATION_HYSTERESIS_WIDTH = 0.05;
