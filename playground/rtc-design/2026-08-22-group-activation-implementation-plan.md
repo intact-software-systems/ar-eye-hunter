@@ -3081,10 +3081,30 @@ What 13a lands:
 - **The admin capture and a rising-count assertion on both managed bursts**, which is what makes the
   volume visible where the section wanted it. The transport valve stays in `other`.
 
-**Not here:** `activationStatus` counts nothing until the writer exists, deliberately — a bucket that
-appears with its writer would change the artifact shape under the comparison it exists to serve. It
-is a zero counter on a diagnostic, not a wire contract with no producer, which is why it is treated
-differently from the `group-activation-status-changed` event I36 deferred.
+**Review (2026-09-03).** The type-level work held — the classifier was checked member for member
+against the union and the compile pin proved to fail on a missing key — but the recipe amendment, the
+whole point of the deviation, was unsound. Both managed bursts run **only** in `formation-large`,
+which always launches three servers, and the bucket is recorded by whichever process executed the
+queued mutation: the inbox is claimed `for update skip locked` from a shared table, and two of the
+three transitions this recipe depends on are worker- and timer-driven with no affinity to the node
+that took the HTTP request. A primary-only reading could therefore fail when the work landed
+elsewhere and pass on a previous recipe's leftovers. Both recipes now read all three nodes before and
+after and compare the sums, which is what `burst-large` already does per server and what
+[[appinbox-cluster-execution-log-forensics]] records as the general rule. The comparator also moved
+from `gt` to `gte` against `before + 3`: the sequence drives a plan, an automatic connect and an
+activate, so a floor of one would have passed with two of the three reclassified back to `other`.
+
+The same review found the seven transition literals living in a fourth place. They now live in one:
+`GROUP_LIFECYCLE_TRANSITION_OPERATIONS` in the command contracts, with the type derived from it, the
+typed guard delegating to a name-only sibling for callers holding an unvalidated string, and the
+metrics classifier calling that sibling. The step names moved off "burst" — the join burst drives no
+transitions, which is the census finding, so naming the bracket after it re-planted the misconception.
+
+**Not here:** `activationStatus` counts nothing until the writer exists, deliberately — registering it
+now costs one artifact shape change instead of two. It is a zero counter on a diagnostic, not a wire
+contract with no producer, which is why it is treated differently from the
+`group-activation-status-changed` event I36 deferred; a test pins that no operation the group inbox
+can report reaches it. If 12b lands without a producer, the bucket should go.
 
 ## Slice 14 — Finalisation
 

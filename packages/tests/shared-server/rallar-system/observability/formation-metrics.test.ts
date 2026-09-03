@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GroupLifecycleTransitionOperation } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import {
+    GROUP_LIFECYCLE_TRANSITION_OPERATIONS,
+    type GroupLifecycleTransitionOperation,
+    type GroupMutationCommand
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import {
     createGroupFormationMetricsRecorder,
     emptyGroupFormationMetrics,
@@ -11,10 +15,25 @@ import { AppTopics } from '@shared/api/api-config.ts';
 
 /**
  * Every transition the table owns, keyed so the compiler refuses an eighth
- * without a bucket: the metrics classifier repeats these literals because its
- * sink carries an untyped operation, and this record is what keeps the two
- * lists honest.
+ * without an expectation here.
  */
+/** Every operation the group inbox can report, so nothing reaches the reserved bucket by accident. */
+const EVERY_GROUP_MUTATION_OPERATION: readonly GroupMutationCommand['operation'][] = [
+    ...GROUP_LIFECYCLE_TRANSITION_OPERATIONS,
+    'createGroup',
+    'updateGroup',
+    'joinGroup',
+    'acceptGroupInvite',
+    'upsertMember',
+    'removeGroupMember',
+    'connectPresence',
+    'heartbeatPresence',
+    'disconnectPresence',
+    'applyPlannedLayout',
+    'pauseGroupTransport',
+    'resumeGroupTransport'
+];
+
 const STAGE_TRANSITION_OPERATIONS: Readonly<Record<GroupLifecycleTransitionOperation, 'stageTransition'>> = {
     activateGroup: 'stageTransition',
     reconfigureGroup: 'stageTransition',
@@ -60,9 +79,24 @@ describe('group formation metrics recorder', () => {
         expect(metrics.groupMutationCount.other).toEqual({ write: 0, noOp: 0, rejected: 0 });
     });
 
+    // The promotion is not a transition: it lands the accepted layout without
+    // touching stage, epoch, electorate or attempt count.
+    it('leaves applyPlannedLayout outside the stage bucket', () => {
+        expect(toGroupFormationOperationKind('applyPlannedLayout')).toBe('other');
+    });
+
     // Reserved for the observed-status writer: the bucket exists so the
-    // artifact shape does not change under it, and reads zero until then.
-    it('starts the reserved status bucket empty', () => {
+    // artifact shape changes once rather than twice, and reads zero until then.
+    it('routes no operation into the reserved status bucket', () => {
+        const recorder = createGroupFormationMetricsRecorder();
+        for (const operation of EVERY_GROUP_MUTATION_OPERATION) {
+            recorder.groupMutation({ operation, outcome: 'write' });
+        }
+        expect(recorder.readMetrics().groupMutationCount.activationStatus).toEqual({
+            write: 0,
+            noOp: 0,
+            rejected: 0
+        });
         expect(emptyGroupFormationMetrics().groupMutationCount.activationStatus).toEqual({
             write: 0,
             noOp: 0,

@@ -550,29 +550,36 @@ export interface GroupLayoutTombstones {
 
 export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcome: 'write'; }>;
 
-export type GroupLifecycleTransitionOperation = Extract<
-    GroupMutationCommand['operation'],
-    | 'activateGroup'
-    | 'reconfigureGroup'
-    | 'failGroupFormation'
-    | 'planGroupLayout'
-    | 'connectGroup'
-    | 'startGroupFormation'
-    | 'resetGroupFormation'
->;
+/**
+ * The transition table's commands, listed once. Every registry keyed on them —
+ * the transition map, the guard below, the formation-metrics bucket — derives
+ * from this list, so an eighth cannot be added to one and missed by another.
+ */
+export const GROUP_LIFECYCLE_TRANSITION_OPERATIONS = [
+    'activateGroup',
+    'reconfigureGroup',
+    'failGroupFormation',
+    'planGroupLayout',
+    'connectGroup',
+    'startGroupFormation',
+    'resetGroupFormation'
+] as const satisfies readonly GroupMutationCommand['operation'][];
+
+export type GroupLifecycleTransitionOperation = (typeof GROUP_LIFECYCLE_TRANSITION_OPERATIONS)[number];
 
 export function isGroupLifecycleTransitionOperation(
     operation: GroupMutationCommand['operation']
 ): operation is GroupLifecycleTransitionOperation {
-    return (
-        operation === 'activateGroup' ||
-        operation === 'reconfigureGroup' ||
-        operation === 'failGroupFormation' ||
-        operation === 'planGroupLayout' ||
-        operation === 'connectGroup' ||
-        operation === 'startGroupFormation' ||
-        operation === 'resetGroupFormation'
-    );
+    return isGroupLifecycleTransitionOperationName(operation);
+}
+
+/**
+ * The same membership question for a caller holding an unvalidated name — a
+ * diagnostic sink carries one, because it must never reject an operation it
+ * does not recognise.
+ */
+export function isGroupLifecycleTransitionOperationName(operation: string): boolean {
+    return (GROUP_LIFECYCLE_TRANSITION_OPERATIONS as readonly string[]).includes(operation);
 }
 
 /**

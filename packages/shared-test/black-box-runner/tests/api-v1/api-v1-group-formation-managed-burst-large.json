@@ -30,6 +30,14 @@
       "env": "RALLAR_BB_ADMIN_PASSWORD",
       "default": "admin",
       "secret": true
+    },
+    "rallarApiBaseUrlSecondary": {
+      "env": "RALLAR_API_BASE_URL_SECONDARY",
+      "default": "http://127.0.0.1:18081"
+    },
+    "rallarApiBaseUrlTertiary": {
+      "env": "RALLAR_API_BASE_URL_TERTIARY",
+      "default": "http://127.0.0.1:18082"
     }
   },
   "execution": {
@@ -246,6 +254,22 @@
     "ws-client-50": {
       "type": "ws",
       "timeoutMs": 30000
+    },
+    "apiSecondary": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrlSecondary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 45000
+    },
+    "apiTertiary": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrlTertiary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 45000
     }
   },
   "postRunAssertions": [
@@ -792,7 +816,7 @@
       }
     },
     {
-      "name": "captureStageTransitionsBeforeBurst",
+      "name": "captureStageTransitionsBeforePrimary",
       "type": "http",
       "connection": "api",
       "request": {
@@ -803,8 +827,7 @@
           "x-client-id": "{adminClientId}"
         },
         "outputs": {
-          "beforeFormationMetrics": "body.groupFormation.metrics",
-          "beforeStageTransitionWrites": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+          "beforeStageTransitionWritesPrimary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
         }
       },
       "expect": {
@@ -814,6 +837,72 @@
             "processLocal": true
           }
         }
+      }
+    },
+    {
+      "name": "captureStageTransitionsBeforeSecondary",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "outputs": {
+          "beforeStageTransitionWritesSecondary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupFormation": {
+            "processLocal": true
+          }
+        }
+      }
+    },
+    {
+      "name": "captureStageTransitionsBeforeTertiary",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "outputs": {
+          "beforeStageTransitionWritesTertiary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupFormation": {
+            "processLocal": true
+          }
+        }
+      }
+    },
+    {
+      "name": "sumStageTransitionsBefore",
+      "type": "set",
+      "output": "beforeStageTransitionTotal",
+      "transform": {
+        "add": [
+          {
+            "path": "outputs.beforeStageTransitionWritesPrimary"
+          },
+          {
+            "path": "outputs.beforeStageTransitionWritesSecondary"
+          },
+          {
+            "path": "outputs.beforeStageTransitionWritesTertiary"
+          }
+        ]
       }
     },
     {
@@ -18834,7 +18923,7 @@
       }
     },
     {
-      "name": "captureStageTransitionsAfterBurst",
+      "name": "captureStageTransitionsAfterPrimary",
       "type": "http",
       "connection": "api",
       "request": {
@@ -18845,8 +18934,7 @@
           "x-client-id": "{adminClientId}"
         },
         "outputs": {
-          "afterFormationMetrics": "body.groupFormation.metrics",
-          "afterStageTransitionWrites": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+          "afterStageTransitionWritesPrimary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
         }
       },
       "expect": {
@@ -18859,17 +18947,96 @@
       }
     },
     {
-      "name": "theBurstsStageTransitionsAreCountedInTheirOwnBucket",
+      "name": "captureStageTransitionsAfterSecondary",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "outputs": {
+          "afterStageTransitionWritesSecondary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupFormation": {
+            "processLocal": true
+          }
+        }
+      }
+    },
+    {
+      "name": "captureStageTransitionsAfterTertiary",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "outputs": {
+          "afterStageTransitionWritesTertiary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupFormation": {
+            "processLocal": true
+          }
+        }
+      }
+    },
+    {
+      "name": "sumStageTransitionsAfter",
+      "type": "set",
+      "output": "afterStageTransitionTotal",
+      "transform": {
+        "add": [
+          {
+            "path": "outputs.afterStageTransitionWritesPrimary"
+          },
+          {
+            "path": "outputs.afterStageTransitionWritesSecondary"
+          },
+          {
+            "path": "outputs.afterStageTransitionWritesTertiary"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sumStageTransitionsExpected",
+      "type": "set",
+      "output": "expectedStageTransitionTotal",
+      "transform": {
+        "add": [
+          {
+            "path": "outputs.beforeStageTransitionTotal"
+          },
+          3
+        ]
+      }
+    },
+    {
+      "name": "everyLifecycleTransitionCountsInTheStageBucket",
       "type": "assert",
       "actual": {
-        "beforeStageTransitionWrites": "{beforeStageTransitionWrites}",
-        "afterStageTransitionWrites": "{afterStageTransitionWrites}"
+        "afterStageTransitionTotal": "{afterStageTransitionTotal}",
+        "expectedStageTransitionTotal": "{expectedStageTransitionTotal}"
       },
       "expect": {
         "comparators": [
           {
-            "path": "afterStageTransitionWrites",
-            "gt": "{beforeStageTransitionWrites}"
+            "path": "afterStageTransitionTotal",
+            "gte": "{expectedStageTransitionTotal}"
           }
         ]
       }

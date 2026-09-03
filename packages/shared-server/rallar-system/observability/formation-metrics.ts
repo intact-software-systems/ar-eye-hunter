@@ -10,6 +10,7 @@ import type {
     WsDeliveryDiagnosticsSink
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 
+import { isGroupLifecycleTransitionOperationName } from '../group-state/mutation/group-mutation-contracts.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../topology/mutation/rtc-topology-outbox-entry.ts';
 
 export type GroupFormationGroupMutationEvent = Readonly<{
@@ -87,23 +88,11 @@ export function toGroupFormationOperationKind(operation: string): GroupFormation
         case 'setGroupMemberRole':
         case 'transferGroupOwnership':
             return 'membership';
-        // The transition table's seven commands. The sink carries an untyped
-        // operation so a diagnostic can never reject one, so the literals are
-        // repeated here rather than narrowed through
-        // `isGroupLifecycleTransitionOperation`; a `Record` over that union in
-        // the test fails to compile if an eighth transition ever joins it.
-        case 'activateGroup':
-        case 'reconfigureGroup':
-        case 'failGroupFormation':
-        case 'planGroupLayout':
-        case 'connectGroup':
-        case 'startGroupFormation':
-        case 'resetGroupFormation':
-            return 'stageTransition';
         default:
-            // The transport valve lands here with everything else: it writes
-            // `transportState` alone and is no stage transition (decision 25).
-            return 'other';
+            // The transport valve lands in `other` with everything else: it
+            // writes `transportState` alone and is no stage transition
+            // (product decision 25).
+            return isGroupLifecycleTransitionOperationName(operation) ? 'stageTransition' : 'other';
     }
 }
 
