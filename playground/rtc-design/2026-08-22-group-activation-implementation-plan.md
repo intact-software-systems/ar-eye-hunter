@@ -401,7 +401,7 @@ Decisions I21–I25 were taken while delivering and reviewing PR 2 (1b + 1c) on 
 | I34 | **The exhaustion landing moves the stage and nothing else** (2026-09-03, Slice 11c): the mutation owner asks the attempt budget about the attempt the failure is recording, so a series' last failure parks in `dormant` instead of following the transition table. It clears no layout identity and closes no transport valve — decision 36 assigns both to `reset`, and the `dormant` row of the dial, topology-disposition and closed-admission tables already makes a parked group inert. _Alternative rejected:_ clearing `acceptedLayoutIdentity` here too, which would give one field two owners for the sake of a stage description decision 35 states as how the group arrives, not as an invariant the stage enforces.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | I35 | **The connect latch names the candidate it supersedes** (2026-09-03, Slice 11d): a `reconfigure` commands its own replan, so at arming time the planned slot still holds the layout it means to replace; the latch carries that identity and the petition refuses it, which is what makes `reconfiguring → reconnecting` automatic without dialing the stale candidate and freezing the replan. A `plan` names nothing, and deliberately: only `reconfigure` and `reset` enqueue commanded-origin replan work, and a `plan`'s automatic-origin work can be skipped as unchanged, so requiring a different publication there would strand a group in `planned` whenever its inputs did not move. Both stages that hold a candidate now answer to the connect trigger, `presence` included: `resolveGroupStageTrigger` and the topology cycle's petition cover `reconfiguring` as they cover `planned`, so the threshold fires ahead of the fallback at either. _Alternative rejected:_ a publication instant on the latch, which a lagging node's clock could strand exactly as the settle could before I31. _Accepted rather than changed:_ the superseded identity is read outside the write transaction and the reconfigure takes no fence from the row, so a publication landing between that read and the commit leaves the latch naming the older candidate and the petition dials the newer one — bounded, because that candidate already dominates the accepted layout, and unreachable under `commanded` replanning. Fencing the row would make a user-facing command conflict-retry against a busy `auto` replan stream, which is the worse trade. |
 | I36 | **The status axes report derived; the persisted fields wait for their writer** (2026-09-03, Slice 12a): 12a puts both axes and the coverage basis on the formation view, computed at read from facts the route already loads, and adds nothing to the group row. I4's second key-list edit moves to 12b, which is the slice that needs somewhere to put a banded change and which already carries the state-write gate. The evidence is 9b's: one required field (`memberPolicy`) cost a registered row-width regression on every group write, and the A-B-B-A run that would measure three more — two enums and a nullable identity — is still blocked by a foreign container on the pinned port. Deriving also keeps one owner per fact, where persisting now would leave a stored value and a read-time value free to disagree between transitions. _Also here:_ `group-activation-status-changed` registers with its first emitter in 12b rather than dark in 12a (product decision 14), and `degraded` stays unreachable at read until 12b's dwell clock exists — a band no clock has observed cannot honestly be reported as dwelt.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| I37 | **The stage bucket lands with the recipes that make it visible** (2026-09-03, Slice 13a): the section asks for the metrics buckets so slice 11's and 12's write volume stops falling through to `other`, but the census found the premise only half true — every recipe that captures `body.groupFormation.metrics` (the small, medium, large and churn bursts) drives **zero** lifecycle transitions, and the managed bursts that do drive them capture no metrics at all. The bucket alone would have read zero in every artifact. 13a therefore adds the admin capture and a rising-count assertion to both managed bursts, which is what the ordering note was actually asking for. `activationStatus` is registered unmapped beside it, so the artifact shape does not change under the writer that will fill it. _Alternative rejected:_ a third bucket for the transport valve — it writes `transportState` alone and enters no transition-table row (product decision 25), so it stays in `other`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| I37 | **The bucket lands; the visibility it was asked for does not fit an existing recipe** (2026-09-03, Slice 13a): the section wants the buckets so slice 11's and 12's write volume stops falling through to `other`, but the census found no recipe that both drives a lifecycle command and reads `body.groupFormation.metrics` — the four bursts that read the metrics are join-and-presence only, and the two managed bursts that drive transitions read nothing. The obvious remedy, capturing on the managed bursts, was implemented and then withdrawn: those two are pinned single-origin by `api-v1-managed-formation-recipe-loading.test.ts`, so cluster connections break the property that lets them drive one managed deployment, and a primary-only reading would have been unsound anyway because the inbox is claimed `for update skip locked` by any node while two of the three transitions are worker- and timer-driven. 13a therefore lands the bucket with a compile-pinned classifier and unit proof, and the artifact reading needs a cluster-wired recipe that drives transitions — new work, named rather than bolted on unsoundly. _Alternative rejected:_ loosening the single-origin test, which exists so these recipes can drive one managed deployment.                                                                                                                                                                                                                                                                                                                                                                         |
 
 The held-layout capability is the next milestone under current evidence, but every checkpoint selects
 only its next two independently reviewable PRs. Later labels below are capability-analysis anchors used
@@ -3060,12 +3060,14 @@ Branched from `main` @ `4250859b5`. This is the piece the section orders **befor
 status writer, and it is already late: slices 11a–11d shipped four automatic writers whose every
 mutation has been counted as `other` since.
 
-**The census found the ordering note's premise only half true.** Adding the bucket makes the volume
-_classifiable_; it does not make it _visible_. Of the recipes that read
-`body.groupFormation.metrics` — `burst-small`, `burst-medium`, `burst-large`, `churn-large` — not one
-issues a lifecycle command; they are join-and-presence bursts. The recipes that do drive transitions,
-the two managed bursts 11a made automatic, capture no admin metrics at all. So the bucket would have
-read zero in every artifact it was added for (I37).
+**The census found the ordering note's premise only half true, and the obvious fix does not fit.**
+Adding the bucket makes the volume _classifiable_; it does not make it _visible_. Of the recipes that
+read `body.groupFormation.metrics` — `burst-small`, `burst-medium`, `burst-large`, `churn-large` —
+not one issues a lifecycle command; they are join-and-presence bursts. The recipes that do drive
+transitions, the two managed bursts 11a made automatic, read no metrics at all. Capturing on those
+two was implemented and then withdrawn (I37): a test pins every one of their HTTP operations to the
+single configured API origin, and a primary-only reading would have been unsound regardless. The
+bucket therefore lands with unit proof, and the artifact reading stays open work.
 
 What 13a lands:
 
@@ -3078,27 +3080,26 @@ What 13a lands:
   through `isGroupLifecycleTransitionOperation`. A `Record<GroupLifecycleTransitionOperation, …>` in
   the test fails to compile if an eighth transition ever joins the union without a bucket, and
   `check-tests-typecheck` gates that file.
-- **The admin capture and a rising-count assertion on both managed bursts**, which is what makes the
-  volume visible where the section wanted it. The transport valve stays in `other`.
+- **The transport valve stays in `other`**: it writes `transportState` alone and enters no
+  transition-table row (product decision 25). `applyPlannedLayout` stays there too — the promotion
+  lands the accepted layout without touching stage, epoch, electorate or attempt count.
 
 **Review (2026-09-03).** The type-level work held — the classifier was checked member for member
-against the union and the compile pin proved to fail on a missing key — but the recipe amendment, the
-whole point of the deviation, was unsound. Both managed bursts run **only** in `formation-large`,
-which always launches three servers, and the bucket is recorded by whichever process executed the
-queued mutation: the inbox is claimed `for update skip locked` from a shared table, and two of the
-three transitions this recipe depends on are worker- and timer-driven with no affinity to the node
-that took the HTTP request. A primary-only reading could therefore fail when the work landed
-elsewhere and pass on a previous recipe's leftovers. Both recipes now read all three nodes before and
-after and compare the sums, which is what `burst-large` already does per server and what
-[[appinbox-cluster-execution-log-forensics]] records as the general rule. The comparator also moved
-from `gt` to `gte` against `before + 3`: the sequence drives a plan, an automatic connect and an
-activate, so a floor of one would have passed with two of the three reclassified back to `other`.
+against the union and the compile pin proved to fail on a missing key. The recipe amendment did not,
+twice over, and is withdrawn: it read one node of a three-node cluster for a counter recorded by
+whichever process executed the queued mutation, and it broke the single-origin property
+`api-v1-managed-formation-recipe-loading.test.ts` pins on exactly those two recipes. The review caught
+the first, the gate caught the second, and neither was worth weakening a test for.
 
 The same review found the seven transition literals living in a fourth place. They now live in one:
 `GROUP_LIFECYCLE_TRANSITION_OPERATIONS` in the command contracts, with the type derived from it, the
 typed guard delegating to a name-only sibling for callers holding an unvalidated string, and the
-metrics classifier calling that sibling. The step names moved off "burst" — the join burst drives no
-transitions, which is the census finding, so naming the bracket after it re-planted the misconception.
+metrics classifier calling that sibling.
+
+**Carried forward.** The artifact reading the section asked for needs a recipe that is cluster-wired
+_and_ drives lifecycle commands. None exists: the metrics-reading bursts drive none, and the
+transition-driving recipes are single-origin by design. Building one is the next piece of Slice 13's
+observability work, and it is what would let 12b's writer be measured rather than assumed.
 
 **Not here:** `activationStatus` counts nothing until the writer exists, deliberately — registering it
 now costs one artifact shape change instead of two. It is a zero counter on a diagnostic, not a wire

@@ -1817,23 +1817,13 @@
       "requires": {
         "httpServices": [
           {
-            "name": "Rallar API primary",
+            "name": "Rallar API",
             "env": "RALLAR_API_BASE_URL",
             "default": "http://127.0.0.1:18080"
-          },
-          {
-            "name": "Rallar API secondary",
-            "env": "RALLAR_API_BASE_URL_SECONDARY",
-            "default": "http://127.0.0.1:18081"
-          },
-          {
-            "name": "Rallar API tertiary",
-            "env": "RALLAR_API_BASE_URL_TERTIARY",
-            "default": "http://127.0.0.1:18082"
           }
         ]
       },
-      "description": "Managed threshold burst medium tier (N=20): 20 clients join a preset:managed phased group, the creator-manager connects the published layout, readiness holds at zero observed edges, a planned-edge RTT burst covers the mesh, and activation fires only at threshold (outcome activated, observedRate 1). Admin group-formation metrics are read on all three nodes before and after the lifecycle sequence, so the stage-transition bucket is counted across the cluster that executes it."
+      "description": "Managed threshold burst medium tier (N=20): 20 clients join a preset:managed phased group, the creator-manager connects the published layout, readiness holds at zero observed edges, a planned-edge RTT burst covers the mesh, and activation fires only at threshold (outcome activated, observedRate 1)."
     },
     {
       "id": "api-v1-group-formation-burst-large",
@@ -1881,23 +1871,13 @@
       "requires": {
         "httpServices": [
           {
-            "name": "Rallar API primary",
+            "name": "Rallar API",
             "env": "RALLAR_API_BASE_URL",
             "default": "http://127.0.0.1:18080"
-          },
-          {
-            "name": "Rallar API secondary",
-            "env": "RALLAR_API_BASE_URL_SECONDARY",
-            "default": "http://127.0.0.1:18081"
-          },
-          {
-            "name": "Rallar API tertiary",
-            "env": "RALLAR_API_BASE_URL_TERTIARY",
-            "default": "http://127.0.0.1:18082"
           }
         ]
       },
-      "description": "Managed threshold burst large tier (N=50): 50 clients join a preset:managed phased group, the creator-manager connects the published layout, readiness holds at zero observed edges, a planned-edge RTT burst covers the mesh, and activation fires only at threshold (outcome activated, observedRate 1). Admin group-formation metrics are read on all three nodes before and after the lifecycle sequence, so the stage-transition bucket is counted across the cluster that executes it."
+      "description": "Managed threshold burst large tier (N=50): 50 clients join a preset:managed phased group, the creator-manager connects the published layout, readiness holds at zero observed edges, a planned-edge RTT burst covers the mesh, and activation fires only at threshold (outcome activated, observedRate 1)."
     },
     {
       "id": "api-v1-group-formation-churn-large",
