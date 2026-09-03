@@ -1,4 +1,5 @@
 import type { GroupLifecyclePolicy, GroupLifecycleState, GroupStageTrigger } from './group-lifecycle-policy.ts';
+import { holdsPlannedCandidateAt } from './resolve-formation-stage-entry.ts';
 
 export type GroupStageTriggerDecision =
     | 'fire'
@@ -67,21 +68,17 @@ export function toStageTriggerTimerDelayMs(trigger: GroupStageTrigger): number |
 
 /**
  * The trigger that governs a group's next automatic boundary, or null where
- * no trigger does. `forming` is governed by the plan trigger and `planned`
- * by the connect trigger; `reconfiguring` holds a planned candidate too, but
- * its boundary is an application `connect` until a latch can name the
- * publication it waits for.
+ * no trigger does. `forming` is governed by the plan trigger; both stages
+ * that hold a planned candidate — `planned` and `reconfiguring` — are
+ * governed by the connect trigger, which since slice 11d dials the
+ * reconfigure's own replan rather than the candidate it replaced.
  */
 export function resolveGroupStageTrigger(
     policy: GroupLifecyclePolicy,
     lifecycleState: GroupLifecycleState
 ): GroupStageTrigger | null {
-    switch (lifecycleState) {
-        case 'forming':
-            return policy.establishment.planTrigger;
-        case 'planned':
-            return policy.establishment.connectTrigger;
-        default:
-            return null;
+    if (lifecycleState === 'forming') {
+        return policy.establishment.planTrigger;
     }
+    return holdsPlannedCandidateAt(lifecycleState) ? policy.establishment.connectTrigger : null;
 }

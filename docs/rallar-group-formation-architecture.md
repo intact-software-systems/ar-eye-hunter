@@ -50,9 +50,14 @@ Formation intent has seven states. The eight application commands share one init
 | `reset`            | any stage                | dormant, halted; clears layouts/attempt series |
 | `pause` / `resume` | any stage                | same stage; halted / flowing transport         |
 
-The internal `fail-formation` command returns initial connecting to forming, but reconnecting to
-active with the accepted layout retained. Only initial forming failures arm bounded automatic retry.
-Other source states produce the typed `lifecycle-transition-invalid` denial.
+The internal `fail-formation` command lands by the attempt budget. An unexhausted failure follows the
+table: connecting returns to forming, reconnecting returns to active with the accepted layout
+retained, and only the forming landing arms bounded automatic retry. The attempt that spends the
+budget parks the group in dormant instead (product decisions 35 and 37) — a closed lobby therefore
+stays closed (product decision 38), no retry is armed, and only `reset` then `start` opens a new
+series. The landing moves nothing else: transport stays as it was, because closing the valve is
+`reset`'s (product decision 36). Other source states produce the typed
+`lifecycle-transition-invalid` denial.
 
 ### The aggregate fields
 
@@ -178,9 +183,14 @@ instant: `immediate` may connect as soon as the layout publishes, `after` from i
 `connect` timer petitions the group's awaiting latches; `presence` from its fallback on, or sooner when its members hold live presence — the topology cycle
 that every presence change reaches petitions the latch as satisfied — and `manual` arms nothing. A
 re-plan behind a spent attempt latches regardless of trigger or formation mode, because it continues
-a series the application already started. The `reconfigure` that opens `reconfiguring` arms nothing:
-its own replan has not published, so `reconfiguring` still waits for an application `connect`. A deadline that finds no live planned layout in a dialing
-stage fails that attempt at once, with no layout to fence. A `forming` group's presence trigger plans through the same
+a series the application already started. The `reconfigure` that opens `reconfiguring` arms the same
+trigger, with one difference: it commands its own replan, so at arming time the planned slot still
+holds the candidate it means to replace. Its latch names that candidate
+(`supersedesLayoutIdentity`) and the petition refuses it, so the trigger dials the replan when it
+publishes and never the layout the reconfigure replaced; a `plan` names nothing, because its own
+replan may be skipped as unchanged and the standing candidate is then the one to dial. A deadline
+that finds no live planned layout in a dialing stage fails that attempt at once, with no layout to
+fence. A `forming` group's presence trigger plans through the same
 cycle, under `formation-automation`.
 
 `establishment.maxConcurrentEdgeSetups` reaches the browser as `Group.memberPolicy`, where each
@@ -326,15 +336,17 @@ never activates honest about its limits:
 | `manager-approval`                 | every state, from creation                                                        |
 | `untilEpochMs`, `untilMemberCount` | every state, from creation                                                        |
 | `closed`                           | every state except `forming`: the roster freezes when establishment begins, and a |
-|                                    | below-floor return to `forming` re-opens the lobby                                |
+|                                    | below-floor return to `forming` re-opens the lobby, but the attempt that spends   |
+|                                    | the budget lands in `dormant`, where it stays closed (product decision 38)        |
 
 `api-v1-group-admission-windows` pins each row: `untilMemberCount: 1` on a `phased` group that never
 activates denies the second join (`capacityWindowBindsWithoutActivation`); a leave under the window
 re-opens it (`leaveReopensTheCapacityWindow`); an elapsed `untilEpochMs` denies
 (`deadlineWindowClosesJoins`) and an open one admits; `closed` admits while forming
-(`closedAdmitsWhileForming`), denies during establishment and after activation, and admits again
-after a below-floor return (`belowFloorReopensTheLobby`). `api-v1-match-preset` pins the same
-`closed` behaviour composed with the rest of the match preset.
+(`closedAdmitsWhileForming`), denies during establishment and after activation, and keeps denying
+once the spent series parks (`theSpentSeriesKeepsTheLobbyClosed`). `api-v1-match-preset` pins the
+same `closed` behaviour composed with the rest of the match preset, down to
+`exhaustionKeepsTheClosedLobbyClosed`.
 
 ### `pending`: the consent-mirror of `invited`
 
@@ -500,9 +512,10 @@ Setting the floor equal to the success rate asks for all-or-nothing.
 
 Below the floor, initial connecting returns to forming, records the observed outcome, increments
 attempt count, and arms a retry while under the policy budget. Backoff is
-`min(5 000 × attemptCount, 60 000)`. Exhaustion requires a reset to begin another series.
-Reconnecting failure returns active and arms no retry: replanning policy, not failure, decides
-whether a new reconfiguration should begin.
+`min(5 000 × attemptCount, 60 000)`. Reconnecting failure returns active and arms no retry:
+replanning policy, not failure, decides whether a new reconfiguration should begin. The attempt that
+spends the budget lands in dormant from either stage instead, arming nothing, and a reset is what
+begins another series.
 
 ### Durable initial retry handoff
 
@@ -566,9 +579,10 @@ native scheduling, no polling or requeue loop — and each carries the post-tran
 yet due (clock-skew defence; the retry release walks it forward), drops it if the group is gone or
 its epoch moved on, and then: a `retry` entry for a `forming` group submits `planGroupLayout`
 under `formation-automation` authority; a `deadline` entry for a `connecting` or `reconnecting`
-group reads the planning authority and the stored plan and runs the same evaluation function. If no
-plan is stored at deadline time the handler throws so the durable entry is retried rather than
-acknowledged, until topology publication catches up.
+group reads the planning authority and the stored plan and runs the same evaluation function. A
+deadline that finds no live planned layout has nothing to fence and no readiness to measure, so it
+fails that attempt at once with `expectedLayout: null` rather than retrying the durable entry
+without bound.
 
 **Racing producers replay instead of double-transitioning.** Criterion request ids pin decision,
 epoch and exact layout. Compute rejects stale epochs and superseded layouts before a transition;
@@ -833,9 +847,6 @@ writing this document:
   nothing. The in-flight bound is enforced by the browser for the setups it starts; setups accepted
   from a peer's signaling are not paced.
 - **A pending-admission TTL.** Parked rows persist until granted, declined, withdrawn, or governed.
-- **The automatic boundary out of `reconfiguring`.** The plan and connect triggers drive `forming`
-  and `planned`; a hold-landing reconfigure still waits for an application `connect`, because the
-  latch would have to name the publication it waits for rather than the layout it means to replace.
 - **Distributed (Hetzner) lifecycle artifacts.** The recipes above are api-v1 black-box recipes
   against the real server; the distributed lane carries no lifecycle manifest.
 

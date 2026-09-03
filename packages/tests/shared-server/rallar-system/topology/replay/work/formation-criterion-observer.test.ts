@@ -246,7 +246,12 @@ async function createStageTriggerHarness(
         await runtime.upsert(
             GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
             toGroupConnectTriggerStorageKey(identity),
-            JSON.stringify({ ...identity, notBeforeEpochMs: input.awaitingLatchNotBeforeEpochMs, state: 'awaiting-publication' }),
+            JSON.stringify({
+                ...identity,
+                notBeforeEpochMs: input.awaitingLatchNotBeforeEpochMs,
+                supersedesLayoutIdentity: null,
+                state: 'awaiting-publication'
+            }),
             NEVER_EXPIRE_AT_TIMESTAMP
         );
     }
@@ -310,18 +315,23 @@ describe('presence stage trigger petition', () => {
         expect(harness.commands).toEqual([]);
     });
 
-    it('connects a planned group before its fallback once the threshold is met', async () => {
-        const harness = await createStageTriggerHarness({
-            lifecycleState: 'planned',
-            onlineMemberCount: 2,
-            policy: createStageTriggerPolicy({ kind: 'manual' }, PRESENCE_PLAN),
-            awaitingLatchNotBeforeEpochMs: 9_000
-        });
+    // Both stages that hold a planned candidate answer to the connect
+    // trigger, so the threshold fires ahead of the fallback at either.
+    it.each(['planned', 'reconfiguring'] as const)(
+        'connects a %s group before its fallback once the threshold is met',
+        async (lifecycleState) => {
+            const harness = await createStageTriggerHarness({
+                lifecycleState,
+                onlineMemberCount: 2,
+                policy: createStageTriggerPolicy({ kind: 'manual' }, PRESENCE_PLAN),
+                awaitingLatchNotBeforeEpochMs: 9_000
+            });
 
-        await petitionGroupStageTrigger(harness.dependencies, harness.authority);
+            await petitionGroupStageTrigger(harness.dependencies, harness.authority);
 
-        expect(harness.commands.map((command) => command.operation)).toEqual(['connectGroup']);
-    });
+            expect(harness.commands.map((command) => command.operation)).toEqual(['connectGroup']);
+        }
+    );
 
     it.each([
         ['manual', { kind: 'manual' } as const],

@@ -62,6 +62,7 @@ describe('automatic retry connect intent', () => {
             formationEpoch: 3,
             triggerGeneration: command.commandId,
             notBeforeEpochMs: 0,
+            supersedesLayoutIdentity: null,
             state: 'awaiting-publication'
         });
         expect(computed.outboxEntries.some((entry) => JSON.parse(entry.resource).payload.typeId === 'GROUP_CONNECT_TRIGGER')).toBe(true);
@@ -96,7 +97,7 @@ function automaticRead(): GroupMutationRead {
         actorMember: null,
         actorMemberEntry: null,
         plannedLayoutRow: { snapshot: PLANNED, revision: 1 },
-        connectTriggerLatch: { latch: { ...IDENTITY, notBeforeEpochMs: 0, state: 'awaiting-publication' }, revision: 1 }
+        connectTriggerLatch: { latch: { ...IDENTITY, notBeforeEpochMs: 0, supersedesLayoutIdentity: null, state: 'awaiting-publication' }, revision: 1 }
     };
 }
 
@@ -107,7 +108,7 @@ describe('connect intent handoff', () => {
         await runtime.upsert(
             GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
             toGroupConnectTriggerStorageKey(IDENTITY),
-            JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, state: 'awaiting-publication' }),
+            JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, supersedesLayoutIdentity: null, state: 'awaiting-publication' }),
             NEVER_EXPIRE_AT_TIMESTAMP
         );
         const commands: GroupMutationCommand[] = [];
@@ -162,7 +163,7 @@ describe('connect intent handoff', () => {
                 ? { snapshot: { ...PLANNED, version: 2 }, revision: 2 }
                 : original.plannedLayoutRow,
             connectTriggerLatch: state === 'consumed'
-                ? { latch: { ...IDENTITY, notBeforeEpochMs: 0, state: 'consumed' }, revision: 2 }
+                ? { latch: { ...IDENTITY, notBeforeEpochMs: 0, supersedesLayoutIdentity: null, state: 'consumed' }, revision: 2 }
                 : original.connectTriggerLatch,
             group: state === 'reset' ? createGroupAuthorityRead({ lifecycleState: 'dormant', formationEpoch: 4 }).group : original.group
         };
@@ -174,26 +175,55 @@ describe('connect intent handoff', () => {
         expect(computed.outcome).toBe('rejected');
     });
 
-    it('fails exact reads and prefix reads closed on wrong scope, epoch, generation and stored keys', async () => {
-        for (
-            const patch of [
-                { groupRef: { ...IDENTITY.groupRef, workspaceId: 'wrong' } },
-                { formationEpoch: 4 },
-                { triggerGeneration: 'other' },
-                { extra: true }
-            ]
-        ) {
-            const runtime = new FakeRuntimeStateRepository();
-            const latches = new GroupConnectTriggerLatchRepository(runtime);
-            await runtime.upsert(
-                GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
-                toGroupConnectTriggerStorageKey(IDENTITY),
-                JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, state: 'awaiting-publication', ...patch }),
-                NEVER_EXPIRE_AT_TIMESTAMP
-            );
-            await expect(latches.read(IDENTITY)).rejects.toBeInstanceOf(GroupConnectTriggerLatchCorruptionError);
-            await expect(latches.listAwaiting(IDENTITY.groupRef, 3)).rejects.toBeInstanceOf(GroupConnectTriggerLatchCorruptionError);
-        }
+    // The superseded candidate is a stored identity the petition compares
+    // against, so every shape it can take is checked closed: a row written
+    // before the field existed is corrupt until the migration backfills it.
+    const SUPERSEDED = { groupRevision: 7, presenceRevision: 3, version: 4, state: 'active' } as const;
+
+    it.each([
+        ['a wrong scope', { groupRef: { ...IDENTITY.groupRef, workspaceId: 'wrong' } }],
+        ['a wrong epoch', { formationEpoch: 4 }],
+        ['a wrong generation', { triggerGeneration: 'other' }],
+        ['an extra key', { extra: true }],
+        ['a missing superseded candidate', { supersedesLayoutIdentity: undefined }],
+        ['a superseded candidate missing a key', { supersedesLayoutIdentity: { ...SUPERSEDED, version: undefined } }],
+        ['a superseded candidate with an extra key', { supersedesLayoutIdentity: { ...SUPERSEDED, extra: 1 } }],
+        ['a non-integer superseded revision', { supersedesLayoutIdentity: { ...SUPERSEDED, groupRevision: 1.5 } }],
+        ['an unknown superseded state', { supersedesLayoutIdentity: { ...SUPERSEDED, state: 'bogus' } }]
+    ])('fails exact reads and prefix reads closed on %s', async (_label, patch) => {
+        const runtime = new FakeRuntimeStateRepository();
+        const latches = new GroupConnectTriggerLatchRepository(runtime);
+        await runtime.upsert(
+            GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+            toGroupConnectTriggerStorageKey(IDENTITY),
+            JSON.stringify({
+                ...IDENTITY,
+                notBeforeEpochMs: 0,
+                supersedesLayoutIdentity: null,
+                state: 'awaiting-publication',
+                ...patch
+            }),
+            NEVER_EXPIRE_AT_TIMESTAMP
+        );
+        await expect(latches.read(IDENTITY)).rejects.toBeInstanceOf(GroupConnectTriggerLatchCorruptionError);
+        await expect(latches.listAwaiting(IDENTITY.groupRef, 3)).rejects.toBeInstanceOf(GroupConnectTriggerLatchCorruptionError);
+    });
+
+    it('reads a latch that names the candidate it supersedes', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const latches = new GroupConnectTriggerLatchRepository(runtime);
+        await runtime.upsert(
+            GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
+            toGroupConnectTriggerStorageKey(IDENTITY),
+            JSON.stringify({
+                ...IDENTITY,
+                notBeforeEpochMs: 0,
+                supersedesLayoutIdentity: SUPERSEDED,
+                state: 'awaiting-publication'
+            }),
+            NEVER_EXPIRE_AT_TIMESTAMP
+        );
+        expect((await latches.read(IDENTITY))?.latch.supersedesLayoutIdentity).toEqual(SUPERSEDED);
     });
 });
 
@@ -299,7 +329,7 @@ describe('retry handoff commit races and replay', () => {
         await harness.runtimeRepository.upsert(
             GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
             toGroupConnectTriggerStorageKey(IDENTITY),
-            JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, state: 'awaiting-publication' }),
+            JSON.stringify({ ...IDENTITY, notBeforeEpochMs: 0, supersedesLayoutIdentity: null, state: 'awaiting-publication' }),
             NEVER_EXPIRE_AT_TIMESTAMP
         );
         await createGroupConnectTriggerWorkHandler(port).onMessage(JSON.parse(source.resource) as ALMessage, source);

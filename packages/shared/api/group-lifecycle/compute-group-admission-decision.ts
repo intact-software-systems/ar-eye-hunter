@@ -41,8 +41,9 @@ const CLOSED_MODE_ADMITS: Readonly<Record<GroupLifecycleState, boolean>> = {
  * correction 5: the window constraints and `manager-approval` bind in every
  * lifecycle state from creation, while `closed` binds outside FORMING — the
  * roster freezes when establishment begins, and a below-floor return to
- * FORMING re-opens the lobby. The windows degrade any mode to closed once
- * they pass, so they are decided first.
+ * FORMING re-opens the lobby — but the attempt that spends the budget lands
+ * in DORMANT instead, where the table above keeps it closed. The windows
+ * degrade any mode to closed once they pass, so they are decided first.
  */
 export function computeGroupAdmissionDecision(
     input: ComputeGroupAdmissionDecisionInput

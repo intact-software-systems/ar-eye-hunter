@@ -5435,6 +5435,9 @@ components:
             maxFormationAttempts:
               type: integer
               format: int64
+              description: >-
+                Attempts one formation series may spend. The attempt that spends
+                the budget parks the group in DORMANT; RESET clears the series.
             strictConfirmation:
               type: boolean
               description: >-

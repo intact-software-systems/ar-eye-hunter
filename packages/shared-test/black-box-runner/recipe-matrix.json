@@ -975,7 +975,7 @@
           }
         ]
       },
-      "description": "Exercises both legs of the activation criterion: a threshold group auto-activates from the evidence produced by its own establishment planning pass, and a deadline group with unconfirmed links fails formation below the floor -- typed outcome, attempt increment, terminal forming at the attempt cap."
+      "description": "Exercises both legs of the activation criterion: a threshold group auto-activates from the evidence produced by its own establishment planning pass, and a deadline group with unconfirmed links fails formation below the floor -- typed outcome, attempt increment, and a parked DORMANT series at the attempt cap."
     },
     {
       "id": "api-v1-group-manager-succession",
@@ -1067,7 +1067,7 @@
           }
         ]
       },
-      "description": "Automatic formation triggers on a phased group: the plan trigger plans after its settle and the connect trigger dials the planned layout after the next settle, with no application plan or connect command."
+      "description": "Automatic formation triggers on a phased group: the plan trigger plans after its settle, the connect trigger dials the planned layout after the next settle, and a reconfigure that opens RECONFIGURING is dialed by the same trigger once its own replan publishes -- never the candidate it replaced, and with no application plan or connect command."
     },
     {
       "id": "api-v1-presence-formation-trigger",
@@ -1136,7 +1136,7 @@
           }
         ]
       },
-      "description": "Composed match-preset behaviour: closed admission admits in FORMING and freezes outside it, deterministic election resolves the creator, blocked-until-active data NACKs in the lobby, full edge coverage activates at the all-or-nothing threshold and data flows, and a group with no confirmed edges exhausts both attempts below the floor and reopens as a lobby."
+      "description": "Composed match-preset behaviour: closed admission admits in FORMING and freezes outside it, deterministic election resolves the creator, blocked-until-active data NACKs in the lobby, full edge coverage activates at the all-or-nothing threshold and data flows, and a group with no confirmed edges exhausts both attempts below the floor and parks in DORMANT with the lobby still closed."
     },
     {
       "id": "api-v1-drop-in-social-preset",
@@ -1205,7 +1205,7 @@
           }
         ]
       },
-      "description": "Pins the admission binding phases: the member-count window closes joins in a group that never activates, the epoch-ms window denies after its deadline, and closed admits only while forming -- denying during establishment and activation, and reopening after a below-floor return to forming."
+      "description": "Pins the admission binding phases: the member-count window closes joins in a group that never activates, the epoch-ms window denies after its deadline, and closed admits only while forming -- denying during establishment and activation, and staying closed once the spent series parks in DORMANT."
     },
     {
       "id": "api-v1-group-data-policy",

@@ -2,6 +2,8 @@ import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lif
 import {
     computeGroupLifecycleTransition,
     denyExhaustedFormationSeries,
+    isFormationAttemptBudgetExhausted,
+    resolveFormationFailureLanding,
     type GroupLifecycleTransition,
     type GroupLifecycleTransitionOutcome
 } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
@@ -161,10 +163,10 @@ function computeAuthorizedLifecycleTransition(
 }
 
 /**
- * The state machine and the preconditions the stage does not carry. Both are
- * decided here rather than inside the initiator policy, because internal
- * authority skips that policy and the attempt budget still binds it (product
- * decision 37).
+ * The state machine, the preconditions the stage does not carry, and where a
+ * failure lands. All three are decided here rather than inside the initiator
+ * policy, because internal authority skips that policy and the attempt budget
+ * still binds it (product decision 37).
  */
 function computeAllowedLifecycleTransition(
     transition: GroupLifecycleTransition,
@@ -184,7 +186,25 @@ function computeAllowedLifecycleTransition(
         activation: policy.activation,
         formationAttemptCount: stored.formationAttemptCount
     });
-    return exhausted ?? outcome;
+    if (exhausted !== undefined) {
+        return exhausted;
+    }
+    if (transition !== 'fail-formation') {
+        return outcome;
+    }
+    // Exhaustion's `dormant` landing over the table's unexhausted one
+    // (product decisions 35 and 37). The budget is asked about the attempt
+    // this failure is about to record, so a series whose last attempt fails
+    // parks instead of returning to a stage that would re-open a closed lobby
+    // (product decision 38) and re-arm automation.
+    const landing = resolveFormationFailureLanding({
+        lifecycleState: stored.lifecycleState,
+        attemptBudgetExhausted: isFormationAttemptBudgetExhausted({
+            activation: policy.activation,
+            formationAttemptCount: stored.formationAttemptCount + 1
+        })
+    });
+    return { ...outcome, nextState: landing ?? outcome.nextState };
 }
 
 function computeNextLifecycleGroup(
