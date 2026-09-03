@@ -25,6 +25,7 @@ import {
 import type { TopologyAppInboxRequestPayload } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import type { TopologyAppInboxResult } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
+import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { toApiMutationRouteFailure } from './api-mutation-route-failure.ts';
@@ -83,13 +84,7 @@ export interface GraphTopologyRoutePlanning {
             knownGroup?: GroupSnapshot;
             snapshotSelection: 'prefer-current' | 'preserve-known-revision';
         }>
-    ): Promise<
-        Readonly<{
-            group: GroupSnapshot;
-            rttMeasurements: readonly RttMeasurementInfo[];
-            nowEpochMs: number;
-        }>
-    >;
+    ): Promise<GroupTopologyPlanningAuthority>;
 }
 
 export interface GraphTopologyRouteDependencies {
@@ -103,6 +98,8 @@ export interface GraphTopologyRouteDependencies {
     ) => Promise<IssuedAuthSession>;
     readonly adminClientIds: readonly string[];
     readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
+    /** The planned slot's stored topology-input fingerprint; null before a planning cycle stored one. */
+    readonly readPlannedLayoutFingerprint: (ref: GroupRef) => Promise<string | null>;
     readonly strictReadAuthorization: boolean;
     readonly now: () => number;
 }

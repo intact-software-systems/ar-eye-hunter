@@ -71,6 +71,8 @@ export interface ApiV1RouteInstallerTopology {
     readonly groupStateRepository: Readonly<{
         readLifecyclePolicy: graphTopologyRoutes.GraphTopologyRouteDependencies['readLifecyclePolicy'];
     }>;
+    readonly readPlannedLayoutFingerprint:
+        graphTopologyRoutes.GraphTopologyRouteDependencies['readPlannedLayoutFingerprint'];
 }
 
 export interface ApiV1RouteInstallerAdminServices {
@@ -256,6 +258,7 @@ function createApiV1StateRouteInstallers<
                 requireApiAuthSession: requireSession,
                 adminClientIds: input.topology.adminClientIds,
                 readLifecyclePolicy: (ref) => input.topology.groupStateRepository.readLifecyclePolicy(ref),
+                readPlannedLayoutFingerprint: input.topology.readPlannedLayoutFingerprint,
                 strictReadAuthorization: input.strictReadAuthorization,
                 now: input.nowEpochMs
             })

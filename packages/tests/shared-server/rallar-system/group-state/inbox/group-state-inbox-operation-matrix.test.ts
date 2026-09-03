@@ -581,6 +581,8 @@ describe('GroupStateInboxService authenticated authority', () => {
                             requestId: 'matrix-create-phased'
                         }
                     } satisfies GroupCreateAppInboxPayload,
+                    // A phased creation arms the plan trigger's timer beside its summary (plan slice 11a).
+                    extraOutboxEntries: 1,
                     assertDomain: async () => {
                         expect(
                             (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))
@@ -597,6 +599,8 @@ describe('GroupStateInboxService authenticated authority', () => {
                         groupId: phasedGroupId,
                         request: { ...ownerActor, requestId: 'matrix-plan' }
                     } satisfies GroupLifecycleTransitionAppInboxPayload,
+                    // The plan arms the connect trigger's latch and its intent work under the default preset (plan slice 11a).
+                    extraOutboxEntries: 1,
                     assertDomain: async () => {
                         const group = (await harness.repository.readSnapshot({ ...SCOPE, groupId: phasedGroupId }))?.group;
                         expect(group?.lifecycleState).toBe('planned');

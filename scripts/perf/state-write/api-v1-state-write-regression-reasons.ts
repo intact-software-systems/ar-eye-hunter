@@ -86,6 +86,23 @@ export const MEMBER_POLICY_ROW_WIDTH_REASONS = (['uncontended', 'shared', 'hot']
 
 export const MEMBER_POLICY_ROW_WIDTH_REGRESSION_REASON_PROFILE = 'member-policy-row-width' as const;
 
+const COMMANDED_REPLAN_GATE_READS_REASON = 'Slices 10a and 10b consult the stored lifecycle policy and the ' +
+    'planned topology slot on every presence summary of an active group, for ' +
+    'the replan hold and the replan window alike: two point reads per summary, ' +
+    'merges included; the bench\'s groups are active and default-policied, so ' +
+    'every summary pays them.';
+
+export const COMMANDED_REPLAN_GATE_READS_REASONS = (['uncontended', 'shared', 'hot'] as const).flatMap(
+    (workload) =>
+        ['sql.statements', 'sql.rowsRead', 'postgres.transactionDurationMs'].map((metric) => ({
+            workload,
+            metric,
+            reason: COMMANDED_REPLAN_GATE_READS_REASON
+        }))
+);
+
+export const COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE = 'commanded-replan-gate-reads' as const;
+
 export function selectStateWriteRegressionReasons(
     profile: string | undefined,
     precommittedReasons: readonly StateWriteBenchmarkRegressionReason[]
@@ -107,6 +124,9 @@ export function selectStateWriteRegressionReasons(
     }
     if (profile === MEMBER_POLICY_ROW_WIDTH_REGRESSION_REASON_PROFILE) {
         return MEMBER_POLICY_ROW_WIDTH_REASONS;
+    }
+    if (profile === COMMANDED_REPLAN_GATE_READS_REGRESSION_REASON_PROFILE) {
+        return COMMANDED_REPLAN_GATE_READS_REASONS;
     }
     throw new Error('State-write regression reason selection is inconsistent');
 }

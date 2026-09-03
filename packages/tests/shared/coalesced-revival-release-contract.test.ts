@@ -32,6 +32,7 @@ function toCoalescedEntry(input: CoalescedEntryInput): ResourceEntry {
                 __rallarCoalescedWork: {
                     generation: input.generation,
                     requestedAtEpochMs: 1_000 + input.generation,
+                    windowOpenedAtEpochMs: 1_000,
                     dueAtEpochMs: 1_500 + input.generation,
                     reasons: ['group-revision']
                 }

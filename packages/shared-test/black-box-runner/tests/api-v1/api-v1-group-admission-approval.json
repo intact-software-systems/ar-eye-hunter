@@ -212,6 +212,14 @@
             "preset": "managed",
             "activation": {
               "mode": "manual"
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
             }
           }
         }
@@ -428,6 +436,14 @@
                 "{bobClientId}"
               ],
               "count": 1
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
             }
           }
         }
@@ -633,6 +649,14 @@
               "minimumViableRate": 1,
               "deadlineMs": 3000,
               "maxFormationAttempts": 1
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
             }
           }
         }

@@ -6,7 +6,7 @@ import type {
     ReconfigureGroupTopologyResponse
 } from '@shared/api/graph-topology-management-types.ts';
 import { readGroupCreatedByPrincipalId, readGroupMemberSessionIds } from '@shared/api/group-client-views.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { toCanonicalGroupRef, type GroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
@@ -439,7 +439,7 @@ function removedTopologyResult(
             sourceGroupStateCausalRevision: group.causalRevision,
             state: 'removed',
             overlayId: toScopedOverlayId(group.group),
-            groupRef: canonicalGroupRef(group.group),
+            groupRef: toCanonicalGroupRef(group.group),
             name: previous?.name ?? group.group.displayName,
             topology: previous?.topology ?? 'star',
             activeSessionIds,
@@ -473,13 +473,5 @@ function toReconfigureGroupTopologyResponse(
         previous: input.result.previous,
         config: input.config,
         published: input.published
-    };
-}
-
-function canonicalGroupRef(groupRef: GroupRef): GroupRef {
-    return {
-        applicationId: groupRef.applicationId,
-        workspaceId: groupRef.workspaceId,
-        groupId: groupRef.groupId
     };
 }

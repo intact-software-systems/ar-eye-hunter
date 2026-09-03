@@ -17,6 +17,8 @@ export interface GroupConnectTriggerIdentity {
 }
 
 export interface GroupConnectTriggerLatch extends GroupConnectTriggerIdentity {
+    /** The trigger's settle instant: a publication before it leaves the intent latched (plan slice 11a). */
+    readonly notBeforeEpochMs: number;
     readonly state: 'awaiting-publication' | 'consumed';
 }
 
@@ -97,6 +99,7 @@ export function decodeGroupConnectTriggerLatchRow(
             'groupRef',
             'formationEpoch',
             'triggerGeneration',
+            'notBeforeEpochMs',
             'state'
         ], 'Connect trigger latch');
         const groupRef = toExactJsonWireObject(
@@ -110,11 +113,16 @@ export function decodeGroupConnectTriggerLatchRow(
             value.formationEpoch !== identity.formationEpoch ||
             value.triggerGeneration !== identity.triggerGeneration ||
             (value.state !== 'awaiting-publication' && value.state !== 'consumed') ||
+            typeof value.notBeforeEpochMs !== 'number' || !Number.isSafeInteger(value.notBeforeEpochMs) ||
+            value.notBeforeEpochMs < 0 ||
             !Number.isSafeInteger(entry.revision) || entry.revision < 0
         ) {
             throw new GroupConnectTriggerLatchCorruptionError(entry.key);
         }
-        return { latch: { ...identity, state: value.state }, revision: entry.revision };
+        return {
+            latch: { ...identity, notBeforeEpochMs: value.notBeforeEpochMs, state: value.state },
+            revision: entry.revision
+        };
     }
     catch {
         throw new GroupConnectTriggerLatchCorruptionError(entry.key);

@@ -139,6 +139,50 @@ and initiator choices plus six policy sections. Every field is required once nor
 | `topology`      | `replanning`, `reconfigureLanding`, `debounceWindowMs`, `maxReplanWaitMs`                              |
 | `data`          | `preActivationAppData`: `'allowed'` \| `'blocked-until-active'`                                        |
 
+`topology.replanning` is enforced at two gates that take the planner's decision on the same stored
+facts. The planner (`resolveTopologyPlanAction`) freezes automatic work for an `active` group whose
+planned slot holds an active layout when the mode is `commanded` or the policy is unreadable. The
+presence-summary enqueue (`resolveTopologyReplanEnqueue`) asks the planner the same question before
+the work is queued and holds what it would freeze, so `pending` never reports a replan the policy
+forbids and no frozen cycle is paid for. It never holds an inactive group's removal publication, a
+delta that can still merge into a queued row, the lifecycle `reconfigure` family's commanded-origin
+follow-ups, or a group whose `apply` landing has a promotion outstanding, because the frozen cycle
+is what re-derives that promotion. (The topology-inbox `reconfigure` route still enqueues its work
+as automatic origin, so under `commanded` the planner freezes it; only the lifecycle `reconfigure`
+replans on command.) Staleness follows product decision 11 by derivation (implementation decision
+I27): the accepted layout is always a promoted planned layout, so the formation view reads it as
+stale when its identity differs from the planned slot's or when the planned slot's stored
+topology-input fingerprint differs from the authority's fingerprint computed at read time.
+
+The replan window (product decision 31, `resolveTopologyReplanWindow`) is decided on the same
+consulted policy: `debounced` coalesces under the policy's `debounceWindowMs` and replans no later
+than `maxReplanWaitMs` after the first change of a series; `auto` carries no policy window and keeps
+the server's `topology.recompute.formationDebounceMs`, unbounded, so it replans on the first
+opportunity after a change; `commanded` coalesces its commanded follow-ups under the policy window;
+a stage outside the policy and an unreadable policy keep the server window unbounded. The coalesced
+row carries the series anchor (`windowOpenedAtEpochMs`), minted by the generic coalescing service,
+kept by every merge and restarted by a successor row or a revived terminal row; a migration backfilled
+it onto rows written before it existed, so every reader requires it. A queued replan of a live
+planned layout is floored at the layout's last write plus the minimum layout age (1 000 ms), decided
+when the change is queued. RTT refreshes are the machinery's own work and keep the server's
+unbounded window.
+
+The stage triggers (product decision 8, `establishment.planTrigger` and `connectTrigger`) ride the
+durable formation timer, the same epoch-fenced outbox entry the deadline and retry legs use, and only
+for `phased` groups (decision 17). The first entry into `forming` — creation of a phased group, or
+`start` — arms a `plan` timer at the trigger's settle (`immediate` is due at once), consumed only
+while the group is still at that formation epoch, where it submits the automation plan under
+`formation-automation`. A plan that lands a candidate in a stage that holds one arms
+the connect trigger's latch (`GroupConnectTriggerLatch`) with its settle
+instant: `immediate` may connect as soon as the layout publishes, `after` from its settle on, when a
+`connect` timer petitions the group's awaiting latches; `presence` from its fallback on, or sooner when its members hold live presence — the topology cycle
+that every presence change reaches petitions the latch as satisfied — and `manual` arms nothing. A
+re-plan behind a spent attempt latches regardless of trigger or formation mode, because it continues
+a series the application already started. The `reconfigure` that opens `reconfiguring` arms nothing:
+its own replan has not published, so `reconfiguring` still waits for an application `connect`. A deadline that finds no live planned layout in a dialing
+stage fails that attempt at once, with no layout to fence. A `forming` group's presence trigger plans through the same
+cycle, under `formation-automation`.
+
 `establishment.maxConcurrentEdgeSetups` reaches the browser as `Group.memberPolicy`, where each
 member bounds the RTC setups it starts per group (product decision 18). `establishment.transports`
 is carried the same way but read by nothing yet, and no server path reads either field.
@@ -636,12 +680,14 @@ commands; browser dial/data enforcement uses the authoritative group and layout 
 returns `GroupFormationView`: authoritative intent beside derived observation, enough for an
 application to explain the group to a user.
 
-| Field                                                                                                                | Source                                                                                                        |
-| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `groupRef`                                                                                                           | the route path's `{ applicationId, workspaceId, groupId }`, echoed so the view names the group it describes   |
-| `lifecycleState`, `formationEpoch`, `formationAttemptCount`, `lastFormationOutcome`, `establishmentStartedAtEpochMs` | the aggregate                                                                                                 |
-| `readiness`                                                                                                          | computed at read time from the stored plan and the authority's evidence; `{ 0, 0, 1 }` when no plan is stored |
-| `managerPrincipalIds`                                                                                                | `resolveGroupLifecycleManagers` at read time over the active roster; `[]` when the policy is corrupt          |
+| Field                                                                                                                | Source                                                                                                                                                                                                                                                   |
+| -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `groupRef`                                                                                                           | the route path's `{ applicationId, workspaceId, groupId }`, echoed so the view names the group it describes                                                                                                                                              |
+| `lifecycleState`, `formationEpoch`, `formationAttemptCount`, `lastFormationOutcome`, `establishmentStartedAtEpochMs` | the aggregate                                                                                                                                                                                                                                            |
+| `readiness`                                                                                                          | computed at read time from the stored plan and the authority's evidence; `{ 0, 0, 1 }` when no plan is stored                                                                                                                                            |
+| `managerPrincipalIds`                                                                                                | `resolveGroupLifecycleManagers` at read time over the active roster; `[]` when the policy is corrupt                                                                                                                                                     |
+| `layoutStale`                                                                                                        | product decision 11's latched half, derived (I27): the accepted identity differs from the planned slot's, or the planned slot's stored topology-input fingerprint differs from the authority's computed at read time; `false` without an accepted layout |
+| `pending`                                                                                                            | the transient half, `{ reconfigureQueued, dueAtEpochMs }` from the coalesced replan row, or `null`                                                                                                                                                       |
 
 Like the other group reads, the route applies full-visibility authorization — active members only,
 so a pending member cannot read it — when `RALLAR_STATE_STRICT_READ_AUTH` is enabled, which the
@@ -787,8 +833,9 @@ writing this document:
   nothing. The in-flight bound is enforced by the browser for the setups it starts; setups accepted
   from a peer's signaling are not paced.
 - **A pending-admission TTL.** Parked rows persist until granted, declined, withdrawn, or governed.
-- **General automatic plan/connect policy evaluation.** Durable initial retry intent is implemented;
-  immediate, timed and presence trigger policies remain separate work.
+- **The automatic boundary out of `reconfiguring`.** The plan and connect triggers drive `forming`
+  and `planned`; a hold-landing reconfigure still waits for an application `connect`, because the
+  latch would have to name the publication it waits for rather than the layout it means to replace.
 - **Distributed (Hetzner) lifecycle artifacts.** The recipes above are api-v1 black-box recipes
   against the real server; the distributed lane carries no lifecycle manifest.
 

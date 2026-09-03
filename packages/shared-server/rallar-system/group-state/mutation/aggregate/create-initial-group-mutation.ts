@@ -1,4 +1,5 @@
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSummary } from '@shared/api/group-types.ts';
 
@@ -15,7 +16,7 @@ export function createInitialGroup({
     audit,
     snapshotVersion
 }: CreateInitialGroupInput): Group {
-    const lifecyclePolicy = command.input.lifecyclePolicy ?? createDefaultGroupLifecyclePolicy();
+    const lifecyclePolicy = resolveCreateGroupLifecyclePolicy(command);
     return {
         ...command.aggregateRef,
         slug: command.input.slug,
@@ -97,4 +98,11 @@ export function createInitialPresenceSummary({
         activeSessionCount: 0,
         computedAtEpochMs: facts.nowEpochMs
     };
+}
+
+/** The policy a group is created under: the request's, or the default preset when the request carries none. */
+export function resolveCreateGroupLifecyclePolicy(
+    command: Extract<GroupMutationCommand, { operation: 'createGroup'; }>
+): GroupLifecyclePolicy {
+    return command.input.lifecyclePolicy ?? createDefaultGroupLifecyclePolicy();
 }

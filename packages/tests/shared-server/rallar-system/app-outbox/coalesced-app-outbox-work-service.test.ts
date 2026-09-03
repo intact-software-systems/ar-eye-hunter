@@ -110,6 +110,32 @@ describe('CoalescedAppOutboxWorkService', () => {
             .toMatchObject({ generation: 1 });
         expect(await service.isReservedEntryStale(reservedEntry)).toBe(false);
     });
+
+    it('opens the series anchor at the first request and keeps it through a pending merge', async () => {
+        let now = 1_000;
+        const queue = new InMemoryQueueBox();
+        const service = new CoalescedAppOutboxWorkService(
+            new OutboxQueueReader(queue),
+            'server-1',
+            () => now
+        );
+        const input = {
+            type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
+            topicId: 'app-outbox.rtc-topology',
+            resourceId: 'overlay-anchor',
+            contextId: 'room-anchor',
+            data: { overlayId: 'overlay-anchor', snapshotVersion: 1 }
+        };
+
+        const first = await service.enqueue<TestWork>(input);
+        now = 1_400;
+        const merged = await service.enqueue<TestWork>({ ...input, data: { ...input.data, snapshotVersion: 2 } });
+
+        expect(first.envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD])
+            .toMatchObject({ generation: 1, requestedAtEpochMs: 1_000, windowOpenedAtEpochMs: 1_000 });
+        expect(merged.envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD])
+            .toMatchObject({ generation: 2, requestedAtEpochMs: 1_400, windowOpenedAtEpochMs: 1_000 });
+    });
 });
 
 function mergeVersionsAndReasons(

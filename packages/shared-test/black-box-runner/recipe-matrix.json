@@ -1024,6 +1024,98 @@
       "description": "No-browser API-v1 group create recipe covering the optional lifecyclePolicy request field: a normalized preset with overrides, and a create that omits it."
     },
     {
+      "id": "api-v1-debounced-replanning",
+      "recipe": "tests/api-v1/api-v1-debounced-replanning.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-debounced-replanning",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Debounced replanning on a managed group: a burst of replacing sessions extends the queued replan's window, the policy's maximum wait stops the extension, and the single replan covers the burst's last change."
+    },
+    {
+      "id": "api-v1-automatic-formation-triggers",
+      "recipe": "tests/api-v1/api-v1-automatic-formation-triggers.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-automatic-formation-triggers",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Automatic formation triggers on a phased group: the plan trigger plans after its settle and the connect trigger dials the planned layout after the next settle, with no application plan or connect command."
+    },
+    {
+      "id": "api-v1-presence-formation-trigger",
+      "recipe": "tests/api-v1/api-v1-presence-formation-trigger.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-presence-formation-trigger",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Presence stage triggers on a phased group: the second live member plans the group and dials the planned layout before either trigger's fallback."
+    },
+    {
+      "id": "api-v1-commanded-replanning",
+      "recipe": "tests/api-v1/api-v1-commanded-replanning.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-commanded-replanning",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Commanded replanning on a closed match group: a replacing session latches layoutStale with no automatic replan queued, reconfigure replans on command under a hold landing, and the promotion after connect and activate clears the obligation."
+    },
+    {
       "id": "api-v1-match-preset",
       "recipe": "tests/api-v1/api-v1-match-preset.json",
       "category": "api-v1-black-box",

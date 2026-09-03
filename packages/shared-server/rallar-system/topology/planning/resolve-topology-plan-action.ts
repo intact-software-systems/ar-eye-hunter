@@ -4,9 +4,11 @@ import type {
     GroupTopologyReplanningMode
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { resolveGroupTopologyWorkDisposition } from '@shared/api/group-lifecycle/resolve-group-topology-work-disposition.ts';
+import type { Group } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
+import { isGroupAggregateTopologyActiveAt } from './select-group-topology-planning-snapshot.ts';
 
 /**
  * Who asked for this topology work: `automatic` is the machinery's own
@@ -65,8 +67,8 @@ export interface ResolveTopologyPlanActionInput {
  * row freezes. `active` follows the replanning policy: `commanded` holds
  * automatic work (the layout moves only on an application command, product
  * decision 2's table) and an unreadable policy fails automatic replanning
- * closed the same way; `auto` and `debounced` are indistinguishable on
- * main until decision 31 lands, so both plan.
+ * closed the same way; `auto` and `debounced` both plan and differ only in
+ * the replan window (`resolveTopologyReplanWindow`, product decision 31).
  */
 export function resolveTopologyPlanAction(input: ResolveTopologyPlanActionInput): TopologyPlanAction {
     const disposition = resolveGroupTopologyWorkDisposition(input.lifecycleState);
@@ -82,4 +84,69 @@ export function resolveTopologyPlanAction(input: ResolveTopologyPlanActionInput)
     disposition satisfies 'follow-replanning-policy';
     const automaticHeld = input.replanning === 'commanded' || input.replanning === 'corrupt';
     return automaticHeld && input.workOrigin === 'automatic' ? 'freeze' : 'plan';
+}
+
+export type TopologyReplanEnqueue = 'enqueue' | 'held-by-policy';
+
+/** The stored facts the enqueue gate consults, read only when `consultsTopologyReplanPolicy` says so. */
+export type TopologyReplanPolicyFacts =
+    | Readonly<{ consulted: false; }>
+    | Readonly<{
+        consulted: true;
+        lifecyclePolicy: GroupLifecyclePolicyRead;
+        /** The stored planned slot; null before the first layout. */
+        plannedLayout: RallarOverlayTopologySnapshot | null;
+    }>;
+
+export interface TopologyReplanEnqueueFacts {
+    readonly group: Group;
+    readonly nowEpochMs: number;
+    readonly workOrigin: TopologyWorkOrigin;
+    /** A queued coalesced row this delta would merge into instead of minting new work. */
+    readonly mergeableHeadRow: boolean;
+}
+
+export interface ResolveTopologyReplanEnqueueInput extends TopologyReplanEnqueueFacts {
+    readonly policyFacts: TopologyReplanPolicyFacts;
+}
+
+/**
+ * Whether the presence-summary path needs the stored policy and planned slot
+ * at all: an inactive group publishes its removal whatever the policy says,
+ * and only the stage that follows the replanning policy consults it — for
+ * the hold decision and for the replan window (product decision 31).
+ */
+export function consultsTopologyReplanPolicy(facts: TopologyReplanEnqueueFacts): boolean {
+    return isGroupAggregateTopologyActiveAt(facts.group, facts.nowEpochMs) &&
+        consultsReplanningPolicy(facts.group.lifecycleState);
+}
+
+/**
+ * The enqueue-side twin of `resolveTopologyPlanAction` (product decision 2's
+ * table, plan slice 10a): the automatic follow-up the planner would freeze is
+ * held before it is queued, so `pending` never reports a replan the policy
+ * forbids and no frozen cycle is paid for. The decision is the planner's own,
+ * taken on the same stored facts; the planner's freeze stays authoritative
+ * for every path that still reaches it.
+ */
+export function resolveTopologyReplanEnqueue(input: ResolveTopologyReplanEnqueueInput): TopologyReplanEnqueue {
+    if (!consultsTopologyReplanPolicy(input)) {
+        return 'enqueue';
+    }
+    if (!input.policyFacts.consulted) {
+        throw new Error('Topology replan enqueue needs the stored policy facts for this group');
+    }
+    // A delta with a queued row to merge into keeps merging, and commanded-origin
+    // work always runs; only fresh automatic work can be held.
+    if (input.mergeableHeadRow || input.workOrigin === 'commanded') {
+        return 'enqueue';
+    }
+    const { lifecyclePolicy, plannedLayout } = input.policyFacts;
+    const action = resolveTopologyPlanAction({
+        lifecycleState: input.group.lifecycleState,
+        replanning: toGroupTopologyReplanningRead(lifecyclePolicy),
+        workOrigin: input.workOrigin,
+        previous: plannedLayout ?? undefined
+    });
+    return action === 'freeze' ? 'held-by-policy' : 'enqueue';
 }

@@ -219,6 +219,14 @@
             "admission": {
               "mode": "open",
               "untilMemberCount": 1
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
             }
           }
         }
@@ -280,6 +288,14 @@
             "admission": {
               "mode": "open",
               "untilMemberCount": 2
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
             }
           }
         }
@@ -470,6 +486,14 @@
             "admission": {
               "mode": "open",
               "untilEpochMs": 4102444800000
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
             }
           }
         }
@@ -544,6 +568,14 @@
             },
             "admission": {
               "mode": "closed"
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
             }
           }
         }
@@ -756,6 +788,14 @@
             },
             "admission": {
               "mode": "closed"
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
             }
           }
         }

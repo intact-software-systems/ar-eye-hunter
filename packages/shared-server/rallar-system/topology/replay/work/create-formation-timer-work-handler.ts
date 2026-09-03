@@ -1,6 +1,4 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-import { consumesFormationDeadlineAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -9,12 +7,20 @@ import {
     decodeFormationTimerWork,
     type GroupFormationTimerWork
 } from '../../../group-state/formation-timer-outbox-entry.ts';
-import { toFormationRetryPlanCommand } from '../../../group-state/group-formation-mutation-command.ts';
+import {
+    toFailFormationCommand,
+    toFormationRetryPlanCommand,
+    toFormationTriggerPlanCommand
+} from '../../../group-state/group-formation-mutation-command.ts';
 import type { GroupMutationCommand } from '../../../group-state/mutation/group-mutation-contracts.ts';
 import type { GroupLifecyclePolicyRead } from '../../../group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { GroupTopologyGroupSnapshotReader } from '../../planning/group-topology-planning-contracts.ts';
 import type { GroupTopologyPlanningService } from '../../planning/group-topology-planning-service.ts';
 import { computeFormationCriterionCommand } from './compute-formation-criterion-command.ts';
+import {
+    petitionAwaitingGroupConnectTriggers,
+    type GroupFormationAutomationPort
+} from './create-group-connect-trigger-work-handler.ts';
 
 interface OnMessageCallback {
     onMessage(message: ALMessage, entry: ResourceEntry): Promise<void>;
@@ -25,48 +31,33 @@ export interface FormationTimerWorkHandlerOptions {
     readonly readPlannedTopology: (ref: GroupRef) => Promise<RallarOverlayTopologySnapshot | null>;
     readonly topologyPlanning: Pick<GroupTopologyPlanningService, 'readTopologyPlanningAuthority'>;
     readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
-    readonly submitAutomationCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
+    /** The criterion's submit: activation and formation failure. */
     readonly submitCommand: (command: GroupMutationCommand, atEpochMs: number) => Promise<void>;
+    readonly formationAutomation: GroupFormationAutomationPort;
     readonly nowEpochMs: () => number;
 }
-
-/**
- * A `retry` entry fires only for a `forming` group. The deadline's stages
- * are owned by `consumesFormationDeadlineAt`, shared with the site that
- * arms them and with criterion evaluation so the stages cannot disagree.
- */
-const RETRY_TIMER_CONSUMES: Readonly<Record<GroupLifecycleState, boolean>> = {
-    dormant: false,
-    forming: true,
-    planned: false,
-    connecting: false,
-    active: false,
-    reconfiguring: false,
-    reconnecting: false
-};
 
 /**
  * The time leg's consumer. Every queue backend holds entries invisible until
  * their next_ts, so a dequeued entry is normally due; the not-due throw is
  * defense against clock skew between the queue's clock and this node's --
  * the retry release walks the entry forward until this clock agrees. Once
- * due, the only checks left are staleness -- the group moved on (epoch or
- * state mismatch) is a cheap drop -- and the criterion itself, evaluated by
- * the same function the evidence leg uses. A missing plan is transient: the
- * durable deadline must be retried instead of acknowledged before topology
- * publication catches up.
+ * due, the only check left is staleness: every transition but the idempotent
+ * replan advances the formation epoch, so a group still at the timer's epoch
+ * is still in the stage that armed it, and a group past it makes the entry
+ * a cheap drop.
  */
 export function createFormationTimerWorkHandler(
     options: FormationTimerWorkHandlerOptions
 ): OnMessageCallback {
     return {
         onMessage: async (_message, entry) => {
-            await processFormationTimerWork(options, decodeFormationTimerWork(entry.resource));
+            await consumeFormationTimer(options, decodeFormationTimerWork(entry.resource));
         }
     };
 }
 
-async function processFormationTimerWork(
+async function consumeFormationTimer(
     options: FormationTimerWorkHandlerOptions,
     work: GroupFormationTimerWork
 ): Promise<void> {
@@ -86,45 +77,59 @@ async function processFormationTimerWork(
         return;
     }
     const nowEpochMs = options.nowEpochMs();
-    if (work.kind === 'retry') {
-        if (!RETRY_TIMER_CONSUMES[snapshot.group.lifecycleState]) {
+    switch (work.kind) {
+        case 'retry':
+            await options.formationAutomation.submitCommand(toFormationRetryPlanCommand(work), nowEpochMs);
             return;
-        }
-        await options.submitAutomationCommand(
-            toFormationRetryPlanCommand({
-                groupRef: work.groupRef,
-                formationEpoch: work.formationEpoch
-            }),
-            nowEpochMs
-        );
-        return;
+        case 'plan':
+            await options.formationAutomation.submitCommand(toFormationTriggerPlanCommand(work), nowEpochMs);
+            return;
+        case 'connect':
+            await petitionAwaitingGroupConnectTriggers(options.formationAutomation, work.groupRef, {
+                kind: 'clock',
+                atEpochMs: work.notBeforeEpochMs
+            });
+            return;
+        case 'deadline':
+            await evaluateFormationDeadline(options, work, snapshot);
+            return;
     }
-    if (!consumesFormationDeadlineAt(snapshot.group.lifecycleState)) {
-        return;
-    }
-    await processFormationDeadline(options, work, snapshot);
 }
 
-async function processFormationDeadline(
+/**
+ * The deadline evaluates the criterion the evidence leg evaluates, on the
+ * same function. A dialing group whose planned layout is gone by its
+ * deadline — torn down, or never published in a whole deadline — has
+ * nothing to fence and no readiness to measure: the attempt fails at once,
+ * landing where every failed attempt lands, instead of retrying the
+ * durable entry without bound.
+ */
+async function evaluateFormationDeadline(
     options: FormationTimerWorkHandlerOptions,
     work: GroupFormationTimerWork,
     snapshot: GroupSnapshot
 ): Promise<void> {
-    const [authority, planned, lifecyclePolicy] = await Promise.all([
+    const planned = await options.readPlannedTopology(work.groupRef);
+    if (planned === null || planned.state !== 'active') {
+        await options.submitCommand(
+            toFailFormationCommand({
+                groupRef: work.groupRef,
+                formationEpoch: work.formationEpoch,
+                observedRate: 0,
+                expectedLayout: null
+            }),
+            options.nowEpochMs()
+        );
+        return;
+    }
+    const [authority, lifecyclePolicy] = await Promise.all([
         options.topologyPlanning.readTopologyPlanningAuthority({
             groupRef: work.groupRef,
             knownGroup: snapshot,
             snapshotSelection: 'prefer-current'
         }),
-        options.readPlannedTopology(work.groupRef),
         options.readLifecyclePolicy(work.groupRef)
     ]);
-    if (planned === null || planned.state !== 'active') {
-        // A missing or tombstoned plan retries the durable deadline rather
-        // than consuming it: computeFormationCriterionCommand would refuse a
-        // removed plan anyway, and a silent return would spend the timer.
-        throw new Error('Formation topology plan is not available; retry the deadline evaluation');
-    }
     const command = computeFormationCriterionCommand({
         group: authority.group,
         planned,

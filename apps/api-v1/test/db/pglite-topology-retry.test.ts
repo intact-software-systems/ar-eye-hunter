@@ -141,6 +141,7 @@ Deno.test(
                     requireApiAuthSession: () => Promise.resolve(authority),
                     adminClientIds: [],
                     readLifecyclePolicy: () => Promise.resolve({ status: 'absent' as const }),
+                    readPlannedLayoutFingerprint: () => Promise.resolve(null),
                     now: () => nowEpochMs
                 });
                 return app;

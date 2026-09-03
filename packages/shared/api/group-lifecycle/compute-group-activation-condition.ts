@@ -1,14 +1,14 @@
-import type { GroupLayoutIdentity } from './group-layout-identity.ts';
+import { isSameGroupLayoutIdentity, type GroupLayoutIdentity } from './group-layout-identity.ts';
 import type { GroupLifecycleState, GroupTopologyReplanningMode } from './group-lifecycle-policy.ts';
 import { resolveDialLayoutRoles } from './resolve-dial-layout-roles.ts';
 
 /**
  * Server defaults settled once so no later slice invents values under
  * pressure (product decisions 7 and 41). Nothing in this file applies them:
- * the status writer slice owns the dwell, the hysteresis band (exit sitting
- * one width below entry) and evidence expiry, the replanning slice owns the
- * minimum layout age, and the browser pacing slice owns the RTC setup
- * timeout. Until those land, the pinning matrix test is their only consumer.
+ * the presence-summary worker floors a queued replan by the minimum layout
+ * age, the status writer slice owns the dwell, the hysteresis band (exit
+ * sitting one width below entry) and evidence expiry, and the browser
+ * pacing slice owns the RTC setup timeout.
  */
 export const GROUP_ACTIVATION_STATUS_DWELL_MS = 3_000;
 export const GROUP_ACTIVATION_HYSTERESIS_WIDTH = 0.05;
@@ -155,18 +155,27 @@ export function resolveCoverageBasisLayoutIdentity(
 }
 
 export interface ComputeLayoutStaleInput {
-    readonly acceptedFingerprint: string | undefined;
-    readonly planningAuthorityFingerprint: string | undefined;
+    readonly acceptedIdentity: GroupLayoutIdentity | null;
+    readonly plannedIdentity: GroupLayoutIdentity | null;
+    /** The planned slot's stored topology-input fingerprint; null when no cycle stored one. */
+    readonly plannedFingerprint: string | null;
+    readonly planningAuthorityFingerprint: string;
 }
 
 /**
- * The latched staleness obligation (product decision 11): the accepted
- * layout's stored topology-input fingerprint no longer matches the planning
- * authority's. With no accepted layout there is nothing to be stale.
+ * The latched staleness obligation (product decision 11, implementation
+ * decision I27): the accepted layout is always a promoted planned layout, so
+ * its topology inputs are the planned slot's whenever the two identities
+ * agree; a planned layout the group does not yet run on means the authority
+ * has already moved past the accepted one. With no accepted layout there is
+ * nothing to be stale.
  */
 export function computeLayoutStale(input: ComputeLayoutStaleInput): boolean {
-    if (input.acceptedFingerprint === undefined || input.planningAuthorityFingerprint === undefined) {
+    if (input.acceptedIdentity === null) {
         return false;
     }
-    return input.acceptedFingerprint !== input.planningAuthorityFingerprint;
+    if (input.plannedIdentity === null || !isSameGroupLayoutIdentity(input.acceptedIdentity, input.plannedIdentity)) {
+        return true;
+    }
+    return input.plannedFingerprint !== input.planningAuthorityFingerprint;
 }

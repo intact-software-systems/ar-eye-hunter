@@ -2,7 +2,6 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { computeGroupFormationReadiness } from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
 import { evaluateGroupActivationCriterion } from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
-import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { consumesFormationDeadlineAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -12,7 +11,10 @@ import {
     toFormationActivateCommand
 } from '../../../group-state/group-formation-mutation-command.ts';
 import type { GroupMutationCommand } from '../../../group-state/mutation/group-mutation-contracts.ts';
-import type { GroupLifecyclePolicyRead } from '../../../group-state/persistence/group-lifecycle-policy-repository.ts';
+import {
+    toReadGroupLifecyclePolicy,
+    type GroupLifecyclePolicyRead
+} from '../../../group-state/persistence/group-lifecycle-policy-repository.ts';
 
 export interface ComputeFormationCriterionCommandInput {
     readonly group: GroupSnapshot;
@@ -44,11 +46,10 @@ export function computeFormationCriterionCommand(
         // against a torn-down layout at rate 1.
         return null;
     }
-    const policyRead = input.lifecyclePolicy;
-    if (policyRead.status === 'corrupt') {
+    const policy = toReadGroupLifecyclePolicy(input.lifecyclePolicy);
+    if (policy === null) {
         return null;
     }
-    const policy = policyRead.status === 'present' ? policyRead.policy : createDefaultGroupLifecyclePolicy();
     const readiness = computeGroupFormationReadiness({
         planned: input.planned,
         rttMeasurements: input.rttMeasurements,

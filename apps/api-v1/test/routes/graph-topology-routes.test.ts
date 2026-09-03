@@ -5,7 +5,11 @@ import { Either } from '@shared/resilience/Either.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
+import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
+import type { PendingTopologyReplan } from '@shared/api/graph-topology-management-types.ts';
+import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
 
@@ -601,6 +605,7 @@ function createRouteApp(options: {
     readonly requireApiAuthSession?: GraphTopologyRouteRequireApiAuthSession;
     readonly graphDiagnostics?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['graphDiagnostics']>;
     readonly topologyQuery?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyQuery']>;
+    readonly readPlannedLayoutFingerprint?: graphTopologyRoutes.GraphTopologyRouteDependencies['readPlannedLayoutFingerprint'];
     readonly topologyPlanning?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyPlanning']>;
     readonly processTopologyAppInbox?: graphTopologyRoutes.ProcessTopologyAppInbox;
     readonly onCurrentGroupRead?: () => void;
@@ -657,10 +662,14 @@ function createRouteApp(options: {
                                 applicationId: input.groupRef.applicationId,
                                 workspaceId: input.groupRef.workspaceId
                             }),
+                        config: createTopologyConfigView(),
+                        kindHysteresisWidths: { meshExitWidth: 0, treeExitWidth: 0 },
                         rttMeasurements: [],
+                        replanning: 'auto',
                         nowEpochMs: 123_456
                     }))
         },
+        readPlannedLayoutFingerprint: options.readPlannedLayoutFingerprint ?? (() => Promise.resolve(null)),
         processTopologyAppInbox: options.processTopologyAppInbox ??
             ((_authority, reservation) => createTopologyAppInboxResult(reservation)),
         now: () => 123_456
@@ -824,3 +833,122 @@ function toTopologyMutationRequestPath(path: string, requestId: string): string 
     return '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/' +
         `${path}/requests/${requestId}`;
 }
+
+const FORMATION_PATH = `/api/state/apps/${TEST_SCOPE.applicationId}/workspaces/${TEST_SCOPE.workspaceId}/groups/room-1/formation`;
+const ACCEPTED_IDENTITY = { groupRevision: 1, presenceRevision: 0, version: 1, state: 'active' } as const;
+
+async function readFormationView(app: Hono): Promise<GroupFormationView> {
+    const response = await app.request(FORMATION_PATH, { headers: { authorization: 'Bearer token' } });
+    assert.equal(response.status, 200);
+    return await response.json() as GroupFormationView;
+}
+
+function withAcceptedLayout(snapshot: GroupSnapshot): GroupSnapshot {
+    return { ...snapshot, group: { ...snapshot.group, acceptedLayoutIdentity: ACCEPTED_IDENTITY } };
+}
+
+/** A planned slot whose identity is the accepted one (or a newer version of it). */
+function plannedLayout(groupRef: GroupRef, version: number): RallarOverlayTopologySnapshot {
+    return {
+        sourceGroupStateCausalRevision: {
+            groupRevision: ACCEPTED_IDENTITY.groupRevision,
+            presenceRevision: ACCEPTED_IDENTITY.presenceRevision
+        },
+        state: 'active',
+        overlayId: 'overlay',
+        groupRef,
+        name: 'room-1-overlay',
+        topology: 'tree',
+        activeSessionIds: [],
+        nextHopsBySessionId: {},
+        degreeLimit: 2,
+        version,
+        createdByClientId: 'route-test',
+        createdAtEpochMs: 1,
+        updatedAtEpochMs: 1
+    };
+}
+
+function topologyQueryWithPlanned(version: number, pending: PendingTopologyReplan | null = null) {
+    return {
+        readTopologyView: (groupRef: GroupRef) =>
+            Promise.resolve({
+                groupRef,
+                overlayId: 'overlay',
+                snapshot: plannedLayout(groupRef, version),
+                acceptedSnapshot: null,
+                config: createTopologyConfigView(),
+                pending
+            })
+    };
+}
+
+async function authorityFingerprintFor(group: GroupSnapshot): Promise<string> {
+    return await computeRtcTopologyInputFingerprint({
+        group,
+        effectiveConfig: createTopologyConfigView().effective,
+        kindHysteresisWidths: { meshExitWidth: 0, treeExitWidth: 0 }
+    });
+}
+
+Deno.test('formation view reports nothing stale and nothing pending without an accepted layout', async () => {
+    const app = createRouteApp({
+        group: createGroupSnapshot('room-1', ['owner']),
+        topologyQuery: topologyQueryWithPlanned(1),
+        readPlannedLayoutFingerprint: () => Promise.resolve(`sha256:${'d'.repeat(64)}`)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.layoutStale, false);
+    assert.equal(view.pending, null);
+});
+
+Deno.test('formation view latches layoutStale when the planned fingerprint trails the authority', async () => {
+    const app = createRouteApp({
+        group: withAcceptedLayout(createGroupSnapshot('room-1', ['owner'])),
+        topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version),
+        readPlannedLayoutFingerprint: () => Promise.resolve(`sha256:${'d'.repeat(64)}`)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.layoutStale, true);
+});
+
+Deno.test('formation view clears layoutStale when the group runs on the planned layout the authority matches', async () => {
+    const group = withAcceptedLayout(createGroupSnapshot('room-1', ['owner']));
+    const app = createRouteApp({
+        group,
+        topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version),
+        readPlannedLayoutFingerprint: async () => await authorityFingerprintFor(group)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.layoutStale, false);
+});
+
+Deno.test('formation view latches layoutStale while a newer planned layout awaits application', async () => {
+    const group = withAcceptedLayout(createGroupSnapshot('room-1', ['owner']));
+    const app = createRouteApp({
+        group,
+        topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version + 1),
+        readPlannedLayoutFingerprint: async () => await authorityFingerprintFor(group)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.layoutStale, true);
+});
+
+Deno.test('formation view carries the queued replan the topology view reports', async () => {
+    const app = createRouteApp({
+        group: createGroupSnapshot('room-1', ['owner']),
+        topologyQuery: topologyQueryWithPlanned(1, { reconfigureQueued: true, dueAtEpochMs: 4_000, generation: 2 })
+    });
+
+    const view = await readFormationView(app);
+
+    assert.deepEqual(view.pending, { reconfigureQueued: true, dueAtEpochMs: 4_000, generation: 2 });
+});

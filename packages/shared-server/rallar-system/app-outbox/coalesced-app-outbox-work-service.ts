@@ -197,7 +197,8 @@ export class CoalescedAppOutboxWorkService {
                         [COALESCED_APP_OUTBOX_WORK_FIELD]: {
                             ...mergedData[COALESCED_APP_OUTBOX_WORK_FIELD],
                             generation: previousMetadata.generation + 1,
-                            requestedAtEpochMs: now
+                            requestedAtEpochMs: now,
+                            windowOpenedAtEpochMs: isTerminal ? now : previousMetadata.windowOpenedAtEpochMs
                         }
                     }
                 };
@@ -273,7 +274,13 @@ export class CoalescedAppOutboxWorkService {
         requestedAtEpochMs: number,
         generation: number
     ): CoalescedAppOutboxWorkEnvelope<T> {
-        const dueAtEpochMs = input.dueAtEpochMs ?? requestedAtEpochMs;
+        const metadata: CoalescedAppOutboxWorkMetadata = {
+            generation,
+            requestedAtEpochMs,
+            windowOpenedAtEpochMs: requestedAtEpochMs,
+            dueAtEpochMs: input.dueAtEpochMs ?? requestedAtEpochMs,
+            reasons: input.reason ? [input.reason] : []
+        };
         return {
             type: input.type,
             topicId: input.topicId,
@@ -282,12 +289,7 @@ export class CoalescedAppOutboxWorkService {
             senderId: input.senderId ?? this.serviceId,
             data: {
                 ...input.data,
-                [COALESCED_APP_OUTBOX_WORK_FIELD]: {
-                    generation,
-                    requestedAtEpochMs,
-                    dueAtEpochMs,
-                    reasons: input.reason ? [input.reason] : []
-                }
+                [COALESCED_APP_OUTBOX_WORK_FIELD]: metadata
             } as CoalescedAppOutboxWorkData<T>
         };
     }

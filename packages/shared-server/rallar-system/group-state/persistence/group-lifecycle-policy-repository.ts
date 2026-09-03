@@ -1,3 +1,4 @@
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -20,6 +21,18 @@ export const GROUP_LIFECYCLE_POLICIES_NAMESPACE = 'group-state:lifecycle-policie
  * therefore reports what it found and the enforcement point decides, rather
  * than one failure posture being baked in before there is an enforcer.
  */
+/**
+ * The stored policy folded to the policy a caller applies: an absent
+ * document is the default preset, and an unreadable one is no policy at
+ * all, so every caller fails closed on the same fact.
+ */
+export function toReadGroupLifecyclePolicy(read: GroupLifecyclePolicyRead): GroupLifecyclePolicy | null {
+    if (read.status === 'corrupt') {
+        return null;
+    }
+    return read.status === 'present' ? read.policy : createDefaultGroupLifecyclePolicy();
+}
+
 export type GroupLifecyclePolicyRead =
     | Readonly<{ status: 'absent'; }>
     | Readonly<{ status: 'present'; policy: GroupLifecyclePolicy; }>

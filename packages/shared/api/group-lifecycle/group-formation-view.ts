@@ -1,3 +1,4 @@
+import type { PendingTopologyReplan } from '../graph-topology-management-types.ts';
 import type { GroupRef } from '../group-types.ts';
 import type { GroupFormationReadiness } from './compute-group-formation-readiness.ts';
 import type { GroupFormationOutcome, GroupLifecycleState } from './group-lifecycle-policy.ts';
@@ -22,4 +23,13 @@ export type GroupFormationView = Readonly<{
      * the policy selects none or no candidate survives the liveness filter.
      */
     managerPrincipalIds: readonly string[];
+    /**
+     * Product decision 11's latched obligation: the accepted layout no longer
+     * matches the planning authority's topology inputs. A temporary topology
+     * override is part of those inputs, so its expiry can raise this on
+     * wall-clock time alone.
+     */
+    layoutStale: boolean;
+    /** The transient half: a replan is queued and due; null when none is. */
+    pending: PendingTopologyReplan | null;
 }>;

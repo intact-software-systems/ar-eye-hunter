@@ -1,5 +1,6 @@
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type {
+    Group,
     GroupEvent,
     GroupMember,
     GroupPresenceSession,
@@ -9,14 +10,25 @@ import type {
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
-import type { ComputedCoalescedAppOutboxWork } from '../../app-outbox/coalesced-app-outbox-work-service.ts';
+import {
+    isMutableCoalescedStatus,
+    type ComputedCoalescedAppOutboxWork
+} from '../../app-outbox/coalesced-app-outbox-work-service.ts';
 import {
     computeGroupStateSyncEntries,
     type ComputedGroupStateSyncEffect,
     type StateSyncAudience
 } from '../../state-sync/state-sync-entry-computation.ts';
 import {
-    computeCoalescedRtcTopologyGroupRevisionWork
+    resolveTopologyReplanEnqueue,
+    type TopologyReplanEnqueueFacts,
+    type TopologyReplanPolicyFacts,
+    type TopologyWorkOrigin
+} from '../../topology/planning/resolve-topology-plan-action.ts';
+import { resolveTopologyReplanWindow } from '../../topology/planning/resolve-topology-replan-window.ts';
+import {
+    computeCoalescedRtcTopologyGroupRevisionWork,
+    type TopologyReplanTiming
 } from '../../topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { assembleGroupStateSnapshot } from '../persistence/assemble-group-state-snapshot.ts';
 import {
@@ -29,20 +41,28 @@ import {
 export interface GroupPresenceSummaryWorkRead {
     readonly presence: GroupPresenceSummaryRead;
     readonly coalescedTopologyEntry: ResourceEntry | null;
+    readonly topologyReplanPolicyFacts: TopologyReplanPolicyFacts;
 }
+
+/** The replan decision (product decision 2): queued work, or held by the replanning policy. */
+export type TopologyReplanDecision =
+    | Readonly<{ decision: 'enqueue'; work: ComputedCoalescedAppOutboxWork; }>
+    | Readonly<{ decision: 'held-by-policy'; }>;
 
 export interface GroupPresenceSummaryComputedWork {
     readonly work: GroupPresenceSummaryWorkData;
     readonly summary: GroupPresenceSummaryComputed;
     readonly snapshot: GroupSnapshot;
     readonly downstreamOutboxEntries: readonly ResourceEntry[];
-    readonly coalescedTopologyWork: ComputedCoalescedAppOutboxWork;
+    readonly topologyReplan: TopologyReplanDecision;
 }
 
 export interface ComputeGroupPresenceSummaryWorkOptions {
     readonly serviceId: string;
     readonly nowEpochMs: number;
+    /** The server-wide replan window, the one every group coalesced through before per-group windows existed. */
     readonly recomputeDebounceMs: number;
+    readonly minimumLayoutAgeMs: number;
 }
 
 export interface ComputeGroupPresenceSummaryOutboxInput {
@@ -110,18 +130,75 @@ export function computeGroupPresenceSummaryWork(
         summary,
         snapshot,
         downstreamOutboxEntries: computeGroupPresenceSummaryOutboxEntries(outboxInput),
-        coalescedTopologyWork: computeCoalescedRtcTopologyGroupRevisionWork({
+        topologyReplan: computeTopologyReplan({ work, read, summary, snapshot, options })
+    };
+}
+
+/** The facts the enqueue gate reads from the presence-summary command and the group it summarizes. */
+export function toTopologyReplanEnqueueFacts(
+    work: GroupPresenceSummaryWorkData,
+    group: Group,
+    read: Readonly<{ coalescedTopologyEntry: ResourceEntry | null; nowEpochMs: number; }>
+): TopologyReplanEnqueueFacts {
+    return {
+        group,
+        nowEpochMs: read.nowEpochMs,
+        workOrigin: toTopologyReplanOrigin(work),
+        mergeableHeadRow: read.coalescedTopologyEntry !== null &&
+            isMutableCoalescedStatus(read.coalescedTopologyEntry.status)
+    };
+}
+
+function toTopologyReplanOrigin(work: GroupPresenceSummaryWorkData): TopologyWorkOrigin {
+    return work.event.payload.topologyReplanOrigin === 'commanded' ? 'commanded' : 'automatic';
+}
+
+function computeTopologyReplan(input: ToGroupPresenceSummaryOutboxInputInput): TopologyReplanDecision {
+    const { work, read, summary, snapshot, options } = input;
+    const enqueue = resolveTopologyReplanEnqueue({
+        ...toTopologyReplanEnqueueFacts(work, snapshot.group, {
+            coalescedTopologyEntry: read.coalescedTopologyEntry,
+            nowEpochMs: options.nowEpochMs
+        }),
+        policyFacts: read.topologyReplanPolicyFacts
+    });
+    if (enqueue === 'held-by-policy') {
+        return { decision: 'held-by-policy' };
+    }
+    return {
+        decision: 'enqueue',
+        work: computeCoalescedRtcTopologyGroupRevisionWork({
             aggregateRef: work.aggregateRef,
             groupSnapshot: snapshot,
             requestedAtEpochMs: summary.summary.computedAtEpochMs,
             expireAtEpochMs: work.expireAtEpochMs,
-            recomputeDebounceMs: options.recomputeDebounceMs,
+            timing: toTopologyReplanTiming(read.topologyReplanPolicyFacts, options),
             senderId: options.serviceId,
-            origin: work.event.payload.topologyReplanOrigin === 'commanded'
-                ? 'commanded'
-                : 'automatic',
+            origin: toTopologyReplanOrigin(work),
             previousEntry: read.coalescedTopologyEntry
         })
+    };
+}
+
+/** The replan window and the layout-age floor, from the policy facts the read consulted for this stage. */
+function toTopologyReplanTiming(
+    policyFacts: TopologyReplanPolicyFacts,
+    options: Pick<ComputeGroupPresenceSummaryWorkOptions, 'recomputeDebounceMs' | 'minimumLayoutAgeMs'>
+): TopologyReplanTiming {
+    if (!policyFacts.consulted) {
+        return { window: { debounceMs: options.recomputeDebounceMs, maxWaitMs: null }, replanNotBeforeEpochMs: null };
+    }
+    const { plannedLayout } = policyFacts;
+    return {
+        window: resolveTopologyReplanWindow({
+            lifecyclePolicy: policyFacts.lifecyclePolicy,
+            serverDebounceMs: options.recomputeDebounceMs
+        }),
+        // Only a live planned layout ages; a removal tombstone carries the
+        // group's last update, not a layout write.
+        replanNotBeforeEpochMs: plannedLayout?.state === 'active'
+            ? plannedLayout.updatedAtEpochMs + options.minimumLayoutAgeMs
+            : null
     };
 }
 
@@ -156,6 +233,21 @@ export function validateGroupPresenceSummaryComputedWork(
             options: { ...options, nowEpochMs: computed.summary.summary.computedAtEpochMs }
         })
     );
+    validateTopologyReplanDecision(input);
+}
+
+function validateTopologyReplanDecision(input: ValidateGroupPresenceSummaryComputedWorkInput): void {
+    const { work, read, computed } = input;
+    const enqueue = resolveTopologyReplanEnqueue({
+        ...toTopologyReplanEnqueueFacts(work, computed.snapshot.group, {
+            coalescedTopologyEntry: read.coalescedTopologyEntry,
+            nowEpochMs: computed.summary.summary.computedAtEpochMs
+        }),
+        policyFacts: read.topologyReplanPolicyFacts
+    });
+    if ((enqueue === 'enqueue') !== (computed.topologyReplan.decision === 'enqueue')) {
+        throw new TypeError('Presence-summary replan decision differs from the stored policy facts');
+    }
 }
 
 function toGroupPresenceSummaryOutboxInput(

@@ -315,14 +315,16 @@ function optionalCoalescedMetadata(metadata: CoalescedAppOutboxWorkMetadata | un
 
 function readCoalescedWorkMetadata(value: JsonWireValue): CoalescedAppOutboxWorkMetadata {
     const metadata = requireWorkRecord(value, 'RTC topology coalescing metadata');
+    const keys = ['generation', 'requestedAtEpochMs', 'windowOpenedAtEpochMs', 'dueAtEpochMs', 'reasons'];
     requireWorkKeys({
         value: metadata,
-        required: ['generation', 'requestedAtEpochMs', 'dueAtEpochMs', 'reasons'],
-        allowed: ['generation', 'requestedAtEpochMs', 'dueAtEpochMs', 'reasons'],
+        required: keys,
+        allowed: keys,
         label: 'RTC topology coalescing metadata'
     });
     requireWorkInteger(metadata.generation, 'RTC topology coalescing generation');
     requireWorkInteger(metadata.requestedAtEpochMs, 'RTC topology coalescing requestedAtEpochMs');
+    requireWorkInteger(metadata.windowOpenedAtEpochMs, 'RTC topology coalescing windowOpenedAtEpochMs');
     requireWorkInteger(metadata.dueAtEpochMs, 'RTC topology coalescing dueAtEpochMs');
     if (!isNonEmptyStringArray(metadata.reasons)) {
         throw new TypeError('RTC topology coalescing reasons are invalid');
@@ -330,6 +332,7 @@ function readCoalescedWorkMetadata(value: JsonWireValue): CoalescedAppOutboxWork
     return {
         generation: metadata.generation,
         requestedAtEpochMs: metadata.requestedAtEpochMs,
+        windowOpenedAtEpochMs: metadata.windowOpenedAtEpochMs,
         dueAtEpochMs: metadata.dueAtEpochMs,
         reasons: metadata.reasons
     };

@@ -265,29 +265,24 @@
       "type": "http",
       "connection": "primary",
       "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{autoGroupId}/lifecycle/connect/requests/connect-plan-auto-{runId}",
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{autoGroupId}/formation",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "expectedFormationEpoch": "{startAutoPlanEpoch}",
-          "expectedLayout": {
-            "groupRevision": "{startAutoPlanLayoutGroupRevision}",
-            "presenceRevision": "{startAutoPlanLayoutPresenceRevision}",
-            "version": "{startAutoPlanLayoutVersion}",
-            "state": "{startAutoPlanLayoutState}"
-          }
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 8000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.2
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "group": {
-            "lifecycleState": "connecting",
-            "formationEpoch": 2
-          }
+          "lifecycleState": "connecting",
+          "formationEpoch": 2
         }
       }
     },
@@ -496,29 +491,24 @@
       "type": "http",
       "connection": "primary",
       "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/lifecycle/connect/requests/connect-plan-deadline-{runId}",
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{deadlineGroupId}/formation",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "expectedFormationEpoch": "{startDeadlinePlanEpoch}",
-          "expectedLayout": {
-            "groupRevision": "{startDeadlinePlanLayoutGroupRevision}",
-            "presenceRevision": "{startDeadlinePlanLayoutPresenceRevision}",
-            "version": "{startDeadlinePlanLayoutVersion}",
-            "state": "{startDeadlinePlanLayoutState}"
-          }
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 8000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.2
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "group": {
-            "lifecycleState": "connecting",
-            "formationEpoch": 2
-          }
+          "lifecycleState": "connecting",
+          "formationEpoch": 2
         }
       }
     },
@@ -735,29 +725,24 @@
       "type": "http",
       "connection": "primary",
       "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{retryGroupId}/lifecycle/connect/requests/connect-automatic-retry-{runId}",
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{retryGroupId}/formation",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "expectedFormationEpoch": "{retryPlannedEpoch}",
-          "expectedLayout": {
-            "groupRevision": "{retryLayoutGroupRevision}",
-            "presenceRevision": "{retryLayoutPresenceRevision}",
-            "version": "{retryLayoutVersion}",
-            "state": "{retryLayoutState}"
-          }
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 8000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.2
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "group": {
-            "lifecycleState": "connecting",
-            "formationEpoch": 2
-          }
+          "lifecycleState": "connecting",
+          "formationEpoch": 2
         }
       }
     },
@@ -1028,29 +1013,24 @@
       "type": "http",
       "connection": "primary",
       "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/lifecycle/connect/requests/connect-plan-threshold-{runId}",
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{thresholdGroupId}/formation",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "expectedFormationEpoch": "{startThresholdPlanEpoch}",
-          "expectedLayout": {
-            "groupRevision": "{startThresholdPlanLayoutGroupRevision}",
-            "presenceRevision": "{startThresholdPlanLayoutPresenceRevision}",
-            "version": "{startThresholdPlanLayoutVersion}",
-            "state": "{startThresholdPlanLayoutState}"
-          }
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 8000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.2
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "group": {
-            "lifecycleState": "connecting",
-            "formationEpoch": 2
-          }
+          "lifecycleState": "connecting",
+          "formationEpoch": 2
         }
       }
     },
@@ -1256,29 +1236,24 @@
       "type": "http",
       "connection": "primary",
       "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/lifecycle/connect/requests/connect-plan-degraded-{runId}",
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{degradedGroupId}/formation",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "expectedFormationEpoch": "{startDegradedPlanEpoch}",
-          "expectedLayout": {
-            "groupRevision": "{startDegradedPlanLayoutGroupRevision}",
-            "presenceRevision": "{startDegradedPlanLayoutPresenceRevision}",
-            "version": "{startDegradedPlanLayoutVersion}",
-            "state": "{startDegradedPlanLayoutState}"
-          }
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 8000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.2
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "group": {
-            "lifecycleState": "connecting",
-            "formationEpoch": 2
-          }
+          "lifecycleState": "connecting",
+          "formationEpoch": 2
         }
       }
     },
@@ -1397,11 +1372,19 @@
       "redactAs": "bobWsUrl",
       "transform": {
         "concat": [
-          { "path": "variables.rallarWsBaseUrl" },
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
           "/api/ws/",
-          { "path": "outputs.bobSessionId" },
+          {
+            "path": "outputs.bobSessionId"
+          },
           "?ticket=",
-          { "urlEncode": { "path": "outputs.bobWsTicket" } }
+          {
+            "urlEncode": {
+              "path": "outputs.bobWsTicket"
+            }
+          }
         ]
       }
     },
@@ -1431,19 +1414,31 @@
           "condition": {
             "operator": "lexicallyBefore",
             "values": [
-              { "path": "outputs.aliceSessionId" },
-              { "path": "outputs.bobSessionId" }
+              {
+                "path": "outputs.aliceSessionId"
+              },
+              {
+                "path": "outputs.bobSessionId"
+              }
             ]
           },
           "then": {
             "connection": "wsAlice",
-            "sessionIdFrom": { "path": "outputs.aliceSessionId" },
-            "sessionIdTo": { "path": "outputs.bobSessionId" }
+            "sessionIdFrom": {
+              "path": "outputs.aliceSessionId"
+            },
+            "sessionIdTo": {
+              "path": "outputs.bobSessionId"
+            }
           },
           "else": {
             "connection": "wsBob",
-            "sessionIdFrom": { "path": "outputs.bobSessionId" },
-            "sessionIdTo": { "path": "outputs.aliceSessionId" }
+            "sessionIdFrom": {
+              "path": "outputs.bobSessionId"
+            },
+            "sessionIdTo": {
+              "path": "outputs.aliceSessionId"
+            }
           }
         }
       }

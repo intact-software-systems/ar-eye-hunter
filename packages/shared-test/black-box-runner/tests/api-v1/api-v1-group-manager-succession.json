@@ -182,6 +182,14 @@
             },
             "admission": {
               "mode": "open"
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
             }
           }
         }
@@ -449,6 +457,14 @@
             },
             "admission": {
               "mode": "open"
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
             }
           }
         }
@@ -680,6 +696,14 @@
             },
             "admission": {
               "mode": "open"
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
             }
           }
         }
@@ -934,6 +958,14 @@
             },
             "admission": {
               "mode": "open"
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
             }
           }
         }

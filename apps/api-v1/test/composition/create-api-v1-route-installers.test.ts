@@ -198,6 +198,7 @@ function createTopology(): ApiV1RouteInstallerTopology {
             readTopologyPlanningAuthority: rejectUnusedOperation
         },
         adminClientIds: ['admin'],
+        readPlannedLayoutFingerprint: () => Promise.resolve(null),
         groupStateRepository: {
             readLifecyclePolicy: () => Promise.resolve({ status: 'absent' as const })
         }
