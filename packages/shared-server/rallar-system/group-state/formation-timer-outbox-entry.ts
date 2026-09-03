@@ -16,10 +16,11 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { AppOutboxType } from '../app-outbox/app-outbox-type.ts';
 import { requireOneOf } from '../protocol/exact-object-decoding.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
-import type {
-    GroupLifecycleTransitionOperation,
-    GroupMutationCommand,
-    GroupMutationFacts
+import {
+    opensPlannedCandidateStage,
+    type GroupLifecycleTransitionOperation,
+    type GroupMutationCommand,
+    type GroupMutationFacts
 } from './mutation/group-mutation-contracts.ts';
 
 import { groupStateGroupStorageKey } from './persistence/aggregate/group-aggregate-storage-keys.ts';
@@ -188,16 +189,6 @@ function computeEstablishmentTimerEntries(
         ];
     }
     return [];
-}
-
-/**
- * The commands that can land a group in a stage holding a planned candidate,
- * and so arm the connect trigger: a `plan` from `forming` and the
- * `reconfigure` that opens `reconfiguring`. The latch and its timer backstop
- * must agree on this, or a trigger with a settle arms an intent nothing wakes.
- */
-export function opensPlannedCandidateStage(operation: GroupMutationCommand['operation']): boolean {
-    return operation === 'planGroupLayout' || operation === 'reconfigureGroup';
 }
 
 /**

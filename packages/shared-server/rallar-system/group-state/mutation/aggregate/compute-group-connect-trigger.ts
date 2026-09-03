@@ -6,10 +6,14 @@ import type { Group } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { RuntimeStateGuardedBatchEffect } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import { opensPlannedCandidateStage } from '../../formation-timer-outbox-entry.ts';
 import { computeGroupConnectTriggerEntry } from '../../group-connect-trigger-outbox-entry.ts';
 import { toGroupConnectTriggerLatchEffect } from '../../persistence/group-connect-trigger-latch-repository.ts';
-import type { GroupMutationCommand, GroupMutationFacts, GroupMutationRead } from '../group-mutation-contracts.ts';
+import {
+    opensPlannedCandidateStage,
+    type GroupMutationCommand,
+    type GroupMutationFacts,
+    type GroupMutationRead
+} from '../group-mutation-contracts.ts';
 
 export interface GroupConnectTriggerComputed {
     readonly effect: RuntimeStateGuardedBatchEffect | null;
