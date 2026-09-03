@@ -99,19 +99,28 @@ describe('stage trigger timer arming', () => {
         expect(timers.map((work) => [work.kind, work.notBeforeEpochMs])).toEqual([['plan', dueAtEpochMs]]);
     });
 
-    it.each([{ kind: 'manual' } as const, { kind: 'presence', memberCount: 2, fallbackMs: 5_000 } as const])(
-        'arms nothing on the timer path for a %o plan trigger',
-        (trigger) => {
-            const policy = policyWith(trigger, { kind: 'manual' });
-            expect(computeFormationTimerEntries({
-                command: transitionCommand('startGroupFormation'),
-                previous: 'dormant',
-                next: createTestGroup({ lifecycleState: 'forming', formationEpoch: 5 }),
-                policy,
-                facts: createGroupAuthorityFacts()
-            })).toEqual([]);
-        }
-    );
+    it('arms nothing on the timer path for a manual plan trigger', () => {
+        const policy = policyWith({ kind: 'manual' }, { kind: 'manual' });
+        expect(computeFormationTimerEntries({
+            command: transitionCommand('startGroupFormation'),
+            previous: 'dormant',
+            next: createTestGroup({ lifecycleState: 'forming', formationEpoch: 5 }),
+            policy,
+            facts: createGroupAuthorityFacts()
+        })).toEqual([]);
+    });
+
+    it('arms a presence plan trigger at its fallback, the half presence cannot answer', () => {
+        const policy = policyWith({ kind: 'presence', memberCount: 2, fallbackMs: 5_000 }, { kind: 'manual' });
+        const timers = timerKinds(computeFormationTimerEntries({
+            command: transitionCommand('startGroupFormation'),
+            previous: 'dormant',
+            next: createTestGroup({ lifecycleState: 'forming', formationEpoch: 5 }),
+            policy,
+            facts: createGroupAuthorityFacts()
+        }));
+        expect(timers.map((work) => [work.kind, work.notBeforeEpochMs])).toEqual([['plan', NOW_EPOCH_MS + 5_000]]);
+    });
 
     it('leaves a below-floor return into forming to the retry leg alone', () => {
         const policy = policyWith({ kind: 'immediate' }, { kind: 'immediate' });
@@ -226,6 +235,11 @@ describe('connect trigger latching by policy', () => {
         expect(latchedNotBefore(computed)).toBe(NOW_EPOCH_MS + 900);
     });
 
+    it('latches a presence connect trigger at its fallback, petitioned sooner when the threshold is met', () => {
+        const computed = latchFor({ kind: 'presence', memberCount: 2, fallbackMs: 5_000 }, 'forming');
+        expect(latchedNotBefore(computed)).toBe(NOW_EPOCH_MS + 5_000);
+    });
+
     it('latches nothing for an application plan under a manual connect trigger', () => {
         expect(latchFor({ kind: 'manual' }, 'forming')).toEqual({ effect: null, outboxEntries: [] });
     });
@@ -323,14 +337,14 @@ describe('connect trigger settle', () => {
 
     it('leaves a publication ahead of the settle latched', async () => {
         const port = await createAutomationPort({ group: plannedGroup, planned: PLANNED, notBeforeEpochMs: 5_000, nowEpochMs: 4_999 });
-        await petitionGroupConnectTrigger(port, IDENTITY, port.nowEpochMs());
+        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
         expect(port.commands).toEqual([]);
         expect((await port.latches.read(IDENTITY))?.latch.state).toBe('awaiting-publication');
     });
 
     it('connects once the settle has passed and the layout is published', async () => {
         const port = await createAutomationPort({ group: plannedGroup, planned: PLANNED, notBeforeEpochMs: 5_000, nowEpochMs: 5_000 });
-        await petitionGroupConnectTrigger(port, IDENTITY, port.nowEpochMs());
+        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
         expect(port.commands.map((command) => command.operation)).toEqual(['connectGroup']);
     });
 
@@ -348,7 +362,7 @@ describe('plan trigger timer', () => {
         const port = await createAutomationPort({ group: forming, planned: null, notBeforeEpochMs: 0, nowEpochMs: 2_400 });
         const handler = createTimerHandler({ group: forming, planned: null, port, nowEpochMs: 2_400 });
         await handler.onMessage(timerMessage(), timerEntry({ kind: 'plan', formationEpoch: 0, notBeforeEpochMs: 2_400 }, forming));
-        expect(port.commands.map((command) => [command.operation, command.commandId.startsWith('formation-automation:v1:trigger-plan:')]))
+        expect(port.commands.map((command) => [command.operation, command.commandId.startsWith('formation-automation:v2:trigger-plan:')]))
             .toEqual([['planGroupLayout', true]]);
         expect(port.commands[0]!.commandId).toContain('"groupSnapshotVersion":3');
     });

@@ -121,13 +121,13 @@ describe('connect intent handoff', () => {
             },
             nowEpochMs: () => 2000
         };
-        await petitionGroupConnectTrigger(port, IDENTITY, port.nowEpochMs());
+        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
         expect(commands).toEqual([]);
         planned = PLANNED;
-        await petitionGroupConnectTrigger(port, IDENTITY, port.nowEpochMs());
+        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
         planned = { ...PLANNED, version: 2 };
-        await petitionGroupConnectTrigger(port, IDENTITY, port.nowEpochMs());
-        await petitionGroupConnectTrigger(port, IDENTITY, port.nowEpochMs());
+        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
+        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
         expect(commands.map((command) => command.operation === 'connectGroup' ? command.input.expectedLayout.version : null)).toEqual([1, 2, 2]);
         expect(commands[0]!.commandId).not.toBe(commands[1]!.commandId);
         expect(commands[1]!.commandId).toBe(commands[2]!.commandId);

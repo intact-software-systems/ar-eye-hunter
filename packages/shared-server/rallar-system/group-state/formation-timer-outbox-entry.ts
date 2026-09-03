@@ -7,7 +7,7 @@ import {
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { computeFormationRetryBackoffMs } from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
-import { toStageTriggerSettleMs } from '@shared/api/group-lifecycle/evaluate-group-stage-trigger.ts';
+import { toStageTriggerTimerDelayMs } from '@shared/api/group-lifecycle/evaluate-group-stage-trigger.ts';
 import type { GroupLifecyclePolicy, GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { isFormationAttemptBudgetExhausted } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
@@ -193,11 +193,11 @@ function computeEstablishmentTimerEntries(
 /**
  * The stage triggers' time leg (product decision 8), phased groups only
  * (product decision 17): the first entry into `forming` — creation or
- * `start` — arms the plan trigger at its settle, and every entry into a
- * stage that holds a planned candidate arms an `after` connect trigger's
- * settle. A below-floor return into `forming` is the retry leg's, and a
- * repeated `plan` while `planned` is the state machine's idempotent cell,
- * not an entry.
+ * `start` — arms the plan trigger, and a plan that lands a candidate in a
+ * stage that holds one arms the connect trigger, each at the delay its kind
+ * gives — a settle for `after`, a fallback for `presence`. A below-floor
+ * return into `forming` is the retry leg's, and a repeated `plan` while
+ * `planned` is the state machine's idempotent cell, not an entry.
  */
 function computeStageTriggerTimerEntries(
     input: ComputeFormationTimerEntriesInput
@@ -207,17 +207,20 @@ function computeStageTriggerTimerEntries(
         return [];
     }
     if (next.lifecycleState === 'forming' && (previous === null || previous === 'dormant')) {
-        const settleMs = toStageTriggerSettleMs(policy.establishment.planTrigger);
-        return settleMs === null ? [] : [timerEntry(input, 'plan', facts.nowEpochMs + settleMs)];
+        const delayMs = toStageTriggerTimerDelayMs(policy.establishment.planTrigger);
+        return delayMs === null ? [] : [timerEntry(input, 'plan', facts.nowEpochMs + delayMs)];
     }
     const { connectTrigger } = policy.establishment;
     if (
-        input.command.operation === 'planGroupLayout' && holdsPlannedCandidateAt(next.lifecycleState) &&
-        connectTrigger.kind === 'after'
+        input.command.operation !== 'planGroupLayout' || !holdsPlannedCandidateAt(next.lifecycleState) ||
+        // `immediate` needs no entry: the publication that follows the plan
+        // petitions the latch, which is sooner than any timer could be.
+        connectTrigger.kind === 'immediate'
     ) {
-        return [timerEntry(input, 'connect', facts.nowEpochMs + connectTrigger.settleMs)];
+        return [];
     }
-    return [];
+    const delayMs = toStageTriggerTimerDelayMs(connectTrigger);
+    return delayMs === null ? [] : [timerEntry(input, 'connect', facts.nowEpochMs + delayMs)];
 }
 
 function timerEntry(
