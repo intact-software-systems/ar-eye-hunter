@@ -970,7 +970,7 @@
       }
     },
     {
-      "name": "belowFloorReturnsToForming",
+      "name": "belowFloorParksTheSpentSeries",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -990,7 +990,7 @@
       "expect": {
         "status": 200,
         "body": {
-          "lifecycleState": "forming",
+          "lifecycleState": "dormant",
           "formationEpoch": 3,
           "lastFormationOutcome": {
             "outcome": "below-floor"
@@ -999,7 +999,7 @@
       }
     },
     {
-      "name": "bobLeavesTheReopenedLobby",
+      "name": "bobLeavesTheParkedLobby",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -1026,12 +1026,12 @@
       }
     },
     {
-      "name": "belowFloorReopensTheLobby",
+      "name": "theSpentSeriesKeepsTheLobbyClosed",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/join/requests/rejoin-reopen-forming-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reopenGroupId}/join/requests/rejoin-reopen-parked-{runId}",
         "headers": {
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
@@ -1039,14 +1039,12 @@
         "body": {}
       },
       "expect": {
-        "status": 200,
+        "status": 403,
         "body": {
-          "members": [
-            {
-              "principalId": "{bobClientId}",
-              "status": "active"
-            }
-          ]
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-admission-closed",
+          "status": 403
         }
       }
     }
