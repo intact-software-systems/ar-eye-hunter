@@ -513,7 +513,7 @@
       }
     },
     {
-      "name": "formationBelowFloorAtDeadline",
+      "name": "formationBelowFloorAtDeadlineParksTheSpentSeries",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -533,7 +533,7 @@
       "expect": {
         "status": 200,
         "body": {
-          "lifecycleState": "forming",
+          "lifecycleState": "dormant",
           "formationEpoch": 3,
           "formationAttemptCount": 1,
           "lastFormationOutcome": {
@@ -828,7 +828,7 @@
       "expect": {
         "status": 200,
         "body": {
-          "lifecycleState": "forming",
+          "lifecycleState": "dormant",
           "formationEpoch": 6,
           "formationAttemptCount": 2,
           "lastFormationOutcome": {

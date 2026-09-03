@@ -975,7 +975,7 @@
           }
         ]
       },
-      "description": "Exercises both legs of the activation criterion: a threshold group auto-activates from the evidence produced by its own establishment planning pass, and a deadline group with unconfirmed links fails formation below the floor -- typed outcome, attempt increment, terminal forming at the attempt cap."
+      "description": "Exercises both legs of the activation criterion: a threshold group auto-activates from the evidence produced by its own establishment planning pass, and a deadline group with unconfirmed links fails formation below the floor -- typed outcome, attempt increment, and a parked DORMANT series at the attempt cap."
     },
     {
       "id": "api-v1-group-manager-succession",
@@ -1136,7 +1136,7 @@
           }
         ]
       },
-      "description": "Composed match-preset behaviour: closed admission admits in FORMING and freezes outside it, deterministic election resolves the creator, blocked-until-active data NACKs in the lobby, full edge coverage activates at the all-or-nothing threshold and data flows, and a group with no confirmed edges exhausts both attempts below the floor and reopens as a lobby."
+      "description": "Composed match-preset behaviour: closed admission admits in FORMING and freezes outside it, deterministic election resolves the creator, blocked-until-active data NACKs in the lobby, full edge coverage activates at the all-or-nothing threshold and data flows, and a group with no confirmed edges exhausts both attempts below the floor and parks in DORMANT with the lobby still closed."
     },
     {
       "id": "api-v1-drop-in-social-preset",

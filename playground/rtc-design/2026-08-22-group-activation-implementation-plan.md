@@ -396,8 +396,9 @@ Decisions I21–I25 were taken while delivering and reviewing PR 2 (1b + 1c) on 
 | I29 | **Minimum layout age** (2026-09-02, Slice 10b): a queued replan of a live planned layout is due no earlier than the layout's last write plus 1 000 ms (I24), decided when the change is queued from the planned slot the presence-summary read saw; the floor wins over the maximum-wait bound because it is short. It is a scheduling floor, not a planner invariant: a replan that commits between that read and the due time is not re-checked at execution, a removal tombstone does not age, and stages that do not follow the policy (`planned`, `reconfiguring`) keep the bare server window.                                                                                                                                                                                                                                                                                                                                         |
 | I30 | **The stage triggers are the phased vocabulary; a started series stays automatic** (2026-09-02, Slice 11a): for a `phased` group the plan trigger arms on the first entry into `forming` and the connect trigger on every plan that lands a candidate in a stage that holds one, when the trigger is `immediate` or `after`; `manual` and `presence` arm nothing, and a group whose formation is `immediate` arms nothing at all (product decision 17). _Amended 2026-09-02 (Slice 11b): `presence` arms both legs at its `fallbackMs` and fires sooner on its threshold; only `manual` arms nothing._ A re-plan behind a spent attempt latches its connect regardless of trigger or formation mode — it continues a series the application started, which is what the attempt budget bounds (decision 37), and the plan trigger only ever plans a fresh series at attempt zero, so the two are told apart by the group's own attempt count. |
 | I31 | **A settle is latched, not deferred** (2026-09-02, Slice 11a): the latch carries `notBeforeEpochMs` (0 for `immediate` and for a sanctioned re-plan, the plan instant plus `settleMs` for `after`); a publication ahead of it leaves the intent latched, and a `connect` timer entry due at the settle petitions the group's awaiting latches. The petition takes the settled instant from its caller — the timer's own due time, which the queue served, rather than the petitioning node's clock — so a lagging node cannot strand a settle. A migration backfills the settle instant onto stored latches, and the PGlite bootstrap replays the data migrations so file-backed runtimes carry them too.                                                                                                                                                                                                                                    |
-| I32 | **A deadline with no live layout fails its attempt at once** (2026-09-02, Slice 11a): a dialing group whose planned layout is gone at its deadline — torn down, or never published in a whole deadline — has nothing to fence and no readiness to measure, so the attempt fails with `expectedLayout: null` instead of retrying the durable entry without bound. The criterion authority matrix accepts a null layout fence on failure only; activation still requires one. A grace period was considered and rejected: implemented as re-throws it is a retry loop the queue's own attempt budget (20 attempts, ~5 minutes) cuts short well before a long deadline elapses, so it would promise a bound it cannot keep. The failure lands where the transition table puts it, `forming`; the exhausted-series `dormant` landing (`resolveFormationFailureLanding`) still has no caller and remains Slice 11's automation-completion work.   |
+| I32 | **A deadline with no live layout fails its attempt at once** (2026-09-02, Slice 11a): a dialing group whose planned layout is gone at its deadline — torn down, or never published in a whole deadline — has nothing to fence and no readiness to measure, so the attempt fails with `expectedLayout: null` instead of retrying the durable entry without bound. The criterion authority matrix accepts a null layout fence on failure only; activation still requires one. A grace period was considered and rejected: implemented as re-throws it is a retry loop the queue's own attempt budget (20 attempts, ~5 minutes) cuts short well before a long deadline elapses, so it would promise a bound it cannot keep. The failure lands where the transition table puts it, `forming`. _Amended 2026-09-03 (Slice 11c): unless it is the attempt that spends the budget, which parks the group in `dormant` (I34)._                       |
 | I33 | **The presence trigger is answered where the presence evidence already lands** (2026-09-02, Slice 11b): its threshold half is evaluated in the topology work cycle beside the criterion petition — every presence change reaches that cycle, because the topology input fingerprint hashes the live session set — and its fallback half stays with the durable timer the stage entry armed, so `presence` arms `plan`/`connect` at `fallbackMs` and fires sooner when the members arrive. The one evaluator answers all four kinds; a caller whose elapsed half belongs to the timer passes no stage-entry instant. A met threshold petitions the connect latch as satisfied rather than by the clock, so the settle gate cannot hold back a trigger the policy says has fired.                                                                                                                                                              |
+| I34 | **The exhaustion landing moves the stage and nothing else** (2026-09-03, Slice 11c): the mutation owner asks the attempt budget about the attempt the failure is recording, so a series' last failure parks in `dormant` instead of following the transition table. It clears no layout identity and closes no transport valve — decision 36 assigns both to `reset`, and the `dormant` row of the dial, topology-disposition and closed-admission tables already makes a parked group inert. _Alternative rejected:_ clearing `acceptedLayoutIdentity` here too, which would give one field two owners for the sake of a stage description decision 35 states as how the group arrives, not as an invariant the stage enforces.                                                                                                                                                                                                             |
 
 The held-layout capability is the next milestone under current evidence, but every checkpoint selects
 only its next two independently reviewable PRs. Later labels below are capability-analysis anchors used
@@ -2761,6 +2762,46 @@ file, `build`, `test:deno` (780 tests), and `test:unit` (1 049 files, 9 093 test
 in-memory profile 36 of 36, the Postgres profile 36 of 36 plus the 6-recipe cluster profile,
 medium-scale, topology replay, and formation-large. Not run: the state-write A-B-B-A comparison, still
 blocked by the foreign perf-bench container on the pinned port.
+
+### Slice 11c start checkpoint — the exhausted series parks (2026-09-03)
+
+Stacked on the rebased 10a–11b head. The census found the slice smaller than the section's costing
+and one step wider than its title. `resolveFormationFailureLanding` and
+`isFormationAttemptBudgetExhausted` have existed and been tested since slice 1b; what was missing was
+a caller. `denyExhaustedFormationSeries` guards `start` only, so today a series' last failure follows
+the transition table like any other — `connecting` to `forming`, `reconnecting` to `active` — and the
+group keeps offering the automation another attempt it can never take.
+
+What 11c lands is one decision moved into the mutation owner: `computeAllowedLifecycleTransition`
+asks the budget about **the attempt this failure is about to record** (`stored + 1`) and takes
+`resolveFormationFailureLanding`'s answer over the table's. Everything else follows from stage tables
+that already exist:
+
+- **No retry is armed.** `computeEstablishmentTimerEntries` already refuses a retry for a spent
+  budget, and its `next.lifecycleState === 'forming'` guard now fails as well; the stage-trigger legs
+  arm only on entry into `forming` from creation or `dormant`, and on a plan that lands a candidate,
+  so a landing in `dormant` arms nothing at all.
+- **A closed lobby stays closed** (product decision 38). `CLOSED_MODE_ADMITS` already reads
+  `dormant: false` and its comment already names this decision; the landing is what makes the row
+  reachable. The `match` preset recipe's last two steps invert with it — the step that asserted a
+  spent series "honestly reopens as a lobby" now asserts the `group-admission-closed` denial.
+- **The transport valve is not touched.** Decision 36 assigns closing it to `reset`, and every
+  transition carries it through by construction, so an `active` + `flowing` group that spends its
+  budget lands in `dormant` still flowing — the state this plan already recorded the model as
+  producing on its own.
+
+**Accepted rather than changed.** Decision 35 describes `dormant` as holding no accepted and no
+planned layout, and the landing clears neither `acceptedLayoutIdentity` nor the stored rows: decision
+36 assigns that clearing to `reset`, `resolveDialLayoutRoles('dormant')` is already `none`, and the
+stage's topology disposition is already `publish-removal`, so the layout stops carrying traffic
+without a second owner for the same field. The identity stays as the trace of the series that failed,
+beside `lastFormationOutcome`.
+
+**Blast radius.** Three black-box assertions pinned the dark behaviour and change with it: the
+criterion recipe's deadline failure (budget 1, so the first failure spends it) and its
+"exhausts only after the second failed dial" step, and the `match` preset's floor return. One unit
+test pinned it too, and is now four rows — both dialing stages, exhausted and not — plus a test that
+no formation-timer entry rides the parked landing.
 
 ## Slice 12 — The living observed status
 
