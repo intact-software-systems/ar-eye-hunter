@@ -2797,11 +2797,28 @@ stage's topology disposition is already `publish-removal`, so the layout stops c
 without a second owner for the same field. The identity stays as the trace of the series that failed,
 beside `lastFormationOutcome`.
 
-**Blast radius.** Three black-box assertions pinned the dark behaviour and change with it: the
-criterion recipe's deadline failure (budget 1, so the first failure spends it) and its
-"exhausts only after the second failed dial" step, and the `match` preset's floor return. One unit
-test pinned it too, and is now four rows — both dialing stages, exhausted and not — plus a test that
-no formation-timer entry rides the parked landing.
+**Two consequences worth naming, neither invented here.** First, the budget only becomes terminal
+now. An exhausted series used to return to `forming`, where `plan` is a legal transition, so an
+application could re-plan and re-dial it forever; `dormant` admits only `reset` and `start`, and
+`start` is what `denyExhaustedFormationSeries` refuses. Second, `resolveFormationFailureLanding` has
+returned `dormant` from `reconnecting` as well as `connecting` since slice 1b, pinned by its own
+test, so a live group whose reconfiguration series spends its budget now parks: its topology
+disposition becomes `publish-removal` and `blocked-until-active` data stops flowing, on a layout that
+was carrying traffic. Decision 28 keeps an _unexhausted_ reconnect failure on the accepted layout, and
+a successful `activate` zeroes the count, so reaching this needs `maxFormationAttempts` consecutive
+failed reconfigurations — two under the `match` preset. This slice implements the settled resolver
+rather than narrowing it; narrowing exhaustion to series that never activated would be a product
+decision, not an implementation one.
+
+**Blast radius.** Four black-box assertions pinned the dark behaviour and change with it: the
+criterion recipe's deadline failure (budget 1, so the first failure spends it) and its "exhausts only
+after the second failed dial" step, the `match` preset's floor return, and the admission-windows
+lobby whose last three steps asserted the closed group re-opening — the pair product decision 38
+names. One unit test pinned it too, and is now four rows — both dialing stages, exhausted and not —
+plus a two-row test that the retry leg arms behind an unexhausted failure and nothing behind a parked
+one. Two condition-axis branches written for this landing, `failed` in
+`computeGroupActivationCondition` and `awaiting-application` in `resolveGroupActivationRemediation`,
+become reachable in production; both stay unread until Slice 12's status projection.
 
 ## Slice 12 — The living observed status
 
