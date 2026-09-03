@@ -1,5 +1,5 @@
 {
-  "description": "The stage-transition metrics bucket read across the cluster that writes it: a managed group is planned, dials itself on the connect trigger and is activated, while the admin group-formation metrics are read on all three nodes before and after. The counter is process-local and the AppInbox is claimed by any node, so only the cluster sum is a sound reading.",
+  "description": "The stage-transition metrics bucket read across the cluster that writes it: a managed group is planned, dials itself on the connect trigger and is activated, while the admin group-formation metrics are read on all three nodes before and after. The counter is process-local and the AppInbox is claimed by any node, so only the cluster sum is a sound reading, and the readings are asserted to come from three distinct servers. The floor is a floor because the counter is global to each process: it holds while no other recipe in this profile drives a lifecycle command. Re-running with a stale runId replays the request identities, which satisfy the state expectations from stored receipts without re-incrementing the counter.",
   "variables": {
     "apiPrimary": {
       "env": "RALLAR_API_BASE_URL",
@@ -209,7 +209,9 @@
           "x-client-id": "{adminClientId}"
         },
         "outputs": {
-          "beforeStageWritesPrimary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+          "beforeStageWritesPrimary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write",
+          "beforeFormationMetricsPrimary": "body.groupFormation.metrics",
+          "serverIdPrimary": "body.serverId"
         }
       },
       "expect": {
@@ -233,7 +235,9 @@
           "x-client-id": "{adminClientId}"
         },
         "outputs": {
-          "beforeStageWritesSecondary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+          "beforeStageWritesSecondary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write",
+          "beforeFormationMetricsSecondary": "body.groupFormation.metrics",
+          "serverIdSecondary": "body.serverId"
         }
       },
       "expect": {
@@ -257,7 +261,9 @@
           "x-client-id": "{adminClientId}"
         },
         "outputs": {
-          "beforeStageWritesTertiary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+          "beforeStageWritesTertiary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write",
+          "beforeFormationMetricsTertiary": "body.groupFormation.metrics",
+          "serverIdTertiary": "body.serverId"
         }
       },
       "expect": {
@@ -464,7 +470,7 @@
       }
     },
     {
-      "name": "theConnectTriggerDialsIt",
+      "name": "theConnectTriggerDialsThePublishedLayout",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -513,6 +519,18 @@
       }
     },
     {
+      "name": "settleBeforeTheClosingReading",
+      "type": "set",
+      "output": "closingReadingSettle",
+      "value": {
+        "delayMs": 1500,
+        "waitsFor": "the post-commit metric increment on the claiming node"
+      },
+      "request": {
+        "delayMs": 1500
+      }
+    },
+    {
       "name": "captureStageWritesAfterPrimary",
       "type": "http",
       "connection": "primary",
@@ -524,7 +542,8 @@
           "x-client-id": "{adminClientId}"
         },
         "outputs": {
-          "afterStageWritesPrimary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+          "afterStageWritesPrimary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write",
+          "afterFormationMetricsPrimary": "body.groupFormation.metrics"
         }
       },
       "expect": {
@@ -548,7 +567,8 @@
           "x-client-id": "{adminClientId}"
         },
         "outputs": {
-          "afterStageWritesSecondary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+          "afterStageWritesSecondary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write",
+          "afterFormationMetricsSecondary": "body.groupFormation.metrics"
         }
       },
       "expect": {
@@ -572,7 +592,8 @@
           "x-client-id": "{adminClientId}"
         },
         "outputs": {
-          "afterStageWritesTertiary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+          "afterStageWritesTertiary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write",
+          "afterFormationMetricsTertiary": "body.groupFormation.metrics"
         }
       },
       "expect": {
@@ -616,11 +637,79 @@
       }
     },
     {
+      "name": "compareServerIdPrimarySecondary",
+      "type": "set",
+      "output": "serverIdPrimaryIsSecondary",
+      "transform": {
+        "equals": [
+          {
+            "path": "outputs.serverIdPrimary"
+          },
+          {
+            "path": "outputs.serverIdSecondary"
+          }
+        ]
+      }
+    },
+    {
+      "name": "compareServerIdSecondaryTertiary",
+      "type": "set",
+      "output": "serverIdSecondaryIsTertiary",
+      "transform": {
+        "equals": [
+          {
+            "path": "outputs.serverIdSecondary"
+          },
+          {
+            "path": "outputs.serverIdTertiary"
+          }
+        ]
+      }
+    },
+    {
+      "name": "compareServerIdPrimaryTertiary",
+      "type": "set",
+      "output": "serverIdPrimaryIsTertiary",
+      "transform": {
+        "equals": [
+          {
+            "path": "outputs.serverIdPrimary"
+          },
+          {
+            "path": "outputs.serverIdTertiary"
+          }
+        ]
+      }
+    },
+    {
+      "name": "theThreeReadingsComeFromThreeServers",
+      "type": "assert",
+      "actual": {
+        "serverIdPrimaryIsSecondary": "{serverIdPrimaryIsSecondary}",
+        "serverIdSecondaryIsTertiary": "{serverIdSecondaryIsTertiary}",
+        "serverIdPrimaryIsTertiary": "{serverIdPrimaryIsTertiary}"
+      },
+      "expect": {
+        "body": {
+          "serverIdPrimaryIsSecondary": false,
+          "serverIdSecondaryIsTertiary": false,
+          "serverIdPrimaryIsTertiary": false
+        }
+      }
+    },
+    {
       "name": "thePlanConnectAndActivateCountInTheStageBucket",
       "type": "assert",
       "actual": {
+        "beforeStageWritesTotal": "{beforeStageWritesTotal}",
         "afterStageWritesTotal": "{afterStageWritesTotal}",
-        "expectedStageWritesTotal": "{expectedStageWritesTotal}"
+        "expectedStageWritesTotal": "{expectedStageWritesTotal}",
+        "beforeStageWritesPrimary": "{beforeStageWritesPrimary}",
+        "beforeStageWritesSecondary": "{beforeStageWritesSecondary}",
+        "beforeStageWritesTertiary": "{beforeStageWritesTertiary}",
+        "afterStageWritesPrimary": "{afterStageWritesPrimary}",
+        "afterStageWritesSecondary": "{afterStageWritesSecondary}",
+        "afterStageWritesTertiary": "{afterStageWritesTertiary}"
       },
       "expect": {
         "comparators": [
@@ -630,6 +719,13 @@
           }
         ]
       }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
     }
   ]
 }
