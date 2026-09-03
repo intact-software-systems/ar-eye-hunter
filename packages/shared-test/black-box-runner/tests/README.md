@@ -53,9 +53,9 @@ black-box test. The convention: name the evidence source, not the topology.
   including all `api-v1-black-box-recipes` portability-profile rows.
 - **Tier 2 — convergence/durability proof (SQL evidence)**: additionally
   reads persisted state through `set.state-write-evidence`
-  (`resource_inbox`/outbox/receipts). Exactly five today:
-  `api-v1-admin-operations`, `api-v1-auth-session`, `api-v1-crdt-app-inbox`,
-  `api-v1-state-medium-scale-churn`, `api-v1-state-write-convergence`.
+  (`resource_inbox`/outbox/receipts). `recipe-matrix.test.ts` derives the tier
+  from that usage, so the list is whatever carries the evidence rather than a
+  number to keep in step here.
 - **Tier 3 — coordinator proof**: coordinator-owned flows that manage server
   processes themselves; not portable matrix recipes. Today this is the
   `api-v1-black-box-topology-replay` profile (`topology-replay/*.mts`), which
