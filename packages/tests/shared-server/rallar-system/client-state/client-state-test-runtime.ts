@@ -6,6 +6,11 @@ import {
     type ClientStateService,
     type ClientStateWritten
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import {
+    timeClientStateMutationCommit,
+    timeClientStateMutationPhase,
+    type ClientStateMutationTiming
+} from '@shared-server/rallar-system/client-state/client-state-service-timing.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import {
     toClientMutationIssuedSessionAuthority,
@@ -45,6 +50,7 @@ interface ClientStateTestExecutorInput {
     readonly serviceId: string;
     readonly nowEpochMs: () => number;
     readonly nextSequence: () => number;
+    readonly mutationTiming: ClientStateMutationTiming;
 }
 
 interface ClientStateTestDriverDependencies {
@@ -84,6 +90,7 @@ export function createClientStatePhaseTestDriver(
             service,
             serviceId,
             nowEpochMs,
+            mutationTiming: { sink: options.timing, serviceId },
             nextSequence: () => ++commandSequence
         }),
         nextId: () => `test-client-command-${++commandSequence}`
@@ -148,8 +155,14 @@ async function computeClientStateTestMutation(
         authority
     );
     const read = await context.service.read(command);
-    const computed = context.service.compute(command, read);
-    context.service.validate(command, read, computed);
+    const computed = timeClientStateMutationPhase(
+        { timing: context.mutationTiming, command, operation: 'mutation.compute' },
+        () => context.service.compute(command, read)
+    );
+    timeClientStateMutationPhase(
+        { timing: context.mutationTiming, command, operation: 'mutation.validate' },
+        () => context.service.validate(command, read, computed)
+    );
     return computed;
 }
 
@@ -157,26 +170,30 @@ async function writeClientStateTestMutation(
     context: ClientStateTestExecutorInput,
     computed: Parameters<ClientStateService['write']>[1]
 ): Promise<void> {
-    await context.runtimeRepository.begin(async (runtime) => {
-        const outboxBefore = captureClientStateTestOutbox(context.runtimeRepository);
-        const eventsBefore = [...context.eventStore.events];
-        try {
-            await context.service.write(
-                createClientStateTestTransaction({
-                    runtime,
-                    runtimeRepository: context.runtimeRepository,
-                    eventStore: context.eventStore
-                }),
-                computed
-            );
-        }
-        catch (error) {
-            restoreClientStateTestOutbox(context.runtimeRepository, outboxBefore);
-            context.eventStore.events.length = 0;
-            context.eventStore.events.push(...eventsBefore);
-            throw error;
-        }
-    });
+    await timeClientStateMutationCommit(
+        { timing: context.mutationTiming, writes: [computed] },
+        async () =>
+            await context.runtimeRepository.begin(async (runtime) => {
+                const outboxBefore = captureClientStateTestOutbox(context.runtimeRepository);
+                const eventsBefore = [...context.eventStore.events];
+                try {
+                    await context.service.write(
+                        createClientStateTestTransaction({
+                            runtime,
+                            runtimeRepository: context.runtimeRepository,
+                            eventStore: context.eventStore
+                        }),
+                        computed
+                    );
+                }
+                catch (error) {
+                    restoreClientStateTestOutbox(context.runtimeRepository, outboxBefore);
+                    context.eventStore.events.length = 0;
+                    context.eventStore.events.push(...eventsBefore);
+                    throw error;
+                }
+            })
+    );
 }
 
 async function toTestAuthority(
