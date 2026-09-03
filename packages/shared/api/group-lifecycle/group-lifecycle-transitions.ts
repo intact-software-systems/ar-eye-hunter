@@ -86,7 +86,8 @@ export function computeGroupLifecycleTransition(
  * unexhausted failure follows the table — `forming` from `connecting` where no
  * accepted layout exists yet, `active` from `reconnecting` where it does
  * (product decision 28). `undefined` means the stage has no failure landing at
- * all. Dark: the criterion owner does not pass real exhaustion state yet.
+ * all. The criterion owner asks about the attempt it is recording, so the
+ * series' last failure parks the group rather than returning it.
  */
 export function resolveFormationFailureLanding(
     input: Readonly<{

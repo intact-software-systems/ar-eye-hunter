@@ -1,3 +1,4 @@
+import { APP_OUTBOX_FORMATION_TIMER_TOPIC } from '@shared-server/rallar-system/group-state/formation-timer-outbox-entry.ts';
 import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -18,7 +19,13 @@ import { toGroupMutationRejectionError } from '@shared-server/rallar-system/grou
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
-import { createGroupAuthorityFacts, createGroupAuthorityRead, groupRef, transitionCommand } from './group-mutation-test-runtime.ts';
+import {
+    createGroupAuthorityFacts,
+    createGroupAuthorityRead,
+    groupRef,
+    transitionCommand,
+    type GroupAuthorityReadOptions
+} from './group-mutation-test-runtime.ts';
 
 function writtenMutation(
     computed: GroupMutationComputed
@@ -396,19 +403,35 @@ describe('group lifecycle transition computation', () => {
         expect(computed.outcome).toBe('rejected');
     });
 
-    it('fails formation with criterion authority: outcome, attempts, epoch, anchor', () => {
+    // The landing is the attempt budget's, not the table's: the series' last
+    // attempt parks the group in `dormant` (product decisions 35 and 37),
+    // where a closed lobby stays closed (product decision 38) and nothing
+    // re-arms; an unexhausted failure follows the table.
+    it.each(
+        [
+            { label: 'an unexhausted dial returns to forming', from: 'connecting', policy: 'managed', attempts: 1, landing: 'forming' },
+            { label: 'the last dial parks in dormant', from: 'connecting', policy: 'optimistic', attempts: 0, landing: 'dormant' },
+            { label: 'an unexhausted reconnect returns to active', from: 'reconnecting', policy: 'managed', attempts: 1, landing: 'active' },
+            { label: 'the last reconnect parks in dormant', from: 'reconnecting', policy: 'optimistic', attempts: 0, landing: 'dormant' }
+        ] as const
+    )('fails formation with criterion authority: $label', (row) => {
         const computed = computeGroupMutation({
             command: criterionCommand('failGroupFormation', {
                 observedRate: 0.3,
                 expectedFormationEpoch: 2,
                 expectedLayout: PLANNED_LAYOUT
             }),
-            read: criterionRead({
-                lifecycleState: 'connecting',
-                formationEpoch: 2,
-                establishmentStartedAtEpochMs: 1_500,
-                formationAttemptCount: 1
-            }),
+            read: criterionRead(
+                {
+                    lifecycleState: row.from,
+                    formationEpoch: 2,
+                    establishmentStartedAtEpochMs: 1_500,
+                    formationAttemptCount: row.attempts,
+                    transportState: 'flowing'
+                },
+                PLANNED_LAYOUT,
+                { policy: row.policy }
+            ),
             facts: criterionFacts()
         });
         expect(computed.outcome).toBe('write');
@@ -416,16 +439,49 @@ describe('group lifecycle transition computation', () => {
             return;
         }
         const written = computed.guard.value as Group;
-        expect(written.lifecycleState).toBe('forming');
+        expect(written.lifecycleState).toBe(row.landing);
         expect(written.formationEpoch).toBe(3);
-        expect(written.formationAttemptCount).toBe(2);
+        expect(written.formationAttemptCount).toBe(row.attempts + 1);
         expect(written.establishmentStartedAtEpochMs).toBe(null);
+        // The valve is `reset`'s to close (product decision 36); every
+        // transition carries it through unchanged.
+        expect(written.transportState).toBe('flowing');
         expect(written.lastFormationOutcome).toEqual({
             outcome: 'below-floor',
             observedRate: 0.3,
             atEpochMs: 2_000,
             formationEpoch: 2
         });
+    });
+
+    // The retry leg is armed by the `forming` landing, so parking is what
+    // disarms it: the same failure one attempt earlier still schedules the
+    // next one.
+    it.each([
+        { label: 'an unexhausted failure arms the next attempt', attempts: 1, landing: 'forming', timers: 1 },
+        { label: 'the parked series arms nothing', attempts: 2, landing: 'dormant', timers: 0 }
+    ])('$label', (row) => {
+        const computed = computeGroupMutation({
+            command: criterionCommand('failGroupFormation', {
+                observedRate: 0,
+                expectedFormationEpoch: 2,
+                expectedLayout: PLANNED_LAYOUT
+            }),
+            read: criterionRead(
+                { lifecycleState: 'connecting', formationEpoch: 2, formationAttemptCount: row.attempts },
+                PLANNED_LAYOUT,
+                { policy: 'managed' }
+            ),
+            facts: criterionFacts()
+        });
+        expect(computed.outcome).toBe('write');
+        if (computed.outcome !== 'write') {
+            return;
+        }
+        expect((computed.guard.value as Group).lifecycleState).toBe(row.landing);
+        expect(
+            computed.outboxEntries.filter((entry) => entry.key.topicId === APP_OUTBOX_FORMATION_TIMER_TOPIC)
+        ).toHaveLength(row.timers);
     });
 
     // The causal fence: a stale petition is a typed rejection that computes
@@ -626,10 +682,11 @@ function connectRead(
 
 function criterionRead(
     groupOverrides: Partial<Group>,
-    plannedLayoutIdentity: GroupLayoutIdentity | null = PLANNED_LAYOUT
+    plannedLayoutIdentity: GroupLayoutIdentity | null = PLANNED_LAYOUT,
+    options: GroupAuthorityReadOptions = {}
 ): GroupMutationRead {
     return {
-        ...createGroupAuthorityRead(groupOverrides),
+        ...createGroupAuthorityRead(groupOverrides, options),
         actorMember: null,
         actorMemberEntry: null,
         plannedLayoutRow: plannedLayoutIdentity === null ? null : {

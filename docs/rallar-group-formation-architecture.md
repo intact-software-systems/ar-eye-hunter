@@ -50,9 +50,14 @@ Formation intent has seven states. The eight application commands share one init
 | `reset`            | any stage                | dormant, halted; clears layouts/attempt series |
 | `pause` / `resume` | any stage                | same stage; halted / flowing transport         |
 
-The internal `fail-formation` command returns initial connecting to forming, but reconnecting to
-active with the accepted layout retained. Only initial forming failures arm bounded automatic retry.
-Other source states produce the typed `lifecycle-transition-invalid` denial.
+The internal `fail-formation` command lands by the attempt budget. An unexhausted failure follows the
+table: connecting returns to forming, reconnecting returns to active with the accepted layout
+retained, and only the forming landing arms bounded automatic retry. The attempt that spends the
+budget parks the group in dormant instead (product decisions 35 and 37) — a closed lobby therefore
+stays closed (product decision 38), no retry is armed, and only `reset` then `start` opens a new
+series. The landing moves nothing else: transport stays as it was, because closing the valve is
+`reset`'s (product decision 36). Other source states produce the typed
+`lifecycle-transition-invalid` denial.
 
 ### The aggregate fields
 

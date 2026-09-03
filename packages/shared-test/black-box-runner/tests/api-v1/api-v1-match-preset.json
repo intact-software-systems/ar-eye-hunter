@@ -1,5 +1,5 @@
 {
-  "description": "Composed behaviour of the match preset: closed admission admits during FORMING and freezes the roster outside it, the deterministic election resolves the creator, blocked-until-active data NACKs in the lobby, full edge coverage activates at the all-or-nothing threshold and data then flows, and a group whose edges never confirm exhausts both formation attempts below the floor and honestly reopens as a lobby.",
+  "description": "Composed behaviour of the match preset: closed admission admits during FORMING and freezes the roster outside it, the deterministic election resolves the creator, blocked-until-active data NACKs in the lobby, full edge coverage activates at the all-or-nothing threshold and data then flows, and a group whose edges never confirm exhausts both formation attempts below the floor and parks in DORMANT with the lobby still closed.",
   "variables": {
     "apiPrimary": {
       "env": "RALLAR_API_BASE_URL",
@@ -1293,7 +1293,7 @@
       }
     },
     {
-      "name": "allOrNothingFloorReturnsToForming",
+      "name": "allOrNothingFloorParksTheSpentSeries",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -1313,7 +1313,7 @@
       "expect": {
         "status": 200,
         "body": {
-          "lifecycleState": "forming",
+          "lifecycleState": "dormant",
           "formationAttemptCount": 2,
           "lastFormationOutcome": {
             "outcome": "below-floor",
@@ -1323,12 +1323,12 @@
       }
     },
     {
-      "name": "honestFailureReopensTheClosedLobby",
+      "name": "exhaustionKeepsTheClosedLobbyClosed",
       "type": "http",
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/join/requests/join-match-lobby-carol-reopened-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/join/requests/join-match-lobby-carol-denied-{runId}",
         "headers": {
           "Authorization": "{carolAuthHeader}",
           "x-client-id": "{carolClientId}"
@@ -1336,14 +1336,12 @@
         "body": {}
       },
       "expect": {
-        "status": 200,
+        "status": 403,
         "body": {
-          "members": [
-            {
-              "principalId": "{carolClientId}",
-              "status": "active"
-            }
-          ]
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-admission-closed",
+          "status": 403
         }
       }
     }
