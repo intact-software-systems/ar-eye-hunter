@@ -692,7 +692,10 @@ commands; browser dial/data enforcement uses the authoritative group and layout 
 `GET /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation`
 (`apps/api-v1/src/routes/group-formation-view-read.ts`, registered beside the topology routes)
 returns `GroupFormationView`: authoritative intent beside derived observation, enough for an
-application to explain the group to a user.
+application to explain the group to a user. Everything derived is computed at the read and stored
+nowhere, so no field can go stale between writes; the fields the stored policy answers —
+`managerPrincipalIds`, `maxFormationAttempts`, both status axes and the coverage basis — fail closed
+together when that policy is unreadable.
 
 | Field                                                                                                                | Source                                                                                                                                                                                                                                                   |
 | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -702,6 +705,9 @@ application to explain the group to a user.
 | `managerPrincipalIds`                                                                                                | `resolveGroupLifecycleManagers` at read time over the active roster; `[]` when the policy is corrupt                                                                                                                                                     |
 | `layoutStale`                                                                                                        | product decision 11's latched half, derived (I27): the accepted identity differs from the planned slot's, or the planned slot's stored topology-input fingerprint differs from the authority's computed at read time; `false` without an accepted layout |
 | `pending`                                                                                                            | the transient half, `{ reconfigureQueued, dueAtEpochMs }` from the coalesced replan row, or `null`                                                                                                                                                       |
+| `maxFormationAttempts`                                                                                               | the stored policy's attempt budget (product decision 39), so the count above has a denominator and `formation-attempts-exhausted` is explainable; `null` when the policy is corrupt                                                                      |
+| `condition`, `remediation`                                                                                           | both status axes computed at this read from the aggregate, the stored policy, the readiness fraction and the queued replan; `degraded` and the dwell-held `failed` band wait for the status writer's dwell clock                                         |
+| `coverageBasisLayoutIdentity`                                                                                        | the layout the condition is measured against: the accepted one whenever one exists, and before first activation the frozen candidate being dialed in `connecting`; `null` otherwise and whenever the policy is corrupt                                   |
 
 Like the other group reads, the route applies full-visibility authorization — active members only,
 so a pending member cannot read it — when `RALLAR_STATE_STRICT_READ_AUTH` is enabled, which the
@@ -837,7 +843,10 @@ writing this document:
   The `match` preset therefore has no per-edge audit trail — a disputed session has "we were at
   94%" rather than "edge (A, B) never confirmed at T" — and no server-controlled establishment
   ordering.
-- **The six-state RTC activation status projection.** Only the readiness fraction exists.
+- **The stored activation status projection.** Both axes and their coverage basis are derived at
+  read on the formation view; what is missing is the writer that bands them — the dwell clock,
+  the hysteresis, decision 33's evidence watermark, the `group-activation-status-changed` event
+  and the persisted group fields. `degraded` is therefore not reported yet.
 - **The `elected-by-rank` rank source.** The selection is in the vocabulary and resolves zero
   managers; `resolveGroupLifecycleManagers` already takes `rankByPrincipalId`, so the remaining work
   is a `GroupMember` rank field, its join plumbing, and switching the `match` preset back.

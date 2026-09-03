@@ -316,7 +316,13 @@
           },
           "managerPrincipalIds": [
             "{aliceClientId}"
-          ]
+          ],
+          "condition": "active",
+          "remediation": "none",
+          "maxFormationAttempts": 3,
+          "coverageBasisLayoutIdentity": {
+            "state": "active"
+          }
         }
       }
     },
@@ -542,7 +548,10 @@
           },
           "managerPrincipalIds": [
             "{aliceClientId}"
-          ]
+          ],
+          "maxFormationAttempts": 1,
+          "condition": "failed",
+          "remediation": "awaiting-application"
         }
       }
     },

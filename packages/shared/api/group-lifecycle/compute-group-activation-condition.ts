@@ -1,3 +1,4 @@
+import type { Group } from '../group-types.ts';
 import { isSameGroupLayoutIdentity, type GroupLayoutIdentity } from './group-layout-identity.ts';
 import type { GroupLifecycleState, GroupTopologyReplanningMode } from './group-lifecycle-policy.ts';
 import { resolveDialLayoutRoles } from './resolve-dial-layout-roles.ts';
@@ -22,6 +23,25 @@ export type GroupBusinessLiveness =
     | 'archived'
     | 'deleted'
     | 'expired';
+
+/**
+ * The business plane resolved from the stored group: `requireActiveGroup`
+ * answers the same question as a policy denial, which a read surface cannot
+ * use, so the value form lives here beside the axis it feeds. Expiry is a
+ * clock fact, so it is asked at the reader's instant, not stored. The two
+ * still carry the rule separately: the predicate skips expiry entirely when
+ * its caller passes no instant, and giving the value form that mode would
+ * widen a shared contract for one caller's option.
+ */
+export function resolveGroupBusinessLiveness(
+    group: Pick<Group, 'status' | 'expiresAtEpochMs'>,
+    nowEpochMs: number
+): GroupBusinessLiveness {
+    if (group.status === 'archived' || group.status === 'deleted') {
+        return group.status;
+    }
+    return group.expiresAtEpochMs !== null && group.expiresAtEpochMs <= nowEpochMs ? 'expired' : 'active';
+}
 
 export type GroupActivationCondition =
     | 'failed'
@@ -90,16 +110,21 @@ export interface ResolveGroupActivationRemediationInput {
     readonly business: GroupBusinessLiveness;
     readonly lifecycleState: GroupLifecycleState;
     readonly attemptBudgetExhausted: boolean;
-    readonly replanning: GroupTopologyReplanningMode;
+    /**
+     * The replanning mode as read: an unreadable stored policy is its own
+     * input, because it is also what stops the automation from replanning.
+     */
+    readonly replanning: GroupTopologyReplanningMode | 'corrupt';
     readonly layoutStale: boolean;
     readonly replanQueued: boolean;
 }
 
 /**
  * The remediation axis: whose move it is, naming only work the server actually
- * performs (product decision 30). `awaiting-application` covers the two cases
- * where only an application command can act — a stale layout under `commanded`
- * replanning, and a `dormant` group with its attempt budget spent.
+ * performs (product decision 30). `awaiting-application` covers the cases where
+ * only an application command can act — a stale layout the server will not
+ * replan by itself, under `commanded` or under a policy it cannot read, and a
+ * `dormant` group with its attempt budget spent.
  */
 export function resolveGroupActivationRemediation(
     input: ResolveGroupActivationRemediationInput
@@ -113,7 +138,9 @@ export function resolveGroupActivationRemediation(
     if (input.replanQueued) {
         return 'replan-queued';
     }
-    if (input.layoutStale && input.replanning === 'commanded') {
+    // A corrupt policy replans no more than `commanded` does, so a stale
+    // layout under one is equally the application's move.
+    if (input.layoutStale && input.replanning !== 'auto' && input.replanning !== 'debounced') {
         return 'awaiting-application';
     }
     return 'none';
