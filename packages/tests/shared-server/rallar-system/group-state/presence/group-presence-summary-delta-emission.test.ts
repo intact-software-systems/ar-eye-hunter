@@ -171,7 +171,7 @@ async function computeSummaryWork(scenario: ConnectedScenario): Promise<Computed
         event
     };
     const read = await work.read(command);
-    const computed = work.compute(command, read);
+    const computed = work.compute(command, read, BASE_EPOCH_MS + 1_000);
     work.validate(command, read, computed);
     return { work, command, read, computed };
 }

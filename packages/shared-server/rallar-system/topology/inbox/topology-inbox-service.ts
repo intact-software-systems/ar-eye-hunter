@@ -144,7 +144,7 @@ export class TopologyInboxService {
         reservation: TopologyInboxService.HttpCommandReservation,
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, TopologyAppInboxResult>> {
-        const currentSession = await this.handler.validateCurrentSession(
+        const currentSession = await this.handler.readAndValidateCurrentSession(
             reservation.callerId,
             authority
         );

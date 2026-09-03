@@ -48,13 +48,15 @@ interface ConvergeSummaryForTestInput {
     readonly runtime: GroupBarrierRepository;
     readonly ref: GroupRef;
     readonly commandId: string;
+    readonly nowEpochMs: number;
 }
 
 export async function convergeSummaryForTest({
     work,
     runtime,
     ref,
-    commandId
+    commandId,
+    nowEpochMs
 }: ConvergeSummaryForTestInput): Promise<void> {
     const repository = createTestGroupStateRepository(runtime);
     const event = (await repository.listEvents(ref)).at(-1);
@@ -71,7 +73,7 @@ export async function convergeSummaryForTest({
         event
     };
     const read = await work.read(command);
-    const computed = work.compute(command, read);
+    const computed = work.compute(command, read, nowEpochMs);
     work.validate(command, read, computed);
     await runtime.begin(async (transaction) => {
         if (computed.summary.outcome === 'no-op') {

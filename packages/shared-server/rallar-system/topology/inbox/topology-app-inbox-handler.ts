@@ -28,7 +28,7 @@ import {
     createAuthenticatedTopologyEnqueue,
     createAuthenticatedTopologyEnqueueFromValidatedSession,
     decodeTopologyAppInboxAuthority,
-    validateCurrentTopologySession,
+    readAndValidateCurrentTopologySession,
     verifyTopologyAppInboxAuthority
 } from './topology-app-inbox-authority.ts';
 import { toTopologyConfigMutationCommand } from './topology-app-inbox-command.ts';
@@ -152,11 +152,11 @@ export class TopologyAppInboxHandler {
         });
     }
 
-    async validateCurrentSession(
+    async readAndValidateCurrentSession(
         principalId: string,
         claimedAuthority: IssuedAuthSession
     ): Promise<PersistedAuthSession> {
-        return await validateCurrentTopologySession({
+        return await readAndValidateCurrentTopologySession({
             principalId,
             claimedAuthority,
             groupStateService: this.dependencies.groupStateService,

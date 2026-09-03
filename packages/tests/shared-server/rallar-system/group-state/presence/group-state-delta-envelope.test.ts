@@ -96,7 +96,8 @@ describe('group-state delta envelope construction', () => {
             work: createSummaryWorkService(runtime),
             runtime,
             ref: groupRef('delta-noop-group'),
-            commandId: 'delta-noop-converge'
+            commandId: 'delta-noop-converge',
+            nowEpochMs: BASE_EPOCH_MS + 1_000
         });
 
         const { computed } = await computeSummaryWork({
@@ -119,6 +120,43 @@ describe('group-state delta envelope construction', () => {
         expect(first.resource).toBe(second.resource);
         const envelope = readGroupStateEventRowEnvelope(first);
         expect(envelope.activeSessionIds).toEqual(['s-a', 's-b', 's-c', 's-trigger']);
+    });
+
+    it('computes from the explicit observation time without consulting a hidden clock', async () => {
+        const runtime = new GroupBarrierRepository();
+        const service = createService(runtime, BASE_EPOCH_MS);
+        await seedGroupWithBob(service, 'delta-explicit-time-group');
+        const ref = groupRef('delta-explicit-time-group');
+        const repository = createTestGroupStateRepository(runtime);
+        const event = (await repository.listEvents(ref)).find(
+            (candidate) => candidate.eventType === 'member-joined'
+        );
+        if (!event) {
+            throw new Error('Missing member-joined event');
+        }
+        const command: GroupPresenceSummaryWorkData = {
+            effectKind: 'group-presence-summary',
+            aggregateRef: ref,
+            commandId: 'delta-explicit-time-command',
+            createdAtEpochMs: event.occurredAtEpochMs,
+            expireAtEpochMs: 253_402_300_799_999,
+            acceptedCausalRevision: event.causalRevision,
+            event
+        };
+        const work = new GroupPresenceSummaryWork({
+            outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+            recomputeDebounceMs: 0,
+            runtimeRepository: runtime,
+            now: () => {
+                throw new Error('compute read the worker clock');
+            },
+            serviceId: 'summary-worker'
+        });
+        const read = await work.read(command);
+
+        const computed = work.compute(command, read, BASE_EPOCH_MS + 1_000);
+
+        expect(computed.summary.evaluatedAtEpochMs).toBe(BASE_EPOCH_MS + 1_000);
     });
 });
 
@@ -221,7 +259,7 @@ async function computeSummaryWork(input: SummaryWorkInput): Promise<ComputedSumm
         event
     };
     const read = await work.read(command);
-    const computed = work.compute(command, read);
+    const computed = work.compute(command, read, BASE_EPOCH_MS + 1_000);
     work.validate(command, read, computed);
     return { command, read, computed };
 }

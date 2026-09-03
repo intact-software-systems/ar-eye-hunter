@@ -123,7 +123,7 @@ export class GroupTopologyPlanningService {
         return computeGroupTopologyFromAuthority(authority, previous, planning);
     }
 
-    async computeGroupTopology(
+    private async readAndComputeGroupTopology(
         group: GroupSnapshot,
         previous: RallarOverlayTopologySnapshot | undefined
     ): Promise<ReconcileGroupTopologyResult> {
@@ -193,7 +193,7 @@ export class GroupTopologyPlanningService {
             throw new TypeError('Persistent topology reconciliation requires APP_OUTBOX');
         }
         const previous = this.dependencies.topologyService.readSnapshot(group);
-        const result = await this.computeGroupTopology(group, previous);
+        const result = await this.readAndComputeGroupTopology(group, previous);
         if (result.action === 'frozen') {
             return result;
         }
