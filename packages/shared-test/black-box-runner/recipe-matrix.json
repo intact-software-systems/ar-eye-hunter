@@ -1394,6 +1394,39 @@
       "description": "Three-server CRDT AppInbox gate for authenticated append, committed reply, durable fanout, and catch-up."
     },
     {
+      "id": "api-v1-group-lifecycle-stage-metrics",
+      "recipe": "tests/api-v1/api-v1-group-lifecycle-stage-metrics.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": ["api-v1-black-box-cluster"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-lifecycle-stage-metrics",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
+        ]
+      },
+      "description": "Three-node reading of the stage-transition metrics bucket: a managed group is planned, dials itself on the connect trigger and is activated, with admin group-formation metrics read on every node before and after, because the counter is process-local and the AppInbox is claimed by any node."
+    },
+    {
       "id": "api-v1-crdt-append-history-small",
       "recipe": "tests/api-v1/api-v1-crdt-append-history.json",
       "category": "api-v1-black-box",

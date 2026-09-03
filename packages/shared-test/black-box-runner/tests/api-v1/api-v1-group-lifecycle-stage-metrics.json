@@ -1,0 +1,635 @@
+{
+  "description": "The stage-transition metrics bucket read across the cluster that writes it: a managed group is planned, dials itself on the connect trigger and is activated, while the admin group-formation metrics are read on all three nodes before and after. The counter is process-local and the AppInbox is claimed by any node, so only the cluster sum is a sound reading.",
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "apiSecondary": {
+      "env": "RALLAR_API_BASE_URL_SECONDARY",
+      "default": "http://127.0.0.1:18081"
+    },
+    "apiTertiary": {
+      "env": "RALLAR_API_BASE_URL_TERTIARY",
+      "default": "http://127.0.0.1:18082"
+    },
+    "applicationId": "stage-metrics-{runId}",
+    "workspaceId": "default-{runId}",
+    "groupId": "stage-metrics-room-{runId}",
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "adminUsername": {
+      "env": "RALLAR_BB_ADMIN_USERNAME",
+      "default": "admin"
+    },
+    "adminPassword": {
+      "env": "RALLAR_BB_ADMIN_PASSWORD",
+      "default": "admin",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "secondary": {
+      "type": "http",
+      "baseUrl": "{apiSecondary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "tertiary": {
+      "type": "http",
+      "baseUrl": "{apiTertiary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    }
+  },
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}-group-lifecycle-stage-metrics",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-login-bob-002-{runId}-group-lifecycle-stage-metrics",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginAdmin",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-login-admin-003-{runId}-group-lifecycle-stage-metrics",
+        "body": {
+          "username": "{adminUsername}",
+          "password": "{adminPassword}"
+        },
+        "outputs": {
+          "adminClientId": "body.clientId",
+          "adminAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAdminAuthHeader",
+      "type": "set",
+      "output": "adminAuthHeader",
+      "secret": true,
+      "redactAs": "adminAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.adminAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "captureStageWritesBeforePrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "outputs": {
+          "beforeStageWritesPrimary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupFormation": {
+            "processLocal": true
+          }
+        }
+      }
+    },
+    {
+      "name": "captureStageWritesBeforeSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "outputs": {
+          "beforeStageWritesSecondary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupFormation": {
+            "processLocal": true
+          }
+        }
+      }
+    },
+    {
+      "name": "captureStageWritesBeforeTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "outputs": {
+          "beforeStageWritesTertiary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupFormation": {
+            "processLocal": true
+          }
+        }
+      }
+    },
+    {
+      "name": "sumStageWritesBefore",
+      "type": "set",
+      "output": "beforeStageWritesTotal",
+      "transform": {
+        "add": [
+          {
+            "path": "outputs.beforeStageWritesPrimary"
+          },
+          {
+            "path": "outputs.beforeStageWritesSecondary"
+          },
+          {
+            "path": "outputs.beforeStageWritesTertiary"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createManagedGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-stage-metrics-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Stage metrics group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "activation": {
+              "mode": "manual"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "lifecycleState": "forming",
+            "formationEpoch": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "aliceInvitesBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{bobClientId}/requests/invite-bob-stage-metrics-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "invited"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobAcceptsTheInvite",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/accept/requests/accept-bob-stage-metrics-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectAlicePresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/presence-alice-stage-metrics-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectBobPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/presence-bob-stage-metrics-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "managerPlansTheGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/plan/requests/plan-stage-metrics-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "thePlanPublishesALayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 250,
+          "backoffMultiplier": 1.5
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "theConnectTriggerDialsIt",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 250,
+          "backoffMultiplier": 1.5
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "connecting",
+          "formationEpoch": 2
+        }
+      }
+    },
+    {
+      "name": "activateTheDialedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/activate/requests/activate-stage-metrics-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "active",
+            "formationEpoch": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "captureStageWritesAfterPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "outputs": {
+          "afterStageWritesPrimary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupFormation": {
+            "processLocal": true
+          }
+        }
+      }
+    },
+    {
+      "name": "captureStageWritesAfterSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "outputs": {
+          "afterStageWritesSecondary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupFormation": {
+            "processLocal": true
+          }
+        }
+      }
+    },
+    {
+      "name": "captureStageWritesAfterTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "outputs": {
+          "afterStageWritesTertiary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupFormation": {
+            "processLocal": true
+          }
+        }
+      }
+    },
+    {
+      "name": "sumStageWritesAfter",
+      "type": "set",
+      "output": "afterStageWritesTotal",
+      "transform": {
+        "add": [
+          {
+            "path": "outputs.afterStageWritesPrimary"
+          },
+          {
+            "path": "outputs.afterStageWritesSecondary"
+          },
+          {
+            "path": "outputs.afterStageWritesTertiary"
+          }
+        ]
+      }
+    },
+    {
+      "name": "sumStageWritesExpected",
+      "type": "set",
+      "output": "expectedStageWritesTotal",
+      "transform": {
+        "add": [
+          {
+            "path": "outputs.beforeStageWritesTotal"
+          },
+          3
+        ]
+      }
+    },
+    {
+      "name": "thePlanConnectAndActivateCountInTheStageBucket",
+      "type": "assert",
+      "actual": {
+        "afterStageWritesTotal": "{afterStageWritesTotal}",
+        "expectedStageWritesTotal": "{expectedStageWritesTotal}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "afterStageWritesTotal",
+            "gte": "{expectedStageWritesTotal}"
+          }
+        ]
+      }
+    }
+  ]
+}

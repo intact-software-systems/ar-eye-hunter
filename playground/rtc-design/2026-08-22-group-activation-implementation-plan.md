@@ -3096,16 +3096,42 @@ The same review found the seven transition literals living in a fourth place. Th
 typed guard delegating to a name-only sibling for callers holding an unvalidated string, and the
 metrics classifier calling that sibling.
 
-**Carried forward.** The artifact reading the section asked for needs a recipe that is cluster-wired
-_and_ drives lifecycle commands. None exists: the metrics-reading bursts drive none, and the
-transition-driving recipes are single-origin by design. Building one is the next piece of Slice 13's
-observability work, and it is what would let 12b's writer be measured rather than assumed.
+**Carried forward, and then built.** The artifact reading the section asked for needs a recipe that is
+cluster-wired _and_ drives lifecycle commands. None existed: the metrics-reading bursts drive none,
+and the transition-driving recipes are single-origin by design. Slice 13b is that recipe —
+`api-v1-group-lifecycle-stage-metrics`, the cluster profile's seventh.
 
 **Not here:** `activationStatus` counts nothing until the writer exists, deliberately — registering it
 now costs one artifact shape change instead of two. It is a zero counter on a diagnostic, not a wire
 contract with no producer, which is why it is treated differently from the
 `group-activation-status-changed` event I36 deferred; a test pins that no operation the group inbox
 can report reaches it. If 12b lands without a producer, the bucket should go.
+
+### Slice 13b start checkpoint — the stage bucket read across the cluster (2026-09-03)
+
+Stacked on 13a, which is the slice that has the bucket to read. 13a could not prove it end to end:
+its own census found no recipe that both drives a lifecycle command and reads
+`body.groupFormation.metrics`, and neither remedy fitted — a primary-only reading on the managed
+bursts is unsound because the AppInbox is claimed by any node, and a cluster-wide one breaks the
+single-origin property `api-v1-managed-formation-recipe-loading.test.ts` pins on exactly those two.
+
+`api-v1-group-lifecycle-stage-metrics` is the recipe that fits, and it is new rather than an
+amendment because none of the six existing cluster recipes drives a lifecycle command either. It
+logs in as its own admin, reads the stage-transition write count on all three nodes, drives a
+`managed` group through `plan` → the connect trigger's own dial → `activate`, reads all three nodes
+again, and asserts the **sum** rose by at least three. The sum is the point: the counter is
+process-local, the queue hands work to whichever node claims it, and two of those three transitions
+are worker- and timer-driven, so no single node's reading is a fact about the group.
+
+It sits in `api-v1-black-box-cluster`, which the routine Postgres profile already runs, so the proof
+is paid on every `bb:api-v1:postgres` rather than only in `formation-large`.
+
+**Two gates corrected the first draft.** The matrix's evidence tier is not decorative — `tier: 2`
+means the recipe carries SQL evidence, and this one does not, so copying a neighbour's entry made a
+dishonest claim the matrix test caught. And the request identities have to be at least twenty
+resolved characters and private to one recipe: `plan-{runId}` was too short, while `activate-{runId}`
+and `group-create-{runId}` collided with the lifecycle-transitions and state-read-convergence
+recipes, which would have replayed their receipts.
 
 ## Slice 14 — Finalisation
 
