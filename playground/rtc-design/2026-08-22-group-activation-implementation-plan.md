@@ -400,6 +400,8 @@ Decisions I21–I25 were taken while delivering and reviewing PR 2 (1b + 1c) on 
 | I33 | **The presence trigger is answered where the presence evidence already lands** (2026-09-02, Slice 11b): its threshold half is evaluated in the topology work cycle beside the criterion petition — every presence change reaches that cycle, because the topology input fingerprint hashes the live session set — and its fallback half stays with the durable timer the stage entry armed, so `presence` arms `plan`/`connect` at `fallbackMs` and fires sooner when the members arrive. The one evaluator answers all four kinds; a caller whose elapsed half belongs to the timer passes no stage-entry instant. A met threshold petitions the connect latch as satisfied rather than by the clock, so the settle gate cannot hold back a trigger the policy says has fired.                                                                                                                                                              |
 | I34 | **The exhaustion landing moves the stage and nothing else** (2026-09-03, Slice 11c): the mutation owner asks the attempt budget about the attempt the failure is recording, so a series' last failure parks in `dormant` instead of following the transition table. It clears no layout identity and closes no transport valve — decision 36 assigns both to `reset`, and the `dormant` row of the dial, topology-disposition and closed-admission tables already makes a parked group inert. _Alternative rejected:_ clearing `acceptedLayoutIdentity` here too, which would give one field two owners for the sake of a stage description decision 35 states as how the group arrives, not as an invariant the stage enforces.                                                                                                                                                                                                             |
 
+| I35 | **The connect latch names the candidate it supersedes** (2026-09-03, Slice 11d): a `reconfigure` commands its own replan, so at arming time the planned slot still holds the layout it means to replace; the latch carries that identity and the petition refuses it, which is what makes `reconfiguring → reconnecting` automatic without dialing the stale candidate and freezing the replan. A `plan` names nothing, and deliberately: only `reconfigure` and `reset` enqueue commanded-origin replan work, and a `plan`'s automatic-origin work can be skipped as unchanged, so requiring a different publication there would strand a group in `planned` whenever its inputs did not move. _Alternative rejected:_ a publication instant on the latch, which a lagging node's clock could strand exactly as the settle could before I31. |
+
 The held-layout capability is the next milestone under current evidence, but every checkpoint selects
 only its next two independently reviewable PRs. Later labels below are capability-analysis anchors used
 for dependencies and navigation; I20 permits their owners, boundaries, grouping, order and even their
@@ -2819,6 +2821,54 @@ plus a two-row test that the retry leg arms behind an unexhausted failure and no
 one. Two condition-axis branches written for this landing, `failed` in
 `computeGroupActivationCondition` and `awaiting-application` in `resolveGroupActivationRemediation`,
 become reachable in production; both stay unread until Slice 12's status projection.
+
+### Slice 11d start checkpoint — the reconfigure boundary (2026-09-03)
+
+Stacked on 11c. The remaining Slice 11 automation item, carried since 11a reverted its first attempt
+and recorded the reason: arming the connect latch on the `reconfigure` that opens `reconfiguring`
+made the publication-driven petition dial the layout the reconfigure meant to replace, entering
+`reconnecting` on the stale candidate and freezing the reconfigure's own replan behind the 4b stage
+freeze. The latch named an epoch and a generation but no publication, so it could not tell the
+candidate it was waiting to see replaced from the one that satisfied it.
+
+What 11d lands:
+
+- **`GroupConnectTriggerLatch.supersedesLayoutIdentity`** (I35), the candidate the latch waits to see
+  replaced, `null` when any active planned layout satisfies it. `computeGroupConnectTrigger` fills it
+  from the planned slot the reconfigure's own read already loaded; the petition compares the
+  publication against it with `isSameGroupLayoutIdentity` and leaves the intent latched on a match.
+  Migration `20260903120000_connect_trigger_latch_supersedes` backfills `null` onto stored latches —
+  every one of them was armed by a `plan` — and the PGlite bootstrap replays it.
+- **Why only the reconfigure names one.** `toGroupEventPayload` marks exactly `reconfigureGroup` and
+  `resetGroupFormation` as commanded-origin replan work, and the fingerprint skip
+  (`readFingerprintSkip`) applies only to change-gated automatic group-revision work. So a
+  reconfigure always republishes and a fresh identity is guaranteed, while a `plan`'s own replan can
+  be skipped as unchanged — requiring a different publication there would strand a group in `planned`
+  whenever its topology inputs did not move, which is the ordinary case for a retry.
+- **One predicate for the latch and its timer.** `opensPlannedCandidateStage` is now shared by
+  `entersHeldStage` and `computeStageTriggerTimerEntries`. They must agree: the timer's arming gate
+  still read `planGroupLayout` only, so a reconfigure under an `after` or `presence` connect trigger
+  would have armed an intent whose settle no timer ever crossed — the publication petition runs on
+  the arming node's clock and returns before the settle, with nothing left to wake it.
+- **Recipe**: `api-v1-automatic-formation-triggers` continues past `connecting` — it activates the
+  dialed layout, reconfigures under the `hold` landing, polls for the automatic `reconnecting`, and
+  asserts the dialed layout's version is greater than the accepted one the latch named.
+
+- **The planned row is now read for a `reconfigure`.** The first head armed the latch from
+  `read.plannedLayoutRow`, which `readsGroupLayoutRows` does not load for that command, so the
+  identity was silently `null` and the latch fired on the stale candidate exactly as in 11a — the
+  lifecycle-transitions recipe caught it as a topology poll stuck at the pre-reconfigure revision.
+  The reconfigure takes no fence from the row, so it adds one point read and no conflict surface, on
+  a commanded path that already reads the stored policy.
+- **Blast radius in the recipes.** Under the `managed` preset the connect trigger is `immediate`, so
+  `api-v1-group-lifecycle-transitions` no longer drives the reconfigure's connect by hand: its manual
+  `connect` POST becomes a formation poll for `reconnecting`, the same conversion 11a made for that
+  recipe's first connect, and the four layout outputs the POST consumed go with it.
+
+**Accepted rather than changed.** A reconfigure whose replan publishes nothing leaves the group in
+`reconfiguring` with its latch armed, exactly as before this slice; the application `connect` still
+works, and no commanded replan is silently dropped, because commanded-origin work is not
+change-gated. The `apply` landing arms nothing, because it does not change the stage.
 
 ## Slice 12 — The living observed status
 

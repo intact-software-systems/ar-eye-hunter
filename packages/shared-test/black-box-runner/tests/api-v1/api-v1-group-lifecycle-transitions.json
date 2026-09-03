@@ -724,7 +724,6 @@
           "landing": "hold"
         },
         "outputs": {
-          "reconfigureLifecycleEpoch": "body.group.formationEpoch",
           "reconfigureLifecycleGroupRevision": "body.causalRevision.groupRevision"
         }
       },
@@ -755,12 +754,6 @@
           "maxDurationMs": 15000,
           "backoffMs": 100,
           "backoffMultiplier": 2
-        },
-        "outputs": {
-          "reconfigureLifecycleLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
-          "reconfigureLifecycleLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
-          "reconfigureLifecycleLayoutVersion": "body.snapshot.version",
-          "reconfigureLifecycleLayoutState": "body.snapshot.state"
         }
       },
       "expect": {
@@ -780,30 +773,24 @@
       "type": "http",
       "connection": "primary",
       "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/lifecycle/connect/requests/connect-reconfigure-managed-group-{runId}",
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{managedGroupId}/formation",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {
-          "expectedFormationEpoch": "{reconfigureLifecycleEpoch}",
-          "expectedLayout": {
-            "groupRevision": "{reconfigureLifecycleLayoutGroupRevision}",
-            "presenceRevision": "{reconfigureLifecycleLayoutPresenceRevision}",
-            "version": "{reconfigureLifecycleLayoutVersion}",
-            "state": "{reconfigureLifecycleLayoutState}"
-          }
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 250,
+          "backoffMultiplier": 1.5
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "group": {
-            "lifecycleState": "reconnecting",
-            "formationEpoch": 5,
-            "transportState": "halted"
-          }
+          "lifecycleState": "reconnecting",
+          "formationEpoch": 5
         }
       }
     },

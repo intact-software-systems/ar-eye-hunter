@@ -1,5 +1,5 @@
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
-import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { isSameGroupLayoutIdentity, toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { holdsPlannedCandidateAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -104,10 +104,17 @@ export async function petitionGroupConnectTrigger(
         // Intent remains in the latch; publication creates fresh durable work.
         return;
     }
-    await port.submitCommand(
-        toAutomaticGroupConnectCommand(identity, toGroupLayoutIdentity(planned)),
-        port.nowEpochMs()
-    );
+    const publication = toGroupLayoutIdentity(planned);
+    if (
+        row.latch.supersedesLayoutIdentity !== null &&
+        isSameGroupLayoutIdentity(publication, row.latch.supersedesLayoutIdentity)
+    ) {
+        // The reconfigure's own replan has not published yet, so this is the
+        // candidate it means to replace. Dialing it would enter `reconnecting`
+        // on the stale layout and freeze the replan (plan slice 11d).
+        return;
+    }
+    await port.submitCommand(toAutomaticGroupConnectCommand(identity, publication), port.nowEpochMs());
 }
 
 export function toAutomaticGroupConnectCommand(

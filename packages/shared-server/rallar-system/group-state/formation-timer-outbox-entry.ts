@@ -191,9 +191,19 @@ function computeEstablishmentTimerEntries(
 }
 
 /**
+ * The commands that can land a group in a stage holding a planned candidate,
+ * and so arm the connect trigger: a `plan` from `forming` and the
+ * `reconfigure` that opens `reconfiguring`. The latch and its timer backstop
+ * must agree on this, or a trigger with a settle arms an intent nothing wakes.
+ */
+export function opensPlannedCandidateStage(operation: GroupMutationCommand['operation']): boolean {
+    return operation === 'planGroupLayout' || operation === 'reconfigureGroup';
+}
+
+/**
  * The stage triggers' time leg (product decision 8), phased groups only
  * (product decision 17): the first entry into `forming` — creation or
- * `start` — arms the plan trigger, and a plan that lands a candidate in a
+ * `start` — arms the plan trigger, and a command that lands a candidate in a
  * stage that holds one arms the connect trigger, each at the delay its kind
  * gives — a settle for `after`, a fallback for `presence`. A below-floor
  * return into `forming` is the retry leg's, and a repeated `plan` while
@@ -212,9 +222,9 @@ function computeStageTriggerTimerEntries(
     }
     const { connectTrigger } = policy.establishment;
     if (
-        input.command.operation !== 'planGroupLayout' || !holdsPlannedCandidateAt(next.lifecycleState) ||
-        // `immediate` needs no entry: the publication that follows the plan
-        // petitions the latch, which is sooner than any timer could be.
+        !opensPlannedCandidateStage(input.command.operation) || !holdsPlannedCandidateAt(next.lifecycleState) ||
+        // `immediate` needs no entry: the publication that follows petitions
+        // the latch, which is sooner than any timer could be.
         connectTrigger.kind === 'immediate'
     ) {
         return [];

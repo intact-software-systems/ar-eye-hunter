@@ -1067,7 +1067,7 @@
           }
         ]
       },
-      "description": "Automatic formation triggers on a phased group: the plan trigger plans after its settle and the connect trigger dials the planned layout after the next settle, with no application plan or connect command."
+      "description": "Automatic formation triggers on a phased group: the plan trigger plans after its settle, the connect trigger dials the planned layout after the next settle, and a reconfigure that opens RECONFIGURING is dialed by the same trigger once its own replan publishes -- never the candidate it replaced, and with no application plan or connect command."
     },
     {
       "id": "api-v1-presence-formation-trigger",

@@ -128,7 +128,7 @@ async function seedConnectWrite(sql: PSqlSql, applicationId: string) {
     };
     const base = createGroupAuthorityRead({ ...groupRef, lifecycleState: 'planned', formationEpoch: 3 });
     const group = { ...base.group!, entry: { ...base.group!.entry, key: groupStateGroupStorageKey(groupRef) } };
-    const latch = { ...identity, notBeforeEpochMs: 0, state: 'awaiting-publication' } as const;
+    const latch = { ...identity, notBeforeEpochMs: 0, supersedesLayoutIdentity: null, state: 'awaiting-publication' } as const;
     const read = {
         ...base,
         group,
