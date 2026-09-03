@@ -1,5 +1,8 @@
 import { jsonEquals } from '@shared/repository/state-utils.ts';
-import { computeGroupConnectTrigger, type GroupConnectTriggerComputed } from '../aggregate/compute-group-connect-trigger.ts';
+import {
+    computeGroupConnectTrigger,
+    type GroupConnectTriggerComputed
+} from '../aggregate/compute-group-connect-trigger.ts';
 import { resolveGroupAuthorityPolicy } from '../aggregate/resolve-group-authority-policy.ts';
 import {
     isGroupLifecycleTransitionOperation,
@@ -44,7 +47,10 @@ function computeWrittenConnectTrigger(
     input: AssertComputedGroupMutationWriteInput
 ): Pick<GroupConnectTriggerComputed, 'effect'> {
     const { command, read, computed } = input;
-    if (!isGroupLifecycleTransitionOperation(command.operation) || computed.guard.kind !== 'group' || read.group === null) {
+    if (
+        !isGroupLifecycleTransitionOperation(command.operation) || computed.guard.kind !== 'group' ||
+        read.group === null
+    ) {
         return { effect: null };
     }
     const resolution = resolveGroupAuthorityPolicy(read);

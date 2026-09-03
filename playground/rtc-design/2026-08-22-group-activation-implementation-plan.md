@@ -399,10 +399,6 @@ Decisions I21–I25 were taken while delivering and reviewing PR 2 (1b + 1c) on 
 | I32 | **A deadline with no live layout fails its attempt at once** (2026-09-02, Slice 11a): a dialing group whose planned layout is gone at its deadline — torn down, or never published in a whole deadline — has nothing to fence and no readiness to measure, so the attempt fails with `expectedLayout: null` instead of retrying the durable entry without bound. The criterion authority matrix accepts a null layout fence on failure only; activation still requires one. A grace period was considered and rejected: implemented as re-throws it is a retry loop the queue's own attempt budget (20 attempts, ~5 minutes) cuts short well before a long deadline elapses, so it would promise a bound it cannot keep. The failure lands where the transition table puts it, `forming`; the exhausted-series `dormant` landing (`resolveFormationFailureLanding`) still has no caller and remains Slice 11's automation-completion work.   |
 | I33 | **The presence trigger is answered where the presence evidence already lands** (2026-09-02, Slice 11b): its threshold half is evaluated in the topology work cycle beside the criterion petition — every presence change reaches that cycle, because the topology input fingerprint hashes the live session set — and its fallback half stays with the durable timer the stage entry armed, so `presence` arms `plan`/`connect` at `fallbackMs` and fires sooner when the members arrive. The one evaluator answers all four kinds; a caller whose elapsed half belongs to the timer passes no stage-entry instant. A met threshold petitions the connect latch as satisfied rather than by the clock, so the settle gate cannot hold back a trigger the policy says has fired.                                                                                                                                                              |
 
-Decision I26 was taken at the Slice 9a start checkpoint on 2026-09-02 and is recorded in that
-checkpoint under Slice 9: the I13 member-policy field lands in 9b with its first reader, so 9a
-carries no mutation path.
-
 The held-layout capability is the next milestone under current evidence, but every checkpoint selects
 only its next two independently reviewable PRs. Later labels below are capability-analysis anchors used
 for dependencies and navigation; I20 permits their owners, boundaries, grouping, order and even their
@@ -2736,6 +2732,35 @@ What 11b lands:
   ten-minute fallback.
 - **Not here**: the automatic `reconfiguring → reconnecting` boundary and the exhausted-series
   `dormant` landing, both still Slice 11's remaining automation work.
+
+### Slice 10a–11b merge and rebase onto `main` (2026-09-03)
+
+The stack was merged downward — 11b into 11a's branch, 11a into 10b's, 10b into 10a's — so the one
+open PR (#409) now carries slices 10a, 10b, 11a and 11b as a single change against `main`, and 9a/9b
+landed separately as `030a82a06` (#404). The branch was rebased onto that head.
+
+Three textual conflicts, each reconciled by keeping both sides. The formation architecture's policy
+section: 9b replaced the "carried but enforced by nothing in v1" sentence with the `Group.memberPolicy`
+reader, so the replan-window and stage-trigger paragraphs now sit above that paragraph rather than
+before its predecessor. The state-write reason registry: 9b and 10a each registered a profile, so both
+`MEMBER_POLICY_ROW_WIDTH_*` and `COMMANDED_REPLAN_GATE_READS_*` are carried, in the union, the option
+guard and the selector. And `createInitialGroup`, where 9b's `memberPolicy: toGroupMemberPolicy(...)`
+now reads the policy through 10b's named `resolveCreateGroupLifecyclePolicy` instead of re-deriving
+the default preset inline.
+
+One semantic conflict no merge could see: 9a added a paragraph pointing at its checkpoint for decision
+I26 while 10a added I26 to the decision table itself, so the pointer paragraph is removed and the
+table row is the record. One piece of formatting debt travelled in with the merged stack —
+`assert-computed-group-mutation-write.ts` was not dprint-clean — and is fixed here.
+
+**Validation (2026-09-03, rebased head).** `typecheck` including the governed test typecheck (1 019
+files, 0 debt), `check:repo-style:changed` against the new base (no new findings), the changed-range
+structure-coupling review, `check:repo-structure`, `check:retained-legacy`, dprint over every changed
+file, `build`, `test:deno` (780 tests), and `test:unit` (1 049 files, 9 093 tests; the 19 failures in
+6 files are the known sandbox family — all 126 tests in those files pass unsandboxed). Black-box: the
+in-memory profile 36 of 36, the Postgres profile 36 of 36 plus the 6-recipe cluster profile,
+medium-scale, topology replay, and formation-large. Not run: the state-write A-B-B-A comparison, still
+blocked by the foreign perf-bench container on the pinned port.
 
 ## Slice 12 — The living observed status
 
