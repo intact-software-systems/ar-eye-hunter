@@ -21,6 +21,15 @@
       "env": "RALLAR_BB_CLIENT_PASSWORD",
       "default": "black-box-secret",
       "secret": true
+    },
+    "adminUsername": {
+      "env": "RALLAR_BB_ADMIN_USERNAME",
+      "default": "admin"
+    },
+    "adminPassword": {
+      "env": "RALLAR_BB_ADMIN_PASSWORD",
+      "default": "admin",
+      "secret": true
     }
   },
   "execution": {
@@ -738,6 +747,73 @@
       },
       "expect": {
         "status": 200
+      }
+    },
+    {
+      "name": "loginAdmin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-login-admin-{runId}-api-v1-group-formation-managed-burst-large",
+        "body": {
+          "username": "{adminUsername}",
+          "password": "{adminPassword}"
+        },
+        "outputs": {
+          "adminClientId": "body.clientId",
+          "adminAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAdminAuthHeader",
+      "type": "set",
+      "output": "adminAuthHeader",
+      "secret": true,
+      "redactAs": "adminAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.adminAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "captureStageTransitionsBeforeBurst",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "outputs": {
+          "beforeFormationMetrics": "body.groupFormation.metrics",
+          "beforeStageTransitionWrites": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupFormation": {
+            "processLocal": true
+          }
+        }
       }
     },
     {
@@ -18755,6 +18831,47 @@
             "outcome": "activated"
           }
         }
+      }
+    },
+    {
+      "name": "captureStageTransitionsAfterBurst",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/realtime",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "outputs": {
+          "afterFormationMetrics": "body.groupFormation.metrics",
+          "afterStageTransitionWrites": "body.groupFormation.metrics.groupMutationCount.stageTransition.write"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupFormation": {
+            "processLocal": true
+          }
+        }
+      }
+    },
+    {
+      "name": "theBurstsStageTransitionsAreCountedInTheirOwnBucket",
+      "type": "assert",
+      "actual": {
+        "beforeStageTransitionWrites": "{beforeStageTransitionWrites}",
+        "afterStageTransitionWrites": "{afterStageTransitionWrites}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "afterStageTransitionWrites",
+            "gt": "{beforeStageTransitionWrites}"
+          }
+        ]
       }
     }
   ]

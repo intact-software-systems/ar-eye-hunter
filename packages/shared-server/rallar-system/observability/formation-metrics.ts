@@ -87,7 +87,22 @@ export function toGroupFormationOperationKind(operation: string): GroupFormation
         case 'setGroupMemberRole':
         case 'transferGroupOwnership':
             return 'membership';
+        // The transition table's seven commands. The sink carries an untyped
+        // operation so a diagnostic can never reject one, so the literals are
+        // repeated here rather than narrowed through
+        // `isGroupLifecycleTransitionOperation`; a `Record` over that union in
+        // the test fails to compile if an eighth transition ever joins it.
+        case 'activateGroup':
+        case 'reconfigureGroup':
+        case 'failGroupFormation':
+        case 'planGroupLayout':
+        case 'connectGroup':
+        case 'startGroupFormation':
+        case 'resetGroupFormation':
+            return 'stageTransition';
         default:
+            // The transport valve lands here with everything else: it writes
+            // `transportState` alone and is no stage transition (decision 25).
             return 'other';
     }
 }
@@ -198,6 +213,8 @@ function createMutableGroupFormationMetrics(): MutableGroupFormationMetrics {
             heartbeat: emptyOutcomeCounts(),
             disconnect: emptyOutcomeCounts(),
             membership: emptyOutcomeCounts(),
+            stageTransition: emptyOutcomeCounts(),
+            activationStatus: emptyOutcomeCounts(),
             other: emptyOutcomeCounts()
         },
         presenceSummaryExpansionCount: 0,

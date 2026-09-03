@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { GroupLifecycleTransitionOperation } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import {
     createGroupFormationMetricsRecorder,
     emptyGroupFormationMetrics,
@@ -7,6 +8,22 @@ import {
 } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+
+/**
+ * Every transition the table owns, keyed so the compiler refuses an eighth
+ * without a bucket: the metrics classifier repeats these literals because its
+ * sink carries an untyped operation, and this record is what keeps the two
+ * lists honest.
+ */
+const STAGE_TRANSITION_OPERATIONS: Readonly<Record<GroupLifecycleTransitionOperation, 'stageTransition'>> = {
+    activateGroup: 'stageTransition',
+    reconfigureGroup: 'stageTransition',
+    failGroupFormation: 'stageTransition',
+    planGroupLayout: 'stageTransition',
+    connectGroup: 'stageTransition',
+    startGroupFormation: 'stageTransition',
+    resetGroupFormation: 'stageTransition'
+};
 
 describe('group formation metrics recorder', () => {
     it('maps group mutation operations onto formation operation kinds', () => {
@@ -19,6 +36,38 @@ describe('group formation metrics recorder', () => {
         expect(toGroupFormationOperationKind('setGroupMemberRole')).toBe('membership');
         expect(toGroupFormationOperationKind('createGroup')).toBe('other');
         expect(toGroupFormationOperationKind('unknown-op')).toBe('other');
+    });
+
+    it.each(Object.entries(STAGE_TRANSITION_OPERATIONS))('buckets %s as a stage transition', (operation, kind) => {
+        expect(toGroupFormationOperationKind(operation)).toBe(kind);
+    });
+
+    // The valve writes `transportState` alone and enters no transition table
+    // row (product decision 25), so it is not a stage transition.
+    it.each(['pauseGroupTransport', 'resumeGroupTransport'])('leaves %s outside the stage bucket', (operation) => {
+        expect(toGroupFormationOperationKind(operation)).toBe('other');
+    });
+
+    it('counts a lifecycle transition where the burst artifacts can see it', () => {
+        const recorder = createGroupFormationMetricsRecorder();
+
+        recorder.groupMutation({ operation: 'planGroupLayout', outcome: 'write' });
+        recorder.groupMutation({ operation: 'connectGroup', outcome: 'write' });
+        recorder.groupMutation({ operation: 'activateGroup', outcome: 'rejected' });
+
+        const metrics = recorder.readMetrics();
+        expect(metrics.groupMutationCount.stageTransition).toEqual({ write: 2, noOp: 0, rejected: 1 });
+        expect(metrics.groupMutationCount.other).toEqual({ write: 0, noOp: 0, rejected: 0 });
+    });
+
+    // Reserved for the observed-status writer: the bucket exists so the
+    // artifact shape does not change under it, and reads zero until then.
+    it('starts the reserved status bucket empty', () => {
+        expect(emptyGroupFormationMetrics().groupMutationCount.activationStatus).toEqual({
+            write: 0,
+            noOp: 0,
+            rejected: 0
+        });
     });
 
     it('counts group mutations by operation kind and outcome', () => {

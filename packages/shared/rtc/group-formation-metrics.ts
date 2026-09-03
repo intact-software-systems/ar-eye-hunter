@@ -4,6 +4,14 @@ export const GROUP_FORMATION_OPERATION_KINDS = [
     'heartbeat',
     'disconnect',
     'membership',
+    /** The seven lifecycle transitions, whichever authority commanded them. */
+    'stageTransition',
+    /**
+     * Reserved for the observed-status writer. The bucket lands before that
+     * writer so the burst artifacts keep one shape across the change it makes
+     * (Slice 13's ordering note); nothing counts here until then.
+     */
+    'activationStatus',
     'other'
 ] as const;
 
