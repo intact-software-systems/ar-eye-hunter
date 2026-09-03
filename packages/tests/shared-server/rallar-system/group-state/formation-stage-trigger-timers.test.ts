@@ -8,7 +8,7 @@ import {
     type GroupFormationTimerWork
 } from '@shared-server/rallar-system/group-state/formation-timer-outbox-entry.ts';
 import { computeGroupConnectTrigger } from '@shared-server/rallar-system/group-state/mutation/aggregate/compute-group-connect-trigger.ts';
-import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type { GroupMutationCommand, GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import {
     GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
     GroupConnectTriggerLatchRepository,
@@ -22,6 +22,7 @@ import {
 } from '@shared-server/rallar-system/topology/replay/work/create-group-connect-trigger-work-handler.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { toGroupLayoutIdentity, type GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy, GroupLifecycleState, GroupStageTrigger } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { Group } from '@shared/api/group-types.ts';
@@ -153,15 +154,19 @@ describe('stage trigger timer arming', () => {
         })).toEqual([]);
     });
 
-    it('arms nothing on the reconfigure that opens reconfiguring: its own replan has not published', () => {
+    // The latch a reconfigure arms names the candidate it supersedes, so its
+    // settle needs the same timer backstop a plan's does (plan slice 11d).
+    it('arms the connect settle on the reconfigure that opens reconfiguring', () => {
         const policy = policyWith({ kind: 'manual' }, { kind: 'after', settleMs: 700 });
-        expect(computeFormationTimerEntries({
+        const entries = computeFormationTimerEntries({
             command: transitionCommand('reconfigureGroup'),
             previous: 'active',
             next: createTestGroup({ lifecycleState: 'reconfiguring', formationEpoch: 4 }),
             policy,
             facts: createGroupAuthorityFacts()
-        })).toEqual([]);
+        });
+        expect(timerKinds(entries).map((work) => [work.kind, work.notBeforeEpochMs, work.formationEpoch]))
+            .toEqual([['connect', NOW_EPOCH_MS + 700, 4]]);
     });
 
     it('arms nothing for a group whose formation is immediate', () => {
@@ -223,6 +228,25 @@ describe('connect trigger latching by policy', () => {
         return computed.effect && 'value' in computed.effect ? JSON.parse(computed.effect.value).notBeforeEpochMs : null;
     }
 
+    function reconfigureLatchFor(plannedLayoutRow: GroupMutationRead['plannedLayoutRow']) {
+        return computeGroupConnectTrigger({
+            command: transitionCommand('reconfigureGroup'),
+            read: { ...createGroupAuthorityRead({ lifecycleState: 'active', formationEpoch: 2 }), plannedLayoutRow },
+            facts: createGroupAuthorityFacts(),
+            next: createTestGroup({ lifecycleState: 'reconfiguring', formationEpoch: 3 }),
+            policy: policyWith({ kind: 'manual' }, { kind: 'immediate' }),
+            previous: 'active'
+        });
+    }
+
+    function latchedSupersedes(
+        computed: ReturnType<typeof computeGroupConnectTrigger>
+    ): GroupLayoutIdentity | null {
+        return computed.effect && 'value' in computed.effect
+            ? JSON.parse(computed.effect.value).supersedesLayoutIdentity
+            : null;
+    }
+
     it('latches an application plan under an immediate connect trigger, settled at the plan', () => {
         const computed = latchFor({ kind: 'immediate' }, 'forming');
         expect(computed.effect?.operation).toBe('insert');
@@ -254,17 +278,17 @@ describe('connect trigger latching by policy', () => {
         expect(latchedNotBefore(computed)).toBe(0);
     });
 
-    it('latches nothing on the reconfigure that opens reconfiguring', () => {
-        const command = transitionCommand('reconfigureGroup');
-        const computed = computeGroupConnectTrigger({
-            command,
-            read: createGroupAuthorityRead({ lifecycleState: 'active', formationEpoch: 2 }),
-            facts: createGroupAuthorityFacts(),
-            next: createTestGroup({ lifecycleState: 'reconfiguring', formationEpoch: 3 }),
-            policy: policyWith({ kind: 'manual' }, { kind: 'immediate' }),
-            previous: 'active'
-        });
-        expect(computed).toEqual({ effect: null, outboxEntries: [] });
+    // The reconfigure commands its own replan, so the planned slot still holds
+    // the candidate it means to replace: the latch names that candidate and
+    // waits for a different one (plan slice 11d).
+    it('latches the superseded candidate on the reconfigure that opens reconfiguring', () => {
+        const computed = reconfigureLatchFor({ snapshot: PLANNED, revision: 5 });
+        expect(computed.effect?.operation).toBe('insert');
+        expect(latchedSupersedes(computed)).toEqual(toGroupLayoutIdentity(PLANNED));
+    });
+
+    it('names no candidate when the reconfigure finds an empty planned slot', () => {
+        expect(latchedSupersedes(reconfigureLatchFor(null))).toBeNull();
     });
 
     it('latches nothing for a group whose formation is immediate: the vocabulary is phased-only', () => {
@@ -310,13 +334,19 @@ async function createAutomationPort(
         planned: RallarOverlayTopologySnapshot | null;
         notBeforeEpochMs: number;
         nowEpochMs: number;
+        supersedesLayoutIdentity?: GroupLayoutIdentity | null;
     }>
 ): Promise<GroupFormationAutomationPort & { readonly commands: GroupMutationCommand[]; }> {
     const runtime = new FakeRuntimeStateRepository();
     await runtime.upsert(
         GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
         toGroupConnectTriggerStorageKey(IDENTITY),
-        JSON.stringify({ ...IDENTITY, notBeforeEpochMs: input.notBeforeEpochMs, state: 'awaiting-publication' }),
+        JSON.stringify({
+            ...IDENTITY,
+            notBeforeEpochMs: input.notBeforeEpochMs,
+            supersedesLayoutIdentity: input.supersedesLayoutIdentity ?? null,
+            state: 'awaiting-publication'
+        }),
         NEVER_EXPIRE_AT_TIMESTAMP
     );
     const commands: GroupMutationCommand[] = [];
@@ -353,6 +383,39 @@ describe('connect trigger settle', () => {
         const handler = createTimerHandler({ group: plannedGroup, planned: PLANNED, port, nowEpochMs: 5_000 });
         await handler.onMessage(timerMessage(), timerEntry({ kind: 'connect', formationEpoch: 3, notBeforeEpochMs: 5_000 }, plannedGroup));
         expect(port.commands.map((command) => command.operation)).toEqual(['connectGroup']);
+    });
+
+    // A reconfigure's latch names the candidate its own replan replaces, so
+    // the standing publication is exactly the one it must not dial.
+    it('leaves a latch naming the standing candidate latched', async () => {
+        const reconfiguring = createTestGroup({ lifecycleState: 'reconfiguring', formationEpoch: 3 });
+        const port = await createAutomationPort({
+            group: reconfiguring,
+            planned: PLANNED,
+            notBeforeEpochMs: 0,
+            nowEpochMs: 5_000,
+            supersedesLayoutIdentity: toGroupLayoutIdentity(PLANNED)
+        });
+        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
+        expect(port.commands).toEqual([]);
+        expect((await port.latches.read(IDENTITY))?.latch.state).toBe('awaiting-publication');
+    });
+
+    it('connects on the replan that replaces the candidate the latch names', async () => {
+        const reconfiguring = createTestGroup({ lifecycleState: 'reconfiguring', formationEpoch: 3 });
+        const replanned = { ...PLANNED, version: PLANNED.version + 1 };
+        const port = await createAutomationPort({
+            group: reconfiguring,
+            planned: replanned,
+            notBeforeEpochMs: 0,
+            nowEpochMs: 5_000,
+            supersedesLayoutIdentity: toGroupLayoutIdentity(PLANNED)
+        });
+        await petitionGroupConnectTrigger(port, IDENTITY, { kind: 'clock', atEpochMs: port.nowEpochMs() });
+        expect(port.commands.map((command) => command.operation)).toEqual(['connectGroup']);
+        expect(
+            port.commands.map((command) => command.operation === 'connectGroup' ? command.input.expectedLayout : null)
+        ).toEqual([toGroupLayoutIdentity(replanned)]);
     });
 });
 

@@ -16,10 +16,11 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { AppOutboxType } from '../app-outbox/app-outbox-type.ts';
 import { requireOneOf } from '../protocol/exact-object-decoding.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
-import type {
-    GroupLifecycleTransitionOperation,
-    GroupMutationCommand,
-    GroupMutationFacts
+import {
+    opensPlannedCandidateStage,
+    type GroupLifecycleTransitionOperation,
+    type GroupMutationCommand,
+    type GroupMutationFacts
 } from './mutation/group-mutation-contracts.ts';
 
 import { groupStateGroupStorageKey } from './persistence/aggregate/group-aggregate-storage-keys.ts';
@@ -193,7 +194,7 @@ function computeEstablishmentTimerEntries(
 /**
  * The stage triggers' time leg (product decision 8), phased groups only
  * (product decision 17): the first entry into `forming` — creation or
- * `start` — arms the plan trigger, and a plan that lands a candidate in a
+ * `start` — arms the plan trigger, and a command that lands a candidate in a
  * stage that holds one arms the connect trigger, each at the delay its kind
  * gives — a settle for `after`, a fallback for `presence`. A below-floor
  * return into `forming` is the retry leg's, and a repeated `plan` while
@@ -212,9 +213,9 @@ function computeStageTriggerTimerEntries(
     }
     const { connectTrigger } = policy.establishment;
     if (
-        input.command.operation !== 'planGroupLayout' || !holdsPlannedCandidateAt(next.lifecycleState) ||
-        // `immediate` needs no entry: the publication that follows the plan
-        // petitions the latch, which is sooner than any timer could be.
+        !opensPlannedCandidateStage(input.command.operation) || !holdsPlannedCandidateAt(next.lifecycleState) ||
+        // `immediate` needs no entry: the publication that follows petitions
+        // the latch, which is sooner than any timer could be.
         connectTrigger.kind === 'immediate'
     ) {
         return [];

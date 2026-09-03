@@ -246,7 +246,12 @@ async function createStageTriggerHarness(
         await runtime.upsert(
             GROUP_CONNECT_TRIGGER_LATCHES_NAMESPACE,
             toGroupConnectTriggerStorageKey(identity),
-            JSON.stringify({ ...identity, notBeforeEpochMs: input.awaitingLatchNotBeforeEpochMs, state: 'awaiting-publication' }),
+            JSON.stringify({
+                ...identity,
+                notBeforeEpochMs: input.awaitingLatchNotBeforeEpochMs,
+                supersedesLayoutIdentity: null,
+                state: 'awaiting-publication'
+            }),
             NEVER_EXPIRE_AT_TIMESTAMP
         );
     }

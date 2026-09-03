@@ -1,4 +1,5 @@
 import { toStageTriggerTimerDelayMs } from '@shared/api/group-lifecycle/evaluate-group-stage-trigger.ts';
+import { toGroupLayoutIdentity, type GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecyclePolicy, GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { holdsPlannedCandidateAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import type { Group } from '@shared/api/group-types.ts';
@@ -7,7 +8,12 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateGuardedBatchEffect } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { computeGroupConnectTriggerEntry } from '../../group-connect-trigger-outbox-entry.ts';
 import { toGroupConnectTriggerLatchEffect } from '../../persistence/group-connect-trigger-latch-repository.ts';
-import type { GroupMutationCommand, GroupMutationFacts, GroupMutationRead } from '../group-mutation-contracts.ts';
+import {
+    opensPlannedCandidateStage,
+    type GroupMutationCommand,
+    type GroupMutationFacts,
+    type GroupMutationRead
+} from '../group-mutation-contracts.ts';
 
 export interface GroupConnectTriggerComputed {
     readonly effect: RuntimeStateGuardedBatchEffect | null;
@@ -76,21 +82,30 @@ export function computeGroupConnectTrigger(input: ComputeGroupConnectTriggerInpu
 }
 
 /**
- * A plan that lands a fresh candidate in a stage that holds one. The
- * reconfigure that opens `reconfiguring` is deliberately not an arming site:
- * its own replan has not published yet, so a latch armed there would petition
- * against the layout the reconfigure means to replace and freeze it by
- * dialing. `reconfiguring` still waits for an application `connect`; the
- * automatic boundary out of it needs the latch to name the publication it
- * waits for, which is the next slice's work.
+ * A command that lands the group in a stage holding a candidate: `plan` from
+ * `forming`, and the `reconfigure` that opens `reconfiguring`. Both arm; what
+ * separates them is which publication satisfies the latch. A `reconfigure`
+ * commands its own replan, so at arming time the planned slot still holds the
+ * layout it means to replace — the latch names that layout and waits for a
+ * different one (plan slice 11d). A `plan` names nothing, because its replan
+ * may be skipped as unchanged and the standing candidate is then the one to
+ * dial. The idempotent replan from `planned` is excluded by the stage change.
  */
 function entersHeldStage(
     command: GroupMutationCommand,
     previous: GroupLifecycleState | null,
     next: Group
 ): boolean {
-    return command.operation === 'planGroupLayout' &&
+    return opensPlannedCandidateStage(command.operation) &&
         holdsPlannedCandidateAt(next.lifecycleState) && previous !== next.lifecycleState;
+}
+
+/** The candidate a `reconfigure` supersedes: the one its own replan replaces. */
+function resolveSupersededLayoutIdentity(input: ComputeGroupConnectTriggerInput): GroupLayoutIdentity | null {
+    if (input.command.operation !== 'reconfigureGroup' || input.read.plannedLayoutRow === null) {
+        return null;
+    }
+    return toGroupLayoutIdentity(input.read.plannedLayoutRow.snapshot);
 }
 
 function latchAwaitingPublication(
@@ -103,6 +118,7 @@ function latchAwaitingPublication(
         formationEpoch: next.formationEpoch,
         triggerGeneration: command.commandId,
         notBeforeEpochMs,
+        supersedesLayoutIdentity: resolveSupersededLayoutIdentity(input),
         state: 'awaiting-publication'
     } as const;
     return {

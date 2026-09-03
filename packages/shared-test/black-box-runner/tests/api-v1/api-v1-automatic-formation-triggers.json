@@ -1,5 +1,5 @@
 {
-  "description": "The automatic formation triggers (product decision 8, plan slice 11a): a phased group whose plan and connect triggers are `after` settles plans itself once the settle elapses and dials the planned layout after the next settle, with no application plan or connect command; each automatic transition advances the epoch like its manual twin.",
+  "description": "The automatic formation triggers (product decision 8, plan slices 11a and 11d): a phased group whose plan and connect triggers are `after` settles plans itself once the settle elapses and dials the planned layout after the next settle, with no application plan or connect command; a `reconfigure` then opens RECONFIGURING and the same connect trigger dials the replan it commanded, never the candidate it replaced; each automatic transition advances the epoch like its manual twin.",
   "variables": {
     "apiPrimary": {
       "env": "RALLAR_API_BASE_URL",
@@ -364,6 +364,129 @@
             "state": "active"
           }
         }
+      }
+    },
+    {
+      "name": "activateTheDialedLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/activate/requests/activate-automatic-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "active",
+            "formationEpoch": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "reconfigureOpensReconfiguring",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/reconfigure/requests/reconfigure-automatic-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "landing": "hold"
+        },
+        "outputs": {
+          "supersededLayoutGroupRevision": "body.group.acceptedLayoutIdentity.groupRevision"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "reconfiguring",
+            "formationEpoch": 4
+          }
+        }
+      }
+    },
+    {
+      "name": "theConnectTriggerDialsTheCommandedReplan",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 250,
+          "backoffMultiplier": 1.5
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "reconnecting",
+          "formationEpoch": 5
+        }
+      }
+    },
+    {
+      "name": "theDialedReplanIsNotTheSupersededCandidate",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 250,
+          "backoffMultiplier": 1.5
+        },
+        "outputs": {
+          "dialedLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "theDialedReplanSupersedesTheCandidateTheLatchNamed",
+      "type": "assert",
+      "actual": {
+        "supersededLayoutGroupRevision": "{supersededLayoutGroupRevision}",
+        "dialedLayoutGroupRevision": "{dialedLayoutGroupRevision}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "dialedLayoutGroupRevision",
+            "gt": "{supersededLayoutGroupRevision}"
+          }
+        ]
       }
     }
   ],

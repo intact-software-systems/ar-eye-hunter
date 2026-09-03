@@ -592,6 +592,16 @@ export function isGroupTransportOperation(
 }
 
 /** True exactly when the command names a planned layout its fence must match. */
+/**
+ * The commands that can land a group in a stage holding a planned candidate,
+ * and so arm the connect trigger: a `plan` from `forming` and the
+ * `reconfigure` that opens `reconfiguring`. The latch and its timer backstop
+ * must agree on this, or a trigger with a settle arms an intent nothing wakes.
+ */
+export function opensPlannedCandidateStage(operation: GroupMutationCommand['operation']): boolean {
+    return operation === 'planGroupLayout' || operation === 'reconfigureGroup';
+}
+
 export function isLayoutFencedGroupMutationCommand(command: GroupMutationCommand): boolean {
     return (
         (

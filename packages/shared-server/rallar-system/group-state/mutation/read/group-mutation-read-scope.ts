@@ -48,12 +48,16 @@ export function readsGroupActiveMemberPrincipalIds(
 /**
  * True when the command's compute consults the stored layout rows: every
  * activation reads them for the promotion effect (operator activations
- * included), and a layout-fenced command reads the planned row for its
- * fence and its commit-time re-assertion.
+ * included), a layout-fenced command reads the planned row for its fence and
+ * its commit-time re-assertion, and a `reconfigure` reads it to name the
+ * candidate its connect latch supersedes (plan slice 11d). The reconfigure
+ * takes no fence from it, so it adds a point read and no conflict surface —
+ * and only on a commanded path that already reads the stored policy.
  */
 export function readsGroupLayoutRows(command: GroupMutationCommand): boolean {
     return command.operation === 'activateGroup' ||
         command.operation === 'resetGroupFormation' ||
+        command.operation === 'reconfigureGroup' ||
         isLayoutFencedGroupMutationCommand(command);
 }
 

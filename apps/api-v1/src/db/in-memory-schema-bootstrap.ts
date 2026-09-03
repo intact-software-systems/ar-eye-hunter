@@ -21,7 +21,8 @@ export const API_V1_IN_MEMORY_SCHEMA_URL = new URL(
 export const API_V1_PGLITE_SCHEMA_UPGRADE_URLS: readonly URL[] = [
     '../../prisma/migrations/20260714093000_resource_inbox_scoped_queue_keys/migration.sql',
     '../../prisma/migrations/20260902150000_coalesced_work_window_anchor/migration.sql',
-    '../../prisma/migrations/20260902200000_connect_trigger_latch_settle/migration.sql'
+    '../../prisma/migrations/20260902200000_connect_trigger_latch_settle/migration.sql',
+    '../../prisma/migrations/20260903120000_connect_trigger_latch_supersedes/migration.sql'
 ].map((path) => new URL(path, import.meta.url));
 
 export async function readApiV1InMemorySchemaSql(): Promise<string> {

@@ -1,10 +1,15 @@
+import {
+    GROUP_LAYOUT_IDENTITY_KEYS,
+    GROUP_LAYOUT_IDENTITY_STATES,
+    type GroupLayoutIdentity
+} from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { serializeCanonicalJson } from '../../protocol/canonical-json.ts';
-import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { toExactJsonWireObject } from '../../protocol/to-json-wire-object.ts';
 import { groupStateGroupStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 
@@ -19,6 +24,13 @@ export interface GroupConnectTriggerIdentity {
 export interface GroupConnectTriggerLatch extends GroupConnectTriggerIdentity {
     /** The trigger's settle instant: a publication before it leaves the intent latched (plan slice 11a). */
     readonly notBeforeEpochMs: number;
+    /**
+     * The candidate this latch is waiting to see replaced, or `null` when any
+     * active planned layout satisfies it. A `reconfigure` commands its own
+     * replan, so at arming time the planned slot still holds the layout the
+     * reconfigure means to supersede (plan slice 11d).
+     */
+    readonly supersedesLayoutIdentity: GroupLayoutIdentity | null;
     readonly state: 'awaiting-publication' | 'consumed';
 }
 
@@ -100,8 +112,10 @@ export function decodeGroupConnectTriggerLatchRow(
             'formationEpoch',
             'triggerGeneration',
             'notBeforeEpochMs',
+            'supersedesLayoutIdentity',
             'state'
         ], 'Connect trigger latch');
+        const supersedesLayoutIdentity = toStoredSupersededLayoutIdentity(value.supersedesLayoutIdentity, entry.key);
         const groupRef = toExactJsonWireObject(
             value.groupRef,
             ['applicationId', 'workspaceId', 'groupId'],
@@ -120,13 +134,42 @@ export function decodeGroupConnectTriggerLatchRow(
             throw new GroupConnectTriggerLatchCorruptionError(entry.key);
         }
         return {
-            latch: { ...identity, notBeforeEpochMs: value.notBeforeEpochMs, state: value.state },
+            latch: {
+                ...identity,
+                notBeforeEpochMs: value.notBeforeEpochMs,
+                supersedesLayoutIdentity,
+                state: value.state
+            },
             revision: entry.revision
         };
     }
     catch {
         throw new GroupConnectTriggerLatchCorruptionError(entry.key);
     }
+}
+
+/** `null` or the exact wire shape of a layout identity; anything else is corruption. */
+function toStoredSupersededLayoutIdentity(value: JsonWireValue, key: string): GroupLayoutIdentity | null {
+    if (value === null) {
+        return null;
+    }
+    const identity = toExactJsonWireObject(value, GROUP_LAYOUT_IDENTITY_KEYS, 'Connect trigger superseded layout');
+    const state = identity.state;
+    if (
+        typeof identity.groupRevision !== 'number' || !Number.isSafeInteger(identity.groupRevision) ||
+        typeof identity.presenceRevision !== 'number' || !Number.isSafeInteger(identity.presenceRevision) ||
+        typeof identity.version !== 'number' || !Number.isSafeInteger(identity.version) ||
+        typeof state !== 'string' ||
+        !(GROUP_LAYOUT_IDENTITY_STATES as readonly string[]).includes(state)
+    ) {
+        throw new GroupConnectTriggerLatchCorruptionError(key);
+    }
+    return {
+        groupRevision: identity.groupRevision,
+        presenceRevision: identity.presenceRevision,
+        version: identity.version,
+        state: state as GroupLayoutIdentity['state']
+    };
 }
 
 export function toGroupConnectTriggerLatchEffect(

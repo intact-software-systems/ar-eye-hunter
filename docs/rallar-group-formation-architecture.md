@@ -183,9 +183,14 @@ instant: `immediate` may connect as soon as the layout publishes, `after` from i
 `connect` timer petitions the group's awaiting latches; `presence` from its fallback on, or sooner when its members hold live presence — the topology cycle
 that every presence change reaches petitions the latch as satisfied — and `manual` arms nothing. A
 re-plan behind a spent attempt latches regardless of trigger or formation mode, because it continues
-a series the application already started. The `reconfigure` that opens `reconfiguring` arms nothing:
-its own replan has not published, so `reconfiguring` still waits for an application `connect`. A deadline that finds no live planned layout in a dialing
-stage fails that attempt at once, with no layout to fence. A `forming` group's presence trigger plans through the same
+a series the application already started. The `reconfigure` that opens `reconfiguring` arms the same
+trigger, with one difference: it commands its own replan, so at arming time the planned slot still
+holds the candidate it means to replace. Its latch names that candidate
+(`supersedesLayoutIdentity`) and the petition refuses it, so the trigger dials the replan when it
+publishes and never the layout the reconfigure replaced; a `plan` names nothing, because its own
+replan may be skipped as unchanged and the standing candidate is then the one to dial. A deadline
+that finds no live planned layout in a dialing stage fails that attempt at once, with no layout to
+fence. A `forming` group's presence trigger plans through the same
 cycle, under `formation-automation`.
 
 `establishment.maxConcurrentEdgeSetups` reaches the browser as `Group.memberPolicy`, where each
