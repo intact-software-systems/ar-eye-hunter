@@ -1,3 +1,4 @@
+import { GROUP_ESTABLISHMENT_TRANSPORTS } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupLifecyclePolicy, GroupStageTrigger } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import {
     MAX_GROUP_ADMISSION_MEMBER_COUNT,
@@ -134,7 +135,7 @@ function decodeEstablishmentPolicy(value: JsonWireValue): GroupLifecyclePolicy['
     return {
         transports: requireOneOf(
             establishment.transports,
-            ['rtc-and-ws', 'ws-only', 'rtc-preferred'] as const,
+            GROUP_ESTABLISHMENT_TRANSPORTS,
             'Group lifecycle establishment transports'
         ),
         maxConcurrentEdgeSetups: requireBoundedInteger({

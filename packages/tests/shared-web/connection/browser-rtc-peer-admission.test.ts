@@ -83,7 +83,7 @@ describe('browser RTC peer admission', () => {
             for (const peerId of ['peer-planned', 'peer-accepted', 'peer-shared', 'peer-unlisted']) {
                 const allowed = scenario.expectedPeerIds.includes(peerId);
                 const dial = outbound.connection.service.ensurePeerConnectionStarted(peerId);
-                expect(dial.right?.peerId).toBe(allowed ? peerId : undefined);
+                expect(dial.right?.peer.peerId).toBe(allowed ? peerId : undefined);
                 if (!allowed) {
                     expect(dial.left?.kind).toBe('dial-denied');
                 }
@@ -173,7 +173,7 @@ describe('browser RTC peer admission', () => {
 
     it('rejects a lagging planned offer after activation while retaining an established peer', async () => {
         const runtime = await createAdmissionRuntime({ lifecycleState: 'connecting', planned: true, accepted: true });
-        expect(runtime.connection.service.ensurePeerConnectionStarted('peer-planned').right?.peerId).toBe('peer-planned');
+        expect(runtime.connection.service.ensurePeerConnectionStarted('peer-planned').right?.peer.peerId).toBe('peer-planned');
         const established = runtime.connection.nativePeer('peer-planned');
         established.setConnected();
         for (const channel of established.channels) {
@@ -186,7 +186,7 @@ describe('browser RTC peer admission', () => {
         };
         await runtime.manager.getOrCreate(active.group).acceptGroupUpdate(active);
 
-        expect(runtime.connection.service.ensurePeerConnectionStarted('peer-planned').right?.peerId).toBe('peer-planned');
+        expect(runtime.connection.service.ensurePeerConnectionStarted('peer-planned').right?.peer.peerId).toBe('peer-planned');
         expect(runtime.connection.nativePeer('peer-planned')).toBe(established);
         runtime.connection.service.removePeerIfPresent('peer-planned');
         await runtime.connection.receive(offer('peer-planned'));

@@ -1,4 +1,6 @@
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 type BenchResult = Readonly<{
@@ -109,7 +111,8 @@ function createGroupSnapshot(groupId: string, memberSessionIds: readonly string[
             establishmentStartedAtEpochMs: null,
             formationElectorate: [],
             acceptedLayoutIdentity: null,
-            transportState: 'flowing'
+            transportState: 'flowing',
+            memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy())
         },
         members: memberSessionIds.map((sessionId) => ({
             applicationId,

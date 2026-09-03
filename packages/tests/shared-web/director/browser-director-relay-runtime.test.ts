@@ -2,7 +2,7 @@ import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contrac
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 
@@ -572,11 +572,12 @@ function resetDirectorRtcDoubles(): void {
     mocks.webRtcConnectionService.activePeerIds.mockReturnValue([]);
     mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
     mocks.webRtcConnectionService.ensurePeerConnectionStarted.mockImplementation(
-        (peerId) =>
-            Either.ofLeft<WebRtcConnectionService.PeerConnectionLeft, QRtcPeerDto>({
+        (peerId: string): WebRtcConnectionService.PeerConnectionResult =>
+            Either.ofLeft({
                 kind: 'connect-failed',
                 peerId,
-                error: new Error('connect not mocked')
+                error: new Error('connect not mocked'),
+                startedSetup: false
             })
     );
     mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(

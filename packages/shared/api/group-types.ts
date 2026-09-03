@@ -3,6 +3,7 @@ import type { GroupLayoutIdentity } from './group-lifecycle/group-layout-identit
 import type {
     GroupFormationOutcome,
     GroupLifecycleState,
+    GroupMemberPolicy,
     GroupTransportState
 } from './group-lifecycle/group-lifecycle-policy.ts';
 import type { MutationActor } from './mutation-actor.ts';
@@ -116,6 +117,9 @@ type GroupBase =
          * Creation is always `flowing`.
          */
         transportState: GroupTransportState;
+
+        /** Resolved once at creation and never rewritten, like the policy it comes from. */
+        memberPolicy: GroupMemberPolicy;
     }>;
 
 export type Group =

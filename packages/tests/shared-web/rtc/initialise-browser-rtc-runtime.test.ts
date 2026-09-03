@@ -159,7 +159,7 @@ describe('browser RTC runtime composition', () => {
         });
         for (const peerId of ['accepted-peer', 'planned-peer']) {
             const connected = fixture.service.ensurePeerConnectionStarted(peerId, true);
-            expect(connected.right?.peerId).toBe(peerId);
+            expect(connected.right?.peer.peerId).toBe(peerId);
             const nativePeer = fixture.nativePeer(peerId);
             nativePeer.setConnected();
             for (const channel of nativePeer.channels) {

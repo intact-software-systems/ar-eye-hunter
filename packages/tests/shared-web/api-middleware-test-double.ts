@@ -7,7 +7,6 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import {
     DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
-    type QRtcPeerDto,
     type WebRtcConnectionService
 } from '@shared/services/web-rtc-connection-service.ts';
 
@@ -41,6 +40,8 @@ export function createDefaultApiMiddlewareTestDouble(
             ),
             rtcRxStreamer: createRtcRxStreamerDouble(middlewareOverrides.rtcRxStreamer),
             webRtcGroupManager: toServiceTestDouble<RallarBrowserMiddleware['webRtcGroupManager']>({
+                startReconcileWakes: vi.fn(),
+                stopReconcileWakes: vi.fn(),
                 ...middlewareOverrides.webRtcGroupManager
             }),
             webRtcOverlayMulticastManager: toServiceTestDouble<RallarBrowserMiddleware['webRtcOverlayMulticastManager']>({
@@ -131,12 +132,15 @@ function createWebRtcConnectionServiceDouble(
         knownPeerIds: vi.fn((): readonly string[] => []),
         activePeerIds: vi.fn((): readonly string[] => []),
         readyPeerIdsForLane: vi.fn((): readonly string[] => []),
-        ensurePeerConnectionStarted: vi.fn((peerId: string) =>
-            Either.ofLeft<WebRtcConnectionService.PeerConnectionLeft, QRtcPeerDto>({
-                kind: 'connect-failed',
-                peerId,
-                error: new Error('connect not mocked')
-            })
+        inFlightPeerIds: vi.fn((): readonly string[] => []),
+        ensurePeerConnectionStarted: vi.fn(
+            (peerId: string): WebRtcConnectionService.PeerConnectionResult =>
+                Either.ofLeft({
+                    kind: 'connect-failed',
+                    peerId,
+                    error: new Error('connect not mocked'),
+                    startedSetup: false
+                })
         ),
         ensurePeerLaneOpen: vi.fn(
             async (peerId: string, laneId: string = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => ({

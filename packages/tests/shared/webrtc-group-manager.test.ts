@@ -8,6 +8,8 @@ import {
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 // dprint-ignore
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type {
     AuditStamp,
     Group,
@@ -20,6 +22,7 @@ import type { WebRtcConnectionService } from '@shared/services/web-rtc-connectio
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcGroupPeerSelection } from '@shared/services/webrtc-group-manager-contracts.ts';
 import { createTestGroup } from '../create-test-group.ts';
+import type { SimulatedNativeRtcPeerConnection } from './native-rtc-connection-fixture.ts';
 import { createSimulatedRtcConnections } from './simulated-rtc-connection-service.ts';
 
 interface GroupSnapshotFixture {
@@ -28,6 +31,7 @@ interface GroupSnapshotFixture {
     readonly memberSessionIds: readonly string[];
     readonly applicationId?: string;
     readonly workspaceId?: string;
+    readonly maxConcurrentEdgeSetups?: number;
 }
 
 interface RtcConnectionHarness {
@@ -35,6 +39,7 @@ interface RtcConnectionHarness {
     knownPeerIds(): string[];
     peerIdsWithNoReconnectableLanes(): string[];
     markReconnectable(peerId: string): boolean;
+    nativePeer(peerId: string): SimulatedNativeRtcPeerConnection;
 }
 
 describe('WebRtcGroupManager', () => {
@@ -799,6 +804,7 @@ describe('WebRtcGroupManager', () => {
             connectAttemptCount: 0,
             connectFailureCount: 0,
             connectDeferredBudgetCount: 0,
+            connectDeferredPacingCount: 0,
             disconnectCount: 0,
             retainedCreatedCount: 0,
             retainedExpiredCount: 0,
@@ -830,6 +836,8 @@ describe('WebRtcGroupManager', () => {
         // re-runs once against the newest state after the in-flight run.
         expect(afterConcurrentReconcile.reconcileRunCount).toBe(3);
         expect(afterConcurrentReconcile.reconcileAwaitedInFlightCount).toBe(1);
+        // Re-ensuring a peer whose setup is still in flight starts no new attempt.
+        expect(afterConcurrentReconcile.connectAttemptCount).toBe(2);
 
         manager.resetDiagnostics();
         expect(manager.readDiagnostics().reconcileRunCount).toBe(0);
@@ -907,6 +915,358 @@ describe('WebRtcGroupManager', () => {
 
         expect(rtcQBox.knownPeerIds()).toEqual(['peer-s1']);
         expect(manager.readDiagnostics().connectDeferredBudgetCount).toBe(0);
+    });
+
+    it('bounds in-flight setups per group and dials paced peers as setups complete', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcConnectionHarness('self');
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service,
+            { groupCache, clientCache, acceptedOverlayCache },
+            { overlayTransitionGraceMs: 0 }
+        );
+        manager.startReconcileWakes();
+        const peerIds = ['peer-a', 'peer-b', 'peer-c', 'peer-d', 'peer-e'];
+        for (const peerId of peerIds) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+
+        await acceptActiveLayoutGroup(
+            manager,
+            acceptedOverlayCache,
+            createGroupSnapshot({
+                groupId: 'group-1',
+                membershipVersion: 1,
+                memberSessionIds: ['self', ...peerIds],
+                maxConcurrentEdgeSetups: 2
+            })
+        );
+
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-b']);
+        expect(rtcQBox.service.inFlightPeerIds()).toEqual(['peer-a', 'peer-b']);
+        expect(manager.readDiagnostics()).toMatchObject({ connectAttemptCount: 2, connectDeferredPacingCount: 3 });
+
+        rtcQBox.nativePeer('peer-a').setConnected();
+        await manager.whenReconciled();
+
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-b', 'peer-c']);
+        expect(rtcQBox.service.inFlightPeerIds()).toEqual(['peer-b', 'peer-c']);
+
+        rtcQBox.nativePeer('peer-b').setConnected();
+        rtcQBox.nativePeer('peer-c').setConnected();
+        await manager.whenReconciled();
+
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-b', 'peer-c', 'peer-d', 'peer-e']);
+        expect(manager.readDiagnostics()).toMatchObject({ connectAttemptCount: 5 });
+    });
+
+    it('wakes a reconcile when a setup ends by removal while a paced dial is waiting', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcConnectionHarness('self');
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service,
+            { groupCache, clientCache, acceptedOverlayCache },
+            { overlayTransitionGraceMs: 0 }
+        );
+        manager.startReconcileWakes();
+        for (const peerId of ['peer-a', 'peer-b']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+        await acceptActiveLayoutGroup(
+            manager,
+            acceptedOverlayCache,
+            createGroupSnapshot({
+                groupId: 'group-1',
+                membershipVersion: 1,
+                memberSessionIds: ['self', 'peer-a', 'peer-b'],
+                maxConcurrentEdgeSetups: 1
+            })
+        );
+        expect(manager.readDiagnostics()).toMatchObject({ reconcileRunCount: 1, connectAttemptCount: 1 });
+        const lifecycle: string[] = [];
+        rtcQBox.service.onRtcPeerLifecycleDo('observer-after-manager', {
+            onCreated: (peer) => {
+                lifecycle.push(`created:${peer.peerId}`);
+            },
+            onDeleted: (peer) => {
+                lifecycle.push(`deleted:${peer.peerId}`);
+            }
+        });
+
+        rtcQBox.service.disconnectPeer('peer-a');
+        expect(lifecycle).toEqual(['deleted:peer-a']);
+        await manager.whenReconciled();
+
+        // The wake ran after the deletion notice completed, so a later observer
+        // never sees the re-dial before the ending that released it.
+        expect(lifecycle).toEqual(['deleted:peer-a', 'created:peer-a']);
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-a']);
+        expect(manager.readDiagnostics()).toMatchObject({ reconcileRunCount: 2, connectAttemptCount: 2 });
+        manager.stopReconcileWakes();
+    });
+
+    it('stands down a wake scheduled before the wakes stop', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcConnectionHarness('self');
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service,
+            { groupCache, clientCache, acceptedOverlayCache },
+            { overlayTransitionGraceMs: 0 }
+        );
+        manager.startReconcileWakes();
+        for (const peerId of ['peer-a', 'peer-b']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+        await acceptActiveLayoutGroup(
+            manager,
+            acceptedOverlayCache,
+            createGroupSnapshot({
+                groupId: 'group-1',
+                membershipVersion: 1,
+                memberSessionIds: ['self', 'peer-a', 'peer-b'],
+                maxConcurrentEdgeSetups: 1
+            })
+        );
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-a']);
+
+        // The removal schedules the wake; shutdown stops the wakes before it runs.
+        rtcQBox.service.disconnectPeer('peer-a');
+        manager.stopReconcileWakes();
+        await manager.whenReconciled();
+
+        expect(rtcQBox.knownPeerIds()).toEqual([]);
+        expect(manager.readDiagnostics()).toMatchObject({ reconcileRunCount: 1 });
+    });
+
+    it('does not re-run a pass for an ending its own dial caused', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        // peer-a's lane refuses on every dial, which resets and removes its native
+        // connection inside the pass; with peer-c paced, a latch on that removal
+        // would re-run the pass forever.
+        const rtcQBox = createRtcConnectionHarness('self', [], (peerId) => {
+            if (peerId === 'peer-a') {
+                throw new Error('lane refused');
+            }
+            return true;
+        });
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service,
+            { groupCache, clientCache, acceptedOverlayCache },
+            { overlayTransitionGraceMs: 0 }
+        );
+        manager.startReconcileWakes();
+        for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+        await acceptActiveLayoutGroup(
+            manager,
+            acceptedOverlayCache,
+            createGroupSnapshot({
+                groupId: 'group-1',
+                membershipVersion: 1,
+                memberSessionIds: ['self', 'peer-a', 'peer-b', 'peer-c'],
+                maxConcurrentEdgeSetups: 1
+            })
+        );
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-b']);
+
+        await manager.ensureAllGroupsConnected();
+        await manager.whenReconciled();
+
+        // Pass two paces both peer-a and peer-c behind peer-b's setup.
+        expect(manager.readDiagnostics()).toMatchObject({
+            reconcileRunCount: 2,
+            reconcileCoalescedRerunCount: 0,
+            connectDeferredPacingCount: 3
+        });
+        manager.stopReconcileWakes();
+    });
+
+    it('frees a pacing slot at once when an admitted dial starts nothing', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcConnectionHarness('self');
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service,
+            { groupCache, clientCache, acceptedOverlayCache },
+            { overlayTransitionGraceMs: 0 }
+        );
+        rtcQBox.service.setOutboundDialPolicy(({ peerId }) => peerId !== 'peer-denied');
+        for (const peerId of ['peer-denied', 'peer-b']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+
+        await acceptActiveLayoutGroup(
+            manager,
+            acceptedOverlayCache,
+            createGroupSnapshot({
+                groupId: 'group-1',
+                membershipVersion: 1,
+                memberSessionIds: ['self', 'peer-denied', 'peer-b'],
+                maxConcurrentEdgeSetups: 1
+            })
+        );
+
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-b']);
+        expect(manager.readDiagnostics()).toMatchObject({ connectFailureCount: 1, connectDeferredPacingCount: 0 });
+    });
+
+    it('charges a known peer whose connection died as the new setup its re-dial starts', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcConnectionHarness('self');
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service,
+            { groupCache, clientCache, acceptedOverlayCache },
+            { overlayTransitionGraceMs: 0 }
+        );
+        for (const peerId of ['peer-a', 'peer-b']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+        await acceptActiveLayoutGroup(
+            manager,
+            acceptedOverlayCache,
+            createGroupSnapshot({
+                groupId: 'group-1',
+                membershipVersion: 1,
+                memberSessionIds: ['self', 'peer-a', 'peer-b'],
+                maxConcurrentEdgeSetups: 1
+            })
+        );
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-a']);
+        rtcQBox.nativePeer('peer-a').connectionState = 'failed';
+        expect(rtcQBox.service.inFlightPeerIds()).toEqual([]);
+
+        await manager.ensureAllGroupsConnected();
+
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-a']);
+        expect(rtcQBox.service.inFlightPeerIds()).toEqual(['peer-a']);
+        expect(manager.readDiagnostics()).toMatchObject({ connectAttemptCount: 2, connectDeferredPacingCount: 2 });
+    });
+
+    it('never lets a paced peer hold a connection-budget slot an idle group could use', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcConnectionHarness('self');
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service,
+            { groupCache, clientCache, acceptedOverlayCache },
+            { maxPeerConnections: 5, overlayTransitionGraceMs: 0 }
+        );
+        const idlePeerIds = ['peer-k1', 'peer-k2', 'peer-k3', 'peer-c'];
+        for (const peerId of ['peer-s', 'peer-a', ...idlePeerIds]) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+        await acceptActiveLayoutGroup(
+            manager,
+            acceptedOverlayCache,
+            createGroupSnapshot({
+                groupId: 'group-saturated',
+                membershipVersion: 1,
+                memberSessionIds: ['self', 'peer-s', 'peer-a'],
+                maxConcurrentEdgeSetups: 1
+            })
+        );
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-s']);
+
+        await acceptActiveLayoutGroup(
+            manager,
+            acceptedOverlayCache,
+            createGroupSnapshot({ groupId: 'group-idle', membershipVersion: 1, memberSessionIds: ['self', ...idlePeerIds] })
+        );
+
+        // Four connection slots remain; the paced peer-a consumes none of them.
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-s', ...idlePeerIds]);
+        expect(manager.readDiagnostics()).toMatchObject({ connectDeferredBudgetCount: 0 });
+    });
+
+    it('does not wake a reconcile for a setup ending while no dial is waiting, nor after wakes stop', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcConnectionHarness('self');
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service,
+            { groupCache, clientCache, acceptedOverlayCache },
+            { overlayTransitionGraceMs: 0 }
+        );
+        manager.startReconcileWakes();
+        for (const peerId of ['peer-a', 'peer-b']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+        await acceptActiveLayoutGroup(
+            manager,
+            acceptedOverlayCache,
+            createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a', 'peer-b'] })
+        );
+        expect(manager.readDiagnostics()).toMatchObject({ reconcileRunCount: 1, connectDeferredPacingCount: 0 });
+
+        rtcQBox.nativePeer('peer-a').setConnected();
+        await manager.whenReconciled();
+        expect(manager.readDiagnostics().reconcileRunCount).toBe(1);
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot({
+                groupId: 'group-1',
+                membershipVersion: 2,
+                memberSessionIds: ['self', 'peer-a', 'peer-b'],
+                maxConcurrentEdgeSetups: 1
+            })
+        );
+        manager.stopReconcileWakes();
+        rtcQBox.nativePeer('peer-b').setConnected();
+        await manager.whenReconciled();
+
+        expect(manager.readDiagnostics().reconcileRunCount).toBe(2);
+    });
+
+    it('charges a peer wanted by two groups to both and waits while either owner is at its bound', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcConnectionHarness('self');
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service,
+            { groupCache, clientCache, acceptedOverlayCache },
+            { overlayTransitionGraceMs: 0 }
+        );
+        manager.startReconcileWakes();
+        for (const peerId of ['peer-a', 'peer-shared', 'peer-b']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+        const saturated = createGroupSnapshot({
+            groupId: 'group-saturated',
+            membershipVersion: 1,
+            memberSessionIds: ['self', 'peer-a', 'peer-shared'],
+            maxConcurrentEdgeSetups: 1
+        });
+        const idle = createGroupSnapshot({
+            groupId: 'group-idle',
+            membershipVersion: 1,
+            memberSessionIds: ['self', 'peer-shared', 'peer-b'],
+            maxConcurrentEdgeSetups: 5
+        });
+
+        await acceptActiveLayoutGroup(manager, acceptedOverlayCache, saturated);
+        await acceptActiveLayoutGroup(manager, acceptedOverlayCache, idle);
+
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-b']);
+
+        rtcQBox.nativePeer('peer-a').setConnected();
+        await manager.whenReconciled();
+
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-b', 'peer-shared']);
     });
 
     it('counts connect failures in diagnostics', async () => {
@@ -1012,7 +1372,8 @@ function createRtcConnectionHarness(
         service,
         knownPeerIds: () => [...service.knownPeerIds()],
         peerIdsWithNoReconnectableLanes: () => [...service.peerIdsWithNoReconnectableLanes()],
-        markReconnectable: simulation.markReconnectable
+        markReconnectable: simulation.markReconnectable,
+        nativePeer: simulation.nativePeer
     };
 }
 
@@ -1060,6 +1421,14 @@ function createGroupSnapshot(
         rosterVersion: fixture.membershipVersion,
         presenceVersion: fixture.membershipVersion,
         formationElectorate: [...fixture.memberSessionIds],
+        ...(fixture.maxConcurrentEdgeSetups === undefined
+            ? {}
+            : {
+                memberPolicy: {
+                    ...toGroupMemberPolicy(createDefaultGroupLifecyclePolicy()),
+                    maxConcurrentEdgeSetups: fixture.maxConcurrentEdgeSetups
+                }
+            }),
         acceptedLayoutIdentity: {
             groupRevision: fixture.membershipVersion,
             presenceRevision: fixture.membershipVersion,

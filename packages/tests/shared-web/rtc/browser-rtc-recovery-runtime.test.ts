@@ -185,7 +185,8 @@ describe('Rallar RTC recovery', () => {
                 Either.ofLeft({
                     kind: 'connect-failed',
                     peerId,
-                    error: new Error('connect not mocked')
+                    error: new Error('connect not mocked'),
+                    startedSetup: false
                 })
         );
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
@@ -642,6 +643,66 @@ describe('Rallar RTC recovery', () => {
                 peerId: 'peer-1',
                 connection: {
                     connectionState: 'connecting'
+                }
+            }
+        });
+    });
+
+    it('emits RTC peer established lifecycle events from the connection service', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+        );
+        const peer = createBrowserRtcPeerTestDouble({
+            channels: [],
+            peerId: 'peer-1',
+            status: {
+                state: 'Open',
+                pc: Object.assign(new SimulatedNativeRtcPeerConnection(), {
+                    connectionState: 'connected'
+                }),
+                reconnectAttempts: 0,
+                reconnectTimer: undefined,
+                disconnectTimer: undefined
+            }
+        });
+        mocks.webRtcConnectionService.knownPeerIds.mockReturnValue(['peer-1']);
+        mocks.webRtcConnectionService.activePeerIds.mockReturnValue(['peer-1']);
+        mocks.webRtcConnectionService.readPeer.mockReturnValue(peer);
+        const facade = createRallarFacade();
+        const lifecycles: RallarRtcLifecycleEvent[] = [];
+
+        facade.rtc.onLifecycle(
+            (event) => {
+                lifecycles.push(event);
+            },
+            {
+                emitCurrent: false
+            }
+        );
+        await facade.connect();
+
+        const lifecycleCallback = mocks.webRtcConnectionService
+            .onRtcPeerLifecycleDo.mock.calls
+            .find(([id]) => id === 'rallar:rtc:status')?.[1];
+        expect(lifecycleCallback).toBeDefined();
+
+        lifecycleCallback?.onEstablished?.(
+            peer,
+            {
+                phase: 'established',
+                peerId: 'peer-1',
+                startedAtEpochMs: 1,
+                establishedAtEpochMs: 51
+            }
+        );
+
+        expect(lifecycles.at(-1)).toMatchObject({
+            kind: 'peer-established',
+            peerId: 'peer-1',
+            peer: {
+                peerId: 'peer-1',
+                connection: {
+                    connectionState: 'connected'
                 }
             }
         });

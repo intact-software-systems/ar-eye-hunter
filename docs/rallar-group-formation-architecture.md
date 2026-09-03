@@ -69,6 +69,8 @@ response and in every WS delta envelope:
 - `formationAttemptCount` — incremented by failure; activation and reset clear the series.
 - `transportState` — flowing or halted independently of lifecycle stage.
 - `acceptedLayoutIdentity` — the last accepted layout; reconfiguration preserves it until replacement.
+- `memberPolicy` — the member tier of the lifecycle policy (`maxConcurrentEdgeSetups`, `transports`),
+  resolved once at creation; the browser bounds its own concurrent RTC setups per group from it.
 - `lastFormationOutcome` — `null` until the criterion first decides, then the recorded decision:
   `{ outcome: 'activated' | 'activated-degraded' | 'below-floor', observedRate, atEpochMs,
   formationEpoch }`. Operator activation records nothing; only criterion-commanded transitions do.
@@ -137,9 +139,9 @@ and initiator choices plus six policy sections. Every field is required once nor
 | `topology`      | `replanning`, `reconfigureLanding`, `debounceWindowMs`, `maxReplanWaitMs`                              |
 | `data`          | `preActivationAppData`: `'allowed'` \| `'blocked-until-active'`                                        |
 
-Two fields are carried but enforced by nothing in v1: `establishment.transports` and
-`establishment.maxConcurrentEdgeSetups` are normalized, clamped, and persisted, and no server path
-reads them. Establishment pacing is whatever the browser's existing dial budget provides.
+`establishment.maxConcurrentEdgeSetups` reaches the browser as `Group.memberPolicy`, where each
+member bounds the RTC setups it starts per group (product decision 18). `establishment.transports`
+is carried the same way but read by nothing yet, and no server path reads either field.
 
 ### Presets
 
@@ -781,8 +783,9 @@ writing this document:
   is a `GroupMember` rank field, its join plumbing, and switching the `match` preset back.
 - **A policy-update surface.** The document is written once at creation; per-field mutability
   declarations land with the first update surface.
-- **Enforcement of `establishment.transports` and `establishment.maxConcurrentEdgeSetups`.** Both
-  are recorded and unread; establishment pacing is the browser dial budget.
+- **Enforcement of `establishment.transports`.** It rides `Group.memberPolicy` and is read by
+  nothing. The in-flight bound is enforced by the browser for the setups it starts; setups accepted
+  from a peer's signaling are not paced.
 - **A pending-admission TTL.** Parked rows persist until granted, declined, withdrawn, or governed.
 - **General automatic plan/connect policy evaluation.** Durable initial retry intent is implemented;
   immediate, timed and presence trigger policies remain separate work.

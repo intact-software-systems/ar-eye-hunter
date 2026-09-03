@@ -87,6 +87,13 @@ describe('API-v1 state-write topology regression reasons', { timeout: 30_000 }, 
             []
         );
 
+        const memberPolicyOptions = parseBenchmarkOptions([
+            '--regression-reason-profile=member-policy-row-width'
+        ]);
+        const memberPolicyReasons = selectStateWriteRegressionReasons(memberPolicyOptions.regressionReasonProfile, []);
+        expect(memberPolicyReasons).toHaveLength(12);
+        expect(memberPolicyReasons.every((entry) => entry.reason.includes('memberPolicy'))).toBe(true);
+
         const groupTopologyOptions = parseBenchmarkOptions([
             '--regression-reasons-file=tmp/perf/topology-reasons.json'
         ]);

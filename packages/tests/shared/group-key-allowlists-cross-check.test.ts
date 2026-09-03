@@ -39,6 +39,21 @@ describe('group key allowlists against keyof Group', () => {
         expect(() => validatePersistedGroup(group, ref)).not.toThrow();
     });
 
+    it('rejects an unregistered member policy key in every list', () => {
+        const group = JSON.parse(JSON.stringify(createTestGroup(ref)));
+        group.memberPolicy.retries = 3;
+        expect(() => validatePersistedGroup(group, ref))
+            .toThrow('Stored group memberPolicy has unexpected key: retries');
+        const snapshot = JSON.parse(JSON.stringify(createGroupSnapshotFixture({ ...ref, sessionIds: ['alice'] })));
+        snapshot.group.memberPolicy.retries = 3;
+        expect(() => validateAuthoritativeGroupSnapshot(snapshot, ref))
+            .toThrow('GroupSnapshot.group.memberPolicy has unexpected retries');
+        const envelope = JSON.parse(JSON.stringify(createDeltaEnvelopeFixture({ audienceSessionIds: ['alice-session'] })));
+        envelope.group.memberPolicy.retries = 3;
+        expect(() => validateGroupStateDeltaEnvelope(envelope))
+            .toThrow('memberPolicy has unexpected retries');
+    });
+
     it('rejects a group missing a registered key in every list', () => {
         const { transportState: omitted, ...withoutTransport } = JSON.parse(
             JSON.stringify(createTestGroup(ref))

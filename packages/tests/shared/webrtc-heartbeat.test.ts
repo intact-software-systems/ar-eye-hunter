@@ -97,7 +97,7 @@ async function createHeartbeatRuntime(maxMissedPings: number): Promise<Heartbeat
     const service = new WebRtcHeartbeatService({
         sessionId: 'self',
         peerSessionId: 'peer-1',
-        channel: connected.right.channel,
+        channel: connected.right.peer.channel,
         maxMissedPings,
         pingFrequencyMsecs: 5
     });

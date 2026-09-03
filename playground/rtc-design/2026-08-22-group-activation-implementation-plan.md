@@ -1,8 +1,9 @@
 # Group Activation — Implementation Plan (2026-08-22)
 
-Status: **implementation in progress — PR #390 and PR #391 are merged; Slice 8d PR #396 has completed
-reviewed-parent reconciliation, controlled performance review and final local validation. Its review
-correction awaits publication and exact remote gates, followed by Slice 9a. Re-baselined
+Status: **implementation in progress — Slices 1–8 are merged, the last through PR #396 on
+2026-09-01. Slice 9a, the truthful RTC lifecycle signals, is in delivery on
+`codex/group-activation-rtc-lifecycle-signals` (PR #404), and Slice 9b, the wire path and the
+per-group in-flight bound, is stacked on it on `codex/group-activation-in-flight-bound`. Re-baselined
 against product decisions 1–42. The product decisions are settled;
 the implementation decisions record current reasoning, while ownership, decomposition, file and
 symbol inventories, dependencies and gates must be refreshed against the actual delivery head before
@@ -389,6 +390,10 @@ Decisions I21–I25 were taken while delivering and reviewing PR 2 (1b + 1c) on 
 | I23 | **The business-plane rows of both status axes read `inactive` / `none`.** An archived, deleted or expired group's routing plane is frozen, so no coverage claim and no remediation claim is honest — the C5 row values I10 requires, now encoded in `computeGroupActivationCondition` and `resolveGroupActivationRemediation` as precedence zero.                                                                                                                                                                                                                                                                                                                                                                                                       |
 | I24 | **The settled numeric constants**: status dwell 3 000 ms, `active ↔ degraded` hysteresis width 0.05, evidence expiry 30 000 ms, minimum layout age 1 000 ms, RTC setup timeout 15 000 ms (`compute-group-activation-condition.ts`); per-group debounce window default 500 ms — matching today's `topology.recompute.formationDebounceMs` server default, an unbounded operator knob the clamped per-group field supersedes for replanning when slice 10 lands — clamped at 30 000 ms, maximum replan wait default 5 000 ms clamped at 600 000 ms, trigger delay clamp 600 000 ms (`to-normalized-group-lifecycle-policy.ts`). Pinned by the policy and status matrices so no later slice invents values under pressure.                                 |
 | I25 | **Supersedes I16: the `mutationDescriptor` refactor had already landed on `main` via #338** (`MutationDescriptorInput`, one named parameter), one day after this plan's last edit, so slice 5a carries no refactor. What survives of I16 is its own closing observation: the function's remaining job is defaulting `targetPrincipalId` and `sessionId` to `null` on a type that declares both required, so the honest outcome may be deletion. That question is decided in slice 5a with the four new commands in hand, where the call-site shape is being edited anyway. _Alternative rejected:_ deleting it during a governance pass — 36 live call sites across 9 files edited outside any behavioural slice, with no gate that exercises them all. |
+
+Decision I26 was taken at the Slice 9a start checkpoint on 2026-09-02 and is recorded in that
+checkpoint under Slice 9: the I13 member-policy field lands in 9b with its first reader, so 9a
+carries no mutation path.
 
 The held-layout capability is the next milestone under current evidence, but every checkpoint selects
 only its next two independently reviewable PRs. Later labels below are capability-analysis anchors used
@@ -2189,6 +2194,11 @@ historical checkpoints, not current blockers. PR #396 alone remains in the exist
 green checks do not prove its final review commit, so the broad and exact remote evidence must be
 refreshed before it can be marked ready.
 
+That refresh completed: the maintainer merged PR #396 on 2026-09-01, and its merged head is its exact
+branch head, so nothing on the lifecycle-route branch is unpublished. No review thread on #381, #390,
+#391 or #396 remains unresolved. Slice 8d is accepted with its recorded deferrals — the exhausted
+`dormant` landing stays a Slice 11 outcome — and the existing stack is closed.
+
 ## Slice 9 — In-flight pacing
 
 Three prerequisites are missing: (1) `ensurePeerConnectionStarted` returns a right value whether or not
@@ -2205,9 +2215,13 @@ its bound, even if the other is idle. Put that consequence in the pacing matrix.
 arbitration is promised" describes the absence of negotiation, not the absence of a scheduling
 decision, and an earlier draft leaned on it as though it removed one.
 
-- **9a — truthful RTC lifecycle signals** (surface attempt-started, add an established callback). Dark,
-  additive, independently valuable. I13 fixes the wire path: a nested member-policy object on the `Group`, carrying the resolved member-tier values with its own field validator.
-- **9b — the per-group bound, wake-on-completion, and the 6/20/50 sweep.**
+- **9a — truthful RTC lifecycle signals** (the ensure result names whether it started a setup, and an
+  established callback ends one). Dark, additive, independently valuable. Under I26 it carries no wire
+  change: I13's nested member-policy object on the `Group` lands in 9b with its first reader.
+- **9b — the wire path, the per-group bound, wake-on-completion, and the 6/20/50 sweep.** I13's
+  member-policy object, its field validator and its OpenAPI block land here beside the reconciler that
+  reads them (I7); the sweep's Hetzner manifest family splits into its own PR only if 9b's evidence
+  shows the distributed tier needs one.
 
 **Pacing is literally unobservable until the harnesses change:** the formation simulation clients and
 the RTC QBox harness both stub `ensurePeerConnectionStarted` as immediately successful. Rewrite them
@@ -2217,6 +2231,161 @@ with a completable asynchronous dial **before** 9b. Also the peer establishment 
 **Gates:** baseline, shared-web trio, headless bundle boundary, `test:full-stack`, the live-RTC suite;
 and for `pacing-sweep`, the Hetzner manifest family — generated code with a byte-exactness test,
 literal path lists, participant-count-in-filename validation and an explicit RTC-readiness requirement.
+
+### Slice 9a start checkpoint — truthful RTC lifecycle signals (2026-09-02)
+
+The Slice 0 material-change review ran against `main` @ `8a94bd772`. Since #396 merged, `main` gained
+one performance archive (#400) and the durable-delivery readiness gate on the room snapshot (#401).
+Both sit on the WebSocket delivery path; neither touches the RTC connection service, the group
+manager's reconcile pass, the browser lifecycle runtime or the in-flight admission function, so
+Slice 9's owners and its three named prerequisites stand as recovered.
+
+Ownership recovery confirmed the shape of the lie the slice exists to remove. `computeOutboundDialPlan`
+deliberately re-ensures every known desired peer on every pass — an ensure is idempotent, not a dial —
+so the manager's `connectAttemptCount`, incremented per call, counted every reconcile over a peer
+whose setup was still under way. The service knew the truth (the attempt budget consumes exactly once
+per created peer) and exposed none of it: the `Either` right was the bare peer, and
+`markPeerEstablished` cleared the watchdog and budget without telling any observer. Nothing else
+needed inventing: `computeInFlightDialAdmission` already exists from 1b and the native RTC fixture
+already drives establishment one lane at a time.
+
+**Decision I26 — the I13 field lands in 9b, not 9a.** I7 already rules that a persisted field lands
+with its first reader, and the member-policy object's first reader is 9b's per-group bound. Carrying
+it in 9a would have put a mutation-path change — the aggregate key lists, the persisted validator,
+the OpenAPI schema, medium-scale and state-write — into a slice whose own risk is confined to
+`packages/shared` and the browser lifecycle runtime. 9a therefore stays dark and additive and pays
+only the baseline, the shared-web trio and the headless bundle boundary. _Alternative rejected:_
+landing the field early so 9b is smaller, which is exactly the dark-plumbing hazard I7 removes.
+
+What 9a lands, all in `WebRtcConnectionService` and its two consumers:
+
+- **One entry per peer, carrying its setup.** The service keeps a single map of peer entries; the
+  entry's setup starts when the attempt budget is consumed, is replaced once on the first open
+  report from the connection or any lane, and leaves with the peer, so the two facts cannot drift.
+  A setup is the interval product decision 18 bounds; a later repair cycle on the same peer is the
+  connection's own reconnect state, which the per-peer status already reports, never a second setup.
+- **Creation owns its own undo.** A native start that throws inside `createPeer` releases the entry
+  before any observer hears of it — no creation notice, no deletion notice — while the consumed
+  attempt still counts against the budget, so a rejected ICE configuration still climbs the
+  exhaustion ladder instead of retrying forever. The old delayed `peer-timeout` for that case was an
+  accident of the corpse it left behind; the ensure result now reports the failure at once.
+- **A truthful ensure result.** `ensurePeerConnectionStarted` returns `{ peer, outcome }` with
+  `setup-started`, `setup-in-flight` or `setup-established`, and a `connect-failed` left states
+  `startedSetup` so a lane start that kills the connection is reported as the started-then-ended
+  setup it was. `isPeerSetupStarted` beside the result type answers "did this call start a setup"
+  once, for every caller. `acceptPeerIfAbsent` and the lane opener carry the same shape.
+- **`onEstablished`,** fired exactly once per setup with the started and established timestamps, and
+  `inFlightPeerIds`, which lists started, unestablished setups on live native connections — the set
+  9b's bound will count from. There is no reader-less setup accessor; 9b adds the read it needs with
+  its consumer. The five lifecycle notifications share one guarded loop instead of four copies.
+- **The manager counts setups, not calls**: `connectAttemptCount` advances only when
+  `isPeerSetupStarted` says so, so repeated reconciles over in-flight peers no longer inflate it.
+  The formation churn simulation's dial-count assertions hold unchanged, which is the semantic proof
+  the counter was previously wrong only in the repeated-reconcile case.
+- **`peer-established`** joins `RallarRtcLifecycleKind`, emitted by the browser lifecycle runtime, so
+  an application's member-progress view can advance on the event product decision 40 names rather
+  than polling lane health. The per-peer status does not yet project the setup phase; 9b decides
+  whether member progress needs that level view beside the event.
+
+Refreshed next two slices. 9a is this PR. 9b starts by rewriting the simulated RTC connection
+harness with a completable dial — the setup record makes "created but not yet established" a real
+state the native fixture already produces, so the harness only needs to stop marking every connect
+as immediately reconnectable — then lands I13's field with its validator and OpenAPI block, the
+per-group bound as `computeInFlightDialAdmission` over `inFlightPeerIds()` intersected with each
+owner's desired set, and wake-on-completion from `onEstablished`, `onDeleted` and
+`onConnectTimeout`. Its gates are the baseline, both black-box profiles, medium-scale, state-write,
+the shared-web trio, `test:full-stack` and the live-RTC suite; the 6/20/50 sweep manifests follow
+only when that evidence exists.
+
+Local evidence for 9a: the focused RTC suites pass with the setup-phase, once-only `onEstablished`,
+lane-failure, construction-failure and repeated-reconcile counter proofs; the complete root
+typecheck, the governed test typecheck, the full unit gate, the Deno gate, the workspace build, the
+changed-range style, coupling, structure and retained-legacy gates, the public API snapshots, the
+browser bundle budget and the headless bundle boundary all pass. The nine-angle review of the first
+head produced one consolidated correction, recorded above: a single per-peer entry, creation that
+undoes its own failed start, a `startedSetup` failure fact with `isPeerSetupStarted`, the liveness
+filter on `inFlightPeerIds`, the `setup-established` vocabulary, and the removal of the reader-less
+accessor. The same review found the overlay-roles test and both group-coordination benches mocking
+`connect` after the native constructor had already thrown; all three now dial through a simulated
+native runtime. The sandboxed unit run reports six files that bind ports or `/tmp`; they pass
+unsandboxed and are environment evidence, not slice evidence. Seventeen pre-existing unformatted
+files on `main` are untouched and outside this closure, as is the legacy scan's vocabulary hit on
+the benches' pre-existing CLI default parameter.
+
+### Slice 9b start checkpoint — the wire path and the per-group in-flight bound (2026-09-02)
+
+Stacked on 9a's reviewed head. The Slice 0 material-change review found nothing new on `main`
+beyond 9a's own base. Ownership recovery confirmed the "five-list edit" I13 predicted, and it is
+exactly five: the persisted group validator's key list, the authoritative snapshot validator's,
+the delta envelope validator's, the OpenAPI `Group` required block, and the compile-complete test
+fixture — the aggregate cross-check test drives one `Group` through the first three, so a list
+that drifts fails there before any recipe runs. Six benchmark and diagnostic workloads build a
+`Group` literal by hand and joined the closure as compile errors, which is the fixture's design
+working as intended.
+
+What 9b lands:
+
+- **`Group.memberPolicy`** (I13, product decision 26): `{ maxConcurrentEdgeSetups, transports }`,
+  resolved by `toGroupMemberPolicy` from the normalized policy at creation and from the default
+  preset when the request carries no policy, so every group read, delta and hydration carries the
+  bound each member enforces on itself. Last in wire order (I4); no persisted-row migration
+  because the key lists are exact and the cutover is clean-database, as every earlier aggregate
+  field was. The three validators enforce the normalizer's cap (256) and the OpenAPI schema
+  carries the same maximum, so no row or wire value can exceed what a policy can express.
+- **The dial plan and the dial walk.** `computeOutboundDialPlan` stays the pure ordering and
+  budget: known peers split by native liveness, new candidates server-first, and the connection
+  budget left after the peers already held. `WebRtcOutboundDialing` spends that budget and the
+  in-flight bound at dial time, against what each ensure actually did: an owner is charged only
+  when the ensure reports `setup-started`, a peer paced under product decision 18 holds no
+  connection-budget slot, a dial that starts nothing frees its slot for the next candidate at
+  once, and a known peer whose native connection died is charged as the new setup its re-dial
+  starts. Bounds are keyed by the scoped group key, so two groups sharing a bare id cannot share
+  a bound.
+- **Wake-on-completion** with an explicit lifecycle: the browser composition root calls
+  `startReconcileWakes()` once the service and manager exist, and transport shutdown calls
+  `stopReconcileWakes()` before it tears peers down, because shutdown removes peers their groups
+  still want. A wake runs on a microtask after the lifecycle notice that raised it, so every
+  observer sees the ending before the dials it releases; an ending the pass's own dial loop causes
+  sets the drain latch instead. `whenReconciled()` covers a scheduled wake. Nothing wakes while no
+  dial is waiting.
+- **The harness composes over the native fixture** and exposes `nativePeer(peerId)`: a test
+  establishes a setup with `setConnected()` on the simulated native connection, the path the
+  browser runtime takes. Only a live peer reports lane readiness there, as in the real predicate,
+  which is what lets a dead-but-known peer be re-dialed and charged.
+
+**Review correction (2026-09-02).** The first 9b head paced in the plan (`computePacedOutboundDialPlan`)
+and charged admissions before any ensure ran, so a denied or failed dial kept the slot it never
+used, a paced peer consumed a connection-budget slot, and a wake could re-dial a peer inside the
+deletion notice that freed it, ahead of other observers. The nine-angle review also found the
+bound keyed by bare group id, the wake observer registered in the constructor with no matching
+stop for non-browser owners, and the validators accepting any positive integer while the
+normalizer clamps to 256. All of it is folded into the shape above. Two consequences are
+accepted rather than fixed: a group created without a policy copies the default preset's member
+tier at creation, so a later preset change does not re-aim existing groups (the rule every other
+creation-time policy value already follows); and each validator's member-policy helper takes the
+already-narrowed record under one named record type per file, because the changed-style gate
+counts every `unknown` spelling a file gains and an `unknown`-typed helper parameter is one.
+
+**Open for 9c.** Inbound setups are not paced: `acceptPeerIfAbsent` starts a setup for any
+signaled peer regardless of the bound, so a member's in-flight count can exceed its bound by the
+offers it accepts; the bound governs what this member starts. RTT-driven peer selection should
+decide whether the acceptor pays for those setups or whether the initiator's bound is enough.
+
+**Validation (2026-09-02, final head).** Baseline: dprint, `check:repo-style:changed` (no new
+findings), test-structure coupling, `check:retained-legacy` (four candidates, all the pre-existing
+`fallback` identifiers of two benches that only gained a policy import), `check:repo-structure`,
+the governed test typecheck, `typecheck`, `build`, `test:deno`, and `test:unit` unsandboxed with
+two failures: the headless bundle boundary (216.6 KiB against the 216 KiB ceiling, below) and one
+IndexedDB AL store test whose 30 ms real-timer wait lost under full-suite load; it passes three of
+three alone and the slice touches no AL code. The shared-web trio, the browser bundle budget and
+the API-v1 black-box in-memory profile, medium-scale profile and full-stack suite pass. The
+live-RTC three-browser matrix fails identically on pristine `main` on this machine today, so it
+is environmental and not slice evidence. Two items wait on the maintainer: the headless bundle
+ceiling, which this slice does not touch, and the state-write A-B-B-A comparison, blocked while a
+foreign perf-bench container from another worktree holds the pinned port.
+
+Refreshed next two slices. 9b is this PR. The 6/20/50 sweep manifests (`pacing-sweep`) follow as
+their own PR once 9b's live-RTC evidence exists; Slice 10a is the outcome after that.
 
 ## Slice 10 — Replanning modes and landing go live
 

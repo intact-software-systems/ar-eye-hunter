@@ -10,6 +10,7 @@ import type {
     GroupLifecyclePolicy,
     GroupLifecyclePolicyInput,
     GroupManagerPolicy,
+    GroupMemberPolicy,
     GroupStageTrigger,
     GroupTopologyPolicy
 } from './group-lifecycle-policy.ts';
@@ -46,6 +47,14 @@ export function toNormalizedGroupLifecyclePolicy(
         admission: toAdmissionPolicy(base.admission, input.admission),
         topology: toTopologyPolicy(base.topology, input.topology),
         data: toDataPolicy(base.data, input.data)
+    };
+}
+
+/** The member tier a group carries (product decision 26): the normalized policy's establishment values, nothing more. */
+export function toGroupMemberPolicy(policy: GroupLifecyclePolicy): GroupMemberPolicy {
+    return {
+        maxConcurrentEdgeSetups: policy.establishment.maxConcurrentEdgeSetups,
+        transports: policy.establishment.transports
     };
 }
 

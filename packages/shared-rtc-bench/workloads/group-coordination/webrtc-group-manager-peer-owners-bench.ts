@@ -2,10 +2,14 @@ import { dirname } from 'node:path';
 
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+
+import { installRtcBenchmarkNativeRuntime } from '../native-rtc/rtc-benchmark-native-peer.ts';
 
 import {
     parseRtcBaselineAcceptedWorker,
@@ -80,10 +84,23 @@ export function parseWebRtcGroupManagerPeerOwnersArguments(
 export async function runWebRtcGroupManagerPeerOwners(
     input: WebRtcGroupManagerPeerOwnersInput
 ): Promise<WebRtcGroupManagerPeerOwnersResult> {
+    const connections = createSimulatedConnections('self');
+    try {
+        const manager = await seedPeerOwnerGroups(input, connections.service);
+        return measureOwnerLookups(input, manager);
+    }
+    finally {
+        connections.dispose();
+    }
+}
+
+async function seedPeerOwnerGroups(
+    input: WebRtcGroupManagerPeerOwnersInput,
+    connectionService: WebRtcConnectionService
+): Promise<WebRtcGroupManager> {
     const groupCache = new LatestRepository<string, GroupSnapshot>();
     const clientCache = new LatestRepository<string, ClientInfo>();
     const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
-    const connectionService = createSimulatedConnectionService('self');
     const manager = new WebRtcGroupManager(
         connectionService,
         { groupCache, clientCache, acceptedOverlayCache }
@@ -102,7 +119,13 @@ export async function runWebRtcGroupManagerPeerOwners(
 
         await manager.getOrCreate(group.group).acceptGroupUpdate(group);
     }
+    return manager;
+}
 
+function measureOwnerLookups(
+    input: WebRtcGroupManagerPeerOwnersInput,
+    manager: WebRtcGroupManager
+): WebRtcGroupManagerPeerOwnersResult {
     const lookupPeerIds = Array.from(
         { length: input.lookups },
         (_unused, index) => `peer-${index % input.groups}`
@@ -168,8 +191,14 @@ export function runWebRtcGroupManagerPeerOwnersAcceptedSamples(
     });
 }
 
-function createSimulatedConnectionService(sessionId: string): WebRtcConnectionService {
-    const connectedPeerIds = new Set<string>();
+interface SimulatedConnections {
+    readonly service: WebRtcConnectionService;
+    dispose(): void;
+}
+
+/** Real dials over the benchmark's simulated native peers, so the manager's ownership reads run their true workload. */
+function createSimulatedConnections(sessionId: string): SimulatedConnections {
+    const nativeRuntime = installRtcBenchmarkNativeRuntime();
     const service = new WebRtcConnectionService({ send: async () => undefined, connect: async () => undefined }, {
         sessionId,
         token: 'benchmark-token',
@@ -177,22 +206,15 @@ function createSimulatedConnectionService(sessionId: string): WebRtcConnectionSe
         dataChannelName: 'benchmark',
         rtcSignalingTopicId: 'rtc'
     });
-    service.onRtcPeerLifecycleDo('simulated-native-transport', {
-        onCreated: (peer) => {
-            peer.connection.connect = () => {
-                connectedPeerIds.add(peer.peerId);
-            };
-            for (const channel of peer.channels.values()) {
-                channel.connect = () => undefined;
+    return {
+        service,
+        dispose: () => {
+            for (const peerId of service.knownPeerIds()) {
+                service.removePeerIfPresent(peerId);
             }
-        },
-        onDeleted: (peer) => {
-            connectedPeerIds.delete(peer.peerId);
+            nativeRuntime.restore();
         }
-    });
-    // Preserve the simulated native readiness query's workload without creating browser sockets.
-    service.peerIdsWithNoReconnectableLanes = () => Array.from(connectedPeerIds);
-    return service;
+    };
 }
 
 function createGroupSnapshot(
@@ -268,7 +290,8 @@ function createGroupSnapshotGroup(
             version: 1,
             state: 'active'
         },
-        transportState: 'flowing'
+        transportState: 'flowing',
+        memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy())
     };
 }
 

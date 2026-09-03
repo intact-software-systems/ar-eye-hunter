@@ -117,6 +117,7 @@ export type RallarRtcLifecycleKind =
     | 'connected'
     | 'disconnected'
     | 'peer-created'
+    | 'peer-established'
     | 'peer-deleted'
     | 'peer-timeout'
     | 'lane-open'
