@@ -591,7 +591,6 @@ export function isGroupTransportOperation(
     return operation === 'pauseGroupTransport' || operation === 'resumeGroupTransport';
 }
 
-/** True exactly when the command names a planned layout its fence must match. */
 /**
  * The commands that can land a group in a stage holding a planned candidate,
  * and so arm the connect trigger: a `plan` from `forming` and the
@@ -602,6 +601,7 @@ export function opensPlannedCandidateStage(operation: GroupMutationCommand['oper
     return operation === 'planGroupLayout' || operation === 'reconfigureGroup';
 }
 
+/** True exactly when the command names a planned layout its fence must match. */
 export function isLayoutFencedGroupMutationCommand(command: GroupMutationCommand): boolean {
     return (
         (

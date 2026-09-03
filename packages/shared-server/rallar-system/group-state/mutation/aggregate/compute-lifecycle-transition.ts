@@ -204,7 +204,7 @@ function computeAllowedLifecycleTransition(
             formationAttemptCount: stored.formationAttemptCount + 1
         })
     });
-    return landing === undefined ? outcome : { ...outcome, nextState: landing };
+    return { ...outcome, nextState: landing ?? outcome.nextState };
 }
 
 function computeNextLifecycleGroup(

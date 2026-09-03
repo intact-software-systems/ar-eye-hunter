@@ -175,6 +175,10 @@ function computeEstablishmentTimerEntries(
     if (consumesFormationDeadlineAt(next.lifecycleState) && deadlineArmed) {
         return [timerEntry(input, 'deadline', facts.nowEpochMs + policy.activation.deadlineMs)];
     }
+    // The `forming` landing already implies an unspent budget since slice
+    // 11c — the attempt that spends it parks in `dormant`. This keeps the
+    // budget as the retry leg's own precondition, so narrowing the landing
+    // can never arm a retry the budget forbids.
     const retryAllowed = !isFormationAttemptBudgetExhausted({
         activation: policy.activation,
         formationAttemptCount: next.formationAttemptCount

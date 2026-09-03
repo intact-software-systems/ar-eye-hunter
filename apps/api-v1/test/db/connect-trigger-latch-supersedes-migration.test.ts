@@ -71,6 +71,9 @@ Deno.test('the supersedes migration backfills latches written before the candida
         assert.equal(byKey.get('legacy')?.supersedesLayoutIdentity, null);
         assert.equal(byKey.get('legacy')?.notBeforeEpochMs, 0);
         assert.deepEqual(byKey.get('reconfigure')?.supersedesLayoutIdentity, SUPERSEDED);
+        // Scoped to the latch namespace: the row in another namespace is
+        // still there, and still without the field.
+        assert.ok(byKey.has('other'));
         assert.equal(byKey.get('other')?.supersedesLayoutIdentity, undefined);
     }
     finally {

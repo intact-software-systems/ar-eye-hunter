@@ -3,7 +3,10 @@ import {
     evaluateGroupStageTrigger,
     resolveGroupStageTrigger
 } from '@shared/api/group-lifecycle/evaluate-group-stage-trigger.ts';
-import { consumesFormationDeadlineAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
+import {
+    consumesFormationDeadlineAt,
+    holdsPlannedCandidateAt
+} from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import { toCanonicalGroupRef, type Group } from '@shared/api/group-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -108,7 +111,7 @@ export async function petitionGroupStageTrigger(
         return;
     }
     const group = authority.group.group;
-    if (!isFreshFormingSeries(group) && group.lifecycleState !== 'planned') {
+    if (!isFreshFormingSeries(group) && !holdsPlannedCandidateAt(group.lifecycleState)) {
         return;
     }
     const policyRead = await dependencies.formationCriterion.readLifecyclePolicy(group);
@@ -156,7 +159,7 @@ async function submitSatisfiedStageTrigger(
     nowEpochMs: number
 ): Promise<void> {
     const groupRef = toCanonicalGroupRef(group);
-    if (group.lifecycleState === 'planned') {
+    if (holdsPlannedCandidateAt(group.lifecycleState)) {
         await petitionAwaitingGroupConnectTriggers(automation, groupRef, {
             kind: 'satisfied',
             observedFormationEpoch: group.formationEpoch

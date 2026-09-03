@@ -69,12 +69,17 @@ describe('stage trigger timer delay', () => {
 describe('stage trigger selection', () => {
     const policy = createDefaultGroupLifecyclePolicy();
 
-    it('gives forming the plan trigger and planned the connect trigger', () => {
+    it('gives forming the plan trigger', () => {
         expect(resolveGroupStageTrigger(policy, 'forming')).toBe(policy.establishment.planTrigger);
-        expect(resolveGroupStageTrigger(policy, 'planned')).toBe(policy.establishment.connectTrigger);
     });
 
-    it.each(['dormant', 'connecting', 'active', 'reconfiguring', 'reconnecting'] as const)(
+    // Both stages that hold a planned candidate answer to the connect
+    // trigger; since slice 11d the reconfigure boundary is one of them.
+    it.each(['planned', 'reconfiguring'] as const)('gives %s the connect trigger', (lifecycleState) => {
+        expect(resolveGroupStageTrigger(policy, lifecycleState)).toBe(policy.establishment.connectTrigger);
+    });
+
+    it.each(['dormant', 'connecting', 'active', 'reconnecting'] as const)(
         'governs no boundary from %s',
         (lifecycleState) => {
             expect(resolveGroupStageTrigger(policy, lifecycleState)).toBe(null);
