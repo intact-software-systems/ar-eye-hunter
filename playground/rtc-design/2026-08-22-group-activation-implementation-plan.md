@@ -2654,6 +2654,12 @@ Split 11a (`immediate`/`after` via the durable timer path) from 11b (the `presen
 construction restructure and its own state-write verdict). **Write the first unit tests this surface has
 ever had in 11a.**
 
+_Delivered 2026-09-02/03 across four checkpoints: 11a (`immediate`/`after` on the durable timer),
+11b (the `presence` trigger), 11c (the exhausted series parks in `dormant`, I34) and 11d (the
+`reconfiguring → reconnecting` boundary, I35). What this section describes as outstanding is
+historical from here on; the only item it names that is still open is 10a's per-command `automatic`
+origin._
+
 **Gates:** baseline, both profiles, **medium-scale**, **state-write**, `formation-large`.
 
 ### Slice 11a start checkpoint — plan and connect triggers on the durable timer path (2026-09-02)
