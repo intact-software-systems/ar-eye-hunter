@@ -1328,7 +1328,7 @@
       "connection": "primary",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/join/requests/join-match-lobby-carol-denied-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{lobbyGroupId}/join/requests/join-match-lobby-carol-after-exhaustion-{runId}",
         "headers": {
           "Authorization": "{carolAuthHeader}",
           "x-client-id": "{carolClientId}"
