@@ -3,12 +3,7 @@ import { isALControlTypeId, type ALControlAcceptance } from '../../al-contracts/
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import {
-    RetryableConflictError,
-    RetryPolicies,
-    tryWithPolicy
-} from '../../resilience/TryWith.ts';
-import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
+import { RetryableConflictError } from '../../resilience/TryWith.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type {
     ALInboundAdmissionStore,
@@ -18,6 +13,7 @@ import { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
 import { ALInboundDurableEffectWorker } from './al-inbound-durable-effect-worker.ts';
 import { computeALInboundAdmission } from './compute-al-inbound-admission.ts';
 import { readALInboundComputationFacts } from './read-al-inbound-computation-facts.ts';
+import { validateALInboundAdmission } from './validate-al-inbound-admission.ts';
 
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
@@ -56,10 +52,6 @@ export namespace ALInboundMessageRuntime {
 }
 
 export class ALInboundMessageRuntime {
-    private static readonly COMMIT_RETRY_POLICY = RetryPolicies.optimisticCommit(
-        'al-inbound-commit'
-    );
-
     private readonly admissionStore: ALInboundAdmissionStore;
     private readonly readyPromise: Promise<void>;
     private readonly commitQueuesBySenderId = new Map<string, Promise<void>>();
@@ -74,10 +66,7 @@ export class ALInboundMessageRuntime {
         this.dependencies = dependencies;
         this.admissionStore = dependencies.admissionStore;
         this.readyPromise = this.admissionStore.ready();
-        this.delivery = new ALInboundAdmittedDelivery({
-            ...dependencies,
-            commitRetryPolicy: ALInboundMessageRuntime.COMMIT_RETRY_POLICY
-        });
+        this.delivery = new ALInboundAdmittedDelivery(dependencies);
         this.effects = new ALInboundDurableEffectWorker({ ...dependencies, delivery: this.delivery });
     }
 
@@ -105,7 +94,7 @@ export class ALInboundMessageRuntime {
         }
 
         if (isALControlTypeId(msg.payload.typeId)) {
-            const acceptance = await this.acceptControlMessageWithRetry(msg);
+            const acceptance = await this.acceptControlMessage(msg);
             const waitForEffects = !this.effects.hasActiveDrain();
             const effectDrain = this.effects.start();
             if (waitForEffects) {
@@ -119,54 +108,24 @@ export class ALInboundMessageRuntime {
 
         await this.withSenderCommitQueue(
             msg.id.senderId,
-            () => this.admitIncomingMessage(msg, fromPeerId, planIncomingMessage)
+            () => this.commitIncomingMessage(msg, fromPeerId, planIncomingMessage)
         );
     }
 
-    private async acceptControlMessageWithRetry(
+    private async acceptControlMessage(
         msg: ALMessage
     ): Promise<ALControlAcceptance> {
-        return await tryWithPolicy(
-            async () => {
-                try {
-                    return await this.admissionStore.acceptControlMessage(msg);
-                }
-                catch (error) {
-                    if (error instanceof ALAdmissionBackendConflictError) {
-                        throw new RetryableConflictError(
-                            'Inbound control-message admission conflict',
-                            { cause: error }
-                        );
-                    }
-                    throw error;
-                }
-            },
-            ALInboundMessageRuntime.COMMIT_RETRY_POLICY
-        );
-    }
-
-    private async admitIncomingMessage(
-        msg: ALMessage,
-        fromPeerId: string,
-        planIncomingMessage: ALInboundPlanner
-    ): Promise<void> {
-        if (this.disposed) {
-            return;
-        }
         try {
-            await tryWithPolicy(
-                () => this.commitIncomingMessage(msg, fromPeerId, planIncomingMessage),
-                ALInboundMessageRuntime.COMMIT_RETRY_POLICY
-            );
+            return await this.admissionStore.acceptControlMessage(msg);
         }
         catch (error) {
-            if (error instanceof ALAdmissionCorruptionError) {
-                throw error;
+            if (error instanceof ALAdmissionBackendConflictError) {
+                throw new RetryableConflictError(
+                    'Inbound control-message admission conflict',
+                    { cause: error }
+                );
             }
-            throw new Error(
-                `Failed to commit inbound message after retries: ${msg.id.msgId}`,
-                { cause: error }
-            );
+            throw error;
         }
     }
 
@@ -175,6 +134,9 @@ export class ALInboundMessageRuntime {
         fromPeerId: string,
         planIncomingMessage: ALInboundPlanner
     ): Promise<void> {
+        if (this.disposed) {
+            return;
+        }
         const read = await this.admissionStore.readIncomingMessage(
             msg,
             fromPeerId,
@@ -182,11 +144,21 @@ export class ALInboundMessageRuntime {
         );
         const canForward = !read.plan.dropReason && this.dependencies.forwardMessage !== undefined &&
             (this.dependencies.canForwardMessage?.(msg) ?? true);
+        const facts = readALInboundComputationFacts(this.dependencies);
         const bundle = computeALInboundAdmission(
             read,
             canForward,
-            readALInboundComputationFacts(this.dependencies)
+            facts
         );
+        const validationIssue = validateALInboundAdmission({
+            read,
+            canForward,
+            facts,
+            computed: bundle
+        })[0];
+        if (validationIssue) {
+            throw validationIssue.cause;
+        }
         const status = await this.admissionStore.commitBundle(bundle);
         if (status === 'conflict') {
             throw new RetryableConflictError('Inbound commit conflict');

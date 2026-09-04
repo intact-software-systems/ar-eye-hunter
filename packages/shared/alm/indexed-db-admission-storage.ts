@@ -1,15 +1,20 @@
+import type { PersistedALValue } from '../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import {
     readIndexedDbRequest,
     waitForIndexedDbTransaction
 } from '../persistence/indexed-db-request.ts';
 import { openIndexedDbWithStore } from '../persistence/openIndexedDb.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
+import { toError } from '../resilience/to-error.ts';
 import {
     decodeALAdmissionStoredValue,
     type ALAdmissionStoredValue
 } from './al-admission-backend.ts';
 import { ALAdmissionCorruptionError, decodeALAdmissionValue } from './al-admission-decoder.ts';
-import { decodeALAdmissionNumber } from './al-admission-value-validation.ts';
+import {
+    decodeALAdmissionNumber,
+    decodeALAdmissionRecord
+} from './al-admission-value-validation.ts';
 
 export const AL_ADMISSION_REVISION_KEY = '__rallar_al_admission_revision__';
 export const AL_ADMISSION_EXPIRY_INDEX_NAME = 'expireAtTimestamp';
@@ -26,6 +31,13 @@ export type IndexedDbAdmissionMutation =
 export interface IndexedDbAdmissionSnapshot<Stored = ALAdmissionStoredValue> {
     readonly revision: number;
     readonly stored: readonly Stored[];
+}
+
+export interface IndexedDbAdmissionStoredRow {
+    readonly key: string;
+    readonly value: PersistedALValue;
+    readonly expireAtTimestamp: number;
+    readonly writeToken?: string;
 }
 
 export type IndexedDbAdmissionSelection =
@@ -46,6 +58,15 @@ export interface WriteIndexedDbAdmissionMutationsInput {
     readonly mutations: readonly IndexedDbAdmissionMutation[];
     readonly revisionWrite: ALAdmissionStoredValue;
     readonly storeName: string;
+}
+
+interface IndexedDbAdmissionWriteContext {
+    readonly guardedRemovals: readonly Extract<IndexedDbAdmissionMutation, { kind: 'remove-if-write-token'; }>[];
+    readonly input: WriteIndexedDbAdmissionMutationsInput;
+    readonly store: IDBObjectStore;
+    readonly transaction: IDBTransaction;
+    conflict: boolean;
+    storedValueError: Error | undefined;
 }
 
 export function computeIndexedDbAdmissionRevisionWrite(
@@ -81,80 +102,129 @@ export async function readIndexedDbAdmissionSnapshot<Stored>(
     db: IDBDatabase,
     storeName: string,
     selection: IndexedDbAdmissionSelection,
-    readStored: (value: unknown, key: string) => Stored
+    projectStored: (stored: IndexedDbAdmissionStoredRow, key: string) => Stored
 ): Promise<IndexedDbAdmissionSnapshot<Stored>>;
 export async function readIndexedDbAdmissionSnapshot<Stored>(
     db: IDBDatabase,
     storeName: string,
     selection: IndexedDbAdmissionSelection,
-    readStored: (value: unknown, key: string) => Stored = decodeALAdmissionStoredValue as (
-        value: unknown,
-        key: string
-    ) => Stored
-): Promise<IndexedDbAdmissionSnapshot<Stored>> {
+    projectStored?: (stored: IndexedDbAdmissionStoredRow, key: string) => Stored
+): Promise<IndexedDbAdmissionSnapshot<ALAdmissionStoredValue | Stored>> {
     const transaction = db.transaction(storeName, 'readonly');
     const store = transaction.objectStore(storeName);
     const completed = waitForIndexedDbTransaction(transaction);
-    const [stored, revisionValue] = await Promise.all([
-        readIndexedDbAdmissionSelection(store, selection, readStored),
+    const [rows, revisionValue] = await Promise.all([
+        readIndexedDbAdmissionSelection(store, selection),
         readIndexedDbRequest(store.get(AL_ADMISSION_REVISION_KEY))
     ]);
     await completed;
+    const stored = projectStored === undefined
+        ? rows.map(decodeALAdmissionStoredValueFromIndexedDbRow)
+        : rows.map((row) => projectIndexedDbAdmissionStoredRow(row, projectStored));
     return { stored, revision: decodeIndexedDbAdmissionRevision(revisionValue) };
 }
 
 export async function writeIndexedDbAdmissionMutations(
     input: WriteIndexedDbAdmissionMutationsInput
 ): Promise<boolean> {
-    return await new Promise<boolean>((resolve, reject) => {
-        const transaction = input.db.transaction(input.storeName, 'readwrite');
-        const store = transaction.objectStore(input.storeName);
-        const revisionRequest = store.get(AL_ADMISSION_REVISION_KEY);
-        let conflict = false;
+    const guardedRemovals = input.mutations.filter(
+        (mutation) => mutation.kind === 'remove-if-write-token'
+    );
+    const transaction = input.db.transaction(input.storeName, 'readwrite');
+    const completed = waitForIndexedDbTransaction(transaction);
+    const store = transaction.objectStore(input.storeName);
+    const revisionRequest = store.get(AL_ADMISSION_REVISION_KEY);
+    const context: IndexedDbAdmissionWriteContext = {
+        guardedRemovals,
+        input,
+        store,
+        transaction,
+        conflict: false,
+        storedValueError: undefined
+    };
+    revisionRequest.onsuccess = () => continueIndexedDbAdmissionWrite(context, revisionRequest.result);
+    try {
+        await completed;
+        return true;
+    }
+    catch (error) {
+        if (context.storedValueError) {
+            throw context.storedValueError;
+        }
+        if (context.conflict) {
+            return false;
+        }
+        throw transaction.error ?? toError(error);
+    }
+}
 
-        transaction.oncomplete = () => resolve(true);
-        transaction.onabort = () => {
-            if (conflict) {
-                resolve(false);
+function continueIndexedDbAdmissionWrite(
+    context: IndexedDbAdmissionWriteContext,
+    revisionValue: IDBRequest['result']
+): void {
+    let actualRevision: number;
+    try {
+        actualRevision = decodeIndexedDbAdmissionRevision(revisionValue);
+    }
+    catch (error) {
+        abortIndexedDbAdmissionWrite(context, AL_ADMISSION_REVISION_KEY, toError(error));
+        return;
+    }
+    if (actualRevision !== context.input.expectedRevision) {
+        context.conflict = true;
+        context.transaction.abort();
+        return;
+    }
+    if (context.guardedRemovals.length === 0) {
+        applyIndexedDbAdmissionMutations(context.store, context.input);
+        return;
+    }
+    readGuardedIndexedDbAdmissionRemovals(context, context.guardedRemovals);
+}
+
+function readGuardedIndexedDbAdmissionRemovals(
+    context: IndexedDbAdmissionWriteContext,
+    removals: readonly Extract<IndexedDbAdmissionMutation, { kind: 'remove-if-write-token'; }>[]
+): void {
+    let remaining = removals.length;
+    for (const removal of removals) {
+        const request = context.store.get(removal.key);
+        request.onsuccess = () => {
+            if (context.conflict || context.storedValueError) {
                 return;
             }
-            reject(transaction.error ?? new Error('IndexedDB AL admission write aborted'));
+            let current: IndexedDbAdmissionStoredRow | undefined;
+            try {
+                current = request.result === undefined
+                    ? undefined
+                    : decodeIndexedDbAdmissionStoredRow(request.result, removal.key);
+            }
+            catch (error) {
+                abortIndexedDbAdmissionWrite(context, removal.key, toError(error));
+                return;
+            }
+            if (current?.writeToken !== removal.expectedWriteToken) {
+                context.conflict = true;
+                context.transaction.abort();
+                return;
+            }
+            remaining -= 1;
+            if (remaining === 0) {
+                applyIndexedDbAdmissionMutations(context.store, context.input);
+            }
         };
-        revisionRequest.onsuccess = () => {
-            const actualRevision = decodeIndexedDbAdmissionRevision(revisionRequest.result);
-            if (actualRevision !== input.expectedRevision) {
-                conflict = true;
-                transaction.abort();
-                return;
-            }
-            const guardedRemovals = input.mutations.filter(
-                (mutation) => mutation.kind === 'remove-if-write-token'
-            );
-            if (guardedRemovals.length === 0) {
-                applyIndexedDbAdmissionMutations(store, input);
-                return;
-            }
-            let remaining = guardedRemovals.length;
-            for (const removal of guardedRemovals) {
-                const request = store.get(removal.key);
-                request.onsuccess = () => {
-                    if (conflict) {
-                        return;
-                    }
-                    const current = request.result as Readonly<{ writeToken?: unknown; }> | undefined;
-                    if (current?.writeToken !== removal.expectedWriteToken) {
-                        conflict = true;
-                        transaction.abort();
-                        return;
-                    }
-                    remaining -= 1;
-                    if (remaining === 0) {
-                        applyIndexedDbAdmissionMutations(store, input);
-                    }
-                };
-            }
-        };
-    });
+    }
+}
+
+function abortIndexedDbAdmissionWrite(
+    context: IndexedDbAdmissionWriteContext,
+    key: string,
+    error: Error
+): void {
+    context.storedValueError = error instanceof ALAdmissionCorruptionError
+        ? error
+        : new ALAdmissionCorruptionError(key, toError(error));
+    context.transaction.abort();
 }
 
 function applyIndexedDbAdmissionMutations(
@@ -173,69 +243,121 @@ function decodeIndexedDbAdmissionRevision(value: IDBRequest['result']): number {
     if (value === undefined) {
         return 0;
     }
-    const stored = decodeALAdmissionValue(value, AL_ADMISSION_REVISION_KEY, decodeALAdmissionStoredValue);
+    const stored = decodeALAdmissionStoredValueFromIndexedDbRow(
+        decodeIndexedDbAdmissionStoredRow(value, AL_ADMISSION_REVISION_KEY)
+    );
     return decodeALAdmissionValue(stored.value, AL_ADMISSION_REVISION_KEY, decodeALAdmissionNumber);
 }
 
-async function readIndexedDbAdmissionSelection<Stored>(
+async function readIndexedDbAdmissionSelection(
     store: IDBObjectStore,
-    selection: IndexedDbAdmissionSelection,
-    readStored: (value: unknown, key: string) => Stored
-): Promise<readonly Stored[]> {
+    selection: IndexedDbAdmissionSelection
+): Promise<readonly IndexedDbAdmissionStoredRow[]> {
     switch (selection.kind) {
         case 'key': {
             const value = await readIndexedDbRequest(store.get(selection.key));
             return value === undefined
                 ? []
-                : [decodeALAdmissionValue(value, selection.key, readStored)];
+                : [decodeIndexedDbAdmissionStoredRow(value, selection.key)];
         }
         case 'prefixes':
             return await collectIndexedDbAdmissionStoredValuesForPrefixes(
                 store,
-                selection.prefixes,
-                readStored
+                selection.prefixes
             );
         case 'expired':
             return await readIndexedDbAdmissionRange(
                 store.index(AL_ADMISSION_EXPIRY_INDEX_NAME),
-                IDBKeyRange.upperBound(selection.maximumExpireAtTimestamp),
-                readStored
+                IDBKeyRange.upperBound(selection.maximumExpireAtTimestamp)
             );
         case 'revision':
             return [];
     }
 }
 
-async function collectIndexedDbAdmissionStoredValuesForPrefixes<Stored>(
+async function collectIndexedDbAdmissionStoredValuesForPrefixes(
     store: IDBObjectStore,
-    prefixes: readonly string[],
-    readStored: (value: unknown, key: string) => Stored
-): Promise<readonly Stored[]> {
+    prefixes: readonly string[]
+): Promise<readonly IndexedDbAdmissionStoredRow[]> {
     const stored = await Promise.all(
         prefixes.map((prefix) =>
             readIndexedDbAdmissionRange(
                 store,
-                toIndexedDbPrefixRange(prefix),
-                readStored
+                toIndexedDbPrefixRange(prefix)
             )
         )
     );
     return stored.flat();
 }
 
-async function readIndexedDbAdmissionRange<Stored>(
+async function readIndexedDbAdmissionRange(
     source: IDBObjectStore | IDBIndex,
-    range: IDBKeyRange | undefined,
-    readStored: (value: unknown, key: string) => Stored
-): Promise<readonly Stored[]> {
+    range: IDBKeyRange | undefined
+): Promise<readonly IndexedDbAdmissionStoredRow[]> {
     const [values, keys] = await Promise.all([
         readIndexedDbRequest(source.getAll(range)),
         readIndexedDbRequest(source.getAllKeys(range))
     ]);
     return values.map((value, index) => {
         const key = requireStringKey(keys[index]);
-        return decodeALAdmissionValue(value, key, readStored);
+        return decodeIndexedDbAdmissionStoredRow(value, key);
     });
+}
+
+function decodeIndexedDbAdmissionStoredRow(
+    value: IDBRequest['result'],
+    key: string
+): IndexedDbAdmissionStoredRow {
+    return decodeALAdmissionValue(value, key, (candidate) => {
+        const record = decodeALAdmissionRecord(
+            candidate,
+            ['key', 'value', 'expireAtTimestamp'],
+            ['writeToken']
+        );
+        const canonical = decodeALAdmissionStoredValue({
+            key: record.key,
+            value: record.value,
+            expireAtTimestamp: record.expireAtTimestamp
+        }, key);
+        const common = {
+            key: canonical.key,
+            value: record.value,
+            expireAtTimestamp: canonical.expireAtTimestamp
+        };
+        return Object.prototype.hasOwnProperty.call(record, 'writeToken')
+            ? { ...common, writeToken: decodeIndexedDbAdmissionWriteToken(record.writeToken) }
+            : common;
+    });
+}
+
+function decodeIndexedDbAdmissionWriteToken(value: PersistedALValue | undefined): string {
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new TypeError('IndexedDB admission write token must be a non-empty string');
+    }
+    return value;
+}
+
+function decodeALAdmissionStoredValueFromIndexedDbRow(
+    stored: IndexedDbAdmissionStoredRow
+): ALAdmissionStoredValue {
+    if (stored.writeToken !== undefined) {
+        throw new ALAdmissionCorruptionError(
+            stored.key,
+            new TypeError('Stored admission envelope has an unexpected write token')
+        );
+    }
+    return {
+        key: stored.key,
+        value: stored.value,
+        expireAtTimestamp: stored.expireAtTimestamp
+    };
+}
+
+function projectIndexedDbAdmissionStoredRow<Stored>(
+    stored: IndexedDbAdmissionStoredRow,
+    project: (stored: IndexedDbAdmissionStoredRow, key: string) => Stored
+): Stored {
+    return decodeALAdmissionValue(stored, stored.key, (_value, key) => project(stored, key));
 }
 
 function toIndexedDbPrefixRange(prefix: string): IDBKeyRange | undefined {

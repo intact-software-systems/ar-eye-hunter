@@ -9,6 +9,11 @@ import {
     type ALAdmissionBackend
 } from '@shared/alm/al-admission-backend.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import {
+    computeIndexedDbAdmissionRevisionWrite,
+    readIndexedDbAdmissionSnapshot,
+    writeIndexedDbAdmissionMutations
+} from '@shared/alm/indexed-db-admission-storage.ts';
 import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
 import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
 
@@ -177,12 +182,11 @@ describe('admission storage envelopes', () => {
         const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
         const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
         try {
-            const transaction = database.transaction('entries', 'readwrite');
-            transaction.objectStore('entries').put({ key: 'version:bad', value: '7', expireAtTimestamp: NaN });
-            await new Promise<void>((resolve, reject) => {
-                transaction.oncomplete = () => resolve();
-                transaction.onabort = () => reject(transaction.error);
-            });
+            await putIndexedDbRows(database, 'entries', [{
+                key: 'version:bad',
+                value: '7',
+                expireAtTimestamp: NaN
+            }]);
             const corruption = { name: 'ALAdmissionCorruptionError', key: 'version:bad' };
             await expect(backend.read('version:bad', decodeVersion)).rejects.toMatchObject(corruption);
             await expect(backend.list('version:', decodeVersion)).rejects.toMatchObject(corruption);
@@ -196,7 +200,74 @@ describe('admission storage envelopes', () => {
             database.close();
         }
     });
+
+    it('rejects malformed IndexedDB metadata before a custom row projection', async () => {
+        const databaseName = `admission-custom-read-corrupt-${crypto.randomUUID()}`;
+        const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
+        try {
+            await putIndexedDbRows(database, 'entries', [{
+                key: 'version:bad',
+                value: '7',
+                expireAtTimestamp: NaN,
+                writeToken: 'write-token'
+            }]);
+
+            await expect(readIndexedDbAdmissionSnapshot(
+                database,
+                'entries',
+                { kind: 'key', key: 'version:bad' },
+                (_stored, key) => key
+            )).rejects.toMatchObject({ name: 'ALAdmissionCorruptionError', key: 'version:bad' });
+        }
+        finally {
+            database.close();
+        }
+    });
+
+    it('rejects a malformed guarded-removal row instead of reporting a write conflict', async () => {
+        const databaseName = `admission-guarded-remove-corrupt-${crypto.randomUUID()}`;
+        const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
+        try {
+            await putIndexedDbRows(database, 'entries', [{
+                key: 'version:bad',
+                value: '7',
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                writeToken: 7
+            }]);
+
+            await expect(writeIndexedDbAdmissionMutations({
+                db: database,
+                storeName: 'entries',
+                expectedRevision: 0,
+                mutations: [{
+                    kind: 'remove-if-write-token',
+                    key: 'version:bad',
+                    expectedWriteToken: 'write-token'
+                }],
+                revisionWrite: computeIndexedDbAdmissionRevisionWrite(0)
+            })).rejects.toMatchObject({ name: 'ALAdmissionCorruptionError', key: 'version:bad' });
+        }
+        finally {
+            database.close();
+        }
+    });
 });
+
+async function putIndexedDbRows(
+    database: IDBDatabase,
+    storeName: string,
+    rows: readonly object[]
+): Promise<void> {
+    const transaction = database.transaction(storeName, 'readwrite');
+    const store = transaction.objectStore(storeName);
+    for (const row of rows) {
+        store.put(row);
+    }
+    await new Promise<void>((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onabort = () => reject(transaction.error);
+    });
+}
 
 function decodeVersion(value: unknown): number {
     if (typeof value !== 'string' || !/^\d+$/.test(value)) {

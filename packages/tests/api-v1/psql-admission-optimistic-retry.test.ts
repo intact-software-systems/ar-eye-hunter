@@ -75,7 +75,7 @@ describe('PSql admission optimistic retry', () => {
         })).rejects.toThrow('inbound storage unavailable');
     });
 
-    it('commits an inbound message after an apply-time CAS loss', async () => {
+    it('commits an inbound message only after outer redelivery follows an apply-time CAS loss', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:inbound:runtime-retry';
         const plan: ALInboundPlanner = (
@@ -112,10 +112,20 @@ describe('PSql admission optimistic retry', () => {
             { text: 'retry' }
         );
 
+        await expect(runtime.handleIncomingMessage(msg, 'peer-1'))
+            .rejects.toThrow('Inbound commit conflict');
+
+        const admissionNamespace = `${namespace}:inbound:admission`;
+        expect(
+            await repository.findEntry(
+                admissionNamespace,
+                `${admissionNamespace}:version:peer-1`
+            )
+        ).toBeUndefined();
+
         await runtime.handleIncomingMessage(msg, 'peer-1');
 
         expect(repository.conflictCount).toBe(1);
-        const admissionNamespace = `${namespace}:inbound:admission`;
         expect(
             await repository.findEntry(
                 admissionNamespace,

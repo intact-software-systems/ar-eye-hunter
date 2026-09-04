@@ -35,6 +35,12 @@ export interface ALControlMessageConstructionFacts extends ALMessageConstruction
     readonly observedAtEpochMs: number;
 }
 
+interface ALControlOrderingPayload {
+    readonly orderingKey: string | undefined;
+    readonly expectedSeq: number | undefined;
+    readonly missingSeqs: readonly number[] | undefined;
+}
+
 export type ALControlMessageComputationInput =
     | Readonly<{
         kind: 'ack';
@@ -118,7 +124,7 @@ function computeControlMessage(
     });
 }
 
-function toOrderingPayload(ordering: ALOrderingObservation | undefined) {
+function toOrderingPayload(ordering: ALOrderingObservation | undefined): ALControlOrderingPayload {
     return {
         orderingKey: ordering?.trackKey,
         expectedSeq: ordering?.expectedSeq,

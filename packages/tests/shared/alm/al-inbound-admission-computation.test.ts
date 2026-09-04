@@ -7,6 +7,7 @@ import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runt
 import type { ALInboundAdmissionStore, ALInboundCommitBundle } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundAdmission, computeALInboundBufferedRelease } from '@shared/alm/inbound/compute-al-inbound-admission.ts';
+import { validateALInboundAdmission } from '@shared/alm/inbound/validate-al-inbound-admission.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     afterEach,
@@ -99,7 +100,93 @@ describe('inbound admission computation boundary', () => {
         ]);
     });
 
-    it('discards a conflicted computed candidate and sends only the committed envelope', async () => {
+    it('reports every independently noncanonical admission write', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const message = createMessage(1);
+        const read = await stores.admissionStore.readIncomingMessage(message, 'sender', planIncomingMessage);
+        const facts = createComputationFacts('candidate');
+        const computed = computeALInboundAdmission(read, false, facts);
+        const [ownerMutation, ...remainingMutations] = computed.mutations;
+        const [deliveryEffect, ...remainingEffects] = computed.durableEffects;
+        if (ownerMutation?.kind !== 'set-msg-owner' || deliveryEffect?.payload.kind !== 'dispatch-local') {
+            throw new Error('Expected canonical owner and local-delivery writes');
+        }
+        const alternateMessage = createMessage(9);
+        const candidate: ALInboundCommitBundle = {
+            ...computed,
+            mutations: [
+                { ...ownerMutation, msgId: alternateMessage.id.msgId },
+                ...remainingMutations
+            ],
+            durableEffects: [
+                {
+                    ...deliveryEffect,
+                    payload: {
+                        ...deliveryEffect.payload,
+                        entry: {
+                            ...deliveryEffect.payload.entry,
+                            key: alternateMessage.route,
+                            resource: JSON.stringify(alternateMessage)
+                        }
+                    }
+                },
+                ...remainingEffects
+            ]
+        };
+
+        const issues = validateALInboundAdmission({
+            read,
+            canForward: false,
+            facts,
+            computed: candidate
+        });
+
+        expect(issues.map((issue) => issue.path)).toEqual([
+            'computed.mutations[0]',
+            'computed.durableEffects[0]'
+        ]);
+    });
+
+    it('rejects unexpected fields on the complete computed bundle', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const message = createMessage(1);
+        const read = await stores.admissionStore.readIncomingMessage(message, 'sender', planIncomingMessage);
+        const facts = createComputationFacts('candidate');
+        const computed = computeALInboundAdmission(read, false, facts);
+        const candidate = { ...computed, legacyWrite: true };
+
+        const issues = validateALInboundAdmission({
+            read,
+            canForward: false,
+            facts,
+            computed: candidate
+        });
+
+        expect(issues.map((issue) => issue.path)).toEqual(['computed']);
+    });
+
+    it('rejects unexpected fields on a computed write collection', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const message = createMessage(1);
+        const read = await stores.admissionStore.readIncomingMessage(message, 'sender', planIncomingMessage);
+        const facts = createComputationFacts('candidate');
+        const computed = computeALInboundAdmission(read, false, facts);
+        const candidate = {
+            ...computed,
+            mutations: Object.assign([...computed.mutations], { legacyWrite: true })
+        };
+
+        const issues = validateALInboundAdmission({
+            read,
+            canForward: false,
+            facts,
+            computed: candidate
+        });
+
+        expect(issues.map((issue) => issue.path)).toEqual(['computed.mutations']);
+    });
+
+    it('leaves a conflicted candidate uncommitted until outer redelivery recomputes the message', async () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const committedBundles: ALInboundCommitBundle[] = [];
         const commitStatuses: ('committed' | 'conflict')[] = [];
@@ -128,7 +215,15 @@ describe('inbound admission computation boundary', () => {
             }
         });
         try {
-            await runtime.handleIncomingMessage(createMessage(1), 'sender');
+            const message = createMessage(1);
+            await expect(runtime.handleIncomingMessage(message, 'sender'))
+                .rejects.toThrow('Inbound commit conflict');
+
+            expect(commitStatuses).toEqual(['conflict']);
+            expect(committedBundles).toHaveLength(1);
+            expect(controls).toEqual([]);
+
+            await runtime.handleIncomingMessage(message, 'sender');
 
             expect(commitStatuses).toEqual(['conflict', 'committed']);
             expect(committedBundles).toHaveLength(2);

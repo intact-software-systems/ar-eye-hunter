@@ -128,7 +128,7 @@ describe('ALInboundMessageRuntime', () => {
         });
     });
 
-    it('retries a stale optimistic write and still releases ordered messages once', async () => {
+    it('requires outer redelivery after a stale optimistic write', async () => {
         vi.useFakeTimers();
 
         const stores = createDefaultInMemoryALInboundRuntimeStores();
@@ -152,14 +152,41 @@ describe('ALInboundMessageRuntime', () => {
         const seq2 = createOrderedMessage(2, 'two');
         const seq1 = createOrderedMessage(1, 'one');
 
-        const pendingGap = runtime.handleIncomingMessage(seq2, 'peer-1');
-        await vi.advanceTimersByTimeAsync(10);
-        await pendingGap;
+        await expect(runtime.handleIncomingMessage(seq2, 'peer-1'))
+            .rejects.toThrow('Inbound commit conflict');
+        expect(dispatchedTexts).toEqual([]);
+        expect(forwardedIds).toEqual([]);
+
+        await runtime.handleIncomingMessage(seq2, 'peer-1');
         await runtime.handleIncomingMessage(seq1, 'peer-1');
 
         expect(rejectedFirstCommit).toBe(true);
         expect(dispatchedTexts).toEqual(['one', 'two']);
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
+    });
+
+    it('reschedules ordered-delivery completion instead of retrying it inside one effect attempt', async () => {
+        vi.useFakeTimers();
+
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const commitMutations = stores.admissionStore.commitMutations.bind(stores.admissionStore);
+        let completionAttempts = 0;
+        vi.spyOn(stores.admissionStore, 'commitMutations').mockImplementation(async (request) => {
+            completionAttempts += 1;
+            return completionAttempts === 1 ? 'conflict' : await commitMutations(request);
+        });
+        const { runtime, dispatchedTexts } = createInboundHarness(stores);
+        const message = createOrderedMessage(1, 'one');
+
+        await runtime.handleIncomingMessage(message, 'peer-1');
+
+        expect(completionAttempts).toBe(1);
+        expect(dispatchedTexts).toEqual(['one']);
+
+        await vi.advanceTimersByTimeAsync(1_000);
+
+        expect(completionAttempts).toBe(2);
+        expect(dispatchedTexts).toEqual(['one', 'one']);
     });
 
     it('preserves persisted corruption discovered during normal inbound admission', async () => {
@@ -219,8 +246,7 @@ describe('ALInboundMessageRuntime', () => {
         expect(deliveredSenderIds).toEqual(['peer-1', 'peer-2']);
     });
 
-    it('retries complete control-message admission after backend conflicts', async () => {
-        vi.useFakeTimers();
+    it('requires outer control-message redelivery after each backend conflict', async () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const acceptControlMessage = stores.admissionStore.acceptControlMessage.bind(stores.admissionStore);
         let attempts = 0;
@@ -233,19 +259,20 @@ describe('ALInboundMessageRuntime', () => {
         });
         const { runtime, controlAcceptances } = createInboundHarness(stores);
 
-        const pending = runtime.handleIncomingMessage(
-            newALAckControlMessage('peer-2', 'self', 'missing-msg', 'delivered'),
-            'peer-2'
-        );
-        void pending.catch(() => undefined);
-        await vi.runAllTimersAsync();
+        const acknowledgement = newALAckControlMessage('peer-2', 'self', 'missing-msg', 'delivered');
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            await expect(runtime.handleIncomingMessage(acknowledgement, 'peer-2'))
+                .rejects.toThrow('Inbound control-message admission conflict');
+        }
+        expect(controlAcceptances).toEqual([]);
 
-        await expect(pending).resolves.toBeUndefined();
+        await runtime.handleIncomingMessage(acknowledgement, 'peer-2');
         expect(attempts).toBe(4);
         expect(controlAcceptances).toHaveLength(1);
     });
 
-    it('retries buffered release when a downstream ack updates the sender version', async () => {
+    it('redelivers buffered release after a downstream ack updates the sender version', async () => {
+        vi.useFakeTimers();
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const baseAdmission = stores.admissionStore;
         const commitBundle = baseAdmission.commitBundle.bind(baseAdmission);
@@ -288,6 +315,11 @@ describe('ALInboundMessageRuntime', () => {
 
         releaseCommitBlocked.resolve();
         await pendingRelease;
+
+        expect(controlMessages.map(parseALControlMessage).some((control) => control?.type === 'ack' && control.payload.status === 'subtree-complete')).toBe(
+            false
+        );
+        await vi.advanceTimersByTimeAsync(1_000);
 
         const ackPayloads = controlMessages.flatMap((msg) => {
             const parsed = parseALControlMessage(msg);
