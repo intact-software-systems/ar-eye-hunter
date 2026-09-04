@@ -120,6 +120,33 @@ describe('transaction write check', () => {
         }]);
     });
 
+    it('fails closed for external helpers without an inspectable body', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        project.createSourceFile(
+            '/node_modules/external/index.d.ts',
+            `export function refine(value: object): string;`
+        );
+        project.createSourceFile(
+            '/packages/domain/mutation.ts',
+            `import { refine } from 'external';
+             interface Sql {
+                 begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                 query(value: string): Promise<void>;
+             }
+             declare const database: Sql;
+             export async function execute(computed: object): Promise<void> {
+                 await database.begin(async (transaction) => {
+                     await transaction.query(refine(computed));
+                 });
+             }`
+        );
+
+        expect(analyzeTransactionWrites(project)).toMatchObject([{
+            rule: 'transaction.unresolved-provenance',
+            operation: 'refine'
+        }]);
+    });
+
     it('allows dispatching prepared subsets through transaction-bound write ports', () => {
         const findings = analyzeFixture(`
             interface PSqlSql {}
@@ -739,6 +766,40 @@ describe('transaction write check', () => {
         const findings = analyzeTransactionWrites(project, [source]);
 
         expect(findings.map((finding) => finding.operation)).toEqual(['Date.now']);
+    });
+
+    it('stops at exact specialized ResourceInbox operations but analyzes neighboring methods', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        project.createSourceFile(
+            '/packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts',
+            `interface PSqlSql {}
+             export class PSqlResourceInboxEntryRepository {
+                 constructor(transaction: PSqlSql) { void transaction; }
+                 async replacePendingIfMatch(computed: object): Promise<void> {
+                     JSON.stringify(computed);
+                 }
+                 async unreviewedReplace(computed: object): Promise<void> {
+                     JSON.stringify(computed);
+                 }
+             }`
+        );
+        project.createSourceFile(
+            '/packages/domain/write.ts',
+            `import { PSqlResourceInboxEntryRepository } from
+                 '../shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+             interface PSqlSql {}
+             export async function write(transaction: PSqlSql, computed: object): Promise<void> {
+                 const repository = new PSqlResourceInboxEntryRepository(transaction);
+                 await repository.replacePendingIfMatch(computed);
+                 await repository.unreviewedReplace(computed);
+             }`
+        );
+
+        expect(analyzeTransactionWrites(project)).toMatchObject([{
+            rule: 'transaction.precomputable-work',
+            operation: 'JSON.stringify',
+            path: 'packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts'
+        }]);
     });
 
     it('allows only reviewed transaction-forwarding callback parameters', () => {

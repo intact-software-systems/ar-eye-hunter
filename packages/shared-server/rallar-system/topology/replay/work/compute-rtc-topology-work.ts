@@ -5,10 +5,10 @@ import type { RtcTopologyPublication } from '@shared-server/rallar-system/topolo
 import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
+import { validateComputedProjection } from '../../../computed-data-validation.ts';
 import {
     computeTopologyMutation,
     type RtcTopologyMutationInput,
@@ -64,7 +64,7 @@ export interface ComputeRtcTopologyWorkInput {
     readonly publisherStreamId: string | undefined;
 }
 
-export interface ComputedRtcTopologyWork {
+interface ComputedRtcTopologyWork {
     readonly accepted: AcceptedRtcTopologyWork;
     readonly write: AcceptedRtcTopologyWorkWrite;
 }
@@ -111,7 +111,12 @@ export async function validateRtcTopologyWork(
 ): Promise<void> {
     const expected = await computeRtcTopologyWork(input);
     validateAcceptedTopologyDecision(expected.accepted);
-    if (!jsonEquals(computed.accepted, expected.accepted)) {
+    const decisionIssue = validateComputedProjection(
+        expected.accepted,
+        computed.accepted,
+        'computed.accepted'
+    )[0];
+    if (decisionIssue !== undefined) {
         throw new TypeError('RTC topology work decision differs from its canonical computation');
     }
     validateRtcTopologyWorkWrite(

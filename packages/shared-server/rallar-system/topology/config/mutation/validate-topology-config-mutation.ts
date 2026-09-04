@@ -1,3 +1,4 @@
+import { validateComputedProjection } from '../../../computed-data-validation.ts';
 import { resolveGroupTopologyConfig } from '../group-topology-config.ts';
 import { computeTopologyConfigMutation } from './compute-topology-config-mutation.ts';
 import type {
@@ -24,7 +25,8 @@ export function validateTopologyConfigMutation(
     validateTopologyConfigMutationInput(topologyValidation);
     const computed = topologyValidation.computed;
     const canonical = computeTopologyConfigMutation(topologyValidation);
-    if (JSON.stringify(computed) !== JSON.stringify(canonical)) {
+    const projectionIssue = validateComputedProjection(canonical, computed, 'computed')[0];
+    if (projectionIssue !== undefined) {
         const operation = topologyValidation.command.operation;
         throw new TypeError(
             `Topology config ${operation} mutation differs from its canonical deterministic projection`

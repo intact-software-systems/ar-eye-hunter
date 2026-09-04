@@ -1,11 +1,11 @@
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
+import { validateComputedProjection } from '../../../computed-data-validation.ts';
 import {
     computeTopologyMutation,
     validateTopologyMutation,
@@ -100,13 +100,13 @@ export interface RtcTopologyReplayRead {
     readonly delivery: RtcTopologyDeliveryLogEntry | null;
 }
 
-export interface ComputeRtcTopologyReplayWriteInput {
+interface ComputeRtcTopologyReplayWriteInput {
     readonly read: RtcTopologyReplayRead;
     readonly reservationFinish: ResourceInboxReservationFinish;
     readonly publisherStreamId: string | undefined;
 }
 
-export interface ComputedRtcTopologyReplayWrite {
+interface ComputedRtcTopologyReplayWrite {
     readonly loaded: Extract<RtcTopologyMutationComputed, { outcome: 'loaded'; }>;
     readonly transaction: RtcTopologyPublicationTransactionWrite;
 }
@@ -178,8 +178,11 @@ export function validateRtcTopologyWorkWrite(
         });
     }
     const expected = computeRtcTopologyWorkWrite(input);
-    if (!jsonEquals(toValidationProjection(computed), toValidationProjection(expected))) {
-        throw new TypeError('RTC topology work write differs from its canonical computation');
+    const issue = validateComputedProjection(expected, computed, 'computed')[0];
+    if (issue !== undefined) {
+        throw new TypeError(
+            `RTC topology work write differs from its canonical computation: ${issue.message}`
+        );
     }
 }
 
@@ -239,8 +242,11 @@ export function validateRtcTopologyReplayWrite(
         computed: computed.loaded
     });
     const expected = computeRtcTopologyReplayWrite(input);
-    if (!jsonEquals(toTransactionProjection(computed.transaction), toTransactionProjection(expected.transaction))) {
-        throw new TypeError('RTC topology replay write differs from its canonical computation');
+    const issue = validateComputedProjection(expected, computed, 'computed')[0];
+    if (issue !== undefined) {
+        throw new TypeError(
+            `RTC topology replay write differs from its canonical computation: ${issue.message}`
+        );
     }
 }
 
@@ -272,80 +278,6 @@ function computeFingerprintWrite(
     );
 }
 
-function toValidationProjection(computed: AcceptedRtcTopologyWorkWrite): object {
-    if (computed.kind === 'completion-only') {
-        return {
-            kind: computed.kind,
-            reservationFinish: toReservationFinishProjection(computed.reservationFinish)
-        };
-    }
-    const transaction = computed.transaction;
-    return {
-        kind: computed.kind,
-        transaction: toTransactionProjection(transaction)
-    };
-}
-
-function toTransactionProjection(transaction: RtcTopologyPublicationTransactionWrite): object {
-    return {
-        mutation: transaction.mutation,
-        promotionWrite: transaction.promotionWrite === null
-            ? null
-            : {
-                ...transaction.promotionWrite,
-                entry: toRequiredResourceEntryProjection(transaction.promotionWrite.entry)
-            },
-        connectWrites: transaction.connectWrites.map((write) => ({
-            ...write,
-            entry: toRequiredResourceEntryProjection(write.entry)
-        })),
-        fingerprint: transaction.fingerprint,
-        delivery: transaction.delivery === null
-            ? null
-            : {
-                outboxWrite: {
-                    ...transaction.delivery.outboxWrite,
-                    entry: toRequiredResourceEntryProjection(
-                        transaction.delivery.outboxWrite.entry
-                    )
-                },
-                deliveryAppend: transaction.delivery.deliveryAppend
-            },
-        reservationFinish: toReservationFinishProjection(transaction.reservationFinish)
-    };
-}
-
 function toOptionalAppOutboxWrite(entry: ResourceEntry | null) {
     return entry === null ? null : computeAppOutboxInsert(entry);
-}
-
-function toReservationFinishProjection(computed: ResourceInboxReservationFinish): object {
-    return {
-        key: computed.key,
-        expectedAttempts: computed.expectedAttempts,
-        status: computed.status,
-        completedAt: computed.completedAt.toISOString()
-    };
-}
-
-function toRequiredResourceEntryProjection(entry: Readonly<ResourceEntry>): object {
-    return {
-        key: entry.key,
-        resource: entry.resource,
-        typeId: entry.typeId,
-        status: entry.status,
-        audit: {
-            date: entry.audit.date.toString(),
-            createdBy: entry.audit.createdBy,
-            createdTs: entry.audit.createdTs.toString(),
-            expiryTs: entry.audit.expiryTs.toString()
-        },
-        dequeueAudit: {
-            startTs: entry.dequeueAudit.startTs?.toString() ?? null,
-            endTs: entry.dequeueAudit.endTs?.toString() ?? null,
-            nextTs: entry.dequeueAudit.nextTs?.toString() ?? null,
-            attempts: entry.dequeueAudit.attempts
-        },
-        db: entry.db ?? null
-    };
 }

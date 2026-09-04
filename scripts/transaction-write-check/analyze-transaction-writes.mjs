@@ -50,7 +50,21 @@ const SPECIALIZED_TRANSACTION_OWNERS = new Map([
     ],
     [
         'packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts',
-        new Set(['writeMaterializedIfAbsentOrReplaceExpired'])
+        new Set([
+            'deleteByKey',
+            'replace',
+            'replacePendingIfMatch',
+            'tryWriteIfAbsentOrReplaceExpired',
+            'upsert',
+            'write',
+            'writeIfAbsentOrMatch',
+            'writeIfAbsentOrReplaceExpired',
+            'writeMaterializedIfAbsentOrReplaceExpired'
+        ])
+    ],
+    [
+        'packages/shared-server/queuebox/postgres/resource-inbox-finished-replacement.ts',
+        new Set(['replaceFinishedResourceEntryIfMatch'])
     ],
     [
         'packages/shared-server/queuebox/postgres/resource-inbox-results-repository.ts',
@@ -248,7 +262,10 @@ function analyzeCall(input) {
             boundary
         });
     }
-    else if (!isReviewedCallableParameterInvocation(call)) {
+    else if (
+        !isReviewedCallableParameterInvocation(call) &&
+        !isSpecializedTransactionOperation(call)
+    ) {
         if (isUnresolvedCallableParameterInvocation(call)) {
             addFinding({
                 findings,
@@ -510,6 +527,20 @@ function isSpecializedTransactionBoundary(call) {
     return owner !== undefined && allowedOwners.has(declarationName(owner));
 }
 
+function isSpecializedTransactionOperation(call) {
+    const expression = call.getExpression();
+    const symbol = Node.isPropertyAccessExpression(expression)
+        ? expression.getNameNode().getSymbol()
+        : expression.getSymbol();
+    const resolved = symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
+    return (resolved?.getDeclarations() ?? []).some((declaration) => {
+        const allowedOwners = SPECIALIZED_TRANSACTION_OWNERS.get(
+            sourcePath(declaration.getSourceFile())
+        );
+        return allowedOwners?.has(declarationName(declaration)) ?? false;
+    });
+}
+
 function isUnresolvedCallableParameterInvocation(call) {
     return callableParameterDeclarations(call.getExpression()).some((declaration) =>
         !isPromiseSettlementParameter(declaration) &&
@@ -550,10 +581,14 @@ function resolveCallTargets(call, project) {
     const resolved = symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
     const bodies = [];
     let hasAuthoredDeclaration = false;
+    let hasExternalDeclaration = false;
     for (const declaration of resolved?.getDeclarations() ?? []) {
         const sourceFile = declaration.getSourceFile();
         const source = sourcePath(sourceFile);
         if (!isAuthoredSource(source) || !project.getSourceFile(sourceFile.getFilePath())) {
+            if (!isTypeScriptStandardLibraryDeclaration(sourceFile)) {
+                hasExternalDeclaration = true;
+            }
             continue;
         }
         hasAuthoredDeclaration = true;
@@ -574,8 +609,13 @@ function resolveCallTargets(call, project) {
     }
     return {
         bodies,
-        unresolved: hasAuthoredDeclaration && bodies.length === 0
+        unresolved: bodies.length === 0 && (hasAuthoredDeclaration || hasExternalDeclaration)
     };
+}
+
+function isTypeScriptStandardLibraryDeclaration(sourceFile) {
+    const path = sourceFile.getFilePath().replaceAll('\\', '/');
+    return /\/typescript\/lib\/lib\.[^/]+\.d\.ts$/u.test(path);
 }
 
 function isAllowedTransactionOperation(call) {

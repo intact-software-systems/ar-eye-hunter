@@ -14,11 +14,11 @@ import type {
 } from '../mutation/crdt-mutation-contracts.ts';
 import { validateCrdtMutation } from '../mutation/validate-crdt-mutation.ts';
 
-export interface CrdtInboxMutationRead extends ComputeCrdtMutationInput {
+interface CrdtInboxMutationRead extends ComputeCrdtMutationInput {
     readonly completionFacts: AppInboxCompletionFacts;
 }
 
-export interface CrdtInboxMutationComputed {
+interface CrdtInboxMutationComputed {
     readonly mutation: CrdtMutationComputed;
     readonly completion: AppInboxCompletionComputed<CrdtMutationResult>;
 }

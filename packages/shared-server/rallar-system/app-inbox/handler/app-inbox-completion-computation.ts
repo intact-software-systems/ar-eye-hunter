@@ -16,7 +16,7 @@ import {
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { encodeAppInboxResult } from '../app-inbox-registration-codecs.ts';
 
-export interface AppInboxCompletionValidationIssue {
+interface AppInboxCompletionValidationIssue {
     readonly path: string;
     readonly message: string;
     readonly cause: TypeError;
@@ -32,7 +32,7 @@ export interface AppInboxCompletionInput<Result> extends AppInboxCompletionFacts
     readonly status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED;
 }
 
-export interface AppInboxCompletionValidationFacts extends AppInboxCompletionFacts {
+interface AppInboxCompletionValidationFacts extends AppInboxCompletionFacts {
     readonly status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED;
 }
 

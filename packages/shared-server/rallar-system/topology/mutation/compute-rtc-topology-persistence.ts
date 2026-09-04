@@ -7,7 +7,7 @@ import { createRtcTopologyExecutionReceipt } from '../publication/rtc-topology-p
 import { childKey } from '../publication/rtc-topology-publication-repository-state.ts';
 import type { RtcTopologyPublication } from '../publication/rtc-topology-publication.ts';
 
-export interface RtcTopologyPersistenceInput {
+interface RtcTopologyPersistenceInput {
     readonly snapshot: RallarOverlayTopologySnapshot;
     readonly expectedRevision: number | null;
     readonly publication: RtcTopologyPublication | null;
