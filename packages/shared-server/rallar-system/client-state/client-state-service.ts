@@ -8,9 +8,7 @@ import {
     type ClientStateServiceDependencies
 } from './client-state-service-contracts.ts';
 import { createTimedClientStateService } from './client-state-service-timing.ts';
-import { computeClientMutation } from './mutation/compute/compute-client-mutation.ts';
 import { readClientMutation } from './mutation/read-client-mutation.ts';
-import { validateClientMutation } from './mutation/result-validation/validate-client-mutation.ts';
 import { writeClientMutation } from './mutation/write-client-mutation.ts';
 import { ClientStateRepository } from './persistence/client-state-repository.ts';
 
@@ -31,8 +29,6 @@ export function createClientStateService(
         listEventPage: async (ref, query) => await repositoryFor(runtimeRepository).listEventPage(ref, query),
         read: async (command) =>
             await readClientMutation(repositoryFor(runtimeRepository), authSessionRepository, command),
-        compute: (command, read) => computeClientMutation({ command, read }),
-        validate: (command, read, computed) => validateClientMutation({ command, read, computed }),
         write: async (transaction, computed) => await writeClientMutation(transaction, computed),
         readExpiredSessionPage: async (input) => {
             const page = await repositoryFor(runtimeRepository).readSessionPage({

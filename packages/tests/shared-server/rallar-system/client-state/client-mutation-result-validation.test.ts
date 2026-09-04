@@ -21,6 +21,22 @@ describe('client mutation result validation', () => {
         expect(() => validateClientMutation({ command, read, computed })).not.toThrow();
     });
 
+    it('rejects an accessor-backed computed result without invoking the accessor', async () => {
+        const command = await principalCommand('accessor-backed-computed');
+        const read = emptyRead(command);
+        const computed = requireWrite(computeClientMutation({ command, read }));
+        let accessorRead = false;
+        const accessorBacked = Object.defineProperty({ ...computed }, 'snapshot', {
+            get: () => {
+                accessorRead = true;
+                return computed.snapshot;
+            }
+        });
+
+        expect(() => validateClientMutation({ command, read, computed: accessorBacked })).toThrow('Client mutation computed.snapshot must be a data property');
+        expect(accessorRead).toBe(false);
+    });
+
     it('preserves structural result validation order and exact error details', async () => {
         const command = await principalCommand();
         const computed = requireWrite(
