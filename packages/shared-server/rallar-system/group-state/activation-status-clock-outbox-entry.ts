@@ -24,13 +24,28 @@ export const APP_OUTBOX_ACTIVATION_STATUS_CLOCK_TOPIC = 'app-outbox.activation-s
  * until then -- no polling, and no in-process timer to lose when the arming
  * node dies.
  */
+export const GROUP_ACTIVATION_STATUS_CLOCK_KINDS = ['dwell', 'evidence-expiry'] as const;
+
+export type GroupActivationStatusClockKind = (typeof GROUP_ACTIVATION_STATUS_CLOCK_KINDS)[number];
+
 export type GroupActivationStatusClockWork = Readonly<{
+    /**
+     * `dwell` confirms a band only a clock may publish. `evidence-expiry` is
+     * the heartbeat that lets a quiet group report decay at all: coverage falls
+     * when measurements age out of the freshness window, and that is the
+     * absence of evidence, so nothing else would ever wake the group.
+     */
+    kind: GroupActivationStatusClockKind;
     groupRef: GroupRef;
     /** With the basis, the causal series this dwell belongs to. */
     formationEpoch: number;
     coverageBasisLayoutIdentity: GroupLayoutIdentity;
-    /** The band the clock exists to confirm; a different band is a fresh series. */
-    candidateCondition: GroupActivationCondition;
+    /**
+     * The band a `dwell` exists to confirm; a different band is a fresh
+     * series. Null for `evidence-expiry`, which confirms nothing and only
+     * asks the group to look again.
+     */
+    candidateCondition: GroupActivationCondition | null;
     dueAtEpochMs: number;
 }>;
 
@@ -61,7 +76,9 @@ export function computeActivationStatusClockEntry(
     );
     const key = toAppQueueKey({
         topicId: APP_OUTBOX_ACTIVATION_STATUS_CLOCK_TOPIC,
-        resourceId: `as-${work.candidateCondition}-${work.formationEpoch}-${seriesIdentity}`,
+        resourceId: `as-${
+            work.kind === 'dwell' ? work.candidateCondition : 'expiry'
+        }-${work.formationEpoch}-${seriesIdentity}`,
         contextId
     });
     const createdBy = toAppQueueCreatedBy(input.senderId);

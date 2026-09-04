@@ -1,7 +1,14 @@
-import { resolveGroupBusinessLiveness } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
+import {
+    GROUP_ACTIVATION_EVIDENCE_EXPIRY_MS,
+    resolveGroupBusinessLiveness
+} from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
 import { resolveCoverageBasisLayoutIdentity } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
 import { computeGroupFormationReading } from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
-import { isSameGroupLayoutIdentity, toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import {
+    isSameGroupLayoutIdentity,
+    toGroupLayoutIdentity,
+    type GroupLayoutIdentity
+} from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { isFormationAttemptBudgetExhausted } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import { resolveGroupActivationStatusAction } from '@shared/api/group-lifecycle/resolve-group-activation-status-action.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -114,6 +121,10 @@ export async function petitionGroupActivationStatus(
         nowEpochMs: authority.nowEpochMs
     });
     if (action.kind === 'none') {
+        // Steady is still worth a heartbeat: coverage decays by evidence
+        // ageing out, which nothing else observes, so the group must ask
+        // itself again. enqueueIfAbsent makes this one row per group.
+        await armEvidenceExpiry(dependencies, groupRef, group.formationEpoch, basis, authority.nowEpochMs);
         return;
     }
     if (action.kind === 'arm-dwell' && dwell !== null) {
@@ -134,6 +145,7 @@ export async function petitionGroupActivationStatus(
     }
     if (action.kind === 'arm-dwell') {
         await dependencies.activationStatus.armStatusClock({
+            kind: 'dwell',
             groupRef,
             formationEpoch: group.formationEpoch,
             coverageBasisLayoutIdentity: basis,
@@ -153,4 +165,23 @@ export async function petitionGroupActivationStatus(
         }),
         authority.nowEpochMs
     );
+    await armEvidenceExpiry(dependencies, groupRef, group.formationEpoch, basis, authority.nowEpochMs);
+}
+
+/** The self-rescheduling heartbeat: consumed when it fires, re-armed by the reading it causes. */
+async function armEvidenceExpiry(
+    dependencies: GroupActivationStatusPetitionDependencies,
+    groupRef: GroupRef,
+    formationEpoch: number,
+    coverageBasisLayoutIdentity: GroupLayoutIdentity,
+    nowEpochMs: number
+): Promise<void> {
+    await dependencies.activationStatus?.armStatusClock({
+        kind: 'evidence-expiry',
+        groupRef,
+        formationEpoch,
+        coverageBasisLayoutIdentity,
+        candidateCondition: null,
+        dueAtEpochMs: nowEpochMs + GROUP_ACTIVATION_EVIDENCE_EXPIRY_MS
+    });
 }
