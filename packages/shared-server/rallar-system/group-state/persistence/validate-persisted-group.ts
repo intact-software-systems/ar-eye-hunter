@@ -16,7 +16,7 @@ import {
 import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
-import { validateStoredGroupActivationStatus } from './validate-persisted-group-activation-status.ts';
+import { validateStoredGroupActivationStatus } from './validate-stored-group-activation-status.ts';
 
 import {
     assertExactKeys,
