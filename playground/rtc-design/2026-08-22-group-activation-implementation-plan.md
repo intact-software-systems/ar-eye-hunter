@@ -402,6 +402,7 @@ Decisions I21–I25 were taken while delivering and reviewing PR 2 (1b + 1c) on 
 | I35 | **The connect latch names the candidate it supersedes** (2026-09-03, Slice 11d): a `reconfigure` commands its own replan, so at arming time the planned slot still holds the layout it means to replace; the latch carries that identity and the petition refuses it, which is what makes `reconfiguring → reconnecting` automatic without dialing the stale candidate and freezing the replan. A `plan` names nothing, and deliberately: only `reconfigure` and `reset` enqueue commanded-origin replan work, and a `plan`'s automatic-origin work can be skipped as unchanged, so requiring a different publication there would strand a group in `planned` whenever its inputs did not move. Both stages that hold a candidate now answer to the connect trigger, `presence` included: `resolveGroupStageTrigger` and the topology cycle's petition cover `reconfiguring` as they cover `planned`, so the threshold fires ahead of the fallback at either. _Alternative rejected:_ a publication instant on the latch, which a lagging node's clock could strand exactly as the settle could before I31. _Accepted rather than changed:_ the superseded identity is read outside the write transaction and the reconfigure takes no fence from the row, so a publication landing between that read and the commit leaves the latch naming the older candidate and the petition dials the newer one — bounded, because that candidate already dominates the accepted layout, and unreachable under `commanded` replanning. Fencing the row would make a user-facing command conflict-retry against a busy `auto` replan stream, which is the worse trade. |
 | I36 | **The status axes report derived; the persisted fields wait for their writer** (2026-09-03, Slice 12a): 12a puts both axes and the coverage basis on the formation view, computed at read from facts the route already loads, and adds nothing to the group row. I4's second key-list edit moves to 12b, which is the slice that needs somewhere to put a banded change and which already carries the state-write gate. The evidence is 9b's: one required field (`memberPolicy`) cost a registered row-width regression on every group write, and the A-B-B-A run that would measure three more — two enums and a nullable identity — is still blocked by a foreign container on the pinned port. Deriving also keeps one owner per fact, where persisting now would leave a stored value and a read-time value free to disagree between transitions. _Also here:_ `group-activation-status-changed` registers with its first emitter in 12b rather than dark in 12a (product decision 14), and `degraded` stays unreachable at read until 12b's dwell clock exists — a band no clock has observed cannot honestly be reported as dwelt.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | I37 | **The bucket lands; the visibility it was asked for does not fit an existing recipe** (2026-09-03, Slice 13a): the section wants the buckets so slice 11's and 12's write volume stops falling through to `other`, but the census found no recipe that both drives a lifecycle command and reads `body.groupFormation.metrics` — the four bursts that read the metrics are join-and-presence only, and the two managed bursts that drive transitions read nothing. The obvious remedy, capturing on the managed bursts, was implemented and then withdrawn: those two are pinned single-origin by `api-v1-managed-formation-recipe-loading.test.ts`, so cluster connections break the property that lets them drive one managed deployment, and a primary-only reading would have been unsound anyway because the inbox is claimed `for update skip locked` by any node while two of the three transitions are worker- and timer-driven. 13a therefore lands the bucket with a compile-pinned classifier and unit proof, and the artifact reading needs a cluster-wired recipe that drives transitions — new work, named rather than bolted on unsoundly. _Alternative rejected:_ loosening the single-origin test, which exists so these recipes can drive one managed deployment.                                                                                                                                                                                                                                                                                                                                                                         |
+| I38 | **The status writer is one slice, because a writer without its clocks reports nothing new** (2026-09-04, Slice 12b): the start checkpoint split the writer's pure core from its durable clocks, and the census killed that split. `computeGroupActivationCondition` gates both `degraded` and the below-floor `failed` on `dwellSatisfied`, and the product plan puts dwell completion and evidence expiry on a timer path that "produce[s] no evidence event" — the path decision 33's strictly-advancing watermark deliberately does not govern, because an evidence-driven write cannot observe a decay that is the absence of evidence. A first PR carrying the fields, the watermark and an evidence-driven writer could therefore only ever publish `active`, `inactive` and `initialising`: exactly the three 12a already derives at read, bought with a group CAS, a durable event and a WS fan per change, plus a second owner for a fact I36 deliberately kept to one. So 12b lands as one writer — banding with hysteresis, both durable clocks, the watermark ordering, the three fields and the status command with its event — and the three recipes follow as the second PR. _Also here:_ the formation view flips from derived to stored, because decision 3 persists and pushes both axes and leaving the read deriving would restore exactly the divergence I36 avoided.                                                                                                                                                                                                                                                                  |
 
 The held-layout capability is the next milestone under current evidence, but every checkpoint selects
 only its next two independently reviewable PRs. Later labels below are capability-analysis anchors used
@@ -3066,14 +3067,42 @@ cost a registered `member-policy-row-width` reason on every group write, and thi
 maintainer's call is to free the port and measure, so the A-B-B-A comparison runs on the head that
 adds the fields and its result is reported with the slice rather than deferred again.
 
-**Split, because the section's 12b is more than one reviewable change.** The first PR is the writer's
-pure core and its stored shape — banding with hysteresis, the watermark returned from readiness, the
-three fields with their key lists and migration, and the status command computed through AppInbox
-under the existing topology-cycle petition, with a monotonic component in its command id so
-`active → degraded → active` inside one epoch is not a replay of the first write. The second is the
-durable clocks — dwell and evidence expiry on the coalesced replacement path — and the three recipes
-the section names. Splitting keeps the fields and their measurement in one change, which is the point
-of measuring at all.
+**The split this checkpoint opened with was wrong, and the census killed it (I38).** The first PR was to
+be the writer's pure core and stored shape, with the durable clocks and recipes second. But
+`computeGroupActivationCondition` gates both `degraded` and the below-floor `failed` on
+`dwellSatisfied`, and the product plan puts dwell completion and evidence expiry on a timer path that
+"produce[s] no evidence event" — the path decision 33's strictly-advancing watermark deliberately
+does not govern, because a decay that is the _absence_ of evidence can never advance a watermark. So
+that first PR could only ever publish `active`, `inactive` and `initialising`: the three 12a already
+derives at read, bought with a group CAS, a durable event and a WS fan per change. **12b therefore
+lands as one writer** — banding with hysteresis, both durable clocks, the watermark ordering, the
+three fields and the status command with its event — and the three recipes follow as the second PR.
+The formation view flips from derived to stored in the same change, because decision 3 persists and
+pushes both axes and leaving the read deriving is the two-owner divergence I36 avoided.
+
+**Four census corrections to the section's own instructions.** (1) There is no SQL `Group` table: the
+aggregate is a JSON document in `runtime_state_store`, so the field work is four hand-maintained
+compiler-blind key allowlists plus a test fixture, and both precedents (`memberPolicy`, slice 9b;
+`acceptedLayoutIdentity`/`transportState`, slices 2/4a) shipped **no migration** — the checkpoint's
+"key lists and migration" overstated it. (2) The evidence watermark must **not** copy
+`validateGroupPresenceSummaryCausalRevision`'s equal-tuple-is-corruption branch: two readings of one
+basis taken a freshness window apart can share an identical newest-counted watermark while coverage
+falls as measurements age out, so that branch would throw on ordinary decay; the presence summary has
+no analogue because its content only changes when a row changes and a row change advances
+`groupRevision`. (3) It must not throw a bare `TypeError` either — `app-inbox-error-classification.ts`
+maps that to a terminal 400 `app-inbox-malformed-command`, so a genuine race would be killed
+permanently under a misleading code; an abort belongs in `RuntimeStateWriteConflictError`, which is
+retryable. And because it throws at all it is named `assertXxx`, not `validateXxx`, which the repo
+standard reserves for a pure all-issues check that never throws. (4) `assertGroupMutationAuthority`'s
+`activation-status` case currently throws "which does not exist yet" behind a `never`-anchored
+switch, so the capability slice 3 reserved is a live landmine until this slice implements it.
+
+**One correction to work already committed here.** The watermark first landed as a fourth field on
+`GroupFormationReadiness` — which is the shape `GroupFormationView` serializes, so it put an internal
+ordering token on the HTTP response with no OpenAPI declaration, and broke `deno check` on
+`api-v1` (a Deno app no `tsc` sweep covers). The computer now returns a `GroupFormationReading` that
+nests the published triple under `readiness` beside the watermark, so publishing a reading cannot
+widen the response by accident; module and test are renamed to match the primary export.
 
 **Not moving:** the fingerprint skip in the topology work handler, which is the only thing stopping
 status → topology work → petition → status from sustaining itself; and no new authority mode, since
