@@ -1,5 +1,5 @@
 {
-  "description": "The stage-transition metrics bucket read across the cluster that writes it: a managed group is planned, dials itself on the connect trigger and is activated, while the admin group-formation metrics are read on all three nodes before and after. The counter is process-local and the AppInbox is claimed by any node, so only the cluster sum is a sound reading, and the readings are asserted to come from three distinct servers. The floor is a floor because the counter is global to each process: it holds while no other recipe in this profile drives a lifecycle command. Re-running with a stale runId replays the request identities, which satisfy the state expectations from stored receipts without re-incrementing the counter.",
+  "description": "The stage-transition metrics bucket read across the cluster that writes it: a managed group is planned, dials itself on the connect trigger and is activated, while the admin group-formation metrics are read on all three nodes before and after. The counter is process-local and the AppInbox is claimed by any node, so only the cluster sum is a sound reading, and the readings are asserted to come from three distinct servers. The floor is a floor because the counter is global to each process: it holds while nothing else on these three processes drives a lifecycle transition, and the upper bound makes gross contamination visible rather than silently satisfying the floor. This recipe needs a fresh runId: two of its state expectations are live polls for a mid-formation stage, so a stale runId replays the receipts but then waits for a stage the group has already left.",
   "variables": {
     "apiPrimary": {
       "env": "RALLAR_API_BASE_URL",
@@ -523,11 +523,11 @@
       "type": "set",
       "output": "closingReadingSettle",
       "value": {
-        "delayMs": 1500,
+        "delayMs": 3000,
         "waitsFor": "the post-commit metric increment on the claiming node"
       },
       "request": {
-        "delayMs": 1500
+        "delayMs": 3000
       }
     },
     {
@@ -543,7 +543,8 @@
         },
         "outputs": {
           "afterStageWritesPrimary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write",
-          "afterFormationMetricsPrimary": "body.groupFormation.metrics"
+          "afterFormationMetricsPrimary": "body.groupFormation.metrics",
+          "afterServerIdPrimary": "body.serverId"
         }
       },
       "expect": {
@@ -568,7 +569,8 @@
         },
         "outputs": {
           "afterStageWritesSecondary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write",
-          "afterFormationMetricsSecondary": "body.groupFormation.metrics"
+          "afterFormationMetricsSecondary": "body.groupFormation.metrics",
+          "afterServerIdSecondary": "body.serverId"
         }
       },
       "expect": {
@@ -593,7 +595,8 @@
         },
         "outputs": {
           "afterStageWritesTertiary": "body.groupFormation.metrics.groupMutationCount.stageTransition.write",
-          "afterFormationMetricsTertiary": "body.groupFormation.metrics"
+          "afterFormationMetricsTertiary": "body.groupFormation.metrics",
+          "afterServerIdTertiary": "body.serverId"
         }
       },
       "expect": {
@@ -633,6 +636,19 @@
             "path": "outputs.beforeStageWritesTotal"
           },
           3
+        ]
+      }
+    },
+    {
+      "name": "computeContaminationCeiling",
+      "type": "set",
+      "output": "stageWritesContaminationCeiling",
+      "transform": {
+        "add": [
+          {
+            "path": "outputs.beforeStageWritesTotal"
+          },
+          6
         ]
       }
     },
@@ -682,6 +698,67 @@
       }
     },
     {
+      "name": "compareServerIdSameProcessPrimary",
+      "type": "set",
+      "output": "serverIdPrimarySameProcess",
+      "transform": {
+        "equals": [
+          {
+            "path": "outputs.serverIdPrimary"
+          },
+          {
+            "path": "outputs.afterServerIdPrimary"
+          }
+        ]
+      }
+    },
+    {
+      "name": "compareServerIdSameProcessSecondary",
+      "type": "set",
+      "output": "serverIdSecondarySameProcess",
+      "transform": {
+        "equals": [
+          {
+            "path": "outputs.serverIdSecondary"
+          },
+          {
+            "path": "outputs.afterServerIdSecondary"
+          }
+        ]
+      }
+    },
+    {
+      "name": "compareServerIdSameProcessTertiary",
+      "type": "set",
+      "output": "serverIdTertiarySameProcess",
+      "transform": {
+        "equals": [
+          {
+            "path": "outputs.serverIdTertiary"
+          },
+          {
+            "path": "outputs.afterServerIdTertiary"
+          }
+        ]
+      }
+    },
+    {
+      "name": "eachReadingPairComesFromOneProcess",
+      "type": "assert",
+      "actual": {
+        "serverIdPrimarySameProcess": "{serverIdPrimarySameProcess}",
+        "serverIdSecondarySameProcess": "{serverIdSecondarySameProcess}",
+        "serverIdTertiarySameProcess": "{serverIdTertiarySameProcess}"
+      },
+      "expect": {
+        "body": {
+          "serverIdPrimarySameProcess": true,
+          "serverIdSecondarySameProcess": true,
+          "serverIdTertiarySameProcess": true
+        }
+      }
+    },
+    {
       "name": "theThreeReadingsComeFromThreeServers",
       "type": "assert",
       "actual": {
@@ -709,13 +786,18 @@
         "beforeStageWritesTertiary": "{beforeStageWritesTertiary}",
         "afterStageWritesPrimary": "{afterStageWritesPrimary}",
         "afterStageWritesSecondary": "{afterStageWritesSecondary}",
-        "afterStageWritesTertiary": "{afterStageWritesTertiary}"
+        "afterStageWritesTertiary": "{afterStageWritesTertiary}",
+        "stageWritesContaminationCeiling": "{stageWritesContaminationCeiling}"
       },
       "expect": {
         "comparators": [
           {
             "path": "afterStageWritesTotal",
             "gte": "{expectedStageWritesTotal}"
+          },
+          {
+            "path": "afterStageWritesTotal",
+            "lte": "{stageWritesContaminationCeiling}"
           }
         ]
       }
