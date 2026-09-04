@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { GroupStateMutationCommand, GroupStateMutationService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { GroupMutationComputed, GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { processGroupPresenceConnect } from '@shared-server/rallar-system/group-state/presence/group-presence-service.ts';
+import { readAndComputeGroupPresenceConnect } from '@shared-server/rallar-system/group-state/presence/group-presence-service.ts';
 import type {
     WsSessionGenerationLifecycleComputed,
     WsSessionGenerationLifecycleRead
 } from '@shared-server/rallar-system/websocket/ws-session-generation-computation.ts';
 import type { WsSessionGenerationLifecycleService } from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
 
-describe('group presence connect decision', () => {
+describe('group presence connect read and compute', () => {
     it('returns inactive without reading or computing a group mutation', async () => {
         const phases: string[] = [];
         const dependencies = createDecisionDependencies({
@@ -17,7 +17,7 @@ describe('group presence connect decision', () => {
             closedAtObservation: true
         });
 
-        const outcome = await processGroupPresenceConnect({
+        const outcome = await readAndComputeGroupPresenceConnect({
             command: dependencies.command,
             mutationService: dependencies.mutationService,
             sessionGenerationLifecycle: dependencies.sessionGenerationLifecycle
@@ -34,7 +34,7 @@ describe('group presence connect decision', () => {
             closedAtObservation: false
         });
 
-        const outcome = await processGroupPresenceConnect({
+        const outcome = await readAndComputeGroupPresenceConnect({
             command: dependencies.command,
             mutationService: dependencies.mutationService,
             sessionGenerationLifecycle: dependencies.sessionGenerationLifecycle
@@ -43,19 +43,27 @@ describe('group presence connect decision', () => {
         expect(outcome).toEqual({
             status: 'ready-to-commit',
             computed: dependencies.computed,
+            read: dependencies.read,
+            lifecycleGuardFacts: {
+                ...dependencies.lifecycleRead.identity,
+                generationId: 'generation-1',
+                generationStartedAtEpochMs: 1_000,
+                expireAtEpochMs: 422_240
+            },
+            lifecycleRead: dependencies.lifecycleRead,
             lifecycleGuard: dependencies.lifecycleGuard
         });
         if (outcome.status !== 'ready-to-commit') {
             throw new Error('Expected a ready-to-commit presence decision');
         }
         expect(outcome.computed).toBe(dependencies.computed);
+        expect(outcome.read).toBe(dependencies.read);
         expect(outcome.lifecycleGuard).toBe(dependencies.lifecycleGuard);
         expect(phases).toEqual([
             'lifecycle-read',
             'lifecycle-closed-check',
             'mutation-read',
             'mutation-compute',
-            'mutation-validate',
             'lifecycle-compute-guard'
         ]);
     });
@@ -69,6 +77,8 @@ interface CreateDecisionDependenciesInput {
 interface DecisionDependencies {
     readonly command: GroupStateMutationCommand;
     readonly computed: GroupMutationComputed;
+    readonly read: GroupMutationRead;
+    readonly lifecycleRead: WsSessionGenerationLifecycleRead;
     readonly lifecycleGuard: WsSessionGenerationLifecycleComputed;
     readonly mutationService: GroupStateMutationService;
     readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
@@ -76,11 +86,13 @@ interface DecisionDependencies {
 
 interface MutationServiceFixture {
     readonly computed: GroupMutationComputed;
+    readonly read: GroupMutationRead;
     readonly service: GroupStateMutationService;
 }
 
 interface LifecycleServiceFixture {
     readonly lifecycleGuard: WsSessionGenerationLifecycleComputed;
+    readonly lifecycleRead: WsSessionGenerationLifecycleRead;
     readonly service: WsSessionGenerationLifecycleService;
 }
 
@@ -91,6 +103,8 @@ function createDecisionDependencies(input: CreateDecisionDependenciesInput): Dec
     return {
         command,
         computed: mutation.computed,
+        read: mutation.read,
+        lifecycleRead: lifecycle.lifecycleRead,
         lifecycleGuard: lifecycle.lifecycleGuard,
         mutationService: mutation.service,
         sessionGenerationLifecycle: lifecycle.service
@@ -120,12 +134,13 @@ function createMutationServiceFixture(command: GroupStateMutationCommand, phases
             expect(receivedRead).toBe(read);
             expect(receivedComputed).toBe(computed);
             phases.push('mutation-validate');
+            return [];
         },
         write: async () => {
             throw new Error('The presence decision must not own the transaction write');
         }
     };
-    return { computed, service };
+    return { computed, read, service };
 }
 
 function createLifecycleServiceFixture(input: CreateDecisionDependenciesInput): LifecycleServiceFixture {
@@ -163,7 +178,7 @@ function createLifecycleServiceFixture(input: CreateDecisionDependenciesInput): 
             throw new Error('The presence decision must not own the lifecycle write');
         }
     };
-    return { lifecycleGuard, service };
+    return { lifecycleGuard, lifecycleRead, service };
 }
 
 function lifecycleReadFixture(): WsSessionGenerationLifecycleRead {
@@ -177,7 +192,7 @@ function lifecycleReadFixture(): WsSessionGenerationLifecycleRead {
             },
             sessionId: 'session-1'
         },
-        key: 'lifecycle-key',
+        key: 'group:ar-eye-hunter:default:owner:session-1',
         revision: null,
         persistedExpireAtEpochMs: null,
         state: null
@@ -186,13 +201,13 @@ function lifecycleReadFixture(): WsSessionGenerationLifecycleRead {
 
 function lifecycleGuardFixture(lifecycleRead: WsSessionGenerationLifecycleRead): WsSessionGenerationLifecycleComputed {
     const state = {
-        version: 3 as const,
-        status: 'open' as const,
+        version: 3,
+        status: 'open',
         ...lifecycleRead.identity,
         generationId: 'generation-1',
         generationStartedAtEpochMs: 1_000,
         expireAtEpochMs: 422_240
-    };
+    } as const;
     return {
         outcome: 'insert',
         key: lifecycleRead.key,

@@ -3,6 +3,7 @@ import { ClientStateRepository } from '@shared-server/rallar-system/client-state
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ClientSessionRef } from '@shared/api/client-types.ts';
@@ -122,7 +123,6 @@ describe('Postgres presence expiry concurrency', () => {
                     runtimeRepository: toRuntimeRepository(setupSql),
                     groupStateEventStoreFor: createGroupStateEventRepository,
                     now: () => atEpochMs,
-                    sleep: () => Promise.resolve(),
                     serviceId: 'postgres-worker-request-id-setup'
                 }).service;
                 await setup.createGroup(scope, {
@@ -407,7 +407,6 @@ describe('Postgres presence expiry concurrency', () => {
                     runtimeRepository: toRuntimeRepository(setupSql),
                     groupStateEventStoreFor: createGroupStateEventRepository,
                     now: () => atEpochMs,
-                    sleep: () => Promise.resolve(),
                     serviceId: 'postgres-worker-group-setup'
                 }).service;
                 await setup.createGroup(scope, {
@@ -484,7 +483,6 @@ describe('Postgres presence expiry concurrency', () => {
                     runtimeRepository: toRuntimeRepository(setupSql),
                     groupStateEventStoreFor: createGroupStateEventRepository,
                     now: () => atEpochMs,
-                    sleep: () => Promise.resolve(),
                     serviceId: 'postgres-worker-presence-setup'
                 }).service;
                 await setup.createGroup(scope, {
@@ -922,19 +920,35 @@ describe('Postgres presence expiry concurrency', () => {
             try {
                 await seedExpiredClientSession({ sql: setupSql, scope, sessionRef, atEpochMs });
                 const expiryBarrier = new PrincipalReadBarrier(2);
+                const leftExpiry = createPostgresClientService({
+                    sql: leftSql,
+                    barrier: expiryBarrier,
+                    atEpochMs,
+                    applicationId: scope.applicationId
+                });
+                const rightExpiry = createPostgresClientService({
+                    sql: rightSql,
+                    barrier: expiryBarrier,
+                    atEpochMs,
+                    applicationId: scope.applicationId
+                });
+                const [leftFirstAttempt, rightFirstAttempt] = await Promise.allSettled([
+                    leftExpiry.expireExpiredSessions(atEpochMs),
+                    rightExpiry.expireExpiredSessions(atEpochMs)
+                ]);
+                if (leftFirstAttempt.status === 'rejected') {
+                    expect(leftFirstAttempt.reason).toBeInstanceOf(RuntimeStateWriteConflictError);
+                }
+                if (rightFirstAttempt.status === 'rejected') {
+                    expect(rightFirstAttempt.reason).toBeInstanceOf(RuntimeStateWriteConflictError);
+                }
                 const [leftResults, rightResults] = await Promise.all([
-                    createPostgresClientService({
-                        sql: leftSql,
-                        barrier: expiryBarrier,
-                        atEpochMs,
-                        applicationId: scope.applicationId
-                    }).expireExpiredSessions(atEpochMs),
-                    createPostgresClientService({
-                        sql: rightSql,
-                        barrier: expiryBarrier,
-                        atEpochMs,
-                        applicationId: scope.applicationId
-                    }).expireExpiredSessions(atEpochMs)
+                    leftFirstAttempt.status === 'fulfilled'
+                        ? Promise.resolve(leftFirstAttempt.value)
+                        : leftExpiry.expireExpiredSessions(atEpochMs),
+                    rightFirstAttempt.status === 'fulfilled'
+                        ? Promise.resolve(rightFirstAttempt.value)
+                        : rightExpiry.expireExpiredSessions(atEpochMs)
                 ]);
                 expect(leftResults.length + rightResults.length).toBe(1);
 
@@ -965,33 +979,50 @@ describe('Postgres presence expiry concurrency', () => {
                     atEpochMs
                 });
                 const reconnectBarrier = new PrincipalReadBarrier(2);
-                await Promise.all([
-                    createPostgresClientService({
-                        sql: leftSql,
-                        barrier: reconnectBarrier,
-                        atEpochMs,
-                        applicationId: scope.applicationId
-                    }).expireExpiredSessions(atEpochMs),
-                    createPostgresClientService({
-                        sql: rightSql,
-                        barrier: reconnectBarrier,
-                        atEpochMs: atEpochMs + 1,
-                        applicationId: scope.applicationId
-                    }).connectSession(
+                const reconnectExpiry = createPostgresClientService({
+                    sql: leftSql,
+                    barrier: reconnectBarrier,
+                    atEpochMs,
+                    applicationId: scope.applicationId
+                });
+                const reconnect = createPostgresClientService({
+                    sql: rightSql,
+                    barrier: reconnectBarrier,
+                    atEpochMs: atEpochMs + 1,
+                    applicationId: scope.applicationId
+                });
+                const reconnectRequest = {
+                    generationId: 'generation-2',
+                    connectionId: 'connection-2',
+                    connectedAtEpochMs: atEpochMs + 1,
+                    lastHeartbeatAtEpochMs: atEpochMs + 1,
+                    expiresAtEpochMs: atEpochMs + 60_000,
+                    requestId: requestIdFor('postgres-reconnect-generation-2')
+                } as const;
+                const [expiryAttempt, reconnectAttempt] = await Promise.allSettled([
+                    reconnectExpiry.expireExpiredSessions(atEpochMs),
+                    reconnect.connectSession(
                         scope,
                         reconnectRef.principalId,
                         reconnectRef.clientInstanceId,
                         reconnectRef.sessionId,
-                        {
-                            generationId: 'generation-2',
-                            connectionId: 'connection-2',
-                            connectedAtEpochMs: atEpochMs + 1,
-                            lastHeartbeatAtEpochMs: atEpochMs + 1,
-                            expiresAtEpochMs: atEpochMs + 60_000,
-                            requestId: requestIdFor('postgres-reconnect-generation-2')
-                        }
+                        reconnectRequest
                     )
                 ]);
+                if (expiryAttempt.status === 'rejected') {
+                    expect(expiryAttempt.reason).toBeInstanceOf(RuntimeStateWriteConflictError);
+                    await reconnectExpiry.expireExpiredSessions(atEpochMs);
+                }
+                if (reconnectAttempt.status === 'rejected') {
+                    expect(reconnectAttempt.reason).toBeInstanceOf(RuntimeStateWriteConflictError);
+                    await reconnect.connectSession(
+                        scope,
+                        reconnectRef.principalId,
+                        reconnectRef.clientInstanceId,
+                        reconnectRef.sessionId,
+                        reconnectRequest
+                    );
+                }
                 expect(await repository.findSession(reconnectRef)).toMatchObject({
                     status: 'active',
                     generationId: 'generation-2',
@@ -1031,23 +1062,38 @@ describe('Postgres presence expiry concurrency', () => {
                     atEpochMs
                 });
                 const expiryBarrier = new GroupPresenceReadBarrier(2);
-                const [leftResults, rightResults] = await Promise.all([
+                const firstAttempts = await Promise.allSettled([
                     createPostgresGroupRuntime({
                         sql: leftSql,
                         barrier: expiryBarrier,
                         atEpochMs,
                         barrierNamespace: 'group-state:sessions',
-                        applicationId: scope.applicationId
+                        applicationId: scope.applicationId,
+                        attemptCount: 1
                     }).maintenance.expireExpiredPresenceSessions(atEpochMs),
                     createPostgresGroupRuntime({
                         sql: rightSql,
                         barrier: expiryBarrier,
                         atEpochMs,
                         barrierNamespace: 'group-state:sessions',
-                        applicationId: scope.applicationId
+                        applicationId: scope.applicationId,
+                        attemptCount: 1
                     }).maintenance.expireExpiredPresenceSessions(atEpochMs)
                 ]);
-                expect(leftResults.length + rightResults.length).toBe(1);
+                const conflictedIndex = firstAttempts.findIndex((result) => result.status === 'rejected');
+                expect(conflictedIndex).not.toBe(-1);
+                const retryResults = await createPostgresGroupRuntime({
+                    sql: conflictedIndex === 0 ? leftSql : rightSql,
+                    barrier: new GroupPresenceReadBarrier(1),
+                    atEpochMs,
+                    barrierNamespace: 'group-state:sessions',
+                    applicationId: scope.applicationId,
+                    attemptCount: 2
+                }).maintenance.expireExpiredPresenceSessions(atEpochMs);
+                const firstWritten = firstAttempts.flatMap(
+                    (result) => result.status === 'fulfilled' ? result.value : []
+                );
+                expect(firstWritten.length + retryResults.length).toBe(1);
 
                 const repository = createGroupStateRepository(setupSql);
                 const session = await repository.findPresenceSession({

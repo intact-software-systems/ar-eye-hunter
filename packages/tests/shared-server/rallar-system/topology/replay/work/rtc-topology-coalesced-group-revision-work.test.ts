@@ -59,7 +59,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: null
         });
 
-        const envelope = readPersistedGroupRevisionEnvelope(computed.entry);
+        const envelope = readPersistedGroupRevisionEnvelope(computed.entryWrite.entry);
         expect(envelope.data.origin).toBe('commanded');
         expect(isChangeGatedGroupRevisionWork(envelope.data)).toBe(false);
     });
@@ -88,10 +88,10 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             timing: createUnboundedTopologyReplanTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: secondOrigin,
-            previousEntry: first.entry
+            previousEntry: first.entryWrite.entry
         });
 
-        expect(readPersistedGroupRevisionEnvelope(second.entry).data.origin).toBe('commanded');
+        expect(readPersistedGroupRevisionEnvelope(second.entryWrite.entry).data.origin).toBe('commanded');
     });
 
     it('creates a per-group coalesced entry with debounce scheduling on first intent', () => {
@@ -107,10 +107,10 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         });
 
         expect(computed.expectedEntry).toBeNull();
-        expect(computed.entry.status).toBe(EntityStatus.RETRY);
-        expect(computed.entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(BASE_EPOCH_MS + DEBOUNCE_MS);
+        expect(computed.entryWrite.entry.status).toBe(EntityStatus.RETRY);
+        expect(computed.entryWrite.entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(BASE_EPOCH_MS + DEBOUNCE_MS);
 
-        const envelope = readPersistedEnvelope(computed.entry);
+        const envelope = readPersistedEnvelope(computed.entryWrite.entry);
         expect(envelope.resourceId).toBe(toRtcTopologyCoalescedGroupRevisionResourceId(OVERLAY_ID));
         expect(envelope.resourceId).toBe(`${OVERLAY_ID}:group-revision`);
         expect(envelope.data.kind).toBe('group-revision');
@@ -135,8 +135,8 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: null
         });
 
-        expect(computed.entry.status).toBe(EntityStatus.NEW);
-        expect(computed.entry.dequeueAudit.nextTs).toBeUndefined();
+        expect(computed.entryWrite.entry.status).toBe(EntityStatus.NEW);
+        expect(computed.entryWrite.entry.dequeueAudit.nextTs).toBeUndefined();
     });
 
     it('merges onto a pending predecessor: max revision, sliding due, one generation up', () => {
@@ -158,11 +158,11 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             timing: createUnboundedTopologyReplanTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
-            previousEntry: first.entry
+            previousEntry: first.entryWrite.entry
         });
 
-        expect(second.expectedEntry).toBe(first.entry);
-        const envelope = readPersistedGroupRevisionEnvelope(second.entry);
+        expect(second.expectedEntry).toBe(first.entryWrite.entry);
+        const envelope = readPersistedGroupRevisionEnvelope(second.entryWrite.entry);
         expect(envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]).toMatchObject({
             generation: 2,
             dueAtEpochMs: BASE_EPOCH_MS + 200 + DEBOUNCE_MS
@@ -171,8 +171,8 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupRevision: 4,
             presenceRevision: 5
         });
-        expect(second.entry.status).toBe(EntityStatus.RETRY);
-        expect(second.entry.dequeueAudit.attempts).toBe(first.entry.dequeueAudit.attempts);
+        expect(second.entryWrite.entry.status).toBe(EntityStatus.RETRY);
+        expect(second.entryWrite.entry.dequeueAudit.attempts).toBe(first.entryWrite.entry.dequeueAudit.attempts);
     });
 
     it('keeps merged generations canonical so handler-finalized releases stay idempotent', () => {
@@ -196,9 +196,9 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             timing: createUnboundedTopologyReplanTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
-            previousEntry: first.entry
+            previousEntry: first.entryWrite.entry
         });
-        const merged = JSON.parse(second.entry.resource) as {
+        const merged = JSON.parse(second.entryWrite.entry.resource) as {
             id: { ts: number; };
             audit: { createdTs: number; };
             constraints: { expiresAtMs: number; };
@@ -207,15 +207,15 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         expect(merged.id.ts).toBe(unexpiredBaseEpochMs);
         expect(merged.audit.createdTs).toBe(unexpiredBaseEpochMs);
         expect(merged.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
-        expect(isCanonicalRtcTopologyWorkEntry(second.entry)).toBe(true);
+        expect(isCanonicalRtcTopologyWorkEntry(second.entryWrite.entry)).toBe(true);
 
         const reserved: ResourceEntry = {
-            ...second.entry,
+            ...second.entryWrite.entry,
             status: EntityStatus.RESERVED,
             dequeueAudit: { attempts: 1 }
         };
         const finalized: ResourceEntry = {
-            ...second.entry,
+            ...second.entryWrite.entry,
             status: EntityStatus.COMPLETED,
             dequeueAudit: { attempts: 1 }
         };
@@ -241,7 +241,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: null
         });
         const completedFirst: ResourceEntry = {
-            ...first.entry,
+            ...first.entryWrite.entry,
             status: EntityStatus.COMPLETED,
             dequeueAudit: { attempts: 1 }
         };
@@ -255,16 +255,16 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             origin: 'automatic',
             previousEntry: completedFirst
         });
-        const revivedMessage = JSON.parse(revived.entry.resource) as {
+        const revivedMessage = JSON.parse(revived.entryWrite.entry.resource) as {
             id: { ts: number; };
             constraints: { expiresAtMs: number; };
         };
 
-        expect(revived.entry.dequeueAudit.attempts).toBe(0);
+        expect(revived.entryWrite.entry.dequeueAudit.attempts).toBe(0);
         expect(revivedMessage.id.ts).toBe(unexpiredBaseEpochMs);
         expect(revivedMessage.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
-        expect(revived.entry.audit).toEqual(first.entry.audit);
-        expect(isCanonicalRtcTopologyWorkEntry(revived.entry)).toBe(true);
+        expect(revived.entryWrite.entry.audit).toEqual(first.entryWrite.entry.audit);
+        expect(isCanonicalRtcTopologyWorkEntry(revived.entryWrite.entry)).toBe(true);
     });
 
     it('keeps the newer predecessor snapshot when the incoming revision is older', () => {
@@ -296,7 +296,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: null
         });
         const completed: ResourceEntry = {
-            ...first.entry,
+            ...first.entryWrite.entry,
             status: EntityStatus.COMPLETED,
             dequeueAudit: { attempts: 3 }
         };
@@ -312,7 +312,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: completed
         });
 
-        const envelope = readPersistedGroupRevisionEnvelope(revived.entry);
+        const envelope = readPersistedGroupRevisionEnvelope(revived.entryWrite.entry);
         expect(envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]).toMatchObject({
             generation: 2,
             dueAtEpochMs: BASE_EPOCH_MS + 60_000 + DEBOUNCE_MS,
@@ -322,7 +322,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupRevision: 5,
             presenceRevision: 5
         });
-        expect(revived.entry.dequeueAudit.attempts).toBe(0);
+        expect(revived.entryWrite.entry.dequeueAudit.attempts).toBe(0);
     });
 
     it('always carries a deterministic per-revision successor identity', () => {
@@ -336,7 +336,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             origin: 'automatic',
             previousEntry: null
         });
-        const reserved: ResourceEntry = { ...first.entry, status: EntityStatus.RESERVED };
+        const reserved: ResourceEntry = { ...first.entryWrite.entry, status: EntityStatus.RESERVED };
 
         const blocked = computeCoalescedRtcTopologyGroupRevisionWork({
             aggregateRef: GROUP_REF,
@@ -349,7 +349,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: reserved
         });
 
-        const successorEnvelope = readPersistedGroupRevisionEnvelope(blocked.successorEntry);
+        const successorEnvelope = readPersistedGroupRevisionEnvelope(blocked.successorWrite.entry);
         expect(successorEnvelope.resourceId).toBe(
             `${OVERLAY_ID}:group-revision:group=4;presence=5`
         );
@@ -358,7 +358,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             groupRevision: 4,
             presenceRevision: 5
         });
-        const mainEnvelope = readPersistedGroupRevisionEnvelope(blocked.entry);
+        const mainEnvelope = readPersistedGroupRevisionEnvelope(blocked.entryWrite.entry);
         expect(mainEnvelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation).toBe(2);
     });
 
@@ -373,7 +373,7 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             origin: 'automatic',
             previousEntry: null
         });
-        const corrupted: ResourceEntry = { ...first.entry, resource: '{"not":"a message"}' };
+        const corrupted: ResourceEntry = { ...first.entryWrite.entry, resource: '{"not":"a message"}' };
 
         expect(() =>
             computeCoalescedRtcTopologyGroupRevisionWork({
@@ -603,7 +603,7 @@ describe('readPendingTopologyReplan', () => {
             senderId: 'server-1',
             origin: 'automatic',
             previousEntry: null
-        }).entry;
+        }).entryWrite.entry;
     }
 
     it('reads a queued replan and its due time off the coalesced row', async () => {
@@ -718,10 +718,10 @@ describe('the series anchor on coalesced rows', () => {
 
     it('keeps the first request of the series through every merge and bounds the due time by it', () => {
         const first = createReplan(BASE_EPOCH_MS, null);
-        const second = createReplan(BASE_EPOCH_MS + 400, first.entry);
-        const third = createReplan(BASE_EPOCH_MS + 900, second.entry);
+        const second = createReplan(BASE_EPOCH_MS + 400, first.entryWrite.entry);
+        const third = createReplan(BASE_EPOCH_MS + 900, second.entryWrite.entry);
 
-        expect(readPersistedGroupRevisionEnvelope(third.entry).data[COALESCED_APP_OUTBOX_WORK_FIELD]).toMatchObject({
+        expect(readPersistedGroupRevisionEnvelope(third.entryWrite.entry).data[COALESCED_APP_OUTBOX_WORK_FIELD]).toMatchObject({
             generation: 3,
             windowOpenedAtEpochMs: BASE_EPOCH_MS,
             dueAtEpochMs: BASE_EPOCH_MS + 1_200
@@ -730,20 +730,20 @@ describe('the series anchor on coalesced rows', () => {
 
     it('restarts the series on the successor row minted behind a reserved head', () => {
         const first = createReplan(BASE_EPOCH_MS, null);
-        const reserved = { ...first.entry, status: EntityStatus.RESERVED };
+        const reserved = { ...first.entryWrite.entry, status: EntityStatus.RESERVED };
         const behind = createReplan(BASE_EPOCH_MS + 5_000, reserved);
 
-        expect(readPersistedGroupRevisionEnvelope(behind.successorEntry).data[COALESCED_APP_OUTBOX_WORK_FIELD])
+        expect(readPersistedGroupRevisionEnvelope(behind.successorWrite.entry).data[COALESCED_APP_OUTBOX_WORK_FIELD])
             .toMatchObject({ generation: 1, windowOpenedAtEpochMs: BASE_EPOCH_MS + 5_000 });
     });
 
     it('fails closed on a predecessor without a series anchor', () => {
         const first = createReplan(BASE_EPOCH_MS, null);
-        const message = JSON.parse(first.entry.resource);
+        const message = JSON.parse(first.entryWrite.entry.resource);
         const envelope = JSON.parse(message.payload.resource);
         delete envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].windowOpenedAtEpochMs;
         const legacy = {
-            ...first.entry,
+            ...first.entryWrite.entry,
             resource: JSON.stringify({ ...message, payload: { ...message.payload, resource: JSON.stringify(envelope) } })
         };
 
@@ -753,15 +753,15 @@ describe('the series anchor on coalesced rows', () => {
     it('keeps a head that already failed an attempt retryable when the bound makes a merge due at once', () => {
         const first = createReplan(BASE_EPOCH_MS, null);
         const failedOnce = {
-            ...first.entry,
+            ...first.entryWrite.entry,
             status: EntityStatus.RETRY,
-            dequeueAudit: { ...first.entry.dequeueAudit, attempts: 1 }
+            dequeueAudit: { ...first.entryWrite.entry.dequeueAudit, attempts: 1 }
         };
 
         const merged = createReplan(BASE_EPOCH_MS + 1_300, failedOnce);
 
-        expect(merged.entry.status).toBe(EntityStatus.RETRY);
-        expect(merged.entry.dequeueAudit.attempts).toBe(1);
-        expect(merged.entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(BASE_EPOCH_MS + 1_200);
+        expect(merged.entryWrite.entry.status).toBe(EntityStatus.RETRY);
+        expect(merged.entryWrite.entry.dequeueAudit.attempts).toBe(1);
+        expect(merged.entryWrite.entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(BASE_EPOCH_MS + 1_200);
     });
 });

@@ -27,6 +27,7 @@ import type {
     UpdateGroupRequest,
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
+import type { ComputedDataValidationIssue } from '../computed-data-validation.ts';
 import type {
     GroupAcceptedLayoutRow,
     GroupPlannedLayoutRow
@@ -162,7 +163,7 @@ export interface GroupStateMutationService {
         command: GroupStateMutationCommand,
         read: GroupMutationRead,
         computed: GroupMutationComputed
-    ): void;
+    ): readonly ComputedDataValidationIssue[];
     write(
         transaction: PSqlSql,
         computed: GroupMutationComputedWrite

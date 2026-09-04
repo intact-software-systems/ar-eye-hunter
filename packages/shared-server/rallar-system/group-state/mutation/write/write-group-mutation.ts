@@ -1,116 +1,36 @@
-import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import {
-    type RuntimeStateGuardedBatch,
-    type RuntimeStateGuardedBatchEffect,
-    type RuntimeStateGuardedBatchGuard
-} from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
-import { validateRuntimeStateGuardedBatchResult } from '../../../../runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
-import { validateRuntimeStateGuardedBatch } from '../../../../runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
+import type { RuntimeStateGuardedBatchWrite } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
-import {
-    createTransactionBoundPSqlRuntimeStateRepository,
-    type PSqlRuntimeStateRepository
-} from '../../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import {
-    groupStateInsertGroupDescriptor,
-    groupStateUpdateGroupDescriptor
-} from '../../persistence/aggregate/group-aggregate-write-descriptors.ts';
-import { GroupLifecyclePolicyRepository } from '../../persistence/group-lifecycle-policy-repository.ts';
-import { createTransactionBoundGroupStateRepository } from '../../persistence/group-state-repository.ts';
-import { groupStateInsertIdempotencyDescriptor } from '../../persistence/idempotency/group-idempotency-write-descriptor.ts';
-import {
-    toGroupLayoutPromotionEffects,
-    toGroupLayoutTombstoneEffects,
-    toPlannedLayoutFenceEffect
-} from '../../persistence/layout/to-group-layout-promotion-effects.ts';
-import { groupStateMemberPutDescriptor } from '../../persistence/membership/group-state-member-put-descriptor.ts';
-import {
-    groupStateDeletePresenceDescriptor,
-    groupStateInsertPresenceAdmissionDescriptor,
-    groupStateInsertPresenceDescriptor,
-    groupStateInsertPresenceSummaryDescriptor,
-    groupStateUpdatePresenceAdmissionDescriptor,
-    groupStateUpdatePresenceDescriptor,
-    groupStateUpdatePresenceSummaryDescriptor
-} from '../../persistence/presence/group-presence-write-descriptors.ts';
-import type { GroupMutationComputedWrite, GroupMutationReceipt } from '../group-mutation-contracts.ts';
-
-export function materializeGroupStateGuardedBatch(
-    computed: GroupMutationComputedWrite
-): RuntimeStateGuardedBatch {
-    const effects: RuntimeStateGuardedBatchEffect[] = [];
-
-    effects.push(...materializePresenceAndMembershipEffects(computed));
-
-    if (computed.acceptedLayoutPromotion) {
-        effects.push(...toGroupLayoutPromotionEffects(computed.acceptedLayoutPromotion));
-    }
-
-    if (computed.layoutTombstones) {
-        effects.push(...toGroupLayoutTombstoneEffects(computed.layoutTombstones));
-    }
-
-    if (computed.plannedLayoutFence) {
-        effects.push(toPlannedLayoutFenceEffect(computed.plannedLayoutFence));
-    }
-
-    if (computed.connectTriggerLatchEffect) {
-        effects.push(computed.connectTriggerLatchEffect);
-    }
-
-    if (computed.idempotency) {
-        effects.push({
-            effectId: 'receipt',
-            ...groupStateInsertIdempotencyDescriptor({
-                ref: computed.idempotency.aggregateRef,
-                requestId: computed.idempotency.requestId,
-                record: computed.idempotency,
-                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
-            })
-        });
-    }
-
-    return validateRuntimeStateGuardedBatch({
-        guard: materializeGuard(computed),
-        effects
-    });
-}
+import { writeRuntimeStateGuardedBatch } from '../../../../runtime-state/postgres/write-runtime-state-guarded-batch.ts';
+import { writeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
+import { GroupStateEventCollisionError } from '../../../state-events/group-state-event-store.ts';
+import type { GroupStateEventCollisionRow } from '../../../state-events/postgres/group-state-event-row-codec.ts';
+import type {
+    GroupMutationComputedWrite,
+    GroupMutationPersistence,
+    GroupMutationReceipt
+} from '../group-mutation-contracts.ts';
 
 export async function writeGroupMutation(
     transaction: PSqlSql,
     computed: GroupMutationComputedWrite
 ): Promise<GroupMutationReceipt> {
-    const batch = materializeGroupStateGuardedBatch(computed);
-    const runtime = createTransactionBoundPSqlRuntimeStateRepository(transaction);
-    const repository = createTransactionBoundGroupStateRepository(transaction);
-
-    await executeGuardedGroupMutationBatch(runtime, batch);
-
-    if (computed.lifecyclePolicy !== null) {
-        await new GroupLifecyclePolicyRepository(runtime).writePolicy(
-            computed.receipt.aggregateRef,
-            computed.lifecyclePolicy
-        );
+    await executeGuardedGroupMutationBatch(transaction, computed.persistence.guardedBatch);
+    if (computed.persistence.lifecyclePolicyWrite) {
+        await writeLifecyclePolicy(transaction, computed.persistence.lifecyclePolicyWrite);
     }
-
-    await repository.appendEvent(computed.event);
-    const outbox = new PSqlResourceInboxEntryRepository(transaction);
-    for (const entry of computed.outboxEntries) {
-        await outbox.writeIfAbsentOrMatch(entry);
+    await writeGroupEvent(transaction, computed.persistence.eventWrite);
+    for (const outboxWrite of computed.outboxWrites) {
+        await writeAppOutboxInsert(transaction, outboxWrite);
     }
     return computed.receipt;
 }
 
 async function executeGuardedGroupMutationBatch(
-    runtime: PSqlRuntimeStateRepository,
-    batch: RuntimeStateGuardedBatch
+    transaction: PSqlSql,
+    computed: RuntimeStateGuardedBatchWrite
 ): Promise<void> {
-    const result = validateRuntimeStateGuardedBatchResult(
-        batch,
-        await runtime.executeGuardedBatch(batch)
-    );
+    const result = await writeRuntimeStateGuardedBatch(transaction, computed);
     if (result.guard.status === 'conflict') {
         throw new RuntimeStateWriteConflictError();
     }
@@ -121,51 +41,77 @@ async function executeGuardedGroupMutationBatch(
     }
 }
 
-function materializeGuard(computed: GroupMutationComputedWrite): RuntimeStateGuardedBatchGuard {
-    const guard = computed.guard;
-    if (guard.kind === 'group') {
-        return guard.operation === 'insert'
-            ? groupStateInsertGroupDescriptor(guard.value)
-            : groupStateUpdateGroupDescriptor(guard.value, guard.expectedRevision);
-    }
-    if (guard.operation === 'delete') {
-        return groupStateDeletePresenceDescriptor(guard.value, guard.expectedRevision);
-    }
-    return guard.operation === 'insert'
-        ? groupStateInsertPresenceDescriptor(guard.value)
-        : groupStateUpdatePresenceDescriptor(guard.value, guard.expectedRevision);
+async function writeLifecyclePolicy(
+    transaction: PSqlSql,
+    policy: NonNullable<GroupMutationPersistence['lifecyclePolicyWrite']>
+): Promise<void> {
+    await transaction`
+        insert into runtime_state_store (store_namespace, store_key, store_value,
+                                         expire_at_ts, updated_ts, revision)
+        values (${policy.namespace}, ${policy.key}, ${policy.value},
+                ${policy.expireAtIsoTimestamp}, ${policy.updatedAtIsoTimestamp}, 0)
+        on conflict (store_namespace, store_key)
+            do update set store_value = excluded.store_value,
+                          expire_at_ts = excluded.expire_at_ts,
+                          updated_ts = ${policy.updatedAtIsoTimestamp},
+                          revision = runtime_state_store.revision + 1
+    `;
 }
 
-function materializePresenceAndMembershipEffects(
-    computed: GroupMutationComputedWrite
-): RuntimeStateGuardedBatchEffect[] {
-    const effects: RuntimeStateGuardedBatchEffect[] = [];
-    if (computed.presenceAdmission) {
-        const admission = computed.presenceAdmission;
-        effects.push({
-            effectId: 'presence-admission',
-            ...(admission.operation === 'insert'
-                ? groupStateInsertPresenceAdmissionDescriptor(admission.value)
-                : groupStateUpdatePresenceAdmissionDescriptor(admission.value, admission.expectedRevision))
-        });
+async function writeGroupEvent(
+    transaction: PSqlSql,
+    eventWrite: GroupMutationPersistence['eventWrite']
+): Promise<void> {
+    const event = eventWrite.event;
+    const inserted = await transaction<{ event_id: string; }[]>`
+        insert into group_state_events (application_id,
+                                        workspace_key,
+                                        group_id,
+                                        event_id,
+                                        event_type,
+                                        snapshot_version,
+                                        occurred_at_epoch_ms,
+                                        event_json)
+        values (${event.applicationId},
+                ${eventWrite.workspaceKey},
+                ${event.groupId},
+                ${event.eventId},
+                ${event.eventType},
+                ${event.snapshotVersion},
+                ${event.occurredAtEpochMs},
+                ${eventWrite.eventJson})
+        on conflict (application_id, workspace_key, group_id, event_id)
+            do nothing
+        returning event_id
+    `;
+    if (inserted.length === 1) {
+        return;
     }
-
-    for (const member of computed.members) {
-        effects.push({
-            effectId: `member:${member.principalId}`,
-            ...groupStateMemberPutDescriptor(member)
-        });
+    const [existing] = await transaction<GroupStateEventCollisionRow[]>`
+        select application_id, workspace_key, group_id, event_id,
+               event_type, snapshot_version, occurred_at_epoch_ms, event_json
+        from group_state_events
+        where application_id = ${event.applicationId}
+          and workspace_key = ${eventWrite.workspaceKey}
+          and group_id = ${event.groupId}
+          and event_id = ${event.eventId}
+    `;
+    if (!existing || !isExactGroupEvent(existing, eventWrite)) {
+        throw new GroupStateEventCollisionError(event);
     }
+}
 
-    if (computed.initialPresenceSummary) {
-        const summary = computed.initialPresenceSummary;
-        effects.push({
-            effectId: 'initial-presence-summary',
-            ...(summary.operation === 'insert'
-                ? groupStateInsertPresenceSummaryDescriptor(summary.value)
-                : groupStateUpdatePresenceSummaryDescriptor(summary.value, summary.expectedRevision))
-        });
-    }
-
-    return effects;
+function isExactGroupEvent(
+    row: GroupStateEventCollisionRow,
+    eventWrite: GroupMutationPersistence['eventWrite']
+): boolean {
+    const event = eventWrite.event;
+    return row.application_id === event.applicationId &&
+        row.workspace_key === eventWrite.workspaceKey &&
+        row.group_id === event.groupId &&
+        row.event_id === event.eventId &&
+        row.event_type === event.eventType &&
+        Number(row.snapshot_version) === event.snapshotVersion &&
+        Number(row.occurred_at_epoch_ms) === event.occurredAtEpochMs &&
+        row.event_json === eventWrite.eventJson;
 }

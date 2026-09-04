@@ -30,13 +30,14 @@ import {
 
 interface RetryAttempt {
     readonly attempt: number;
+    readonly preparedAtEpochMs: number;
     readonly outcome: 'conflict' | 'denied';
     readonly authorized: boolean;
 }
 
 describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, () => {
     it(
-        'restarts the AppInbox group operation ' + 'and denies a retry after authority changes',
+        'restarts read/compute/validate with immutable prepared facts and current authority',
         async () => {
             const nowEpochMs = Date.now();
             const queue = new TestResourceInbox();
@@ -44,6 +45,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             const results = new TestResourceInboxResults();
             const attempts: RetryAttempt[] = [];
             let authorized = true;
+            let authenticatedReadCount = 0;
             const authorizedMutation = {
                 authorityProof: {
                     version: 1 as const,
@@ -54,65 +56,66 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     commandMac: 'a'.repeat(64)
                 },
                 descriptor: {
-                    operation: 'updateGroup' as const,
+                    operation: 'heartbeatPresence' as const,
                     scope: SCOPE,
                     groupId: 'outer-retry-room',
                     targetPrincipalId: null,
-                    sessionId: null,
+                    sessionId: 'owner-session',
                     request: {
-                        displayName: 'Must Not Apply',
                         actorPrincipalId: 'owner',
                         actorSessionId: 'owner-session',
-                        requestId: 'outer-retry-authority-change'
+                        requestId: 'outer-retry-authority-change',
+                        principalId: 'owner',
+                        generationId: 'owner-generation',
+                        lastHeartbeatAtEpochMs: nowEpochMs,
+                        expiresAtEpochMs: nowEpochMs + 60_000
                     }
                 }
             };
             const phaseService = {
                 authorizeMutation: async () => authorizedMutation,
-                prepareAppInboxMutation: async () => ({
-                    ...authorizedMutation,
-                    command: {
-                        operation: 'updateGroup',
-                        aggregateRef: { ...SCOPE, groupId: 'outer-retry-room' },
-                        commandId: 'outer-retry-authority-change',
-                        requestId: 'outer-retry-authority-change',
-                        input: {
-                            actorPrincipalId: 'owner',
-                            actorSessionId: 'owner-session',
-                            reason: null,
-                            traceId: null,
-                            slug: null,
-                            displayName: 'Must Not Apply',
-                            description: null,
-                            kind: null,
-                            status: null,
-                            joinMode: null,
-                            maxMembers: null,
-                            maxSessionsPerMember: null,
-                            metadata: null,
-                            expiresAtEpochMs: null,
-                            emptySinceEpochMs: null,
-                            purgeAfterEpochMs: null
-                        }
-                    },
-                    facts: {
-                        nowEpochMs,
-                        expireAtEpochMs: nowEpochMs + 60_000,
-                        serviceId: 'server-12345678',
-                        eventId: 'outer-retry-event',
-                        commandHash: `sha256:${'a'.repeat(64)}`,
-                        resolvedJoinCode: null,
-                        joinCodeVerifier: null,
-                        internalAuthority: 'none',
-                        authenticatedAuthority: {
-                            principalId: 'owner',
-                            sessionId: 'owner-session'
-                        }
-                    },
-                    causalToken: 'causal-token',
-                    queueResourceId: 'outer-retry-authority-change'
-                }),
-                read: async (command: Readonly<{ facts: { attemptCount: number; }; }>) => ({
+                prepareAppInboxMutation: async () => {
+                    authenticatedReadCount += 1;
+                    return {
+                        ...authorizedMutation,
+                        command: {
+                            operation: 'heartbeatPresence',
+                            aggregateRef: { ...SCOPE, groupId: 'outer-retry-room' },
+                            commandId: 'outer-retry-authority-change',
+                            requestId: 'outer-retry-authority-change',
+                            sessionId: 'owner-session',
+                            input: {
+                                actorPrincipalId: 'owner',
+                                actorSessionId: 'owner-session',
+                                reason: null,
+                                traceId: null,
+                                principalId: 'owner',
+                                generationId: 'owner-generation',
+                                lastHeartbeatAtEpochMs: nowEpochMs,
+                                expiresAtEpochMs: nowEpochMs + 60_000
+                            }
+                        },
+                        facts: {
+                            nowEpochMs: nowEpochMs + authenticatedReadCount,
+                            expireAtEpochMs: nowEpochMs + 60_000,
+                            serviceId: 'server-12345678',
+                            eventId: 'outer-retry-event',
+                            commandHash: `sha256:${'a'.repeat(64)}`,
+                            resolvedJoinCode: null,
+                            joinCodeVerifier: null,
+                            internalAuthority: 'none',
+                            authenticatedAuthority: {
+                                principalId: 'owner',
+                                sessionId: 'owner-session'
+                            }
+                        },
+                        causalToken: 'causal-token',
+                        queueResourceId: 'outer-retry-authority-change'
+                    };
+                },
+                read: async (
+                    command: Readonly<{ facts: { attemptCount: number; nowEpochMs: number; }; }>
+                ) => ({
                     authorized,
                     command
                 }),
@@ -120,7 +123,9 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     _command: never,
                     read: Readonly<{
                         authorized: boolean;
-                        command: Readonly<{ facts: { attemptCount: number; }; }>;
+                        command: Readonly<{
+                            facts: { attemptCount: number; nowEpochMs: number; };
+                        }>;
                     }>
                 ) => ({
                     outcome: 'write',
@@ -133,32 +138,48 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     computed: Readonly<{
                         read: Readonly<{
                             authorized: boolean;
-                            command: Readonly<{ facts: { attemptCount: number; }; }>;
+                            command: Readonly<{
+                                facts: { attemptCount: number; nowEpochMs: number; };
+                            }>;
                         }>;
                     }>
                 ) => {
                     if (!computed.read.authorized) {
                         attempts.push({
                             attempt: computed.read.command.facts.attemptCount,
+                            preparedAtEpochMs: computed.read.command.facts.nowEpochMs,
                             outcome: 'denied',
                             authorized: false
                         });
-                        throw new GroupMutationAuthorizationError(
+                        const cause = new GroupMutationAuthorizationError(
                             'Authenticated session changed before retry.'
                         );
+                        return [{
+                            path: 'computed.authority',
+                            message: cause.message,
+                            cause
+                        }];
                     }
+                    return [];
                 },
                 write: async (
                     _transaction: never,
                     computed: Readonly<{
                         read: Readonly<{
                             authorized: boolean;
-                            command: Readonly<{ facts: { attemptCount: number; }; }>;
+                            command: Readonly<{
+                                facts: { attemptCount: number; nowEpochMs: number; };
+                            }>;
                         }>;
                     }>
                 ) => {
                     const attempt = computed.read.command.facts.attemptCount as number;
-                    attempts.push({ attempt, outcome: 'conflict', authorized: true });
+                    attempts.push({
+                        attempt,
+                        preparedAtEpochMs: computed.read.command.facts.nowEpochMs,
+                        outcome: 'conflict',
+                        authorized: true
+                    });
                     authorized = false;
                     throw new RuntimeStateWriteConflictError();
                 }
@@ -169,7 +190,11 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     resourceInboxRepository: queue,
                     resourceInboxResultsRepository: results,
                     database: createAppInboxTestDatabase(queue, results),
-                    groupStateService: phaseService as never
+                    groupStateService: phaseService as never,
+                    resultReader: {
+                        readSnapshot: async () => undefined,
+                        readEvent: async () => undefined
+                    }
                 },
                 {
                     serviceId: 'server-12345678'
@@ -183,18 +208,22 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             });
             const pending = service.processAuthenticatedGroupEntryUntilCompletion(
                 {
-                    type: AppInboxType.GROUP_UPDATE,
+                    type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
                     resourceId: 'outer-retry-authority-change',
                     contextId: 'ar-eye-hunter:default:outer-retry-room',
                     senderId: 'owner',
                     data: {
                         scope: SCOPE,
                         groupId: 'outer-retry-room',
+                        sessionId: 'owner-session',
                         request: {
-                            displayName: 'Must Not Apply',
                             actorPrincipalId: 'owner',
                             actorSessionId: 'owner-session',
-                            requestId: 'outer-retry-authority-change'
+                            requestId: 'outer-retry-authority-change',
+                            principalId: 'owner',
+                            generationId: 'owner-generation',
+                            lastHeartbeatAtEpochMs: nowEpochMs,
+                            expiresAtEpochMs: nowEpochMs + 60_000
                         }
                     }
                 },
@@ -208,9 +237,20 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
 
             expect((await pending).left?.message).toContain('Forbidden:');
             expect(attempts).toEqual([
-                { attempt: 1, outcome: 'conflict', authorized: true },
-                { attempt: 2, outcome: 'denied', authorized: false }
+                {
+                    attempt: 1,
+                    preparedAtEpochMs: nowEpochMs + 1,
+                    outcome: 'conflict',
+                    authorized: true
+                },
+                {
+                    attempt: 2,
+                    preparedAtEpochMs: nowEpochMs + 1,
+                    outcome: 'denied',
+                    authorized: false
+                }
             ]);
+            expect(authenticatedReadCount).toBe(1);
         }
     );
 

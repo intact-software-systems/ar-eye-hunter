@@ -12,11 +12,17 @@ interface GroupStateEventRowsQuery {
     readonly limit: number;
 }
 
+export interface InsertPSqlGroupStateEventInput {
+    readonly sql: PSqlSql;
+    readonly event: GroupEvent;
+    readonly workspaceKey: string;
+    readonly eventJson: string;
+}
+
 export async function insertPSqlGroupStateEvent(
-    sql: PSqlSql,
-    event: GroupEvent,
-    eventJson: string
+    input: InsertPSqlGroupStateEventInput
 ): Promise<boolean> {
+    const { sql, event, workspaceKey, eventJson } = input;
     const inserted = await sql<{ event_id: string; }[]>`
         insert into group_state_events (application_id,
                                         workspace_key,
@@ -27,7 +33,7 @@ export async function insertPSqlGroupStateEvent(
                                         occurred_at_epoch_ms,
                                         event_json)
         values (${event.applicationId},
-                ${groupStateEventWorkspaceKey(event.workspaceId)},
+                ${workspaceKey},
                 ${event.groupId},
                 ${event.eventId},
                 ${event.eventType},
@@ -69,6 +75,22 @@ export async function readAllPSqlGroupStateEventRows(
           and group_id = ${ref.groupId}
         order by snapshot_version, occurred_at_epoch_ms, event_id
     `;
+}
+
+export async function readPSqlGroupStateEventRow(
+    sql: PSqlSql,
+    ref: GroupRef,
+    eventId: string
+): Promise<GroupStateEventRow | undefined> {
+    const [row] = await sql<GroupStateEventRow[]>`
+        select event_id, event_type, snapshot_version, occurred_at_epoch_ms, event_json
+        from group_state_events
+        where application_id = ${ref.applicationId}
+          and workspace_key = ${groupStateEventWorkspaceKey(ref.workspaceId)}
+          and group_id = ${ref.groupId}
+          and event_id = ${eventId}
+    `;
+    return row;
 }
 
 export async function readRecentPSqlGroupStateEventRows(

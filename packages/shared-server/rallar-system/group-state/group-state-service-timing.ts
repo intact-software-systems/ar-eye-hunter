@@ -242,13 +242,7 @@ function createTimedMutationOperations(
             }),
         compute: service.compute,
         validate: service.validate,
-        write: async (transaction, computed) =>
-            await timeGroupStateOperation({
-                ...input,
-                operation: 'write',
-                details: {},
-                action: async () => await service.write(transaction, computed)
-            })
+        write: async (transaction, computed) => await service.write(transaction, computed)
     };
 }
 

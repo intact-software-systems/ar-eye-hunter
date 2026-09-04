@@ -131,7 +131,7 @@ describe('group presence-summary causal identity', () => {
         }
         expect(computed.receipt.causalRevision).toEqual({ groupRevision: 2, presenceRevision: 0 });
         expect(computed.receipt.snapshotVersion).toBe(2);
-        const effect = decodeCanonicalGroupPresenceSummaryEntry(computed.outboxEntries[0]);
+        const effect = decodeCanonicalGroupPresenceSummaryEntry(computed.outboxWrites[0]?.entry);
         expect(effect.acceptedCausalRevision).toEqual(computed.receipt.causalRevision);
         expect(effect.event.snapshotVersion).toBe(computed.receipt.snapshotVersion);
     });

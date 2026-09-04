@@ -40,9 +40,9 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         vi.spyOn(worker, 'compute').mockReturnValue(
             createComputedWorkWithDownstreamTopics([
                 AppTopics.groupStateEvent
-            ])
+            ], entry)
         );
-        vi.spyOn(worker, 'validate').mockReturnValue(undefined);
+        vi.spyOn(worker, 'validate').mockReturnValue([]);
         vi.spyOn(worker, 'write').mockResolvedValue(undefined);
 
         await worker.processReservedEntry(message, entry);
@@ -77,9 +77,9 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         });
         vi.spyOn(worker, 'read').mockResolvedValue({} as never);
         vi.spyOn(worker, 'compute').mockReturnValue(
-            createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent], 'held-by-policy')
+            createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent], entry, 'held-by-policy')
         );
-        vi.spyOn(worker, 'validate').mockReturnValue(undefined);
+        vi.spyOn(worker, 'validate').mockReturnValue([]);
         vi.spyOn(worker, 'write').mockResolvedValue(undefined);
 
         await worker.processReservedEntry(message, entry);
@@ -101,8 +101,10 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
             formationMetrics: (event) => formationEvents.push(event)
         });
         vi.spyOn(worker, 'read').mockResolvedValue({} as never);
-        vi.spyOn(worker, 'compute').mockReturnValue(createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent]));
-        vi.spyOn(worker, 'validate').mockReturnValue(undefined);
+        vi.spyOn(worker, 'compute').mockReturnValue(
+            createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent], entry)
+        );
+        vi.spyOn(worker, 'validate').mockReturnValue([]);
         vi.spyOn(worker, 'write').mockResolvedValue(undefined);
 
         await expect(worker.processReservedEntry(message, entry)).rejects.toThrow('Presence-summary reservation changed before commit');
@@ -112,14 +114,23 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
 
 function createComputedWorkWithDownstreamTopics(
     topicIds: readonly string[],
+    entry: ResourceEntry,
     replan: 'enqueued' | 'held-by-policy' = 'enqueued'
 ) {
     return {
-        downstreamOutboxEntries: topicIds.map((topicId, index) => ({
-            key: {
-                topicId,
-                resourceId: `downstream-${index}`,
-                contextId: 'summary-context'
+        reservationFinish: {
+            key: entry.key,
+            expectedAttempts: entry.dequeueAudit.attempts,
+            status: EntityStatus.COMPLETED,
+            completedAt: new Date(BASE_EPOCH_MS + 5_000)
+        },
+        downstreamOutboxWrites: topicIds.map((topicId, index) => ({
+            entry: {
+                key: {
+                    topicId,
+                    resourceId: `downstream-${index}`,
+                    contextId: 'summary-context'
+                }
             }
         })),
         // The write is mocked here, so only the decision has to be present.

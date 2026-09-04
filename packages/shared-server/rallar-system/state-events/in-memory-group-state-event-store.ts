@@ -19,6 +19,10 @@ export class InMemoryGroupStateEventStore implements GroupStateEventStore {
         }
     }
 
+    async readGroupEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined> {
+        return this.events.find((event) => isGroupEventForRef(event, ref) && event.eventId === eventId);
+    }
+
     async listGroupEvents(ref: GroupRef): Promise<readonly GroupEvent[]> {
         return this.events
             .filter((event) => isGroupEventForRef(event, ref))

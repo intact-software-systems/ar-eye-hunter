@@ -1,59 +1,61 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type {
+    AppInboxExecutionMetadata,
+    AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type {
+    AppInboxCompletionComputed,
+    AppInboxCompletionFacts
+} from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import {
     AppInboxTransactionWriter,
-    type AppInboxMutationTransactionResult,
     type AppInboxMutationTransactionWriter
 } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import type {
     GroupMutationAuthority,
     GroupMutationDescriptor,
     GroupMutationPreparation,
-    GroupStateMutationService,
-    GroupStateService
+    GroupStateMutationService
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService as createDurableGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import { GroupStateInboxHandler, type GroupStateInboxHandlerDependencies } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
+import {
+    GroupStateInboxHandler,
+    type GroupStateInboxHandlerDependencies,
+    type GroupStateInboxResultReader
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import type { GroupMutationComputed } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutationWriteResult, type GroupMutationWriteInput } from '@shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
 import type { GroupFormationGroupMutationSink } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 import type { WsSessionGenerationLifecycleService } from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 
 type DurableResult = Readonly<{ status: 'durable'; }>;
-type AfterCommitResult = Readonly<{ committedSnapshot: GroupSnapshot | undefined; }>;
-type TransactionResult = AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>;
 type ExpectedTransactionWriter = {
-    writeMutation<Result>(
-        context: AppInboxMessageContext<Result>,
-        write: (transaction: PSqlSql) => Promise<Result>
+    readCompletionFacts(context: AppInboxExecutionMetadata): AppInboxCompletionFacts;
+    writeComputedMutation<Result>(
+        context: AppInboxExecutionMetadata,
+        computed: AppInboxCompletionComputed<Result>,
+        write: (transaction: PSqlSql) => Promise<void>
     ): Promise<Result>;
-    writeMutationWithAfterCommitResult<Durable, AfterCommit>(
-        context: AppInboxMessageContext<Durable>,
-        write: (
-            transaction: PSqlSql
-        ) => Promise<AppInboxMutationTransactionResult<Durable, AfterCommit>>
-    ): Promise<AppInboxMutationTransactionResult<Durable, AfterCommit>>;
 };
 type ExpectedHandlerDependencies = {
     readonly mutationService: GroupStateMutationService;
     readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
-    readonly snapshotObserver: Pick<GroupStateService, 'observeSnapshot'>;
+    readonly resultReader: GroupStateInboxResultReader;
     readonly transactionWriter: ExpectedTransactionWriter;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
-    readonly prepareMutation: (
+    readonly prepareAuthenticatedMutation: (
         descriptor: GroupMutationDescriptor,
         authority: GroupMutationAuthority
     ) => Promise<GroupMutationPreparation>;
-    readonly persistPreparation: (
+    readonly persistPreparedMutation: (
         context: AppInboxMessageContext<GroupStateInboxDurableResult>,
         preparation: GroupMutationPreparation
     ) => Promise<void>;
@@ -70,27 +72,8 @@ describe('convergent group and presence state', () => {
         ).toThrow(/auth.*required/i);
     });
 
-    it('returns immutable committed snapshot data through the named transaction result', () => {
-        expectTypeOf<TransactionResult['durableResult']>().toEqualTypeOf<DurableResult>();
-        expectTypeOf<TransactionResult['afterCommitResult']>().toEqualTypeOf<AfterCommitResult>();
-        expectTypeOf<ReturnType<AppInboxMutationTransactionWriter['writeMutationWithAfterCommitResult']>>().toMatchTypeOf<
-            Promise<AppInboxMutationTransactionResult<unknown, unknown>>
-        >();
-    });
-
-    it('requires distinct durable and after-commit transaction results', () => {
-        expectTypeOf<TransactionResult>().toEqualTypeOf<Readonly<{ durableResult: DurableResult; afterCommitResult: AfterCommitResult; }>>();
-        expectTypeOf<TransactionResult['durableResult']>().toEqualTypeOf<DurableResult>();
-        expectTypeOf<TransactionResult['afterCommitResult']>().toEqualTypeOf<AfterCommitResult>();
-        expectTypeOf<
-            Pick<
-                AppInboxMutationTransactionWriter,
-                'writeMutation' | 'writeMutationWithAfterCommitResult'
-            >
-        >().toEqualTypeOf<ExpectedTransactionWriter>();
-        expectTypeOf<AppInboxMutationTransactionWriter['writeMutationWithAfterCommitResult']>().toEqualTypeOf<
-            ExpectedTransactionWriter['writeMutationWithAfterCommitResult']
-        >();
+    it('returns the computed durable result after the transaction commits', () => {
+        expectTypeOf<Pick<AppInboxMutationTransactionWriter, 'readCompletionFacts' | 'writeComputedMutation'>>().toEqualTypeOf<ExpectedTransactionWriter>();
         expectTypeOf<AppInboxTransactionWriter>().toMatchTypeOf<AppInboxMutationTransactionWriter>();
     });
 
@@ -106,7 +89,7 @@ describe('convergent group and presence state', () => {
         expectTypeOf<GroupStateInboxHandlerDependencies>().toEqualTypeOf<ExpectedHandlerDependencies>();
         expectTypeOf<GroupStateInboxHandlerDependencies['mutationService']>().toEqualTypeOf<GroupStateMutationService>();
         expectTypeOf<GroupStateInboxHandlerDependencies['sessionGenerationLifecycle']>().toEqualTypeOf<WsSessionGenerationLifecycleService>();
-        expectTypeOf<GroupStateInboxHandlerDependencies['snapshotObserver']>().toEqualTypeOf<Pick<GroupStateService, 'observeSnapshot'>>();
+        expectTypeOf<GroupStateInboxHandlerDependencies['resultReader']>().toEqualTypeOf<GroupStateInboxResultReader>();
         expectTypeOf<GroupStateInboxHandlerDependencies['transactionWriter']>().toEqualTypeOf<ExpectedTransactionWriter>();
         expectTypeOf<GroupStateInboxHandlerDependencies['wakeQueue']>().toEqualTypeOf<(() => void) | undefined>();
         expectTypeOf<ConstructorParameters<typeof GroupStateInboxHandler>>().toEqualTypeOf<[GroupStateInboxHandlerDependencies]>();

@@ -150,7 +150,14 @@ function installWsCloseReader(
             { serviceId: 'server-12345678' }
         ),
         group: new GroupStateInboxService(
-            { ...shared, groupStateService: dependencies.groupState },
+            {
+                ...shared,
+                groupStateService: dependencies.groupState,
+                resultReader: {
+                    readSnapshot: (ref) => dependencies.groupState.readSnapshot(ref),
+                    readEvent: (ref, eventId) => dependencies.database.groupEventStore.readGroupEvent(ref, eventId)
+                }
+            },
             { serviceId: 'server-12345678' }
         )
     };

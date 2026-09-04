@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -130,6 +132,34 @@ const INVALID_SUMMARY_SCENARIOS: readonly InvalidSummaryScenario[] = [
 ];
 
 describe('GroupPresenceSummaryWork canonical persisted command', () => {
+    it('does not read an outbox winner after a strict insert collision', async () => {
+        const worker = new GroupPresenceSummaryWork({
+            outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+            recomputeDebounceMs: 0,
+            runtimeRepository: new FakeRuntimeStateRepository(),
+            serviceId: 'summary-handler'
+        });
+        const statements: string[] = [];
+        const transaction = ((
+            strings: TemplateStringsArray | readonly PSqlParameter[],
+            ..._values: readonly PSqlParameter[]
+        ) => {
+            statements.push(Array.isArray(strings) ? strings.join(' ') : String(strings));
+            return Promise.resolve([]);
+        }) as PSqlSql;
+        const { entry } = createCanonicalReservation();
+
+        await expect(worker.write(transaction, {
+            summary: { outcome: 'no-op' },
+            summaryWrite: null,
+            downstreamOutboxWrites: [computeAppOutboxInsert(entry)],
+            topologyReplan: { decision: 'held-by-policy' }
+        } as never)).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
+
+        expect(statements).toHaveLength(1);
+        expect(statements[0]?.toLowerCase()).not.toContain('select');
+    });
+
     it.each(INVALID_SUMMARY_SCENARIOS)('rejects $name before read or effects', async ({ mutate }) => {
         const begin = vi.fn();
         const wakeQueue = vi.fn();

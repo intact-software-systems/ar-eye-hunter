@@ -151,6 +151,7 @@ interface CreatePostgresGroupRuntimeInput {
     readonly atEpochMs: number;
     readonly barrierNamespace?: string;
     readonly applicationId?: string;
+    readonly attemptCount?: number;
 }
 
 export function createPostgresGroupRuntime(input: CreatePostgresGroupRuntimeInput) {
@@ -163,7 +164,7 @@ export function createPostgresGroupRuntime(input: CreatePostgresGroupRuntimeInpu
         ),
         groupStateEventStoreFor: createPostgresGroupStateEventStore,
         now: () => input.atEpochMs,
-        sleep: () => Promise.resolve(),
+        attemptCount: input.attemptCount,
         serviceId: 'postgres-group-cas-worker'
     });
 }

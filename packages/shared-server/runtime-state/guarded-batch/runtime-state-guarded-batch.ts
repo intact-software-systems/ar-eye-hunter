@@ -54,6 +54,21 @@ export interface RuntimeStateGuardedBatch {
     readonly effects: readonly RuntimeStateGuardedBatchEffect[];
 }
 
+export interface RuntimeStateGuardedBatchSqlDescriptor {
+    readonly effectId?: string;
+    readonly operation: RuntimeStateGuardedBatchEffect['operation'];
+    readonly namespace: string;
+    readonly key: string;
+    readonly expectedRevision?: number;
+    readonly value?: string;
+    readonly expireAtTimestamp?: string;
+}
+
+export interface RuntimeStateGuardedBatchWrite extends RuntimeStateGuardedBatch {
+    readonly guardSqlDescriptor: RuntimeStateGuardedBatchSqlDescriptor;
+    readonly effectSqlDescriptors: readonly RuntimeStateGuardedBatchSqlDescriptor[];
+}
+
 export type RuntimeStateGuardedBatchGuardResult =
     | Readonly<{
         status: 'applied';
@@ -117,7 +132,7 @@ export interface RuntimeStateGuardedBatchResult {
 }
 
 export interface RuntimeStateGuardedBatchTransaction {
-    executeGuardedBatch(
-        batch: RuntimeStateGuardedBatch
+    writeGuardedBatch(
+        computed: RuntimeStateGuardedBatchWrite
     ): Promise<RuntimeStateGuardedBatchResult>;
 }

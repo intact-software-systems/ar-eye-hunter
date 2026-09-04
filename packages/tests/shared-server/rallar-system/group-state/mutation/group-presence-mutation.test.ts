@@ -99,7 +99,7 @@ describe('heartbeat lease renewal classification', () => {
         if (computed.outcome !== 'write') {
             return;
         }
-        expect(computed.outboxEntries).toEqual([]);
+        expect(computed.outboxWrites).toEqual([]);
         expect(computed.receipt.outboxIds).toEqual([]);
         expect(computed.guard.value).toMatchObject({
             lastHeartbeatAtEpochMs: 1_500,
@@ -128,7 +128,7 @@ describe('heartbeat lease renewal classification', () => {
         if (computed.outcome !== 'write') {
             return;
         }
-        expect(computed.outboxEntries).toHaveLength(1);
+        expect(computed.outboxWrites).toHaveLength(1);
         expect(computed.receipt.outboxIds).toHaveLength(1);
     });
 
@@ -156,7 +156,7 @@ describe('heartbeat lease renewal classification', () => {
         if (computed.outcome !== 'write') {
             return;
         }
-        expect(computed.outboxEntries).toHaveLength(1);
+        expect(computed.outboxWrites).toHaveLength(1);
     });
 });
 

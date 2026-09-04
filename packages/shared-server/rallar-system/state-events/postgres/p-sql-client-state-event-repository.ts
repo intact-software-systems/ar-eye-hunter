@@ -2,6 +2,7 @@ import type { ClientEvent, ClientPrincipalRef } from '@shared/api/client-types.t
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
+import { clientStateWorkspaceStorageKey } from '../../client-state/persistence/client-state-workspace-storage-key.ts';
 import { ClientStateEventCollisionError, type ClientStateEventStore } from '../client-state-event-store.ts';
 import { DEFAULT_STATE_EVENT_LIST_LIMIT, type StateEventListQuery } from '../state-event-listing.ts';
 import { toStateEventCursor } from '../state-event-ordering.ts';
@@ -28,7 +29,15 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
     async appendClientEvent(event: ClientEvent): Promise<void> {
         assertPersistableClientStateEvent(event, event);
         const eventJson = JSON.stringify(event);
-        if (await insertPSqlClientStateEvent(this.sql, event, eventJson)) {
+        const workspaceKey = clientStateWorkspaceStorageKey(event.workspaceId);
+        if (
+            await insertPSqlClientStateEvent({
+                sql: this.sql,
+                event,
+                workspaceKey,
+                eventJson
+            })
+        ) {
             return;
         }
         const existing = await readPSqlClientStateEventCollision(this.sql, event);
