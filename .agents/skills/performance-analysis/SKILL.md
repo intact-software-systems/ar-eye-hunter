@@ -30,16 +30,19 @@ load gates, but not a new production performance benchmark or numeric SLO by
 itself. Require the state-write performance comparison only when the same
 change alters a production mutation path or concurrency domain.
 
-Do not move deterministic computation into a transaction to improve an
-apparent timing metric. Keep
+For `strict-domain-write`, do not move deterministic computation into a
+transaction to improve an apparent timing metric. Keep
 `read -> compute -> validate -> write(transaction, computed)` visible, and
 treat precomputable work as non-waivable even when the computation is cheap or
-a deadline is close.
+a deadline is close. Apply the separately defined guarded winner-materializer
+allowance only after resolving a `specialized-resource-inbox` transaction
+owner.
 
-Transaction timing is not value provenance: only
-actual database-returned facts justify inside-transaction refinement, while a
+Transaction timing is not value provenance. Under `strict-domain-write`, only
+actual database-returned facts justify inside-transaction refinement; a
 winner-only clock, key, random value, serialized payload, sorted collection, or
-outbox remains precomputable.
+outbox remains precomputable. The convergent-service reference owns the exact,
+narrow ResourceInbox winner-materializer exception.
 
 Transaction-owner policy changes how a measured critical section is interpreted,
 not whether it is measured. Classify the resolved owner using the convergent
