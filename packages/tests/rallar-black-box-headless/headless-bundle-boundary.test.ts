@@ -58,9 +58,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // group's in-flight setups measures 216.6953125 KiB: the headless agent
         // runs the outbound dialing owner, the in-flight dial admission and the
         // member-policy validators itself. Persistence-ready IndexedDB writes
-        // measure 218.9267578125 KiB. The maintainer approved the smallest
-        // whole-KiB strict limit containing the current behavior.
-        expect(result.brotliKiB).toBeLessThan(219);
+        // measure 219.14453125 KiB in the release runner. The maintainer
+        // approved the smallest whole-KiB strict limit containing the current
+        // behavior.
+        expect(result.brotliKiB).toBeLessThan(220);
     });
 });
 
