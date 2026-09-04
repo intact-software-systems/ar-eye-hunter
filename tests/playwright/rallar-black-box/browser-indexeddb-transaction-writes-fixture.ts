@@ -1,11 +1,15 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import {
+    openIndexedDbAdmissionDatabase
+} from '../../../packages/shared/alm/open-indexed-db-admission-database.ts';
+import {
+    readIndexedDbAdmissionSnapshot
+} from '../../../packages/shared/alm/read-indexed-db-admission-snapshot.ts';
+import {
     computeIndexedDbAdmissionRevisionWrite,
-    openIndexedDbAdmissionDatabase,
-    readIndexedDbAdmissionSnapshot,
     writeIndexedDbAdmissionMutations
-} from '../../../packages/shared/alm/indexed-db-admission-storage.ts';
+} from '../../../packages/shared/alm/write-indexed-db-admission-mutations.ts';
 import {
     type StoredResourceEntry
 } from '../../../packages/shared/queuebox/indexed-db-queue-box-entry-codec.ts';
