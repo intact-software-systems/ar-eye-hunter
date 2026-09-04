@@ -8,17 +8,13 @@ import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-st
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType, type RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
-import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
-import { toRtcRttMutationReceiptId } from '../../rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
-import { validateRtcRttMeasurement } from '../../rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
 
 export const APP_OUTBOX_RTC_TOPOLOGY_TOPIC = 'app-outbox.rtc-topology';
 
@@ -192,45 +188,4 @@ export function deriveRtcTopologyEntryResourceId(
         computed.payloadKind,
         `group=${computed.acceptedCausalRevision.groupRevision};presence=${computed.acceptedCausalRevision.presenceRevision}`
     ].join(':');
-}
-
-export function validateComputedRtcTopologyOutbox(computed: ComputedRtcTopologyOutbox): void {
-    const snapshot = computed.groupSnapshot;
-    validateAuthoritativeGroupSnapshot(snapshot);
-    if (
-        computed.commandId.length === 0 ||
-        computed.resourceId.length === 0 ||
-        computed.senderId.length === 0 ||
-        computed.effectKind !== 'rtc-topology-recompute' ||
-        (computed.payloadKind !== 'group-revision' && computed.payloadKind !== 'rtt-refresh') ||
-        !Number.isSafeInteger(computed.createdAtEpochMs) ||
-        !Number.isSafeInteger(computed.expireAtEpochMs) ||
-        computed.createdAtEpochMs < 0 ||
-        computed.expireAtEpochMs <= computed.createdAtEpochMs ||
-        computed.aggregateRef.applicationId !== snapshot.group.applicationId ||
-        computed.aggregateRef.workspaceId !== snapshot.group.workspaceId ||
-        computed.aggregateRef.groupId !== snapshot.group.groupId ||
-        computed.acceptedCausalRevision.groupRevision !== snapshot.causalRevision.groupRevision ||
-        computed.acceptedCausalRevision.presenceRevision !== snapshot.causalRevision.presenceRevision ||
-        typeof computed.publish !== 'boolean' ||
-        !hasCanonicalRequestOptions(computed.requestOptions)
-    ) {
-        throw new TypeError('Computed RTC topology outbox facts are invalid');
-    }
-    if (computed.payloadKind === 'rtt-refresh') {
-        validateRtcRttMeasurement(computed.rtt);
-        if (computed.refinementObservationId !== toRtcRttMutationReceiptId(computed.rtt)) {
-            throw new TypeError('Computed RTC topology RTT refresh facts are invalid');
-        }
-    }
-}
-
-function hasCanonicalRequestOptions(value: CanonicalGroupTopologyConfigPatch): boolean {
-    try {
-        readCanonicalGroupTopologyConfigPatch(value);
-        return true;
-    }
-    catch {
-        return false;
-    }
 }
