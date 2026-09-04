@@ -26,7 +26,7 @@ describe('Rallar group documentation compatibility', () => {
     it('publishes exactly the policy reason codes the const declares', () => {
         const section = toReasonCodeSection(readRepo('docs/rallar-api-reference.md'));
 
-        expect(toBacktickedKebabTokens(section).sort())
+        expect([...toBacktickedKebabTokens(section)].sort())
             .toEqual([...GROUP_POLICY_REASON_CODES].sort());
     });
 
@@ -44,6 +44,20 @@ describe('Rallar group documentation compatibility', () => {
         );
 
         expect(unnamed).toEqual([]);
+    });
+
+    it('accounts for every acceptance scenario the product plan names', () => {
+        const planned = toScenarioIds(
+            readRepo('playground/rtc-design/2026-08-22-group-activation-product-plan.md'),
+            'Named acceptance scenarios:'
+        );
+        const documented = toScenarioIds(
+            readRepo('docs/rallar-group-formation-architecture.md'),
+            '### Acceptance scenarios'
+        );
+
+        expect(planned).toHaveLength(26);
+        expect([...documented].sort()).toEqual([...planned].sort());
     });
 
     it('keeps the architecture document reachable from its two referrers', () => {
@@ -92,4 +106,17 @@ function toBacktickedKebabTokens(section: string): readonly string[] {
             [...section.matchAll(/`([a-z]+(?:-[a-z]+)+)`/g)].map((match) => match[1])
         )
     ];
+}
+
+/**
+ * The first-column ids of the scenario table that follows `heading`. Both the
+ * plan and the architecture document write the denominator as a table, so
+ * reading it back is what keeps the two from drifting apart silently.
+ */
+function toScenarioIds(document: string, heading: string): readonly string[] {
+    const start = document.indexOf(heading);
+
+    expect(start).toBeGreaterThan(-1);
+    const table = document.slice(start, document.indexOf('\n## ', start));
+    return [...table.matchAll(/^\| `([a-z-]+)`\s*\|/gm)].map((match) => match[1]);
 }
