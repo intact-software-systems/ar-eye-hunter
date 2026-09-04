@@ -56,11 +56,15 @@ function validateComputedDataValue(
     path: string,
     state: ComputedDataValidationState
 ): void {
-    if (types.isProxy(value) || typeof value === 'function' || typeof value === 'symbol') {
+    if (typeof value === 'function' || typeof value === 'symbol') {
         state.issues.push(toComputedDataValidationIssue(path, 'must be inert data'));
         return;
     }
     if (value === null || typeof value !== 'object') {
+        return;
+    }
+    if (types.isProxy(value)) {
+        state.issues.push(toComputedDataValidationIssue(path, 'must be inert data'));
         return;
     }
     if (!isSupportedComputedDataObject(value)) {
