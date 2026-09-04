@@ -6,10 +6,8 @@ import {
 } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import { resolveNewerEvidenceWatermark } from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
 import { resolveGroupActivationCoverageWithHysteresis } from '@shared/api/group-lifecycle/activation-status/group-activation-coverage-hysteresis.ts';
-import {
-    isSameGroupActivationSeries,
-    type GroupActivationStatus
-} from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
+import type { GroupActivationStatus } from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
+import { isSameGroupActivationSeries } from '@shared/api/group-lifecycle/activation-status/is-same-group-activation-series.ts';
 import { isSameGroupLayoutIdentity, toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { isFormationAttemptBudgetExhausted } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import type { Group } from '@shared/api/group-types.ts';

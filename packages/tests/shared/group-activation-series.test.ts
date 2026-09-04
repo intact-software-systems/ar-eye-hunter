@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     isSameGroupActivationSeries,
     type GroupActivationSeries
-} from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
+} from '@shared/api/group-lifecycle/activation-status/is-same-group-activation-series.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 
 const carryingLayout: GroupLayoutIdentity = {
