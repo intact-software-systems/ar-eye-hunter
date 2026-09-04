@@ -1,4 +1,3 @@
-import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type {
     Group,
     GroupMember,
@@ -9,19 +8,9 @@ import type {
 } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
-import {
-    assertExactKeys,
-    assertRequiredKeys,
-    requireJsonSafe,
-    requirePositiveSafeInteger
-} from '../group-state-validation-primitives.ts';
+import { validateComputedProjection } from '../../computed-data-validation.ts';
+import type { ComputedDataValidationIssue } from '../../computed-data-validation.ts';
 import { presenceAdmissionIdentity } from '../mutation/presence/compute-group-presence-admission.ts';
-import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
-import { groupStatePresenceSummaryStorageKey } from '../persistence/presence/group-presence-storage-keys.ts';
-import { validateGroupStateRuntimeEntry } from '../persistence/validate-group-state-runtime-entry.ts';
-import { validatePresenceSummaryValue } from '../persistence/validate-persisted-group-presence.ts';
-import { validateStoredGroup } from '../persistence/validate-persisted-group.ts';
-import { validateGroupPresenceSummaryReadCollections } from './validate-group-presence-summary-read-collections.ts';
 
 export interface GroupPresenceSummaryRead {
     readonly group: RuntimeStateEntryValue<Group>;
@@ -40,8 +29,15 @@ export type GroupPresenceSummaryComputed =
     | Readonly<{
         outcome: 'write';
         evaluatedAtEpochMs: number;
-        operation: 'insert' | 'update';
-        expectedRevision: number | null;
+        operation: 'insert';
+        expectedRevision: null;
+        summary: GroupPresenceSummary;
+    }>
+    | Readonly<{
+        outcome: 'write';
+        evaluatedAtEpochMs: number;
+        operation: 'update';
+        expectedRevision: number;
         summary: GroupPresenceSummary;
     }>;
 
@@ -54,17 +50,8 @@ interface ComputeGroupPresenceSummaryInput {
 interface ValidateGroupPresenceSummaryInput {
     readonly ref: GroupRef;
     readonly read: GroupPresenceSummaryRead;
+    readonly nowEpochMs: number;
     readonly computed: GroupPresenceSummaryComputed;
-}
-
-interface GroupPresenceSummaryValidation {
-    readonly ref: GroupRef;
-    readonly read: GroupPresenceSummaryRead;
-    readonly computed: GroupPresenceSummaryComputed;
-    readonly expectedContent: ReturnType<typeof summaryContent>;
-    readonly groupRevision: number;
-    readonly current: GroupPresenceSummary | undefined;
-    readonly expectedNoOp: boolean;
 }
 
 export function computeGroupPresenceSummary(
@@ -96,144 +83,32 @@ export function computeGroupPresenceSummary(
         ...content,
         computedAtEpochMs: nowEpochMs
     };
-    return {
-        outcome: 'write',
-        evaluatedAtEpochMs: nowEpochMs,
-        operation: read.current ? 'update' : 'insert',
-        expectedRevision: read.current?.entry.revision ?? null,
-        summary
-    };
+    return read.current
+        ? {
+            outcome: 'write',
+            evaluatedAtEpochMs: nowEpochMs,
+            operation: 'update',
+            expectedRevision: read.current.entry.revision,
+            summary
+        }
+        : {
+            outcome: 'write',
+            evaluatedAtEpochMs: nowEpochMs,
+            operation: 'insert',
+            expectedRevision: null,
+            summary
+        };
 }
 
 export function validateGroupPresenceSummary(
     input: ValidateGroupPresenceSummaryInput
-): void {
-    const { ref, read, computed } = input;
-    requireJsonSafe(read, 'Group presence summary read');
-    requireJsonSafe(computed, 'Group presence summary computed result');
-    assertExactKeys(
-        read,
-        ['group', 'members', 'admissions', 'presenceSessions', 'current'],
-        'Group presence summary read'
-    );
-    assertRequiredKeys(
-        read,
-        ['group', 'members', 'admissions', 'presenceSessions', 'current'],
-        'Group presence summary read'
-    );
-    validateGroupStateRuntimeEntry(
-        read.group,
-        'Stored summary group',
-        groupStateGroupStorageKey(ref)
-    );
-    validateStoredGroup(read.group.value, ref);
-    validateGroupPresenceSummaryReadCollections(ref, read);
-    if (read.current) {
-        validateGroupStateRuntimeEntry(
-            read.current,
-            'Stored current presence summary',
-            groupStatePresenceSummaryStorageKey(ref)
-        );
-        validatePresenceSummaryValue(read.current.value, ref);
-    }
-    validateGroupPresenceSummaryCandidate(input);
-}
-
-function validateGroupPresenceSummaryCandidate(
-    input: ValidateGroupPresenceSummaryInput
-): void {
-    const { ref, read, computed } = input;
-    validatePresenceSummaryValue(computed.summary, ref);
-    requirePositiveSafeInteger(
-        computed.evaluatedAtEpochMs,
-        'Group presence summary evaluatedAtEpochMs'
-    );
-    const expectedContent = deriveGroupPresenceSummaryContent(read, computed.evaluatedAtEpochMs);
-    const groupRevision = read.group.value.snapshotVersion;
-    const current = read.current?.value;
-    const expectedNoOp = current !== undefined &&
-        (current.causalRevision.groupRevision > groupRevision ||
-            (current.causalRevision.groupRevision === groupRevision &&
-                jsonEquals(
-                    toComparableSummaryContent(summaryContent(current)),
-                    toComparableSummaryContent(expectedContent)
-                )));
-    const validation = {
-        ref,
-        read,
-        computed,
-        expectedContent,
-        groupRevision,
-        current,
-        expectedNoOp
-    };
-    validateGroupPresenceSummaryOutcome(validation);
-    validateGroupPresenceSummaryCausalRevision(validation);
-}
-
-function validateGroupPresenceSummaryOutcome(validation: GroupPresenceSummaryValidation): void {
-    const { ref, read, computed, expectedContent, groupRevision, current, expectedNoOp } = validation;
-    if (computed.outcome === 'no-op') {
-        assertExactKeys(
-            computed,
-            ['outcome', 'evaluatedAtEpochMs', 'summary'],
-            'Group presence summary computed result'
-        );
-        if (!expectedNoOp || !current || !jsonEquals(computed.summary, current)) {
-            throw new TypeError('Group presence summary no-op differs from current canonical candidate');
-        }
-        return;
-    }
-    assertExactKeys(
-        computed,
-        ['outcome', 'evaluatedAtEpochMs', 'operation', 'expectedRevision', 'summary'],
-        'Group presence summary computed result'
-    );
-    const expectedSummary: GroupPresenceSummary = {
-        applicationId: ref.applicationId,
-        workspaceId: ref.workspaceId,
-        groupId: ref.groupId,
-        causalRevision: {
-            groupRevision,
-            presenceRevision: (current?.causalRevision.presenceRevision ?? 0) + 1
-        },
-        ...expectedContent,
-        computedAtEpochMs: computed.evaluatedAtEpochMs
-    };
-    if (
-        expectedNoOp ||
-        computed.operation !== (read.current ? 'update' : 'insert') ||
-        computed.expectedRevision !== (read.current?.entry.revision ?? null) ||
-        !jsonEquals(computed.summary, expectedSummary)
-    ) {
-        throw new TypeError(
-            'Group presence summary write differs from canonical predecessor projection'
-        );
-    }
-}
-
-function validateGroupPresenceSummaryCausalRevision(
-    validation: GroupPresenceSummaryValidation
-): void {
-    if (!validation.read.current) {
-        return;
-    }
-    const comparison = compareGroupCausalRevision(
-        validation.computed.summary.causalRevision,
-        validation.read.current.value.causalRevision
-    );
-    if (validation.computed.outcome === 'write' && comparison !== 'dominates') {
-        throw new TypeError('Group presence summary write must advance its causal tuple');
-    }
-    if (
-        comparison === 'equal' &&
-        !jsonEquals(
-            toComparableSummaryContent(summaryContent(validation.computed.summary)),
-            toComparableSummaryContent(summaryContent(validation.read.current.value))
-        )
-    ) {
-        throw new TypeError('Equal group presence summary tuple has different content');
-    }
+): readonly ComputedDataValidationIssue[] {
+    const expected = computeGroupPresenceSummary({
+        ref: input.ref,
+        read: input.read,
+        nowEpochMs: input.nowEpochMs
+    });
+    return validateComputedProjection(expected, input.computed, 'computed');
 }
 
 function deriveGroupPresenceSummaryContent(
@@ -315,5 +190,3 @@ function toComparableSummaryContent(
         }))
     };
 }
-
-export { compareGroupCausalRevision };

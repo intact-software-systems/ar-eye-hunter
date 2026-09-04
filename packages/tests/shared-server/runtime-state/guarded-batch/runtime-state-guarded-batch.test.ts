@@ -1,4 +1,9 @@
-import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type {
+    PSqlParameter,
+    PSqlRows,
+    PSqlSql
+} from '@shared-server/postgres/p-sql-sql.ts';
+import { computeRuntimeStateGuardedBatchWrite } from '@shared-server/runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import { type RuntimeStateGuardedBatch, type RuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
 import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
@@ -8,6 +13,60 @@ import { describe, expect, it } from 'vitest';
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
 describe('runtime-state guarded batches', () => {
+    it('computes SQL persistence values before entering a transaction', () => {
+        const batch = createBatch();
+
+        expect(computeRuntimeStateGuardedBatchWrite(batch)).toEqual({
+            ...batch,
+            guardSqlDescriptor: {
+                ...batch.guard,
+                expireAtTimestamp: new Date(FUTURE_MS).toISOString()
+            },
+            effectSqlDescriptors: batch.effects.map((effect) =>
+                'expireAtTimestamp' in effect
+                    ? {
+                        ...effect,
+                        expireAtTimestamp: new Date(effect.expireAtTimestamp).toISOString()
+                    }
+                    : effect
+            )
+        });
+    });
+
+    it('does not recompute persistence values while writing', async () => {
+        let expiryReads = 0;
+        const batch: RuntimeStateGuardedBatch = {
+            guard: {
+                operation: 'insert',
+                namespace: 'guard',
+                key: 'root',
+                value: 'value',
+                get expireAtTimestamp() {
+                    expiryReads += 1;
+                    if (expiryReads > 1) {
+                        throw new Error('expiry recomputed during write');
+                    }
+                    return FUTURE_MS;
+                }
+            },
+            effects: [{
+                effectId: 'delete',
+                operation: 'delete',
+                namespace: 'effect',
+                key: 'missing',
+                expectedRevision: 0
+            }]
+        };
+        const computed = computeRuntimeStateGuardedBatchWrite(batch);
+        const repository = new PSqlRuntimeStateRepository(createTransactionalSql([], []));
+
+        await repository.begin(async (transactionRepository) => {
+            await transactionRepository.writeGuardedBatch(computed);
+        });
+
+        expect(expiryReads).toBe(1);
+    });
+
     it('accepts dense mandatory descriptors at operation-specific revision bounds', () => {
         const batch = createBatch();
 
@@ -302,12 +361,13 @@ describe('runtime-state guarded batches', () => {
         const sql = createTransactionalSql(captured, []);
         const repository = new PSqlRuntimeStateRepository(sql);
 
-        await expect(repository.executeGuardedBatch(createBatch())).rejects.toThrow(
+        const computed = computeRuntimeStateGuardedBatchWrite(createBatch());
+        await expect(repository.writeGuardedBatch(computed)).rejects.toThrow(
             /transaction/iu
         );
 
         await repository.begin(async (transactionRepository) => {
-            await transactionRepository.executeGuardedBatch(createBatch());
+            await transactionRepository.writeGuardedBatch(computed);
         });
         expect(captured).toHaveLength(1);
     });
@@ -342,8 +402,9 @@ describe('runtime-state guarded batches', () => {
         }]);
         const repository = new PSqlRuntimeStateRepository(sql);
 
+        const computed = computeRuntimeStateGuardedBatchWrite(batch);
         const result = await repository.begin(async (transactionRepository) => {
-            return await transactionRepository.executeGuardedBatch(batch);
+            return await transactionRepository.writeGuardedBatch(computed);
         });
 
         expect(result).toEqual({
@@ -449,8 +510,9 @@ describe('runtime-state guarded batches', () => {
             createTransactionalSql([], rows)
         );
 
+        const computed = computeRuntimeStateGuardedBatchWrite(createBatch());
         await expect(repository.begin(async (transactionRepository) => {
-            return await transactionRepository.executeGuardedBatch(createBatch());
+            return await transactionRepository.writeGuardedBatch(computed);
         })).rejects.toThrow(/guarded batch database result/iu);
     });
 });

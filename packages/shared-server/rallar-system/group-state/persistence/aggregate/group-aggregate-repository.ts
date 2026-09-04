@@ -16,7 +16,7 @@ import { decodeJsonWireValue, type JsonWireValue } from '../../../protocol/json-
 import type { GroupStateEventStore } from '../../../state-events/group-state-event-store.ts';
 import type { StateEventListQuery } from '../../../state-events/state-event-listing.ts';
 import type { GroupMutationIdempotencyRecord } from '../../mutation/group-mutation-contracts.ts';
-import { assertGroupMutationIdempotencyRecord } from '../../mutation/result-validation/assert-group-mutation-result.ts';
+import { assertGroupMutationIdempotencyRecord } from '../../mutation/state-validation/assert-group-mutation-result.ts';
 import { decodePersistedGroup } from '../group-state-persistence-codec.ts';
 import {
     assertGroupRefIdentity,
@@ -90,6 +90,10 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
 
     async listEvents(ref: GroupRef): Promise<readonly GroupEvent[]> {
         return await this.events.listGroupEvents(ref);
+    }
+
+    async readEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined> {
+        return await this.events.readGroupEvent(ref, eventId);
     }
 
     async listRecentEvents(

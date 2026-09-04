@@ -68,7 +68,8 @@ describe('group presence summary validation', () => {
             work: summaryWork,
             runtime,
             ref,
-            commandId: 'inactive-summary-filter'
+            commandId: 'inactive-summary-filter',
+            nowEpochMs: BASE_EPOCH_MS + 3_000
         });
 
         expect((await repository.findPresenceSummaryEntry(ref))?.value).toMatchObject({
@@ -145,7 +146,8 @@ describe('group presence summary validation', () => {
                 work: summaryWork,
                 runtime,
                 ref: groupRef(`corrupt-summary-${namespace}`),
-                commandId: `corrupt-${namespace}`
+                commandId: `corrupt-${namespace}`,
+                nowEpochMs: BASE_EPOCH_MS + 3_000
             })
         ).rejects.toThrow(/scope|lifecycle|timestamp|unexpected|serialized|summary/i);
         expect(runtime.presenceSummaryGuards).toBe(0);

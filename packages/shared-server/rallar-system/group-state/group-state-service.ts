@@ -29,7 +29,7 @@ import type {
 import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
 import { readsAcceptedLayoutRow, readsGroupLayoutRows } from './mutation/read/group-mutation-read-scope.ts';
 import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
-import { assertGroupMutation } from './mutation/state-validation/assert-group-mutation.ts';
+import { validateGroupMutation } from './mutation/state-validation/validate-group-mutation.ts';
 import { writeGroupMutation } from './mutation/write/write-group-mutation.ts';
 import { GroupConnectTriggerLatchRepository } from './persistence/group-connect-trigger-latch-repository.ts';
 import { GroupStateRepository } from './persistence/group-state-repository.ts';
@@ -258,21 +258,13 @@ function createMutationOperations(
     return {
         read: async (prepared) => await readPreparedGroupMutation(owners, prepared),
         compute: (prepared, read) => computeGroupMutation({ command: prepared.command, read, facts: prepared.facts }),
-        validate: (prepared, read, computed) => {
-            assertGroupMutation({
+        validate: (prepared, read, computed) =>
+            validateGroupMutation({
                 command: prepared.command,
                 read,
                 facts: prepared.facts,
                 computed
-            });
-            if (computed.outcome === 'idempotency-conflict') {
-                throw new GroupMutationIdempotencyConflictError(
-                    prepared.command.commandId,
-                    computed.existingCommandHash,
-                    computed.receivedCommandHash
-                );
-            }
-        },
+            }),
         write: async (transaction, computed) => await writeGroupMutation(transaction, computed)
     };
 }

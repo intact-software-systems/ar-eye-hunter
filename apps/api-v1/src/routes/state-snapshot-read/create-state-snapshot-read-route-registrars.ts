@@ -30,7 +30,7 @@ export interface ApiV1StateSnapshotRouteRuntime {
     >;
     readonly groupStateInboxService: Pick<
         ApiV1Runtime['groupStateInboxService'],
-        'processAuthenticatedGroupEntryUntilCompletionResult'
+        'processAuthenticatedGroupEntryUntilCompletion'
     >;
     readonly clientStateService: Pick<
         ApiV1Runtime['clientStateService'],
@@ -105,7 +105,7 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
                     enqueue: AuthenticatedGroupMutationEnqueue
                 ): Promise<GroupStateInboxDurableResult> => {
                     const result = await runtime.groupStateInboxService
-                        .processAuthenticatedGroupEntryUntilCompletionResult(
+                        .processAuthenticatedGroupEntryUntilCompletion(
                             enqueue,
                             authority
                         );

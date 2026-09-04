@@ -12,11 +12,17 @@ interface ClientStateEventRowsQuery {
     readonly limit: number;
 }
 
+export interface InsertPSqlClientStateEventInput {
+    readonly sql: PSqlSql;
+    readonly event: ClientEvent;
+    readonly workspaceKey: string;
+    readonly eventJson: string;
+}
+
 export async function insertPSqlClientStateEvent(
-    sql: PSqlSql,
-    event: ClientEvent,
-    eventJson: string
+    input: InsertPSqlClientStateEventInput
 ): Promise<boolean> {
+    const { sql, event, workspaceKey, eventJson } = input;
     const inserted = await sql<{ event_id: string; }[]>`
         insert into client_state_events (application_id,
                                          workspace_key,
@@ -29,7 +35,7 @@ export async function insertPSqlClientStateEvent(
                                          session_id,
                                          event_json)
         values (${event.applicationId},
-                ${clientStateWorkspaceStorageKey(event.workspaceId)},
+                ${workspaceKey},
                 ${event.principalId},
                 ${event.eventId},
                 ${event.eventType},

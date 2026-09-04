@@ -18,6 +18,7 @@ import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIde
 import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
+    computeCoalescedAppOutboxWork,
     isMutableCoalescedStatus,
     tryReadCoalescedAppOutboxWorkEnvelope,
     type CoalescedAppOutboxWorkData,
@@ -101,9 +102,9 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
         messageIdentity: null
     });
     if (input.previousEntry === null) {
-        return {
-            expectedEntry: null,
-            entry: toCoalescedGroupRevisionEntry({
+        return computeCoalescedAppOutboxWork(
+            null,
+            toCoalescedGroupRevisionEntry({
                 input,
                 resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(overlayId),
                 data: incoming,
@@ -112,13 +113,13 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
                 messageIdentity: null
             }),
             successorEntry
-        };
+        );
     }
-    return {
-        expectedEntry: input.previousEntry,
-        entry: toMergedCoalescedGroupRevisionEntry(input, input.previousEntry, incoming),
+    return computeCoalescedAppOutboxWork(
+        input.previousEntry,
+        toMergedCoalescedGroupRevisionEntry(input, input.previousEntry, incoming),
         successorEntry
-    };
+    );
 }
 
 function toFreshCoalescedGroupRevisionData(

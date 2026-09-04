@@ -10,6 +10,7 @@ import {
     invokeEveryTimedGroupStateOperation,
     invokeTimedGroupStateOperation,
     invokeUntimedGroupStateOperations,
+    invokeUntimedGroupStateWrite,
     TIMED_ASYNC_OPERATIONS,
     type TimedAsyncOperation
 } from './group-state-service-timing-fixture.ts';
@@ -284,11 +285,13 @@ async function expectEveryTimedSuccess(createTimed: CreateTimedGroupStateService
         expect(results[operation], operation).toBe(fake.sentinels[operation]);
     }
     expect(invokeUntimedGroupStateOperations(timed)).toBe(fake.sentinels.compute);
-    expect(fake.calls).toEqual([...TIMED_ASYNC_OPERATIONS, 'compute', 'validate']);
+    await expect(invokeUntimedGroupStateWrite(timed)).resolves.toBe(fake.sentinels.write);
+    expect(fake.calls).toEqual([...TIMED_ASYNC_OPERATIONS, 'compute', 'validate', 'write']);
     expect(timingEvents).toHaveLength(TIMED_ASYNC_OPERATIONS.length);
-    expect(timeline).toEqual(
-        TIMED_ASYNC_OPERATIONS.flatMap((operation) => [`call:${operation}`, `event:${operation}`])
-    );
+    expect(timeline).toEqual([
+        ...TIMED_ASYNC_OPERATIONS.flatMap((operation) => [`call:${operation}`, `event:${operation}`]),
+        'call:write'
+    ]);
     for (const [index, operation] of TIMED_ASYNC_OPERATIONS.entries()) {
         expect(timingEvents[index], operation).toMatchObject({
             type: 'rallar.timing',

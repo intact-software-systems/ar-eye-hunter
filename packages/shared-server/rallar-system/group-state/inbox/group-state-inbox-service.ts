@@ -2,7 +2,11 @@ import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import {
+    AppInboxType,
+    type AppInboxEnqueueInput,
+    type AppInboxMessageContext
+} from '../../app-inbox/app-inbox-contracts.ts';
 import { type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
@@ -18,7 +22,7 @@ import { AppInboxTransactionWriter } from '../../app-inbox/handler/app-inbox-tra
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
-import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { GroupStateService } from '../group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
@@ -39,7 +43,10 @@ import {
     isAuthenticatedGroupMutationEnqueue,
     type AuthenticatedGroupMutationEnqueue
 } from './group-state-inbox-contracts.ts';
-import { GroupStateInboxHandler } from './group-state-inbox-handler.ts';
+import {
+    GroupStateInboxHandler,
+    type GroupStateInboxResultReader
+} from './group-state-inbox-handler.ts';
 import { decodeGroupStateInboxDurableResult } from './group-state-inbox-result-codec.ts';
 import type { GroupStateInboxDurableResult } from './group-state-inbox-result.ts';
 import { toGroupMutationDescriptor } from './to-group-mutation-descriptor.ts';
@@ -51,6 +58,7 @@ export namespace GroupStateInboxService {
         readonly resourceInboxResultsRepository: AppInboxResultRepository;
         readonly database: PSqlSql;
         readonly groupStateService: GroupStateService;
+        readonly resultReader: GroupStateInboxResultReader;
     }
 
     export interface Config {
@@ -107,13 +115,13 @@ export class GroupStateInboxService {
         this.groupStateInboxHandler = new GroupStateInboxHandler({
             mutationService: this.groupStateService,
             sessionGenerationLifecycle: this.groupStateService.sessionGenerationLifecycle,
-            snapshotObserver: this.groupStateService,
+            resultReader: dependencies.resultReader,
             transactionWriter: this.transactionWriter,
             wakeQueue: this.wakeQueue,
             formationMetrics: config.formationMetrics,
-            prepareMutation: (descriptor, authority) =>
+            prepareAuthenticatedMutation: (descriptor, authority) =>
                 this.groupStateService.prepareAppInboxMutation(descriptor, authority),
-            persistPreparation: (context, preparation) =>
+            persistPreparedMutation: (context, preparation) =>
                 this.reservationClient.persistAuthority(
                     context,
                     encodeAppInboxCommand(preparation, 'Group mutation AppInbox authority')
@@ -203,21 +211,17 @@ export class GroupStateInboxService {
         enqueue: AuthenticatedGroupMutationEnqueue,
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>> {
-        return await this.processAuthenticatedGroupEntryUntilCompletionResult(enqueue, authority);
-    }
-
-    async processAuthenticatedGroupEntryUntilCompletionResult(
-        enqueue: AuthenticatedGroupMutationEnqueue,
-        authority: IssuedAuthSession
-    ): Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>> {
-        const prepared = await this.prepareAuthenticatedGroupMutation(enqueue, authority);
+        const authorizedEnqueue = await this.authorizeAuthenticatedGroupMutationEnqueue(
+            enqueue,
+            authority
+        );
         return await this.commandClient.enqueueAndWaitForResult<GroupStateInboxDurableResult>(
-            prepared,
+            authorizedEnqueue,
             (value) => decodeGroupStateInboxDurableResult(value, enqueue.type)
         );
     }
 
-    private async prepareAuthenticatedGroupMutation(
+    private async authorizeAuthenticatedGroupMutationEnqueue(
         enqueue: AuthenticatedGroupMutationEnqueue,
         authority: IssuedAuthSession
     ): Promise<AppInboxEnqueueInput> {
@@ -238,6 +242,18 @@ export class GroupStateInboxService {
     }
 
     private registerMessageHandlers(): void {
+        const encodeGroupStateResult = (result: GroupStateInboxDurableResult) =>
+            encodeAppInboxResult(result, 'Group state AppInbox result');
+        const processGroupStateMutation = async (
+            _command: JsonWireValue,
+            context: AppInboxMessageContext<GroupStateInboxDurableResult>
+        ) => {
+            const result = await this.groupStateInboxHandler.processGroupStateMutation(context);
+            if ('status' in result && (result.status === 'created' || result.status === 'ok')) {
+                await this.groupStateService.observeSnapshot(result.result.snapshot);
+            }
+            return result;
+        };
         for (
             const type of GROUP_MUTATION_INBOX_TYPES.filter(
                 (candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP
@@ -246,9 +262,8 @@ export class GroupStateInboxService {
             this.handlers.registerHandler({
                 type,
                 decodeCommand: (value) => decodeGroupStateAppInboxCommand(type, value),
-                encodeResult: (result) => encodeAppInboxResult(result, 'Group state AppInbox result'),
-                handle: async (_command, context) =>
-                    await this.groupStateInboxHandler.processGroupStateMutation(context)
+                encodeResult: encodeGroupStateResult,
+                handle: processGroupStateMutation
             });
         }
         this.handlers.registerHandler({
@@ -259,8 +274,9 @@ export class GroupStateInboxService {
                 await processGroupSessionCleanup({
                     facts: payload,
                     attemptCount: context.entry.dequeueAudit.attempts,
+                    context,
                     groupStateService: this.groupStateService,
-                    writeMutation: async (write) => await this.transactionWriter.writeMutation(context, write),
+                    transactionWriter: this.transactionWriter,
                     wakeQueue: this.wakeQueue
                 })
         });

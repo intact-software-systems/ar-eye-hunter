@@ -82,7 +82,7 @@ async function computeCreateReplay(runtime: TestGroupStateRuntime, request: Crea
     };
     const read = await runtime.durable.read(command);
     const computed = runtime.durable.compute(command, read);
-    runtime.durable.validate(command, read, computed);
+    expect(runtime.durable.validate(command, read, computed)).toEqual([]);
     if (computed.outcome === 'idempotency-conflict') {
         throw new Error('Expected an idempotent create replay');
     }

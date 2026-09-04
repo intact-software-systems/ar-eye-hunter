@@ -1,6 +1,6 @@
 import { groupStateMaintenanceRequestId } from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -107,14 +107,31 @@ describe('group presence expiry retry', () => {
         );
         runtime.armPresenceReadBarrier(2);
 
-        const results = await Promise.all([
-            createMaintenance(runtime, BASE_EPOCH_MS + 3_000).expireExpiredPresenceSessions(
-                BASE_EPOCH_MS + 3_000
-            ),
-            createMaintenance(runtime, BASE_EPOCH_MS + 4_000).expireExpiredPresenceSessions(
-                BASE_EPOCH_MS + 4_000
-            )
-        ]);
+        const attempts = [
+            (attemptCount: number) =>
+                createMaintenance(
+                    runtime,
+                    BASE_EPOCH_MS + 3_000,
+                    attemptCount
+                ).expireExpiredPresenceSessions(BASE_EPOCH_MS + 3_000),
+            (attemptCount: number) =>
+                createMaintenance(
+                    runtime,
+                    BASE_EPOCH_MS + 4_000,
+                    attemptCount
+                ).expireExpiredPresenceSessions(BASE_EPOCH_MS + 4_000)
+        ] as const;
+        const firstAttempts = await Promise.allSettled(attempts.map((attempt) => attempt(1)));
+        const conflictIndex = firstAttempts.findIndex((result) => result.status === 'rejected');
+        expect(firstAttempts[conflictIndex]).toMatchObject({
+            status: 'rejected',
+            reason: expect.any(RuntimeStateWriteConflictError)
+        });
+        const retry = await attempts[conflictIndex]!(2);
+        const results = [
+            ...firstAttempts.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []),
+            retry
+        ];
         const events = (
             await createTestGroupStateRepository(runtime).listEvents(groupRef('different-expiry-observations'))
         ).filter((event) => event.eventType === 'session-disconnected');
@@ -143,16 +160,31 @@ describe('group presence expiry retry', () => {
         );
         runtime.armPresenceReadBarrier(2);
 
-        const results = await Promise.all([
-            createMaintenance(
-                runtime,
-                BASE_EPOCH_MS + 3_000
-            ).disconnectPresenceSessionsBySessionIdWritten('cleanup-session', BASE_EPOCH_MS + 3_000),
-            createMaintenance(
-                runtime,
-                BASE_EPOCH_MS + 4_000
-            ).disconnectPresenceSessionsBySessionIdWritten('cleanup-session', BASE_EPOCH_MS + 4_000)
-        ]);
+        const attempts = [
+            (attemptCount: number) =>
+                createMaintenance(
+                    runtime,
+                    BASE_EPOCH_MS + 3_000,
+                    attemptCount
+                ).disconnectPresenceSessionsBySessionIdWritten('cleanup-session', BASE_EPOCH_MS + 3_000),
+            (attemptCount: number) =>
+                createMaintenance(
+                    runtime,
+                    BASE_EPOCH_MS + 4_000,
+                    attemptCount
+                ).disconnectPresenceSessionsBySessionIdWritten('cleanup-session', BASE_EPOCH_MS + 4_000)
+        ] as const;
+        const firstAttempts = await Promise.allSettled(attempts.map((attempt) => attempt(1)));
+        const conflictIndex = firstAttempts.findIndex((result) => result.status === 'rejected');
+        expect(firstAttempts[conflictIndex]).toMatchObject({
+            status: 'rejected',
+            reason: expect.any(RuntimeStateWriteConflictError)
+        });
+        const retry = await attempts[conflictIndex]!(2);
+        const results = [
+            ...firstAttempts.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []),
+            retry
+        ];
         const events = (
             await createTestGroupStateRepository(runtime).listEvents(groupRef('different-cleanup-observations'))
         ).filter((event) => event.eventType === 'session-disconnected');
@@ -182,10 +214,31 @@ describe('group presence expiry retry', () => {
         runtime.armPresenceReadBarrier(2);
         const atEpochMs = BASE_EPOCH_MS + 3_000;
 
-        const results = await Promise.all([
-            createMaintenance(runtime, atEpochMs).expireExpiredPresenceSessions(atEpochMs),
-            createMaintenance(runtime, atEpochMs).expireExpiredPresenceSessions(atEpochMs)
-        ]);
+        const attempts = [
+            (attemptCount: number) =>
+                createMaintenance(
+                    runtime,
+                    atEpochMs,
+                    attemptCount
+                ).expireExpiredPresenceSessions(atEpochMs),
+            (attemptCount: number) =>
+                createMaintenance(
+                    runtime,
+                    atEpochMs,
+                    attemptCount
+                ).expireExpiredPresenceSessions(atEpochMs)
+        ] as const;
+        const firstAttempts = await Promise.allSettled(attempts.map((attempt) => attempt(1)));
+        const conflictIndex = firstAttempts.findIndex((result) => result.status === 'rejected');
+        expect(firstAttempts[conflictIndex]).toMatchObject({
+            status: 'rejected',
+            reason: expect.any(RuntimeStateWriteConflictError)
+        });
+        const retry = await attempts[conflictIndex]!(2);
+        const results = [
+            ...firstAttempts.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []),
+            retry
+        ];
         const events = (
             await createTestGroupStateRepository(runtime).listEvents(groupRef('duplicate-expiry-work'))
         ).filter((event) => event.eventType === 'session-disconnected');
@@ -196,7 +249,7 @@ describe('group presence expiry retry', () => {
         expect(runtime.conditionalOperations[0]).toBe('delete:group-state:sessions');
     });
 
-    it('re-reads expiry state and exposes bounded exhaustion after delete conflicts', async () => {
+    it('re-reads expiry state for each explicit outer delete-conflict attempt', async () => {
         const runtime = new GroupBarrierRepository();
         const ref = groupRef('expiry-delete-exhaustion-room');
         await seedOpenGroup(runtime, ref.groupId);
@@ -215,19 +268,15 @@ describe('group presence expiry retry', () => {
         );
         runtime.resetGuards();
         runtime.failNextPresenceDelete(3);
-        const retryDelays: number[] = [];
-        const sleep = (delayMs: number): Promise<void> => {
-            retryDelays.push(delayMs);
-            return Promise.resolve();
-        };
-
-        await expect(
-            createMaintenance(runtime, BASE_EPOCH_MS + 3_000, sleep).expireExpiredPresenceSessions(
-                BASE_EPOCH_MS + 3_000
-            )
-        ).rejects.toBeInstanceOf(RuntimeStateRetryExhaustedError);
-
-        expect(retryDelays).toEqual([2, 8]);
+        for (const attemptCount of [1, 2, 3]) {
+            await expect(
+                createMaintenance(
+                    runtime,
+                    BASE_EPOCH_MS + 3_000,
+                    attemptCount
+                ).expireExpiredPresenceSessions(BASE_EPOCH_MS + 3_000)
+            ).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        }
         expect(runtime.conditionalOperations).toEqual([
             'delete:group-state:sessions',
             'delete:group-state:sessions',
@@ -263,31 +312,48 @@ describe('group presence expiry retry', () => {
         );
         runtime.resetGuards();
         runtime.armPresenceReadBarrier(2);
-        await Promise.allSettled([
-            createService(runtime, BASE_EPOCH_MS + 2_500).heartbeatPresenceSession(
-                SCOPE,
-                'presence-room',
-                'session-a',
-                {
-                    generationId: 'generation-1',
-                    actorPrincipalId: 'alice',
-                    lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_500,
-                    expiresAtEpochMs: BASE_EPOCH_MS + 5_000,
-                    requestId: 'heartbeat-generation-1'
-                }
-            ),
-            createService(runtime, BASE_EPOCH_MS + 2_501).disconnectPresenceSession(
-                SCOPE,
-                'presence-room',
-                'session-a',
-                {
-                    generationId: 'generation-1',
-                    actorPrincipalId: 'alice',
-                    disconnectedAtEpochMs: BASE_EPOCH_MS + 2_501,
-                    requestId: 'disconnect-generation-1'
-                }
-            )
-        ]);
+        const attempts = [
+            (attemptCount: number) =>
+                createService(
+                    runtime,
+                    BASE_EPOCH_MS + 2_500,
+                    attemptCount
+                ).heartbeatPresenceSession(
+                    SCOPE,
+                    'presence-room',
+                    'session-a',
+                    {
+                        generationId: 'generation-1',
+                        actorPrincipalId: 'alice',
+                        lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_500,
+                        expiresAtEpochMs: BASE_EPOCH_MS + 5_000,
+                        requestId: 'heartbeat-generation-1'
+                    }
+                ),
+            (attemptCount: number) =>
+                createService(
+                    runtime,
+                    BASE_EPOCH_MS + 2_501,
+                    attemptCount
+                ).disconnectPresenceSession(
+                    SCOPE,
+                    'presence-room',
+                    'session-a',
+                    {
+                        generationId: 'generation-1',
+                        actorPrincipalId: 'alice',
+                        disconnectedAtEpochMs: BASE_EPOCH_MS + 2_501,
+                        requestId: 'disconnect-generation-1'
+                    }
+                )
+        ] as const;
+        const firstAttempts = await Promise.allSettled(attempts.map((attempt) => attempt(1)));
+        const conflictIndex = firstAttempts.findIndex((result) => result.status === 'rejected');
+        expect(firstAttempts[conflictIndex]).toMatchObject({
+            status: 'rejected',
+            reason: expect.any(RuntimeStateWriteConflictError)
+        });
+        await attempts[conflictIndex]!(2);
         const disconnected = await createTestGroupStateRepository(runtime).findPresenceSession({
             ...groupRef('presence-room'),
             sessionId: 'session-a'
