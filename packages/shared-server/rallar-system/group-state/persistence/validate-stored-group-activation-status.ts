@@ -12,8 +12,6 @@ import {
     requireRecord
 } from '../group-state-validation-primitives.ts';
 
-type StoredGroupRecord = Record<string, unknown>;
-
 /**
  * The stored observed status, validated whole. It lives beside the group
  * validator rather than inside it because the group's own validator is
@@ -24,8 +22,8 @@ type StoredGroupRecord = Record<string, unknown>;
  * them from drifting.
  */
 export function validateStoredGroupActivationStatus(
-    activationStatus: StoredGroupRecord,
-    validateLayoutIdentity: (identity: StoredGroupRecord, label: string) => void
+    activationStatus: Readonly<Record<string, unknown>>,
+    validateLayoutIdentity: (identity: Readonly<Record<string, unknown>>, label: string) => void
 ): void {
     assertExactKeys(activationStatus, GROUP_ACTIVATION_STATUS_KEYS, 'Stored group activationStatus');
     assertRequiredKeys(activationStatus, GROUP_ACTIVATION_STATUS_KEYS, 'Stored group activationStatus');
