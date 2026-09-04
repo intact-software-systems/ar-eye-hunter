@@ -1,185 +1,48 @@
 import { Temporal } from '@js-temporal/polyfill';
+
+import {
+    decodeStoredResourceEntryValue,
+    encodeStoredResourceEntry,
+    type StoredResourceEntry
+} from './indexed-db-queue-box-entry-codec.ts';
 import {
     EntityStatus,
-    Key,
-    ResourceEntry,
-    ResourceEntryKeyString,
-    toKeyAsString
+    toKeyAsString,
+    type ResourceEntry,
+    type ResourceEntryKeyString
 } from './ResourceEntry.ts';
-
-export type StoredResourceEntry = Readonly<{
-    keyString: ResourceEntryKeyString;
-    revision: number;
-    fairnessDueEpochMs?: number;
-    key: Key;
-    resource: string;
-    typeId: string;
-    audit: Readonly<{
-        date: string;
-        createdBy: string;
-        createdTs: string;
-        expiryTs: string;
-    }>;
-    status: EntityStatus;
-    dequeueAudit: Readonly<{
-        startTs?: string;
-        endTs?: string;
-        nextTs?: string;
-        attempts: number;
-    }>;
-}>;
 
 export type IndexedDbQueueExpectedState =
     | Readonly<{ kind: 'missing'; }>
     | Readonly<{ kind: 'revision'; revision: number; }>;
 
+export interface ComputedIndexedDbQueuePut {
+    readonly kind: 'put';
+    readonly keyString: ResourceEntryKeyString;
+    readonly expected: IndexedDbQueueExpectedState;
+    readonly value: StoredResourceEntry;
+}
+
+export interface ComputedIndexedDbQueueDelete {
+    readonly kind: 'delete';
+    readonly keyString: ResourceEntryKeyString;
+    readonly expected: IndexedDbQueueExpectedState;
+}
+
+export interface ComputedIndexedDbQueueUnconditionalDelete {
+    readonly kind: 'delete-unconditionally';
+    readonly keyString: ResourceEntryKeyString;
+}
+
 export type ComputedIndexedDbQueueMutation =
-    | Readonly<{
-        kind: 'put';
-        keyString: ResourceEntryKeyString;
-        expected: IndexedDbQueueExpectedState;
-        value: StoredResourceEntry;
-    }>
-    | Readonly<{
-        kind: 'delete';
-        keyString: ResourceEntryKeyString;
-        expected: IndexedDbQueueExpectedState;
-    }>
-    | Readonly<{
-        kind: 'delete-unconditionally';
-        keyString: ResourceEntryKeyString;
-    }>;
-
-export function encodeStoredResourceEntry(
-    entry: ResourceEntry,
-    revision: number
-): StoredResourceEntry {
-    const stored: StoredResourceEntry = {
-        keyString: toKeyAsString(entry.key),
-        revision,
-        fairnessDueEpochMs: entry.dequeueAudit.nextTs
-            ? Number(entry.dequeueAudit.nextTs.epochMilliseconds)
-            : undefined,
-        key: entry.key,
-        resource: entry.resource,
-        typeId: entry.typeId,
-        audit: {
-            date: toPlainTime(entry.audit.date).toString(),
-            createdBy: entry.audit.createdBy,
-            createdTs: toPlainDateTime(entry.audit.createdTs).toString(),
-            expiryTs: toInstant(entry.audit.expiryTs).toString()
-        },
-        status: entry.status,
-        dequeueAudit: {
-            startTs: toOptionalInstant(entry.dequeueAudit.startTs)?.toString(),
-            endTs: toOptionalInstant(entry.dequeueAudit.endTs)?.toString(),
-            nextTs: toOptionalInstant(entry.dequeueAudit.nextTs)?.toString({
-                fractionalSecondDigits: 9
-            }),
-            attempts: entry.dequeueAudit.attempts
-        }
-    };
-    validateStoredResourceEntry(stored);
-    return stored;
-}
-
-export function decodeStoredResourceEntry(stored: StoredResourceEntry): ResourceEntry {
-    const canonical = decodeStoredResourceEntryValue(stored);
-    return {
-        key: canonical.key,
-        resource: canonical.resource,
-        typeId: canonical.typeId,
-        audit: {
-            date: toPlainTime(canonical.audit.date),
-            createdBy: canonical.audit.createdBy,
-            createdTs: toPlainDateTime(canonical.audit.createdTs),
-            expiryTs: toInstant(canonical.audit.expiryTs)
-        },
-        status: canonical.status,
-        dequeueAudit: {
-            startTs: toOptionalInstant(canonical.dequeueAudit.startTs),
-            endTs: toOptionalInstant(canonical.dequeueAudit.endTs),
-            nextTs: toOptionalInstant(canonical.dequeueAudit.nextTs),
-            attempts: canonical.dequeueAudit.attempts
-        },
-        db: {
-            id: canonical.keyString
-        }
-    };
-}
-
-export function decodeStoredResourceEntryValue(value: unknown): StoredResourceEntry {
-    const stored = requireDataRecord(
-        value,
-        'IndexedDB queue row',
-        ['keyString', 'revision', 'key', 'resource', 'typeId', 'audit', 'status', 'dequeueAudit'],
-        ['fairnessDueEpochMs']
-    );
-    const key = requireDataRecord(
-        stored.key,
-        'IndexedDB queue key',
-        ['topicId', 'resourceId', 'contextId']
-    );
-    const audit = requireDataRecord(
-        stored.audit,
-        'IndexedDB queue audit',
-        ['date', 'createdBy', 'createdTs', 'expiryTs']
-    );
-    const dequeueAudit = requireDataRecord(
-        stored.dequeueAudit,
-        'IndexedDB queue dequeue audit',
-        ['attempts'],
-        ['startTs', 'endTs', 'nextTs']
-    );
-    const canonical = {
-        keyString: requireString(stored.keyString, 'IndexedDB queue key string'),
-        revision: requireNonNegativeInteger(stored.revision, 'IndexedDB queue revision'),
-        ...(stored.fairnessDueEpochMs === undefined
-            ? {}
-            : {
-                fairnessDueEpochMs: requireSafeInteger(
-                    stored.fairnessDueEpochMs,
-                    'IndexedDB queue fairness timestamp'
-                )
-            }),
-        key: {
-            topicId: requireString(key.topicId, 'IndexedDB queue topic id'),
-            resourceId: requireString(key.resourceId, 'IndexedDB queue resource id'),
-            contextId: requireString(key.contextId, 'IndexedDB queue context id')
-        },
-        resource: requireString(stored.resource, 'IndexedDB queue resource'),
-        typeId: requireString(stored.typeId, 'IndexedDB queue type id'),
-        audit: {
-            date: requireString(audit.date, 'IndexedDB queue audit date'),
-            createdBy: requireString(audit.createdBy, 'IndexedDB queue creator'),
-            createdTs: requireString(audit.createdTs, 'IndexedDB queue creation timestamp'),
-            expiryTs: requireString(audit.expiryTs, 'IndexedDB queue expiry timestamp')
-        },
-        status: requireEntityStatus(stored.status),
-        dequeueAudit: {
-            ...(dequeueAudit.startTs === undefined
-                ? {}
-                : { startTs: requireString(dequeueAudit.startTs, 'IndexedDB queue start timestamp') }),
-            ...(dequeueAudit.endTs === undefined
-                ? {}
-                : { endTs: requireString(dequeueAudit.endTs, 'IndexedDB queue end timestamp') }),
-            ...(dequeueAudit.nextTs === undefined
-                ? {}
-                : { nextTs: requireString(dequeueAudit.nextTs, 'IndexedDB queue next timestamp') }),
-            attempts: requireNonNegativeInteger(
-                dequeueAudit.attempts,
-                'IndexedDB queue attempt count'
-            )
-        }
-    } satisfies StoredResourceEntry;
-    validateStoredResourceEntry(canonical);
-    return canonical;
-}
+    | ComputedIndexedDbQueuePut
+    | ComputedIndexedDbQueueDelete
+    | ComputedIndexedDbQueueUnconditionalDelete;
 
 export function computeIndexedDbQueuePut(
     stored: StoredResourceEntry | undefined,
     entry: ResourceEntry
-): Extract<ComputedIndexedDbQueueMutation, { kind: 'put'; }> {
+): ComputedIndexedDbQueuePut {
     const expected = toIndexedDbQueueExpectedState(stored);
     const nextRevision = stored ? stored.revision + 1 : 0;
     return {
@@ -192,7 +55,7 @@ export function computeIndexedDbQueuePut(
 
 export function computeIndexedDbQueueDelete(
     stored: StoredResourceEntry
-): Extract<ComputedIndexedDbQueueMutation, { kind: 'delete'; }> {
+): ComputedIndexedDbQueueDelete {
     return {
         kind: 'delete',
         keyString: stored.keyString,
@@ -202,7 +65,7 @@ export function computeIndexedDbQueueDelete(
 
 export function computeIndexedDbQueueUnconditionalDelete(
     keyString: ResourceEntryKeyString
-): Extract<ComputedIndexedDbQueueMutation, { kind: 'delete-unconditionally'; }> {
+): ComputedIndexedDbQueueUnconditionalDelete {
     return { kind: 'delete-unconditionally', keyString };
 }
 
@@ -210,7 +73,9 @@ export function validateComputedIndexedDbQueueMutations(
     mutations: readonly ComputedIndexedDbQueueMutation[]
 ): void {
     for (const mutation of mutations) {
-        requireString(mutation.keyString, 'IndexedDB queue mutation key');
+        if (typeof mutation.keyString !== 'string') {
+            throw new TypeError('IndexedDB queue mutation key must be a string');
+        }
         if (mutation.kind === 'delete-unconditionally') {
             continue;
         }
@@ -301,37 +166,6 @@ export function isStoredQueueEntryTimedOut(
     return Temporal.Instant.compare(now, startTs.add(duration)) >= 0;
 }
 
-function toPlainTime(value: string | Temporal.PlainTime): Temporal.PlainTime {
-    if (typeof value !== 'string' && !(value instanceof Temporal.PlainTime)) {
-        throw new TypeError('IndexedDB queue audit date must be a plain time');
-    }
-    return Temporal.PlainTime.from(value);
-}
-
-function toPlainDateTime(value: string | Temporal.PlainDateTime): Temporal.PlainDateTime {
-    if (typeof value !== 'string' && !(value instanceof Temporal.PlainDateTime)) {
-        throw new TypeError('IndexedDB queue creation timestamp must be a plain date-time');
-    }
-    return Temporal.PlainDateTime.from(value);
-}
-
-function toInstant(value: string | Temporal.Instant): Temporal.Instant {
-    if (typeof value !== 'string' && !(value instanceof Temporal.Instant)) {
-        throw new TypeError('IndexedDB queue timestamp must be an instant');
-    }
-    return Temporal.Instant.from(value);
-}
-
-function toOptionalInstant(
-    value: string | Temporal.Instant | undefined
-): Temporal.Instant | undefined {
-    if (value === undefined) {
-        return undefined;
-    }
-
-    return toInstant(value);
-}
-
 function toIndexedDbQueueExpectedState(
     stored: StoredResourceEntry | undefined
 ): IndexedDbQueueExpectedState {
@@ -343,86 +177,14 @@ function toIndexedDbQueueExpectedState(
 }
 
 function validateIndexedDbQueueExpectedState(expected: IndexedDbQueueExpectedState): void {
-    switch (expected.kind) {
-        case 'missing':
-            return;
-        case 'revision':
-            requireNonNegativeInteger(expected.revision, 'IndexedDB queue expected revision');
-            return;
+    if (expected.kind === 'missing') {
+        return;
     }
-}
-
-function validateStoredResourceEntry(stored: StoredResourceEntry): void {
-    if (stored.keyString !== toKeyAsString(stored.key)) {
-        throw new TypeError('IndexedDB queue row key differs from its canonical key');
-    }
-    toPlainTime(stored.audit.date);
-    toPlainDateTime(stored.audit.createdTs);
-    toInstant(stored.audit.expiryTs);
-    toOptionalInstant(stored.dequeueAudit.startTs);
-    toOptionalInstant(stored.dequeueAudit.endTs);
-    const next = toOptionalInstant(stored.dequeueAudit.nextTs);
-    const expectedFairness = next === undefined ? undefined : Number(next.epochMilliseconds);
-    if (stored.fairnessDueEpochMs !== expectedFairness) {
-        throw new TypeError('IndexedDB queue fairness timestamp differs from its next timestamp');
-    }
-}
-
-function requireDataRecord(
-    value: unknown,
-    label: string,
-    required: readonly string[],
-    optional: readonly string[] = []
-): Readonly<Record<string, unknown>> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        throw new TypeError(`${label} must be a record`);
-    }
-    const record = value as Readonly<Record<string, unknown>>;
-    const permitted = new Set([...required, ...optional]);
-    const keys = Object.keys(record);
     if (
-        required.some((key) => !Object.hasOwn(record, key)) ||
-        keys.some((key) => !permitted.has(key)) ||
-        Reflect.ownKeys(record).length !== keys.length
+        !Number.isSafeInteger(expected.revision) ||
+        expected.revision < 0 ||
+        Object.is(expected.revision, -0)
     ) {
-        throw new TypeError(`${label} fields are invalid`);
+        throw new TypeError('IndexedDB queue expected revision must be non-negative');
     }
-    for (const key of keys) {
-        const descriptor = Object.getOwnPropertyDescriptor(record, key);
-        if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
-            throw new TypeError(`${label} must contain only data fields`);
-        }
-    }
-    return record;
-}
-
-function requireString(value: unknown, label: string): string {
-    if (typeof value !== 'string') {
-        throw new TypeError(`${label} must be a string`);
-    }
-    return value;
-}
-
-function requireSafeInteger(value: unknown, label: string): number {
-    if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
-        throw new TypeError(`${label} must be a safe integer`);
-    }
-    return value;
-}
-
-function requireNonNegativeInteger(value: unknown, label: string): number {
-    const integer = requireSafeInteger(value, label);
-    if (integer < 0 || Object.is(integer, -0)) {
-        throw new TypeError(`${label} must be non-negative`);
-    }
-    return integer;
-}
-
-function requireEntityStatus(value: unknown): EntityStatus {
-    for (const status of Object.values(EntityStatus)) {
-        if (value === status) {
-            return status;
-        }
-    }
-    throw new TypeError('IndexedDB queue status is invalid');
 }

@@ -1,12 +1,12 @@
-import type {
-    ComputedIndexedDbQueueMutation,
-    IndexedDbQueueExpectedState,
-    StoredResourceEntry
-} from './indexed-db-queue-box-entry.ts';
 import {
     decodeStoredResourceEntryValue,
-    validateComputedIndexedDbQueueMutations
+    type StoredResourceEntry
+} from './indexed-db-queue-box-entry-codec.ts';
+import type {
+    ComputedIndexedDbQueueMutation,
+    IndexedDbQueueExpectedState
 } from './indexed-db-queue-box-entry.ts';
+import { validateComputedIndexedDbQueueMutations } from './indexed-db-queue-box-entry.ts';
 
 export async function writeComputedIndexedDbQueueMutations(
     db: IDBDatabase,

@@ -5,16 +5,18 @@ import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvid
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { ResilienceDto } from './DequeueResourceEntryController.ts';
 import {
+    decodeStoredResourceEntry,
+    type StoredResourceEntry
+} from './indexed-db-queue-box-entry-codec.ts';
+import {
     ComputedIndexedDbQueueMutation,
     computeIndexedDbQueueDelete,
     computeIndexedDbQueuePut,
     computeIndexedDbQueueUnconditionalDelete,
     computeReservedQueueEntry,
-    decodeStoredResourceEntry,
     isStoredQueueEntryExpired,
     isStoredQueueEntryReservable,
-    isStoredQueueEntryTimedOut,
-    StoredResourceEntry
+    isStoredQueueEntryTimedOut
 } from './indexed-db-queue-box-entry.ts';
 import { computeIndexedDbFairnessReservation } from './indexed-db-queue-box-fairness.ts';
 import { computeIndexedDbQueueRelease } from './indexed-db-queue-box-release.ts';

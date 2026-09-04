@@ -17,15 +17,15 @@ interface ComputedProjectionValidationState {
     readonly issues: ComputedDataValidationIssue[];
 }
 
-interface ComputedProjectionComparison {
-    readonly expected: unknown;
-    readonly candidate: unknown;
+interface ComputedProjectionComparison<Expected, Candidate> {
+    readonly expected: Expected;
+    readonly candidate: Candidate;
     readonly path: string;
 }
 
 /** Rejects executable and opaque values before a domain validator reads candidate fields. */
-export function validateComputedData(
-    candidate: unknown,
+export function validateComputedData<Candidate>(
+    candidate: Candidate,
     path: string
 ): readonly ComputedDataValidationIssue[] {
     const state: ComputedDataValidationState = { ancestors: new Set(), issues: [] };
@@ -34,9 +34,9 @@ export function validateComputedData(
 }
 
 /** Compares the complete candidate only after proving that candidate property reads are inert. */
-export function validateComputedProjection(
-    expected: unknown,
-    candidate: unknown,
+export function validateComputedProjection<Expected, Candidate>(
+    expected: Expected,
+    candidate: Candidate,
     path: string
 ): readonly ComputedDataValidationIssue[] {
     const dataIssues = validateComputedData(candidate, path);
@@ -51,8 +51,8 @@ export function validateComputedProjection(
     return state.issues;
 }
 
-function validateComputedDataValue(
-    value: unknown,
+function validateComputedDataValue<Value>(
+    value: Value,
     path: string,
     state: ComputedDataValidationState
 ): void {
@@ -92,8 +92,8 @@ function validateComputedDataValue(
     state.ancestors.delete(value);
 }
 
-function compareComputedProjection(
-    comparison: ComputedProjectionComparison,
+function compareComputedProjection<Expected, Candidate>(
+    comparison: ComputedProjectionComparison<Expected, Candidate>,
     state: ComputedProjectionValidationState
 ): void {
     const { expected, candidate, path } = comparison;
@@ -127,7 +127,7 @@ function compareComputedProjection(
 }
 
 function compareComputedDataProperties(
-    comparison: Readonly<ComputedProjectionComparison & { expected: object; candidate: object; }>,
+    comparison: ComputedProjectionComparison<object, object>,
     state: ComputedProjectionValidationState
 ): void {
     const { expected, candidate, path } = comparison;

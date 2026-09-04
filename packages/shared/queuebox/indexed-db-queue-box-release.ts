@@ -1,9 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { StoredResourceEntry } from './indexed-db-queue-box-entry-codec.ts';
 import {
     computeIndexedDbQueuePut,
     isStoredQueueEntryExpired,
-    type ComputedIndexedDbQueueMutation,
-    type StoredResourceEntry
+    type ComputedIndexedDbQueueMutation
 } from './indexed-db-queue-box-entry.ts';
 import {
     isIdempotentHandlerFinalizedRelease,

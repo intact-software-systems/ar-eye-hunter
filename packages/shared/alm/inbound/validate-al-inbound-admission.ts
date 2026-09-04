@@ -32,10 +32,10 @@ export interface ValidateALInboundBufferedReleaseInput {
     readonly computed: ALInboundCommitBundle;
 }
 
-interface AppendDifferenceInput {
+interface AppendDifferenceInput<Value> {
     readonly path: string;
-    readonly expected: unknown;
-    readonly candidate: unknown;
+    readonly expected: Value;
+    readonly candidate: Value;
 }
 
 export function validateALInboundAdmission(
@@ -147,8 +147,8 @@ function appendArrayDifferences<Value>(
     }
 }
 
-function appendDifference(
-    input: AppendDifferenceInput,
+function appendDifference<Value>(
+    input: AppendDifferenceInput<Value>,
     issues: ALInboundAdmissionValidationIssue[]
 ): void {
     const { path, expected, candidate } = input;
@@ -157,9 +157,9 @@ function appendDifference(
     }
 }
 
-function isExactDataValue(
-    expected: unknown,
-    candidate: unknown
+function isExactDataValue<Value>(
+    expected: Value,
+    candidate: Value
 ): boolean {
     if (Object.is(expected, candidate)) {
         return true;
@@ -188,8 +188,12 @@ function isExactDataValue(
     return expectedKeys.length === candidateKeys.length && expectedKeys.every((key) => {
         const expectedField = Object.getOwnPropertyDescriptor(expected, key);
         const candidateField = Object.getOwnPropertyDescriptor(candidate, key);
-        return isDataProperty(expectedField) && isDataProperty(candidateField) &&
-            isExactDataValue(expectedField.value, candidateField.value);
+        return Boolean(
+            expectedField && candidateField &&
+                Object.prototype.hasOwnProperty.call(expectedField, 'value') &&
+                Object.prototype.hasOwnProperty.call(candidateField, 'value') &&
+                isExactDataValue(expectedField.value, candidateField.value)
+        );
     });
 }
 
@@ -200,7 +204,7 @@ function hasExactDataFields(candidate: object, fields: readonly string[]): boole
         keys.length === fields.length &&
         fields.every((field) => {
             const descriptor = descriptors[field];
-            return descriptor?.enumerable === true && isDataProperty(descriptor);
+            return descriptor?.enumerable === true && Object.prototype.hasOwnProperty.call(descriptor, 'value');
         });
 }
 
@@ -210,12 +214,6 @@ function hasExactArrayShape<Value>(candidate: readonly Value[]): boolean {
     }
     const descriptors = Object.getOwnPropertyDescriptors(candidate);
     return Reflect.ownKeys(descriptors).length === candidate.length + 1;
-}
-
-function isDataProperty(
-    descriptor: PropertyDescriptor | undefined
-): descriptor is PropertyDescriptor & Readonly<{ value: unknown; }> {
-    return descriptor !== undefined && Object.prototype.hasOwnProperty.call(descriptor, 'value');
 }
 
 function toValidationIssue(

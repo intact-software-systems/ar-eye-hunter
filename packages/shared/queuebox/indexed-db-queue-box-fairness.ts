@@ -1,11 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
 import {
+    decodeStoredResourceEntry,
+    type StoredResourceEntry
+} from './indexed-db-queue-box-entry-codec.ts';
+import {
     computeIndexedDbQueuePut,
     computeReservedQueueEntry,
-    decodeStoredResourceEntry,
     isStoredQueueEntryExpired,
-    type ComputedIndexedDbQueueMutation,
-    type StoredResourceEntry
+    type ComputedIndexedDbQueueMutation
 } from './indexed-db-queue-box-entry.ts';
 import type { ResourceInboxFairnessSelection } from './queue-box-types.ts';
 import type { Key } from './ResourceEntry.ts';

@@ -5,7 +5,7 @@ import {
 import {
     decodeStoredResourceEntryValue,
     type StoredResourceEntry
-} from './indexed-db-queue-box-entry.ts';
+} from './indexed-db-queue-box-entry-codec.ts';
 import { EntityStatus, type ResourceEntryKeyString } from './ResourceEntry.ts';
 
 export type ReadFairnessStoredQueueEntriesInput = Readonly<{
@@ -39,7 +39,7 @@ export async function readStoredQueueEntries(
     const completed = waitForIndexedDbTransaction(transaction);
     const store = transaction.objectStore(storeName);
     const stored = await Promise.all(
-        keyStrings.map((key) => readIndexedDbRequest<unknown>(store.get(key)))
+        keyStrings.map((key) => readIndexedDbRequest(store.get(key)))
     );
     await completed;
     const entries = new Map<ResourceEntryKeyString, StoredResourceEntry>();
@@ -61,9 +61,7 @@ export async function readAllStoredQueueEntries(
 ): Promise<readonly StoredResourceEntry[]> {
     const transaction = db.transaction(storeName, 'readonly');
     const completed = waitForIndexedDbTransaction(transaction);
-    const entries = await readIndexedDbRequest<unknown[]>(
-        transaction.objectStore(storeName).getAll()
-    );
+    const entries = await readIndexedDbRequest(transaction.objectStore(storeName).getAll());
     await completed;
     return entries.map(decodeStoredResourceEntryValue);
 }
@@ -76,22 +74,22 @@ export async function readFairnessStoredQueueEntries(
     const index = transaction.objectStore(input.storeName).index(input.indexName);
     const states = await Promise.all(input.typeIds.map(async (typeId) => ({
         typeId,
-        entries: await readNextFairnessStoredQueueEntries(
+        entries: await readNextFairnessStoredQueueEntries({
             index,
             typeId,
-            input.overdueBeforeEpochMs
-        )
+            overdueBeforeEpochMs: input.overdueBeforeEpochMs
+        })
     })));
     let scanned = input.typeIds.length;
     const active = new Set(states.filter((state) => state.entries.length > 0));
     while (scanned < input.maxToScan && active.size > 0) {
         const selected = [...active].reduce(earlierFairnessReadState);
-        const next = await readNextFairnessStoredQueueEntries(
+        const next = await readNextFairnessStoredQueueEntries({
             index,
-            selected.typeId,
-            input.overdueBeforeEpochMs,
-            selected.entries.at(-1)
-        );
+            typeId: selected.typeId,
+            overdueBeforeEpochMs: input.overdueBeforeEpochMs,
+            after: selected.entries.at(-1)
+        });
         scanned += 1;
         if (next.length === 0) {
             active.delete(selected);
@@ -108,20 +106,29 @@ interface FairnessReadState {
     readonly entries: StoredResourceEntry[];
 }
 
+interface ReadNextFairnessStoredQueueEntriesInput {
+    readonly index: IDBIndex;
+    readonly typeId: string;
+    readonly overdueBeforeEpochMs: number;
+    readonly after?: StoredResourceEntry;
+}
+
 async function readNextFairnessStoredQueueEntries(
-    index: IDBIndex,
-    typeId: string,
-    overdueBeforeEpochMs: number,
-    after?: StoredResourceEntry
+    input: ReadNextFairnessStoredQueueEntriesInput
 ): Promise<StoredResourceEntry[]> {
-    const lower = after === undefined
-        ? [typeId, EntityStatus.RETRY, Number.MIN_SAFE_INTEGER, '']
-        : [typeId, EntityStatus.RETRY, after.fairnessDueEpochMs!, after.keyString];
-    const values = await readIndexedDbRequest<unknown[]>(index.getAll(
+    const lower = input.after === undefined
+        ? [input.typeId, EntityStatus.RETRY, Number.MIN_SAFE_INTEGER, '']
+        : [
+            input.typeId,
+            EntityStatus.RETRY,
+            input.after.fairnessDueEpochMs!,
+            input.after.keyString
+        ];
+    const values = await readIndexedDbRequest(input.index.getAll(
         IDBKeyRange.bound(
             lower,
-            [typeId, EntityStatus.RETRY, overdueBeforeEpochMs, '\uffff'],
-            after !== undefined
+            [input.typeId, EntityStatus.RETRY, input.overdueBeforeEpochMs, '\uffff'],
+            input.after !== undefined
         ),
         1
     ));

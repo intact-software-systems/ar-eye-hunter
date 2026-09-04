@@ -183,7 +183,7 @@ async function readRawValue(
     dbName: string,
     storeName: string,
     key: string
-): Promise<unknown> {
+): Promise<IDBRequest['result']> {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open(dbName);
         request.onsuccess = () => resolve(request.result);

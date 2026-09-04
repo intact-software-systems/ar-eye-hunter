@@ -5,10 +5,12 @@ import '../setup-browser-indexeddb.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
 import {
-    computeIndexedDbQueuePut,
     decodeStoredResourceEntry,
     encodeStoredResourceEntry,
     type StoredResourceEntry
+} from '@shared/queuebox/indexed-db-queue-box-entry-codec.ts';
+import {
+    computeIndexedDbQueuePut
 } from '@shared/queuebox/indexed-db-queue-box-entry.ts';
 import { computeIndexedDbFairnessReservation } from '@shared/queuebox/indexed-db-queue-box-fairness.ts';
 import { readStoredQueueEntry } from '@shared/queuebox/indexed-db-queue-box-store.ts';
