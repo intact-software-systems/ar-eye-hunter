@@ -98,8 +98,17 @@ export function createRallarServerRestCollectionTemplates(
             collectionId: 'group-lifecycle-stages',
             name: 'Group lifecycle stages',
             description: 'Drive a phased group through plan, connect and activate by hand, then pause and ' +
-                'resume its transport, reading the stage and observed condition at each step.',
-            variables: baseVariables,
+                'resume its transport, reading the stage and observed condition at each step. ' +
+                'The layout read between plan and connect is not optional: connect is fenced on ' +
+                'the exact identity of the candidate it means to dial, and the workbench does ' +
+                'not poll, so re-run that step until the snapshot reads active.',
+            variables: {
+                ...baseVariables,
+                // Its own group: sharing one with the membership collection
+                // would 409 the create and leave the operator driving whatever
+                // policy that group already had.
+                groupId: `${variables.groupId}-lifecycle`
+            },
             steps: [
                 {
                     stepId: 'create-phased-group',
@@ -116,10 +125,10 @@ export function createRallarServerRestCollectionTemplates(
                             kind: 'room',
                             joinMode: 'open',
                             createdByPrincipalId: '{{principalId}}',
-                            // `manual` triggers throughout: the point of this
-                            // collection is that an operator drives each
-                            // boundary by hand, so nothing may auto-advance
-                            // between the steps (product decision 8).
+                            // `managed` is the one preset with a mixed manual
+                            // plan and immediate connect, so both triggers are
+                            // pinned manual here: an operator driving each
+                            // boundary must not race the server to it.
                             lifecyclePolicy: {
                                 preset: 'managed',
                                 establishment: {
@@ -132,13 +141,10 @@ export function createRallarServerRestCollectionTemplates(
                         }
                     },
                     expect: {
-                        status: [200, 201, 409],
-                        body: [
-                            {
-                                path: '$.group.lifecycleState',
-                                equals: 'forming'
-                            }
-                        ]
+                        // No body assertion beside the 409: a conflict returns
+                        // a mutation failure with no `group`, so asserting the
+                        // stage here would fail every re-run.
+                        status: [200, 201, 409]
                     }
                 },
                 {
@@ -146,25 +152,86 @@ export function createRallarServerRestCollectionTemplates(
                     label: 'Plan layout',
                     request: {
                         method: 'POST',
-                        path: stateCollectionPath('/groups/{{groupId}}/plan/requests/{{requestId}}'),
+                        path: stateCollectionPath('/groups/{{groupId}}/lifecycle/plan/requests/{{requestId}}'),
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                        body: {}
+                    },
+                    expect: {
+                        status: 200
+                    },
+                    extract: [
+                        {
+                            name: 'plannedFormationEpoch',
+                            path: '$.group.formationEpoch'
+                        }
+                    ]
+                },
+                {
+                    stepId: 'read-planned-layout',
+                    label: 'Read planned layout',
+                    request: {
+                        method: 'GET',
+                        path: stateCollectionPath('/groups/{{groupId}}/topology'),
                         attachAuth: true,
                         responseBodyMode: 'json'
                     },
                     expect: {
-                        status: [200, 201]
-                    }
+                        status: 200,
+                        body: [
+                            {
+                                path: '$.snapshot.state',
+                                equals: 'active'
+                            }
+                        ]
+                    },
+                    extract: [
+                        {
+                            name: 'plannedGroupRevision',
+                            path: '$.snapshot.sourceGroupStateCausalRevision.groupRevision'
+                        },
+                        {
+                            name: 'plannedPresenceRevision',
+                            path: '$.snapshot.sourceGroupStateCausalRevision.presenceRevision'
+                        },
+                        { name: 'plannedVersion', path: '$.snapshot.version' },
+                        { name: 'plannedState', path: '$.snapshot.state' }
+                    ]
                 },
                 {
                     stepId: 'connect-layout',
                     label: 'Connect the planned layout',
                     request: {
                         method: 'POST',
-                        path: stateCollectionPath('/groups/{{groupId}}/connect/requests/{{requestId}}'),
+                        path: stateCollectionPath('/groups/{{groupId}}/lifecycle/connect/requests/{{requestId}}'),
                         attachAuth: true,
-                        responseBodyMode: 'json'
+                        responseBodyMode: 'json',
+                        body: {
+                            expectedFormationEpoch: '{{plannedFormationEpoch}}',
+                            expectedLayout: {
+                                groupRevision: '{{plannedGroupRevision}}',
+                                presenceRevision: '{{plannedPresenceRevision}}',
+                                version: '{{plannedVersion}}',
+                                state: '{{plannedState}}'
+                            }
+                        }
                     },
                     expect: {
-                        status: [200, 201]
+                        status: 200
+                    }
+                },
+                {
+                    stepId: 'activate-layout',
+                    label: 'Activate the dialed layout',
+                    request: {
+                        method: 'POST',
+                        path: stateCollectionPath('/groups/{{groupId}}/lifecycle/activate/requests/{{requestId}}'),
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                        body: {}
+                    },
+                    expect: {
+                        status: 200
                     }
                 },
                 {
@@ -180,18 +247,9 @@ export function createRallarServerRestCollectionTemplates(
                         status: 200
                     },
                     extract: [
-                        {
-                            name: 'observedLifecycleState',
-                            path: '$.lifecycleState'
-                        },
-                        {
-                            name: 'observedCondition',
-                            path: '$.condition'
-                        },
-                        {
-                            name: 'observedFormationEpoch',
-                            path: '$.formationEpoch'
-                        }
+                        { name: 'observedLifecycleState', path: '$.lifecycleState' },
+                        { name: 'observedCondition', path: '$.condition' },
+                        { name: 'observedFormationEpoch', path: '$.formationEpoch' }
                     ]
                 },
                 {
@@ -199,17 +257,15 @@ export function createRallarServerRestCollectionTemplates(
                     label: 'Pause transport',
                     request: {
                         method: 'POST',
-                        path: stateCollectionPath('/groups/{{groupId}}/transport/pause/requests/{{requestId}}'),
+                        path: stateCollectionPath('/groups/{{groupId}}/lifecycle/pause/requests/{{requestId}}'),
                         attachAuth: true,
-                        responseBodyMode: 'json'
+                        responseBodyMode: 'json',
+                        body: {}
                     },
                     expect: {
-                        status: [200, 201],
+                        status: 200,
                         body: [
                             {
-                                // The valve is orthogonal to the stage
-                                // (product decision 25): pausing must not move
-                                // the group off the stage it reached.
                                 path: '$.group.transportState',
                                 equals: 'halted'
                             }
@@ -221,12 +277,13 @@ export function createRallarServerRestCollectionTemplates(
                     label: 'Resume transport',
                     request: {
                         method: 'POST',
-                        path: stateCollectionPath('/groups/{{groupId}}/transport/resume/requests/{{requestId}}'),
+                        path: stateCollectionPath('/groups/{{groupId}}/lifecycle/resume/requests/{{requestId}}'),
                         attachAuth: true,
-                        responseBodyMode: 'json'
+                        responseBodyMode: 'json',
+                        body: {}
                     },
                     expect: {
-                        status: [200, 201],
+                        status: 200,
                         body: [
                             {
                                 path: '$.group.transportState',
