@@ -1,5 +1,7 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { EffectiveGroupTopologyConfig, GraphDiagnosticReadResponse } from '@shared/api/graph-topology-management-types.ts';
+import type { GroupActivationCondition } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -857,6 +859,26 @@ function commandedReplanningPolicy(): GroupLifecyclePolicy {
     return { ...policy, topology: { ...policy.topology, replanning: 'commanded' } };
 }
 
+function withActivationStatus(
+    snapshot: GroupSnapshot,
+    status: Readonly<{ condition: GroupActivationCondition; coverageBasisLayoutIdentity: GroupLayoutIdentity; }>
+): GroupSnapshot {
+    return {
+        ...snapshot,
+        group: {
+            ...snapshot.group,
+            activationStatus: {
+                condition: status.condition,
+                coverageRate: 0.7,
+                coverageBasisLayoutIdentity: status.coverageBasisLayoutIdentity,
+                formationEpoch: snapshot.group.formationEpoch,
+                evidenceWatermark: { version: 3, createdAtEpochMs: 1_000 },
+                confirmedAtEpochMs: 1_000
+            }
+        }
+    };
+}
+
 function withAcceptedLayout(snapshot: GroupSnapshot): GroupSnapshot {
     return { ...snapshot, group: { ...snapshot.group, acceptedLayoutIdentity: ACCEPTED_IDENTITY } };
 }
@@ -1023,6 +1045,42 @@ Deno.test('formation view reports the condition of the accepted layout it names 
     assert.equal(view.remediation, 'none');
     assert.deepEqual(view.coverageBasisLayoutIdentity, ACCEPTED_IDENTITY);
     assert.equal(view.maxFormationAttempts, 1);
+});
+
+// The status writer owns the dwell, so `degraded` exists only where a clock
+// has observed it. The read publishes the stored condition rather than
+// recomputing one it could never reach.
+Deno.test('formation view publishes the stored condition for the current series', async () => {
+    const app = createRouteApp({
+        group: withActivationStatus(
+            withAcceptedLayout(createGroupSnapshot('room-1', ['owner'])),
+            { condition: 'degraded', coverageBasisLayoutIdentity: ACCEPTED_IDENTITY }
+        ),
+        topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.condition, 'degraded');
+});
+
+// A status whose basis the group has replaced describes a layout it has moved
+// past, so publishing it would report coverage of a layout carrying no traffic.
+Deno.test('formation view ignores a stored condition from a superseded basis', async () => {
+    const app = createRouteApp({
+        group: withActivationStatus(
+            withAcceptedLayout(createGroupSnapshot('room-1', ['owner'])),
+            {
+                condition: 'degraded',
+                coverageBasisLayoutIdentity: { ...ACCEPTED_IDENTITY, version: 99 }
+            }
+        ),
+        topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.condition, 'active');
 });
 
 // Before first activation the basis is the candidate the group is dialing;

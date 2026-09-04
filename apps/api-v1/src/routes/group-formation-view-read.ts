@@ -18,6 +18,7 @@ import {
     computeGroupFormationReading,
     type GroupFormationReadiness
 } from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
+import type { GroupActivationStatus } from '@shared/api/group-lifecycle/group-activation-status.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import {
     isSameGroupLayoutIdentity,
@@ -102,7 +103,7 @@ interface ComputeActivationStatusInput {
     readonly replanQueued: boolean;
 }
 
-interface GroupActivationStatus {
+interface GroupFormationViewActivation {
     readonly condition: GroupActivationCondition;
     readonly remediation: GroupActivationRemediation;
     readonly coverageBasisLayoutIdentity: GroupLayoutIdentity | null;
@@ -115,7 +116,7 @@ interface GroupActivationStatus {
  * resolution gives, and the honest one, because a corrupt policy is also what
  * stops the automation from replanning.
  */
-function computeActivationStatus(input: ComputeActivationStatusInput): GroupActivationStatus {
+function computeActivationStatus(input: ComputeActivationStatusInput): GroupFormationViewActivation {
     const { group, policy, layoutStale, replanQueued } = input;
     const business = resolveGroupBusinessLiveness(group, input.authority.nowEpochMs);
     const basisSnapshot = resolveCoverageBasisSnapshot(input);
@@ -123,13 +124,20 @@ function computeActivationStatus(input: ComputeActivationStatusInput): GroupActi
         activation: policy.activation,
         formationAttemptCount: group.formationAttemptCount
     });
+    const basisIdentity = resolveCoverageBasisIdentity(input);
     return {
-        condition: computeGroupActivationCondition({
-            business,
-            lifecycleState: group.lifecycleState,
-            attemptBudgetExhausted,
-            coverage: toCoverageObservation(policy, basisSnapshot, input.authority)
-        }),
+        // The stored condition wins whenever it still describes this series:
+        // it is the only one a dwell clock has observed, so it is the only one
+        // that can say `degraded`. A status from a spent epoch or a replaced
+        // basis describes a layout the group has moved past, so the read falls
+        // back to what it can derive now rather than publishing a stale band.
+        condition: resolveStoredCondition(group.activationStatus, basisIdentity) ??
+            computeGroupActivationCondition({
+                business,
+                lifecycleState: group.lifecycleState,
+                attemptBudgetExhausted,
+                coverage: toCoverageObservation(policy, basisSnapshot, input.authority)
+            }),
         remediation: resolveGroupActivationRemediation({
             business,
             lifecycleState: group.lifecycleState,
@@ -138,8 +146,26 @@ function computeActivationStatus(input: ComputeActivationStatusInput): GroupActi
             layoutStale,
             replanQueued
         }),
-        coverageBasisLayoutIdentity: resolveCoverageBasisIdentity(input)
+        coverageBasisLayoutIdentity: basisIdentity
     };
+}
+
+/**
+ * The condition the writer confirmed, when it still describes the series the
+ * group is in now. Product decision 3 persists and pushes this axis, so a
+ * read that recomputed it would give one fact two owners -- and the derived
+ * one cannot reach `degraded` at all, because no clock has observed it.
+ */
+function resolveStoredCondition(
+    stored: GroupActivationStatus | null,
+    basisIdentity: GroupLayoutIdentity | null
+): GroupActivationCondition | null {
+    if (stored === null || basisIdentity === null) {
+        return null;
+    }
+    return isSameGroupLayoutIdentity(stored.coverageBasisLayoutIdentity, basisIdentity)
+        ? stored.condition
+        : null;
 }
 
 /** The basis identity, whether or not its snapshot is loaded here. */
