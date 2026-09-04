@@ -193,6 +193,7 @@ function lifecycleSnapshot(stage: GroupLifecycleState, revision: number): GroupS
             ...base.group,
             snapshotVersion: revision,
             metadataVersion: revision,
+            presenceVersion: 0,
             lifecycleState: stage,
             formationEpoch: revision,
             establishmentStartedAtEpochMs: stage === 'connecting' || stage === 'reconnecting' ? 500 : null

@@ -1,3 +1,4 @@
+import type { AppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { encodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
 import { readRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/read-rtc-rtt-mutation.ts';
@@ -186,7 +187,8 @@ export function createRttGroupSnapshot(
     };
 }
 
-type DeepMutable<Value> = Value extends readonly (infer Entry)[] ? DeepMutable<Entry>[] :
+type DeepMutable<Value> = Value extends AppOutboxInsert ? Value :
+    Value extends readonly (infer Entry)[] ? DeepMutable<Entry>[] :
     Value extends object ? { -readonly [Key in keyof Value]: DeepMutable<Value[Key]>; } :
     Value;
 

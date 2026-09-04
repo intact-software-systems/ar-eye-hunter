@@ -67,15 +67,8 @@ export async function executeRtcRttMutation(
     if (computed.outcome !== 'write') {
         return { computed, updated: false };
     }
-    if (facts.requestedAtEpochMs === null || facts.purgeAfterEpochMs === null) {
-        throw new TypeError('RTC RTT write is missing lifecycle facts');
-    }
     await writeRtcRttMutation({
         transaction: input.transaction,
-        repositoryOptions: {
-            ttlMs: facts.purgeAfterEpochMs - facts.requestedAtEpochMs,
-            now: () => facts.requestedAtEpochMs
-        },
         computed,
         outboxWriter: input.outboxWriter
     });

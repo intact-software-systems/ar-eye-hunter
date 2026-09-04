@@ -3,6 +3,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
+import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 
 import type { RtcRttEndpointAdmission, RtcRttMutationReceipt } from '../persistence/rtc-rtt-persistence-contracts.ts';
 import type { RtcRttAcceptanceReason } from '../policy/rtc-rtt-measurement-policy.ts';
@@ -65,6 +66,25 @@ export type RtcRttEndpointGuard = Readonly<{
     value: RtcRttEndpointAdmission;
 }>;
 
+export type RtcRttRuntimeWrite =
+    | Readonly<{
+        operation: 'insert';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedResultRevision: 0;
+    }>
+    | Readonly<{
+        operation: 'update';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedRevision: number;
+        expectedResultRevision: number;
+    }>;
+
 export type RtcRttMutationComputed =
     | Readonly<{
         outcome: 'replay';
@@ -89,4 +109,6 @@ export type RtcRttMutationComputed =
         }>;
         receipt: RtcRttMutationReceipt;
         senderId: string;
+        runtimeWrites: readonly RtcRttRuntimeWrite[];
+        outboxWrites: readonly AppOutboxInsert[];
     }>;

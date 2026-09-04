@@ -1,15 +1,12 @@
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RtcRttMutationCommand } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
 import { toRtcRttMutationReceiptId, toRtcRttTopologyOutboxId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
-import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/write-rtc-rtt-mutation.ts';
 import { RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import {
     RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
     RTC_RTT_RECEIPTS_NAMESPACE
 } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
-import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -17,10 +14,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
-    createMutableRttWriteCandidate,
     createRttGroupSnapshot,
     executeRtcRttMutation,
-    rttWriteCandidateCorruptions,
     type TestRtcRttLifecycleFacts
 } from './rtc-rtt-persistence-test-fixtures.ts';
 
@@ -95,22 +90,6 @@ describe('RTC RTT repository convergence', () => {
         expect(results.filter((result) => result.updated)).toHaveLength(1);
         expect(await repository.listMeasurements()).toHaveLength(1);
     });
-
-    it.each(rttWriteCandidateCorruptions)(
-        'rejects $label before opening the RTT write transaction',
-        async ({ corrupt }) => {
-            const transaction = createUnopenedTransactionSql();
-            const malformed = corrupt(createMutableRttWriteCandidate());
-
-            await expect(
-                validateAndWriteUntrustedRtcRttMutation({
-                    transaction,
-                    computed: malformed,
-                    outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
-                })
-            ).rejects.toBeInstanceOf(TypeError);
-        }
-    );
 
     it.each(['group', 'session-from', 'session-to'] as const)(
         'rejects RTT authority when the candidate %s is expired at attempt time',
@@ -413,7 +392,9 @@ describe('RTC RTT repository convergence', () => {
             }
         }
     );
+});
 
+describe('RTC RTT receipt convergence', () => {
     it('replays an accepted RTT after measurement and admission expiry and rejects divergent reuse', async () => {
         let now = 1;
         const runtimeRepository = new FakeRuntimeStateRepository();
@@ -608,7 +589,9 @@ describe('RTC RTT repository convergence', () => {
             vi.useRealTimers();
         }
     });
+});
 
+describe('RTC RTT retry authority', () => {
     it('refreshes lifecycle facts after an RTT conflict crosses peer expiry', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new RtcRttRepository(runtimeRepository, {
@@ -764,33 +747,3 @@ describe('RTC RTT repository convergence', () => {
         await expect(repository.findMeasurement('session-a', 'session-b')).resolves.toBeUndefined();
     });
 });
-
-interface ValidateAndWriteUntrustedRtcRttMutationInput {
-    readonly transaction: PSqlSql;
-    readonly computed: object;
-    readonly outboxWriter: RtcTopologyOutboxWriter;
-}
-
-async function validateAndWriteUntrustedRtcRttMutation(
-    input: ValidateAndWriteUntrustedRtcRttMutationInput
-): Promise<void> {
-    await Reflect.apply(writeRtcRttMutation, undefined, [{
-        transaction: input.transaction,
-        repositoryOptions: { now: () => 2 },
-        computed: input.computed,
-        outboxWriter: input.outboxWriter
-    }]);
-}
-
-function createUnopenedTransactionSql(): PSqlSql {
-    return Object.assign(
-        () => {
-            throw new Error('RTT write must not query the transaction');
-        },
-        {
-            begin: () => {
-                throw new Error('RTT write must not open a transaction');
-            }
-        }
-    );
-}

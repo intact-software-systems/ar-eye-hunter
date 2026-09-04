@@ -10,7 +10,6 @@ import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { requireRecord } from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
-import { decodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
@@ -500,11 +499,6 @@ Deno.test(
                 'tree'
             );
             const mutation = service.configMutation;
-            const preparation = await mutation.prepare({
-                command,
-                commandHash: await hashMutationCommand(decodeJsonWireValue(command, 'Topology mutation command')),
-                capturedAtEpochMs: 1_000
-            });
             pauseFirstRead = true;
             const firstReadPromise = mutation.read(command);
             await observed.promise;
@@ -525,16 +519,11 @@ Deno.test(
             release.resolve();
             const firstRead = await firstReadPromise;
             const firstComputed = mutation.compute(
-                preparation,
+                command,
                 firstRead,
                 1
             );
-            mutation.validate(
-                preparation,
-                firstRead,
-                1,
-                firstComputed
-            );
+            mutation.validate({ command, read: firstRead, attemptCount: 1, computed: firstComputed });
             assert.equal(firstComputed.outcome, 'write');
             if (firstComputed.outcome !== 'write') {
                 throw new Error('Expected topology write');
@@ -544,13 +533,15 @@ Deno.test(
                 /conditional write conflict/
             );
             const retryRead = await mutation.read(command);
+            const retryComputed = mutation.compute(command, retryRead, 2);
             assert.throws(
                 () =>
-                    mutation.compute(
-                        preparation,
-                        retryRead,
-                        2
-                    ),
+                    mutation.validate({
+                        command,
+                        read: retryRead,
+                        attemptCount: 2,
+                        computed: retryComputed
+                    }),
                 (error) => error instanceof Error && 'status' in error && error.status === 403
             );
             assert.equal(await topology.findConfig(groupRef), undefined);

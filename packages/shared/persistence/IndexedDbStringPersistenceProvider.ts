@@ -1,11 +1,11 @@
+import {
+    deleteComputedIndexedDbStringValues,
+    removeComputedIndexedDbStringValue,
+    StoredIndexedDbValue,
+    writeComputedIndexedDbStringValue
+} from './indexed-db-string-persistence-write.ts';
 import { openIndexedDbWithStore } from './openIndexedDb.ts';
 import type { PersistenceProvider, PersistenceSetItemOptions } from './PersistenceProvider.ts';
-
-type StoredIndexedDbValue<V> = Readonly<{
-    key: string;
-    value: V;
-    expireAtTimestamp: number;
-}>;
 
 export type IndexedDbStringPersistenceProviderOptions = Readonly<{
     dbName?: string;
@@ -35,33 +35,20 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
     async getItem(key: string): Promise<V | undefined> {
         const db = await this.openDb();
         const storedKey = this.toStoredKey(key);
-
-        return await new Promise<V | undefined>((resolve, reject) => {
-            const tx = db.transaction(this.storeName, 'readwrite');
-            const store = tx.objectStore(this.storeName);
-            const request = store.get(storedKey);
-            let value: V | undefined;
-
-            tx.oncomplete = () => resolve(value);
-            tx.onabort = () => reject(tx.error ?? new Error('IndexedDB getItem aborted'));
-            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB getItem failed'));
-            request.onerror = () => reject(request.error ?? new Error('IndexedDB get failed'));
-            request.onsuccess = () => {
-                const result = request.result as StoredIndexedDbValue<V> | undefined;
-                if (!result) {
-                    return;
-                }
-
-                if (this.isExpired(result.expireAtTimestamp)) {
-                    const deleteRequest = store.delete(storedKey);
-                    deleteRequest.onerror = () =>
-                        reject(deleteRequest.error ?? new Error('IndexedDB delete failed during getItem'));
-                    return;
-                }
-
-                value = result.value;
-            };
-        });
+        const result = await this.readStoredValue(db, storedKey);
+        if (!result) {
+            return undefined;
+        }
+        if (!this.isExpired(result.expireAtTimestamp, Date.now())) {
+            return result.value;
+        }
+        this.requireCleanupCommit(
+            await deleteComputedIndexedDbStringValues(db, this.storeName, [{
+                key: storedKey,
+                expectedExpireAtTimestamp: result.expireAtTimestamp
+            }])
+        );
+        return undefined;
     }
 
     async setItem(
@@ -71,114 +58,99 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
     ): Promise<void> {
         const db = await this.openDb();
         const storedKey = this.toStoredKey(key);
-
-        await new Promise<void>((resolve, reject) => {
-            const tx = db.transaction(this.storeName, 'readwrite');
-            const store = tx.objectStore(this.storeName);
-            const request = store.put(
-                {
-                    key: storedKey,
-                    value,
-                    expireAtTimestamp: this.toExpireAtTimestamp(options.expireAtTimestamp)
-                } satisfies StoredIndexedDbValue<V>
-            );
-
-            tx.oncomplete = () => resolve();
-            tx.onabort = () => reject(tx.error ?? new Error('IndexedDB setItem aborted'));
-            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB setItem failed'));
-            request.onerror = () => reject(request.error ?? new Error('IndexedDB put failed'));
-        });
+        const stored = {
+            key: storedKey,
+            value,
+            expireAtTimestamp: this.toExpireAtTimestamp(options.expireAtTimestamp)
+        } satisfies StoredIndexedDbValue<V>;
+        await writeComputedIndexedDbStringValue(db, this.storeName, stored);
     }
 
     async removeItem(key: string): Promise<void> {
         const db = await this.openDb();
         const storedKey = this.toStoredKey(key);
 
-        await new Promise<void>((resolve, reject) => {
-            const tx = db.transaction(this.storeName, 'readwrite');
-            const store = tx.objectStore(this.storeName);
-            const request = store.delete(storedKey);
-
-            tx.oncomplete = () => resolve();
-            tx.onabort = () => reject(tx.error ?? new Error('IndexedDB removeItem aborted'));
-            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB removeItem failed'));
-            request.onerror = () => reject(request.error ?? new Error('IndexedDB delete failed'));
-        });
+        await removeComputedIndexedDbStringValue(db, this.storeName, storedKey);
     }
 
     async getAllKeys(): Promise<string[]> {
         const db = await this.openDb();
+        const storedValues = await this.readAllStoredValues(db);
+        const now = Date.now();
+        const matching = storedValues.filter((stored) => this.matchesPrefix(stored.key));
+        const expired = matching.filter((stored) => this.isExpired(stored.expireAtTimestamp, now));
+        const keys = matching
+            .filter((stored) => !this.isExpired(stored.expireAtTimestamp, now))
+            .map((stored) => this.fromStoredKey(stored.key));
+        this.requireCleanupCommit(
+            await deleteComputedIndexedDbStringValues(
+                db,
+                this.storeName,
+                expired.map((stored) => ({
+                    key: stored.key,
+                    expectedExpireAtTimestamp: stored.expireAtTimestamp
+                }))
+            )
+        );
+        return keys;
+    }
 
-        return await new Promise<string[]>((resolve, reject) => {
-            const tx = db.transaction(this.storeName, 'readwrite');
-            const store = tx.objectStore(this.storeName);
-            const request = store.openCursor();
-            const keys: string[] = [];
+    async deleteExpired(): Promise<number> {
+        const db = await this.openDb();
+        const storedValues = await this.readAllStoredValues(db);
+        const now = Date.now();
+        const expired = storedValues.filter(
+            (stored) =>
+                this.matchesPrefix(stored.key) &&
+                this.isExpired(stored.expireAtTimestamp, now)
+        );
+        this.requireCleanupCommit(
+            await deleteComputedIndexedDbStringValues(
+                db,
+                this.storeName,
+                expired.map((stored) => ({
+                    key: stored.key,
+                    expectedExpireAtTimestamp: stored.expireAtTimestamp
+                }))
+            )
+        );
+        return expired.length;
+    }
 
-            tx.onabort = () => reject(tx.error ?? new Error('IndexedDB getAllKeys aborted'));
-            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB getAllKeys failed'));
-            tx.oncomplete = () => resolve(keys);
+    private async readStoredValue(
+        db: IDBDatabase,
+        storedKey: string
+    ): Promise<StoredIndexedDbValue<V> | undefined> {
+        return await new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, 'readonly');
+            const request = tx.objectStore(this.storeName).get(storedKey);
+            request.onsuccess = () => resolve(request.result as StoredIndexedDbValue<V> | undefined);
+            request.onerror = () => reject(request.error ?? new Error('IndexedDB get failed'));
+        });
+    }
 
-            request.onerror = () => reject(request.error ?? new Error('IndexedDB getAllKeys failed'));
+    private async readAllStoredValues(db: IDBDatabase): Promise<readonly StoredIndexedDbValue<V>[]> {
+        return await new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, 'readonly');
+            const request = tx.objectStore(this.storeName).openCursor();
+            const values: StoredIndexedDbValue<V>[] = [];
+            request.onerror = () => reject(request.error ?? new Error('IndexedDB cursor failed'));
             request.onsuccess = () => {
                 const cursor = request.result;
                 if (!cursor) {
+                    resolve(values);
                     return;
                 }
-
-                const stored = cursor.value as StoredIndexedDbValue<V>;
-                if (!this.matchesPrefix(stored.key)) {
-                    cursor.continue();
-                    return;
-                }
-
-                if (this.isExpired(stored.expireAtTimestamp)) {
-                    const deleteRequest = cursor.delete();
-                    deleteRequest.onerror = () =>
-                        reject(deleteRequest.error ?? new Error('IndexedDB delete failed during getAllKeys'));
-                    deleteRequest.onsuccess = () => cursor.continue();
-                    return;
-                }
-
-                keys.push(this.fromStoredKey(stored.key));
+                values.push(cursor.value as StoredIndexedDbValue<V>);
                 cursor.continue();
             };
         });
     }
 
-    async deleteExpired(): Promise<number> {
-        const db = await this.openDb();
-
-        return await new Promise<number>((resolve, reject) => {
-            const tx = db.transaction(this.storeName, 'readwrite');
-            const store = tx.objectStore(this.storeName);
-            const request = store.openCursor();
-            let deleted = 0;
-
-            tx.onabort = () => reject(tx.error ?? new Error('IndexedDB deleteExpired aborted'));
-            tx.onerror = () => reject(tx.error ?? new Error('IndexedDB deleteExpired failed'));
-            tx.oncomplete = () => resolve(deleted);
-
-            request.onerror = () => reject(request.error ?? new Error('IndexedDB deleteExpired cursor failed'));
-            request.onsuccess = () => {
-                const cursor = request.result;
-                if (!cursor) {
-                    return;
-                }
-
-                const stored = cursor.value as StoredIndexedDbValue<V>;
-                if (!this.matchesPrefix(stored.key) || !this.isExpired(stored.expireAtTimestamp)) {
-                    cursor.continue();
-                    return;
-                }
-
-                deleted += 1;
-                const deleteRequest = cursor.delete();
-                deleteRequest.onerror = () =>
-                    reject(deleteRequest.error ?? new Error('IndexedDB delete failed during deleteExpired'));
-                deleteRequest.onsuccess = () => cursor.continue();
-            };
-        });
+    private requireCleanupCommit(committed: boolean): void {
+        if (!committed) {
+            throw new Error('IndexedDB persistence cleanup conflicted');
+        }
     }
 
     private async openDb(): Promise<IDBDatabase> {
@@ -225,8 +197,8 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
         return storedKey.startsWith(`${this.keyPrefix}:`);
     }
 
-    private isExpired(expireAtTimestamp: number): boolean {
-        return !Number.isFinite(expireAtTimestamp) || expireAtTimestamp <= Date.now();
+    private isExpired(expireAtTimestamp: number, now: number): boolean {
+        return !Number.isFinite(expireAtTimestamp) || expireAtTimestamp <= now;
     }
 
     private toExpireAtTimestamp(expireAtTimestamp: number): number {
