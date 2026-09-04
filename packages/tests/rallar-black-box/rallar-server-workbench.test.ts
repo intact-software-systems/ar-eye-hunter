@@ -1,3 +1,6 @@
+import { load as loadYaml } from 'js-yaml';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
     applyRallarServerEndpointPreset,
@@ -336,7 +339,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         const collectionMutationSteps = createRallarServerRestCollectionTemplates(
             defaultRallarServerWorkbenchVariables({})
         ).flatMap((collection) => collection.steps.filter((step) => step.request.method !== 'GET'));
-        expect(collectionMutationSteps).toHaveLength(14);
+        expect(collectionMutationSteps).toHaveLength(15);
         for (const step of collectionMutationSteps) {
             expect(step.request.path, step.stepId).toMatch(/\/requests\/\{\{requestId\}\}$/u);
             expect(step.request.body).not.toMatchObject({ requestId: expect.anything() });
@@ -538,7 +541,11 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         expect(collection!.steps.map((step) => step.stepId)).toEqual([
             'create-phased-group',
             'plan-layout',
+            // Connect is fenced on the exact planned identity, so the layout
+            // read between them is load-bearing, not a convenience.
+            'read-planned-layout',
             'connect-layout',
+            'activate-layout',
             'read-formation',
             'pause-transport',
             'resume-transport'
@@ -565,4 +572,39 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             { path: '$.group.transportState', equals: 'flowing' }
         ]);
     });
+    /**
+     * The collections are hand-written HTTP paths that nothing executes in
+     * CI, so a wrong one is invisible until an operator clicks it. This
+     * checks every step against the served contract instead.
+     */
+    it('addresses paths the API actually serves', () => {
+        const openApi = loadYaml(
+            readFileSync(path.join(process.cwd(), 'apps/api-v1/resources/api-v1-openapi.yaml'), 'utf8')
+        ) as OpenApiPaths;
+        const served = new Set(Object.keys(openApi.paths));
+
+        const steps = createRallarServerRestCollectionTemplates(
+            defaultRallarServerWorkbenchVariables({})
+        ).flatMap((collection) => collection.steps);
+
+        for (const step of steps) {
+            const templated = step.request.path.replaceAll(/\{\{(\w+)\}\}/gu, '{$1}');
+            const candidates = [...served].filter((servedPath) => toPathShape(servedPath) === toPathShape(templated));
+            expect(candidates, `${step.stepId} -> ${step.request.path}`).not.toHaveLength(0);
+            const methods = served.has(candidates[0]!)
+                ? Object.keys(openApi.paths[candidates[0]!]!)
+                : [];
+            expect(methods, `${step.stepId} method`).toContain(step.request.method.toLowerCase());
+        }
+    });
 });
+
+/** Path parameter names differ between the workbench and the spec; shapes do not. */
+function toPathShape(value: string): string {
+    return value.replaceAll(/\{[^}]+\}/gu, '{}');
+}
+
+/** Only the path keys and their method keys are read here. */
+interface OpenApiPaths {
+    readonly paths: Record<string, object>;
+}
