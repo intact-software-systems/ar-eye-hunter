@@ -1,6 +1,5 @@
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import { hasSameResourceEntryIdentity } from './resource-inbox-entry-comparison.ts';
 import {
     hasMatchingImmutableResourceInboxContent,
     isValidResourceInboxLifecycle,
@@ -346,7 +345,7 @@ export class PSqlResourceInboxEntryRepository {
             }
 
             const materialized = await materialize();
-            if (!hasSameResourceEntryIdentity(reserved, materialized)) {
+            if (!hasReservedIdentity(reserved, materialized)) {
                 throw new ResourceInboxInvariantCorruptionError(
                     reserved.key,
                     'Materialized resource inbox identity differs from its reservation'
@@ -435,19 +434,6 @@ export class PSqlResourceInboxEntryRepository {
               and ri_resource_id = ${key.resourceId}
               and fk_ext_bank_id = ${key.contextId}
             limit 1
-        `;
-
-        return rows.length === 0 ? null : toDomain(rows[0]);
-    }
-
-    async findAnyByKeyForUpdate(key: Key): Promise<ResourceEntry | null> {
-        const rows = await this.sql<ResourceInboxRow[]>`
-            select *
-            from resource_inbox
-            where ri_topic_id = ${key.topicId}
-              and ri_resource_id = ${key.resourceId}
-              and fk_ext_bank_id = ${key.contextId}
-            for update
         `;
 
         return rows.length === 0 ? null : toDomain(rows[0]);
@@ -622,4 +608,14 @@ export class PSqlResourceInboxEntryRepository {
 
         return rows.length === 1;
     }
+}
+
+function hasReservedIdentity(
+    reserved: ResourceEntry,
+    materialized: ResourceEntry
+): boolean {
+    return materialized.key.topicId === reserved.key.topicId &&
+        materialized.key.resourceId === reserved.key.resourceId &&
+        materialized.key.contextId === reserved.key.contextId &&
+        materialized.typeId === reserved.typeId;
 }
