@@ -421,6 +421,8 @@ describe('authoritative mutation guidance integrity', () => {
             );
             expect(guidance).toMatch(/queue locks.{0,80}coordination-only/i);
             expect(guidance).toMatch(/computed persistence data.{0,40}not.{0,20}(?:called )?a plan/i);
+            expect(guidance).not.toContain('Migrate ambiguous legacy data');
+            expect(guidance).not.toContain('migration shapes use separate types');
         }
     );
 
@@ -459,8 +461,7 @@ describe('authoritative mutation guidance integrity', () => {
         expectAllNormalized(readRepo('.agents/skills/rallar-testing/SKILL.md'), [
             'For `strict-domain-write` package or API transaction writes',
             'one mutation attempt',
-            'actual database-returned facts',
-            'incompatible existing schemas fail closed without a schema rewrite'
+            'actual database-returned facts'
         ]);
         expectAllNormalized(readRepo('.agents/skills/performance-analysis/SKILL.md'), [
             'Transaction timing is not value provenance',

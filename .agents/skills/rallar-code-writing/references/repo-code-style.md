@@ -1035,8 +1035,7 @@ Policy follows the resolved transaction opener and owner, not a source path.
 The default `strict-domain-write` policy applies to authored package and API
 write transactions, including AppInbox and domain-owned transactions. Calling
 ResourceInbox code from an AppInbox or domain-owned transaction does not
-transfer the specialized policy. Browser IndexedDB readwrite and
-upgrade/versionchange transactions remain strict.
+transfer the specialized policy.
 
 The `specialized-resource-inbox` policy applies only when resolution proves an
 exact PostgreSQL ResourceInbox, Results, or QueueBox transaction owner. Those

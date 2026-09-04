@@ -78,8 +78,7 @@ Policy follows the resolved transaction opener and owner, not a source path.
 AppInbox and domain-owned transactions use `strict-domain-write`, including
 when their callback invokes a ResourceInbox repository. Calling ResourceInbox
 code from an AppInbox or domain-owned transaction does not transfer the
-specialized policy. Browser IndexedDB readwrite and upgrade/versionchange
-transactions remain strict.
+specialized policy.
 
 Use `specialized-resource-inbox` only when type and API resolution prove an
 exact PostgreSQL ResourceInbox, Results, or QueueBox transaction owner. These
@@ -191,16 +190,16 @@ fail closed; they are not misses to hide, rows to filter, or values to repair by
 guessing.
 
 Scoped storage keys are injective over field name, value type or presence, and
-value. Escaping a string does not encode absence. Migrate ambiguous legacy data
-only after stored identity proves the scope and the new key is claimed
-conditionally; never fan out one row or add an unbounded dual-read fallback.
+value. Escaping a string does not encode absence. Treat an ambiguous stored
+identity as corruption; never repair it by guessing, fan out one row, or add a
+dual-read fallback.
 
 Validate the complete operation-specific candidate through deterministic
 recomputation and exact comparison, including guards, dependent rows, events,
 receipts, and outbox intents. Shared shape checks alone are insufficient.
 Authoritative persisted, replicated, queued, event, snapshot, receipt, and
-response contracts use mandatory fields by default. Sparse inputs and
-migration shapes use separate types.
+response contracts use mandatory fields by default. Sparse construction inputs
+use separate types from complete outputs.
 
 Authoritative snapshot collections that represent unordered sets use canonical
 storage-key order in both the computed mutation result and durable repository
@@ -220,8 +219,7 @@ runtime error timing.
 
 An explicit timing or decorator owner uses a closed operation-name type and an
 exhaustive operation inventory. Timing identity fields are deliberately
-populated, deliberately retained for compatibility, or removed only through
-separately approved observable-behavior work.
+populated or removed only through separately approved observable-behavior work.
 
 ## IDE causal-navigation mutation probe
 

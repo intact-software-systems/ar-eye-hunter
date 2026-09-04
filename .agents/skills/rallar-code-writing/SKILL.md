@@ -210,7 +210,7 @@ checker does not substitute for following production symbols.
 - Prefer a functional core with an explicitly owned stateful shell. Model domain
   decisions and conditional-write outcomes as separate typed values.
 - Authoritative persisted and shared contracts use mandatory fields by default.
-  Sparse input and migration shapes remain separate from complete outputs.
+  Sparse construction inputs remain separate from complete outputs.
 - A compatibility fallback requires explicit human approval and a documented
   lifetime; nearby legacy behavior is not precedent.
 

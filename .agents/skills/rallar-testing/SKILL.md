@@ -72,10 +72,7 @@ Reject lease, heartbeat, polling, arbitrary callback, external-effect,
 unbounded-work, caller-mutation, and unrelated nested-transaction variants in
 semantic tests. Maintain PostgreSQL and PGlite parity, and run the
 focused real PostgreSQL integration tests whenever specialized SQL or its
-transaction semantics change. Browser IndexedDB readwrite and initial
-versionchange schema-creation tests continue to prove strict
-persistence-ready-before-entry behavior; incompatible existing schemas fail
-closed without a schema rewrite.
+transaction semantics change.
 
 When authoritative mutation control flow changes, run
 `npm run check:repo-style:navigation-details` for the affected roots and perform

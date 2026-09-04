@@ -115,10 +115,6 @@
     {
       "id": "transaction-policy.guarded-winner-materializer",
       "pass": "Preserves the exact guarded winner materializer and explicitly permits its bounded winner-only clock capture, identifier generation, serialization, and final-row construction: reserve first, invoke exactly once only on the winning SQL branch, verify identity, replace in the same transaction, rely on PostgreSQL rollback on failure, and never invoke on replay or loss; rejects replacing it with lease, heartbeat, marker, polling, or after-commit repair complexity."
-    },
-    {
-      "id": "transaction-policy.indexeddb-remains-strict",
-      "pass": "Keeps browser IndexedDB readwrite and upgrade/versionchange transactions under strict-domain-write and does not generalize the PostgreSQL ResourceInbox specialization to browser persistence."
     }
   ],
   "resultContract": {
