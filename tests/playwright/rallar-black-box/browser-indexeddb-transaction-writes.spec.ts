@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import type { IndexedDbTransactionWriteBrowserProbe } from './browser-indexeddb-transaction-writes-fixture.ts';
 
-test('upgrades, migrates, and resolves concurrent queue writes in real IndexedDB', async ({ page }) => {
+test('persists current rows and resolves concurrent writes in real IndexedDB', async ({ page }) => {
     await page.goto('/');
     const fixturePath = path.resolve(
         'tests/playwright/rallar-black-box/browser-indexeddb-transaction-writes-fixture.ts'
@@ -17,11 +17,11 @@ test('upgrades, migrates, and resolves concurrent queue writes in real IndexedDB
     );
 
     expect(result).toMatchObject({
-        databaseVersion: 2,
+        databaseVersion: 1,
         fairnessIndexPresent: true,
-        migratedResource: 'legacy-value',
-        migratedRevision: 0,
-        admissionTokenMigrated: true,
+        storedResource: 'stored-value',
+        storedRevision: 0,
+        admissionTokenPresent: true,
         guardedAdmissionBatchRolledBack: true
     });
     expect(result.durableWinner).toBeDefined();

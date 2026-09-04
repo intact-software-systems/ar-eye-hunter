@@ -423,59 +423,6 @@ describe('Browser AL runtime IndexedDB stores', () => {
         expect(await provider.getItem('refreshed')).toEqual({ value: 'refreshed' });
     });
 
-    it('does not delete a tokenless row refreshed by an older browser runtime', async () => {
-        const sessionId = `legacy-cleanup-race-${crypto.randomUUID()}`;
-        const keyPrefix = `${toBrowserALRuntimeEntryKeyPrefix(toBrowserRtcRxALRuntimeStoreId(sessionId))}inbound:admission`;
-        const key = `${keyPrefix}:refreshed`;
-        const provider = new IndexedDbStringPersistenceProvider<{ value: string; }>({
-            dbName: BROWSER_AL_RUNTIME_DB_NAME,
-            storeName: BROWSER_AL_RUNTIME_STORE_NAME,
-            keyPrefix
-        });
-        configureBrowserALRuntimeStores(sessionId);
-        await resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.ready();
-        await putRawBrowserALRuntimeEntry({
-            key,
-            value: { value: 'refreshed-by-older-runtime' },
-            expireAtTimestamp: Date.now() + 60_000
-        });
-
-        await expect(deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, { nowMs: 100 }))
-            .resolves.toMatchObject({ deleted: 0 });
-
-        expect(await provider.getItem('refreshed')).toEqual({ value: 'refreshed-by-older-runtime' });
-    });
-
-    it('does not delete a same-expiry tokenless refresh from an older browser runtime', async () => {
-        const sessionId = `legacy-same-expiry-race-${crypto.randomUUID()}`;
-        const keyPrefix = `${toBrowserALRuntimeEntryKeyPrefix(toBrowserRtcRxALRuntimeStoreId(sessionId))}inbound:admission`;
-        const key = `${keyPrefix}:refreshed`;
-        configureBrowserALRuntimeStores(sessionId);
-        await resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.ready();
-        await putRawBrowserALRuntimeEntry({
-            key,
-            value: { value: 'same-expiry-refresh' },
-            expireAtTimestamp: 1
-        });
-
-        await expect(deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, { nowMs: 100 }))
-            .resolves.toMatchObject({ deleted: 0 });
-
-        const database = await openBrowserALRuntimeDatabase();
-        try {
-            const transaction = database.transaction(BROWSER_AL_RUNTIME_STORE_NAME, 'readonly');
-            const row = await new Promise<{ value: { value: string; }; }>((resolve, reject) => {
-                const request = transaction.objectStore(BROWSER_AL_RUNTIME_STORE_NAME).get(key);
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => reject(request.error);
-            });
-            expect(row.value).toEqual({ value: 'same-expiry-refresh' });
-        }
-        finally {
-            database.close();
-        }
-    });
-
     it('initialises repeated browser AL runtime expiry eviction', async () => {
         vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));

@@ -4,8 +4,50 @@ export type StoredIndexedDbValue<Value> = Readonly<{
     key: string;
     value: Value;
     expireAtTimestamp: number;
-    writeToken?: string;
+    writeToken: string;
 }>;
+
+export function decodeStoredIndexedDbValue<Value>(
+    value: unknown,
+    expectedKey?: string
+): StoredIndexedDbValue<Value> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new TypeError('IndexedDB persistence row must be a record');
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const fields = Reflect.ownKeys(value);
+    const requiredFields = ['key', 'value', 'expireAtTimestamp', 'writeToken'];
+    if (
+        fields.length !== requiredFields.length ||
+        requiredFields.some((field) => !Object.hasOwn(descriptors, field))
+    ) {
+        throw new TypeError('IndexedDB persistence row fields are invalid');
+    }
+    for (const field of requiredFields) {
+        const descriptor = descriptors[field];
+        if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
+            throw new TypeError('IndexedDB persistence row must contain only data fields');
+        }
+    }
+    const key = descriptors.key?.value;
+    if (typeof key !== 'string' || (expectedKey !== undefined && key !== expectedKey)) {
+        throw new TypeError('IndexedDB persistence key is invalid');
+    }
+    const expireAtTimestamp = descriptors.expireAtTimestamp?.value;
+    if (typeof expireAtTimestamp !== 'number' || !Number.isFinite(expireAtTimestamp)) {
+        throw new TypeError('IndexedDB persistence expiry must be a finite number');
+    }
+    const writeToken = descriptors.writeToken?.value;
+    if (typeof writeToken !== 'string') {
+        throw new TypeError('IndexedDB persistence write token must be a string');
+    }
+    return {
+        key,
+        value: descriptors.value?.value as Value,
+        expireAtTimestamp,
+        writeToken
+    };
+}
 
 export type ComputedIndexedDbStringDeletion = Readonly<{
     key: string;
@@ -65,7 +107,7 @@ export async function deleteComputedIndexedDbStringValues(
                 const current = getRequest.result as
                     | Readonly<{
                         expireAtTimestamp: number;
-                        writeToken?: string;
+                        writeToken: string;
                     }>
                     | undefined;
                 if (

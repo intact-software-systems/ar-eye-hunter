@@ -11,7 +11,6 @@ import { decodeALAdmissionValue, type ALAdmissionDecoder } from './al-admission-
 import { decodeALAdmissionNumber } from './al-admission-value-validation.ts';
 import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
 import {
-    AL_ADMISSION_REVISION_KEY,
     computeIndexedDbAdmissionRevisionWrite,
     openIndexedDbAdmissionDatabase,
     readIndexedDbAdmissionSnapshot,
@@ -20,7 +19,6 @@ import {
     type IndexedDbAdmissionMutation,
     type IndexedDbAdmissionStoredRow
 } from './indexed-db-admission-storage.ts';
-import { AL_ADMISSION_WRITE_TOKEN_MIGRATION_KEY } from './migrate-indexed-db-admission-write-tokens.ts';
 
 export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
     readonly #connection: IndexedDbConnection;
@@ -56,18 +54,16 @@ export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
         if (!expired) {
             return value;
         }
-        if (stored.writeToken !== undefined) {
-            await removeExpiredIndexedDbAdmissionValues({
-                db,
-                storeName: this.#storeName,
-                expectedRevision: snapshot.revision,
-                removals: [{
-                    kind: 'remove-if-write-token',
-                    key,
-                    expectedWriteToken: stored.writeToken
-                }]
-            });
-        }
+        await removeExpiredIndexedDbAdmissionValues({
+            db,
+            storeName: this.#storeName,
+            expectedRevision: snapshot.revision,
+            removals: [{
+                kind: 'remove-if-write-token',
+                key,
+                expectedWriteToken: stored.writeToken
+            }]
+        });
         return undefined;
     }
 
@@ -82,21 +78,13 @@ export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
         const expiredRemovals: IndexedDbAdmissionMutation[] = [];
         const nowMs = this.#nowMs();
         for (const row of snapshot.stored) {
-            if (
-                row.key === AL_ADMISSION_REVISION_KEY ||
-                row.key === AL_ADMISSION_WRITE_TOKEN_MIGRATION_KEY
-            ) {
-                continue;
-            }
             const [value, expired] = decodeAdmissionValue(row, row.key, decode, nowMs);
             if (expired) {
-                if (row.writeToken !== undefined) {
-                    expiredRemovals.push({
-                        kind: 'remove-if-write-token',
-                        key: row.key,
-                        expectedWriteToken: row.writeToken
-                    });
-                }
+                expiredRemovals.push({
+                    kind: 'remove-if-write-token',
+                    key: row.key,
+                    expectedWriteToken: row.writeToken
+                });
                 continue;
             }
             entries.push({ key: row.key, value });
@@ -175,11 +163,7 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWriteContext {
         ).stored;
         const nowMs = this.#nowMs();
         for (const row of storedEntries) {
-            if (
-                row.key === AL_ADMISSION_REVISION_KEY ||
-                row.key === AL_ADMISSION_WRITE_TOKEN_MIGRATION_KEY ||
-                this.#pending.has(row.key)
-            ) {
+            if (this.#pending.has(row.key)) {
                 continue;
             }
             const [value, expired] = decodeAdmissionValue(row, row.key, decode, nowMs);
