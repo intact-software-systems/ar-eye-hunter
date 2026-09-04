@@ -24,9 +24,12 @@ A group answers three independent questions, owned by three independent layers:
 
 Intent is authoritative. Every change to it is an AppInbox mutation with authorization, idempotency,
 and typed rejections, exactly like every other group mutation. Observation is pure: the readiness
-derivation (`packages/shared/api/group-lifecycle/compute-group-formation-readiness.ts`) takes a
-planned overlay, RTT evidence, and a clock, and returns a fraction. It feeds the activation
-criterion and the formation view and decides nothing itself.
+derivation (`packages/shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts`)
+takes a planned overlay, RTT evidence, and a clock, and returns a fraction beside the evidence
+watermark that fraction was counted from. It feeds the activation criterion, the formation view and
+the status projection, and decides nothing itself. The watermark is nested rather than folded into
+the readiness so publishing it stays a deliberate act: `GroupFormationView` serializes the readiness
+straight to the wire, and a causal-ordering token has no business on that response.
 
 The one place observation influences intent is deliberately narrow: the criterion evaluator may
 _petition_ a transition by enqueueing a command. That command goes through AppInbox like any other:
@@ -679,13 +682,88 @@ The authorizer's absent-policy branch has no recipe pin: an absent policy create
 lobby NACK and the post-activation flow composed with the rest of the preset;
 `api-v1-drop-in-social-preset` pins data flowing from birth.
 
+## The Observed Activation Status
+
+A group answers two independent questions about its connectivity, and product decision 30 keeps them
+apart because they have different owners. `condition` says what the group's connectivity _is_;
+`remediation` says what would _fix_ it. Only the first is stored.
+
+`condition` is persisted on the group and pushed (product decision 3), because a band like `degraded`
+is not a function of the current read: it exists only once a clock has watched the coverage hold.
+`remediation` stays derived at read (I40) — its inputs are transient, a queued replan drains and a
+temporary override expires, and neither of those writes a status, so a stored value would be stale
+far more often than right.
+
+### What is stored
+
+`GroupActivationStatus` is written whole, because every field is decided by one reading and
+publishing the band without the coverage, basis and instant it came from is what makes a status
+untruthful about its lag:
+
+| Field                         | Meaning                                                                                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `condition`                   | the band: `inactive`, `initialising`, `active`, `degraded`, `failed`                                                                     |
+| `coverageRate`                | the fraction the band was computed from                                                                                                  |
+| `coverageBasisLayoutIdentity` | the layout the coverage was measured against — the accepted one when one exists, otherwise the frozen candidate being dialed             |
+| `formationEpoch`              | the epoch the status was computed under, which is not always the group's current one                                                     |
+| `evidenceWatermark`           | the newest evidence the reading counted, or `null` when it counted none                                                                  |
+| `confirmedAtEpochMs`          | when the status was last _confirmed_, not when it last changed — which is what lets a reader tell "still active" from "last seen active" |
+
+The basis identity and the epoch together name a causal series (product decision 33). A write must
+strictly advance the watermark **within** one series; a petition carrying an equal or older watermark
+is a typed drop rather than a rejection, because it is a duplicate observation, not an error. A
+status from a spent epoch or a replaced basis is not compared against at all — the formation view
+falls back to the read-time computation rather than publishing a band about a layout the group has
+moved past.
+
+### Who writes it
+
+Two producers submit the same `updateGroupActivationStatus` command, and both go through AppInbox like
+every other mutation: the compute re-reads state, drops a non-advancing watermark, and no-ops an
+unchanged band, so a steady group pays an enqueue and nothing durable.
+
+- **The evidence leg** rides the topology work cycle rather than widening the criterion's
+  establishment guard. Widening that guard is what would turn an `active` group's zero criterion
+  evaluations per minute into one per accepted RTT mutation; riding the cycle instead inherits the
+  dampers already sitting between evidence and this point — the RTT refinement gate and the input
+  fingerprint skip — so the status costs no new evaluation rate of its own.
+- **The durable clocks** own what evidence cannot say. `resolveGroupActivationStatusAction` decides
+  which by computing the band twice, with the dwell satisfied and without: when the two answers
+  agree it publishes immediately, and when they disagree the coverage implies a band only a clock may
+  confirm, so it publishes nothing and arms a clock at `GROUP_ACTIVATION_STATUS_DWELL_MS` (3 s).
+  Publishing the undwelled band there would report the group healthier than the evidence says while
+  the dwell is still running. A second clock arms at `GROUP_ACTIVATION_EVIDENCE_EXPIRY_MS` (30 s),
+  because a decay that _is_ the absence of evidence can never arrive as evidence — and it is
+  self-terminating, arming again only while a status and a watermark are both present, so a group
+  that has published its decay stops paying for the clock.
+
+Neither clock needs polling or an in-process timer. Both are `APP_OUTBOX` rows inserted with
+`dequeueAudit.nextTs` at their due time, so the queue's own visibility filter keeps them invisible
+until then and the arming node may die without losing the wake-up. Their key is the causal series
+plus, for a dwell, the band it exists to confirm — which makes a second arming inside one dwell a
+duplicate rather than a reset. That is deliberate: a dwell measures how long a band has held
+_continuously_, so a reading that re-observes the same band must not push the deadline out, and N
+cluster nodes observing the same dip write one row rather than N.
+
+### Band stability
+
+Bands would otherwise flap at their edges under evidence that sits on a threshold.
+`resolveGroupActivationCoverageWithHysteresis` relaxes only the _held_ band's threshold, by
+`GROUP_ACTIVATION_HYSTERESIS_WIDTH` (0.05), and clamps the relaxation so a width wider than the band
+cannot invert it. Exit therefore sits one width below entry, and the group has to actually leave the
+band rather than jitter across its boundary.
+
+Every accepted write emits `group-activation-status-changed`; an unchanged band emits nothing, which
+is what keeps a healthy group quiet on the event stream.
+
 ## Read Surface
 
 ### Group snapshot
 
 Every group response — point reads, lists, mutation responses, and the WS `GroupStateDeltaEnvelope`
-— carries the mandatory formation and transport fields. Browser room operations expose all eight
-commands; browser dial/data enforcement uses the authoritative group and layout state.
+— carries the mandatory formation and transport fields, plus the nullable `activationStatus` written
+by the projection above. Browser room operations expose all eight commands; browser dial/data
+enforcement uses the authoritative group and layout state.
 
 ### The formation view
 
@@ -706,7 +784,7 @@ together when that policy is unreadable.
 | `layoutStale`                                                                                                        | product decision 11's latched half, derived (I27): the accepted identity differs from the planned slot's, or the planned slot's stored topology-input fingerprint differs from the authority's computed at read time; `false` without an accepted layout |
 | `pending`                                                                                                            | the transient half, `{ reconfigureQueued, dueAtEpochMs }` from the coalesced replan row, or `null`                                                                                                                                                       |
 | `maxFormationAttempts`                                                                                               | the stored policy's attempt budget (product decision 39), so the count above has a denominator and `formation-attempts-exhausted` is explainable; `null` when the policy is corrupt                                                                      |
-| `condition`, `remediation`                                                                                           | both status axes computed at this read from the aggregate, the stored policy, the readiness fraction and the queued replan; `degraded` and the dwell-held `failed` band wait for the status writer's dwell clock                                         |
+| `condition`, `remediation`                                                                                           | the two axes of product decision 30: `condition` is the stored one whenever the status still names this coverage basis and the read-time computation otherwise, `remediation` is always derived here from the queued replan and the stored policy (I40)  |
 | `coverageBasisLayoutIdentity`                                                                                        | the layout the condition is measured against: the accepted one whenever one exists, and before first activation the frozen candidate being dialed in `connecting`; `null` otherwise and whenever the policy is corrupt                                   |
 
 Like the other group reads, the route applies full-visibility authorization — active members only,
@@ -716,7 +794,8 @@ black-box runner sets and the production hardening checklist requires; without t
 
 ### Events
 
-Lifecycle transitions emit `group-updated` with an empty payload. The admission-specific event is
+Lifecycle transitions emit `group-updated` with an empty payload; an accepted activation-status
+write emits `group-activation-status-changed`. The admission-specific event is
 `member-admission-requested`. Every `member-*` event names the member it is about in
 `payload.principalId` — a manager's grant emits `member-joined` with the manager as `actor` and the
 admitted member in the payload — and `ownership-transferred` carries `fromPrincipalId` and
@@ -843,10 +922,9 @@ writing this document:
   The `match` preset therefore has no per-edge audit trail — a disputed session has "we were at
   94%" rather than "edge (A, B) never confirmed at T" — and no server-controlled establishment
   ordering.
-- **The stored activation status projection.** Both axes and their coverage basis are derived at
-  read on the formation view; what is missing is the writer that bands them — the dwell clock,
-  the hysteresis, decision 33's evidence watermark, the `group-activation-status-changed` event
-  and the persisted group fields. `degraded` is therefore not reported yet.
+- **A pushed coverage fraction.** The stored status carries the banded `condition` and the
+  `coverageRate` it was banded from, but no consumer receives the fraction as a stream: a reader
+  wanting it between status changes polls the formation view (product decision 40).
 - **The `elected-by-rank` rank source.** The selection is in the vocabulary and resolves zero
   managers; `resolveGroupLifecycleManagers` already takes `rankByPrincipalId`, so the remaining work
   is a `GroupMember` rank field, its join plumbing, and switching the `match` preset back.
@@ -866,7 +944,9 @@ writing this document:
   clamps (`to-normalized-group-lifecycle-policy.ts`), validity
   (`validate-group-lifecycle-policy.ts`), the transition table
   (`group-lifecycle-transitions.ts`), the admission decision
-  (`compute-group-admission-decision.ts`), readiness (`compute-group-formation-readiness.ts`), the
+  (`compute-group-admission-decision.ts`), the reading that carries the readiness fraction beside
+  its evidence watermark
+  (`packages/shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts`), the
   criterion and backoff (`evaluate-group-activation-criterion.ts`), manager resolution
   (`resolve-group-lifecycle-managers.ts`), and the view contract (`group-formation-view.ts`).
 - `packages/shared/api/group-types.ts` and `group-policy-types.ts`: the aggregate fields, the
@@ -885,6 +965,17 @@ writing this document:
 - `packages/shared-server/rallar-system/group-state/formation-timer-outbox-entry.ts` and
   `group-formation-mutation-command.ts`: the `FORMATION_TIMER` entries and the idempotent criterion
   commands.
+- `packages/shared/api/group-lifecycle/activation-status/`: the observed status — the band and its
+  remediation (`compute-group-activation-condition.ts`), the reading
+  (`compute-group-formation-reading.ts`), the stored record (`group-activation-status.ts`), the
+  write-or-arm decision (`resolve-group-activation-status-action.ts`) and band stability
+  (`group-activation-coverage-hysteresis.ts`).
+- `packages/shared-server/rallar-system/topology/replay/work/group-activation-status-observer.ts`,
+  `create-activation-status-clock-work-handler.ts`,
+  `packages/shared-server/rallar-system/group-state/activation-status-clock-outbox-entry.ts`,
+  `to-update-group-activation-status-command.ts` and
+  `mutation/aggregate/compute-update-group-activation-status.ts`: the evidence leg, the two durable
+  clocks, the idempotent command and the convergent write.
 - `packages/shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts`:
   policy storage and the absent/present/corrupt read.
 - `packages/shared-server/rallar-system/topology/replay/work/compute-formation-criterion-command.ts`,

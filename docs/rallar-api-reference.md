@@ -295,11 +295,25 @@ rallar.rooms.onEvent((event) => {
 Group admission, lifecycle, capacity, membership governance, read visibility,
 and room-message authorization decisions live server-side. The pure policy layer
 returns `GroupPolicyResult`, and denial responses surface stable
-`GROUP_POLICY_REASON_CODES`: `group-policy-denied`, `group-invite-required`,
-`group-code-required`, `group-code-invalid`, `group-invite-expired`,
-`group-archived`, `group-deleted`, `group-not-active`, `group-full`,
-`member-session-limit-reached`, `member-not-active`, `member-removed`,
-`member-banned`, `forbidden-role`, and `last-owner`.
+`GROUP_POLICY_REASON_CODES`.
+
+Membership, capacity, and governance denials: `group-policy-denied`,
+`group-invite-required`, `group-code-required`, `group-code-invalid`,
+`group-invite-expired`, `group-archived`, `group-deleted`,
+`group-not-active`, `group-full`, `member-session-limit-reached`,
+`member-not-active`, `member-removed`, `member-banned`, `forbidden-role`,
+and `last-owner`.
+
+Formation-lifecycle denials, raised by the policy layer described in
+`docs/rallar-group-formation-architecture.md`: `lifecycle-transition-invalid`
+(the command is not legal from the group's current stage),
+`lifecycle-manager-unavailable` (the policy names managers and the group
+currently resolves none), `formation-attempts-exhausted` (the attempt budget
+bounded this series, so `start` is denied until an explicit `reset`),
+`group-admission-closed`, `group-admission-deadline-passed`,
+`group-admission-capacity-reached` (the three admission windows), and
+`group-data-blocked-until-active` (the pre-activation data gate, which denies
+over WS only and reaches no HTTP response).
 
 REST errors keep the existing `{ error }` shape and may also include `code`,
 `message`, and `details`. Browser workflows preserve the parsed response on
