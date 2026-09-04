@@ -308,6 +308,7 @@ describe('black-box runner recipe matrix', () => {
             'api-v1-presence-formation-trigger',
             'api-v1-presence-lease-bound',
             'api-v1-read-your-writes-presence',
+            'api-v1-reconfiguration-fails',
             'api-v1-scope-isolation',
             'api-v1-spa-statistics',
             'api-v1-websocket-topic-routing'
@@ -368,6 +369,7 @@ describe('black-box runner recipe matrix', () => {
             'api-v1-presence-formation-trigger',
             'api-v1-presence-lease-bound',
             'api-v1-read-your-writes-presence',
+            'api-v1-reconfiguration-fails',
             'api-v1-scope-isolation',
             'api-v1-spa-statistics',
             'api-v1-websocket-topic-routing'

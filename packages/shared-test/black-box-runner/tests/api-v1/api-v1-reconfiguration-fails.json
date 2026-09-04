@@ -1,0 +1,332 @@
+{
+  "description": "The reconfiguration-fails acceptance scenario (product decisions 35 and 37, plan slice 14): a managed group activates on an accepted layout, a held reconfigure dials a replan, and the reconnection misses the floor at its deadline. Because the attempt budget is not spent, the failure lands back in ACTIVE rather than parking the series, and the accepted layout it was running on is byte-identical afterwards -- the match was never interrupted.",
+  "execution": { "correlation": { "injectHeaders": true, "injectPayloads": false } },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": { "Content-Type": "application/json" },
+      "timeoutMs": 10000
+    }
+  },
+  "postRunAssertions": [{ "name": "no failed steps", "path": "summary.failure", "eq": 0 }],
+  "variables": {
+    "apiPrimary": { "env": "RALLAR_API_BASE_URL", "default": "http://127.0.0.1:18080" },
+    "applicationId": "reconfiguration-fails-{runId}",
+    "workspaceId": "reconfiguration-fails-ws-{runId}",
+    "reconnectGroupId": "reconnect-room-{runId}",
+    "aliceUsername": { "env": "RALLAR_ALICE_USERNAME", "default": "alice" },
+    "alicePassword": { "env": "RALLAR_ALICE_PASSWORD", "default": "secret", "secret": true },
+    "bobUsername": { "env": "RALLAR_BOB_USERNAME", "default": "bob" },
+    "bobPassword": { "env": "RALLAR_BOB_PASSWORD", "default": "secret", "secret": true },
+    "runId": { "env": "RALLAR_BB_RUN_ID", "default": "local" }
+  },
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-login-alice-001-{runId}-reconfiguration-fails",
+        "body": { "username": "{aliceUsername}", "password": "{alicePassword}" },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": { "path": "body.accessToken", "secret": true }
+        }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": { "concat": ["Bearer ", { "path": "outputs.aliceAccessToken" }] }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-login-bob-002-{runId}-reconfiguration-fails",
+        "body": { "username": "{bobUsername}", "password": "{bobPassword}" },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": { "path": "body.accessToken", "secret": true }
+        }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": { "concat": ["Bearer ", { "path": "outputs.bobAccessToken" }] }
+    },
+    {
+      "name": "createAliceClientState",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal/requests/client-create-alice-{runId}-reconfiguration-fails",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "body": {
+          "username": "{aliceUsername}",
+          "displayName": "Reconnection manager {runId}",
+          "status": "active",
+          "roles": []
+        }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "createReconnectGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-reconnect-{runId}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "body": {
+          "groupId": "{reconnectGroupId}",
+          "displayName": "Reconnection group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "activation": {
+              "mode": "deadline",
+              "successRate": 1,
+              "minimumViableRate": 1,
+              "deadlineMs": 8000,
+              "maxFormationAttempts": 2
+            },
+            "admission": { "mode": "open" }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{reconnectGroupId}",
+            "lifecycleState": "forming",
+            "formationEpoch": 0,
+            "formationElectorate": ["{aliceClientId}"]
+          }
+        }
+      }
+    },
+    {
+      "name": "joinBobToReconnectGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reconnectGroupId}/join/requests/join-bob-reconnect-{runId}",
+        "headers": { "Authorization": "{bobAuthHeader}", "x-client-id": "{bobClientId}" },
+        "body": {}
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "connectAliceReconnectPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reconnectGroupId}/sessions/{aliceSessionId}/requests/presence-alice-reconnect-{runId}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "body": { "generationId": "generation-{runId}", "principalId": "{aliceClientId}" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "connectBobReconnectPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reconnectGroupId}/sessions/{bobSessionId}/requests/presence-bob-reconnect-{runId}",
+        "headers": { "Authorization": "{bobAuthHeader}", "x-client-id": "{bobClientId}" },
+        "body": { "generationId": "generation-{runId}", "principalId": "{bobClientId}" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "managerPlansTheFirstLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reconnectGroupId}/lifecycle/plan/requests/plan-reconnect-{runId}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": { "group": { "lifecycleState": "planned", "formationEpoch": 1 } }
+      }
+    },
+    {
+      "name": "connectTriggerDialsTheFirstLayout",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reconnectGroupId}/formation",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 6000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.5
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": { "lifecycleState": "connecting", "formationEpoch": 2 }
+      }
+    },
+    {
+      "name": "managerActivatesBeforeTheDeadline",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reconnectGroupId}/lifecycle/activate/requests/activate-reconnect-{runId}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "active",
+            "formationEpoch": 3,
+            "formationAttemptCount": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "acceptedLayoutTheMatchRunsOn",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reconnectGroupId}/topology",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "acceptedLayoutGroupRevision": "body.acceptedSnapshot.sourceGroupStateCausalRevision.groupRevision",
+          "acceptedLayoutPresenceRevision": "body.acceptedSnapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "acceptedLayoutVersion": "body.acceptedSnapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": { "acceptedSnapshot": { "state": "active" } }
+      }
+    },
+    {
+      "name": "reconfigureUnderHold",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reconnectGroupId}/lifecycle/reconfigure/requests/reconfigure-reconnect-{runId}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "body": { "landing": "hold" }
+      },
+      "expect": {
+        "status": 200,
+        "body": { "group": { "lifecycleState": "reconfiguring", "formationEpoch": 4 } }
+      }
+    },
+    {
+      "name": "connectTriggerDialsTheReplan",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reconnectGroupId}/formation",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 6000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.5
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": { "lifecycleState": "reconnecting", "formationEpoch": 5 }
+      }
+    },
+    {
+      "name": "reconnectionBelowFloorReturnsToActive",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reconnectGroupId}/formation",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 500,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "active",
+          "formationEpoch": 6,
+          "formationAttemptCount": 1,
+          "maxFormationAttempts": 2,
+          "lastFormationOutcome": { "outcome": "below-floor", "observedRate": 0 },
+          "managerPrincipalIds": ["{aliceClientId}"]
+        }
+      }
+    },
+    {
+      "name": "acceptedLayoutSurvivedTheFailedReconnection",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{reconnectGroupId}/topology",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "acceptedSnapshot": {
+            "state": "active",
+            "version": "{acceptedLayoutVersion}",
+            "sourceGroupStateCausalRevision": {
+              "groupRevision": "{acceptedLayoutGroupRevision}",
+              "presenceRevision": "{acceptedLayoutPresenceRevision}"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1093,6 +1093,29 @@
       "description": "Presence stage triggers on a phased group: the second live member plans the group and dials the planned layout before either trigger's fallback."
     },
     {
+      "id": "api-v1-reconfiguration-fails",
+      "recipe": "tests/api-v1/api-v1-reconfiguration-fails.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-reconfiguration-fails",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "A reconnection that misses the floor at its deadline lands back in ACTIVE rather than parking the series, because the attempt budget is not spent, and the accepted layout the match runs on is byte-identical afterwards."
+    },
+    {
       "id": "api-v1-commanded-replanning",
       "recipe": "tests/api-v1/api-v1-commanded-replanning.json",
       "category": "api-v1-black-box",
