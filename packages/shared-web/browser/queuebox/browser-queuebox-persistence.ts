@@ -13,7 +13,6 @@ export type BrowserQueueBoxCleanupStoreResult = Readonly<{
 }>;
 
 export type BrowserQueueBoxCleanupResult = Readonly<{
-    dbName: string;
     sessionId?: string;
     stores: readonly BrowserQueueBoxCleanupStoreResult[];
     deleted: number;
@@ -153,7 +152,6 @@ function toBrowserQueueBoxCleanupResult(
     sessionId?: string
 ): BrowserQueueBoxCleanupResult {
     return {
-        dbName: BROWSER_AL_RUNTIME_DB_NAME,
         sessionId,
         stores,
         deleted: stores.reduce((sum, store) => sum + store.deleted, 0)

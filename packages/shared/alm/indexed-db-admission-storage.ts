@@ -25,6 +25,12 @@ export {
 export const AL_ADMISSION_REVISION_KEY = '__rallar_al_admission_revision__';
 export const AL_ADMISSION_EXPIRY_INDEX_NAME = 'expireAtTimestamp';
 
+const INITIAL_INDEXED_DB_ADMISSION_REVISION: ALAdmissionStoredValue = {
+    key: AL_ADMISSION_REVISION_KEY,
+    value: 0,
+    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+};
+
 export type IndexedDbAdmissionMutation =
     | Readonly<{ kind: 'set'; stored: IndexedDbAdmissionStoredRow; }>
     | Readonly<{ kind: 'remove'; key: string; }>
@@ -90,7 +96,8 @@ export async function openIndexedDbAdmissionDatabase(
         indexes: [{
             name: AL_ADMISSION_EXPIRY_INDEX_NAME,
             keyPath: 'expireAtTimestamp'
-        }]
+        }],
+        initialRecords: [INITIAL_INDEXED_DB_ADMISSION_REVISION]
     });
 }
 
@@ -246,7 +253,7 @@ function applyIndexedDbAdmissionMutations(
 
 function decodeIndexedDbAdmissionRevision(value: IDBRequest['result']): number {
     if (value === undefined) {
-        return 0;
+        throw new TypeError('IndexedDB admission revision row is required');
     }
     const stored = decodeALAdmissionValue(
         value,
@@ -258,7 +265,7 @@ function decodeIndexedDbAdmissionRevision(value: IDBRequest['result']): number {
 
 function readIndexedDbAdmissionRevisionForWrite(value: IDBRequest['result']): number {
     if (value === undefined) {
-        return 0;
+        throw new TypeError('IndexedDB admission revision row is required');
     }
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError('IndexedDB admission revision row must be a record');
