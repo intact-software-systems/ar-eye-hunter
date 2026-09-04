@@ -8,6 +8,7 @@ import { computeClientSessionDisconnect } from '@shared-server/rallar-system/cli
 import { computeClientSessionExpiry } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-session-expiry.ts';
 import { computeClientSessionHeartbeat } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-session-heartbeat.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -266,7 +267,10 @@ describe('client mutation session concurrency', () => {
             }
         );
         runtime.releasePrincipalReadBarrier();
-        await expiry;
+        await expect(expiry).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        await createService(runtime, BASE_EPOCH_MS + 1_000).expireExpiredSessions(
+            BASE_EPOCH_MS + 1_000
+        );
         expect(reconnect.result?.event?.eventType).toBe('session-connected');
         const stored = await createTestClientStateRepository(runtime).findSession({
             ...principalRef('alice'),
@@ -293,7 +297,7 @@ async function expectIndependentHeartbeatRebase(): Promise<AggregateBarrierRepos
     await connect({ runtime, sessionId: 'session-b', generationId: 'generation-b', nowEpochMs: BASE_EPOCH_MS + 100 });
     const before = await snapshot(runtime, 'alice');
     runtime.armPrincipalReadBarrier(2);
-    await Promise.all([
+    const heartbeatA = () =>
         createService(runtime, BASE_EPOCH_MS + 1_000).heartbeatSession(
             SCOPE,
             'alice',
@@ -306,7 +310,8 @@ async function expectIndependentHeartbeatRebase(): Promise<AggregateBarrierRepos
                 expiresAtEpochMs: BASE_EPOCH_MS + 20_000,
                 requestId: 'heartbeat-a'
             }
-        ),
+        );
+    const heartbeatB = () =>
         createService(runtime, BASE_EPOCH_MS + 1_001).heartbeatSession(
             SCOPE,
             'alice',
@@ -319,8 +324,20 @@ async function expectIndependentHeartbeatRebase(): Promise<AggregateBarrierRepos
                 expiresAtEpochMs: BASE_EPOCH_MS + 20_001,
                 requestId: 'heartbeat-b'
             }
-        )
+        );
+    const [firstA, firstB] = await Promise.allSettled([
+        heartbeatA(),
+        heartbeatB()
     ]);
+    const rejected = [firstA, firstB].filter((result) => result.status === 'rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({ reason: expect.any(RuntimeStateWriteConflictError) });
+    if (firstA.status === 'rejected') {
+        await heartbeatA();
+    }
+    if (firstB.status === 'rejected') {
+        await heartbeatB();
+    }
     const afterHeartbeats = await snapshot(runtime, 'alice');
     expect(afterHeartbeats.stateRevision).toBe(before.stateRevision + 2);
     expect(afterHeartbeats.activeSessions).toEqual(
@@ -334,7 +351,7 @@ async function expectIndependentHeartbeatRebase(): Promise<AggregateBarrierRepos
 
 async function runHeartbeatDisconnectRace(runtime: AggregateBarrierRepository): Promise<void> {
     runtime.armPrincipalReadBarrier(2);
-    await Promise.all([
+    const heartbeat = () =>
         createService(runtime, BASE_EPOCH_MS + 2_000).heartbeatSession(
             SCOPE,
             'alice',
@@ -346,7 +363,8 @@ async function runHeartbeatDisconnectRace(runtime: AggregateBarrierRepository): 
                 expiresAtEpochMs: BASE_EPOCH_MS + 30_000,
                 requestId: 'heartbeat-before-disconnect'
             }
-        ),
+        );
+    const disconnect = () =>
         createService(runtime, BASE_EPOCH_MS + 2_001).disconnectSession(
             SCOPE,
             'alice',
@@ -357,8 +375,20 @@ async function runHeartbeatDisconnectRace(runtime: AggregateBarrierRepository): 
                 disconnectedAtEpochMs: BASE_EPOCH_MS + 2_001,
                 requestId: 'disconnect-terminal'
             }
-        )
+        );
+    const [heartbeatFirst, disconnectFirst] = await Promise.allSettled([
+        heartbeat(),
+        disconnect()
     ]);
+    const rejected = [heartbeatFirst, disconnectFirst].filter((result) => result.status === 'rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({ reason: expect.any(RuntimeStateWriteConflictError) });
+    if (heartbeatFirst.status === 'rejected') {
+        await heartbeat();
+    }
+    if (disconnectFirst.status === 'rejected') {
+        await disconnect();
+    }
 }
 
 async function expectTerminalDisconnect(runtime: AggregateBarrierRepository): Promise<void> {

@@ -3,12 +3,38 @@ import {
     recordRallarTiming,
     timeRallarAsync,
     type RallarTimingEventInput,
-    type RallarTimingSink
+    type RallarTimingSink,
+    type RecordRallarTimingInput
 } from '../observability/timing.ts';
 import type { ClientStateService } from './client-state-service-contracts.ts';
-import type { ClientMutationCommand } from './mutation/client-mutation-contracts.ts';
+import type {
+    ClientMutationCommand,
+    ClientMutationComputedWrite
+} from './mutation/client-mutation-contracts.ts';
 
-type ClientStateServiceOperation = 'mutation.read' | 'mutation.compute' | 'mutation.validate' | 'mutation.write';
+type ClientStatePurePhase = 'mutation.compute' | 'mutation.validate';
+
+export interface ClientStateMutationTiming {
+    readonly sink: RallarTimingSink | undefined;
+    readonly serviceId: string;
+}
+
+interface ClientStatePhaseTimingInput {
+    readonly timing: ClientStateMutationTiming;
+    readonly operation: ClientStatePurePhase;
+    readonly command: ClientMutationCommand;
+}
+
+interface ClientStateMutationCommitTimingInput {
+    readonly timing: ClientStateMutationTiming;
+    readonly writes: readonly ClientMutationComputedWrite[];
+}
+
+interface RecordClientStateMutationCommitInput extends ClientStateMutationCommitTimingInput {
+    readonly status: 'ok' | 'error';
+    readonly durationMs: number;
+    readonly error?: RecordRallarTimingInput['error'];
+}
 
 interface CreateTimedClientStateServiceInput {
     readonly service: ClientStateService;
@@ -24,13 +50,7 @@ export function createTimedClientStateService(
     }
     return {
         ...input.service,
-        read: (command) => timeClientMutationRead(input, command, () => input.service.read(command)),
-        compute: (command, read) =>
-            timeClientMutationCompute(input, command, () => input.service.compute(command, read)),
-        validate: (command, read, computed) =>
-            timeClientMutationValidate(input, command, () => input.service.validate(command, read, computed)),
-        write: (transaction, computed) =>
-            timeClientMutationWrite(input, computed, () => input.service.write(transaction, computed))
+        read: (command) => timeClientMutationRead(input, command, () => input.service.read(command))
     };
 }
 
@@ -54,17 +74,19 @@ function timeClientMutationRead<T>(
     );
 }
 
-function timeClientMutationCompute<T>(
-    input: CreateTimedClientStateServiceInput,
-    command: ClientMutationCommand,
+export function timeClientStateMutationPhase<T>(
+    input: ClientStatePhaseTimingInput,
     action: () => T
 ): T {
+    if (!input.timing.sink) {
+        return action();
+    }
     const startedAtEpochMs = nowMs();
     try {
         const result = action();
         recordRallarTiming({
-            sink: input.timing,
-            event: toMutationTiming('mutation.compute', command, input.serviceId),
+            sink: input.timing.sink,
+            event: toMutationTiming(input.operation, input.command, input.timing.serviceId),
             status: 'ok',
             durationMs: nowMs() - startedAtEpochMs
         });
@@ -72,8 +94,8 @@ function timeClientMutationCompute<T>(
     }
     catch (error) {
         recordRallarTiming({
-            sink: input.timing,
-            event: toMutationTiming('mutation.compute', command, input.serviceId),
+            sink: input.timing.sink,
+            event: toMutationTiming(input.operation, input.command, input.timing.serviceId),
             status: 'error',
             durationMs: nowMs() - startedAtEpochMs,
             error
@@ -82,54 +104,54 @@ function timeClientMutationCompute<T>(
     }
 }
 
-function timeClientMutationValidate<T>(
-    input: CreateTimedClientStateServiceInput,
-    command: ClientMutationCommand,
-    action: () => T
-): T {
-    const startedAtEpochMs = nowMs();
-    try {
-        const result = action();
-        recordRallarTiming({
-            sink: input.timing,
-            event: toMutationTiming('mutation.validate', command, input.serviceId),
-            status: 'ok',
-            durationMs: nowMs() - startedAtEpochMs
-        });
-        return result;
-    }
-    catch (error) {
-        recordRallarTiming({
-            sink: input.timing,
-            event: toMutationTiming('mutation.validate', command, input.serviceId),
-            status: 'error',
-            durationMs: nowMs() - startedAtEpochMs,
-            error
-        });
-        throw error;
-    }
-}
-
-function timeClientMutationWrite<T>(
-    input: CreateTimedClientStateServiceInput,
-    computed: Parameters<ClientStateService['write']>[1],
+export async function timeClientStateMutationCommit<T>(
+    input: ClientStateMutationCommitTimingInput,
     action: () => Promise<T>
 ): Promise<T> {
-    return timeRallarAsync(
-        input.timing,
-        {
-            component: 'client-state-service',
-            operation: 'mutation.write',
-            serviceId: input.serviceId,
-            requestId: computed.receipt.requestId ?? undefined,
-            ...computed.receipt.aggregateRef
-        },
-        action
-    );
+    if (!input.timing.sink || input.writes.length === 0) {
+        return await action();
+    }
+    const startedAtEpochMs = nowMs();
+    try {
+        const result = await action();
+        recordClientStateMutationCommit({
+            ...input,
+            status: 'ok',
+            durationMs: nowMs() - startedAtEpochMs
+        });
+        return result;
+    }
+    catch (error) {
+        recordClientStateMutationCommit({
+            ...input,
+            status: 'error',
+            durationMs: nowMs() - startedAtEpochMs,
+            error
+        });
+        throw error;
+    }
+}
+
+function recordClientStateMutationCommit(input: RecordClientStateMutationCommitInput): void {
+    for (const write of input.writes) {
+        recordRallarTiming({
+            sink: input.timing.sink,
+            event: {
+                component: 'client-state-service',
+                operation: 'mutation.write',
+                serviceId: input.timing.serviceId,
+                requestId: write.receipt.requestId ?? undefined,
+                ...write.receipt.aggregateRef
+            },
+            status: input.status,
+            durationMs: input.durationMs,
+            error: input.error
+        });
+    }
 }
 
 function toMutationTiming(
-    operation: ClientStateServiceOperation,
+    operation: ClientStatePurePhase,
     command: ClientMutationCommand,
     serviceId: string
 ): RallarTimingEventInput {

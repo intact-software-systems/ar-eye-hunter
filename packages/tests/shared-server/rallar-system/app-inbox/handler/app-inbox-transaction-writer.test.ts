@@ -13,11 +13,10 @@ describe('AppInboxTransactionWriter atomic finalization', () => {
         const harness = createAtomicHarness();
         const receipt = { status: 'accepted', revision: 2 } as const;
 
-        const result = await harness.service.commit(harness.context, async (transaction) => {
+        const result = await harness.service.commit(harness.context, receipt, async (transaction) => {
             expect(transaction).toBe(harness.database.activeTransaction);
             harness.database.writeMutation('group-1', { revision: 2 });
             harness.database.writeOutbox('outbox-1', { groupId: 'group-1' });
-            return receipt;
         });
 
         expect(result).toEqual(receipt);
@@ -38,7 +37,7 @@ describe('AppInboxTransactionWriter atomic finalization', () => {
             const harness = createAtomicHarness();
 
             await expect(
-                harness.service.commit(harness.context, async () => {
+                harness.service.commit(harness.context, { status: 'accepted' }, async () => {
                     harness.database.writeMutation('group-1', { revision: 2 });
                     if (failurePhase === 'dependent-write') {
                         throw new Error('dependent write failed');
@@ -61,10 +60,9 @@ describe('AppInboxTransactionWriter atomic finalization', () => {
         const harness = createAtomicHarness({ failResultWrite: true });
 
         await expect(
-            harness.service.commit(harness.context, async () => {
+            harness.service.commit(harness.context, { status: 'accepted' }, async () => {
                 harness.database.writeMutation('group-1', { revision: 2 });
                 harness.database.writeOutbox('outbox-1', { groupId: 'group-1' });
-                return { status: 'accepted' };
             })
         ).rejects.toThrow('result write failed');
 
@@ -77,14 +75,13 @@ describe('AppInboxTransactionWriter atomic finalization', () => {
         const harness = createAtomicHarness({ loseReservation: true });
 
         await expect(
-            harness.service.commit(harness.context, async () => {
+            harness.service.commit(harness.context, { status: 'accepted' }, async () => {
                 harness.database.writeMutation('group-1', { revision: 2 });
                 harness.database.writeOutbox('outbox-1', { groupId: 'group-1' });
-                return { status: 'accepted' };
             })
         ).rejects.toBeInstanceOf(AppInboxReservationConflictError);
         await expect(
-            harness.service.commit(harness.context, async () => null)
+            harness.service.commit(harness.context, null, async () => {})
         ).rejects.toMatchObject({ code: 'app-inbox-reservation-conflict' });
 
         expect(harness.database.state.mutations.size).toBe(0);
@@ -145,14 +142,13 @@ describe('AppInboxTransactionWriter atomic finalization', () => {
         });
     });
 
-    it('records transaction and write timing for the winning attempt', async () => {
+    it('records transaction timing for the winning attempt', async () => {
         const timing: RallarTimingEvent[] = [];
         const harness = createAtomicHarness({ timing: (event) => timing.push(event) });
 
-        await harness.service.commit(harness.context, async () => ({ status: 'accepted' }));
+        await harness.service.commit(harness.context, { status: 'accepted' }, async () => {});
 
         expect(timing.filter((event) => event.operation === 'transaction')).toHaveLength(1);
-        expect(timing.filter((event) => event.operation === 'write')).toHaveLength(1);
         for (const event of timing) {
             expect(event.details).toMatchObject({ attempt: 7 });
             expect(event.details).not.toHaveProperty('plan');

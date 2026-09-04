@@ -29,8 +29,7 @@ describe('auth logout outbox', () => {
                 expiredByTokenEntry: null,
                 expiredBySessionEntry: null
             },
-            facts: { kind: command.kind },
-            serviceId: 'auth-service'
+            facts: { kind: command.kind, serviceId: 'auth-service' }
         });
         const outbox = computed.logoutOutbox;
         if (!outbox) {
@@ -70,8 +69,7 @@ describe('auth logout outbox', () => {
                 expiredByTokenEntry: null,
                 expiredBySessionEntry: null
             },
-            facts: { kind: command.kind },
-            serviceId: 'auth-service'
+            facts: { kind: command.kind, serviceId: 'auth-service' }
         });
 
         expect(noOp.outcome).toBe('no-op');

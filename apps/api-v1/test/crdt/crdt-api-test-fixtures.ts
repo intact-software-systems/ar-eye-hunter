@@ -8,7 +8,10 @@ import {
 } from '@shared/crdt/mod.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
+import {
+    PSqlCrdtMutationRepository,
+    writePSqlCrdtMutation
+} from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 
@@ -47,11 +50,6 @@ export function withCompetingWrite(
             );
             const service = createCrdtMutationService({
                 repository,
-                createWriter: (transaction) =>
-                    new PSqlCrdtMutationRepository(
-                        { sql: transaction, authorize: () => Promise.resolve(true) },
-                        { policies: [{ documentType: 'checklist', rollout: 'production' }] }
-                    ),
                 serviceId: 'server-2'
             });
             const command = await appendCommand({
@@ -70,11 +68,9 @@ export function withCompetingWrite(
             if (computed.outcome !== 'write') {
                 assert.fail(`Expected competing append to write, received ${computed.outcome}`);
             }
+            assert.deepEqual(service.validate({ command, read, computed }), []);
             await database.begin(async (transaction) => {
-                await new PSqlCrdtMutationRepository(
-                    { sql: transaction, authorize: () => Promise.resolve(true) },
-                    { policies: [{ documentType: 'checklist', rollout: 'production' }] }
-                ).writeMutation(computed);
+                await writePSqlCrdtMutation(transaction, computed);
             });
             afterCompetingWrite();
         }

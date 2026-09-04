@@ -46,7 +46,7 @@ type ExpectedHandlerDependencies = {
     readonly mutationService: GroupStateMutationService;
     readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
     readonly snapshotObserver: Pick<GroupStateService, 'observeSnapshot'>;
-    readonly transactionWriter: AppInboxMutationTransactionWriter;
+    readonly transactionWriter: ExpectedTransactionWriter;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
     readonly prepareMutation: (
@@ -82,7 +82,12 @@ describe('convergent group and presence state', () => {
         expectTypeOf<TransactionResult>().toEqualTypeOf<Readonly<{ durableResult: DurableResult; afterCommitResult: AfterCommitResult; }>>();
         expectTypeOf<TransactionResult['durableResult']>().toEqualTypeOf<DurableResult>();
         expectTypeOf<TransactionResult['afterCommitResult']>().toEqualTypeOf<AfterCommitResult>();
-        expectTypeOf<AppInboxMutationTransactionWriter>().toEqualTypeOf<ExpectedTransactionWriter>();
+        expectTypeOf<
+            Pick<
+                AppInboxMutationTransactionWriter,
+                'writeMutation' | 'writeMutationWithAfterCommitResult'
+            >
+        >().toEqualTypeOf<ExpectedTransactionWriter>();
         expectTypeOf<AppInboxMutationTransactionWriter['writeMutationWithAfterCommitResult']>().toEqualTypeOf<
             ExpectedTransactionWriter['writeMutationWithAfterCommitResult']
         >();
@@ -102,7 +107,7 @@ describe('convergent group and presence state', () => {
         expectTypeOf<GroupStateInboxHandlerDependencies['mutationService']>().toEqualTypeOf<GroupStateMutationService>();
         expectTypeOf<GroupStateInboxHandlerDependencies['sessionGenerationLifecycle']>().toEqualTypeOf<WsSessionGenerationLifecycleService>();
         expectTypeOf<GroupStateInboxHandlerDependencies['snapshotObserver']>().toEqualTypeOf<Pick<GroupStateService, 'observeSnapshot'>>();
-        expectTypeOf<GroupStateInboxHandlerDependencies['transactionWriter']>().toEqualTypeOf<AppInboxMutationTransactionWriter>();
+        expectTypeOf<GroupStateInboxHandlerDependencies['transactionWriter']>().toEqualTypeOf<ExpectedTransactionWriter>();
         expectTypeOf<GroupStateInboxHandlerDependencies['wakeQueue']>().toEqualTypeOf<(() => void) | undefined>();
         expectTypeOf<ConstructorParameters<typeof GroupStateInboxHandler>>().toEqualTypeOf<[GroupStateInboxHandlerDependencies]>();
     });

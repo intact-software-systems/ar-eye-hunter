@@ -35,7 +35,7 @@ interface MigratedSnapshotContractRow {
 interface RetryMutationCountsRow {
     readonly updates: string;
     readonly owner_updates: string;
-    readonly outbox: string;
+    readonly owner_outbox: string;
 }
 
 interface ResourceInboxResultPayloadRow {
@@ -256,10 +256,12 @@ async function assertRetryMutationOutcome(
           (select count(*) from crdt_updates)::text as updates,
           (select count(*) from crdt_updates where update_id = 'owner-update')::text
               as owner_updates,
-          (select count(*) from resource_inbox where ri_type_id = 'WS_OUTBOX')::text
-              as outbox
+          (select count(*) from resource_inbox
+           where ri_type_id = 'WS_OUTBOX'
+             and ri_resource_id in ('crdt:owner-delivery:reply', 'crdt:owner-update:fanout'))::text
+              as owner_outbox
   `;
-    assert.deepEqual(counts, { updates: '1', owner_updates: '0', outbox: '0' });
+    assert.deepEqual(counts, { updates: '1', owner_updates: '0', owner_outbox: '0' });
     assert.equal(documentAuthorityReads, 2);
     const [completion] = await sql<ResourceInboxResultPayloadRow[]>`
       select ris_resource from resource_inbox_results

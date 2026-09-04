@@ -4,7 +4,9 @@ import type {
     RallarCrdtDocumentMetadata,
     RallarCrdtTrustedAppendMetadata
 } from '@shared/crdt/mod.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { computeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { appendRejectionReason, isAppendRejectionRetryable, toAppendRejectionCode } from './crdt-append-rejection.ts';
 import type {
     CrdtAppendCommand,
@@ -14,7 +16,9 @@ import type {
     CrdtMutationComputedRejected,
     CrdtMutationComputedReplay,
     CrdtMutationComputedWrite,
-    CrdtMutationRead
+    CrdtMutationRead,
+    CrdtSnapshotWrite,
+    CrdtUpdateWrite
 } from './crdt-mutation-contracts.ts';
 import {
     createAcceptedCrdtAdministrationMutationResult,
@@ -34,7 +38,6 @@ export interface ComputeCrdtAcceptedAppendOutcomeInput {
     readonly append: RallarCrdtTrustedAppendMetadata;
     readonly serviceId: string;
 }
-
 export interface ComputeCrdtReplayOutcomeInput {
     readonly command: CrdtAppendCommand;
     readonly read: CrdtMutationRead;
@@ -63,7 +66,7 @@ interface CreateCrdtMutationComputedBaseInput<TDocument extends RallarCrdtDocume
     readonly update: CrdtAppendCommand['update'] | null;
     readonly append: CrdtMutationComputed['append'];
     readonly snapshot: CrdtCanonicalSnapshotEnvelope | null;
-    readonly outboxEntries: CrdtMutationComputed['outboxEntries'];
+    readonly outboxEntries: readonly ResourceEntry[];
     readonly result: CrdtMutationComputed['result'];
 }
 
@@ -81,7 +84,7 @@ interface CrdtMutationComputedBaseValues<TDocument extends RallarCrdtDocumentMet
     readonly update: CrdtAppendCommand['update'] | null;
     readonly append: CrdtMutationComputed['append'];
     readonly snapshot: CrdtCanonicalSnapshotEnvelope | null;
-    readonly outboxEntries: CrdtMutationComputed['outboxEntries'];
+    readonly outboxWrites: CrdtMutationComputed['outboxWrites'];
     readonly result: CrdtMutationComputed['result'];
 }
 
@@ -112,7 +115,14 @@ export function computeCrdtAcceptedAppendOutcome(
             outboxEntries: toAppendOutbox({ command, response: appendResult, serviceId, fanout: true }),
             result
         }),
-        outcome: 'write'
+        outcome: 'write',
+        ...computeCrdtMutationWrites({
+            read,
+            document,
+            update: command.update,
+            append,
+            snapshot: null
+        })
     };
 }
 
@@ -212,7 +222,14 @@ export function computeCrdtAcceptedAdministrationOutcome(
             outboxEntries: auditEvent ? [toCrdtAuditOutbox(auditEvent, command, serviceId)] : [],
             result
         }),
-        outcome: 'write'
+        outcome: 'write',
+        ...computeCrdtMutationWrites({
+            read,
+            document,
+            update: null,
+            append: null,
+            snapshot
+        })
     };
 }
 
@@ -234,9 +251,106 @@ function createCrdtMutationComputedBase<TDocument extends RallarCrdtDocumentMeta
         update,
         append,
         snapshot,
-        outboxEntries,
+        outboxWrites: outboxEntries.map(computeAppOutboxInsert),
         result
     };
+}
+
+export interface ComputeCrdtMutationWritesInput {
+    readonly read: CrdtMutationRead;
+    readonly document: RallarCrdtDocumentMetadata;
+    readonly update: CrdtAppendCommand['update'] | null;
+    readonly append: RallarCrdtTrustedAppendMetadata | null;
+    readonly snapshot: CrdtCanonicalSnapshotEnvelope | null;
+}
+
+export function computeCrdtMutationWrites(
+    input: ComputeCrdtMutationWritesInput
+): Pick<CrdtMutationComputedWrite, 'documentWrite' | 'updateWrite' | 'snapshotWrite'> {
+    const { read, document, update, append, snapshot } = input;
+    const values = {
+        documentKey: document.documentKey,
+        applicationId: document.document.applicationId,
+        workspaceId: document.document.workspaceId,
+        scope: document.document.scope,
+        documentType: document.document.documentType,
+        documentId: document.document.documentId,
+        documentRefJson: JSON.stringify(document.document),
+        documentRevision: document.documentRevision,
+        lifecycle: document.lifecycle,
+        createdAt: new Date(document.createdAtEpochMs),
+        updatedAt: new Date(document.updatedAtEpochMs),
+        archivedAt: toOptionalCrdtDate(document.archivedAtEpochMs),
+        destroyedAt: toOptionalCrdtDate(document.destroyedAtEpochMs),
+        lastAppendSequence: document.lastAppendSequence,
+        updateCount: document.updateCount,
+        snapshotCount: document.snapshotCount,
+        storedUpdateBytes: document.storedUpdateBytes,
+        retentionJson: toOptionalCrdtJson(document.retention),
+        quotaJson: toOptionalCrdtJson(document.quota),
+        projectionIdsJson: JSON.stringify(document.projectionIds)
+    };
+    const documentWrite = read.document === null
+        ? { ...values, operation: 'insert' as const }
+        : {
+            ...values,
+            operation: 'update' as const,
+            expectedRevision: read.document.documentRevision,
+            expectedLifecycle: read.document.lifecycle,
+            expectedAppendSequence: read.document.lastAppendSequence
+        };
+    return {
+        documentWrite,
+        updateWrite: update && append
+            ? computeCrdtUpdateWrite(document.documentKey, update, append)
+            : null,
+        snapshotWrite: snapshot
+            ? computeCrdtSnapshotWrite(document.documentKey, document.lastAppendSequence, snapshot)
+            : null
+    };
+}
+
+function computeCrdtUpdateWrite(
+    documentKey: string,
+    update: CrdtAppendCommand['update'],
+    append: RallarCrdtTrustedAppendMetadata
+): CrdtUpdateWrite {
+    return {
+        documentKey,
+        appendSequence: append.appendSequence,
+        updateId: update.updateId,
+        updateEnvelopeJson: JSON.stringify(update),
+        acceptedUpdateHash: append.acceptedUpdateHash,
+        actorId: append.actorId,
+        principalId: append.principalId,
+        sessionId: append.sessionId,
+        serverId: append.serverId,
+        authorizationScope: append.authorizationScope,
+        acceptedAt: new Date(append.acceptedAtEpochMs)
+    };
+}
+
+function computeCrdtSnapshotWrite(
+    documentKey: string,
+    appendSequence: number,
+    snapshot: CrdtCanonicalSnapshotEnvelope
+): CrdtSnapshotWrite {
+    return {
+        documentKey,
+        snapshotId: snapshot.snapshotId,
+        appendSequence,
+        snapshotEnvelopeJson: JSON.stringify(snapshot),
+        createdAt: new Date(snapshot.createdAtEpochMs),
+        reason: snapshot.metadata.reason
+    };
+}
+
+function toOptionalCrdtDate(epochMs: number | null): Date | null {
+    return epochMs === null ? null : new Date(epochMs);
+}
+
+function toOptionalCrdtJson(value: object | null): string | null {
+    return value === null ? null : JSON.stringify(value);
 }
 
 function toCrdtAppendRejection(

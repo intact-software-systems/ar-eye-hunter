@@ -15,11 +15,13 @@ import { rejectClientMutation } from '../../validation/client-mutation-rejection
 import {
     decodeClientValidationRecord,
     requireExactKeys,
-    type ClientValidationRecord
+    type ClientValidationRecord,
+    type ClientValidationValue
 } from '../../validation/client-record-validation.ts';
 import { requireSha256 } from '../../validation/client-string-validation.ts';
 import { validateClientPrincipalRef } from '../../validation/validate-client-principal-ref.ts';
 import type { ClientMutationComputed, ConditionalCandidate } from '../client-mutation-contracts.ts';
+import { validateClientPersistenceShape } from './validate-client-persistence.ts';
 
 export function validateClientMutationResult(
     computed: unknown
@@ -64,7 +66,8 @@ function validateNoOpResult(value: ClientValidationRecord): void {
                 'idempotency',
                 'receipt',
                 'snapshot',
-                'event'
+                'event',
+                'persistence'
             ]
             : ['outcome', 'persistIdempotency', 'receipt', 'snapshot', 'event'],
         'Client mutation computed'
@@ -80,6 +83,7 @@ function validateNoOpResult(value: ClientValidationRecord): void {
             value.idempotency,
             'Client mutation computed.idempotency'
         );
+        validateClientPersistenceShape(value.persistence);
     }
 }
 
@@ -106,7 +110,8 @@ function validateAppliedWriteResult(value: ClientValidationRecord): void {
             'snapshot',
             'idempotency',
             'stateSync',
-            'outboxEntries'
+            'outboxWrites',
+            'persistence'
         ],
         'Client mutation computed'
     );
@@ -141,16 +146,17 @@ function validateAppliedWriteResult(value: ClientValidationRecord): void {
     if (!Array.isArray(value.stateSync) || value.stateSync.length !== 2) {
         rejectClientMutation('Client mutation computed stateSync must contain snapshot and event');
     }
-    if (!Array.isArray(value.outboxEntries) || value.outboxEntries.length !== 2) {
-        rejectClientMutation('Client mutation computed outboxEntries must contain snapshot and event');
+    if (!Array.isArray(value.outboxWrites) || value.outboxWrites.length !== 2) {
+        rejectClientMutation('Client mutation computed outboxWrites must contain snapshot and event');
     }
+    validateClientPersistenceShape(value.persistence);
 }
 
 function validateConditionalCandidate<T>(
-    value: unknown,
+    value: ClientValidationValue,
     label: string,
-    validateValue: (value: unknown, label: string) => void
-): asserts value is ConditionalCandidate<T> {
+    validateValue: (value: ClientValidationValue, label: string) => void
+): asserts value is ClientValidationRecord & ConditionalCandidate<T> {
     const candidate = decodeClientValidationRecord(value, label);
     switch (candidate.operation) {
         case 'none':

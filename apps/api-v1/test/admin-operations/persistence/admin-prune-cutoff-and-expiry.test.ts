@@ -56,18 +56,13 @@ Deno.test('prune progress renews physical and JSON aggregate expiry together', a
             expireAtEpochMs: now + 120_000
         };
         const successor = toAdminPruneAggregateEntry(renewed);
+        const progressWrite = {
+            expectedAggregate: currentEntry.resource,
+            aggregateSuccessor: successor,
+            aggregateSuccessorExpiryAtIsoTimestamp: successor.audit.expiryTs.toString()
+        };
         await sql.begin(async (transaction) => {
-            await new PSqlAdminPruneRepository(sql).writeProgress(transaction, {
-                kind: 'page',
-                jobId: current.jobId,
-                category: 'runtime-state',
-                rowIds: [],
-                deletedRows: 0,
-                next: null,
-                expectedAggregate: currentEntry.resource,
-                aggregateSuccessor: successor,
-                finishedAtEpochMs: now + 1
-            });
+            await new PSqlAdminPruneRepository(sql).writeProgress(transaction, progressWrite);
         });
         const [stored] = await sql<{ ris_resource: string; expire_epoch_ms: string | number; }[]>`
       select ris_resource, floor(extract(epoch from expire_ts) * 1000)::bigint as expire_epoch_ms

@@ -171,6 +171,43 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         return (await this.listClientSessionEntries()).map((entry) => entry.value);
     }
 
+    async readSessionPage(
+        input: Readonly<{
+            afterKey: string | null;
+            limit: number;
+        }>
+    ): Promise<
+        Readonly<{
+            sessions: readonly RuntimeStateEntryValue<ClientSession>[];
+            nextAfterKey: string | null;
+        }>
+    > {
+        const storedEntries = await this.listEntriesPage(
+            CLIENT_STATE_SESSIONS_NAMESPACE,
+            '',
+            {
+                ...(input.afterKey === null ? {} : { afterKey: input.afterKey }),
+                limit: input.limit
+            }
+        );
+        const sessions: RuntimeStateEntryValue<ClientSession>[] = [];
+        for (const entry of storedEntries) {
+            const stored = await this.toLiveJsonEntryValue(
+                CLIENT_STATE_SESSIONS_NAMESPACE,
+                entry
+            );
+            if (stored !== undefined) {
+                sessions.push(this.toSessionEntry(stored));
+            }
+        }
+        return {
+            sessions,
+            nextAfterKey: storedEntries.length === input.limit
+                ? storedEntries.at(-1)?.key ?? null
+                : null
+        };
+    }
+
     async listEvents(ref: ClientPrincipalRef): Promise<readonly ClientEvent[]> {
         return (await this.events.listClientEvents(ref)).map((event) =>
             decodePersistedClientEventForRepository(event, ref)

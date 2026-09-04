@@ -9,9 +9,13 @@ describe('auth mutation compute router evaluation order', () => {
             const counts = { command: 0, read: 0, facts: 0 };
             const command = trackKind(fixture.command, counts, 'command');
             const read = trackKind(fixture.read, counts, 'read');
-            const facts = trackKind({ kind: fixture.command.kind }, counts, 'facts');
+            const facts = trackKind(
+                { kind: fixture.command.kind, serviceId: 'auth-service' },
+                counts,
+                'facts'
+            );
 
-            computeAuthMutation({ command, read, facts, serviceId: 'auth-service' });
+            computeAuthMutation({ command, read, facts });
 
             expect(counts, fixture.command.kind).toEqual({
                 command: 3,

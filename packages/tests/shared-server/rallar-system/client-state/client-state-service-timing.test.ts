@@ -1,18 +1,20 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createTimedClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-timing.ts';
+import {
+    createTimedClientStateService,
+    timeClientStateMutationCommit
+} from '@shared-server/rallar-system/client-state/client-state-service-timing.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type { ClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 
-import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { CLIENT_MUTATION_SERVICE_SCOPE } from './client-state-service-test-fixtures.ts';
-import { createClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
+import { createClientMutationTransactionBoundaryFixture } from './create-client-mutation-transaction-boundary-fixture.ts';
 
 describe('client-state service timing', () => {
-    it('preserves timed phase identities, results, rejections, and argument identities', async () => {
+    it('times reads without adding clock or sink effects to compute, validate, or write', async () => {
         const fixture = createTimedClientStateServiceFixture();
         const timed = createTimedClientStateService({
             service: fixture.service,
@@ -24,6 +26,9 @@ describe('client-state service timing', () => {
         });
 
         await expect(timed.read(TIMED_COMMAND)).resolves.toBe(fixture.readResult);
+        expect(timed.compute).toBe(fixture.service.compute);
+        expect(timed.validate).toBe(fixture.service.validate);
+        expect(timed.write).toBe(fixture.service.write);
         expect(timed.compute(TIMED_COMMAND, fixture.readResult as never)).toBe(fixture.computedResult);
         expect(() => timed.validate(TIMED_COMMAND, fixture.readResult as never, fixture.computedResult as never)).not.toThrow();
         await expect(timed.write(TIMED_TRANSACTION, TIMED_COMPUTED)).rejects.toBe(fixture.writeFailure);
@@ -32,19 +37,12 @@ describe('client-state service timing', () => {
             'read',
             'event:mutation.read:ok',
             'compute',
-            'event:mutation.compute:ok',
             'validate',
-            'event:mutation.validate:ok',
-            'write',
-            'event:mutation.write:error'
+            'write'
         ]);
         expect(fixture.events.map((event) => [event.operation, event.serviceId, event.status])).toEqual([
-            ['mutation.read', 'client-timing-service', 'ok'],
-            ['mutation.compute', 'client-timing-service', 'ok'],
-            ['mutation.validate', 'client-timing-service', 'ok'],
-            ['mutation.write', 'client-timing-service', 'error']
+            ['mutation.read', 'client-timing-service', 'ok']
         ]);
-        expect(fixture.events.at(-1)?.error?.message).toBe(fixture.writeFailure.message);
     });
 });
 
@@ -129,7 +127,7 @@ function createTimedClientStateServiceFixture(): TimedClientStateServiceFixture 
             expect(computed).toBe(TIMED_COMPUTED);
             throw writeFailure;
         },
-        listExpiredSessionCandidates: async () => [],
+        readExpiredSessionPage: async () => ({ candidates: [], nextAfterKey: null }),
         findSessionBySessionId: async () => undefined,
         readIssuedAuthSession: async () => undefined,
         observeSnapshot: async (snapshot) => snapshot
@@ -138,37 +136,59 @@ function createTimedClientStateServiceFixture(): TimedClientStateServiceFixture 
 }
 
 describe('client mutation service timing', () => {
-    it('records timing for client state service methods when a timing sink is supplied', async () => {
-        const timingEvents: RallarTimingEvent[] = [];
-        const service = createClientStateService({
-            runtimeRepository: new FakeRuntimeStateRepository(),
-            now: () => 1_000,
-            serviceId: 'client-service',
-            timing: (event) => timingEvents.push(event)
+    it('records compute and validate before transaction entry and write after commit', async () => {
+        const fixture = await createClientMutationTransactionBoundaryFixture({
+            recordMutationTiming: true
         });
 
-        await service.upsertPrincipal(CLIENT_MUTATION_SERVICE_SCOPE, 'alice', {
-            username: 'alice',
-            displayName: 'Alice',
-            actorPrincipalId: 'alice',
-            actorSessionId: 'alice-session',
-            requestId: 'upsert-alice-timed'
-        });
-
-        expect(timingEvents).toEqual(
-            expect.arrayContaining([
-                expect.objectContaining({
-                    component: 'client-state-service',
-                    operation: 'mutation.write',
-                    status: 'ok',
-                    serviceId: 'client-service',
-                    requestId: 'upsert-alice-timed',
-                    applicationId: CLIENT_MUTATION_SERVICE_SCOPE.applicationId,
-                    workspaceId: CLIENT_MUTATION_SERVICE_SCOPE.workspaceId,
-                    principalId: 'alice'
-                })
-            ])
+        await fixture.handler.processCommand(
+            fixture.context,
+            toUpsertClientPrincipalMutationInput({
+                scope: SCOPE,
+                principalId: 'alice',
+                request: { username: 'alice', requestId: 'upsert-alice-timed' },
+                defaultCommandId: 'upsert-alice-timed'
+            })
         );
-        expect(typeof timingEvents[0]?.durationMs).toBe('number');
+
+        expect(fixture.actions).toEqual([
+            'completion',
+            'mutation.compute',
+            'mutation.validate',
+            'write',
+            'commit',
+            'mutation.write',
+            'observe'
+        ]);
+    });
+
+    it('records a failed write only after the transaction action has exited', async () => {
+        const actions: string[] = [];
+        const failure = new Error('transaction failed');
+
+        await expect(timeClientStateMutationCommit(
+            {
+                timing: {
+                    serviceId: 'client-timing-service',
+                    sink: (event) => actions.push(`event:${event.operation}:${event.status}`)
+                },
+                writes: [TIMED_COMPUTED]
+            },
+            async () => {
+                actions.push('transaction');
+                try {
+                    throw failure;
+                }
+                finally {
+                    actions.push('transaction-exited');
+                }
+            }
+        )).rejects.toBe(failure);
+
+        expect(actions).toEqual([
+            'transaction',
+            'transaction-exited',
+            'event:mutation.write:error'
+        ]);
     });
 });
