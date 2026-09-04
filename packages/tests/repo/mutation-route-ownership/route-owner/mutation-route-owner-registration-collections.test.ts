@@ -6,7 +6,7 @@ import { findMutationBoundaryViolationsFromRoots } from '../boundary/mutation-bo
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from '../routing/mutation-routing-inventory.ts';
 
 const FIXTURES = 'packages/tests/repo/mutation-route-ownership/fixtures/mutation-boundary-capability-receivers';
-const GROUP_OWNER = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+const GROUP_TYPES = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 const TOPOLOGY_OWNER = 'packages/shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 const AUTH_OWNER = 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 const CRDT_OWNER = 'packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
@@ -40,16 +40,12 @@ describe('Mutation route owner registration collections contracts', () => {
         ).toEqual([]);
     });
 
-    it('rejects a missing direct group registration', () => {
-        const source = readFileSync(GROUP_OWNER, 'utf8');
-        const mutated = replaceRegistrationType(
-            source,
-            'GROUP_CREATE',
-            'GROUP_UPDATE'
-        );
+    it('rejects GROUP_CREATE removed from the imported live group registration collection', () => {
+        const source = readFileSync(GROUP_TYPES, 'utf8');
+        const mutated = source.replace('  AppInboxType.GROUP_CREATE,\n', '');
         expect(mutated).not.toBe(source);
 
-        expect(validateWithOverrides(new Map([[GROUP_OWNER, mutated]]))).toEqual(
+        expect(validateWithOverrides(new Map([[GROUP_TYPES, mutated]]))).toEqual(
             expect.arrayContaining([
                 expect.stringContaining('GROUP_CREATE owner dispatch is not connected')
             ])
