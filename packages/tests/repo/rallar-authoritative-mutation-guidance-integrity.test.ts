@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+// Repository-governance maintainers own these publication guards. Replace phrase
+// checks as consumer evaluations cover the same drift risk; they do not prove agent behavior.
 const repoRoot = process.cwd();
 const canonicalServiceWritingPath = '.agents/skills/rallar-code-writing/references/convergent-service-writing.md';
 const codeProducingSpecialistSkills = [
@@ -16,7 +18,6 @@ const codeProducingSpecialistSkills = [
 const appInboxGuidanceVocabulary = [
     'AppInbox is mandatory for incoming database mutations',
     'service write receives the transaction',
-    'ResourceInboxRepository',
     'APP_OUTBOX',
     'WS_OUTBOX',
     '20 total processing attempts',
@@ -32,7 +33,13 @@ const currentAppInboxGuidancePaths = [
     'docs/rallar-crdt-production-hardening-runbook.md',
     'docs/README.md'
 ] as const;
-const coreConvergentWriteGuidancePaths = [canonicalServiceWritingPath] as const;
+const strictMutationPhaseGuidancePaths = [
+    canonicalServiceWritingPath,
+    '.agents/skills/rallar-code-writing/SKILL.md',
+    '.agents/skills/rallar-code-writing/references/repo-code-style.md',
+    '.agents/skills/rallar-testing/SKILL.md',
+    '.agents/skills/performance-analysis/SKILL.md'
+] as const;
 const canonicalSnapshotOrderingGuidancePaths = [
     canonicalServiceWritingPath,
     'docs/rallar-convergent-state-and-rtc-topology.md'
@@ -60,11 +67,6 @@ const mediumScaleRequirements = [
     'five groups',
     'three Postgres-backed API processes',
     '10 client lanes plus 5 control lanes'
-] as const;
-const performanceGateRequirements = [
-    'npm run perf:api-v1:state-write',
-    'node scripts/perf/compare-api-v1-state-write-results.mjs',
-    'comparative result gate'
 ] as const;
 
 interface PackageJson {
@@ -129,7 +131,7 @@ describe('authoritative mutation guidance integrity', () => {
             'update with expected-revision compare-and-set or `upsertIfRevision`',
             'delete or expire with expected-revision conditional delete or `deleteIfRevision`',
             'a stale expiry observation must not delete or overwrite a refreshed value',
-            'A conflict starts a fresh `read`'
+            'A conflict exits that attempt; queue redelivery starts again from `read`'
         ]);
         expectAllNormalized(realtime, [
             canonicalServiceWritingPath,
@@ -141,7 +143,7 @@ describe('authoritative mutation guidance integrity', () => {
         expect(realtime).not.toContain('prove overlapping conflicts, rebasing, retry exhaustion');
         expectAll(agents, [canonicalServiceWritingPath, 'functional core', 'stateful shell']);
         expectAll(convergenceArchitecture, [
-            'Implemented Convergent Database Writes',
+            'write(transaction, computed)',
             'conditional insert',
             'expected-revision compare-and-set',
             'expected-revision conditional delete'
@@ -393,17 +395,17 @@ describe('authoritative mutation guidance integrity', () => {
         '%s distinguishes downstream QueueBox retries from AppInbox ingress retries',
         (filePath) => {
             expectAllNormalized(readRepo(filePath), [
-                'RtcTopologyOutboxWork',
+                'APP_OUTBOX',
                 'ResourceInbox/QueueBox attempt boundary',
                 'neither service owns the transaction or retry boundary'
             ]);
         }
     );
 
-    it.each(coreConvergentWriteGuidancePaths)(
-        '%s independently states the convergent-write doctrine',
-        (filePath) => {
-            const guidance = normalizeWhitespace(readRepo(filePath));
+    it(
+        'the canonical service reference independently states the convergent-write doctrine',
+        () => {
+            const guidance = normalizeWhitespace(readRepo(canonicalServiceWritingPath));
             expect(guidance).toMatch(
                 /`compute` and `validate` .{0,30}(?:phases|functions) are .{0,10}pure/i
             );
@@ -415,6 +417,20 @@ describe('authoritative mutation guidance integrity', () => {
             );
             expect(guidance).toMatch(/queue locks.{0,80}coordination-only/i);
             expect(guidance).toMatch(/computed persistence data.{0,40}not.{0,20}(?:called )?a plan/i);
+        }
+    );
+
+    it.each(strictMutationPhaseGuidancePaths)(
+        '%s keeps computation in compute without a post-compute preparation phase',
+        (filePath) => {
+            expectAllNormalized(readRepo(filePath), [
+                'same explicit input produces the same result',
+                'no repository reads, clocks, randomness, mutable dependency lookups, or hidden side effects',
+                'Do not add `prepare`, `prepareWrite`, or another deterministic transformation after `compute`',
+                'Adding another service mutation phase requires explicit human approval',
+                'One queue delivery performs one mutation attempt',
+                'A conflict exits that attempt; queue redelivery starts again from `read`'
+            ]);
         }
     );
 
@@ -434,11 +450,7 @@ describe('authoritative mutation guidance integrity', () => {
 });
 
 function readRepo(filePath: string): string {
-    return readAbsolute(path.join(repoRoot, filePath));
-}
-
-function readAbsolute(filePath: string): string {
-    return readFileSync(filePath, 'utf8');
+    return readFileSync(path.join(repoRoot, filePath), 'utf8');
 }
 
 function readPackageJson(filePath: string): PackageJson {

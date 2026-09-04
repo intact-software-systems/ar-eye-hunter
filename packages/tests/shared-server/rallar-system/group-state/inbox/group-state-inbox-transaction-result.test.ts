@@ -3,8 +3,16 @@ import { describe, expect, it } from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
-import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import {
+    AppInboxType,
+    type AppInboxExecutionMetadata,
+    type AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
+import type {
+    AppInboxCompletionComputed,
+    AppInboxCompletionFacts
+} from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { GroupMutationPreparation } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
@@ -121,6 +129,19 @@ describe('group-state AppInbox transaction result boundary', () => {
     it('persists an inactive presence result once without active mutation effects', async () => {
         const actions: string[] = [];
         const transactionWriter: AppInboxMutationTransactionWriter = {
+            readCompletionFacts: (_context: AppInboxExecutionMetadata): AppInboxCompletionFacts => {
+                throw new Error('Inactive presence must not read computed completion facts');
+            },
+            writeComputedMutation: async <Result>(
+                _context: AppInboxExecutionMetadata,
+                _computed: AppInboxCompletionComputed<Result>,
+                _write: (transaction: PSqlSql) => Promise<void>
+            ): Promise<Result> => {
+                throw new Error('Inactive presence must not use computed mutation transaction');
+            },
+            writeComputedMutationWithAfterCommitResult: async () => {
+                throw new Error('Inactive presence must not use computed after-commit transaction');
+            },
             writeMutation: async (_context, write) => {
                 actions.push('inactive-transaction');
                 return await write(createUnusedTransaction());

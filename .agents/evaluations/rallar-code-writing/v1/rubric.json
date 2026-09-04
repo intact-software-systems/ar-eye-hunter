@@ -79,6 +79,46 @@
     {
       "id": "preflight.observable-order",
       "pass": "States the selected skills and their loading order before repository inspection so a human can verify the pre-decision sequence."
+    },
+    {
+      "id": "transaction-purity.persistence-ready-before-entry",
+      "pass": "Requires the exact read -> compute -> validate -> write(transaction, computed) sequence and makes the row, event, outbox, and every non-database-derived persisted value persistence-ready before entering the write-capable transaction."
+    },
+    {
+      "id": "transaction-purity.precomputable-work-outside",
+      "pass": "Moves clock capture, timestamped row construction, random ID generation, serialization, sorting, full event/outbox construction, and every other deterministic or precomputable operation outside the transaction; rejects the claim that cheap work or deadline pressure can waive this boundary."
+    },
+    {
+      "id": "transaction-purity.closed-db-result-refinement",
+      "pass": "Limits inside-transaction computation to executing prepared writes and control operations, selecting prepared variants from actual database outcomes, direct projection/comparison/scalar normalization of database-returned facts, invariant checks, attaching database-generated keys, revisions, sequences, timestamps, or constraint results, and constructing the typed write outcome."
+    },
+    {
+      "id": "transaction-purity.full-retry-reentry",
+      "pass": "Requires every conflict retry to re-enter the complete read, compute, validate, and write sequence with fresh attempt data rather than retrying only the write or carrying mutable or partially computed attempt state forward."
+    },
+    {
+      "id": "transaction-purity.winner-only-is-not-authority",
+      "pass": "Explicitly rejects winner-only execution as authority for clocks, random values, serialization, sorting, row/event/outbox construction, or other precomputable work; only actual database-returned facts establish database-derived provenance."
+    },
+    {
+      "id": "transaction-policy.resolved-owner-not-path",
+      "pass": "Classifies each boundary from its resolved transaction opener and owner, never from a directory or file-name exemption; applies specialized-resource-inbox only to the exact PostgreSQL ResourceInbox, Results, or QueueBox owner and reports that boundary separately rather than calling it a strict pass or exception."
+    },
+    {
+      "id": "transaction-policy.strict-domain-no-transfer",
+      "pass": "Keeps the AppInbox/domain-owned transaction under strict-domain-write even when it calls a ResourceInbox helper; explicitly states that policy does not transfer through the callee name, import, repository, or source path."
+    },
+    {
+      "id": "transaction-policy.bounded-resource-inbox-specialization",
+      "pass": "States that strict transaction.precomputable-work purity does not govern the proven specialized-resource-inbox boundary. Allows its exact PostgreSQL owner to perform bounded middleware-local SQL reservation, deduplication, result, replacement, queue coordination, deterministic persisted-value transformations, and resolved bounded local boundary machinery, while rejecting external effects, timers, polling, unbounded work, caller-owned mutation, arbitrary unresolved callbacks, unrelated nested transaction ownership, and ordinary domain mutation logic outside the exact winner materializer."
+    },
+    {
+      "id": "transaction-policy.guarded-winner-materializer",
+      "pass": "Preserves the exact guarded winner materializer and explicitly permits its bounded winner-only clock capture, identifier generation, serialization, and final-row construction: reserve first, invoke exactly once only on the winning SQL branch, verify identity, replace in the same transaction, rely on PostgreSQL rollback on failure, and never invoke on replay or loss; rejects replacing it with lease, heartbeat, marker, polling, or after-commit repair complexity."
+    },
+    {
+      "id": "transaction-policy.indexeddb-remains-strict",
+      "pass": "Keeps browser IndexedDB readwrite and upgrade/versionchange transactions under strict-domain-write and does not generalize the PostgreSQL ResourceInbox specialization to browser persistence."
     }
   ],
   "resultContract": {

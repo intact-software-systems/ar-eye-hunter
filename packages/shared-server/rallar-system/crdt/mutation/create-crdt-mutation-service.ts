@@ -43,7 +43,7 @@ export function createCrdtMutationService(
             if (computed.outcome === 'write') {
                 await writer.writeMutation(computed);
             }
-            await writer.writeOutbox(computed.outboxEntries);
+            await writer.writeOutbox(computed.outboxWrites);
             return computed.result;
         }
     };

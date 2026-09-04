@@ -463,12 +463,12 @@ describe('AppAdminInboxService initial prune command', () => {
             'now-callback',
             'count:runtime-state',
             'current-authority',
+            'now-callback',
             'phase:read',
             'phase:compute',
             'phase:validate',
             'transaction',
             'result-write',
-            'now-callback',
             'commit-return'
         ]);
         expect(harness.events.filter((event) => event === 'queue-wake')).toHaveLength(1);
@@ -493,6 +493,7 @@ describe('AppAdminInboxService initial prune command', () => {
             'count:runtime-state',
             'count:resource-inbox-results',
             'current-authority',
+            'now-callback',
             'phase:read',
             'phase:compute',
             'phase:validate',
@@ -501,7 +502,6 @@ describe('AppAdminInboxService initial prune command', () => {
             'page-write',
             'aggregate-write',
             'result-write',
-            'now-callback',
             'commit-return'
         ]);
         expect(harness.events.filter((event) => event === 'queue-wake')).toHaveLength(2);
@@ -562,6 +562,7 @@ describe('AppAdminInboxService initial prune command', () => {
             'now-callback',
             'count:runtime-state',
             'current-authority',
+            'now-callback',
             'phase:read',
             'phase:compute',
             'phase:validate',
@@ -569,12 +570,12 @@ describe('AppAdminInboxService initial prune command', () => {
             'now-callback',
             'count:runtime-state',
             'current-authority',
+            'now-callback',
             'phase:read',
             'phase:compute',
             'phase:validate',
             'transaction',
             'result-write',
-            'now-callback',
             'commit-return'
         ]);
     });

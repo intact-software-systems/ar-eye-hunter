@@ -1,22 +1,22 @@
 import {
     byteLengthOfRallarCrdtJson,
-    type RallarCrdtDocumentLifecycleState,
     type RallarCrdtDocumentMetadata,
-    type RallarCrdtDocumentTypePolicy,
-    type RallarCrdtTrustedAppendMetadata,
-    type RallarCrdtUpdateEnvelope
+    type RallarCrdtDocumentTypePolicy
 } from '@shared/crdt/mod.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { writeAppOutboxInsert, type AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
+import { CrdtMutationConflictError } from '../mutation/crdt-mutation-contracts.ts';
 import {
-    CrdtMutationConflictError,
-    type CrdtCanonicalSnapshotEnvelope,
+    type CrdtDocumentWrite,
     type CrdtMutationCommand,
+    type CrdtMutationComputed,
     type CrdtMutationComputedWrite,
     type CrdtMutationRead,
-    type CrdtMutationRepository
+    type CrdtMutationRepository,
+    type CrdtMutationResult,
+    type CrdtSnapshotWrite,
+    type CrdtUpdateWrite
 } from '../mutation/crdt-mutation-contracts.ts';
 import { evaluateCrdtMutationFeatureDecision } from '../mutation/evaluate-crdt-mutation-feature-decision.ts';
 import { decodeCrdtDocumentRow, type CrdtDocumentRow } from './row-decoding/decode-crdt-document-row.ts';
@@ -120,41 +120,49 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
     }
 
     async writeMutation(computed: CrdtMutationComputedWrite): Promise<void> {
-        const guarded = computed.expectedDocumentRevision === 'absent'
-            ? await insertDocument(this.sql, computed.document)
-            : await updateDocument({
-                sql: this.sql,
-                metadata: computed.document,
-                expectedRevision: computed.expectedDocumentRevision,
-                expectedLifecycle: computed.expectedDocumentLifecycle,
-                expectedAppendSequence: computed.expectedAppendSequence
-            });
-        if (!guarded) {
-            throw new CrdtMutationConflictError(computed.documentKey);
-        }
-        if (computed.update && computed.append) {
-            await insertUpdate({
-                sql: this.sql,
-                documentKey: computed.documentKey,
-                update: computed.update,
-                append: computed.append
-            });
-        }
-        if (computed.snapshot) {
-            await insertSnapshot({
-                sql: this.sql,
-                documentKey: computed.documentKey,
-                snapshot: computed.snapshot,
-                appendSequence: computed.document.lastAppendSequence
-            });
-        }
+        await writeCrdtMutationRows(this.sql, computed);
     }
 
-    async writeOutbox(entries: readonly ResourceEntry[]): Promise<void> {
-        const outbox = new PSqlResourceInboxEntryRepository(this.sql);
-        for (const entry of entries) {
-            await outbox.write(entry);
-        }
+    async writeOutbox(writes: readonly AppOutboxInsert[]): Promise<void> {
+        await writeCrdtOutbox(this.sql, writes);
+    }
+}
+
+export async function writePSqlCrdtMutation(
+    transaction: PSqlSql,
+    computed: CrdtMutationComputed
+): Promise<CrdtMutationResult> {
+    if (computed.outcome === 'write') {
+        await writeCrdtMutationRows(transaction, computed);
+    }
+    await writeCrdtOutbox(transaction, computed.outboxWrites);
+    return computed.result;
+}
+
+async function writeCrdtMutationRows(
+    sql: PSqlSql,
+    computed: CrdtMutationComputedWrite
+): Promise<void> {
+    const guarded = computed.documentWrite.operation === 'insert'
+        ? await insertDocument(sql, computed.documentWrite)
+        : await updateDocument(sql, computed.documentWrite);
+    if (!guarded) {
+        throw computed.conflict;
+    }
+    if (computed.updateWrite) {
+        await insertUpdate(sql, computed.updateWrite);
+    }
+    if (computed.snapshotWrite) {
+        await insertSnapshot(sql, computed.snapshotWrite);
+    }
+}
+
+async function writeCrdtOutbox(
+    transaction: PSqlSql,
+    writes: readonly AppOutboxInsert[]
+): Promise<void> {
+    for (const write of writes) {
+        await writeAppOutboxInsert(transaction, write);
     }
 }
 
@@ -325,7 +333,7 @@ async function readActorUpdatesInWindow(
 
 async function insertDocument(
     sql: PSqlSql,
-    metadata: RallarCrdtDocumentMetadata
+    write: Extract<CrdtDocumentWrite, { operation: 'insert'; }>
 ): Promise<boolean> {
     const rows = await sql<DocumentKeyRow[]>`
         insert into crdt_documents (
@@ -335,106 +343,71 @@ async function insertDocument(
             update_count, snapshot_count, stored_update_bytes, retention_policy,
             quota_policy, projection_ids
         ) values (
-            ${metadata.documentKey}, ${metadata.document.applicationId},
-            ${metadata.document.workspaceId}, ${metadata.document.scope},
-            ${metadata.document.documentType}, ${metadata.document.documentId},
-            ${JSON.stringify(metadata.document)}, ${metadata.documentRevision},
-            ${metadata.lifecycle}, ${new Date(metadata.createdAtEpochMs)},
-            ${new Date(metadata.updatedAtEpochMs)}, ${toOptionalDate(metadata.archivedAtEpochMs)},
-            ${toOptionalDate(metadata.destroyedAtEpochMs)}, ${metadata.lastAppendSequence},
-            ${metadata.updateCount}, ${metadata.snapshotCount}, ${metadata.storedUpdateBytes},
-            ${encodeOptionalPolicy(metadata.retention)}, ${encodeOptionalPolicy(metadata.quota)},
-            ${JSON.stringify(metadata.projectionIds)}
+            ${write.documentKey}, ${write.applicationId},
+            ${write.workspaceId}, ${write.scope},
+            ${write.documentType}, ${write.documentId},
+            ${write.documentRefJson}, ${write.documentRevision},
+            ${write.lifecycle}, ${write.createdAt},
+            ${write.updatedAt}, ${write.archivedAt},
+            ${write.destroyedAt}, ${write.lastAppendSequence},
+            ${write.updateCount}, ${write.snapshotCount}, ${write.storedUpdateBytes},
+            ${write.retentionJson}, ${write.quotaJson},
+            ${write.projectionIdsJson}
         ) on conflict (document_key) do nothing
         returning document_key
     `;
     return rows.length === 1;
 }
 
-interface UpdateDocumentInput {
-    readonly sql: PSqlSql;
-    readonly metadata: RallarCrdtDocumentMetadata;
-    readonly expectedRevision: number;
-    readonly expectedLifecycle: RallarCrdtDocumentLifecycleState | 'absent';
-    readonly expectedAppendSequence: number | 'absent';
-}
-
-async function updateDocument(input: UpdateDocumentInput): Promise<boolean> {
-    const { sql, metadata, expectedRevision, expectedLifecycle, expectedAppendSequence } = input;
-    if (expectedLifecycle === 'absent' || expectedAppendSequence === 'absent') {
-        return false;
-    }
+async function updateDocument(
+    sql: PSqlSql,
+    write: Extract<CrdtDocumentWrite, { operation: 'update'; }>
+): Promise<boolean> {
     const rows = await sql<DocumentKeyRow[]>`
         update crdt_documents
-        set document_revision = ${metadata.documentRevision}, lifecycle = ${metadata.lifecycle},
-            updated_at_ts = ${new Date(metadata.updatedAtEpochMs)},
-            archived_at_ts = ${toOptionalDate(metadata.archivedAtEpochMs)},
-            destroyed_at_ts = ${toOptionalDate(metadata.destroyedAtEpochMs)},
-            last_append_sequence = ${metadata.lastAppendSequence},
-            update_count = ${metadata.updateCount}, snapshot_count = ${metadata.snapshotCount},
-            stored_update_bytes = ${metadata.storedUpdateBytes},
-            retention_policy = ${encodeOptionalPolicy(metadata.retention)},
-            quota_policy = ${encodeOptionalPolicy(metadata.quota)},
-            projection_ids = ${JSON.stringify(metadata.projectionIds)}
-        where document_key = ${metadata.documentKey}
-          and document_revision = ${expectedRevision}
-          and lifecycle = ${expectedLifecycle}
-          and last_append_sequence = ${expectedAppendSequence}
+        set document_revision = ${write.documentRevision}, lifecycle = ${write.lifecycle},
+            updated_at_ts = ${write.updatedAt},
+            archived_at_ts = ${write.archivedAt},
+            destroyed_at_ts = ${write.destroyedAt},
+            last_append_sequence = ${write.lastAppendSequence},
+            update_count = ${write.updateCount}, snapshot_count = ${write.snapshotCount},
+            stored_update_bytes = ${write.storedUpdateBytes},
+            retention_policy = ${write.retentionJson},
+            quota_policy = ${write.quotaJson},
+            projection_ids = ${write.projectionIdsJson}
+        where document_key = ${write.documentKey}
+          and document_revision = ${write.expectedRevision}
+          and lifecycle = ${write.expectedLifecycle}
+          and last_append_sequence = ${write.expectedAppendSequence}
         returning document_key
     `;
     return rows.length === 1;
 }
 
-interface InsertUpdateInput {
-    readonly sql: PSqlSql;
-    readonly documentKey: string;
-    readonly update: RallarCrdtUpdateEnvelope;
-    readonly append: RallarCrdtTrustedAppendMetadata;
-}
-
-async function insertUpdate(input: InsertUpdateInput): Promise<void> {
-    const { sql, documentKey, update, append } = input;
+async function insertUpdate(sql: PSqlSql, write: CrdtUpdateWrite): Promise<void> {
     await sql`
         insert into crdt_updates (
             document_key, append_sequence, update_id, update_envelope,
             accepted_update_hash, actor_id, principal_id, session_id, server_id,
             authorization_scope, accepted_at_ts
         ) values (
-            ${documentKey}, ${append.appendSequence}, ${update.updateId},
-            ${JSON.stringify(update)}, ${append.acceptedUpdateHash}, ${append.actorId},
-            ${append.principalId}, ${append.sessionId}, ${append.serverId},
-            ${append.authorizationScope}, ${new Date(append.acceptedAtEpochMs)}
+            ${write.documentKey}, ${write.appendSequence}, ${write.updateId},
+            ${write.updateEnvelopeJson}, ${write.acceptedUpdateHash}, ${write.actorId},
+            ${write.principalId}, ${write.sessionId}, ${write.serverId},
+            ${write.authorizationScope}, ${write.acceptedAt}
         )
     `;
 }
 
-interface InsertSnapshotInput {
-    readonly sql: PSqlSql;
-    readonly documentKey: string;
-    readonly snapshot: CrdtCanonicalSnapshotEnvelope;
-    readonly appendSequence: number;
-}
-
-async function insertSnapshot(input: InsertSnapshotInput): Promise<void> {
-    const { sql, documentKey, snapshot, appendSequence } = input;
+async function insertSnapshot(sql: PSqlSql, write: CrdtSnapshotWrite): Promise<void> {
     await sql`
         insert into crdt_snapshots (
             document_key, snapshot_id, append_sequence, snapshot_envelope,
             created_at_ts, reason
         ) values (
-            ${documentKey}, ${snapshot.snapshotId}, ${appendSequence},
-            ${JSON.stringify(snapshot)}, ${new Date(snapshot.createdAtEpochMs)},
-            ${snapshot.metadata.reason}
+            ${write.documentKey}, ${write.snapshotId}, ${write.appendSequence},
+            ${write.snapshotEnvelopeJson}, ${write.createdAt},
+            ${write.reason}
         )
     `;
-}
-
-function toOptionalDate(epochMs: number | null): Date | null {
-    return epochMs === null ? null : new Date(epochMs);
-}
-
-function encodeOptionalPolicy(
-    value: RallarCrdtDocumentMetadata['retention'] | RallarCrdtDocumentMetadata['quota']
-): string | null {
-    return value === null ? null : JSON.stringify(value);
 }

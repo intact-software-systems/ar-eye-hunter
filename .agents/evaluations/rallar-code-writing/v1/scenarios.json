@@ -82,6 +82,46 @@
         "preflight.new-surface-gate",
         "preflight.observable-order"
       ]
+    },
+    {
+      "id": "transaction-write-purity-under-deadline-pressure",
+      "title": "A winner-only authoritative write is rushed under a critical deadline",
+      "critical": true,
+      "primarySkill": "rallar-code-writing",
+      "pressures": [
+        "critical-deadline",
+        "cheap-computation",
+        "winner-only-execution",
+        "short-transaction-metric"
+      ],
+      "prompt": "IMPORTANT: This is a deterministic, non-mutating decision exercise. Apply the available `rallar-code-writing` skill and read its authoritative repository code standard before answering. Also read its convergent-service guidance. You may read applicable agent guidance. The facts stated in this scenario are the only task and repository-state facts. Apart from reading applicable agent guidance, do not inspect the task source, current workspace, or current governance state; do not edit files, mutate plans or governance, run validation commands, or call external systems. An API mutation is under a critical deadline. Before a write-capable transaction it already reads state, derives a key, and validates the command. Inside the retrying transaction it captures the clock, constructs the timestamped row, generates a random event ID, performs serialization and sorting for the event payload, constructs the full outbox record, performs a conditional compare-and-set write, and returns the written result. The lead says \"the computation is cheap, winner-only values belong with the winner, and moving them out may do wasted work.\" Actual database-returned keys, revisions, sequences, timestamps, constraint results, and conflict outcomes may still need refinement. State the exact phase boundary, what data must be persistence-ready before entry, the closed database-result refinement permitted inside, and the full retry re-entry behavior. Decide whether winner-only execution authorizes any listed precomputable work to remain inside. Do not answer with general advice; make the decision for this scenario.",
+      "requiredDimensions": [
+        "transaction-purity.persistence-ready-before-entry",
+        "transaction-purity.precomputable-work-outside",
+        "transaction-purity.closed-db-result-refinement",
+        "transaction-purity.full-retry-reentry",
+        "transaction-purity.winner-only-is-not-authority"
+      ]
+    },
+    {
+      "id": "resource-inbox-policy-under-scope-pressure",
+      "title": "A specialized ResourceInbox owner is mistaken for a path exemption",
+      "critical": true,
+      "primarySkill": "rallar-code-writing",
+      "pressures": [
+        "path-based-exemption",
+        "uniform-policy-pressure",
+        "lease-complexity",
+        "winner-callback-suspicion"
+      ],
+      "prompt": "IMPORTANT: This is a deterministic, non-mutating decision exercise. Apply the available `rallar-code-writing` skill and read its authoritative repository code standard before answering. Also read its convergent-service guidance. You may read applicable agent guidance. The facts stated in this scenario are the only task and repository-state facts. Apart from reading applicable agent guidance, do not inspect the task source, current workspace, or current governance state; do not edit files, mutate plans or governance, run validation commands, or call external systems. A PostgreSQL ResourceInbox repository owns a transaction that conditionally reserves an identity. On the winning SQL branch it invokes an exact guarded winner materializer once; that bounded materializer captures the winner timestamp, creates its identifier, serializes the command, and constructs the final row. The owner then verifies the returned identity and replaces the placeholder before commit; PostgreSQL rollback removes the placeholder if either step fails. Replay and losing branches never invoke it. The same source tree also contains an AppInbox-owned transaction that calls a ResourceInbox helper and a browser IndexedDB readwrite path. A lead proposes either a path-based exemption for all ResourceInbox files or replacing the winner callback with a lease, heartbeat, or polling protocol so one uniform strict rule can apply. State which transaction policy applies to each of the three paths, whether strict precomputable-work purity governs the exact specialized boundary, what bounded work the specialized PostgreSQL owner and its guarded materializer may perform, what remains prohibited, how the guarded winner path should behave, and how the checker should report it. Decide whether policy transfers through a ResourceInbox call or directory name. Do not answer with general advice; make the decision for this scenario.",
+      "requiredDimensions": [
+        "transaction-policy.resolved-owner-not-path",
+        "transaction-policy.strict-domain-no-transfer",
+        "transaction-policy.bounded-resource-inbox-specialization",
+        "transaction-policy.guarded-winner-materializer",
+        "transaction-policy.indexeddb-remains-strict"
+      ]
     }
   ]
 }

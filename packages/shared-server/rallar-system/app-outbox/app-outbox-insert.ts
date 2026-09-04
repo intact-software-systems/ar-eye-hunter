@@ -1,0 +1,90 @@
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+import { ResourceInboxInvariantCorruptionError } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    toPgTimestamp,
+    toSystemDate
+} from '../../queuebox/postgres/resource-inbox-row-codec.ts';
+
+export interface AppOutboxInsert {
+    readonly entry: Readonly<ResourceEntry>;
+    readonly systemDate: string;
+    readonly createdAt: string;
+    readonly expiresAt: string;
+    readonly startedAt: string | null;
+    readonly finishedAt: string | null;
+    readonly nextAt: string | null;
+    readonly attempts: number;
+    readonly conflict: ResourceInboxInvariantCorruptionError;
+}
+
+export function computeAppOutboxInsert(entry: ResourceEntry): AppOutboxInsert {
+    const snapshot: Readonly<ResourceEntry> = {
+        ...entry,
+        key: { ...entry.key },
+        audit: { ...entry.audit },
+        dequeueAudit: { ...entry.dequeueAudit },
+        ...(entry.db === undefined ? {} : { db: { ...entry.db } })
+    };
+    return {
+        entry: snapshot,
+        systemDate: toSystemDate(snapshot),
+        createdAt: toPgTimestamp(snapshot.audit.createdTs),
+        expiresAt: toPgTimestamp(snapshot.audit.expiryTs),
+        startedAt: snapshot.dequeueAudit.startTs ? toPgTimestamp(snapshot.dequeueAudit.startTs) : null,
+        finishedAt: snapshot.dequeueAudit.endTs ? toPgTimestamp(snapshot.dequeueAudit.endTs) : null,
+        nextAt: snapshot.dequeueAudit.nextTs ? toPgTimestamp(snapshot.dequeueAudit.nextTs) : null,
+        attempts: snapshot.dequeueAudit.attempts,
+        conflict: new ResourceInboxInvariantCorruptionError(
+            snapshot.key,
+            'App outbox insert did not create exactly one row'
+        )
+    };
+}
+
+export async function writeAppOutboxInsert(transaction: PSqlSql, computed: AppOutboxInsert): Promise<void> {
+    if (!await insertAppOutboxRow(transaction, computed)) {
+        throw computed.conflict;
+    }
+}
+
+async function insertAppOutboxRow(transaction: PSqlSql, computed: AppOutboxInsert): Promise<boolean> {
+    const entry = computed.entry;
+    const inserted = await transaction<readonly { ri_row_id: bigint; }[]>`
+        insert into resource_inbox (ri_resource_id,
+                                    ri_topic_id,
+                                    ri_resource,
+                                    ri_type_id,
+                                    ri_status,
+                                    fk_ext_bank_id,
+                                    system_date,
+                                    created_by,
+                                    created_ts,
+                                    expire_ts,
+                                    start_ts,
+                                    end_ts,
+                                    next_ts,
+                                    ri_attempts)
+        values (${entry.key.resourceId},
+                ${entry.key.topicId},
+                ${entry.resource},
+                ${entry.typeId},
+                ${entry.status},
+                ${entry.key.contextId},
+                ${computed.systemDate},
+                ${entry.audit.createdBy},
+                ${computed.createdAt},
+                ${computed.expiresAt},
+                ${computed.startedAt},
+                ${computed.finishedAt},
+                ${computed.nextAt},
+                ${computed.attempts})
+        on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id) do nothing
+        returning ri_row_id
+    `;
+    if (inserted.length > 1) {
+        throw computed.conflict;
+    }
+    return inserted.length === 1;
+}

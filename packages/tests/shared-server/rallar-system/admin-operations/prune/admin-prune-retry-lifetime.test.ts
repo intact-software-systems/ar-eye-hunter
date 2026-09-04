@@ -56,7 +56,8 @@ describe('admin prune retry lifetime', () => {
             aggregate,
             expectedAggregate: JSON.stringify(aggregate),
             authority: { allowed: true, code: 'allowed' },
-            nowEpochMs: NOW
+            nowEpochMs: NOW,
+            serviceId: 'server-1'
         };
 
         const computed = service.compute(command, read);
