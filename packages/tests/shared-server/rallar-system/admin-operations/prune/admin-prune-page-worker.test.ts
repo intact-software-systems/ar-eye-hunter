@@ -75,7 +75,7 @@ describe('AdminPrunePageWorker', () => {
         const read = await work.read(command);
         const computed = work.compute(command, read);
 
-        work.validate(command, read, computed);
+        expect(work.validate(command, read, computed)).toEqual([]);
         expect(read.candidates).toEqual([
             { rowId: '1', revisionToken: '1' },
             { rowId: '2', revisionToken: '2' }
@@ -160,9 +160,10 @@ describe('AdminPrunePageWorker', () => {
         ];
 
         for (const altered of alteredCandidates) {
-            expect(() => work.validate(command, read, altered)).toThrow(
-                'Admin prune computed persistence differs from read facts'
-            );
+            expect(work.validate(command, read, altered)[0]).toMatchObject({
+                code: 'admin-prune-page-invalid',
+                status: 400
+            });
         }
     });
 
@@ -280,11 +281,16 @@ describe('AdminPrunePageWorker', () => {
         }));
         const read = await work.read(command);
 
-        const computed = work.compute(command, read);
+        const invalidRead = {
+            ...read,
+            candidates: [...read.candidates, { rowId: '3', revisionToken: '3' }]
+        };
+        const computed = work.compute(command, invalidRead);
 
-        expect(() => work.validate(command, read, computed)).toThrow(
-            expect.objectContaining({ code: 'admin-prune-authority-denied', status: 403 })
-        );
+        expect(work.validate(command, invalidRead, computed).map((issue) => issue.code)).toEqual([
+            'admin-prune-authority-denied',
+            'admin-prune-page-invalid'
+        ]);
     });
 
     it('rolls aggregate, deletion, successor, and reservation back on outbox collision', async () => {

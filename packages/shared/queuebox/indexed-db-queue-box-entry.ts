@@ -2,7 +2,6 @@ import { Temporal } from '@js-temporal/polyfill';
 import {
     EntityStatus,
     Key,
-    NEVER_EXPIRE_TS,
     ResourceEntry,
     ResourceEntryKeyString,
     toKeyAsString
@@ -271,10 +270,7 @@ export function isStoredQueueEntryExpired(
     stored: StoredResourceEntry,
     now: Temporal.Instant
 ): boolean {
-    const expiryTs = stored.audit.expiryTs
-        ? Temporal.Instant.from(stored.audit.expiryTs)
-        : NEVER_EXPIRE_TS;
-    return Temporal.Instant.compare(now, expiryTs) >= 0;
+    return Temporal.Instant.compare(now, Temporal.Instant.from(stored.audit.expiryTs)) >= 0;
 }
 
 export function isStoredQueueEntryReservable(
@@ -372,7 +368,7 @@ function validateIndexedDbQueueExpectedState(expected: IndexedDbQueueExpectedSta
             requireNonNegativeInteger(expected.revision, 'IndexedDB queue expected revision');
             return;
         case 'legacy-row':
-            validateStoredResourceEntry(expected.stored);
+            decodeStoredResourceEntryValue(expected.stored);
             if (expected.stored.revision !== undefined) {
                 throw new TypeError('IndexedDB queue legacy expectation contains a revision');
             }

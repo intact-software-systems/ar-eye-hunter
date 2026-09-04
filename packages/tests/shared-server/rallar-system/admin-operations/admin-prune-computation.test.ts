@@ -134,6 +134,24 @@ describe('admin prune computation', () => {
         }
     });
 
+    it('rejects a proxy candidate without executing its traps', async () => {
+        const read = await createRead();
+        const computed = computeAdminPruneMutation(read);
+        let propertyReads = 0;
+        const candidate = new Proxy(computed, {
+            get(target, property, receiver) {
+                propertyReads += 1;
+                return Reflect.get(target, property, receiver);
+            }
+        });
+
+        expect(validateAdminPruneMutation(read, candidate)[0]).toMatchObject({
+            code: 'admin-prune-computed-persistence-invalid',
+            status: 400
+        });
+        expect(propertyReads).toBe(0);
+    });
+
     it('writes only prepared aggregate values in the transaction', async () => {
         const computed = computeAdminPruneMutation(await createRead());
         const aggregateWrite = computed.aggregateWrite;

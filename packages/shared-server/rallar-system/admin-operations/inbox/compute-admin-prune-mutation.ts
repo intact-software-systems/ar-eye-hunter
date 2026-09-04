@@ -14,10 +14,12 @@ import {
 } from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import {
     computeAppOutboxInsert,
-    isExactAppOutboxInsert,
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
-import { serializeCanonicalJson } from '../../protocol/canonical-json.ts';
+import {
+    validateComputedData,
+    validateComputedProjection
+} from '../../validation/computed-data-validation.ts';
 import { toAdminPruneOutbox } from '../prune/admin-prune-page-codec.ts';
 import {
     createAdminPruneAggregate,
@@ -101,6 +103,14 @@ export function validateAdminPruneMutation(
 ): readonly AdminPruneValidationIssue[] {
     const issues: AdminPruneValidationIssue[] = [];
     const expected = computeAdminPruneMutation(read);
+    const dataIssues = validateComputedData(computed, 'computed');
+    if (dataIssues.length > 0) {
+        return dataIssues.map((issue) => ({
+            code: 'admin-prune-computed-persistence-invalid',
+            message: issue.message,
+            status: 400
+        }));
+    }
     if (!read.authority.allowed || read.command.expireAtEpochMs <= read.nowEpochMs) {
         issues.push({
             code: 'admin-prune-authority-denied',
@@ -108,27 +118,30 @@ export function validateAdminPruneMutation(
             status: 403
         });
     }
-    if (!hasSameAdminPruneResult(computed.result, expected.result)) {
-        issues.push({
+    issues.push(
+        ...validateComputedProjection(expected.result, computed.result, 'computed.result').map((issue) => ({
             code: 'admin-prune-computed-identity-invalid',
-            message: 'Admin prune computed identity differs from its read facts',
+            message: issue.message,
             status: 400
-        });
-    }
-    if (computed.outboxWrites.length !== (read.command.dryRun ? 0 : read.command.categories.length)) {
-        issues.push({
-            code: 'admin-prune-computed-category-count-invalid',
-            message: 'Admin prune computed category count is invalid',
-            status: 400
-        });
-    }
-    if (!hasExactAdminPrunePersistence(computed, expected)) {
-        issues.push({
+        }))
+    );
+    issues.push(
+        ...validateComputedProjection(
+            {
+                outboxWrites: expected.outboxWrites,
+                aggregateWrite: expected.aggregateWrite
+            },
+            {
+                outboxWrites: computed.outboxWrites,
+                aggregateWrite: computed.aggregateWrite
+            },
+            'computed.persistence'
+        ).map((issue) => ({
             code: 'admin-prune-computed-persistence-invalid',
-            message: 'Admin prune prepared persistence differs from its computed mutation',
+            message: issue.message,
             status: 400
-        });
-    }
+        }))
+    );
     issues.push(
         ...validateAppInboxCompletion(
             {
@@ -144,54 +157,6 @@ export function validateAdminPruneMutation(
         }))
     );
     return issues;
-}
-
-function hasSameAdminPruneResult(
-    left: AdminPruneEnqueueResult,
-    right: AdminPruneEnqueueResult
-): boolean {
-    try {
-        return serializeCanonicalJson(left) === serializeCanonicalJson(right);
-    }
-    catch {
-        return false;
-    }
-}
-
-function hasExactAdminPrunePersistence(
-    computed: AdminPruneComputed,
-    expected: AdminPruneComputed
-): boolean {
-    if (
-        computed.outboxWrites.length !== expected.outboxWrites.length ||
-        !computed.outboxWrites.every((write, index) => {
-            const expectedWrite = expected.outboxWrites[index];
-            return expectedWrite !== undefined && isExactAppOutboxInsert(expectedWrite.entry, write);
-        })
-    ) {
-        return false;
-    }
-    return hasSameAdminPruneAggregateWrite(computed.aggregateWrite, expected.aggregateWrite);
-}
-
-function hasSameAdminPruneAggregateWrite(
-    left: AdminPruneAggregateWrite | null,
-    right: AdminPruneAggregateWrite | null
-): boolean {
-    if (left === null || right === null) {
-        return left === right;
-    }
-    return left.entry.key.topicId === right.entry.key.topicId &&
-        left.entry.key.resourceId === right.entry.key.resourceId &&
-        left.entry.key.contextId === right.entry.key.contextId &&
-        left.entry.resource === right.entry.resource &&
-        left.entry.typeId === right.entry.typeId &&
-        left.entry.status === right.entry.status &&
-        left.entry.audit.createdBy === right.entry.audit.createdBy &&
-        left.systemDate === right.systemDate &&
-        left.createdAt === right.createdAt &&
-        left.expiresAt === right.expiresAt &&
-        left.replaceExpiredAt === right.replaceExpiredAt;
 }
 
 function computeInitialAdminPrunePages(

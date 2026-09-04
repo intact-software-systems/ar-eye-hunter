@@ -135,7 +135,7 @@ function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
             resourceInboxRepository: createPSqlResourceInboxRepository(database).entries,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
             database,
-            mutationService: createCrdtMutationService({
+            mutationReader: createCrdtMutationService({
                 repository,
                 serviceId: 'server-1'
             }),

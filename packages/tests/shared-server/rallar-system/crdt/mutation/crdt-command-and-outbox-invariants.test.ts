@@ -34,7 +34,7 @@ describe('CRDT command and outbox invariants', () => {
         const accepted = compute(command, read());
         const acceptedWire = outboxPayload(accepted, 'reply');
 
-        expect(accepted.outboxEntries).toHaveLength(2);
+        expect(accepted.outboxWrites).toHaveLength(2);
         expect(acceptedWire.results).toEqual([
             {
                 status: 'accepted',
@@ -52,7 +52,7 @@ describe('CRDT command and outbox invariants', () => {
                 existingAppend: accepted.append
             })
         );
-        expect(replay.outboxEntries).toHaveLength(1);
+        expect(replay.outboxWrites).toHaveLength(1);
         expect(outboxPayload(replay, 'reply').results[0]).toMatchObject({
             status: 'duplicate',
             update: command.update,
@@ -61,7 +61,7 @@ describe('CRDT command and outbox invariants', () => {
         });
 
         const denied = compute(command, read({ authorized: false }));
-        expect(denied.outboxEntries).toHaveLength(0);
+        expect(denied.outboxWrites).toHaveLength(0);
         expect(toAppendResult(denied)).toMatchObject({
             status: 'rejected',
             update: command.update,
@@ -319,7 +319,9 @@ function metadata(overrides: Partial<RallarCrdtDocumentMetadata> = {}): RallarCr
 }
 
 function outboxMessage(computed: CrdtMutationComputed, effect: string) {
-    const entry = computed.outboxEntries.find((candidate) => candidate.key.resourceId.endsWith(`:${effect}`));
+    const entry = computed.outboxWrites
+        .map((write) => write.entry)
+        .find((candidate) => candidate.key.resourceId.endsWith(`:${effect}`));
     if (!entry) {
         throw new Error(`Missing ${effect} outbox entry`);
     }

@@ -106,7 +106,7 @@ function createInbox(input: CreateInboxInput): AppCrdtInboxService {
             resourceInboxRepository: createPSqlResourceInboxRepository(database).entries,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
             database,
-            mutationService: createMutationService(),
+            mutationReader: createMutationService(),
             readCurrentSession: () => Promise.reject(new Error('not read')),
             wakeQueueEngine: () => undefined,
             auditDelivery: input.auditDelivery
@@ -126,8 +126,7 @@ function createUnusedDatabase(): PSqlSql {
         throw new Error('Unexpected SQL execution in audit registration test');
     }
     return Object.assign(query, {
-        begin: <T>(): Promise<T> =>
-            Promise.reject(new Error('Unexpected transaction in audit registration test'))
+        begin: <T>(): Promise<T> => Promise.reject(new Error('Unexpected transaction in audit registration test'))
     });
 }
 

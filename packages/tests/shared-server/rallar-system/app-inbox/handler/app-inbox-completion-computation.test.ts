@@ -45,7 +45,9 @@ describe('AppInbox successful completion computation', () => {
 
         const issues = validateAppInboxCompletion(input, candidate);
 
-        expect(issues.map((issue) => issue.path)).toEqual(['computed.reservationFinish']);
+        expect(issues.map((issue) => issue.path)).toEqual([
+            'computed.reservationFinish.expectedAttempts'
+        ]);
         expect(harness.database.beginCalls).toBe(0);
     });
 
@@ -73,10 +75,66 @@ describe('AppInbox successful completion computation', () => {
         });
 
         expect(issues.map((issue) => issue.path)).toEqual([
-            'computed.encodedResult',
-            'computed.resultReplacement',
-            'computed.finalizedEntry'
+            'computed.encodedResult.status',
+            'computed.encodedResult.revision',
+            'computed.resultReplacement.resource',
+            'computed.finalizedEntry.resource'
         ]);
+        expect(harness.database.beginCalls).toBe(0);
+    });
+
+    it('rejects executable completion candidates without reading their properties', () => {
+        const harness = createAtomicHarness();
+        const writer = new AppInboxTransactionWriter({ database: harness.database.sql }, { serviceId: 'server-1' });
+        const input = {
+            ...writer.readCompletionFacts(harness.context),
+            status: EntityStatus.COMPLETED,
+            durableResult: { status: 'accepted', revision: 2 }
+        } as const;
+        const computed = computeAppInboxCompletion(input);
+        let propertyReads = 0;
+        const candidate = new Proxy(computed, {
+            get(target, property, receiver) {
+                propertyReads += 1;
+                return Reflect.get(target, property, receiver);
+            }
+        });
+
+        const issues = validateAppInboxCompletion(input, candidate);
+
+        expect(issues.map((issue) => issue.path)).toEqual(['computed']);
+        expect(propertyReads).toBe(0);
+        expect(harness.database.beginCalls).toBe(0);
+    });
+
+    it('rejects accessor-backed persistence fields without invoking the accessor', () => {
+        const harness = createAtomicHarness();
+        const writer = new AppInboxTransactionWriter({ database: harness.database.sql }, { serviceId: 'server-1' });
+        const input = {
+            ...writer.readCompletionFacts(harness.context),
+            status: EntityStatus.COMPLETED,
+            durableResult: { status: 'accepted', revision: 2 }
+        } as const;
+        const computed = computeAppInboxCompletion(input);
+        let propertyReads = 0;
+        const resultReplacement = { ...computed.resultReplacement };
+        Object.defineProperty(resultReplacement, 'resource', {
+            enumerable: true,
+            get() {
+                propertyReads += 1;
+                return computed.resultReplacement.resource;
+            }
+        });
+
+        const issues = validateAppInboxCompletion(input, {
+            ...computed,
+            resultReplacement
+        });
+
+        expect(issues.map((issue) => issue.path)).toContain(
+            'computed.resultReplacement.resource'
+        );
+        expect(propertyReads).toBe(0);
         expect(harness.database.beginCalls).toBe(0);
     });
 

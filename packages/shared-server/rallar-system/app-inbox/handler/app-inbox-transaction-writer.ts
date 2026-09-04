@@ -7,6 +7,7 @@ import type { RallarTimingDetails, RallarTimingSink } from '../../observability/
 import { timeRallarAsync } from '../../observability/timing.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
+    AppInboxReservationConflictError,
     type AppInboxExecutionMetadata
 } from '../app-inbox-contracts.ts';
 import { toAppInboxAttemptTimingDetails } from './app-inbox-attempt-timing.ts';
@@ -98,7 +99,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
             await writeResourceInboxResultReplacement(transaction, computed.resultReplacement);
             const completed = await writeResourceInboxReservationFinish(transaction, computed.reservationFinish);
             if (!completed) {
-                throw computed.reservationConflict;
+                throw new AppInboxReservationConflictError(context.entry.key);
             }
         });
         this.finalizationByContext.set(context, {

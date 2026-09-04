@@ -1,7 +1,6 @@
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { jsonEquals } from '@shared/repository/state-utils.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import type { ResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
@@ -10,7 +9,7 @@ import {
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
 import { serializeCanonicalJson } from '../../protocol/canonical-json.ts';
-import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { validateComputedProjection } from '../../validation/computed-data-validation.ts';
 import { requireAdminPrunePageSize, type AdminPruneAppData } from '../inbox/admin-prune-command-codec.ts';
 import {
     decodeAdminPruneWork,
@@ -70,6 +69,13 @@ export interface AdminPrunePageComputed extends AdminPruneProgressWrite {
     readonly next: AdminPrunePageWork | null;
     readonly successorOutboxWrite: AppOutboxInsert | null;
     readonly reservationFinish: ResourceInboxReservationFinish;
+}
+
+export interface AdminPrunePageValidationIssue {
+    readonly code: 'admin-prune-authority-denied' | 'admin-prune-page-invalid';
+    readonly message: string;
+    readonly status: number;
+    readonly cause: Error;
 }
 
 export interface AdminPrunePageRepository {
@@ -227,25 +233,44 @@ export class AdminPrunePageWorker {
         command: ReservedAdminPrunePageWork,
         read: AdminPrunePageRead,
         computed: AdminPrunePageComputed
-    ): void {
+    ): readonly AdminPrunePageValidationIssue[] {
+        const issues: AdminPrunePageValidationIssue[] = [];
         if (
             !read.authority.allowed ||
             command.expireAtEpochMs <= read.nowEpochMs ||
             read.aggregate.requestedBy !== command.requestedBy ||
             read.aggregate.requestedSessionId !== command.requestedSessionId
         ) {
-            throw Object.assign(new Error('Admin prune current authority is denied'), {
+            const cause = Object.assign(new Error('Admin prune current authority is denied'), {
                 code: 'admin-prune-authority-denied',
                 status: 403
             });
+            issues.push({
+                code: 'admin-prune-authority-denied',
+                message: cause.message,
+                status: 403,
+                cause
+            });
         }
         if (read.candidates.length > command.pageSize) {
-            throw new TypeError('Admin prune computed page exceeds its command');
+            const cause = new TypeError('Admin prune computed page exceeds its command');
+            issues.push({
+                code: 'admin-prune-page-invalid',
+                message: cause.message,
+                status: 400,
+                cause
+            });
         }
         const expected = this.compute(command, read);
-        if (!jsonEquals(toAdminPrunePagePersistence(computed), toAdminPrunePagePersistence(expected))) {
-            throw new TypeError('Admin prune computed persistence differs from read facts');
-        }
+        issues.push(
+            ...validateComputedProjection(expected, computed, 'computed').map((issue) => ({
+                code: 'admin-prune-page-invalid' as const,
+                message: issue.message,
+                status: 400,
+                cause: issue.cause
+            }))
+        );
+        return issues;
     }
 
     async write(
@@ -269,99 +294,15 @@ export class AdminPrunePageWorker {
         const command = decodeAdminPruneWork(entry);
         const read = await this.read(command);
         const computed = this.compute(command, read);
-        this.validate(command, read, computed);
+        const issues = this.validate(command, read, computed);
+        if (issues[0] !== undefined) {
+            throw issues[0].cause;
+        }
         await runInPSqlTransaction(this.options.database, async (transaction) => {
             await this.write(transaction, computed);
         });
         this.options.wakeQueue?.();
     }
-}
-
-function toAdminPrunePagePersistence(computed: AdminPrunePageComputed): JsonWireValue {
-    return {
-        kind: computed.kind,
-        jobId: computed.jobId,
-        category: computed.category,
-        rowIds: computed.rowIds,
-        deletedRows: computed.deletedRows,
-        deletion: {
-            category: computed.deletion.category,
-            candidates: computed.deletion.candidates.map((candidate) => ({
-                rowId: candidate.rowId,
-                revisionToken: candidate.revisionToken
-            })),
-            candidateRowsJson: computed.deletion.candidateRowsJson,
-            capturedAtEpochMs: computed.deletion.capturedAt.getTime(),
-            appData: computed.deletion.category === 'app-data' ? computed.deletion.appData : null
-        },
-        next: computed.next === null
-            ? null
-            : {
-                kind: computed.next.kind,
-                jobId: computed.next.jobId,
-                category: computed.next.category,
-                requestedBy: computed.next.requestedBy,
-                requestedSessionId: computed.next.requestedSessionId,
-                capturedAtEpochMs: computed.next.capturedAtEpochMs,
-                expireAtEpochMs: computed.next.expireAtEpochMs,
-                pageSize: computed.next.pageSize,
-                afterCursor: computed.next.afterCursor,
-                pageIndex: computed.next.pageIndex,
-                appData: computed.next.appData === null
-                    ? null
-                    : {
-                        namespace: computed.next.appData.namespace,
-                        storeName: computed.next.appData.storeName
-                    }
-            },
-        successorOutboxWrite: computed.successorOutboxWrite === null
-            ? null
-            : toAppOutboxPersistence(computed.successorOutboxWrite),
-        expectedAggregate: computed.expectedAggregate,
-        aggregateSuccessor: toResourceEntryPersistence(computed.aggregateSuccessor),
-        aggregateSuccessorExpiryAtIsoTimestamp: computed.aggregateSuccessorExpiryAtIsoTimestamp,
-        reservationFinish: {
-            key: computed.reservationFinish.key,
-            expectedAttempts: computed.reservationFinish.expectedAttempts,
-            status: computed.reservationFinish.status,
-            completedAtEpochMs: computed.reservationFinish.completedAt.getTime()
-        }
-    };
-}
-
-function toAppOutboxPersistence(computed: AppOutboxInsert): JsonWireValue {
-    return {
-        entry: toResourceEntryPersistence(computed.entry),
-        systemDate: computed.systemDate,
-        createdAt: computed.createdAt,
-        expiresAt: computed.expiresAt,
-        startedAt: computed.startedAt,
-        finishedAt: computed.finishedAt,
-        nextAt: computed.nextAt,
-        attempts: computed.attempts
-    };
-}
-
-function toResourceEntryPersistence(entry: Readonly<ResourceEntry>): JsonWireValue {
-    return {
-        key: entry.key,
-        resource: entry.resource,
-        typeId: entry.typeId,
-        status: entry.status,
-        audit: {
-            date: entry.audit.date.toString(),
-            createdBy: entry.audit.createdBy,
-            createdTs: entry.audit.createdTs.toString(),
-            expiryTs: entry.audit.expiryTs.toString()
-        },
-        dequeueAudit: {
-            attempts: entry.dequeueAudit.attempts,
-            startTs: entry.dequeueAudit.startTs?.toString() ?? null,
-            endTs: entry.dequeueAudit.endTs?.toString() ?? null,
-            nextTs: entry.dequeueAudit.nextTs?.toString() ?? null
-        },
-        db: entry.db ?? null
-    };
 }
 
 export function toAdminPrunePageDelete(

@@ -4,6 +4,7 @@ import type {
     RallarCrdtDocumentMetadata,
     RallarCrdtTrustedAppendMetadata
 } from '@shared/crdt/mod.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { computeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { appendRejectionReason, isAppendRejectionRetryable, toAppendRejectionCode } from './crdt-append-rejection.ts';
@@ -65,7 +66,7 @@ interface CreateCrdtMutationComputedBaseInput<TDocument extends RallarCrdtDocume
     readonly update: CrdtAppendCommand['update'] | null;
     readonly append: CrdtMutationComputed['append'];
     readonly snapshot: CrdtCanonicalSnapshotEnvelope | null;
-    readonly outboxEntries: CrdtMutationComputed['outboxEntries'];
+    readonly outboxEntries: readonly ResourceEntry[];
     readonly result: CrdtMutationComputed['result'];
 }
 
@@ -83,7 +84,6 @@ interface CrdtMutationComputedBaseValues<TDocument extends RallarCrdtDocumentMet
     readonly update: CrdtAppendCommand['update'] | null;
     readonly append: CrdtMutationComputed['append'];
     readonly snapshot: CrdtCanonicalSnapshotEnvelope | null;
-    readonly outboxEntries: CrdtMutationComputed['outboxEntries'];
     readonly outboxWrites: CrdtMutationComputed['outboxWrites'];
     readonly result: CrdtMutationComputed['result'];
 }
@@ -251,7 +251,6 @@ function createCrdtMutationComputedBase<TDocument extends RallarCrdtDocumentMeta
         update,
         append,
         snapshot,
-        outboxEntries,
         outboxWrites: outboxEntries.map(computeAppOutboxInsert),
         result
     };

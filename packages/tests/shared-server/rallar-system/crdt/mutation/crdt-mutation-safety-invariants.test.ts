@@ -96,7 +96,7 @@ describe('CRDT mutation safety and audience invariants', () => {
             },
             serviceId: 'server-1'
         });
-        const fanout = JSON.parse(computed.outboxEntries[1]!.resource);
+        const fanout = JSON.parse(computed.outboxWrites[1]!.entry.resource);
         expect(fanout.targets).toEqual({
             mode: 'unicast',
             toPeerId: 'principal-1'

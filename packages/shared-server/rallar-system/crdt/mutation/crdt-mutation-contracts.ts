@@ -16,8 +16,6 @@ import type {
     RallarCrdtTrustedAppendMetadata,
     RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 
@@ -209,7 +207,6 @@ interface CrdtMutationComputedBase {
     readonly update: RallarCrdtUpdateEnvelope | null;
     readonly append: RallarCrdtTrustedAppendMetadata | null;
     readonly snapshot: CrdtCanonicalSnapshotEnvelope | null;
-    readonly outboxEntries: readonly ResourceEntry[];
     readonly outboxWrites: readonly AppOutboxInsert[];
     readonly result: CrdtMutationResult;
 }

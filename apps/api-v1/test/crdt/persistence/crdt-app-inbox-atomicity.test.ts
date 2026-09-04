@@ -84,13 +84,9 @@ async function verifyAtomicMutationCommit(): Promise<void> {
         const third = await command('command-3', 'update-3', 3_000);
         const secondComputed = await computeValidatedWrite(service, second);
         const thirdComputed = await computeValidatedWrite(service, third);
-        await sql.begin(async (transaction) =>
-            await writePSqlCrdtMutation(transaction, secondComputed)
-        );
+        await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, secondComputed));
         await assert.rejects(
-            sql.begin(async (transaction) =>
-                await writePSqlCrdtMutation(transaction, thirdComputed)
-            ),
+            sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, thirdComputed)),
             CrdtMutationConflictError
         );
     });
@@ -164,8 +160,8 @@ async function computeValidatedWrite(
 }
 
 function readCollisionEntries(computed: CrdtMutationComputedWrite): CollisionEntries {
-    const durableResult = computed.outboxEntries[0];
-    const collision = computed.outboxEntries.at(-1);
+    const durableResult = computed.outboxWrites[0]?.entry;
+    const collision = computed.outboxWrites.at(-1)?.entry;
     assert.ok(durableResult);
     assert.ok(collision);
     assert.equal(durableResult.typeId, 'WS_OUTBOX');

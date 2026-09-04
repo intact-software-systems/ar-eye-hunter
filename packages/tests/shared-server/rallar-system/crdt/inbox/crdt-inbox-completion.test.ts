@@ -15,7 +15,6 @@ describe('CRDT inbox completion candidate', () => {
         const computed = computeCrdtInboxMutation(read);
 
         expect(computed.mutation).toMatchObject({ outcome: 'write', document: { documentRevision: 1, updateCount: 1 } });
-        expect(computed.mutation.outboxEntries).toHaveLength(2);
         expect(computed.mutation).toHaveProperty('documentWrite');
         expect(computed.mutation).toHaveProperty('updateWrite');
         expect(computed.mutation).toHaveProperty('outboxWrites');
@@ -34,7 +33,6 @@ describe('CRDT inbox completion candidate', () => {
             updateEnvelopeJson: JSON.stringify(read.command.update),
             acceptedAt: new Date(read.command.capturedAtEpochMs)
         });
-        expect(computed.mutation.outboxWrites.map(({ entry }) => entry)).toEqual(computed.mutation.outboxEntries);
         expect(computed.completion.durableResult).toBe(computed.mutation.result);
         expect(computed.completion.reservationFinish.completedAt).toEqual(new Date(1_010));
         expect(validateCrdtInboxMutation(read, computed)).toEqual([]);
@@ -61,9 +59,9 @@ describe('CRDT inbox completion candidate', () => {
         expect(denied.mutation.outcome).toBe('rejected');
         expect(denied.completion.durableResult.status).toBe('rejected');
         expect(validateCrdtInboxMutation(deniedRead, denied)).toEqual([]);
-        const changed = { ...accepted, mutation: { ...accepted.mutation, outboxEntries: [] } };
+        const changed = { ...accepted, mutation: { ...accepted.mutation, outboxWrites: [] } };
         expect(validateCrdtInboxMutation(read, changed).length).toBeGreaterThan(0);
-        expect(changed.mutation.outboxEntries).toEqual([]);
+        expect(changed.mutation.outboxWrites).toEqual([]);
         expect(
             validateCrdtInboxMutation(read, {
                 ...accepted,
@@ -104,10 +102,11 @@ describe('CRDT inbox completion candidate', () => {
     it('rejects substituted Temporal outbox facts without invoking their callback', async () => {
         const read = await createRead();
         const computed = computeCrdtInboxMutation(read);
-        const firstEntry = computed.mutation.outboxEntries[0];
-        if (firstEntry === undefined) {
-            throw new Error('Expected a CRDT outbox entry');
+        const firstWrite = computed.mutation.outboxWrites[0];
+        if (firstWrite === undefined) {
+            throw new Error('Expected a CRDT outbox write');
         }
+        const firstEntry = firstWrite.entry;
         let callbackCalls = 0;
         const substitutedEntry = {
             ...firstEntry,
@@ -123,7 +122,10 @@ describe('CRDT inbox completion candidate', () => {
             ...computed,
             mutation: {
                 ...computed.mutation,
-                outboxEntries: [substitutedEntry, ...computed.mutation.outboxEntries.slice(1)]
+                outboxWrites: [
+                    { ...firstWrite, entry: substitutedEntry },
+                    ...computed.mutation.outboxWrites.slice(1)
+                ]
             }
         };
 
@@ -136,10 +138,11 @@ describe('CRDT inbox completion candidate', () => {
     it('rejects computed accessors without invoking them during validation', async () => {
         const read = await createRead();
         const computed = computeCrdtInboxMutation(read);
-        const firstEntry = computed.mutation.outboxEntries[0];
-        if (firstEntry === undefined) {
-            throw new Error('Expected a CRDT outbox entry');
+        const firstWrite = computed.mutation.outboxWrites[0];
+        if (firstWrite === undefined) {
+            throw new Error('Expected a CRDT outbox write');
         }
+        const firstEntry = firstWrite.entry;
         let accessorCalls = 0;
         const substitutedAudit = { ...firstEntry.audit };
         Object.defineProperty(substitutedAudit, 'createdBy', {
@@ -154,7 +157,10 @@ describe('CRDT inbox completion candidate', () => {
             ...computed,
             mutation: {
                 ...computed.mutation,
-                outboxEntries: [substitutedEntry, ...computed.mutation.outboxEntries.slice(1)]
+                outboxWrites: [
+                    { ...firstWrite, entry: substitutedEntry },
+                    ...computed.mutation.outboxWrites.slice(1)
+                ]
             }
         };
 

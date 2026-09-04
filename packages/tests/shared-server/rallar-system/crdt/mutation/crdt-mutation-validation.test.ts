@@ -10,9 +10,9 @@ import {
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import {
+    hashRallarCrdtUpdateEnvelope,
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
-    hashRallarCrdtUpdateEnvelope,
     toRallarCrdtDocumentKey,
     type RallarCrdtDocumentMetadata,
     type RallarCrdtDocumentRef,
@@ -67,8 +67,8 @@ describe('CRDT mutation exact validation', () => {
         });
 
         expect(substituted.outcome).toBe('write');
-        expect(validate(command, read, restoreOriginalProvenance(substituted, command, read)))
-            .toMatchObject([{ code: 'computed-mutation-differs' }]);
+        expect(validate(command, read, restoreOriginalProvenance(substituted, command, read))[0])
+            .toMatchObject({ code: 'computed-mutation-differs' });
     });
 
     it('rejects a replay outcome computed from coordinated substituted inputs', async () => {
@@ -92,8 +92,8 @@ describe('CRDT mutation exact validation', () => {
         });
 
         expect(substituted.outcome).toBe('replay');
-        expect(validate(command, read, restoreOriginalProvenance(substituted, command, read)))
-            .toMatchObject([{ code: 'computed-mutation-differs' }]);
+        expect(validate(command, read, restoreOriginalProvenance(substituted, command, read))[0])
+            .toMatchObject({ code: 'computed-mutation-differs' });
     });
 
     it('rejects a rejected outcome computed from coordinated substituted inputs', async () => {
@@ -117,8 +117,8 @@ describe('CRDT mutation exact validation', () => {
         });
 
         expect(substituted.outcome).toBe('rejected');
-        expect(validate(command, read, restoreOriginalProvenance(substituted, command, read)))
-            .toMatchObject([{ code: 'computed-mutation-differs' }]);
+        expect(validate(command, read, restoreOriginalProvenance(substituted, command, read))[0])
+            .toMatchObject({ code: 'computed-mutation-differs' });
     });
 
     it('rejects every altered accepted result, row, outbox, and conflict fact', async () => {
@@ -153,7 +153,6 @@ describe('CRDT mutation exact validation', () => {
                 ...computed,
                 updateWrite: { ...computed.updateWrite, updateEnvelopeJson: '{"kind":"tampered"}' }
             },
-            { ...computed, outboxEntries: computed.outboxEntries.slice(1) },
             {
                 ...computed,
                 outboxWrites: [
@@ -165,9 +164,9 @@ describe('CRDT mutation exact validation', () => {
         ];
 
         for (const candidate of candidates) {
-            expect(validate(command, read, candidate)).toMatchObject([
-                { code: 'computed-mutation-differs' }
-            ]);
+            expect(validate(command, read, candidate)[0]).toMatchObject({
+                code: 'computed-mutation-differs'
+            });
         }
     });
 
@@ -204,12 +203,35 @@ describe('CRDT mutation exact validation', () => {
         });
 
         expect(() => validate(command, read, malformedResult)).not.toThrow();
-        expect(validate(command, read, snapshotMismatch)).toMatchObject([
-            { code: 'computed-mutation-differs' }
-        ]);
-        expect(validate(command, read, malformedResult)).toMatchObject([
-            { code: 'computed-mutation-differs' }
-        ]);
+        expect(validate(command, read, snapshotMismatch)[0]).toMatchObject({
+            code: 'computed-mutation-differs'
+        });
+        expect(validate(command, read, malformedResult)[0]).toMatchObject({
+            code: 'computed-mutation-differs'
+        });
+    });
+
+    it('rejects a proxy candidate without executing its traps', async () => {
+        const command = await createAppendCommand({
+            commandId: 'proxy-validation',
+            updateId: 'proxy-validation-update',
+            title: 'accepted',
+            document: DOCUMENT
+        });
+        const read = createMutationRead();
+        const computed = computeCrdtMutation({ command, read, serviceId: 'server-1' });
+        let propertyReads = 0;
+        const candidate = new Proxy(computed, {
+            get(target, property, receiver) {
+                propertyReads += 1;
+                return Reflect.get(target, property, receiver);
+            }
+        });
+
+        expect(validate(command, read, candidate)[0]).toMatchObject({
+            code: 'computed-mutation-differs'
+        });
+        expect(propertyReads).toBe(0);
     });
 });
 

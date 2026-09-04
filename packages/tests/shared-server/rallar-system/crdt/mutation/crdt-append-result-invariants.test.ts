@@ -264,7 +264,7 @@ function appCrdt(): AppCrdtInboxService {
             resourceInboxRepository: createPSqlResourceInboxRepository(database).entries,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
             database,
-            mutationService: createCrdtMutationService({
+            mutationReader: createCrdtMutationService({
                 repository,
                 serviceId: 'server-1'
             }),
@@ -282,8 +282,7 @@ function createUnusedDatabase(): PSqlSql {
         throw new Error('Unexpected SQL execution in mutation invariant test');
     }
     return Object.assign(query, {
-        begin: <T>(): Promise<T> =>
-            Promise.reject(new Error('Unexpected transaction in mutation invariant test'))
+        begin: <T>(): Promise<T> => Promise.reject(new Error('Unexpected transaction in mutation invariant test'))
     });
 }
 

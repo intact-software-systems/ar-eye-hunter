@@ -94,7 +94,7 @@ describe('admin prune page persistence invariants', () => {
         expect(aggregateKey.resourceId.length).toBeLessThanOrEqual(36);
         expect(aggregateKey.contextId.length).toBeLessThanOrEqual(35);
         expect(command).toMatchObject(work);
-        expect(() => service.validate(command, read, computed)).not.toThrow();
+        expect(service.validate(command, read, computed)).toEqual([]);
     });
 
     it('exactly decodes aggregate nested fields and cross-field completion invariants', () => {

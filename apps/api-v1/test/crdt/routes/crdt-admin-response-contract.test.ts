@@ -270,7 +270,7 @@ function createAdminAppCrdt(input: CreateAdminAppCrdtInput): AppCrdtInboxService
             resourceInboxRepository: input.resourceInbox.entries,
             resourceInboxResultsRepository: input.results,
             database: input.sql,
-            mutationService: input.mutationService,
+            mutationReader: input.mutationService,
             readCurrentSession: () => Promise.reject(new Error('not read')),
             wakeQueueEngine: () => undefined,
             auditDelivery: { auditSink, outboxQueueReader: input.outbox }

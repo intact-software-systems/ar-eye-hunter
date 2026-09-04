@@ -68,7 +68,7 @@ export namespace AppCrdtInboxService {
         readonly resourceInboxRepository: PSqlResourceInboxEntryRepository;
         readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
         readonly database: PSqlSql;
-        readonly mutationService: CrdtMutationService;
+        readonly mutationReader: Pick<CrdtMutationService, 'read'>;
         readonly readCurrentSession: ReadCurrentCrdtMutationSession;
         readonly wakeQueueEngine: () => void;
         readonly auditDelivery?: AuditDelivery;
@@ -102,7 +102,7 @@ export class AppCrdtInboxService {
     private readonly wakeQueueEngine: () => void;
     private readonly serviceId: string;
 
-    public readonly mutationService: CrdtMutationService;
+    private readonly mutationReader: Pick<CrdtMutationService, 'read'>;
 
     constructor(dependencies: AppCrdtInboxService.Dependencies, config: AppCrdtInboxService.Config) {
         const clientRuntime = createAppInboxClientRuntime({
@@ -130,7 +130,7 @@ export class AppCrdtInboxService {
         this.handlers = handlerRuntime.registry;
         this.transactionWriter = handlerRuntime.transactionWriter;
         this.serviceId = config.serviceId;
-        this.mutationService = dependencies.mutationService;
+        this.mutationReader = dependencies.mutationReader;
         this.readCurrentSession = dependencies.readCurrentSession;
         this.wakeQueueEngine = dependencies.wakeQueueEngine;
         if (dependencies.auditDelivery !== undefined) {
@@ -305,7 +305,7 @@ export class AppCrdtInboxService {
 
         const read = {
             command,
-            read: await this.mutationService.read(command),
+            read: await this.mutationReader.read(command),
             serviceId: this.serviceId,
             completionFacts: this.transactionWriter.readCompletionFacts(appInboxContext)
         };

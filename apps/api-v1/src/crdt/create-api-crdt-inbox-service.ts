@@ -72,7 +72,7 @@ export function createApiCrdtInboxService(
             resourceInboxRepository: input.resourceInboxRepository,
             resourceInboxResultsRepository: input.resourceInboxResultsRepository,
             database: input.database,
-            mutationService: createCrdtMutationService({
+            mutationReader: createCrdtMutationService({
                 repository,
                 serviceId: input.serviceId
             }),

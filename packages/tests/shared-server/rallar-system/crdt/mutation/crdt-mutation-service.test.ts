@@ -70,7 +70,7 @@ describe('CRDT mutation service', () => {
             expectedDocumentRevision: 'absent',
             document: { documentRevision: 1, lastAppendSequence: 1, updateCount: 1 }
         });
-        expect(computed.outboxEntries.every((entry) => entry.typeId === 'WS_OUTBOX')).toBe(true);
+        expect(computed.outboxWrites.every(({ entry }) => entry.typeId === 'WS_OUTBOX')).toBe(true);
         expect(service.validate({ command, read, computed })).toEqual([]);
         expect(decodeCrdtMutationResult(computed.result)).toMatchObject({
             status: 'accepted',
@@ -175,7 +175,6 @@ describe('CRDT mutation service', () => {
             });
         }
     });
-
 });
 
 function createActor() {
@@ -297,8 +296,7 @@ function createUnusedTransaction(): PSqlSql {
         throw new Error('Unexpected SQL execution in mutation unit test');
     }
     return Object.assign(query, {
-        begin: <T>(): Promise<T> =>
-            Promise.reject(new Error('Unexpected nested transaction in mutation unit test'))
+        begin: <T>(): Promise<T> => Promise.reject(new Error('Unexpected nested transaction in mutation unit test'))
     });
 }
 
