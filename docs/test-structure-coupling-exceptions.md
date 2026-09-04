@@ -128,6 +128,14 @@ moved or changed test.
       "coverageRelation": "The named schema test parses and validates the exact published fixture, application example, compatibility corpus, or guide example represented by this filesystem occurrence."
     },
     {
+      "id": "workbench-collection-served-paths",
+      "domain": "Rallar server workbench collection addressing",
+      "owner": "Shared Test maintainers",
+      "summary": "Every workbench REST collection step addresses a path and method the API actually serves. Executable assertion: \u201caddresses paths the API actually serves\u201d.",
+      "semanticCoverage": "packages/tests/rallar-black-box/rallar-server-workbench.test.ts#addresses paths the API actually serves",
+      "coverageRelation": "The collections are hand-written HTTP paths that nothing executes in CI, so a wrong one is invisible until an operator clicks it and receives a 404. This assertion reads the shipped OpenAPI document \u2014 the published contract, not an internal structure \u2014 and requires a served path and method for every step. No behavioural test can substitute: the collections are operator inputs, never executed by the suite."
+    },
+    {
       "id": "control-protocol-browser-boundary",
       "domain": "Distributed monitor production ownership",
       "owner": "Shared Test maintainers",
@@ -1496,6 +1504,17 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-7f88b9c9cc3c1256",
+      "path": "packages/tests/rallar-black-box/rallar-server-workbench.test.ts",
+      "kind": "production-source-read",
+      "contract": "workbench-collection-served-paths",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared Test maintainers",
+      "rationale": "Reads the shipped OpenAPI document so a workbench collection cannot ship a path the API does not serve; the collections are operator inputs that no suite executes.",
+      "semanticCoverage": "packages/tests/rallar-black-box/rallar-server-workbench.test.ts#addresses paths the API actually serves"
+    },
     {
       "id": "test-structure-coupling-a5d5fdeb1214727a",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
