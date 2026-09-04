@@ -134,6 +134,9 @@ function constructDefaultRallarServer(
         serviceId: myServerId,
         timing,
         readWebSocketStatus: () => readApiV1WebSocketStatus(runtime.wsQBoxServerService.socket),
+        // Durable, never the snapshot cache: an operator explanation must not
+        // read a policy that lags a cross-server write.
+        readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
         readRtcTopologyMetrics: topology.readRtcTopologyMetrics,
         resetRtcTopologyMetrics: topology.resetRtcTopologyMetrics,
         readGroupFormationMetrics: runtime.groupFormationMetrics.readMetrics,

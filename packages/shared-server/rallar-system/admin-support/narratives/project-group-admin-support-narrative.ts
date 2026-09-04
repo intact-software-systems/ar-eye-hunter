@@ -7,9 +7,10 @@ import type {
     AdminSupportWarning
 } from '@shared/api/admin-support/admin-support-types.ts';
 import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
+import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupEvent, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { adminSupportNarrativeBase, type AdminSupportNarrativeBase } from './admin-support-narrative-base.ts';
-import { groupLifecycleFacts } from './group-lifecycle-facts.ts';
+import { groupLifecycleFacts, isGroupFormationSeriesParked } from './group-lifecycle-facts.ts';
 
 interface ProjectGroupAdminSupportInput extends AdminSupportNarrativeBase {
     readonly request: AdminSupportExplainGroupRequest;
@@ -18,6 +19,9 @@ interface ProjectGroupAdminSupportInput extends AdminSupportNarrativeBase {
     readonly snapshot: GroupSnapshot | undefined;
     readonly recentEvents: readonly GroupEvent[];
     readonly topologyView: GroupTopologyManagementView | undefined;
+    readonly hasLifecyclePolicyReader: boolean;
+    /** Null when unreadable or unconfigured; the facts it feeds degrade rather than lie. */
+    readonly policy: GroupLifecyclePolicy | null;
 }
 
 export function projectGroupAdminSupportNarrative(
@@ -29,6 +33,8 @@ export function projectGroupAdminSupportNarrative(
         input.request.sessionId
     );
     const facts = groupFacts({
+        policy: input.policy,
+        nowEpochMs: input.generatedAtEpochMs,
         snapshot: input.snapshot,
         recentEvents: input.recentEvents,
         topologyView: input.topologyView,
@@ -37,6 +43,8 @@ export function projectGroupAdminSupportNarrative(
         session
     });
     const warnings = groupWarnings({
+        policy: input.policy,
+        nowEpochMs: input.generatedAtEpochMs,
         hasGroupStateService: input.hasGroupStateService,
         hasTopologyQuery: input.hasTopologyQuery,
         snapshot: input.snapshot,
@@ -70,6 +78,8 @@ export function projectGroupAdminSupportNarrative(
 }
 
 interface GroupFactsInput {
+    readonly policy: GroupLifecyclePolicy | null;
+    readonly nowEpochMs: number;
     readonly snapshot: GroupSnapshot | undefined;
     readonly recentEvents: readonly GroupEvent[];
     readonly topologyView: GroupTopologyManagementView | undefined;
@@ -86,6 +96,8 @@ interface GroupWarningsInput {
     readonly sessionId: string | undefined;
     readonly session: GroupPresenceSession | undefined;
     readonly topologyView: GroupTopologyManagementView | undefined;
+    readonly policy: GroupLifecyclePolicy | null;
+    readonly nowEpochMs: number;
 }
 
 function groupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
@@ -125,7 +137,14 @@ function groupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
                 certainty: 'exact'
             }
         );
-        facts.push(...groupLifecycleFacts(input.snapshot.group, input.topologyView?.snapshot ?? null));
+        facts.push(...groupLifecycleFacts({
+            group: input.snapshot.group,
+            plannedSnapshot: input.topologyView?.snapshot ?? null,
+            acceptedSnapshot: input.topologyView?.acceptedSnapshot ?? null,
+            replanQueued: input.topologyView?.pending != null,
+            policy: input.policy,
+            nowEpochMs: input.nowEpochMs
+        }));
         if (input.principalId) {
             const member = input.snapshot.members.find(
                 (candidate) => candidate.principalId === input.principalId
@@ -200,11 +219,13 @@ function groupWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[
         });
     }
     const group = input.snapshot?.group;
-    if (group?.lifecycleState === 'dormant' && group.formationAttemptCount > 0) {
-        // The series is spent: `start` is denied until a `reset` clears it
-        // (product decision 37). Nothing is claimed here about admission --
-        // decision 38 keeps whatever posture the policy asked for, so a closed
-        // lobby stays closed, and this narrative cannot read that policy.
+    if (group !== undefined && isGroupFormationSeriesParked(group, input.policy)) {
+        // The series is spent, so `start` is denied until a `reset` clears it
+        // (product decision 37). Keyed on the budget rather than on a non-zero
+        // attempt count, which stops describing exhaustion the moment someone
+        // raises `maxFormationAttempts` on a parked group. Nothing is claimed
+        // about admission: decision 38 keeps whatever posture the policy asked
+        // for, so a closed lobby stays closed.
         warnings.push({
             code: 'group-formation-series-parked',
             message: `Formation parked in dormant after ${group.formationAttemptCount} attempt(s); ` +
