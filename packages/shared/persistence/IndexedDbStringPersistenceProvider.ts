@@ -134,7 +134,7 @@ async function readStoredIndexedDbValue<Value>(
 ): Promise<StoredIndexedDbValue<Value> | undefined> {
     const transaction = db.transaction(storeName, 'readonly');
     const completed = waitForIndexedDbTransaction(transaction);
-    const stored = await readIndexedDbRequest<unknown>(
+    const stored = await readIndexedDbRequest<IDBRequest['result']>(
         transaction.objectStore(storeName).get(storedKey)
     );
     await completed;
@@ -149,7 +149,7 @@ async function readAllStoredIndexedDbValues<Value>(
 ): Promise<readonly StoredIndexedDbValue<Value>[]> {
     const transaction = db.transaction(storeName, 'readonly');
     const completed = waitForIndexedDbTransaction(transaction);
-    const stored = await readIndexedDbRequest<unknown[]>(
+    const stored = await readIndexedDbRequest<IDBRequest['result'][]>(
         transaction.objectStore(storeName).getAll()
     );
     await completed;

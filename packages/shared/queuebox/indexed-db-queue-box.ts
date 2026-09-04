@@ -3,6 +3,8 @@ import { EnqueuedType } from '../api/api-config.ts';
 import { IndexedDbConnection, openIndexedDbWithStore } from '../persistence/openIndexedDb.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
+import { computeIndexedDbFairnessReservation } from './compute-indexed-db-fairness-reservation.ts';
+import { computeIndexedDbQueueRelease } from './compute-indexed-db-queue-release.ts';
 import { ResilienceDto } from './DequeueResourceEntryController.ts';
 import {
     decodeStoredResourceEntry,
@@ -18,8 +20,6 @@ import {
     isStoredQueueEntryReservable,
     isStoredQueueEntryTimedOut
 } from './indexed-db-queue-box-entry.ts';
-import { computeIndexedDbFairnessReservation } from './indexed-db-queue-box-fairness.ts';
-import { computeIndexedDbQueueRelease } from './indexed-db-queue-box-release.ts';
 import {
     readAllStoredQueueEntries,
     readFairnessStoredQueueEntries,
