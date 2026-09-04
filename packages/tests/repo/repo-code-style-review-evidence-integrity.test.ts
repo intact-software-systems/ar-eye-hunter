@@ -78,7 +78,7 @@ describe('repo code style review evidence integrity', () => {
             'declared beside the canonical owner',
             'closed operation-name type',
             'exhaustive operation inventory',
-            'Timing identity fields are deliberately populated, deliberately retained for compatibility',
+            'Timing identity fields are deliberately populated or removed only through',
             'separately approved observable-behavior work'
         ]);
         expectAllNormalized(realtime, [

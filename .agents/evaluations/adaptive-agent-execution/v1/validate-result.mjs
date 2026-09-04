@@ -362,8 +362,7 @@ function readCliInput(args) {
     }
     if (!Object.hasOwn(suiteDefinitions, args[1])) {
         return {
-            issue: 'suite must be adaptive-agent-execution, organizing-repository-structure, ' +
-                'or rallar-code-writing'
+            issue: `suite must be one of: ${Object.keys(suiteDefinitions).join(', ')}`
         };
     }
     return { suite: args[1], resultPath: args[2] };

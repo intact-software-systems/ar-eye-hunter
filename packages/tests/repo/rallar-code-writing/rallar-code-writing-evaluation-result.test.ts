@@ -105,6 +105,20 @@ describe('rallar code-writing evaluation result validation', () => {
         expect(validation.stdout).toContain('PASS: rallar code-writing v1 evaluation result');
     });
 
+    it('lists every accepted evaluation suite when the CLI suite is invalid', () => {
+        const validation = spawnSync(
+            process.execPath,
+            [path.join(repoRoot, canonicalValidator), '--suite', 'invalid-suite', 'result.json'],
+            { cwd: repoRoot, encoding: 'utf8' }
+        );
+
+        expect(validation.status).toBe(1);
+        expect(validation.stdout).toContain(
+            'suite must be one of: adaptive-agent-execution, organizing-repository-structure, ' +
+                'rallar-code-writing-v1, rallar-code-writing, rallar-code-writing-v2'
+        );
+    });
+
     it('requires all six critical scenarios and their raw output artifacts', () => {
         const validationInput = createValidationInput();
 
