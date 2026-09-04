@@ -177,7 +177,7 @@ function lifecycleReadFixture(): WsSessionGenerationLifecycleRead {
             },
             sessionId: 'session-1'
         },
-        key: 'lifecycle-key',
+        key: 'group:ar-eye-hunter:default:owner:session-1',
         revision: null,
         persistedExpireAtEpochMs: null,
         state: null
@@ -185,18 +185,21 @@ function lifecycleReadFixture(): WsSessionGenerationLifecycleRead {
 }
 
 function lifecycleGuardFixture(lifecycleRead: WsSessionGenerationLifecycleRead): WsSessionGenerationLifecycleComputed {
+    const state = {
+        version: 3,
+        status: 'open',
+        ...lifecycleRead.identity,
+        generationId: 'generation-1',
+        generationStartedAtEpochMs: 1_000,
+        expireAtEpochMs: 422_240
+    } as const;
     return {
         outcome: 'insert',
         key: lifecycleRead.key,
         expectedRevision: null,
-        state: {
-            version: 3,
-            status: 'open',
-            ...lifecycleRead.identity,
-            generationId: 'generation-1',
-            generationStartedAtEpochMs: 1_000,
-            expireAtEpochMs: 422_240
-        }
+        state,
+        value: JSON.stringify(state),
+        expireAtIsoTimestamp: new Date(state.expireAtEpochMs).toISOString()
     };
 }
 

@@ -1,6 +1,6 @@
 import type {
     AuthMutationCommand,
-    AuthMutationComputed,
+    AuthMutationDomainComputed,
     AuthMutationRead,
     IssueAuthWsTicketCommand
 } from '../auth-mutation-contracts.ts';
@@ -17,7 +17,7 @@ interface ComputeAuthTicketMutationInput {
 
 export function computeAuthTicketMutation(
     input: ComputeAuthTicketMutationInput
-): AuthMutationComputed {
+): AuthMutationDomainComputed {
     switch (input.kind) {
         case 'issue-ws-ticket':
             return computeIssueAuthWebSocketTicket(
@@ -55,7 +55,7 @@ export function computeAuthTicketMutation(
 function computeIssueAuthWebSocketTicket(
     command: IssueAuthWsTicketCommand,
     read: Extract<AuthMutationRead, { kind: 'issue-ws-ticket'; }>
-): AuthMutationComputed {
+): AuthMutationDomainComputed {
     return {
         command,
         read,

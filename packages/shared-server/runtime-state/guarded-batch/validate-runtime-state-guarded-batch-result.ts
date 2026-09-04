@@ -22,6 +22,13 @@ export function validateRuntimeStateGuardedBatchResult(
     input: RuntimeStateGuardedBatchResult | JsonWireValue
 ): RuntimeStateGuardedBatchResult {
     const batch = validateRuntimeStateGuardedBatch(expectedBatch);
+    return validateComputedRuntimeStateGuardedBatchResult(batch, input);
+}
+
+export function validateComputedRuntimeStateGuardedBatchResult(
+    batch: RuntimeStateGuardedBatch,
+    input: RuntimeStateGuardedBatchResult | JsonWireValue
+): RuntimeStateGuardedBatchResult {
     const result = requireResultRecord(
         input,
         'root'

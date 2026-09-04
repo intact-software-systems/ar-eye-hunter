@@ -23,6 +23,7 @@ import type {
     GroupLayoutTombstones,
     GroupMutationCommand,
     GroupMutationComputed,
+    GroupMutationDomainWrite,
     GroupMutationFacts,
     GroupMutationIdempotencyRecord,
     GroupMutationRead,
@@ -33,6 +34,7 @@ import type {
 import { GroupAlreadyExistsError, GroupMutationRejectedError } from './group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from './group-mutation-idempotency-key.ts';
 import { GroupConnectDeniedError, type GroupMutationRejectionCode } from './group-mutation-rejection-codes.ts';
+import { computeGroupMutationPersistence } from './orchestration/compute-group-mutation-persistence.ts';
 
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
@@ -135,7 +137,7 @@ export function computeGroupMutationWriteResult(
         outboxIds: outboxEntries.map((outboxEntry) => outboxEntry.key.resourceId),
         rejection: null
     });
-    return {
+    const computed: GroupMutationDomainWrite = {
         outcome: 'write',
         guard: input.guard,
         members: input.members,
@@ -151,6 +153,7 @@ export function computeGroupMutationWriteResult(
         layoutTombstones,
         connectTriggerLatchEffect: input.connectTriggerLatchEffect ?? null
     };
+    return { ...computed, persistence: computeGroupMutationPersistence(computed) };
 }
 
 function toGroupMutationIdempotency(

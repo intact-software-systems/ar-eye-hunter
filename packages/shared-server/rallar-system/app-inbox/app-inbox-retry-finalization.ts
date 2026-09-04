@@ -29,6 +29,7 @@ export interface AppInboxRetryFinalizerDependencies {
 interface AppInboxRetryFinalizationWork {
     readonly finalization: AppInboxRetryFinalization;
     readonly finalizedAtEpochMs: number;
+    readonly finalizedAt: Date;
     readonly diagnostics: AppInboxFailure;
     readonly timingDetails: RallarTimingDetails;
 }
@@ -59,9 +60,11 @@ export function createAppInboxRetryFinalizer(
 function createAppInboxRetryFinalizationWork(
     finalization: AppInboxRetryFinalization
 ): AppInboxRetryFinalizationWork {
+    const finalizedAtEpochMs = toFinalizedAtEpochMs(finalization);
     return {
         finalization,
-        finalizedAtEpochMs: toFinalizedAtEpochMs(finalization),
+        finalizedAtEpochMs,
+        finalizedAt: new Date(finalizedAtEpochMs),
         diagnostics: toDiagnostics(finalization),
         timingDetails: {
             processingAttempts: finalization.processingAttempts,
@@ -111,7 +114,7 @@ async function writeAppInboxRetryFinalization(
                 work.finalization.entry.key,
                 work.finalization.reservationAttempt,
                 EntityStatus.FAILED,
-                new Date(work.finalizedAtEpochMs)
+                work.finalizedAt
             );
             if (!finished) {
                 throw new AppInboxReservationConflictError(work.finalization.entry.key);

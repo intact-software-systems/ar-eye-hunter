@@ -240,7 +240,7 @@ export type ConditionalCandidate<T> =
     | Readonly<{ operation: 'insert'; value: T; }>
     | Readonly<{ operation: 'update'; value: T; expectedRevision: number; }>;
 
-export type ClientMutationComputedPersistedNoOp = Readonly<{
+export type ClientMutationDomainPersistedNoOp = Readonly<{
     outcome: 'no-op';
     persistIdempotency: true;
     aggregateRef: ClientPrincipalRef;
@@ -258,7 +258,7 @@ export type ClientMutationComputedNonPersistedNoOp = Readonly<{
     event: null;
 }>;
 
-export type ClientMutationComputedAppliedWrite = Readonly<{
+export type ClientMutationDomainAppliedWrite = Readonly<{
     outcome: 'write';
     principal: Exclude<ConditionalCandidate<ClientPrincipal>, { operation: 'none'; }>;
     instance: ConditionalCandidate<ClientInstance>;
@@ -271,7 +271,50 @@ export type ClientMutationComputedAppliedWrite = Readonly<{
     outboxEntries: readonly ResourceEntry[];
 }>;
 
-export type ClientMutationComputedWrite = ClientMutationComputedAppliedWrite | ClientMutationComputedPersistedNoOp;
+export type ClientRuntimePersistenceOperation =
+    | Readonly<{
+        kind: 'insert';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedRevision: null;
+    }>
+    | Readonly<{
+        kind: 'update';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedRevision: number;
+    }>;
+
+export type ClientMutationPersistence = Readonly<{
+    runtimeWrites: readonly ClientRuntimePersistenceOperation[];
+    eventWrite:
+        | Readonly<{
+            event: ClientEvent;
+            workspaceKey: string;
+            eventJson: string;
+        }>
+        | null;
+}>;
+
+export type ClientMutationComputedPersistedNoOp =
+    & ClientMutationDomainPersistedNoOp
+    & Readonly<{ persistence: ClientMutationPersistence; }>;
+
+export type ClientMutationComputedAppliedWrite =
+    & ClientMutationDomainAppliedWrite
+    & Readonly<{ persistence: ClientMutationPersistence; }>;
+
+export type ClientMutationDomainWrite =
+    | ClientMutationDomainAppliedWrite
+    | ClientMutationDomainPersistedNoOp;
+
+export type ClientMutationComputedWrite =
+    | ClientMutationComputedAppliedWrite
+    | ClientMutationComputedPersistedNoOp;
 
 export type ClientMutationComputed =
     | Readonly<{

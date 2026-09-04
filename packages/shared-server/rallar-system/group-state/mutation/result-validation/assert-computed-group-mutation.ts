@@ -111,7 +111,8 @@ function assertWriteOutcomeKeys(computed: Extract<GroupMutationComputed, { outco
         'acceptedLayoutPromotion',
         'plannedLayoutFence',
         'layoutTombstones',
-        'connectTriggerLatchEffect'
+        'connectTriggerLatchEffect',
+        'persistence'
     ];
     assertExactKeys(computed, keys, 'Group mutation computed result');
     assertRequiredKeys(computed, keys, 'Group mutation computed result');

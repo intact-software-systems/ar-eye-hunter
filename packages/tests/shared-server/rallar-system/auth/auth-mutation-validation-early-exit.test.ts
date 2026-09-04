@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { AuthMutationCommand, AuthMutationComputed, AuthMutationRead } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { validateAuthMutation } from '@shared-server/rallar-system/auth/mutation/validate/validate-auth-mutation.ts';
+import type { PersistedAuthUser } from '@shared-server/rallar-system/auth/persistence/persisted-auth-user.ts';
 
 const session = {
     clientId: 'client-1',
@@ -72,13 +73,16 @@ function registerUserEarlyExit() {
         capturedAtEpochMs: 1_000,
         user: { clientId: 'client-1' }
     } as AuthMutationCommand;
-    const read = {
+    const read: Extract<AuthMutationRead, { kind: 'register-user'; }> = {
         kind: 'register-user',
-        byUsername: { value: { clientId: 'different-client' } },
-        get byClientId() {
+        byUsername: {
+            entry: runtimeEntry(),
+            value: { clientId: 'different-client' } as PersistedAuthUser
+        },
+        get byClientId(): never {
             throw new Error('Registration should stop before the client index');
         }
-    } as unknown as AuthMutationRead;
+    };
     return rejectionCase({
         command,
         read,
@@ -96,15 +100,19 @@ function issueSessionEarlyExit() {
         authority: { kind: 'static-client', clientId: 'client-1', normalizedUsername: 'alice' },
         session
     } as AuthMutationCommand;
-    const read = {
+    const read: Extract<AuthMutationRead, { kind: 'issue-session'; }> = {
         kind: 'issue-session',
-        get byToken() {
+        get byToken(): never {
             throw new Error('Missing computed session must stop before runtime indexes');
         },
-        get userByUsername() {
+        get userByUsername(): never {
             throw new Error('Missing computed session must stop before user authority');
-        }
-    } as unknown as AuthMutationRead;
+        },
+        userByClientId: null,
+        bySession: null,
+        expiredByTokenEntry: null,
+        expiredBySessionEntry: null
+    };
     return rejectionCase({
         command,
         read,
@@ -122,13 +130,13 @@ function consumeWebSocketTicketEarlyExit() {
         ticketDigest: 'websocket-ticket-digest',
         expectedSessionId: session.sessionId
     } as AuthMutationCommand;
-    const read = {
+    const read: Extract<AuthMutationRead, { kind: 'consume-ws-ticket'; }> = {
         kind: 'consume-ws-ticket',
         ticket: null,
-        get session() {
+        get session(): never {
             throw new Error('Missing ticket must stop before session authority');
         }
-    } as unknown as AuthMutationRead;
+    };
     return rejectionCase({
         command,
         read,
@@ -146,12 +154,15 @@ function issueAgentTicketEarlyExit() {
         authority: session,
         tickets: []
     } as AuthMutationCommand;
-    const read = {
+    const read: Extract<AuthMutationRead, { kind: 'issue-agent-tickets'; }> = {
         kind: 'issue-agent-tickets',
-        get authority() {
+        get authority(): never {
             throw new Error('Invalid ticket batch must stop before authority');
-        }
-    } as unknown as AuthMutationRead;
+        },
+        sessions: [],
+        tickets: [],
+        expiredTicketEntries: []
+    };
     return rejectionCase({
         command,
         read,
@@ -179,7 +190,18 @@ function computed(command: AuthMutationCommand, read: AuthMutationRead): AuthMut
         sessions: [],
         agentTickets: [],
         logoutOutbox: null,
-        outcome: 'write'
+        outcome: 'write',
+        persistence: { operations: [], logoutOutbox: null }
+    };
+}
+
+function runtimeEntry() {
+    return {
+        key: 'test-entry',
+        value: '{}',
+        expireAtTimestamp: 2_000,
+        updatedTimestamp: '1970-01-01T00:00:01.000Z',
+        revision: 0
     };
 }
 

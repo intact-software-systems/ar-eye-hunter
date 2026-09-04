@@ -36,6 +36,34 @@ interface StoredRtcTopologyInputFingerprint {
     readonly fingerprint: string;
 }
 
+export interface RtcTopologyInputFingerprintWrite {
+    readonly key: string;
+    readonly value: string;
+    readonly expireAtIsoTimestamp: string;
+}
+
+export function computeRtcTopologyInputFingerprintWrite(
+    ref: GroupRef,
+    fingerprint: string
+): RtcTopologyInputFingerprintWrite {
+    if (!/^sha256:[0-9a-f]{64}$/u.test(fingerprint)) {
+        throw new TypeError('RTC topology input fingerprint is invalid');
+    }
+    const stored: StoredRtcTopologyInputFingerprint = {
+        groupRef: {
+            applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
+            groupId: ref.groupId
+        },
+        fingerprint
+    };
+    return {
+        key: groupStateGroupStorageKey(ref),
+        value: JSON.stringify(stored),
+        expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
+    };
+}
+
 export async function computeRtcTopologyInputFingerprint(
     facts: RtcTopologyInputFingerprintFacts
 ): Promise<string> {

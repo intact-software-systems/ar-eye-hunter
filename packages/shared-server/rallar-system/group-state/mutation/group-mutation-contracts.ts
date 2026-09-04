@@ -20,7 +20,10 @@ import type {
     GroupStatus
 } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type {
+    RuntimeStateGuardedBatch,
+    RuntimeStateGuardedBatchEffect
+} from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { GroupConnectTriggerLatchRow } from '../persistence/group-connect-trigger-latch-repository.ts';
 import type {
     GroupAcceptedLayoutRow,
@@ -493,6 +496,46 @@ export type PresenceAdmissionCandidate =
         expectedRevision: number;
     }>;
 
+export type GroupMutationDomainWrite = Readonly<{
+    outcome: 'write';
+    guard: GroupGuardCandidate | PresenceGuardCandidate;
+    members: readonly GroupMember[];
+    initialPresenceSummary: InitialGroupPresenceSummaryCandidate | null;
+    presenceAdmission: PresenceAdmissionCandidate | null;
+    event: GroupEvent;
+    receipt: GroupMutationReceipt;
+    idempotency: GroupMutationIdempotencyRecord | null;
+    outboxEntries: readonly ResourceEntry[];
+    lifecyclePolicy: GroupLifecyclePolicy | null;
+    /** Accepted layout committed atomically with the authoritative group row. */
+    acceptedLayoutPromotion: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }> | null;
+    /** Planned layout revision re-asserted by a layout-fenced command. */
+    plannedLayoutFence: GroupPlannedLayoutRow | null;
+    layoutTombstones: GroupLayoutTombstones | null;
+    connectTriggerLatchEffect: RuntimeStateGuardedBatchEffect | null;
+}>;
+
+export type GroupMutationPersistence = Readonly<{
+    guardedBatch: RuntimeStateGuardedBatch;
+    lifecyclePolicyWrite:
+        | Readonly<{
+            namespace: string;
+            key: string;
+            value: string;
+            expireAtIsoTimestamp: string;
+        }>
+        | null;
+    eventWrite: Readonly<{
+        event: GroupEvent;
+        workspaceKey: string;
+        eventJson: string;
+    }>;
+}>;
+
+export type GroupMutationComputedWrite =
+    & GroupMutationDomainWrite
+    & Readonly<{ persistence: GroupMutationPersistence; }>;
+
 export type GroupMutationComputed =
     | Readonly<{
         outcome: 'replay' | 'no-op';
@@ -515,40 +558,12 @@ export type GroupMutationComputed =
         policyDenial: GroupPolicyDenied;
         receipt: GroupMutationReceipt;
     }>
-    | Readonly<{
-        outcome: 'write';
-        guard: GroupGuardCandidate | PresenceGuardCandidate;
-        members: readonly GroupMember[];
-        initialPresenceSummary: InitialGroupPresenceSummaryCandidate | null;
-        presenceAdmission: PresenceAdmissionCandidate | null;
-        event: GroupEvent;
-        receipt: GroupMutationReceipt;
-        idempotency: GroupMutationIdempotencyRecord | null;
-        outboxEntries: readonly ResourceEntry[];
-        lifecyclePolicy: GroupLifecyclePolicy | null;
-        /**
-         * The accepted-layout facts an activation or applyPlannedLayout
-         * commits atomically with the group row (product decisions 24/42);
-         * null for every other operation and when no plan exists to promote.
-         */
-        acceptedLayoutPromotion: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }> | null;
-        /**
-         * The planned row a layout-fenced command matched, re-asserted under
-         * its revision inside the write transaction. Null when the command
-         * carries no layout fence or already promotes (a promotion emits the
-         * same guard itself).
-         */
-        plannedLayoutFence: GroupPlannedLayoutRow | null;
-        layoutTombstones: GroupLayoutTombstones | null;
-        connectTriggerLatchEffect: RuntimeStateGuardedBatchEffect | null;
-    }>;
+    | GroupMutationComputedWrite;
 
 export interface GroupLayoutTombstones {
     readonly planned: GroupPlannedLayoutRow | null;
     readonly accepted: GroupAcceptedLayoutRow | null;
 }
-
-export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcome: 'write'; }>;
 
 /**
  * The transition table's commands, listed once. Every registry keyed on them —

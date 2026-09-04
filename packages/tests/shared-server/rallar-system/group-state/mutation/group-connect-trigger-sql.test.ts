@@ -5,7 +5,7 @@ import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.t
 import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { computeGroupConnectTriggerEntry } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { materializeGroupStateGuardedBatch, writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
+import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupConnectTriggerLatchRepository } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
@@ -42,7 +42,7 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
             const latches = new GroupConnectTriggerLatchRepository(runtime);
             await expect(sql.begin((tx) => writeGroupMutation(tx, computed))).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
             expect((await latches.read(identity))?.latch.state).toBe('awaiting-publication');
-            const batch = materializeGroupStateGuardedBatch(computed);
+            const batch = computed.persistence.guardedBatch;
             expect(JSON.parse((await runtime.findEntry(batch.guard.namespace, batch.guard.key))!.value).lifecycleState).toBe('planned');
             await sql`delete from resource_inbox where fk_ext_bank_id = ${entry.key.contextId} and ri_resource_id = ${entry.key.resourceId}`;
             await sql.begin((tx) => writeGroupMutation(tx, computed));
@@ -146,7 +146,7 @@ async function seedConnectWrite(sql: PSqlSql, applicationId: string) {
         throw new Error('Expected connect write');
     }
     const runtime = new PSqlRuntimeStateRepository(sql);
-    const batch = materializeGroupStateGuardedBatch(computed);
+    const batch = computed.persistence.guardedBatch;
     await runtime.upsert(batch.guard.namespace, batch.guard.key, JSON.stringify(group.value), NEVER_EXPIRE_AT_TIMESTAMP);
     for (const effect of batch.effects) {
         if (effect.effectId === 'planned-layout-fence' || effect.effectId === 'connect-trigger-latch') {

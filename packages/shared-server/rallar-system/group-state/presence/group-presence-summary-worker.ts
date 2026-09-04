@@ -196,13 +196,14 @@ export class GroupPresenceSummaryWork {
         const read = await this.read(work);
         const computed = this.compute(work, read);
         this.validate(work, read, computed);
+        const completedAt = new Date(this.now());
         await runInPSqlTransaction(this.options.database, async (transaction) => {
             await this.write(transaction, computed);
             const finished = await new PSqlResourceInboxFinalizationRepository(transaction).finishReserved(
                 entry.key,
                 entry.dequeueAudit.attempts,
                 EntityStatus.COMPLETED,
-                new Date(this.now())
+                completedAt
             );
             if (!finished) {
                 throw new Error('Presence-summary reservation changed before commit');

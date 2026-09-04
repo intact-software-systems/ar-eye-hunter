@@ -6,7 +6,11 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    computeAppOutboxInsert,
+    writeAppOutboxInsert,
+    type AppOutboxInsert
+} from '../../app-outbox/app-outbox-insert.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
 import { validateRtcTopologyPublication } from './validate-rtc-topology-publication.ts';
 
@@ -65,9 +69,14 @@ export function computeRtcTopologyPublicationOutbox(
 
 export async function writeRtcTopologyPublicationOutbox(
     transaction: PSqlSql,
-    publication: RtcTopologyPublication
+    computed: AppOutboxInsert
 ): Promise<ResourceEntry> {
-    const entry = computeRtcTopologyPublicationOutbox(publication);
-    await new PSqlResourceInboxEntryRepository(transaction).writeIfAbsentOrMatch(entry);
-    return entry;
+    await writeAppOutboxInsert(transaction, computed);
+    return computed.entry;
+}
+
+export function computeRtcTopologyPublicationOutboxInsert(
+    publication: RtcTopologyPublication
+): AppOutboxInsert {
+    return computeAppOutboxInsert(computeRtcTopologyPublicationOutbox(publication));
 }

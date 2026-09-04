@@ -16,10 +16,13 @@ import { ClientMutationRejectedError } from '../../validation/client-mutation-re
 import type {
     ClientMutationCommand,
     ClientMutationComputed,
+    ClientMutationDomainAppliedWrite,
+    ClientMutationDomainPersistedNoOp,
     ClientMutationRead,
     ConditionalCandidate
 } from '../client-mutation-contracts.ts';
 import { toClientMutationActor } from './compute-client-mutation-state.ts';
+import { computeClientPersistence } from './compute-client-persistence.ts';
 
 export type AppliedClientMutationInput = Readonly<{
     command: ClientMutationCommand;
@@ -56,7 +59,7 @@ export function computeClientMutationResult(
         stateRevision,
         outboxIds: outboxEntries.map((entry) => entry.key.resourceId)
     });
-    return {
+    const computed: ClientMutationDomainAppliedWrite = {
         outcome: 'write',
         principal: read.principal
             ? { operation: 'update', value: principal, expectedRevision: read.principal.entry.revision }
@@ -72,6 +75,7 @@ export function computeClientMutationResult(
         stateSync,
         outboxEntries
     };
+    return { ...computed, persistence: computeClientPersistence(computed) };
 }
 
 export function computeClientMutationNoOp(
@@ -91,7 +95,7 @@ export function computeClientMutationNoOp(
     const receipt = toNoOpClientMutationReceipt(command, read);
     const snapshot = requireClientMutationReadSnapshot(read, command);
     if (persistIdempotency && command.requestId !== null) {
-        return {
+        const computed: ClientMutationDomainPersistedNoOp = {
             outcome: 'no-op',
             persistIdempotency: true,
             aggregateRef: command.aggregateRef,
@@ -104,6 +108,7 @@ export function computeClientMutationNoOp(
             snapshot,
             event: null
         };
+        return { ...computed, persistence: computeClientPersistence(computed) };
     }
     return {
         outcome: 'no-op',
