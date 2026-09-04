@@ -7,6 +7,7 @@ import type {
     AdminSupportWarning
 } from '@shared/api/admin-support/admin-support-types.ts';
 import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupEvent, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { adminSupportNarrativeBase, type AdminSupportNarrativeBase } from './admin-support-narrative-base.ts';
 
@@ -122,6 +123,64 @@ function groupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
                 source: 'group-state',
                 value: input.snapshot.activeSessions.length,
                 certainty: 'exact'
+            },
+            // The lifecycle plane an operator actually asks about: which stage
+            // the group is in, which series it is on, which layout carries
+            // traffic, and whether application data is flowing (product
+            // decision 25 keeps the valve off the routing plane).
+            {
+                label: 'group.lifecycleState',
+                source: 'group-state',
+                value: input.snapshot.group.lifecycleState,
+                certainty: 'exact'
+            },
+            {
+                label: 'group.formationEpoch',
+                source: 'group-state',
+                value: input.snapshot.group.formationEpoch,
+                certainty: 'exact'
+            },
+            {
+                label: 'group.formationAttemptCount',
+                source: 'group-state',
+                value: input.snapshot.group.formationAttemptCount,
+                certainty: 'exact'
+            },
+            {
+                label: 'group.transportState',
+                source: 'group-state',
+                value: input.snapshot.group.transportState,
+                certainty: 'exact'
+            },
+            {
+                label: 'group.acceptedLayoutIdentity',
+                source: 'group-state',
+                value: summarizeLayoutIdentity(input.snapshot.group.acceptedLayoutIdentity),
+                certainty: input.snapshot.group.acceptedLayoutIdentity === null ? 'unavailable' : 'exact'
+            },
+            // Derived, non-authoritative, and read by no policy or gate
+            // (product decision 3) -- reported so an operator can see what the
+            // group is telling its members, and `unavailable` until the writer
+            // has confirmed one rather than invented a band no clock observed.
+            {
+                label: 'group.activationCondition',
+                source: 'group-state',
+                value: input.snapshot.group.activationStatus?.condition ?? 'unconfirmed',
+                certainty: input.snapshot.group.activationStatus === null ? 'unavailable' : 'exact'
+            },
+            {
+                label: 'group.activationCoverageRate',
+                source: 'group-state',
+                value: input.snapshot.group.activationStatus?.coverageRate ?? 'unconfirmed',
+                certainty: input.snapshot.group.activationStatus === null ? 'unavailable' : 'exact'
+            },
+            {
+                label: 'group.activationCoverageBasis',
+                source: 'group-state',
+                value: summarizeLayoutIdentity(
+                    input.snapshot.group.activationStatus?.coverageBasisLayoutIdentity ?? null
+                ),
+                certainty: input.snapshot.group.activationStatus === null ? 'unavailable' : 'exact'
             }
         );
         if (input.principalId) {
@@ -174,6 +233,16 @@ function groupTimeline(events: readonly GroupEvent[]): readonly AdminSupportTime
     }));
 }
 
+/**
+ * A layout identity is the tuple, never a bare version (product decision 29),
+ * so an operator comparing two of them can tell a re-plan from a re-publish.
+ */
+function summarizeLayoutIdentity(identity: GroupLayoutIdentity | null): string {
+    return identity === null
+        ? 'none'
+        : `${identity.state} r${identity.groupRevision}/${identity.presenceRevision} v${identity.version}`;
+}
+
 function groupWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[] {
     const warnings: AdminSupportWarning[] = [];
     if (!input.hasGroupStateService) {
@@ -194,6 +263,27 @@ function groupWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[
         warnings.push({
             code: 'group-session-missing',
             message: 'No active group presence session matched the requested principal or session id.',
+            source: 'group-state'
+        });
+    }
+    const group = input.snapshot?.group;
+    if (group?.lifecycleState === 'dormant' && group.formationAttemptCount > 0) {
+        // Decision 38: the parked series keeps its admission posture, so the
+        // lobby looks open while nothing will dial. That is the state an
+        // operator is most likely to be paged about and least likely to guess.
+        warnings.push({
+            code: 'group-formation-series-parked',
+            message: `Formation parked in dormant after ${group.formationAttemptCount} attempt(s); ` +
+                'a reset clears the series before another can start.',
+            source: 'group-state'
+        });
+    }
+    if (group?.transportState === 'halted') {
+        // The valve is orthogonal to the stage (product decision 25), so an
+        // active group can be carrying no application data at all.
+        warnings.push({
+            code: 'group-transport-halted',
+            message: 'Application data is paused; the routing plane is unaffected and resume restores it.',
             source: 'group-state'
         });
     }
