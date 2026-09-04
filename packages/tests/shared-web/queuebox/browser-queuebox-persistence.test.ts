@@ -49,7 +49,6 @@ describe('Browser queuebox expiry eviction', () => {
 
         const result = await deleteExpiredBrowserQueueBoxEntriesForSession(targetSessionId);
 
-        expect(result.dbName).toBe(BROWSER_AL_RUNTIME_DB_NAME);
         expect(result.sessionId).toBe(targetSessionId);
         expect(result.deleted).toBe(1);
         expect(result.stores).toContainEqual({

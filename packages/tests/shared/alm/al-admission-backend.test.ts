@@ -10,12 +10,14 @@ import {
 } from '@shared/alm/al-admission-backend.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import {
+    AL_ADMISSION_EXPIRY_INDEX_NAME,
     AL_ADMISSION_REVISION_KEY,
     computeIndexedDbAdmissionRevisionWrite,
     openIndexedDbAdmissionDatabase,
     readIndexedDbAdmissionSnapshot,
     writeIndexedDbAdmissionMutations
 } from '@shared/alm/indexed-db-admission-storage.ts';
+import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
 import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
 
 import '../../setup-browser-indexeddb.ts';
@@ -104,6 +106,31 @@ describe.each(backends)('$name admission reads', ({ create }) => {
 });
 
 describe('admission storage envelopes', () => {
+    it('rejects an existing store without the required revision metadata', async () => {
+        const databaseName = `admission-missing-revision-${crypto.randomUUID()}`;
+        const existing = await openIndexedDbWithStore(databaseName, {
+            name: 'entries',
+            keyPath: 'key',
+            indexes: [{
+                name: AL_ADMISSION_EXPIRY_INDEX_NAME,
+                keyPath: 'expireAtTimestamp'
+            }]
+        });
+        existing.close();
+
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        try {
+            await expect(readIndexedDbAdmissionSnapshot(
+                database,
+                'entries',
+                { kind: 'revision' }
+            )).rejects.toThrow('IndexedDB admission revision row is required');
+        }
+        finally {
+            database.close();
+        }
+    });
+
     it('persists a write token on every IndexedDB admission data row', async () => {
         const databaseName = `admission-write-token-${crypto.randomUUID()}`;
         const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
