@@ -3039,6 +3039,47 @@ pinned by tests at the boundary instant, and the drift risk is recorded rather t
 decision 40). The fingerprint skip in the topology work handler stays exactly as it is — it is what
 stops status from feeding itself.
 
+### Slice 12b start checkpoint — the observed-status writer (2026-09-04)
+
+Stacked on 13a/13b, which is the order the section's own note requires: the metrics bucket and a
+recipe that can read it exist before the writer that fills them, so its write volume is measured
+rather than assumed.
+
+**The census confirmed all four hazards the section names, and each has an owner in the repository
+already.** The banding copies `resolveTopologyKindWithHysteresis` — entry thresholds from policy,
+exits a configured _width_ below entry so a per-group patch cannot invert the band, previous value
+deciding. The evidence watermark copies `validateGroupPresenceSummaryCausalRevision`, which throws
+when a write does not dominate its stored tuple and when an equal tuple carries different content.
+`computeGroupFormationReadiness` does discard what the watermark needs: it counts observed edges and
+returns the fraction, dropping each measurement's `version` and `createdAtEpochMs`, so it has to
+return the watermark for the writer to have an evidence-derived recency signal — the group tuple is
+not one, because RTT writes never advance it. And the dwell and evidence-expiry clocks cannot use
+slice 11's formation-timer shape: a timer entry's write throws unless resource, creator, created and
+expire timestamps match byte for byte, while a dwell's due time moves, so they take the coalesced
+replacement path I14 already picks for damping.
+
+**The row-width question is settled by measurement, not by argument.** I36 deferred `condition`,
+`remediation` and `coverageBasisLayoutIdentity` out of 12a because this slice carries the state-write
+gate. That gate has been blocked all along by a foreign container holding the pinned port, and
+landing the fields unmeasured would repeat exactly the regression 9b measured — one required field
+cost a registered `member-policy-row-width` reason on every group write, and this is three. The
+maintainer's call is to free the port and measure, so the A-B-B-A comparison runs on the head that
+adds the fields and its result is reported with the slice rather than deferred again.
+
+**Split, because the section's 12b is more than one reviewable change.** The first PR is the writer's
+pure core and its stored shape — banding with hysteresis, the watermark returned from readiness, the
+three fields with their key lists and migration, and the status command computed through AppInbox
+under the existing topology-cycle petition, with a monotonic component in its command id so
+`active → degraded → active` inside one epoch is not a replay of the first write. The second is the
+durable clocks — dwell and evidence expiry on the coalesced replacement path — and the three recipes
+the section names. Splitting keeps the fields and their measurement in one change, which is the point
+of measuring at all.
+
+**Not moving:** the fingerprint skip in the topology work handler, which is the only thing stopping
+status → topology work → petition → status from sustaining itself; and no new authority mode, since
+the section registers none and the status command cannot reuse `formation-automation`,
+`topology-publication` or `formation-criterion`.
+
 ## Slice 13 — Operator and observability surfaces (C9)
 
 **Lands:** the stage, epoch, accepted and planned layout identities, `transportState`, both status axes

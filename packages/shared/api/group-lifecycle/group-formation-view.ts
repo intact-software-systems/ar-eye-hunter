@@ -4,7 +4,7 @@ import type {
     GroupActivationCondition,
     GroupActivationRemediation
 } from './compute-group-activation-condition.ts';
-import type { GroupFormationReadiness } from './compute-group-formation-readiness.ts';
+import type { GroupFormationReadiness } from './compute-group-formation-reading.ts';
 import type { GroupLayoutIdentity } from './group-layout-identity.ts';
 import type { GroupFormationOutcome, GroupLifecycleState } from './group-lifecycle-policy.ts';
 

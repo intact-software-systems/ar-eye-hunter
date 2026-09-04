@@ -1,5 +1,5 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import { computeGroupFormationReadiness } from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
+import { computeGroupFormationReading } from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
 import { evaluateGroupActivationCriterion } from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { consumesFormationDeadlineAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';
@@ -50,14 +50,14 @@ export function computeFormationCriterionCommand(
     if (policy === null) {
         return null;
     }
-    const readiness = computeGroupFormationReadiness({
+    const reading = computeGroupFormationReading({
         planned: input.planned,
         rttMeasurements: input.rttMeasurements,
         nowEpochMs: input.nowEpochMs
     });
     const decision = evaluateGroupActivationCriterion({
         activation: policy.activation,
-        observedRate: readiness.observedRate,
+        observedRate: reading.readiness.observedRate,
         establishmentStartedAtEpochMs: group.establishmentStartedAtEpochMs,
         formationAttemptCount: group.formationAttemptCount,
         nowEpochMs: input.nowEpochMs
@@ -74,7 +74,7 @@ export function computeFormationCriterionCommand(
                     groupId: group.groupId
                 },
                 formationEpoch: group.formationEpoch,
-                observedRate: readiness.observedRate,
+                observedRate: reading.readiness.observedRate,
                 degraded: decision.decision === 'activate-degraded',
                 expectedLayout: toGroupLayoutIdentity(input.planned)
             });
@@ -86,7 +86,7 @@ export function computeFormationCriterionCommand(
                     groupId: group.groupId
                 },
                 formationEpoch: group.formationEpoch,
-                observedRate: readiness.observedRate,
+                observedRate: reading.readiness.observedRate,
                 expectedLayout: toGroupLayoutIdentity(input.planned)
             });
     }
