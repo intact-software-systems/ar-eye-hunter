@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { projectGroupAdminSupportNarrative } from '@shared-server/rallar-system/admin-support/narratives/project-group-admin-support-narrative.ts';
+import type { AdminSupportJsonValue } from '@shared/api/admin-support/admin-support-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../../../create-test-group.ts';
@@ -107,7 +108,9 @@ function narrativeFor(overrides: Partial<Parameters<typeof createTestGroup>[0]>)
     });
 }
 
-function factsFor(overrides: Partial<Parameters<typeof createTestGroup>[0]>): Record<string, unknown> {
+function factsFor(
+    overrides: Partial<Parameters<typeof createTestGroup>[0]>
+): Record<string, AdminSupportJsonValue> {
     return Object.fromEntries(narrativeFor(overrides).facts.map((f) => [f.label, f.value]));
 }
 
