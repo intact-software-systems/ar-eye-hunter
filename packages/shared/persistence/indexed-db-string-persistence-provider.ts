@@ -1,6 +1,6 @@
 import {
     readIndexedDbRequest,
-    waitForIndexedDbTransaction
+    readIndexedDbTransaction
 } from './indexed-db-request.ts';
 import {
     decodeStoredIndexedDbValue,
@@ -10,7 +10,7 @@ import {
     writeComputedIndexedDbStringValue,
     type ComputedIndexedDbStringDeletion
 } from './indexed-db-string-persistence-write.ts';
-import { IndexedDbConnection, openIndexedDbWithStore } from './openIndexedDb.ts';
+import { IndexedDbConnection, openIndexedDbWithStore } from './open-indexed-db.ts';
 import type { PersistenceProvider, PersistenceSetItemOptions } from './PersistenceProvider.ts';
 
 export type IndexedDbStringPersistenceProviderOptions = Readonly<{
@@ -133,11 +133,13 @@ async function readStoredIndexedDbValue<Value>(
     storedKey: string
 ): Promise<StoredIndexedDbValue<Value> | undefined> {
     const transaction = db.transaction(storeName, 'readonly');
-    const completed = waitForIndexedDbTransaction(transaction);
-    const stored = await readIndexedDbRequest<IDBRequest['result']>(
-        transaction.objectStore(storeName).get(storedKey)
+    const stored = await readIndexedDbTransaction(
+        transaction,
+        async () =>
+            await readIndexedDbRequest<IDBRequest['result']>(
+                transaction.objectStore(storeName).get(storedKey)
+            )
     );
-    await completed;
     return stored === undefined
         ? undefined
         : decodeStoredIndexedDbValue<Value>(stored, storedKey);
@@ -148,11 +150,13 @@ async function readAllStoredIndexedDbValues<Value>(
     storeName: string
 ): Promise<readonly StoredIndexedDbValue<Value>[]> {
     const transaction = db.transaction(storeName, 'readonly');
-    const completed = waitForIndexedDbTransaction(transaction);
-    const stored = await readIndexedDbRequest<IDBRequest['result'][]>(
-        transaction.objectStore(storeName).getAll()
+    const stored = await readIndexedDbTransaction(
+        transaction,
+        async () =>
+            await readIndexedDbRequest<IDBRequest['result'][]>(
+                transaction.objectStore(storeName).getAll()
+            )
     );
-    await completed;
     return stored.map((value) => decodeStoredIndexedDbValue<Value>(value));
 }
 

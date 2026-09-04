@@ -6,7 +6,7 @@ import { createRallarDataFacade, defineRallarDataStore } from '@shared-web/brows
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import { IndexedDbStringPersistenceProvider } from '@shared/persistence/IndexedDbStringPersistenceProvider.ts';
+import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { FakeBroadcastChannel, resolveTestDataScopeKey, waitFor, type Todo } from './rallar-data-test-runtime.ts';
@@ -137,7 +137,14 @@ describe('Rallar data stores', () => {
         );
     });
 
-    it('migrates legacy custom data into the current schema on read', async () => {
+    it.each([
+        ['an unwrapped value', { text: 'Invalid todo' }],
+        ['an envelope with surplus fields', {
+            kind: 'rallar.custom-data',
+            value: { title: 'Invalid todo', done: false },
+            extra: true
+        }]
+    ])('rejects %s outside the current persisted schema', async (_description, persisted) => {
         const dbName = `rallar-data-${crypto.randomUUID()}`;
         const storeName = `todos-${crypto.randomUUID()}`;
         const rawProvider = new IndexedDbStringPersistenceProvider<unknown>({
@@ -145,8 +152,8 @@ describe('Rallar data stores', () => {
             keyPrefix: `custom:app:${encodeURIComponent(storeName)}`
         });
         await rawProvider.setItem(
-            'legacy',
-            { text: 'Migrated todo' },
+            'old',
+            persisted,
             { expireAtTimestamp: Date.now() + 60_000 }
         );
 
@@ -154,27 +161,9 @@ describe('Rallar data stores', () => {
             manager: new RepositoryManager(),
             resolveScopeKey: resolveTestDataScopeKey
         });
-        const store = await data.open<Todo>(storeName, {
-            dbName,
-            schemaVersion: 2,
-            migrate: (value, context) => {
-                expect(context).toMatchObject({
-                    key: 'legacy',
-                    fromVersion: 0,
-                    toVersion: 2
-                });
-                const legacy = value as { text: string; };
-                return {
-                    title: legacy.text,
-                    done: false
-                };
-            }
-        });
-
-        expect(store.read('legacy')).toEqual({
-            title: 'Migrated todo',
-            done: false
-        });
+        await expect(data.open<Todo>(storeName, { dbName })).rejects.toThrow(
+            'Rallar data persisted value does not match the current schema'
+        );
     });
 
     it('rejects opening the same store identity with incompatible options', async () => {
@@ -185,15 +174,12 @@ describe('Rallar data stores', () => {
         const dbName = `rallar-data-${crypto.randomUUID()}`;
         const storeName = `todos-${crypto.randomUUID()}`;
 
-        await data.open<Todo>(storeName, {
-            dbName,
-            schemaVersion: 1
-        });
+        await data.open<Todo>(storeName, { dbName, durability: 'write-through' });
 
         await expect(
             data.open<Todo>(storeName, {
                 dbName,
-                schemaVersion: 2
+                durability: 'write-behind'
             })
         ).rejects.toThrow(
             'Rallar data store already opened with different options'

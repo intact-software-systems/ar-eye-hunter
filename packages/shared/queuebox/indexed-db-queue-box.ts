@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '../api/api-config.ts';
-import { IndexedDbConnection, openIndexedDbWithStore } from '../persistence/openIndexedDb.ts';
+import { IndexedDbConnection, openIndexedDbWithStore } from '../persistence/open-indexed-db.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { computeIndexedDbFairnessReservation } from './compute-indexed-db-fairness-reservation.ts';

@@ -2,12 +2,14 @@ import { isIndexedDbALRuntimeStoreSupported } from '@shared/alm/al-runtime-store
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import {
     AL_ADMISSION_REVISION_KEY,
+    openIndexedDbAdmissionDatabase
+} from '@shared/alm/open-indexed-db-admission-database.ts';
+import { readIndexedDbAdmissionSnapshot } from '@shared/alm/read-indexed-db-admission-snapshot.ts';
+import {
     computeIndexedDbAdmissionRevisionWrite,
-    openIndexedDbAdmissionDatabase,
-    readIndexedDbAdmissionSnapshot,
     writeIndexedDbAdmissionMutations,
     type IndexedDbAdmissionMutation
-} from '@shared/alm/indexed-db-admission-storage.ts';
+} from '@shared/alm/write-indexed-db-admission-mutations.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 
 import {
@@ -26,8 +28,8 @@ interface BrowserALRuntimeCleanupRead {
 
 interface BrowserALRuntimeCleanupRow {
     readonly key: string;
-    readonly expireAtTimestamp: number | null;
-    readonly writeToken: string | null;
+    readonly expireAtTimestamp: number;
+    readonly writeToken: string;
 }
 
 interface BrowserALRuntimeCleanupComputed {
@@ -179,10 +181,8 @@ async function readBrowserALRuntimeCleanup(
             )
             .map((stored) => ({
                 key: stored.key,
-                expireAtTimestamp: policy.kind === 'all'
-                    ? null
-                    : stored.expireAtTimestamp,
-                writeToken: stored.writeToken ?? null
+                expireAtTimestamp: stored.expireAtTimestamp,
+                writeToken: stored.writeToken
             }))
     };
 }
@@ -193,15 +193,13 @@ function computeBrowserALRuntimeCleanup(
 ): BrowserALRuntimeCleanupComputed {
     return {
         mutations: read.rows
-            .filter((row) =>
-                row.writeToken !== null &&
-                (deletionPolicy.kind === 'all' ||
-                    (row.expireAtTimestamp !== null && row.expireAtTimestamp <= deletionPolicy.nowMs))
+            .filter((row) => (deletionPolicy.kind === 'all' ||
+                row.expireAtTimestamp <= deletionPolicy.nowMs)
             )
             .map((row): IndexedDbAdmissionMutation => ({
                 kind: 'remove-if-write-token',
                 key: row.key,
-                expectedWriteToken: row.writeToken!
+                expectedWriteToken: row.writeToken
             })),
         revisionWrite: computeIndexedDbAdmissionRevisionWrite(read.revision)
     };

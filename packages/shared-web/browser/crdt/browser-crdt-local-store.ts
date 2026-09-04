@@ -349,7 +349,6 @@ async function openInternalStore<V>(
     return await data.open<V>(name, {
         dbName,
         scope: 'app',
-        schemaVersion: 1,
         sync: false
     });
 }

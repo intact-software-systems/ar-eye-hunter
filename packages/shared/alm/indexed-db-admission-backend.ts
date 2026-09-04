@@ -1,24 +1,27 @@
-import { IndexedDbConnection } from '../persistence/openIndexedDb.ts';
+import { IndexedDbConnection } from '../persistence/open-indexed-db.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 import {
     decodeALAdmissionStoredValue,
     type ALAdmissionBackend,
     type ALAdmissionBackendEntry,
-    type ALAdmissionStoredValue,
     type ALAdmissionWriteContext
 } from './al-admission-backend.ts';
 import { decodeALAdmissionValue, type ALAdmissionDecoder } from './al-admission-decoder.ts';
 import { decodeALAdmissionNumber } from './al-admission-value-validation.ts';
 import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
 import {
-    computeIndexedDbAdmissionRevisionWrite,
-    openIndexedDbAdmissionDatabase,
-    readIndexedDbAdmissionSnapshot,
     toALAdmissionStoredValue,
-    writeIndexedDbAdmissionMutations,
-    type IndexedDbAdmissionMutation,
     type IndexedDbAdmissionStoredRow
-} from './indexed-db-admission-storage.ts';
+} from './indexed-db-admission-row.ts';
+import {
+    openIndexedDbAdmissionDatabase
+} from './open-indexed-db-admission-database.ts';
+import { readIndexedDbAdmissionSnapshot } from './read-indexed-db-admission-snapshot.ts';
+import {
+    computeIndexedDbAdmissionRevisionWrite,
+    writeIndexedDbAdmissionMutations,
+    type IndexedDbAdmissionMutation
+} from './write-indexed-db-admission-mutations.ts';
 
 export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
     readonly #connection: IndexedDbConnection;
@@ -135,7 +138,7 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWriteContext {
     }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
-        let stored: IndexedDbAdmissionStoredRow | ALAdmissionStoredValue | undefined = this.#pending.get(key);
+        let stored = this.#pending.get(key);
         if (!this.#pending.has(key)) {
             stored = (
                 await readIndexedDbAdmissionSnapshot(
@@ -211,7 +214,7 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWriteContext {
 }
 
 function decodeAdmissionValue<V>(
-    stored: IndexedDbAdmissionStoredRow | ALAdmissionStoredValue,
+    stored: IndexedDbAdmissionStoredRow,
     key: string,
     decode: ALAdmissionDecoder<V>,
     nowMs: number

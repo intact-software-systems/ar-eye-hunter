@@ -88,6 +88,20 @@ describe('Browser queuebox expiry eviction', () => {
             expect(await readQueueBoxEntryKeys(storeName)).toEqual([]);
         });
     });
+
+    it('does not create absent session queue databases during cleanup', async () => {
+        const sessionId = `queue-absent-${crypto.randomUUID()}`;
+        const existingStoreName = toBrowserQueueBoxStoreName(`ws-inbox-${sessionId}`);
+        const queue = createBrowserQueueBox(`ws-inbox-${sessionId}`);
+        await queue.enqueue(createEntry('existing-expired', expiredTs()));
+        const before = await readBrowserQueueBoxDatabaseNames();
+
+        const result = await deleteExpiredBrowserQueueBoxEntriesForSession(sessionId);
+
+        expect(result.deleted).toBe(1);
+        expect(result.stores).toContainEqual({ storeName: existingStoreName, deleted: 1 });
+        expect(await readBrowserQueueBoxDatabaseNames()).toEqual(before);
+    });
 });
 
 function createEntry(resourceId: string, expiryTs: Temporal.Instant): ResourceEntry {
@@ -174,6 +188,13 @@ async function deleteBrowserRuntimeDatabase(): Promise<void> {
             .filter((name): name is string => name?.startsWith(queueBoxDatabasePrefix) ?? false)
             .map(deleteDatabase)
     );
+}
+
+async function readBrowserQueueBoxDatabaseNames(): Promise<readonly string[]> {
+    const databaseNamePrefix = `${BROWSER_AL_RUNTIME_DB_NAME}:`;
+    return (await indexedDB.databases())
+        .flatMap(({ name }) => name?.startsWith(databaseNamePrefix) ? [name] : [])
+        .sort();
 }
 
 async function deleteDatabase(name: string): Promise<void> {

@@ -12,12 +12,14 @@ import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-back
 import {
     AL_ADMISSION_EXPIRY_INDEX_NAME,
     AL_ADMISSION_REVISION_KEY,
+    openIndexedDbAdmissionDatabase
+} from '@shared/alm/open-indexed-db-admission-database.ts';
+import { readIndexedDbAdmissionSnapshot } from '@shared/alm/read-indexed-db-admission-snapshot.ts';
+import {
     computeIndexedDbAdmissionRevisionWrite,
-    openIndexedDbAdmissionDatabase,
-    readIndexedDbAdmissionSnapshot,
     writeIndexedDbAdmissionMutations
-} from '@shared/alm/indexed-db-admission-storage.ts';
-import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
+} from '@shared/alm/write-indexed-db-admission-mutations.ts';
+import { openIndexedDbWithStore } from '@shared/persistence/open-indexed-db.ts';
 import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
 
 import '../../setup-browser-indexeddb.ts';
@@ -377,15 +379,14 @@ describe('admission storage envelopes', () => {
         }
     });
 
-    it('reads only the revision scalar needed for the write compare-and-set', async () => {
-        const databaseName = `admission-revision-scalar-${crypto.randomUUID()}`;
+    it('rejects a revision row that does not match the current stored shape', async () => {
+        const databaseName = `admission-invalid-revision-${crypto.randomUUID()}`;
         const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
         try {
             await putIndexedDbRows(database, 'entries', [{
                 key: AL_ADMISSION_REVISION_KEY,
                 value: 0,
-                expireAtTimestamp: 'irrelevant-to-the-write-cas',
-                writeToken: 7
+                expireAtTimestamp: 'invalid-expiry'
             }]);
 
             await expect(writeIndexedDbAdmissionMutations({
@@ -394,12 +395,40 @@ describe('admission storage envelopes', () => {
                 expectedRevision: 0,
                 mutations: [],
                 revisionWrite: computeIndexedDbAdmissionRevisionWrite(0)
-            })).resolves.toBe(true);
-            await expect(readIndexedDbAdmissionSnapshot(
+            })).rejects.toMatchObject({
+                name: 'ALAdmissionCorruptionError',
+                key: AL_ADMISSION_REVISION_KEY
+            });
+        }
+        finally {
+            database.close();
+        }
+    });
+
+    it('lists a matching key whose suffix starts with the maximum UTF-16 code unit', async () => {
+        const databaseName = `admission-prefix-bound-${crypto.randomUUID()}`;
+        const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
+        const key = `version:\ufffftail`;
+        await backend.write((transaction) => transaction.set(key, '7'));
+
+        await expect(backend.list('version:', decodeVersion)).resolves.toEqual([
+            { key, value: 7 }
+        ]);
+    });
+
+    it('returns one row when requested prefixes overlap', async () => {
+        const databaseName = `admission-overlapping-prefixes-${crypto.randomUUID()}`;
+        const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
+        await backend.write((transaction) => transaction.set('version:peer-a', '7'));
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        try {
+            const snapshot = await readIndexedDbAdmissionSnapshot(
                 database,
                 'entries',
-                { kind: 'revision' }
-            )).resolves.toMatchObject({ revision: 1 });
+                { kind: 'prefixes', prefixes: ['version:', 'version:peer'] }
+            );
+            expect(snapshot.stored).toHaveLength(1);
+            expect(snapshot.stored[0]?.key).toBe('version:peer-a');
         }
         finally {
             database.close();

@@ -84,11 +84,16 @@ async function deleteExpiredBrowserQueueBoxEntriesMatching(
         );
     }
 
+    const existingStoreNames = new Set(await readBrowserQueueBoxStoreNames());
     const storeNames = inputStoreNames
         ? [...new Set(inputStoreNames)]
-        : await readBrowserQueueBoxStoreNames();
+        : [...existingStoreNames];
     const stores: BrowserQueueBoxCleanupStoreResult[] = [];
     for (const storeName of storeNames) {
+        if (!existingStoreNames.has(storeName)) {
+            stores.push({ storeName, deleted: 0 });
+            continue;
+        }
         const queueBox = new IndexedDbQueueBox({
             dbName: toBrowserQueueBoxDatabaseName(storeName),
             storeName

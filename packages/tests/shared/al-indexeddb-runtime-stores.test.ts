@@ -97,12 +97,13 @@ describe('IndexedDB AL runtime stores', () => {
         expect(dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
     });
 
-    it('supports sharing one IndexedDB database between admission state and inbox queue stores', async () => {
+    it('keeps admission state and inbox queue data in owner-specific databases', async () => {
         const dbName = `al-runtime-${crypto.randomUUID()}`;
         const namespace = 'shared-browser-db';
+        const inboxStoreName = 'queuebox:inbox';
         const inbox = new IndexedDbQueueBox({
-            dbName,
-            storeName: 'queuebox:inbox'
+            dbName: `${dbName}:${inboxStoreName}`,
+            storeName: inboxStoreName
         });
         const dispatchedMsgIds: string[] = [];
         const runtime = createDefaultALInboundMessageRuntime({
@@ -778,8 +779,7 @@ function createFlakyOutboundAdmissionStore(
                 ? hooks.commitBundle(bundle, decode)
                 : inner.commitBundle(bundle, decode),
         acceptControlMessage: (msg, decode) => inner.acceptControlMessage(msg, decode),
-        scheduleNotYetInSyncRetry: (schedule, decode) =>
-            inner.scheduleNotYetInSyncRetry(schedule, decode),
+        scheduleNotYetInSyncRetry: (schedule, decode) => inner.scheduleNotYetInSyncRetry(schedule, decode),
         claimReadyEffects: <TPrepared>(input: ClaimALOutboundEffectsInput, decode: ALOutboundPreparedMessageDecoder<TPrepared>) =>
             hooks.claimReadyEffects
                 ? hooks.claimReadyEffects(input, decode)

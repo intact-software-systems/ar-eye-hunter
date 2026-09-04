@@ -3,7 +3,7 @@
 import '../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
-import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
+import { openIndexedDbWithStore } from '@shared/persistence/open-indexed-db.ts';
 import { computeIndexedDbFairnessReservation } from '@shared/queuebox/compute-indexed-db-fairness-reservation.ts';
 import {
     decodeStoredResourceEntry,

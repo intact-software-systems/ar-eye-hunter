@@ -2,8 +2,8 @@
 
 import '../setup-browser-indexeddb.ts';
 
-import { IndexedDbStringPersistenceProvider } from '@shared/persistence/IndexedDbStringPersistenceProvider.ts';
-import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
+import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
+import { openIndexedDbWithStore } from '@shared/persistence/open-indexed-db.ts';
 import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it, vi } from 'vitest';
 

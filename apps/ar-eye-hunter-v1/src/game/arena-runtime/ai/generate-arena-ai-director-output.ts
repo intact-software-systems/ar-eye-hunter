@@ -146,8 +146,7 @@ async function generateAndPersistArenaAiEvent(
     await rallar.data
         .open<AiDirectorProposal>('ar-eye-hunter-ai-replay', {
             scope: 'session',
-            durability: 'write-behind',
-            schemaVersion: 1
+            durability: 'write-behind'
         })
         .then((store) => store.set(proposal.dedupeKey, proposal));
     return event;
