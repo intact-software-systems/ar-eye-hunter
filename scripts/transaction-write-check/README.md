@@ -8,7 +8,8 @@ The checker reports:
 
 - `transaction.precomputable-work` for clocks, randomness, serialization,
   hashing, sorting/canonicalization, and named compute/prepare builders reached
-  from a resolved transaction callback or transaction-write function;
+  from a resolved transaction callback or transaction-write function, plus
+  parameter-only persisted-value construction passed directly to a write;
 - `transaction.inner-retry` when a write transaction is opened from any loop;
 - `transaction.unresolved-provenance` when transaction work invokes a
   caller-supplied function whose behavior cannot be proven locally.

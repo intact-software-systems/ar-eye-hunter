@@ -195,6 +195,16 @@ function analyzeBody(input) {
             });
             continue;
         }
+        if (hasParameterOnlyPersistedValueTransformation(call, root)) {
+            addFinding({
+                findings,
+                node: call,
+                rule: 'transaction.precomputable-work',
+                operation: `${operation} argument`,
+                boundary
+            });
+            continue;
+        }
         if (isReviewedCallableParameterInvocation(call)) {
             continue;
         }
@@ -229,6 +239,81 @@ function analyzeBody(input) {
             });
         }
     }
+}
+
+function hasParameterOnlyPersistedValueTransformation(call, root) {
+    if (!isAllowedTransactionOperation(call)) {
+        return false;
+    }
+    return call.getArguments().some((argument) =>
+        isConstructedPersistedValue(argument) &&
+        referencesPreTransactionInput(argument, root) &&
+        !referencesDirectDatabaseResult(argument, root)
+    );
+}
+
+function isConstructedPersistedValue(argument) {
+    return Node.isObjectLiteralExpression(argument) ||
+        Node.isArrayLiteralExpression(argument) ||
+        Node.isBinaryExpression(argument) ||
+        Node.isConditionalExpression(argument) ||
+        Node.isTemplateExpression(argument);
+}
+
+function referencesPreTransactionInput(expression, root) {
+    return expressionIdentifiers(expression).some((identifier) => {
+        const declarations = resolvedDeclarations(identifier);
+        return declarations.some((declaration) => {
+            if (Node.isParameterDeclaration(declaration)) {
+                const owner = declaration.getFirstAncestor(isFunctionDeclaration);
+                return owner !== root || !isTransactionParameter(declaration);
+            }
+            return Node.isVariableDeclaration(declaration) &&
+                declaration.getFirstAncestor(isFunctionDeclaration) !== root;
+        });
+    });
+}
+
+function referencesDirectDatabaseResult(expression, root) {
+    return expressionIdentifiers(expression).some((identifier) => {
+        return resolvedDeclarations(identifier).some((declaration) => {
+            if (
+                !Node.isVariableDeclaration(declaration) ||
+                declaration.getFirstAncestor(isFunctionDeclaration) !== root
+            ) {
+                return false;
+            }
+            const initializer = declaration.getInitializer();
+            if (!initializer) {
+                return false;
+            }
+            const calls = [
+                ...(Node.isCallExpression(initializer) ? [initializer] : []),
+                ...initializer.getDescendantsOfKind(SyntaxKind.CallExpression)
+            ];
+            return calls.some(isAllowedTransactionOperation);
+        });
+    });
+}
+
+function resolvedDeclarations(identifier) {
+    const symbol = identifier.getSymbol();
+    const resolved = symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
+    return resolved?.getDeclarations() ?? [];
+}
+
+function expressionIdentifiers(expression) {
+    const identifiers = [
+        ...(Node.isIdentifier(expression) ? [expression] : []),
+        ...expression.getDescendantsOfKind(SyntaxKind.Identifier)
+    ];
+    return identifiers;
+}
+
+function isTransactionParameter(parameter) {
+    const typeNode = parameter.getTypeNode();
+    const typeText = typeNode?.getText() ?? parameter.getType().getText(parameter);
+    return /^(?:transaction|tx|sql)$/iu.test(parameter.getName()) || TRANSACTION_TYPE.test(typeText);
 }
 
 function isDirectlyExecutedBy(root, node) {

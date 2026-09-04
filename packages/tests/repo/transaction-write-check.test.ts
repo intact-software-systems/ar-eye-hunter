@@ -310,6 +310,54 @@ describe('transaction write check', () => {
         expect(findings).toEqual([]);
     });
 
+    it('reports parameter-only persisted-value construction inside a write', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql {
+                insert(value: object): Promise<void>;
+                update(value: number): Promise<void>;
+            }
+            export async function writeMutation(
+                transaction: PSqlSql,
+                validatedComputed: { readonly resource: string; readonly revision: number }
+            ): Promise<void> {
+                await transaction.insert({ resource: validatedComputed.resource });
+                await transaction.update(validatedComputed.revision + 1);
+            }
+        `);
+
+        expect(findings).toMatchObject([
+            {
+                rule: 'transaction.precomputable-work',
+                operation: 'transaction.insert argument'
+            },
+            {
+                rule: 'transaction.precomputable-work',
+                operation: 'transaction.update argument'
+            }
+        ]);
+    });
+
+    it('allows direct prepared values and database-result refinements as write arguments', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql {
+                insert(value: object): Promise<{ id: number }>;
+                update(value: object): Promise<void>;
+            }
+            export async function writeMutation(
+                transaction: PSqlSql,
+                computed: { readonly row: object; readonly status: string }
+            ): Promise<void> {
+                const inserted = await transaction.insert(computed.row);
+                await transaction.update({
+                    id: Number(inserted.id),
+                    status: computed.status
+                });
+            }
+        `);
+
+        expect(findings).toEqual([]);
+    });
+
     it('recognizes IndexedDB readwrite and upgrade callbacks but excludes readonly work', () => {
         const findings = analyzeFixture(`
             declare const db: IDBDatabase;
