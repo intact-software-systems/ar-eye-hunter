@@ -1,6 +1,6 @@
 import {
     readIndexedDbRequest,
-    waitForIndexedDbTransaction
+    readIndexedDbTransaction
 } from '../persistence/indexed-db-request.ts';
 import {
     decodeStoredResourceEntryValue,
@@ -36,12 +36,14 @@ export async function readStoredQueueEntries(
     }
 
     const transaction = db.transaction(storeName, 'readonly');
-    const completed = waitForIndexedDbTransaction(transaction);
     const store = transaction.objectStore(storeName);
-    const stored = await Promise.all(
-        keyStrings.map((key) => readIndexedDbRequest(store.get(key)))
+    const stored = await readIndexedDbTransaction(
+        transaction,
+        async () =>
+            await Promise.all(
+                keyStrings.map((key) => readIndexedDbRequest(store.get(key)))
+            )
     );
-    await completed;
     const entries = new Map<ResourceEntryKeyString, StoredResourceEntry>();
     for (const [index, value] of stored.entries()) {
         if (value !== undefined) {
@@ -60,9 +62,10 @@ export async function readAllStoredQueueEntries(
     storeName: string
 ): Promise<readonly StoredResourceEntry[]> {
     const transaction = db.transaction(storeName, 'readonly');
-    const completed = waitForIndexedDbTransaction(transaction);
-    const entries = await readIndexedDbRequest(transaction.objectStore(storeName).getAll());
-    await completed;
+    const entries = await readIndexedDbTransaction(
+        transaction,
+        async () => await readIndexedDbRequest(transaction.objectStore(storeName).getAll())
+    );
     return entries.map(decodeStoredResourceEntryValue);
 }
 
@@ -70,35 +73,35 @@ export async function readFairnessStoredQueueEntries(
     input: ReadFairnessStoredQueueEntriesInput
 ): Promise<ReadonlyMap<string, readonly StoredResourceEntry[]>> {
     const transaction = input.db.transaction(input.storeName, 'readonly');
-    const completed = waitForIndexedDbTransaction(transaction);
-    const index = transaction.objectStore(input.storeName).index(input.indexName);
-    const states = await Promise.all(input.typeIds.map(async (typeId) => ({
-        typeId,
-        entries: await readNextFairnessStoredQueueEntries({
-            index,
+    return await readIndexedDbTransaction(transaction, async () => {
+        const index = transaction.objectStore(input.storeName).index(input.indexName);
+        const states = await Promise.all(input.typeIds.map(async (typeId) => ({
             typeId,
-            overdueBeforeEpochMs: input.overdueBeforeEpochMs
-        })
-    })));
-    let scanned = input.typeIds.length;
-    const active = new Set(states.filter((state) => state.entries.length > 0));
-    while (scanned < input.maxToScan && active.size > 0) {
-        const selected = [...active].reduce(earlierFairnessReadState);
-        const next = await readNextFairnessStoredQueueEntries({
-            index,
-            typeId: selected.typeId,
-            overdueBeforeEpochMs: input.overdueBeforeEpochMs,
-            after: selected.entries.at(-1)
-        });
-        scanned += 1;
-        if (next.length === 0) {
-            active.delete(selected);
-            continue;
+            entries: await readNextFairnessStoredQueueEntries({
+                index,
+                typeId,
+                overdueBeforeEpochMs: input.overdueBeforeEpochMs
+            })
+        })));
+        let scanned = input.typeIds.length;
+        const active = new Set(states.filter((state) => state.entries.length > 0));
+        while (scanned < input.maxToScan && active.size > 0) {
+            const selected = [...active].reduce(earlierFairnessReadState);
+            const next = await readNextFairnessStoredQueueEntries({
+                index,
+                typeId: selected.typeId,
+                overdueBeforeEpochMs: input.overdueBeforeEpochMs,
+                after: selected.entries.at(-1)
+            });
+            scanned += 1;
+            if (next.length === 0) {
+                active.delete(selected);
+                continue;
+            }
+            selected.entries.push(next[0]);
         }
-        selected.entries.push(next[0]);
-    }
-    await completed;
-    return new Map(states.map((state) => [state.typeId, state.entries]));
+        return new Map(states.map((state) => [state.typeId, state.entries]));
+    });
 }
 
 interface FairnessReadState {

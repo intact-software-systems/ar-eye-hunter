@@ -38,8 +38,6 @@ export type {
     RallarDataDurability,
     RallarDataFacade,
     RallarDataHydration,
-    RallarDataMigration,
-    RallarDataMigrationContext,
     RallarDataScope,
     RallarDataStorageEstimate,
     RallarDataStore,

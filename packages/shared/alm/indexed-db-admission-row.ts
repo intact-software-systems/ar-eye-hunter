@@ -39,7 +39,7 @@ export function decodeIndexedDbAdmissionStoredRow(
 }
 
 export function toALAdmissionStoredValue(
-    stored: IndexedDbAdmissionStoredRow | ALAdmissionStoredValue
+    stored: IndexedDbAdmissionStoredRow
 ): ALAdmissionStoredValue {
     return {
         key: stored.key,

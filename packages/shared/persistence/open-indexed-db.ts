@@ -4,11 +4,11 @@ interface IndexedDbIndexDefinition {
     readonly unique?: boolean;
 }
 
-interface IndexedDbStoreDefinition {
+interface IndexedDbStoreDefinition<InitialRecord extends object> {
     readonly name: string;
     readonly keyPath: string;
     readonly indexes?: readonly IndexedDbIndexDefinition[];
-    readonly initialRecords?: readonly unknown[];
+    readonly initialRecords?: readonly InitialRecord[];
 }
 
 interface IndexedDbIndexSchema {
@@ -17,11 +17,11 @@ interface IndexedDbIndexSchema {
     readonly unique: boolean;
 }
 
-interface IndexedDbStoreSchema {
+interface IndexedDbStoreSchema<InitialRecord extends object> {
     readonly name: string;
     readonly keyPath: string;
     readonly indexes: readonly IndexedDbIndexSchema[];
-    readonly initialRecords: readonly unknown[];
+    readonly initialRecords: readonly InitialRecord[];
 }
 
 export class IndexedDbConnection {
@@ -56,9 +56,9 @@ export class IndexedDbConnection {
     }
 }
 
-export async function openIndexedDbWithStore(
+export async function openIndexedDbWithStore<InitialRecord extends object>(
     dbName: string,
-    definition: IndexedDbStoreDefinition
+    definition: IndexedDbStoreDefinition<InitialRecord>
 ): Promise<IDBDatabase> {
     if (typeof indexedDB === 'undefined') {
         throw new Error('IndexedDB is not supported in this environment');
@@ -76,7 +76,9 @@ export async function openIndexedDbWithStore(
     }
 }
 
-function toIndexedDbStoreSchema(definition: IndexedDbStoreDefinition): IndexedDbStoreSchema {
+function toIndexedDbStoreSchema<InitialRecord extends object>(
+    definition: IndexedDbStoreDefinition<InitialRecord>
+): IndexedDbStoreSchema<InitialRecord> {
     return {
         name: definition.name,
         keyPath: definition.keyPath,
@@ -93,10 +95,11 @@ function toIndexedDbStoreSchema(definition: IndexedDbStoreDefinition): IndexedDb
 
 function assertIndexedDbStoreSchema(
     db: IDBDatabase,
-    store: IndexedDbStoreSchema
+    store: IndexedDbStoreSchema<object>
 ): void {
-    if (!db.objectStoreNames.contains(store.name)) {
-        throw new Error(`IndexedDB database does not contain required store "${store.name}"`);
+    const actualStoreNames = [...db.objectStoreNames];
+    if (actualStoreNames.length !== 1 || actualStoreNames[0] !== store.name) {
+        throw new Error('IndexedDB database stores do not match the required schema');
     }
     const objectStore = db.transaction(store.name).objectStore(store.name);
     if (!isEqualKeyPath(objectStore.keyPath, store.keyPath)) {
@@ -105,7 +108,15 @@ function assertIndexedDbStoreSchema(
                 `expected "${store.keyPath}"`
         );
     }
-    if (store.indexes.some((index) => !isMatchingIndex(objectStore, index))) {
+    if (objectStore.autoIncrement) {
+        throw new Error(
+            `IndexedDB store "${store.name}" auto-increment does not match its required schema`
+        );
+    }
+    if (
+        objectStore.indexNames.length !== store.indexes.length ||
+        store.indexes.some((index) => !isMatchingIndex(objectStore, index))
+    ) {
         throw new Error(`IndexedDB indexes for "${store.name}" do not match their required schema`);
     }
 }
@@ -117,9 +128,9 @@ function formatKeyPath(keyPath: string | string[] | null): string {
     return typeof keyPath === 'string' ? keyPath : keyPath.join(',');
 }
 
-async function openIndexedDb(
+async function openIndexedDb<InitialRecord extends object>(
     dbName: string,
-    store: IndexedDbStoreSchema
+    store: IndexedDbStoreSchema<InitialRecord>
 ): Promise<IDBDatabase> {
     return await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open(dbName);
@@ -132,9 +143,9 @@ async function openIndexedDb(
     });
 }
 
-function createIndexedDbStore(
+function createIndexedDbStore<InitialRecord extends object>(
     db: IDBDatabase,
-    store: IndexedDbStoreSchema
+    store: IndexedDbStoreSchema<InitialRecord>
 ): void {
     const objectStore = db.createObjectStore(store.name, { keyPath: store.keyPath });
     for (const index of store.indexes) {
@@ -154,6 +165,7 @@ function isMatchingIndex(
     }
     const index = store.index(definition.name);
     return index.unique === definition.unique &&
+        index.multiEntry === false &&
         isEqualKeyPath(index.keyPath, definition.keyPath);
 }
 

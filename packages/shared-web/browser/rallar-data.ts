@@ -21,18 +21,6 @@ export type RallarDataChangeEvent<V> = ObservableKeyedValueEvent<string, V>;
 
 export type RallarDataChangeListener<V> = ObservableKeyedValueListener<string, V>;
 
-export type RallarDataMigrationContext = Readonly<{
-    key: string;
-    fromVersion: number;
-    toVersion: number;
-    updatedAtEpochMs?: number;
-}>;
-
-export type RallarDataMigration<V> = (
-    persistedValue: unknown,
-    context: RallarDataMigrationContext
-) => V | Promise<V>;
-
 export type RallarDataStorageEstimate = Readonly<{
     usage?: number;
     quota?: number;
@@ -46,8 +34,6 @@ export type RallarDataStoreOptions<V> = Readonly<{
     ttlMs?: number;
     durability?: RallarDataDurability;
     hydrate?: RallarDataHydration;
-    schemaVersion?: number;
-    migrate?: RallarDataMigration<V>;
     sync?: boolean;
     isValid?: (value: V) => boolean;
     equals?: ValueEqualityChecker<V>;

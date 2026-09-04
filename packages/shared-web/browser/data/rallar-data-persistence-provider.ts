@@ -1,35 +1,20 @@
-import type { RallarDataMigration, RallarDataMigrationContext } from '@shared-web/browser/rallar-data.ts';
 import type { PersistenceProvider, PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
 
 export type RallarDataStorageValue = object | string | number | boolean | null;
 
 type RallarDataPersistedEnvelope = Readonly<{
     kind: 'rallar.custom-data';
-    schemaVersion: number;
-    updatedAtEpochMs: number;
     value: RallarDataStorageValue;
 }>;
 
 const RALLAR_DATA_ENVELOPE_KIND = 'rallar.custom-data';
 
-export namespace RallarDataPersistenceProvider {
-    export type Options<V> = Readonly<{
-        schemaVersion: number;
-        migrate?: RallarDataMigration<V>;
-    }>;
-}
-
-/** Owns the persisted envelope and schema-migration boundary. */
+/** Owns the one current persisted envelope. */
 export class RallarDataPersistenceProvider<V> implements PersistenceProvider<string, V> {
     private readonly inner: PersistenceProvider<string, RallarDataStorageValue>;
-    private readonly options: RallarDataPersistenceProvider.Options<V>;
 
-    public constructor(
-        inner: PersistenceProvider<string, RallarDataStorageValue>,
-        options: RallarDataPersistenceProvider.Options<V>
-    ) {
+    public constructor(inner: PersistenceProvider<string, RallarDataStorageValue>) {
         this.inner = inner;
-        this.options = options;
     }
 
     public async getItem(key: string): Promise<V | undefined> {
@@ -37,7 +22,7 @@ export class RallarDataPersistenceProvider<V> implements PersistenceProvider<str
         if (persisted === undefined) {
             return undefined;
         }
-        return await this.toValue(key, persisted);
+        return this.toValue(persisted);
     }
 
     public async setItem(
@@ -49,8 +34,6 @@ export class RallarDataPersistenceProvider<V> implements PersistenceProvider<str
             key,
             {
                 kind: RALLAR_DATA_ENVELOPE_KIND,
-                schemaVersion: this.options.schemaVersion,
-                updatedAtEpochMs: Date.now(),
                 value: value as RallarDataStorageValue
             } satisfies RallarDataPersistedEnvelope,
             options
@@ -69,54 +52,41 @@ export class RallarDataPersistenceProvider<V> implements PersistenceProvider<str
         return await this.inner.deleteExpired();
     }
 
-    private async toValue(
-        key: string,
-        persisted: RallarDataStorageValue
-    ): Promise<V> {
-        if (!isRallarDataEnvelope(persisted)) {
-            return await this.migrateValue(key, persisted, 0, undefined);
-        }
-        if (persisted.schemaVersion === this.options.schemaVersion) {
-            return persisted.value as V;
-        }
-        return await this.migrateValue(
-            key,
-            persisted.value,
-            persisted.schemaVersion,
-            persisted.updatedAtEpochMs
-        );
-    }
-
-    private async migrateValue(
-        key: string,
-        persistedValue: RallarDataStorageValue,
-        fromVersion: number,
-        updatedAtEpochMs: number | undefined
-    ): Promise<V> {
-        if (!this.options.migrate) {
-            return persistedValue as V;
-        }
-        const context: RallarDataMigrationContext = {
-            key,
-            fromVersion,
-            toVersion: this.options.schemaVersion,
-            updatedAtEpochMs
-        };
-        return await this.options.migrate(persistedValue, context);
+    private toValue(persisted: RallarDataStorageValue): V {
+        return decodeRallarDataEnvelope(persisted).value as V;
     }
 }
 
-function isRallarDataEnvelope(
+function decodeRallarDataEnvelope(
     value: RallarDataStorageValue
-): value is RallarDataPersistedEnvelope {
-    if (!value || typeof value !== 'object') {
-        return false;
+): RallarDataPersistedEnvelope {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new TypeError('Rallar data persisted value does not match the current schema');
     }
-    const candidate = value as Partial<RallarDataPersistedEnvelope>;
-    return (
-        candidate.kind === RALLAR_DATA_ENVELOPE_KIND &&
-        typeof candidate.schemaVersion === 'number' &&
-        typeof candidate.updatedAtEpochMs === 'number' &&
-        'value' in candidate
-    );
+    const ownKeys = Reflect.ownKeys(value);
+    const kind = Object.getOwnPropertyDescriptor(value, 'kind');
+    const persistedValue = Object.getOwnPropertyDescriptor(value, 'value');
+    if (
+        ownKeys.length !== 2 ||
+        !ownKeys.includes('kind') ||
+        !ownKeys.includes('value') ||
+        kind?.value !== RALLAR_DATA_ENVELOPE_KIND ||
+        !persistedValue ||
+        !('value' in persistedValue) ||
+        !isRallarDataStorageValue(persistedValue.value)
+    ) {
+        throw new TypeError('Rallar data persisted value does not match the current schema');
+    }
+    return {
+        kind: RALLAR_DATA_ENVELOPE_KIND,
+        value: persistedValue.value
+    };
+}
+
+function isRallarDataStorageValue(value: unknown): value is RallarDataStorageValue {
+    return value === null ||
+        typeof value === 'object' ||
+        typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean';
 }

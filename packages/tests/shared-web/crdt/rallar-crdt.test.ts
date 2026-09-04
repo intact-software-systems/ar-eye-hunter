@@ -317,7 +317,6 @@ describe('Rallar CRDT browser facade', () => {
             {
                 dbName: DEFAULT_RALLAR_CRDT_DB_NAME,
                 scope: 'app',
-                schemaVersion: 1,
                 sync: false
             }
         );
@@ -326,7 +325,6 @@ describe('Rallar CRDT browser facade', () => {
             {
                 dbName: DEFAULT_RALLAR_CRDT_DB_NAME,
                 scope: 'app',
-                schemaVersion: 1,
                 sync: false
             }
         );

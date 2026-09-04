@@ -13,3 +13,22 @@ export function waitForIndexedDbTransaction(transaction: IDBTransaction): Promis
         transaction.onerror = fail;
     });
 }
+
+export async function readIndexedDbTransaction<Result>(
+    transaction: IDBTransaction,
+    read: () => Promise<Result>
+): Promise<Result> {
+    const completed = waitForIndexedDbTransaction(transaction);
+    const readResult = read();
+    const [readOutcome, completionOutcome] = await Promise.allSettled([
+        readResult,
+        completed
+    ]);
+    if (readOutcome.status === 'rejected') {
+        throw readOutcome.reason;
+    }
+    if (completionOutcome.status === 'rejected') {
+        throw completionOutcome.reason;
+    }
+    return readOutcome.value;
+}

@@ -9,9 +9,13 @@ import {
 } from 'vitest';
 
 import {
+    readIndexedDbRequest,
+    readIndexedDbTransaction
+} from '@shared/persistence/indexed-db-request.ts';
+import {
     IndexedDbConnection,
     openIndexedDbWithStore
-} from '@shared/persistence/openIndexedDb.ts';
+} from '@shared/persistence/open-indexed-db.ts';
 
 interface SchemaWriteObservation {
     readonly kind: 'store' | 'index';
@@ -144,6 +148,82 @@ describe('IndexedDB current schema', () => {
         }
     });
 
+    it('rejects a surplus store instead of accepting another schema', async () => {
+        const factory = new FakeIndexedDb.IDBFactory();
+        vi.stubGlobal('indexedDB', factory);
+        const request = factory.open('surplus-schema');
+        request.onupgradeneeded = () => {
+            const items = request.result.createObjectStore('items', { keyPath: 'id' });
+            items.createIndex('required', 'required');
+            items.createIndex('surplus', 'surplus');
+            request.result.createObjectStore('surplus-store', { keyPath: 'id' });
+        };
+        const existing = await readRequest(request);
+        existing.close();
+
+        await expect(openIndexedDbWithStore('surplus-schema', {
+            name: 'items',
+            keyPath: 'id',
+            indexes: [{ name: 'required', keyPath: 'required' }]
+        })).rejects.toThrow('IndexedDB database stores do not match the required schema');
+    });
+
+    it('rejects a surplus index instead of accepting different write constraints', async () => {
+        const factory = new FakeIndexedDb.IDBFactory();
+        vi.stubGlobal('indexedDB', factory);
+        const request = factory.open('surplus-index');
+        request.onupgradeneeded = () => {
+            const items = request.result.createObjectStore('items', { keyPath: 'id' });
+            items.createIndex('required', 'required');
+            items.createIndex('surplus', 'surplus', { unique: true });
+        };
+        const existing = await readRequest(request);
+        existing.close();
+
+        await expect(openIndexedDbWithStore('surplus-index', {
+            name: 'items',
+            keyPath: 'id',
+            indexes: [{ name: 'required', keyPath: 'required' }]
+        })).rejects.toThrow('IndexedDB indexes for "items" do not match their required schema');
+    });
+
+    it('rejects auto-increment metadata absent from the current schema', async () => {
+        const factory = new FakeIndexedDb.IDBFactory();
+        vi.stubGlobal('indexedDB', factory);
+        const request = factory.open('auto-increment-metadata');
+        request.onupgradeneeded = () => {
+            request.result.createObjectStore('items', {
+                keyPath: 'id',
+                autoIncrement: true
+            });
+        };
+        const existing = await readRequest(request);
+        existing.close();
+
+        await expect(openIndexedDbWithStore('auto-increment-metadata', {
+            name: 'items',
+            keyPath: 'id'
+        })).rejects.toThrow('IndexedDB store "items" auto-increment does not match its required schema');
+    });
+
+    it('rejects multi-entry index metadata absent from the current schema', async () => {
+        const factory = new FakeIndexedDb.IDBFactory();
+        vi.stubGlobal('indexedDB', factory);
+        const request = factory.open('multi-entry-metadata');
+        request.onupgradeneeded = () => {
+            const items = request.result.createObjectStore('items', { keyPath: 'id' });
+            items.createIndex('tags', 'tags', { multiEntry: true });
+        };
+        const existing = await readRequest(request);
+        existing.close();
+
+        await expect(openIndexedDbWithStore('multi-entry-metadata', {
+            name: 'items',
+            keyPath: 'id',
+            indexes: [{ name: 'tags', keyPath: 'tags' }]
+        })).rejects.toThrow('IndexedDB indexes for "items" do not match their required schema');
+    });
+
     it('rejects an existing database that does not contain the required store', async () => {
         const factory = new FakeIndexedDb.IDBFactory();
         vi.stubGlobal('indexedDB', factory);
@@ -157,7 +237,7 @@ describe('IndexedDB current schema', () => {
         await expect(openIndexedDbWithStore('concurrent-schema', {
             name: 'required',
             keyPath: 'id'
-        })).rejects.toThrow('IndexedDB database does not contain required store "required"');
+        })).rejects.toThrow('IndexedDB database stores do not match the required schema');
 
         const database = await readRequest(factory.open('concurrent-schema'));
         expect(database.version).toBe(initialVersion);
@@ -188,6 +268,26 @@ describe('IndexedDB current schema', () => {
         expect(first).toBe(second);
         expect(attempts).toBe(2);
         first.close();
+    });
+
+    it('observes both the request failure and the resulting transaction abort', async () => {
+        const factory = new FakeIndexedDb.IDBFactory();
+        vi.stubGlobal('indexedDB', factory);
+        const database = await openIndexedDbWithStore('request-and-transaction-failure', {
+            name: 'items',
+            keyPath: 'id',
+            initialRecords: [{ id: 'duplicate' }]
+        });
+        const transaction = database.transaction('items', 'readwrite');
+        const duplicate = transaction.objectStore('items').add({ id: 'duplicate' });
+
+        await expect(readIndexedDbTransaction(
+            transaction,
+            () => readIndexedDbRequest(duplicate)
+        )).rejects.toMatchObject({ name: 'ConstraintError' });
+
+        expect(transaction.error).toMatchObject({ name: 'ConstraintError' });
+        database.close();
     });
 });
 

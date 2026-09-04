@@ -1,4 +1,4 @@
-import { IndexedDbStringPersistenceProvider } from '../persistence/IndexedDbStringPersistenceProvider.ts';
+import { IndexedDbStringPersistenceProvider } from '../persistence/indexed-db-string-persistence-provider.ts';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend

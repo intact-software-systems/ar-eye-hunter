@@ -10,7 +10,7 @@ export function createFakeRallar() {
             open: vi.fn(
                 async (
                     _input: string,
-                    _options?: Pick<RallarDataStoreOptions<never>, 'durability' | 'schemaVersion' | 'scope'>
+                    _options?: Pick<RallarDataStoreOptions<never>, 'durability' | 'scope'>
                 ) => store
             ),
             define: unusedByBrowserAi,
