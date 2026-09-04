@@ -10,6 +10,7 @@ import { createRtcTopologyOutboxPublisher } from '../mutation/rtc-topology-outbo
 import type { RtcTopologyExecutionRepository } from '../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyGroupSnapshotReader } from '../planning/group-topology-planning-contracts.ts';
 import type { GroupTopologyPlanningService } from '../planning/group-topology-planning-service.ts';
+import { createActivationStatusClockWorkHandler } from '../replay/work/create-activation-status-clock-work-handler.ts';
 import { createFormationTimerWorkHandler } from '../replay/work/create-formation-timer-work-handler.ts';
 import {
     createGroupConnectTriggerWorkHandler,
@@ -76,6 +77,17 @@ export function installTopologyAppOutbox(
                 submitCommand: options.formationCriterion.submitCommand,
                 formationAutomation: options.formationAutomation,
                 nowEpochMs: options.nowEpochMs
+            })
+        );
+    }
+    if (options.activationStatus) {
+        options.outboxQueueReader.onOutboxMessageDo(
+            AppOutboxType.ACTIVATION_STATUS_CLOCK,
+            createActivationStatusClockWorkHandler({
+                activationStatus: options.activationStatus,
+                topologyPlanning: options.topologyPlanning,
+                findGroupSnapshotByRef: async (ref) => await options.findGroupSnapshotByRef(ref) ?? null,
+                readPlannedTopology: async (ref) => await options.readPlannedTopologySnapshot(ref) ?? null
             })
         );
     }

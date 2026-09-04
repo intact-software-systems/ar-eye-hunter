@@ -1,7 +1,16 @@
+import { resolveGroupBusinessLiveness } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
 import { resolveCoverageBasisLayoutIdentity } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
 import { computeGroupFormationReading } from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
 import { isSameGroupLayoutIdentity, toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { isFormationAttemptBudgetExhausted } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
+import { resolveGroupActivationStatusAction } from '@shared/api/group-lifecycle/resolve-group-activation-status-action.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { GroupActivationStatusClockWork } from '../../../group-state/activation-status-clock-outbox-entry.ts';
+import {
+    toReadGroupLifecyclePolicy,
+    type GroupLifecyclePolicyRead
+} from '../../../group-state/persistence/group-lifecycle-policy-repository.ts';
 
 import type { GroupMutationCommand } from '../../../group-state/mutation/group-mutation-contracts.ts';
 import { toUpdateGroupActivationStatusCommand } from '../../../group-state/to-update-group-activation-status-command.ts';
@@ -9,6 +18,9 @@ import type { GroupTopologyPlanningAuthority } from '../../planning/group-topolo
 
 export interface GroupActivationStatusPort {
     submitCommand(command: GroupMutationCommand, atEpochMs: number): Promise<void>;
+    readLifecyclePolicy(groupRef: GroupRef): Promise<GroupLifecyclePolicyRead>;
+    /** Arms the durable dwell clock; a second arm inside one dwell is a duplicate. */
+    armStatusClock(work: GroupActivationStatusClockWork): Promise<void>;
 }
 
 export interface GroupActivationStatusPetitionDependencies {
@@ -33,7 +45,13 @@ export interface GroupActivationStatusPetitionDependencies {
 export async function petitionGroupActivationStatus(
     dependencies: GroupActivationStatusPetitionDependencies,
     authority: GroupTopologyPlanningAuthority,
-    planned: RallarOverlayTopologySnapshot | null
+    planned: RallarOverlayTopologySnapshot | null,
+    /**
+     * The clock's own confirmation. Null for the evidence leg, which may not
+     * publish a dwell-held band; set when the durable clock came due, which is
+     * the only path allowed to confirm one.
+     */
+    dwell: Readonly<{ satisfied: true; dueAtEpochMs: number; }> | null = null
 ): Promise<void> {
     if (!dependencies.activationStatus) {
         return;
@@ -62,18 +80,71 @@ export async function petitionGroupActivationStatus(
         // confusion slice 12a's review caught on the read surface.
         return;
     }
+    const policy = toReadGroupLifecyclePolicy(
+        await dependencies.activationStatus.readLifecyclePolicy(group)
+    );
+    if (policy === null) {
+        // A corrupt policy carries no thresholds, so there is no band to
+        // report and nothing honest to publish.
+        return;
+    }
     const reading = computeGroupFormationReading({
         planned,
         rttMeasurements: authority.rttMeasurements,
         nowEpochMs: authority.nowEpochMs
     });
+    const groupRef = {
+        applicationId: group.applicationId,
+        workspaceId: group.workspaceId,
+        groupId: group.groupId
+    };
+    const action = resolveGroupActivationStatusAction({
+        business: resolveGroupBusinessLiveness(group, authority.nowEpochMs),
+        lifecycleState: group.lifecycleState,
+        attemptBudgetExhausted: isFormationAttemptBudgetExhausted({
+            activation: policy.activation,
+            formationAttemptCount: group.formationAttemptCount
+        }),
+        coverage: {
+            coverageRate: reading.readiness.observedRate,
+            successRate: policy.activation.successRate,
+            minimumViableRate: policy.activation.minimumViableRate
+        },
+        previousCondition: group.activationStatus?.condition,
+        nowEpochMs: authority.nowEpochMs
+    });
+    if (action.kind === 'none') {
+        return;
+    }
+    if (action.kind === 'arm-dwell' && dwell !== null) {
+        // The clock came due and the band still holds, so this is the write
+        // the dwell was waiting for.
+        await dependencies.activationStatus.submitCommand(
+            toUpdateGroupActivationStatusCommand({
+                groupRef,
+                formationEpoch: group.formationEpoch,
+                coverageBasisLayoutIdentity: basis,
+                coverageRate: reading.readiness.observedRate,
+                evidenceWatermark: null,
+                dwell
+            }),
+            authority.nowEpochMs
+        );
+        return;
+    }
+    if (action.kind === 'arm-dwell') {
+        await dependencies.activationStatus.armStatusClock({
+            groupRef,
+            formationEpoch: group.formationEpoch,
+            coverageBasisLayoutIdentity: basis,
+            candidateCondition: action.condition,
+            dueAtEpochMs: action.dueAtEpochMs
+        });
+        return;
+    }
     await dependencies.activationStatus.submitCommand(
         toUpdateGroupActivationStatusCommand({
-            groupRef: {
-                applicationId: group.applicationId,
-                workspaceId: group.workspaceId,
-                groupId: group.groupId
-            },
+            groupRef,
             formationEpoch: group.formationEpoch,
             coverageBasisLayoutIdentity: basis,
             coverageRate: reading.readiness.observedRate,
