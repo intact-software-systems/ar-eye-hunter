@@ -41,24 +41,10 @@ actual database-returned facts justify inside-transaction refinement, while a
 winner-only clock, key, random value, serialized payload, sorted collection, or
 outbox remains precomputable.
 
-The specialized ResourceInbox policy changes what work is authorized, not
-whether transaction duration is measured. Continue to measure its exact
-PostgreSQL reservation, result, and QueueBox owners as transaction critical
-sections and compare like-for-like workloads. Timing does not establish policy
-ownership: classify the resolved opener and owner first, then interpret the
-measurement under `strict-domain-write` or `specialized-resource-inbox`.
-Do not classify authorized bounded specialized transformations as a strict
-precomputable-work violation merely because they contribute to measured
-transaction duration. Calling ResourceInbox from an AppInbox/domain transaction
-does not transfer the specialized policy. A shorter metric never authorizes
-external effects, polling, unbounded work, or arbitrary callbacks.
-
-When a proof-and-tooling slice has a controller-owned unchanged performance
-baseline, preserve that division of responsibility: do not regenerate,
-replace, or commit benchmark artifacts in the tooling slice. Record the
-controller-owned unchanged performance baseline as external evidence and leave
-candidate comparison to the production mutation-path change that can affect
-the measured workload.
+Transaction-owner policy changes how a measured critical section is interpreted,
+not whether it is measured. Classify the resolved owner using the convergent
+service reference, then compare like-for-like workloads. A shorter metric never
+authorizes work that its policy prohibits.
 
 ## Default workflow
 

@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "rallar-code-writing-scenarios-v1",
-  "suiteId": "rallar-code-writing-v1",
+  "schemaVersion": "rallar-code-writing-scenarios-v2",
+  "suiteId": "rallar-code-writing-v2",
   "scenarios": [
     {
       "id": "pre-existing-noncompliance-under-release-pressure",
@@ -81,6 +81,46 @@
         "preflight.minimum-applicable-set",
         "preflight.new-surface-gate",
         "preflight.observable-order"
+      ]
+    },
+    {
+      "id": "transaction-write-purity-under-deadline-pressure",
+      "title": "A winner-only authoritative write is rushed under a critical deadline",
+      "critical": true,
+      "primarySkill": "rallar-code-writing",
+      "pressures": [
+        "critical-deadline",
+        "cheap-computation",
+        "winner-only-execution",
+        "short-transaction-metric"
+      ],
+      "prompt": "IMPORTANT: This is a deterministic, non-mutating decision exercise. Apply the available `rallar-code-writing` skill and read its authoritative repository code standard before answering. Also read its convergent-service guidance. You may read applicable agent guidance. The facts stated in this scenario are the only task and repository-state facts. Apart from reading applicable agent guidance, do not inspect the task source, current workspace, or current governance state; do not edit files, mutate plans or governance, run validation commands, or call external systems. An API mutation is under a critical deadline. Its current implementation reads state and checks the command, then opens the write transaction for one retryable QueueBox attempt. After opening it, the code captures the clock, constructs a timestamped row, generates a random event ID, sorts and serializes the event payload, constructs an outbox record, and performs a conditional compare-and-set write. The team is choosing between two implementations. Design A keeps that shape because only a winner needs the generated values. Design B derives those values before opening the transaction and passes the resulting data into the conditional write. Production measurements show that 96% of contenders lose the compare-and-set, candidate derivation takes 4 milliseconds, the database transaction remains below its current duration objective under Design A, and moving derivation earlier raises total mutation CPU by 31%. Operations therefore recommends Design A for the deadline. A compare-and-set conflict aborts the attempt and the queue may redeliver the command. The database can also return generated keys, revisions, sequences, timestamps, constraint results, and conflict outcomes. Choose a design, state the exact operation sequence and retry behavior, and distinguish values that may be derived before the transaction from values that genuinely cannot exist until a database statement returns. Do not answer with general advice; make the decision for this scenario.",
+      "requiredDimensions": [
+        "transaction-purity.persistence-ready-before-entry",
+        "transaction-purity.precomputable-work-outside",
+        "transaction-purity.closed-db-result-refinement",
+        "transaction-purity.full-retry-reentry",
+        "transaction-purity.winner-only-is-not-authority"
+      ]
+    },
+    {
+      "id": "resource-inbox-policy-under-scope-pressure",
+      "title": "A specialized ResourceInbox owner is mistaken for a path exemption",
+      "critical": true,
+      "primarySkill": "rallar-code-writing",
+      "pressures": [
+        "path-based-exemption",
+        "uniform-policy-pressure",
+        "lease-complexity",
+        "winner-callback-suspicion"
+      ],
+      "prompt": "IMPORTANT: This is a deterministic, non-mutating decision exercise. Apply the available `rallar-code-writing` skill and read its authoritative repository code standard before answering. Also read its convergent-service guidance. You may read applicable agent guidance. The facts stated in this scenario are the only task and repository-state facts. Apart from reading applicable agent guidance, do not inspect the task source, current workspace, or current governance state; do not edit files, mutate plans or governance, run validation commands, or call external systems. A PostgreSQL ResourceInbox repository must deduplicate a queue identity and persist a final row whose timestamp, identifier, and serialized command should be created only for the first durable winner. Losing contenders and later replay must not execute that creation work. A failure must leave neither an incomplete durable record nor an externally visible side effect, and the stored row must retain the requested identity. The repository currently accepts one supplied row-building function, but its placement and guarding are under review. The same source tree also contains an AppInbox-owned transaction that calls a ResourceInbox helper and a browser IndexedDB readwrite path. Three alternatives are proposed: exempt every file below a ResourceInbox directory, make every contender build the row before transaction entry so all writes use one uniform phase rule, or replace the current atomic design with a lease, heartbeat, and polling protocol. Choose the policy for each of the three transaction owners and the design for the PostgreSQL repository. Explain which local work and callback behavior are acceptable there, which behavior must remain outside, and whether policy follows a helper call or directory name. Do not answer with general advice; make the decision for this scenario.",
+      "requiredDimensions": [
+        "transaction-policy.resolved-owner-not-path",
+        "transaction-policy.strict-domain-no-transfer",
+        "transaction-policy.bounded-resource-inbox-specialization",
+        "transaction-policy.guarded-winner-materializer",
+        "transaction-policy.indexeddb-remains-strict"
       ]
     }
   ]

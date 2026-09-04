@@ -431,23 +431,24 @@ describe('authoritative mutation guidance integrity', () => {
     });
 
     it('keeps specialist transaction-write guidance concise and role-specific', () => {
-        const repeatedCanonicalSentence = 'same explicit input produces the same result';
-        expect([
-            canonicalServiceWritingPath,
-            '.agents/skills/rallar-code-writing/SKILL.md',
-            '.agents/skills/rallar-testing/SKILL.md',
-            '.agents/skills/performance-analysis/SKILL.md'
-        ].filter((filePath) => readRepo(filePath).includes(repeatedCanonicalSentence))).toEqual([]);
         expectAllNormalized(readRepo(canonicalServiceWritingPath), [
+            'authoritative repository code standard',
             'QueueBox redelivery',
             'service write receives the transaction',
-            'Specialized ResourceInbox transaction ownership'
+            'Specialized ResourceInbox transaction ownership',
+            'explicit one-row result or caller-supplied batch limit'
         ]);
-        expectAllNormalized(readRepo('.agents/skills/rallar-code-writing/SKILL.md'), [
+        const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
+        expectAllNormalized(codeWriting, [
             'persistence-ready',
             'Do not add a post-compute preparation phase',
-            'Never add an inner retry loop'
+            'Never add an inner retry loop',
+            'resolved transaction owner'
         ]);
+        expect(codeWriting).not.toContain('checker\'s explicit file inventory');
+        expect(readRepo(canonicalServiceWritingPath)).not.toContain(
+            'The checker keeps specialized ResourceInbox files'
+        );
         expectAllNormalized(readRepo('.agents/skills/rallar-testing/SKILL.md'), [
             'completed before transaction entry',
             'one mutation attempt',
