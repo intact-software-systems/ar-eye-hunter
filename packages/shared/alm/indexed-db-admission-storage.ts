@@ -157,7 +157,7 @@ function continueIndexedDbAdmissionWrite(
 ): void {
     let actualRevision: number;
     try {
-        actualRevision = decodeIndexedDbAdmissionRevision(revisionValue);
+        actualRevision = readIndexedDbAdmissionRevisionForWrite(revisionValue);
     }
     catch (error) {
         abortIndexedDbAdmissionWrite(context, AL_ADMISSION_REVISION_KEY, toError(error));
@@ -262,6 +262,31 @@ function decodeIndexedDbAdmissionRevision(value: IDBRequest['result']): number {
         decodeIndexedDbAdmissionStoredRow(value, AL_ADMISSION_REVISION_KEY)
     );
     return decodeALAdmissionValue(stored.value, AL_ADMISSION_REVISION_KEY, decodeALAdmissionNumber);
+}
+
+function readIndexedDbAdmissionRevisionForWrite(value: IDBRequest['result']): number {
+    if (value === undefined) {
+        return 0;
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new TypeError('IndexedDB admission revision row must be a record');
+    }
+    const key = Object.getOwnPropertyDescriptor(value, 'key');
+    if (!key || !Object.hasOwn(key, 'value') || key.value !== AL_ADMISSION_REVISION_KEY) {
+        throw new TypeError('IndexedDB admission revision row has the wrong key');
+    }
+    const revision = Object.getOwnPropertyDescriptor(value, 'value');
+    if (
+        !revision ||
+        !Object.hasOwn(revision, 'value') ||
+        typeof revision.value !== 'number' ||
+        !Number.isSafeInteger(revision.value) ||
+        revision.value < 0 ||
+        Object.is(revision.value, -0)
+    ) {
+        throw new TypeError('IndexedDB admission revision must be a non-negative safe integer');
+    }
+    return revision.value;
 }
 
 async function readIndexedDbAdmissionSelection(
