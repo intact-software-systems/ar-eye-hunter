@@ -132,7 +132,7 @@ Deno.test('public and mutation CRDT reads reject an omitted snapshot reason', as
         await sql`
       update crdt_snapshots
       set snapshot_envelope = ${JSON.stringify(snapshotEnvelope(undefined))},
-          reason = 'legacy-import'
+          reason = 'omitted-envelope-reason'
     `;
         const repository = new PSqlCrdtLogRepository(sql);
 

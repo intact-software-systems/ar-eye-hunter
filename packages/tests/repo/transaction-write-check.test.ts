@@ -278,7 +278,7 @@ describe('transaction write check', () => {
             'packages/domain/materialize-row.ts'
         ]);
         expect([...new Set(findings.map((finding) => finding.boundary))]).toEqual([
-            'packages/domain/mutation.ts:9'
+            'packages/domain/mutation.ts:8'
         ]);
     });
 
