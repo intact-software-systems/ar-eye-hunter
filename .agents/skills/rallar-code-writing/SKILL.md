@@ -192,8 +192,8 @@ checker does not substitute for following production symbols.
   and retry boundary.
 - Keep `read -> compute -> validate -> write(transaction, computed)` visible.
   `compute` and `validate` are pure; `compute` produces persistence-ready data.
-  Do not add a post-compute preparation phase or another mutation phase without
-  explicit human approval.
+  Do not add a post-compute preparation phase. Do not add another mutation phase
+  without explicit human approval.
 - A write executes the validated computed value. Only refine it from actual
   database-returned facts under the closed grammar in
   `references/repo-code-style.md`; use

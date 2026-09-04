@@ -53,7 +53,7 @@ idempotency, corruption, and final-convergence behaviors. Focused tests must
 exercise the real conditional-write boundary; lock acquisition or waiting is
 not an acceptance criterion.
 
-For authored package or API transaction writes, prove the persistence-ready
+For `strict-domain-write` package or API transaction writes, prove the persistence-ready
 value is completed before transaction entry, even when work is cheap or
 winner-only. Prove one mutation attempt per delivery, full read/compute/validate
 re-entry on outer QueueBox redelivery, and no handler or persistence-helper
@@ -72,9 +72,10 @@ Reject lease, heartbeat, polling, arbitrary callback, external-effect,
 unbounded-work, caller-mutation, and unrelated nested-transaction variants in
 semantic tests. Maintain PostgreSQL and PGlite parity, and run the
 focused real PostgreSQL integration tests whenever specialized SQL or its
-transaction semantics change. Browser IndexedDB readwrite, upgrade, and
-versionchange tests continue to prove strict persistence-ready-before-entry
-behavior.
+transaction semantics change. Browser IndexedDB readwrite and initial
+versionchange schema-creation tests continue to prove strict
+persistence-ready-before-entry behavior; incompatible existing schemas fail
+closed without a schema rewrite.
 
 When authoritative mutation control flow changes, run
 `npm run check:repo-style:navigation-details` for the affected roots and perform
