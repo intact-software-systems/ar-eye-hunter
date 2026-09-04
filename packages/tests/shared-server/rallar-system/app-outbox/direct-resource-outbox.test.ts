@@ -401,6 +401,7 @@ describe('direct resource outbox writes', () => {
             groupSnapshot,
             effectKind: 'rtc-topology-recompute',
             payloadKind: 'group-revision',
+            origin: 'automatic',
             senderId: 'server-1',
             resourceId: 'group-command-1:rtc-topology-recompute:group-revision:group=4;presence=3',
             requestOptions: toCanonicalGroupTopologyConfigPatch({}),
@@ -478,6 +479,7 @@ describe('direct resource outbox writes', () => {
         const computed = {
             ...createComputedRtcTopologyOutbox(),
             payloadKind: 'group-revision',
+            origin: 'automatic',
             requestOptions
         };
 
@@ -794,6 +796,7 @@ function createComputedRtcTopologyOutbox(): ComputedRtcTopologyOutbox {
         groupSnapshot,
         effectKind: 'rtc-topology-recompute' as const,
         payloadKind: 'group-revision' as const,
+        origin: 'automatic',
         senderId: 'server-1',
         resourceId: 'group-command-1:rtc-topology-recompute:group-revision:group=4;presence=3',
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),

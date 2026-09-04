@@ -21,6 +21,11 @@ describe('GroupTopologyReconfigureMutation', () => {
         expect(computed).toMatchObject({
             commandId: 'reconfigure-request',
             resourceId: 'reconfigure-request:rtc-topology-recompute:explicit',
+            // The route commands a replan, so its work must not be stamped
+            // automatic: the planner freezes automatic work under `commanded`
+            // and `corrupt`, which would discard the command in exactly the
+            // mode that exists to honour it (product decision 4).
+            origin: 'commanded',
             aggregateRef: createTopologyTestGroupRef(),
             acceptedCausalRevision: { groupRevision: 1, presenceRevision: 0 },
             effectKind: 'rtc-topology-recompute',

@@ -487,6 +487,7 @@ function topologyOutbox(resourceId: string): ComputedRtcTopologyOutbox {
         groupSnapshot: groupSnapshot(),
         effectKind: 'rtc-topology-recompute',
         payloadKind: 'group-revision',
+        origin: 'automatic',
         createdAtEpochMs: NOW_EPOCH_MS,
         expireAtEpochMs: 2_000,
         senderId: 'owner',

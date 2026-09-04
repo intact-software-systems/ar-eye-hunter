@@ -50,6 +50,7 @@ describe('Postgres topology APP_OUTBOX concurrency', () => {
                     groupSnapshot,
                     effectKind: 'rtc-topology-recompute',
                     payloadKind: 'group-revision',
+                    origin: 'automatic',
                     createdAtEpochMs: atEpochMs + index,
                     expireAtEpochMs: atEpochMs + 60_000 + index,
                     senderId: 'postgres-topology-concurrency',
