@@ -10,7 +10,6 @@ import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts'
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
-import { requireConditionalWrite } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { CoalescedAppOutboxWorkService } from '../../app-outbox/coalesced-app-outbox-work-service.ts';
@@ -28,7 +27,6 @@ import {
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupLifecyclePolicyRepository } from '../persistence/group-lifecycle-policy-repository.ts';
 import { GroupStateRepositoryReads } from '../persistence/group-state-repository-reads.ts';
-import { createTransactionBoundGroupStateRepository } from '../persistence/group-state-repository.ts';
 import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
 import {
     computeGroupPresenceSummaryWork,
@@ -36,7 +34,8 @@ import {
     validateGroupPresenceSummaryComputedWork,
     type GroupPresenceSummaryComputedWork,
     type GroupPresenceSummaryReservationRead,
-    type GroupPresenceSummaryWorkRead
+    type GroupPresenceSummaryWorkRead,
+    type GroupPresenceSummaryWrite
 } from './group-presence-summary-effects.ts';
 
 export interface GroupPresenceSummaryWorkOptions {
@@ -171,16 +170,8 @@ export class GroupPresenceSummaryWork {
         transaction: PSqlSql,
         computed: GroupPresenceSummaryComputedWork
     ): Promise<void> {
-        const repository = createTransactionBoundGroupStateRepository(transaction);
-        if (computed.summary.outcome === 'write') {
-            requireConditionalWrite(
-                computed.summary.operation === 'insert'
-                    ? await repository.insertPresenceSummary(computed.summary.summary)
-                    : await repository.updatePresenceSummary(
-                        computed.summary.summary,
-                        computed.summary.expectedRevision!
-                    )
-            );
+        if (computed.summaryWrite !== null) {
+            await writePresenceSummary(transaction, computed.summaryWrite);
         }
         for (const outboxWrite of computed.downstreamOutboxWrites) {
             await writeAppOutboxInsert(transaction, outboxWrite);
@@ -242,5 +233,34 @@ export class GroupPresenceSummaryWork {
         catch {
             // Metrics recording must not affect the committed queue work.
         }
+    }
+}
+
+async function writePresenceSummary(
+    transaction: PSqlSql,
+    computed: GroupPresenceSummaryWrite
+): Promise<void> {
+    const rows = computed.operation === 'insert'
+        ? await transaction<{ revision: number; }[]>`
+            insert into runtime_state_store (store_namespace, store_key, store_value,
+                                             expire_at_ts, updated_ts, revision)
+            values (${computed.namespace}, ${computed.key}, ${computed.value},
+                    ${computed.expireAtIsoTimestamp}, now(), 0)
+            on conflict (store_namespace, store_key) do nothing
+            returning revision
+        `
+        : await transaction<{ revision: number; }[]>`
+            update runtime_state_store
+            set store_value = ${computed.value},
+                expire_at_ts = ${computed.expireAtIsoTimestamp},
+                updated_ts = now(),
+                revision = revision + 1
+            where store_namespace = ${computed.namespace}
+              and store_key = ${computed.key}
+              and revision = ${computed.expectedRevision}
+            returning revision
+        `;
+    if (rows.length !== 1) {
+        throw new Error('Presence summary changed before write');
     }
 }

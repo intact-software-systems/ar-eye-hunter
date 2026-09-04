@@ -45,6 +45,157 @@ describe('transaction write check', () => {
         expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
     });
 
+    it('follows authored helper graphs to a fixed point', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        project.createSourceFile(
+            '/packages/domain/write-helper.ts',
+            `export function bindRow(value: object): string { return JSON.stringify(value); }`
+        );
+        project.createSourceFile(
+            '/packages/domain/mutation.ts',
+            `import { bindRow } from './write-helper.ts';
+             interface Sql {
+                 begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                 query(value: string): Promise<void>;
+             }
+             declare const database: Sql;
+             function persist(transaction: Sql, computed: object): Promise<void> {
+                 return transaction.query(bindRow(computed));
+             }
+             export async function execute(computed: object): Promise<void> {
+                 await database.begin(async (transaction) => await persist(transaction, computed));
+             }`
+        );
+
+        const findings = analyzeTransactionWrites(project);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+    });
+
+    it('follows authored method bodies reached through a typed owner', () => {
+        const findings = analyzeFixture(`
+            interface Sql {
+                begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                query(value: string): Promise<void>;
+            }
+            declare const database: Sql;
+            class Writer {
+                persist(transaction: Sql, computed: object): Promise<void> {
+                    return transaction.query(JSON.stringify(computed));
+                }
+            }
+            const writer = new Writer();
+            export async function execute(computed: object): Promise<void> {
+                await database.begin(async (transaction) => await writer.persist(transaction, computed));
+            }
+        `);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+    });
+
+    it('terminates recursive helper analysis while retaining findings', () => {
+        const findings = analyzeFixture(`
+            interface Sql {
+                begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                query(value: string): Promise<void>;
+            }
+            declare const database: Sql;
+            function persist(transaction: Sql, values: readonly string[]): Promise<void> {
+                if (values.length === 0) return Promise.resolve();
+                JSON.stringify(values[0]);
+                return persist(transaction, values.slice(1));
+            }
+            export async function execute(values: readonly string[]): Promise<void> {
+                await database.begin(async (transaction) => await persist(transaction, values));
+            }
+        `);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+    });
+
+    it('fails closed for unresolved external helpers', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        project.createSourceFile(
+            '/packages/domain/external.d.ts',
+            `export function materialize(value: object): string;`
+        );
+        project.createSourceFile(
+            '/packages/domain/mutation.ts',
+            `import { materialize } from './external.ts';
+             interface Sql {
+                 begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                 query(value: string): Promise<void>;
+             }
+             declare const database: Sql;
+             export async function execute(computed: object): Promise<void> {
+                 await database.begin(async (transaction) => {
+                     await transaction.query(materialize(computed));
+                 });
+             }`
+        );
+
+        expect(analyzeTransactionWrites(project)).toMatchObject([{
+            rule: 'transaction.unresolved-provenance',
+            operation: 'materialize'
+        }]);
+    });
+
+    it('allows dispatching prepared subsets through transaction-bound write ports', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql {}
+            interface ServiceA { write(transaction: PSqlSql, computed: string): Promise<void>; }
+            interface ServiceB { finish(transaction: PSqlSql, computed: number): Promise<void>; }
+            declare const serviceA: ServiceA;
+            declare const serviceB: ServiceB;
+            export async function write(
+                transaction: PSqlSql,
+                computed: { readonly forServiceA: string; readonly forServiceB: number }
+            ): Promise<void> {
+                await serviceA.write(transaction, computed.forServiceA);
+                await serviceB.finish(transaction, computed.forServiceB);
+            }
+        `);
+
+        expect(findings).toEqual([]);
+    });
+
+    it('does not analyze a callback that is only constructed in the transaction', () => {
+        const findings = analyzeFixture(`
+            interface Sql {
+                begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                query(value: string): Promise<void>;
+            }
+            declare const database: Sql;
+            export async function execute(): Promise<void> {
+                await database.begin(async (transaction) => {
+                    const later = () => JSON.stringify({ value: 1 });
+                    await transaction.query('prepared');
+                    void later;
+                });
+            }
+        `);
+
+        expect(findings).toEqual([]);
+    });
+
+    it('analyzes immediately invoked collection callbacks', () => {
+        const findings = analyzeFixture(`
+            interface Sql {
+                begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                query(value: string): Promise<void>;
+            }
+            declare const database: Sql;
+            export async function execute(values: readonly object[]): Promise<void> {
+                await database.begin(async (transaction) => {
+                    const encoded = values.map((value) => JSON.stringify(value));
+                    await transaction.query(encoded[0]);
+                });
+            }
+        `);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+    });
+
     it('inspects AppInbox domain write callbacks', () => {
         const findings = analyzeFixture(`
             interface PSqlSql { query(value: unknown): Promise<void>; }

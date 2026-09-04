@@ -1,15 +1,8 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import {
-    PSqlResourceInboxEntryRepository,
-    ResourceInboxInvariantCorruptionError
-} from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import {
-    hasSameResourceEntryContent,
-    toPgTimestamp,
-    toSystemDate
-} from '../../queuebox/postgres/resource-inbox-row-codec.ts';
+import { ResourceInboxInvariantCorruptionError } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { toPgTimestamp, toSystemDate } from '../../queuebox/postgres/resource-inbox-row-codec.ts';
 
 export interface AppOutboxInsert {
     readonly entry: Readonly<ResourceEntry>;
@@ -67,22 +60,6 @@ export async function writeAppOutboxInsert(transaction: PSqlSql, computed: AppOu
     if (!await insertAppOutboxRow(transaction, computed)) {
         throwAppOutboxInsertConflict(computed);
     }
-}
-
-/** Inserts an idempotent coalesced write, accepting only an exact persisted winner. */
-export async function writeAppOutboxInsertOrMatch(
-    transaction: PSqlSql,
-    computed: AppOutboxInsert
-): Promise<'inserted' | 'matched'> {
-    if (await insertAppOutboxRow(transaction, computed)) {
-        return 'inserted';
-    }
-    const existing = await new PSqlResourceInboxEntryRepository(transaction)
-        .findAnyByKey(computed.entry.key);
-    if (existing && hasSameResourceEntryContent(existing, computed.entry)) {
-        return 'matched';
-    }
-    throwAppOutboxInsertConflict(computed);
 }
 
 async function insertAppOutboxRow(transaction: PSqlSql, computed: AppOutboxInsert): Promise<boolean> {

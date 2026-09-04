@@ -151,6 +151,7 @@ describe('GroupPresenceSummaryWork canonical persisted command', () => {
 
         await expect(worker.write(transaction, {
             summary: { outcome: 'no-op' },
+            summaryWrite: null,
             downstreamOutboxWrites: [computeAppOutboxInsert(entry)],
             topologyReplan: { decision: 'held-by-policy' }
         } as never)).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });

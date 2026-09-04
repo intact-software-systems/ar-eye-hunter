@@ -10,6 +10,7 @@ import {
     isExactPersistedGroupStateEvent,
     toValidatedGroupStateEvent
 } from './group-state-event-row-codec.ts';
+import { groupStateEventWorkspaceKey } from './group-state-event-workspace-key.ts';
 import {
     insertPSqlGroupStateEvent,
     readAllPSqlGroupStateEventRows,
@@ -29,7 +30,15 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
     async appendGroupEvent(event: GroupEvent): Promise<void> {
         assertPersistableGroupStateEvent(event, event);
         const eventJson = JSON.stringify(event);
-        if (await insertPSqlGroupStateEvent(this.sql, event, eventJson)) {
+        const workspaceKey = groupStateEventWorkspaceKey(event.workspaceId);
+        if (
+            await insertPSqlGroupStateEvent({
+                sql: this.sql,
+                event,
+                workspaceKey,
+                eventJson
+            })
+        ) {
             return;
         }
         const existing = await readPSqlGroupStateEventCollision(this.sql, event);

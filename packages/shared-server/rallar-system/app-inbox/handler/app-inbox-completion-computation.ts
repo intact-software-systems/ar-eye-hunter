@@ -9,11 +9,11 @@ import {
     computeResourceInboxResultReplacement,
     type ResourceInboxResultReplacement
 } from '../../../queuebox/postgres/resource-inbox-result-replacement.ts';
-import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     validateComputedData,
     validateComputedProjection
-} from '../../validation/computed-data-validation.ts';
+} from '../../computed-data-validation.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { encodeAppInboxResult } from '../app-inbox-registration-codecs.ts';
 
 export interface AppInboxCompletionValidationIssue {

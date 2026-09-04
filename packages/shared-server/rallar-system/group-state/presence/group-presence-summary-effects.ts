@@ -7,6 +7,7 @@ import type {
     GroupSnapshot,
     GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { ResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
@@ -36,7 +37,10 @@ import {
     computeCoalescedRtcTopologyGroupRevisionWork,
     type TopologyReplanTiming
 } from '../../topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
+import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import { assembleGroupStateSnapshot } from '../persistence/assemble-group-state-snapshot.ts';
+import { PRESENCE_SUMMARIES_NAMESPACE } from '../persistence/group-state-runtime-namespaces.ts';
+import { serializeGroupStateValue } from '../persistence/serialize-group-state-value.ts';
 import {
     computeGroupPresenceSummary,
     validateGroupPresenceSummary,
@@ -65,11 +69,29 @@ export type TopologyReplanDecision =
 export interface GroupPresenceSummaryComputedWork {
     readonly work: GroupPresenceSummaryWorkData;
     readonly summary: GroupPresenceSummaryComputed;
+    readonly summaryWrite: GroupPresenceSummaryWrite | null;
     readonly snapshot: GroupSnapshot;
     readonly downstreamOutboxWrites: readonly AppOutboxInsert[];
     readonly topologyReplan: TopologyReplanDecision;
     readonly reservationFinish: ResourceInboxReservationFinish;
 }
+
+export type GroupPresenceSummaryWrite =
+    | Readonly<{
+        operation: 'insert';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+    }>
+    | Readonly<{
+        operation: 'update';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedRevision: number;
+    }>;
 
 export interface ComputeGroupPresenceSummaryWorkOptions {
     readonly serviceId: string;
@@ -142,6 +164,7 @@ export function computeGroupPresenceSummaryWork(
     return {
         work,
         summary,
+        summaryWrite: computeGroupPresenceSummaryWrite(summary),
         snapshot,
         downstreamOutboxWrites: downstreamOutboxEntries.map(computeAppOutboxInsert),
         topologyReplan: computeTopologyReplan({ work, read, summary, snapshot, options }),
@@ -152,6 +175,27 @@ export function computeGroupPresenceSummaryWork(
             completedAt: new Date(read.nowEpochMs)
         }
     };
+}
+
+function computeGroupPresenceSummaryWrite(
+    computed: GroupPresenceSummaryComputed
+): GroupPresenceSummaryWrite | null {
+    if (computed.outcome === 'no-op') {
+        return null;
+    }
+    const persisted = {
+        namespace: PRESENCE_SUMMARIES_NAMESPACE,
+        key: groupStateGroupStorageKey(computed.summary),
+        value: serializeGroupStateValue(computed.summary),
+        expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
+    };
+    return computed.operation === 'insert'
+        ? { ...persisted, operation: 'insert' }
+        : {
+            ...persisted,
+            operation: 'update',
+            expectedRevision: computed.expectedRevision
+        };
 }
 
 /** The facts the enqueue gate reads from the presence-summary command and the group it summarizes. */

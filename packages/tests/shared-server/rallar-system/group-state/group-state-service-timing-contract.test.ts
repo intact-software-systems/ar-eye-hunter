@@ -5,6 +5,7 @@ import {
     createGroupStateServiceTimingFake,
     invokeEveryTimedGroupStateOperation,
     invokeTimedGroupStateOperation,
+    invokeUntimedGroupStateWrite,
     TIMED_ASYNC_OPERATION_COVERAGE,
     TIMED_ASYNC_OPERATIONS,
     TIMED_OPERATION_ARGUMENTS,
@@ -21,11 +22,25 @@ interface OptionalAsyncCoverageProbe {
 }
 
 describe('group-state service timing contract', () => {
-    it('covers every required and optional Promise-returning service method exactly once', () => {
-        expectTypeOf<TimedAsyncOperation>().toEqualTypeOf<PromiseReturningGroupStateServiceKey>();
+    it('covers every Promise-returning service method except transaction-bound write', () => {
+        expectTypeOf<TimedAsyncOperation>().toEqualTypeOf<Exclude<PromiseReturningGroupStateServiceKey, 'write'>>();
         expectTypeOf<PromiseReturningMethodKey<OptionalAsyncCoverageProbe>>().toEqualTypeOf<'required' | 'optional'>();
         expect(TIMED_ASYNC_OPERATION_COVERAGE).toBe(true);
         expect(new Set(TIMED_ASYNC_OPERATIONS).size).toBe(TIMED_ASYNC_OPERATIONS.length);
+    });
+
+    it('forwards transaction-bound writes without reading a timing clock', async () => {
+        const fake = createGroupStateServiceTimingFake();
+        const timingEvents: RallarTimingEvent[] = [];
+        const timed = createTimedGroupStateService({
+            service: fake.service,
+            serviceId: 'timing-service',
+            timing: (event) => timingEvents.push(event)
+        });
+
+        await expect(invokeUntimedGroupStateWrite(timed)).resolves.toBe(fake.sentinels.write);
+        expect(fake.calls).toEqual(['write']);
+        expect(timingEvents).toEqual([]);
     });
 
     it('passes the exact argument tuple to every underlying service method', async () => {

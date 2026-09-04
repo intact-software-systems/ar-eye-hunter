@@ -19,7 +19,6 @@ import type {
     RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector
 } from '../read-batch/runtime-state-read-batch.ts';
-import { writeRuntimeStateGuardedBatch } from './write-runtime-state-guarded-batch.ts';
 import { readRuntimeStateBatch } from './read-runtime-state-batch.ts';
 import {
     decodeRuntimeStateRevision,
@@ -27,6 +26,7 @@ import {
     type RuntimeStateDatabaseRow
 } from './runtime-state-row-codec.ts';
 import { toExclusivePrefixEnd, toPgDate } from './runtime-state-sql-values.ts';
+import { writeRuntimeStateGuardedBatch } from './write-runtime-state-guarded-batch.ts';
 
 interface RuntimeStateSavepointSql extends PSqlSql {
     savepoint<T>(fn: (sql: PSqlSql) => Promise<T>): Promise<T>;

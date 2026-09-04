@@ -404,7 +404,7 @@ function requireDataRecord(
     const permitted = new Set([...required, ...optional]);
     const keys = Object.keys(record);
     if (
-        required.some((key) => !Object.prototype.hasOwnProperty.call(record, key)) ||
+        required.some((key) => !Object.hasOwn(record, key)) ||
         keys.some((key) => !permitted.has(key)) ||
         Reflect.ownKeys(record).length !== keys.length
     ) {
@@ -412,7 +412,7 @@ function requireDataRecord(
     }
     for (const key of keys) {
         const descriptor = Object.getOwnPropertyDescriptor(record, key);
-        if (!descriptor?.enumerable || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+        if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
             throw new TypeError(`${label} must contain only data fields`);
         }
     }

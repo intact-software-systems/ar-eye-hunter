@@ -40,8 +40,15 @@ export type GroupPresenceSummaryComputed =
     | Readonly<{
         outcome: 'write';
         evaluatedAtEpochMs: number;
-        operation: 'insert' | 'update';
-        expectedRevision: number | null;
+        operation: 'insert';
+        expectedRevision: null;
+        summary: GroupPresenceSummary;
+    }>
+    | Readonly<{
+        outcome: 'write';
+        evaluatedAtEpochMs: number;
+        operation: 'update';
+        expectedRevision: number;
         summary: GroupPresenceSummary;
     }>;
 
@@ -96,13 +103,21 @@ export function computeGroupPresenceSummary(
         ...content,
         computedAtEpochMs: nowEpochMs
     };
-    return {
-        outcome: 'write',
-        evaluatedAtEpochMs: nowEpochMs,
-        operation: read.current ? 'update' : 'insert',
-        expectedRevision: read.current?.entry.revision ?? null,
-        summary
-    };
+    return read.current
+        ? {
+            outcome: 'write',
+            evaluatedAtEpochMs: nowEpochMs,
+            operation: 'update',
+            expectedRevision: read.current.entry.revision,
+            summary
+        }
+        : {
+            outcome: 'write',
+            evaluatedAtEpochMs: nowEpochMs,
+            operation: 'insert',
+            expectedRevision: null,
+            summary
+        };
 }
 
 export function validateGroupPresenceSummary(

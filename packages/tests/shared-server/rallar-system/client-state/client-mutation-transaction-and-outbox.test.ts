@@ -64,8 +64,8 @@ describe('client mutation transaction and outbox', () => {
         ]);
         expect(harness.actions).toEqual(['completion', 'write', 'commit', 'observe']);
         expect(harness.observedSnapshots).toHaveLength(1);
-        expect(harness.observedSnapshots[0]).toBe(harness.computedSnapshots[0]);
-        expect(result.result?.snapshot).toBe(harness.computedSnapshots[0]);
+        expect(harness.observedSnapshots[0]).toEqual(harness.computedSnapshots[0]);
+        expect(result.result?.snapshot).toEqual(harness.computedSnapshots[0]);
     });
 
     it('does not observe a snapshot when transaction finalization rejects', async () => {
@@ -93,7 +93,7 @@ describe('client mutation transaction and outbox', () => {
         expect(await harness.results.findByKey(harness.context.entry.key)).toBeUndefined();
     });
 
-    it('selects the after-commit snapshot before opening the transaction', async () => {
+    it('rejects an accessor-bearing computed snapshot before opening the transaction', async () => {
         const harness = await createClientMutationTransactionBoundaryFixture({
             rejectSnapshotReadInTransaction: true
         });
@@ -113,9 +113,11 @@ describe('client mutation transaction and outbox', () => {
                     defaultCommandId: 'client-snapshot-selection'
                 })
             )
-        ).resolves.toBeDefined();
+        ).rejects.toThrow('Client mutation computed.snapshot must be a data property');
 
-        expect(harness.observedSnapshots).toHaveLength(1);
+        expect(harness.actions).toEqual(['completion']);
+        expect(harness.observedSnapshots).toEqual([]);
+        expect(await harness.results.findByKey(harness.context.entry.key)).toBeUndefined();
     });
 });
 

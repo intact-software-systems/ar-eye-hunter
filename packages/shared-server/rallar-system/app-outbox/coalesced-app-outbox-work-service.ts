@@ -21,7 +21,7 @@ import { replaceFinishedResourceEntryIfMatch } from '../../queuebox/postgres/res
 import {
     computeAppOutboxInsert,
     isExactAppOutboxInsert,
-    writeAppOutboxInsertOrMatch,
+    writeAppOutboxInsert,
     type AppOutboxInsert
 } from './app-outbox-insert.ts';
 
@@ -70,7 +70,7 @@ export interface ComputedCoalescedAppOutboxWork {
 }
 
 export interface CoalescedAppOutboxWorkWriteResult {
-    readonly action: 'inserted' | 'matched' | 'updated' | 'successor';
+    readonly action: 'inserted' | 'updated' | 'successor';
     readonly entry: ResourceEntry;
     readonly previous: ResourceEntry | null;
     readonly blockedByReserved: boolean;
@@ -137,9 +137,9 @@ export class CoalescedAppOutboxWorkService {
         const repository = new PSqlResourceInboxEntryRepository(transaction);
         const expected = computed.expectedEntry;
         if (expected === null) {
-            const action = await writeAppOutboxInsertOrMatch(transaction, computed.entryWrite);
+            await writeAppOutboxInsert(transaction, computed.entryWrite);
             return {
-                action,
+                action: 'inserted',
                 entry: computed.entryWrite.entry,
                 previous: null,
                 blockedByReserved: false
@@ -189,7 +189,7 @@ export class CoalescedAppOutboxWorkService {
         computed: ComputedCoalescedAppOutboxWork,
         expected: ResourceEntry
     ): Promise<CoalescedAppOutboxWorkWriteResult> {
-        await writeAppOutboxInsertOrMatch(transaction, computed.successorWrite);
+        await writeAppOutboxInsert(transaction, computed.successorWrite);
         return {
             action: 'successor',
             entry: computed.successorWrite.entry,

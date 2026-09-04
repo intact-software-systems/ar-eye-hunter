@@ -1,4 +1,4 @@
-import { validateComputedProjection } from '../../validation/computed-data-validation.ts';
+import { validateComputedProjection } from '../../computed-data-validation.ts';
 import { computeCrdtMutation } from './compute-crdt-mutation.ts';
 import type {
     CrdtMutationComputed,

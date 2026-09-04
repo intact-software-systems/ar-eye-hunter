@@ -1,14 +1,9 @@
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import {
-    createRtcTopologyExecutionReceipt,
-    hashRtcTopologyExecutionCommand,
     RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
     RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
     type RtcTopologyPublicationWorkClaim
 } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
-import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -249,30 +244,6 @@ export function createPublication(
         } satisfies ALMessage,
         createdAtEpochMs: 10
     };
-}
-
-export async function putOrLoadTopologyPublication(
-    repository: RtcTopologyPublicationRepository,
-    publication: RtcTopologyPublication,
-    snapshot: RallarOverlayTopologySnapshot
-) {
-    const snapshots = new RtcTopologySnapshotRepository(repository.runtimeRepository);
-    let stored = await snapshots.findSnapshotEntry(snapshot.groupRef);
-    if (!stored) {
-        const seeded = await snapshots.commitSnapshotGuard(snapshot, null);
-        if (seeded.status !== 'accepted') {
-            throw new Error('Expected topology snapshot fixture seed');
-        }
-        stored = await snapshots.findSnapshotEntry(snapshot.groupRef);
-    }
-    if (!stored) {
-        throw new Error('Expected durable topology snapshot fixture');
-    }
-    return await repository.putOrLoad(publication, {
-        commandHash: await hashRtcTopologyExecutionCommand(publication),
-        attemptCount: 1,
-        acceptedStorageRevision: stored.entry.revision
-    });
 }
 
 export function corruptTopologyExecutionReceipt(

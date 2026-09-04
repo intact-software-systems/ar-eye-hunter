@@ -28,6 +28,10 @@ import { createGroupStateService } from '@shared-server/rallar-system/group-stat
 import type { GroupCreateAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import {
+    createCachedGroupStateService,
+    type CachedGroupStateServiceCache
+} from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './group-state-inbox-resource-fixtures.ts';
@@ -60,6 +64,8 @@ interface HarnessOptions {
     readonly readPlannedLayoutRow?: Parameters<typeof createGroupStateService>[0]['readPlannedLayoutRow'];
     /** Lets a case seed durable rows before the harness is constructed. */
     readonly runtimeRepository?: FakeRuntimeStateRepository;
+    /** Optional real cache boundary for inbox-to-cache convergence cases. */
+    readonly snapshotCache?: CachedGroupStateServiceCache;
 }
 
 export function listRoomEvents(harness: AuthorityHarness, groupId: string) {
@@ -91,7 +97,7 @@ export async function createAuthorityHarness(
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
     const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
-    const groupStateService = createGroupStateService({
+    const durableGroupStateService = createGroupStateService({
         runtimeRepository,
         groupStateEventStore: database.groupEventStore,
         serviceId: 'server-12345678',
@@ -100,6 +106,12 @@ export async function createAuthorityHarness(
         now: () => nowEpochMs,
         authSessionRepository: authSessions
     });
+    const groupStateService = options.snapshotCache
+        ? createCachedGroupStateService({
+            durable: durableGroupStateService,
+            cache: options.snapshotCache
+        })
+        : durableGroupStateService;
     return {
         nowEpochMs,
         runtimeRepository,

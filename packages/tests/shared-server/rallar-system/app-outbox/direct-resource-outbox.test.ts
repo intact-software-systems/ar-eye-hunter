@@ -541,6 +541,42 @@ describe('direct resource outbox writes', () => {
             }
         ]);
     });
+
+    it('rejects an identical coalesced insert won after its read', async () => {
+        const database = createResourceInboxDatabase();
+        const service = new CoalescedAppOutboxWorkService(
+            new OutboxQueueReader(new InMemoryQueueBox()),
+            'server-1',
+            () => CREATED_AT_EPOCH_MS
+        );
+        const input = {
+            type: 'RTC_TOPOLOGY_RECOMPUTE',
+            topicId: 'app-outbox.rtc-topology',
+            resourceId: 'overlay-race',
+            contextId: 'room-race',
+            data: { overlayId: 'overlay-race', snapshotVersion: 1 }
+        } as const;
+        const first = (await service.enqueue(input)).entry;
+        const successor = (
+            await service.enqueue({ ...input, resourceId: 'overlay-race-successor' })
+        ).entry;
+        await runInPSqlTransaction(database.sql, async (transaction) => {
+            await writeAppOutboxInsert(transaction, computeAppOutboxInsert(first));
+        });
+
+        await expect(
+            runInPSqlTransaction(
+                database.sql,
+                async (transaction) =>
+                    await service.write(
+                        transaction,
+                        computeCoalescedAppOutboxWork(null, first, successor)
+                    )
+            )
+        ).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
+        expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(first.resource);
+    });
+
     it('fences coalescing and inserts a deterministic successor instead of overwriting reserved work', async () => {
         const database = createResourceInboxDatabase();
         const stagingService = new CoalescedAppOutboxWorkService(

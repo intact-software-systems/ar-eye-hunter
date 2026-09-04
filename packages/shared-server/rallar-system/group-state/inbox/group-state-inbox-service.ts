@@ -228,7 +228,13 @@ export class GroupStateInboxService {
         const processGroupStateMutation = async (
             _command: JsonWireValue,
             context: AppInboxMessageContext<GroupStateInboxDurableResult>
-        ) => await this.groupStateInboxHandler.processGroupStateMutation(context);
+        ) => {
+            const result = await this.groupStateInboxHandler.processGroupStateMutation(context);
+            if ('status' in result && (result.status === 'created' || result.status === 'ok')) {
+                await this.groupStateService.observeSnapshot(result.result.snapshot);
+            }
+            return result;
+        };
         this.handlers.registerHandler({
             type: AppInboxType.GROUP_CREATE,
             decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_CREATE, value),

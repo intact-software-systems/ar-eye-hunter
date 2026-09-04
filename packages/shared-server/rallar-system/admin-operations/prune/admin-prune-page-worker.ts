@@ -8,8 +8,8 @@ import {
     computeAppOutboxInsert,
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
+import { validateComputedProjection } from '../../computed-data-validation.ts';
 import { serializeCanonicalJson } from '../../protocol/canonical-json.ts';
-import { validateComputedProjection } from '../../validation/computed-data-validation.ts';
 import { requireAdminPrunePageSize, type AdminPruneAppData } from '../inbox/admin-prune-command-codec.ts';
 import {
     decodeAdminPruneWork,

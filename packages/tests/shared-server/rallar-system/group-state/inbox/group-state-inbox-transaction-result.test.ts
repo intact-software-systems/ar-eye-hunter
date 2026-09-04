@@ -61,7 +61,7 @@ const EXPECTED_CREATE_GROUP_DURABLE_JSON = '{"status":"created","result":{"snaps
     '"traceId":null,"requestId":"create-transaction-boundary-room","payload":{}}}}';
 
 describe('group-state AppInbox transaction result boundary', () => {
-    it('persists the exact durable result without an inbox-owned cache observation', async () => {
+    it('persists the exact durable result without a handler-owned cache effect', async () => {
         const harness = await createGroupStateTransactionBoundaryHarness();
 
         const created = await harness.handler.processGroupStateMutation(harness.context);

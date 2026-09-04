@@ -136,11 +136,7 @@ export class RtcTopologyExecutionRepository {
     private publications(
         repository: RuntimeStateOptimisticTransactionalRepositoryLike
     ): RtcTopologyPublicationRepository {
-        return new RtcTopologyPublicationRepository(
-            repository,
-            this.publicationRetentionMs,
-            this.now
-        );
+        return new RtcTopologyPublicationRepository(repository);
     }
 }
 

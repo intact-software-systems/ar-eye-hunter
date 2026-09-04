@@ -19,7 +19,7 @@ import {
 import {
     validateComputedData,
     validateComputedProjection
-} from '../../validation/computed-data-validation.ts';
+} from '../../computed-data-validation.ts';
 import { toAdminPruneOutbox } from '../prune/admin-prune-page-codec.ts';
 import {
     createAdminPruneAggregate,

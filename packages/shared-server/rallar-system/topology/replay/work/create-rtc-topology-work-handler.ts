@@ -6,7 +6,6 @@ import type { OnMessageCallback } from '@shared/services/queue-message-callbacks
 
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
-import type { RallarTimingSink } from '../../../observability/timing.ts';
 import type { RtcRttRefinementService } from '../../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
 import type { RtcTopologyMutationComputed, RtcTopologyMutationRead } from '../../mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyWorkRuntime } from '../../mutation/rtc-topology-outbox-work.ts';
@@ -81,9 +80,8 @@ interface RtcTopologyWorkHandlerOptions {
     readonly executionRepository: RtcTopologyExecutionRepository;
     readonly rttRefinementService?: RtcRttRefinementService;
     /**
-     * The evidence leg of the activation criterion (plan slice 3b). Absent means
-     * this deployment does not automate formation; groups then activate only by
-     * operator command.
+     * The evidence leg of the activation criterion. Absent means this deployment
+     * does not automate formation; groups then activate only by operator command.
      */
     readonly formationCriterion?: FormationCriterionPort;
     readonly formationAutomation?: GroupFormationAutomationPort;
@@ -92,8 +90,6 @@ interface RtcTopologyWorkHandlerOptions {
     readonly onInactiveOverlay?: (overlayId: string) => void;
     readonly wakeQueue?: () => void;
     readonly wakeReplay?: () => void;
-    readonly sleep?: (delayMs: number) => Promise<void>;
-    readonly timing?: RallarTimingSink;
     readonly serviceId?: string;
 }
 
@@ -101,7 +97,6 @@ interface RtcTopologyWorkAttemptInput {
     readonly options: RtcTopologyWorkHandlerOptions;
     readonly facts: RtcTopologyWorkFacts;
     readonly mutationRead: RtcTopologyMutationRead;
-    readonly deferredCriterionPetitioner: DeferredCriterionPetitioner | null;
 }
 
 export function createRtcTopologyWorkHandler(
@@ -145,10 +140,9 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
     const attempt = {
         options,
         facts,
-        mutationRead,
-        deferredCriterionPetitioner
+        mutationRead
     };
-    const rttRefinementSkip = await processRttRefinementGate(attempt);
+    const rttRefinementSkip = claimRttRefinementSkip(attempt);
     if (rttRefinementSkip !== null) {
         const writeInput: ComputeRtcTopologyWorkWriteInput = {
             accepted: rttRefinementSkip,
@@ -165,6 +159,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
             accepted: rttRefinementSkip,
             computedWrite
         });
+        await deferredCriterionPetitioner?.request(workEnvelope.data, mutationRead);
         return;
     }
     const computationInput: ComputeRtcTopologyWorkInput = {
@@ -242,9 +237,9 @@ async function readLoadedRtcTopologyWork(
  * next deadline evaluation. A removed stored plan never petitions — its
  * empty edge set would read as trivially-complete readiness.
  */
-async function processRttRefinementGate(
+function claimRttRefinementSkip(
     input: RtcTopologyWorkAttemptInput
-): Promise<AcceptedRtcTopologyWork | null> {
+): AcceptedRtcTopologyWork | null {
     const work = input.facts.workEnvelope.data;
     if (
         work.kind !== 'rtt-refresh' ||
@@ -259,7 +254,6 @@ async function processRttRefinementGate(
     ) {
         return null;
     }
-    await input.deferredCriterionPetitioner?.request(work, input.mutationRead);
     return {
         decision: 'skipped-rtt-refinement',
         work,

@@ -37,11 +37,6 @@ export type RtcTopologyClaimedPublication = Readonly<{
     publication: RtcTopologyPublication;
 }>;
 
-export type PutRtcTopologyPublicationResult = Readonly<{
-    publication: RtcTopologyPublication;
-    inserted: boolean;
-}>;
-
 export async function hashRtcTopologyExecutionCommand(
     publication: RtcTopologyPublication
 ): Promise<string> {

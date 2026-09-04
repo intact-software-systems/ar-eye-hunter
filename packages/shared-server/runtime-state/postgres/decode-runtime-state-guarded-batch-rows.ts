@@ -33,24 +33,25 @@ export function decodeRuntimeStateGuardedBatchRows(
     batch: RuntimeStateGuardedBatch,
     rows: readonly RuntimeStateGuardedBatchDatabaseRow[]
 ): RuntimeStateGuardedBatchResult {
-    return decodeGuardedBatchRows(batch, rows, validateRuntimeStateGuardedBatchResult);
+    return validateRuntimeStateGuardedBatchResult(
+        batch,
+        decodeGuardedBatchRows(batch, rows)
+    );
 }
 
 export function decodeComputedRuntimeStateGuardedBatchRows(
     batch: RuntimeStateGuardedBatch,
     rows: readonly RuntimeStateGuardedBatchDatabaseRow[]
 ): RuntimeStateGuardedBatchResult {
-    return decodeGuardedBatchRows(
+    return validateComputedRuntimeStateGuardedBatchResult(
         batch,
-        rows,
-        validateComputedRuntimeStateGuardedBatchResult
+        decodeGuardedBatchRows(batch, rows)
     );
 }
 
 function decodeGuardedBatchRows(
     batch: RuntimeStateGuardedBatch,
-    rows: readonly RuntimeStateGuardedBatchDatabaseRow[],
-    validateResult: typeof validateRuntimeStateGuardedBatchResult
+    rows: readonly RuntimeStateGuardedBatchDatabaseRow[]
 ): RuntimeStateGuardedBatchResult {
     requireDenseRows(rows);
     let guardRow: DecodedRuntimeStateGuardedBatchRow | undefined;
@@ -74,7 +75,7 @@ function decodeGuardedBatchRows(
         if (effectRows.size > 0) {
             throw invalidDatabaseResult('effects applied without guard authority');
         }
-        return validateResult(batch, {
+        return {
             guard: {
                 status: 'conflict',
                 operation: batch.guard.operation,
@@ -90,7 +91,7 @@ function decodeGuardedBatchRows(
                 key: effect.key,
                 reason: 'guard-conflict'
             }))
-        });
+        };
     }
 
     const guardResult = toAppliedGuardResult(batch, guardRow);
@@ -118,10 +119,10 @@ function decodeGuardedBatchRows(
         throw invalidDatabaseResult('received an unexpected effect row');
     }
 
-    return validateResult(batch, {
+    return {
         guard: guardResult,
         effects
-    });
+    };
 }
 
 function decodeRow(
