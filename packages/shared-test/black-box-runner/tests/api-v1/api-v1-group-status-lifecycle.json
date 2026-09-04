@@ -32,7 +32,13 @@
       "env": "RALLAR_WS_BASE_URL",
       "default": "ws://127.0.0.1:18080"
     },
-    "statusGroupId": "status-room-{runId}"
+    "statusGroupId": "status-room-{runId}",
+    "carolUsername": "carol-cr-{runId}",
+    "carolPassword": {
+      "env": "RALLAR_CAROL_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
   },
   "execution": {
     "correlation": {
@@ -54,6 +60,10 @@
       "timeoutMs": 10000
     },
     "wsBob": {
+      "type": "ws",
+      "timeoutMs": 10000
+    },
+    "wsCarol": {
       "type": "ws",
       "timeoutMs": 10000
     }
@@ -629,6 +639,194 @@
       }
     },
     {
+      "name": "registerCarol",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/bb-status-lifecycle-1b523385-{runId}",
+        "body": {
+          "username": "{carolUsername}",
+          "password": "{carolPassword}",
+          "displayName": "Commanded replanning carol {runId}"
+        }
+      },
+      "expect": {
+        "statusCode": [
+          201,
+          409
+        ]
+      }
+    },
+    {
+      "name": "loginCarol",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-status-lifecycle-c7652d91-{runId}",
+        "body": {
+          "username": "{carolUsername}",
+          "password": "{carolPassword}"
+        },
+        "outputs": {
+          "carolClientId": "body.clientId",
+          "carolSessionId": "body.sessionId",
+          "carolAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveCarolAuthHeader",
+      "type": "set",
+      "output": "carolAuthHeader",
+      "secret": true,
+      "redactAs": "carolAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.carolAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "joinCarolToStatusGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{statusGroupId}/join/requests/join-status-carol-{runId}",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{carolClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectCarolStatusPresence",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{statusGroupId}/sessions/{carolSessionId}/requests/presence-carol-status-lifecycle-{runId}",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "body": {
+          "generationId": "generation-{runId}",
+          "principalId": "{carolClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "createCarolWsTicket",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/bb-status-lifecycle-7c6ec360-{runId}",
+        "headers": {
+          "Authorization": "{carolAuthHeader}",
+          "x-client-id": "{carolClientId}"
+        },
+        "outputs": {
+          "carolWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveCarolWsUrl",
+      "type": "set",
+      "output": "carolWsUrl",
+      "secret": true,
+      "redactAs": "carolWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.carolSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.carolWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openCarolWs",
+      "type": "ws.open",
+      "connection": "wsCarol",
+      "request": {
+        "url": "{carolWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "theWidenedLayoutFallsBelowTheViableFloor",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{statusGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "condition": "failed",
+          "readiness": {
+            "plannedEdgeCount": 3,
+            "observedEdgeCount": 1
+          }
+        }
+      }
+    },
+    {
       "name": "closeAliceWs",
       "type": "ws.close",
       "connection": "wsAlice",
@@ -645,7 +843,16 @@
         "code": 1000,
         "reason": "formation criterion ws checks done"
       }
+    },
+    {
+      "name": "closeCarolWs",
+      "type": "ws.close",
+      "connection": "wsCarol",
+      "request": {
+        "code": 1000,
+        "reason": "formation criterion ws checks done"
+      }
     }
   ],
-  "description": "The observed activation condition walked across a formation: a group with no layout carrying traffic reports `inactive` and names no coverage basis, a group dialing its frozen planned candidate reports `initialising` because the basis exists but no edge is observed, and the one planned edge being reported takes coverage to 1 so the group activates and publishes `active`. The condition is read from the group row the status writer wrote, not derived at read (product decision 3), so this also pins that the writer ran."
+  "description": "The observed activation condition walked across a formation: a group with no layout carrying traffic reports `inactive` and names no coverage basis, a group dialing its frozen planned candidate reports `initialising` because the basis exists but no edge is observed, and the one planned edge being reported takes coverage to 1 so the group activates and publishes `active`. The condition is read from the group row the status writer wrote, not derived at read (product decision 3), so this also pins that the writer ran. Admitting a third session then widens the planned edge set from one to three while only the original edge is observed, so coverage falls to a third and the condition lands on `failed` -- below the viable floor, and reported by the durable dwell clock, because a decay that is the absence of evidence is one no evidence arrival could ever report. The `degraded` band and the recovery above it need a further clock cycle to set `dwellSatisfied`, so they are left to the follow-up rather than pinned on a poll window that would make this recipe flaky."
 }
