@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { GROUPS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { GroupTopologyConfigMutationService } from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+import { GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -91,22 +93,73 @@ describe('group topology config mutation phases', () => {
             stringify.mockRestore();
         }
     });
+
+    it('executes each prepared runtime write before the APP_OUTBOX write', async () => {
+        const service = createService();
+        const mutation = createTopologyConfigMutationTestInput();
+        const read = {
+            state: mutation.read,
+            policyNowEpochMs: 1_000,
+            isPlatformAdmin: false,
+            serverDefaults: {}
+        };
+        const computed = service.compute(mutation.command, read, 1);
+        service.validate({ command: mutation.command, read, attemptCount: 1, computed });
+        if (computed.outcome !== 'write') {
+            throw new Error('Expected topology config write');
+        }
+        expect(computed.runtimeWrites[0]).toMatchObject({
+            operation: 'update',
+            namespace: GROUPS_NAMESPACE,
+            key: computed.groupAuthorityGuard.entry.key,
+            expectedRevision: computed.groupAuthorityGuard.entry.revision
+        });
+        expect(computed.runtimeWrites.at(-1)).toMatchObject({
+            namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE
+        });
+
+        const calls: ExecutedSql[] = [];
+        await service.write(
+            createSuccessfulTransaction((call) => calls.push(call)),
+            computed
+        );
+
+        expect(calls).toHaveLength(computed.runtimeWrites.length + 1);
+        for (const [index, write] of computed.runtimeWrites.entries()) {
+            const call = calls[index];
+            expect(call?.query).toContain('runtime_state_store');
+            expect(call?.parameters).toEqual(expect.arrayContaining([
+                write.namespace,
+                write.key
+            ]));
+        }
+        expect(calls.at(-1)?.query).toContain('insert into resource_inbox');
+    });
 });
 
-function createSuccessfulTransaction(): PSqlSql {
+interface ExecutedSql {
+    readonly query: string;
+    readonly parameters: readonly PSqlParameter[];
+}
+
+function createSuccessfulTransaction(
+    recordCall: (call: ExecutedSql) => void = () => undefined
+): PSqlSql {
     const revisions = [1, 0, 0, 0, 0];
     function sql<Result>(
         strings: TemplateStringsArray,
-        ..._values: readonly PSqlParameter[]
+        ...parameters: readonly PSqlParameter[]
     ): Promise<Result>;
     function sql(_values: readonly PSqlParameter[]): object;
     function sql(
-        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[]
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...parameters: readonly PSqlParameter[]
     ) {
         if (Array.isArray(stringsOrValues) && !Object.hasOwn(stringsOrValues, 'raw')) {
             return {};
         }
         const query = (stringsOrValues as TemplateStringsArray).join(' ');
+        recordCall({ query, parameters });
         if (query.includes('returning ri_row_id')) {
             return Promise.resolve([{ ri_row_id: 1n }]);
         }
