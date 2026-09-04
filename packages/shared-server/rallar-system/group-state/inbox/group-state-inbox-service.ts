@@ -187,14 +187,17 @@ export class GroupStateInboxService {
         enqueue: AuthenticatedGroupMutationEnqueue,
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>> {
-        const prepared = await this.prepareAuthenticatedGroupMutation(enqueue, authority);
+        const authorizedEnqueue = await this.authorizeAuthenticatedGroupMutationEnqueue(
+            enqueue,
+            authority
+        );
         return await this.commandClient.enqueueAndWaitForResult<GroupStateInboxDurableResult>(
-            prepared,
+            authorizedEnqueue,
             (value) => decodeGroupStateInboxDurableResult(value, enqueue.type)
         );
     }
 
-    private async prepareAuthenticatedGroupMutation(
+    private async authorizeAuthenticatedGroupMutationEnqueue(
         enqueue: AuthenticatedGroupMutationEnqueue,
         authority: IssuedAuthSession
     ): Promise<AppInboxEnqueueInput> {
