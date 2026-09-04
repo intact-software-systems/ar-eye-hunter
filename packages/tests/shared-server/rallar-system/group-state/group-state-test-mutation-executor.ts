@@ -8,6 +8,7 @@ import {
     type GroupStateServiceDependencies,
     type GroupStateWritten
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { GroupMutationIdempotencyConflictError } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import {
     type GroupMutationComputed,
     type GroupMutationComputedWrite,
@@ -71,9 +72,18 @@ export class GroupStateTestMutationExecutor {
         };
         const read = await this.dependencies.durableService.read(command);
         const computed = this.dependencies.durableService.compute(command, read);
-        this.dependencies.durableService.validate(command, read, computed);
+        assertValidGroupMutationServiceResult(
+            this.dependencies.durableService,
+            command,
+            read,
+            computed
+        );
         if (computed.outcome === 'idempotency-conflict') {
-            throw new TypeError('Validated idempotency conflict is unreachable');
+            throw new GroupMutationIdempotencyConflictError(
+                command.command.commandId,
+                computed.existingCommandHash,
+                computed.receivedCommandHash
+            );
         }
         if (computed.outcome === 'write') {
             await this.writeComputed(computed);
@@ -211,3 +221,15 @@ async function writeGuardedBatch(transaction: RuntimeStateGuardedBatchTransactio
 }
 
 const TEST_OUTBOX_EXPIRE_AT_EPOCH_MS = 253_402_300_799_999;
+
+function assertValidGroupMutationServiceResult(
+    service: GroupStateService,
+    command: GroupStateMutationCommand,
+    read: Parameters<GroupStateService['validate']>[1],
+    computed: GroupMutationComputed
+): void {
+    const issue = service.validate(command, read, computed)[0];
+    if (issue !== undefined) {
+        throw issue.cause;
+    }
+}

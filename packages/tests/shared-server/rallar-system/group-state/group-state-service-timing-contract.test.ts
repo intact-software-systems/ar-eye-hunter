@@ -1,3 +1,4 @@
+import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createTimedGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-timing.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
@@ -5,13 +6,15 @@ import {
     createGroupStateServiceTimingFake,
     invokeEveryTimedGroupStateOperation,
     invokeTimedGroupStateOperation,
+    invokeUntimedGroupStateOperations,
     invokeUntimedGroupStateWrite,
     TIMED_ASYNC_OPERATION_COVERAGE,
     TIMED_ASYNC_OPERATIONS,
     TIMED_OPERATION_ARGUMENTS,
     type PromiseReturningGroupStateServiceKey,
     type PromiseReturningMethodKey,
-    type TimedAsyncOperation
+    type TimedAsyncOperation,
+    type TimedOperationArgument
 } from './group-state-service-timing-fixture.ts';
 
 interface OptionalAsyncCoverageProbe {
@@ -27,6 +30,21 @@ describe('group-state service timing contract', () => {
         expectTypeOf<PromiseReturningMethodKey<OptionalAsyncCoverageProbe>>().toEqualTypeOf<'required' | 'optional'>();
         expect(TIMED_ASYNC_OPERATION_COVERAGE).toBe(true);
         expect(new Set(TIMED_ASYNC_OPERATIONS).size).toBe(TIMED_ASYNC_OPERATIONS.length);
+    });
+
+    it('preserves each service operation result type through the generic timing harness', async () => {
+        const fake = createGroupStateServiceTimingFake();
+        const recentEvents = invokeTimedGroupStateOperation(fake.service, 'listRecentEvents');
+        const everyResult = invokeEveryTimedGroupStateOperation(fake.service);
+        const computed = invokeUntimedGroupStateOperations(fake.service);
+        const written = invokeUntimedGroupStateWrite(fake.service);
+
+        expectTypeOf(recentEvents).toEqualTypeOf<ReturnType<GroupStateService['listRecentEvents']>>();
+        expectTypeOf<Awaited<typeof everyResult>['listRecentEvents']>().toEqualTypeOf<Awaited<ReturnType<GroupStateService['listRecentEvents']>>>();
+        expectTypeOf(computed).toEqualTypeOf<ReturnType<GroupStateService['compute']>>();
+        expectTypeOf(written).toEqualTypeOf<ReturnType<GroupStateService['write']>>();
+
+        await Promise.all([recentEvents, everyResult, written]);
     });
 
     it('forwards transaction-bound writes without reading a timing clock', async () => {
@@ -106,8 +124,8 @@ describe('group-state service timing contract', () => {
 });
 
 function expectExactArgumentIdentity(
-    actual: readonly unknown[],
-    expected: readonly unknown[]
+    actual: readonly TimedOperationArgument[],
+    expected: readonly TimedOperationArgument[]
 ): void {
     expect(actual).toHaveLength(expected.length);
     for (const [index, value] of expected.entries()) {

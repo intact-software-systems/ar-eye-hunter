@@ -25,6 +25,7 @@ import type {
     GroupStateMutationService,
     GroupStateService
 } from '../group-state-service-contracts.ts';
+import { GroupMutationIdempotencyConflictError } from '../group-state-service.ts';
 import type { GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
 import type { GroupMutationRead } from '../mutation/group-mutation-contracts.ts';
 import type { GroupPresenceSessionCleanupAppInboxPayload } from './group-presence-session-cleanup-app-inbox-payload.ts';
@@ -50,6 +51,13 @@ interface ReadAndComputeGroupPresenceConnectInput {
     readonly command: GroupStateMutationCommand;
     readonly mutationService: GroupStateMutationService;
     readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
+}
+
+interface AssertGroupStateMutationValidInput {
+    readonly service: GroupStateMutationService;
+    readonly command: GroupStateMutationCommand;
+    readonly read: GroupMutationRead;
+    readonly computed: GroupMutationComputed;
 }
 
 interface GroupSessionCleanupResult extends InactiveGroupPresenceResult {
@@ -171,7 +179,19 @@ export async function processGroupSessionCleanup(
     const completion = computeAppInboxCompletion(completionInput);
     validateWsSessionGenerationClosed(closeFacts, lifecycleRead, lifecycleComputed);
     for (const mutation of mutations) {
-        input.groupStateService.validate(mutation.command, mutation.read, mutation.computed);
+        assertGroupStateMutationValid({
+            service: input.groupStateService,
+            command: mutation.command,
+            read: mutation.read,
+            computed: mutation.computed
+        });
+        if (mutation.computed.outcome === 'idempotency-conflict') {
+            throw new GroupMutationIdempotencyConflictError(
+                mutation.command.command.commandId,
+                mutation.computed.existingCommandHash,
+                mutation.computed.receivedCommandHash
+            );
+        }
     }
     const completionIssues = validateAppInboxCompletion(completionInput, completion);
     if (completionIssues[0] !== undefined) {
@@ -191,6 +211,13 @@ export async function processGroupSessionCleanup(
     );
     input.wakeQueue?.();
     return result;
+}
+
+function assertGroupStateMutationValid(input: AssertGroupStateMutationValidInput): void {
+    const issue = input.service.validate(input.command, input.read, input.computed)[0];
+    if (issue !== undefined) {
+        throw issue.cause;
+    }
 }
 
 function toGroupHighWaterIdentity(

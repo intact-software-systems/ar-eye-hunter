@@ -227,7 +227,7 @@ async function convergePresenceSummaryForCacheTest(
         expectedAttempts: 1
     }, 2_001);
     const computed = work.compute(command, read);
-    work.validate(command, read, computed);
+    expect(work.validate(command, read, computed)).toEqual([]);
     await runtime.begin(async (transaction) => {
         if (computed.summary.outcome === 'no-op') {
             return;

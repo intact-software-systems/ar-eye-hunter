@@ -15,7 +15,7 @@ import {
     type GroupMutationCommand,
     type GroupMutationIdempotencyRecord
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/assert-group-mutation-result.ts';
+import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation-result.ts';
 import {
     toScopedGroupMutationCommandIdFromIdentity
 } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';

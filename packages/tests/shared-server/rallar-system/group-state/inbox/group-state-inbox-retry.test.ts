@@ -143,10 +143,16 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                             outcome: 'denied',
                             authorized: false
                         });
-                        throw new GroupMutationAuthorizationError(
+                        const cause = new GroupMutationAuthorizationError(
                             'Authenticated session changed before retry.'
                         );
+                        return [{
+                            path: 'computed.authority',
+                            message: cause.message,
+                            cause
+                        }];
                     }
+                    return [];
                 },
                 write: async (
                     _transaction: never,

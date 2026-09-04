@@ -13,14 +13,14 @@ import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/Res
 import type { ResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import {
     computeAppOutboxInsert,
-    isExactAppOutboxInsert,
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
 import {
-    isExactComputedCoalescedAppOutboxWork,
     isMutableCoalescedStatus,
     type ComputedCoalescedAppOutboxWork
 } from '../../app-outbox/coalesced-app-outbox-work-service.ts';
+import { validateComputedProjection } from '../../computed-data-validation.ts';
+import type { ComputedDataValidationIssue } from '../../computed-data-validation.ts';
 import {
     computeGroupStateSyncEntries,
     type ComputedGroupStateSyncEffect,
@@ -43,7 +43,6 @@ import { PRESENCE_SUMMARIES_NAMESPACE } from '../persistence/group-state-runtime
 import { serializeGroupStateValue } from '../persistence/serialize-group-state-value.ts';
 import {
     computeGroupPresenceSummary,
-    validateGroupPresenceSummary,
     type GroupPresenceSummaryComputed,
     type GroupPresenceSummaryRead
 } from './compute-group-presence-summary.ts';
@@ -268,91 +267,13 @@ function toTopologyReplanTiming(
 
 export function validateGroupPresenceSummaryComputedWork(
     input: ValidateGroupPresenceSummaryComputedWorkInput
-): void {
-    const { work, read, computed, options } = input;
-    if (computed.work !== work) {
-        throw new TypeError('Presence-summary computed work differs from its command');
-    }
-    validateReservationFinish(read, computed.reservationFinish);
-    validateGroupPresenceSummary({
-        ref: work.aggregateRef,
-        read: read.presence,
-        computed: computed.summary
-    });
-    if (
-        work.event.applicationId !== work.aggregateRef.applicationId ||
-        work.event.workspaceId !== work.aggregateRef.workspaceId ||
-        work.event.groupId !== work.aggregateRef.groupId ||
-        work.event.causalRevision.groupRevision !== work.acceptedCausalRevision.groupRevision ||
-        work.event.causalRevision.presenceRevision !== work.acceptedCausalRevision.presenceRevision
-    ) {
-        throw new TypeError('Presence-summary event differs from accepted group revision');
-    }
-    const outboxInput = toGroupPresenceSummaryOutboxInput({
-        work,
-        read,
-        summary: computed.summary,
-        snapshot: computed.snapshot,
-        options
-    });
-    const expectedOutboxEntries = computeGroupPresenceSummaryOutboxEntries(outboxInput);
-    if (
-        computed.downstreamOutboxWrites.length !== expectedOutboxEntries.length ||
-        computed.downstreamOutboxWrites.some((write, index) => {
-            const expected = expectedOutboxEntries[index];
-            return expected === undefined || !isExactAppOutboxInsert(expected, write);
-        })
-    ) {
-        throw new TypeError('Presence-summary downstream outbox writes are not canonical');
-    }
-    validateTopologyReplanDecision(input);
-}
-
-function validateReservationFinish(
-    read: GroupPresenceSummaryWorkRead,
-    computed: ResourceInboxReservationFinish
-): void {
-    if (
-        computed.key.topicId !== read.reservation.key.topicId ||
-        computed.key.resourceId !== read.reservation.key.resourceId ||
-        computed.key.contextId !== read.reservation.key.contextId ||
-        computed.expectedAttempts !== read.reservation.expectedAttempts ||
-        computed.status !== EntityStatus.COMPLETED ||
-        computed.completedAt.getTime() !== read.nowEpochMs
-    ) {
-        throw new TypeError('Presence-summary reservation finish differs from its read facts');
-    }
-}
-
-function validateTopologyReplanDecision(input: ValidateGroupPresenceSummaryComputedWorkInput): void {
-    const { work, read, computed } = input;
-    const enqueue = resolveTopologyReplanEnqueue({
-        ...toTopologyReplanEnqueueFacts(work, computed.snapshot.group, {
-            coalescedTopologyEntry: read.coalescedTopologyEntry,
-            nowEpochMs: computed.summary.summary.computedAtEpochMs
-        }),
-        policyFacts: read.topologyReplanPolicyFacts
-    });
-    if ((enqueue === 'enqueue') !== (computed.topologyReplan.decision === 'enqueue')) {
-        throw new TypeError('Presence-summary replan decision differs from the stored policy facts');
-    }
-    const expected = computeTopologyReplan({
-        work,
-        read,
-        summary: computed.summary,
-        snapshot: computed.snapshot,
-        options: input.options
-    });
-    if (
-        expected.decision === 'enqueue' &&
-        computed.topologyReplan.decision === 'enqueue' &&
-        !isExactComputedCoalescedAppOutboxWork(
-            expected.work,
-            computed.topologyReplan.work
-        )
-    ) {
-        throw new TypeError('Presence-summary replan write differs from its computation');
-    }
+): readonly ComputedDataValidationIssue[] {
+    const expected = computeGroupPresenceSummaryWork(
+        input.work,
+        input.read,
+        input.options
+    );
+    return validateComputedProjection(expected, input.computed, 'computed');
 }
 
 function toGroupPresenceSummaryOutboxInput(

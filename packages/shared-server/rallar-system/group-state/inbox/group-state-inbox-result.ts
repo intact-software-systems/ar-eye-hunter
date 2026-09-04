@@ -1,6 +1,8 @@
 import type { GroupEvent, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
+import { validateComputedProjection } from '../../computed-data-validation.ts';
+import type { ComputedDataValidationIssue } from '../../computed-data-validation.ts';
 import type { GroupStateMutationCommand } from '../group-state-service-contracts.ts';
 import type { GroupJoinCodeWritten, GroupStateWritten } from '../group-state-service-contracts.ts';
 import type {
@@ -56,11 +58,9 @@ export function computeGroupStateInboxResult(input: ComputeGroupStateInboxResult
 export function validateGroupStateInboxResult(
     input: ComputeGroupStateInboxResultInput,
     computed: GroupStateInboxDurableResult
-): void {
+): readonly ComputedDataValidationIssue[] {
     const expected = computeGroupStateInboxResult(input);
-    if (JSON.stringify(computed) !== JSON.stringify(expected)) {
-        throw new TypeError('Computed group-state inbox result does not match its inputs.');
-    }
+    return validateComputedProjection(expected, computed, 'computed');
 }
 
 interface ToGroupMutationResultInput {

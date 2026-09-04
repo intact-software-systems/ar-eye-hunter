@@ -6,8 +6,8 @@ import type {
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/assert-group-mutation-result.ts';
-import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
+import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation-result.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type {
     AuditStamp,
@@ -164,14 +164,12 @@ describe('group mutation receipt causal invariants', () => {
                     causalRevision: { groupRevision: 1 }
                 }
             });
-            expect(() =>
-                assertGroupMutation({
-                    command,
-                    read: fencedRead,
-                    facts,
-                    computed
-                })
-            ).not.toThrow();
+            expect(validateGroupMutation({
+                command,
+                read: fencedRead,
+                facts,
+                computed
+            })).toEqual([]);
         });
 
         it('rejects malformed computed guards, receipts, and outbox projections', () => {
@@ -216,14 +214,14 @@ describe('group mutation receipt causal invariants', () => {
             ] as const;
 
             for (const malformed of cases) {
-                expect(() =>
-                    assertGroupMutation({
+                expect(
+                    validateGroupMutation({
                         command,
                         read,
                         facts,
                         computed: malformed as never
                     })
-                ).toThrow(/scope|revision|snapshot|effect|outbox|receipt/i);
+                ).not.toEqual([]);
             }
         });
 
@@ -282,18 +280,15 @@ describe('group mutation receipt causal invariants', () => {
                     ['dependent admission', wrongDependent]
                 ] as const
             ) {
-                expect
-                    .soft(
-                        () =>
-                            assertGroupMutation({
-                                command,
-                                read,
-                                facts,
-                                computed: malformed as never
-                            }),
-                        label
-                    )
-                    .toThrow(/canonical|deterministic|projection|operation|unexpected key/i);
+                expect.soft(
+                    validateGroupMutation({
+                        command,
+                        read,
+                        facts,
+                        computed: malformed as never
+                    }),
+                    label
+                ).not.toEqual([]);
             }
         });
     });

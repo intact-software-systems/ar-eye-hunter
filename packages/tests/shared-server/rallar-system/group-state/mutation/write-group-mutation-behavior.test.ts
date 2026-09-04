@@ -52,7 +52,7 @@ describe('GroupStateService guarded batch write boundary', () => {
         };
         const read = await group.durable.read(command);
         const computed = group.durable.compute(command, read);
-        group.durable.validate(command, read, computed);
+        expect(group.durable.validate(command, read, computed)).toEqual([]);
         expect(computed.outcome).toBe('write');
         if (computed.outcome !== 'write') {
             throw new TypeError('Expected group write');
@@ -112,8 +112,29 @@ describe('GroupStateService guarded batch write boundary', () => {
             }
         ];
         for (const candidate of tampered) {
-            expect(() => group.durable.validate(command, read, candidate)).toThrow();
+            expect(group.durable.validate(command, read, candidate)).not.toEqual([]);
         }
+
+        const coordinatedTampering = {
+            ...computed,
+            persistence: {
+                ...computed.persistence,
+                guardedBatch: {
+                    ...computed.persistence.guardedBatch,
+                    guard: {
+                        ...computed.persistence.guardedBatch.guard,
+                        key: `${computed.persistence.guardedBatch.guard.key}:tampered`
+                    }
+                }
+            },
+            outboxWrites: [{ ...outboxWrite, createdAt: '2000-01-01T00:00:00.000Z' }]
+        };
+        expect(
+            group.durable.validate(command, read, coordinatedTampering).map((issue) => issue.path)
+        ).toEqual(expect.arrayContaining([
+            'computed.persistence.guardedBatch.guard.key',
+            'computed.outboxWrites.0.createdAt'
+        ]));
 
         const stringify = vi.spyOn(JSON, 'stringify').mockImplementation(() => {
             throw new Error('group serialization must finish during compute');

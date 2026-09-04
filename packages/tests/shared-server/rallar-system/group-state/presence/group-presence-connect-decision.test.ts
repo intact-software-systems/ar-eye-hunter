@@ -134,6 +134,7 @@ function createMutationServiceFixture(command: GroupStateMutationCommand, phases
             expect(receivedRead).toBe(read);
             expect(receivedComputed).toBe(computed);
             phases.push('mutation-validate');
+            return [];
         },
         write: async () => {
             throw new Error('The presence decision must not own the transaction write');

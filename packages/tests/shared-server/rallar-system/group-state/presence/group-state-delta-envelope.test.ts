@@ -39,7 +39,7 @@ describe('group-state delta envelope construction', () => {
             trigger: (event) => event.eventType === 'member-joined'
         });
 
-        const envelope = readGroupStateEventRowEnvelope(computed.downstreamOutboxWrites[0]?.entry);
+        const envelope = decodeGroupStateEventRowEnvelope(computed.downstreamOutboxWrites[0]?.entry);
         expect(() => validateGroupStateDeltaEnvelope(envelope)).not.toThrow();
         expect(envelope.event).toEqual(command.event);
         if (read.presence.current === null) {
@@ -76,7 +76,7 @@ describe('group-state delta envelope construction', () => {
             trigger: (event) => event.eventType === 'session-connected'
         });
 
-        const envelope = readGroupStateEventRowEnvelope(computed.downstreamOutboxWrites[0]?.entry);
+        const envelope = decodeGroupStateEventRowEnvelope(computed.downstreamOutboxWrites[0]?.entry);
         expect(command.event.eventType).toBe('session-connected');
         expect(envelope.members).toEqual([]);
         expect(envelope.sessions).toEqual(
@@ -108,7 +108,7 @@ describe('group-state delta envelope construction', () => {
         });
 
         expect(computed.summary.outcome).toBe('no-op');
-        const envelope = readGroupStateEventRowEnvelope(computed.downstreamOutboxWrites[0]?.entry);
+        const envelope = decodeGroupStateEventRowEnvelope(computed.downstreamOutboxWrites[0]?.entry);
         expect(envelope.predecessorCausalRevision).toEqual(envelope.resultingCausalRevision);
         expect(envelope.resultingCausalRevision).toEqual(computed.snapshot.causalRevision);
     });
@@ -118,7 +118,7 @@ describe('group-state delta envelope construction', () => {
         const second = await computeShuffledScenarioEventRow(['s-b', 's-c', 's-a']);
 
         expect(first.resource).toBe(second.resource);
-        const envelope = readGroupStateEventRowEnvelope(first);
+        const envelope = decodeGroupStateEventRowEnvelope(first);
         expect(envelope.activeSessionIds).toEqual(['s-a', 's-b', 's-c', 's-trigger']);
     });
 
@@ -268,11 +268,11 @@ async function computeSummaryWork(input: SummaryWorkInput): Promise<ComputedSumm
         BASE_EPOCH_MS + 1_000
     );
     const computed = work.compute(command, read);
-    work.validate(command, read, computed);
+    expect(work.validate(command, read, computed)).toEqual([]);
     return { command, read, computed };
 }
 
-function readGroupStateEventRowEnvelope(entry: ResourceEntry | undefined): GroupStateDeltaEnvelope {
+function decodeGroupStateEventRowEnvelope(entry: ResourceEntry | undefined): GroupStateDeltaEnvelope {
     if (entry === undefined) {
         throw new Error('Expected emitted group state event row');
     }

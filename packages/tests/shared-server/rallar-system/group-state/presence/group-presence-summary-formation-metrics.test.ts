@@ -42,7 +42,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
                 AppTopics.groupStateEvent
             ], entry)
         );
-        vi.spyOn(worker, 'validate').mockReturnValue(undefined);
+        vi.spyOn(worker, 'validate').mockReturnValue([]);
         vi.spyOn(worker, 'write').mockResolvedValue(undefined);
 
         await worker.processReservedEntry(message, entry);
@@ -79,7 +79,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         vi.spyOn(worker, 'compute').mockReturnValue(
             createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent], entry, 'held-by-policy')
         );
-        vi.spyOn(worker, 'validate').mockReturnValue(undefined);
+        vi.spyOn(worker, 'validate').mockReturnValue([]);
         vi.spyOn(worker, 'write').mockResolvedValue(undefined);
 
         await worker.processReservedEntry(message, entry);
@@ -104,7 +104,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         vi.spyOn(worker, 'compute').mockReturnValue(
             createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent], entry)
         );
-        vi.spyOn(worker, 'validate').mockReturnValue(undefined);
+        vi.spyOn(worker, 'validate').mockReturnValue([]);
         vi.spyOn(worker, 'write').mockResolvedValue(undefined);
 
         await expect(worker.processReservedEntry(message, entry)).rejects.toThrow('Presence-summary reservation changed before commit');

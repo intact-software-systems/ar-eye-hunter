@@ -27,6 +27,7 @@ import {
 import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupLifecyclePolicyRepository } from '../persistence/group-lifecycle-policy-repository.ts';
 import { GroupStateRepositoryReads } from '../persistence/group-state-repository-reads.ts';
+import { assertGroupPresenceSummaryRead } from './assert-group-presence-summary-read.ts';
 import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
 import {
     computeGroupPresenceSummaryWork,
@@ -83,7 +84,7 @@ export class GroupPresenceSummaryWork {
                 `Group not found for presence summary: ${work.aggregateRef.groupId}`
             );
         }
-        return {
+        const read: GroupPresenceSummaryWorkRead = {
             nowEpochMs,
             reservation: {
                 key: { ...reservation.key },
@@ -104,6 +105,8 @@ export class GroupPresenceSummaryWork {
                 nowEpochMs
             )
         };
+        assertGroupPresenceSummaryRead(work.aggregateRef, read.presence);
+        return read;
     }
 
     /** The policy and planned slot are read only when the enqueue gate will consult them. */
@@ -153,8 +156,8 @@ export class GroupPresenceSummaryWork {
         work: GroupPresenceSummaryWorkData,
         read: GroupPresenceSummaryWorkRead,
         computed: GroupPresenceSummaryComputedWork
-    ): void {
-        validateGroupPresenceSummaryComputedWork({
+    ): ReturnType<typeof validateGroupPresenceSummaryComputedWork> {
+        return validateGroupPresenceSummaryComputedWork({
             work,
             read,
             computed,
@@ -197,7 +200,7 @@ export class GroupPresenceSummaryWork {
             expectedAttempts: entry.dequeueAudit.attempts
         }, this.now());
         const computed = this.compute(work, read);
-        this.validate(work, read, computed);
+        this.assertValid(work, read, computed);
         await runInPSqlTransaction(this.options.database, async (transaction) => {
             await this.write(transaction, computed);
             const finished = await writeResourceInboxReservationFinish(
@@ -219,6 +222,17 @@ export class GroupPresenceSummaryWork {
             contextId: groupStateGroupStorageKey(ref)
         });
         return (await this.options.outboxQueueReader.outbox.getItem(key)) ?? null;
+    }
+
+    private assertValid(
+        work: GroupPresenceSummaryWorkData,
+        read: GroupPresenceSummaryWorkRead,
+        computed: GroupPresenceSummaryComputedWork
+    ): void {
+        const issue = this.validate(work, read, computed)[0];
+        if (issue !== undefined) {
+            throw issue.cause;
+        }
     }
 
     private recordFormationMetrics(computed: GroupPresenceSummaryComputedWork): void {

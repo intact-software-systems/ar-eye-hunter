@@ -1,19 +1,62 @@
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 
+import {
+    assertExactKeys,
+    assertRequiredKeys,
+    requireJsonSafe
+} from '../group-state-validation-primitives.ts';
+import { groupStateGroupStorageKey } from '../persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateMemberStorageKey } from '../persistence/membership/group-membership-storage-key.ts';
 import {
     groupStatePresenceAdmissionStorageKey,
-    groupStatePresenceSessionStorageKey
+    groupStatePresenceSessionStorageKey,
+    groupStatePresenceSummaryStorageKey
 } from '../persistence/presence/group-presence-storage-keys.ts';
 import { validateGroupStateRuntimeEntry } from '../persistence/validate-group-state-runtime-entry.ts';
 import {
     validatePresenceAdmission,
-    validatePresenceSession
+    validatePresenceSession,
+    validatePresenceSummaryValue
 } from '../persistence/validate-persisted-group-presence.ts';
-import { validateStoredMember } from '../persistence/validate-persisted-group.ts';
+import {
+    validateStoredGroup,
+    validateStoredMember
+} from '../persistence/validate-persisted-group.ts';
 import type { GroupPresenceSummaryRead } from './compute-group-presence-summary.ts';
 
-export function validateGroupPresenceSummaryReadCollections(
+export function assertGroupPresenceSummaryRead(
+    ref: GroupRef,
+    read: GroupPresenceSummaryRead
+): void {
+    requireJsonSafe(read, 'Group presence summary read');
+    assertExactKeys(
+        read,
+        ['group', 'members', 'admissions', 'presenceSessions', 'current'],
+        'Group presence summary read'
+    );
+    assertRequiredKeys(
+        read,
+        ['group', 'members', 'admissions', 'presenceSessions', 'current'],
+        'Group presence summary read'
+    );
+    validateGroupStateRuntimeEntry(
+        read.group,
+        'Stored summary group',
+        groupStateGroupStorageKey(ref)
+    );
+    validateStoredGroup(read.group.value, ref);
+    assertGroupPresenceSummaryCollections(ref, read);
+    if (read.current) {
+        validateGroupStateRuntimeEntry(
+            read.current,
+            'Stored current presence summary',
+            groupStatePresenceSummaryStorageKey(ref)
+        );
+        validatePresenceSummaryValue(read.current.value, ref);
+    }
+}
+
+function assertGroupPresenceSummaryCollections(
     ref: GroupRef,
     read: GroupPresenceSummaryRead
 ): void {
@@ -28,13 +71,13 @@ export function validateGroupPresenceSummaryReadCollections(
             throw new TypeError(`Group presence summary ${label} must be an array`);
         }
     }
-    validateGroupPresenceSummaryMembers(ref, read);
-    validateGroupPresenceSummaryAdmissions(ref, read.admissions);
-    const sessionsById = validateGroupPresenceSummarySessions(ref, read.presenceSessions);
-    validateGroupPresenceSummaryAdmissionSessions(read.admissions, sessionsById);
+    assertGroupPresenceSummaryMembers(ref, read);
+    assertGroupPresenceSummaryAdmissions(ref, read.admissions);
+    const sessionsById = assertGroupPresenceSummarySessions(ref, read.presenceSessions);
+    assertGroupPresenceSummaryAdmissionSessions(read.admissions, sessionsById);
 }
 
-function validateGroupPresenceSummaryMembers(ref: GroupRef, read: GroupPresenceSummaryRead): void {
+function assertGroupPresenceSummaryMembers(ref: GroupRef, read: GroupPresenceSummaryRead): void {
     const memberIds = new Set<string>();
     for (const stored of read.members) {
         validateGroupStateRuntimeEntry(
@@ -61,7 +104,7 @@ function validateGroupPresenceSummaryMembers(ref: GroupRef, read: GroupPresenceS
     }
 }
 
-function validateGroupPresenceSummaryAdmissions(
+function assertGroupPresenceSummaryAdmissions(
     ref: GroupRef,
     admissions: GroupPresenceSummaryRead['admissions']
 ): void {
@@ -88,7 +131,7 @@ function validateGroupPresenceSummaryAdmissions(
     }
 }
 
-function validateGroupPresenceSummarySessions(
+function assertGroupPresenceSummarySessions(
     ref: GroupRef,
     presenceSessions: GroupPresenceSummaryRead['presenceSessions']
 ): Map<string, GroupPresenceSession> {
@@ -108,7 +151,7 @@ function validateGroupPresenceSummarySessions(
     return sessionsById;
 }
 
-function validateGroupPresenceSummaryAdmissionSessions(
+function assertGroupPresenceSummaryAdmissionSessions(
     admissions: GroupPresenceSummaryRead['admissions'],
     sessionsById: ReadonlyMap<string, GroupPresenceSession>
 ): void {

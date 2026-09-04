@@ -20,6 +20,7 @@ import type {
     GroupStateMutationCommand,
     GroupStateMutationService
 } from '../group-state-service-contracts.ts';
+import { GroupMutationIdempotencyConflictError } from '../group-state-service.ts';
 import type { GroupMutationComputed, GroupMutationRead } from '../mutation/group-mutation-contracts.ts';
 import { toGroupMutationRejectionError } from '../mutation/group-mutation-result.ts';
 import {
@@ -95,7 +96,7 @@ export class GroupStateInboxHandler {
             if (outcome.status === 'inactive') {
                 const completionInput = this.readCompletionInput(context, outcome);
                 const completion = computeAppInboxCompletion(completionInput);
-                this.validateCompletion(completionInput, completion);
+                this.assertCompletionValid(completionInput, completion);
                 const durableResult = await this.dependencies.transactionWriter.writeComputedMutation(
                     context,
                     completion,
@@ -105,25 +106,25 @@ export class GroupStateInboxHandler {
                 return durableResult;
             }
             if (!isCommittableMutation(outcome.computed)) {
-                this.dependencies.mutationService.validate(command, outcome.read, outcome.computed);
+                this.assertMutationValid(command, outcome.read, outcome.computed);
                 validateWsSessionConnectGuard(
                     outcome.lifecycleGuardFacts,
                     outcome.lifecycleRead,
                     outcome.lifecycleGuard
                 );
-                throwNonCommittableMutation(outcome.computed);
+                throwNonCommittableMutation(command, outcome.computed);
             }
             const computed = outcome.computed;
             const durableResult = computed.receipt;
             const completionInput = this.readCompletionInput(context, durableResult);
             const completion = computeAppInboxCompletion(completionInput);
-            this.dependencies.mutationService.validate(command, outcome.read, computed);
+            this.assertMutationValid(command, outcome.read, computed);
             validateWsSessionConnectGuard(
                 outcome.lifecycleGuardFacts,
                 outcome.lifecycleRead,
                 outcome.lifecycleGuard
             );
-            this.validateCompletion(completionInput, completion);
+            this.assertCompletionValid(completionInput, completion);
             return await this.commitMutation({
                 context,
                 command,
@@ -136,8 +137,8 @@ export class GroupStateInboxHandler {
         const resultRead = await this.readResultFacts(command);
         const computed = this.dependencies.mutationService.compute(command, resultRead.mutationRead);
         if (!isCommittableMutation(computed)) {
-            this.dependencies.mutationService.validate(command, resultRead.mutationRead, computed);
-            throwNonCommittableMutation(computed);
+            this.assertMutationValid(command, resultRead.mutationRead, computed);
+            throwNonCommittableMutation(command, computed);
         }
         const resultInput = {
             command,
@@ -149,9 +150,9 @@ export class GroupStateInboxHandler {
         const durableResult = computeGroupStateInboxResult(resultInput);
         const completionInput = this.readCompletionInput(context, durableResult);
         const completion = computeAppInboxCompletion(completionInput);
-        this.dependencies.mutationService.validate(command, resultRead.mutationRead, computed);
-        validateGroupStateInboxResult(resultInput, durableResult);
-        this.validateCompletion(completionInput, completion);
+        this.assertMutationValid(command, resultRead.mutationRead, computed);
+        this.assertInboxResultValid(resultInput, durableResult);
+        this.assertCompletionValid(completionInput, completion);
         return await this.commitMutation({ context, command, computed, durableResult, completion });
     }
 
@@ -224,13 +225,34 @@ export class GroupStateInboxHandler {
         } as const;
     }
 
-    private validateCompletion<Result>(
+    private assertCompletionValid<Result>(
         input: AppInboxCompletionInput<Result>,
         computed: AppInboxCompletionComputed<Result>
     ): void {
         const issues = validateAppInboxCompletion(input, computed);
         if (issues[0] !== undefined) {
             throw issues[0].cause;
+        }
+    }
+
+    private assertMutationValid(
+        command: GroupStateMutationCommand,
+        read: GroupMutationRead,
+        computed: GroupMutationComputed
+    ): void {
+        const issue = this.dependencies.mutationService.validate(command, read, computed)[0];
+        if (issue !== undefined) {
+            throw issue.cause;
+        }
+    }
+
+    private assertInboxResultValid(
+        input: Parameters<typeof validateGroupStateInboxResult>[0],
+        computed: GroupStateInboxDurableResult
+    ): void {
+        const issue = validateGroupStateInboxResult(input, computed)[0];
+        if (issue !== undefined) {
+            throw issue.cause;
         }
     }
 
@@ -257,10 +279,15 @@ function isCommittableMutation(
 }
 
 function throwNonCommittableMutation(
+    command: GroupStateMutationCommand,
     computed: Extract<GroupMutationComputed, { outcome: 'idempotency-conflict' | 'rejected'; }>
 ): never {
     if (computed.outcome === 'idempotency-conflict') {
-        throw new TypeError('Validated group idempotency conflict is unreachable');
+        throw new GroupMutationIdempotencyConflictError(
+            command.command.commandId,
+            computed.existingCommandHash,
+            computed.receivedCommandHash
+        );
     }
     throw toGroupMutationRejectionError(computed);
 }

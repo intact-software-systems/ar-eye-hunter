@@ -207,7 +207,7 @@ async function readComputedSummary(seeded: SeededScenario): Promise<GroupPresenc
         BASE_EPOCH_MS + 1_000
     );
     const computed = work.compute(seeded.command, read);
-    work.validate(seeded.command, read, computed);
+    expect(work.validate(seeded.command, read, computed)).toEqual([]);
     return computed;
 }
 

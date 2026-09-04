@@ -43,7 +43,7 @@ describe('group presence summary delta emission', () => {
         expect(decodePersistedALMessage(eventRow.resource).id.msgId).toContain(
             ':member-state:delta-envelope:'
         );
-        expect(readEventRowPayload(eventRow)).toEqual(
+        expect(decodeEventRowPayload(eventRow)).toEqual(
             computeGroupStateDeltaEnvelope({
                 event: result.command.event,
                 summary: result.computed.summary,
@@ -76,7 +76,7 @@ describe('group presence summary delta emission', () => {
             const scenario = await createConnectedScenario('emit-tampered-envelope');
             const { work, command, read, computed } = await computeSummaryWork(scenario);
 
-            expect(() => work.validate(command, read, computed)).not.toThrow();
+            expect(work.validate(command, read, computed)).toEqual([]);
 
             const tampered: GroupPresenceSummaryComputedWork = {
                 ...computed,
@@ -87,9 +87,7 @@ describe('group presence summary delta emission', () => {
                     ...computed.downstreamOutboxWrites.slice(1)
                 ]
             };
-            expect(() => work.validate(command, read, tampered)).toThrow(
-                'Presence-summary downstream outbox writes are not canonical'
-            );
+            expect(work.validate(command, read, tampered)).not.toEqual([]);
         }
     );
 
@@ -102,24 +100,21 @@ describe('group presence summary delta emission', () => {
             throw new Error('Expected computed downstream outbox write');
         }
 
-        expect(() =>
-            work.validate(command, read, {
-                ...computed,
-                downstreamOutboxWrites: [{
-                    ...outboxWrite,
-                    createdAt: '2000-01-01T00:00:00.000Z'
-                }]
-            })
-        ).toThrow('Presence-summary downstream outbox writes are not canonical');
-        expect(() =>
-            work.validate(command, read, {
-                ...computed,
-                reservationFinish: {
-                    ...computed.reservationFinish,
-                    expectedAttempts: computed.reservationFinish.expectedAttempts + 1
-                }
-            })
-        ).toThrow('Presence-summary reservation finish differs from its read facts');
+        const issues = work.validate(command, read, {
+            ...computed,
+            downstreamOutboxWrites: [{
+                ...outboxWrite,
+                createdAt: '2000-01-01T00:00:00.000Z'
+            }],
+            reservationFinish: {
+                ...computed.reservationFinish,
+                expectedAttempts: computed.reservationFinish.expectedAttempts + 1
+            }
+        });
+        expect(issues.map((issue) => issue.path)).toEqual(expect.arrayContaining([
+            'computed.downstreamOutboxWrites.0.createdAt',
+            'computed.reservationFinish.expectedAttempts'
+        ]));
     });
 });
 
@@ -192,7 +187,7 @@ async function computeSummaryWork(scenario: ConnectedScenario): Promise<Computed
         BASE_EPOCH_MS + 1_000
     );
     const computed = work.compute(command, read);
-    work.validate(command, read, computed);
+    expect(work.validate(command, read, computed)).toEqual([]);
     return { work, command, read, computed };
 }
 
@@ -200,7 +195,7 @@ function topicIds(entries: readonly ResourceEntry[]): readonly string[] {
     return entries.map((entry) => entry.key.topicId);
 }
 
-function readEventRowPayload(entry: ResourceEntry): GroupStateDeltaEnvelope {
+function decodeEventRowPayload(entry: ResourceEntry): GroupStateDeltaEnvelope {
     const message = decodePersistedALMessage(entry.resource);
     const envelope: unknown = JSON.parse(message.payload.resource);
     validateGroupStateDeltaEnvelope(envelope);
@@ -215,7 +210,7 @@ function tamperEventRowEnvelope(
         throw new Error('Expected emitted group state event row');
     }
     const message = decodePersistedALMessage(entry.resource);
-    const envelope = readEventRowPayload(entry);
+    const envelope = decodeEventRowPayload(entry);
     const tamperedMessage: ALMessage = {
         ...message,
         payload: {

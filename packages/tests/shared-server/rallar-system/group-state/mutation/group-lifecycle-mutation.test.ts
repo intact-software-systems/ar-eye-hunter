@@ -1,5 +1,5 @@
 import { APP_OUTBOX_FORMATION_TIMER_TOPIC } from '@shared-server/rallar-system/group-state/formation-timer-outbox-entry.ts';
-import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
@@ -366,18 +366,18 @@ describe('group lifecycle transition computation', () => {
         const computed = computeGroupMutation({ command, read, facts });
         expect(computed).toMatchObject({ outcome: 'rejected', rejectionCode: 'group-policy-denied' });
         const serialized: GroupMutationComputed = JSON.parse(JSON.stringify(computed));
-        expect(() => assertGroupMutation({ command, read, facts, computed: serialized })).not.toThrow();
+        expect(validateGroupMutation({ command, read, facts, computed: serialized })).toEqual([]);
         if (computed.outcome !== 'rejected' || computed.rejectionCode !== 'group-policy-denied') {
             throw new Error('Expected a policy rejection');
         }
-        expect(() =>
-            assertGroupMutation({
+        expect(
+            validateGroupMutation({
                 command,
                 read,
                 facts,
                 computed: { ...computed, policyDenial: { ...computed.policyDenial, message: 'forged denial' } }
-            })
-        ).toThrow(/canonical deterministic projection/);
+            }).map((issue) => issue.path)
+        ).toContain('computed.policyDenial.message');
     });
 
     it('denies a non-manager under the managed policy', () => {
