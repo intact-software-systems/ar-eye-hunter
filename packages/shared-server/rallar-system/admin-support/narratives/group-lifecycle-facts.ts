@@ -1,6 +1,7 @@
 import type { AdminSupportFact } from '@shared/api/admin-support/admin-support-types.ts';
-import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { toGroupLayoutIdentity, type GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { Group } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 /**
  * The lifecycle plane an operator actually asks about: which stage the group
@@ -14,9 +15,20 @@ import type { Group } from '@shared/api/group-types.ts';
  * certainty until the writer has stored one, rather than inventing a band no
  * clock has observed.
  */
-export function groupLifecycleFacts(group: Group): readonly AdminSupportFact[] {
+export function groupLifecycleFacts(
+    group: Group,
+    plannedSnapshot: RallarOverlayTopologySnapshot | null
+): readonly AdminSupportFact[] {
     const status = group.activationStatus;
-    const statusCertainty = status === null ? 'unavailable' : 'exact';
+    // A status from a spent series describes a layout the group has moved
+    // past. The formation view refuses to publish one; a support surface
+    // should still show it -- that staleness is often the thing being
+    // debugged -- but must not call it exact.
+    const statusCertainty = status === null
+        ? 'unavailable'
+        : status.formationEpoch === group.formationEpoch
+        ? 'exact'
+        : 'inferred';
     return [
         { label: 'group.lifecycleState', source: 'group-state', value: group.lifecycleState, certainty: 'exact' },
         { label: 'group.formationEpoch', source: 'group-state', value: group.formationEpoch, certainty: 'exact' },
@@ -34,6 +46,17 @@ export function groupLifecycleFacts(group: Group): readonly AdminSupportFact[] {
             certainty: group.acceptedLayoutIdentity === null ? 'unavailable' : 'exact'
         },
         {
+            // The candidate waiting to be dialed. A held one sitting beside a
+            // different accepted identity is what a `hold` reconfigure landing
+            // looks like, and it is otherwise invisible to an operator.
+            label: 'group.plannedLayoutIdentity',
+            source: 'group-topology',
+            value: plannedSnapshot === null || plannedSnapshot.state !== 'active'
+                ? 'none'
+                : toLayoutIdentitySummary(toGroupLayoutIdentity(plannedSnapshot)),
+            certainty: plannedSnapshot === null ? 'unavailable' : 'exact'
+        },
+        {
             label: 'group.activationCondition',
             source: 'group-state',
             value: status?.condition ?? 'unconfirmed',
@@ -49,6 +72,18 @@ export function groupLifecycleFacts(group: Group): readonly AdminSupportFact[] {
             label: 'group.activationCoverageBasis',
             source: 'group-state',
             value: toLayoutIdentitySummary(status?.coverageBasisLayoutIdentity ?? null),
+            certainty: statusCertainty
+        },
+        {
+            label: 'group.activationStatusEpoch',
+            source: 'group-state',
+            value: status?.formationEpoch ?? 'unconfirmed',
+            certainty: statusCertainty
+        },
+        {
+            label: 'group.activationConfirmedAtEpochMs',
+            source: 'group-state',
+            value: status?.confirmedAtEpochMs ?? 'unconfirmed',
             certainty: statusCertainty
         }
     ];

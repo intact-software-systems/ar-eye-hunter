@@ -7,7 +7,6 @@ import type {
     AdminSupportWarning
 } from '@shared/api/admin-support/admin-support-types.ts';
 import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
-import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupEvent, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { adminSupportNarrativeBase, type AdminSupportNarrativeBase } from './admin-support-narrative-base.ts';
 import { groupLifecycleFacts } from './group-lifecycle-facts.ts';
@@ -126,7 +125,7 @@ function groupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
                 certainty: 'exact'
             }
         );
-        facts.push(...groupLifecycleFacts(input.snapshot.group));
+        facts.push(...groupLifecycleFacts(input.snapshot.group, input.topologyView?.snapshot ?? null));
         if (input.principalId) {
             const member = input.snapshot.members.find(
                 (candidate) => candidate.principalId === input.principalId
@@ -177,11 +176,6 @@ function groupTimeline(events: readonly GroupEvent[]): readonly AdminSupportTime
     }));
 }
 
-/**
- * A layout identity is the tuple, never a bare version (product decision 29),
- * so an operator comparing two of them can tell a re-plan from a re-publish.
- */
-
 function groupWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[] {
     const warnings: AdminSupportWarning[] = [];
     if (!input.hasGroupStateService) {
@@ -207,9 +201,10 @@ function groupWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[
     }
     const group = input.snapshot?.group;
     if (group?.lifecycleState === 'dormant' && group.formationAttemptCount > 0) {
-        // Decision 38: the parked series keeps its admission posture, so the
-        // lobby looks open while nothing will dial. That is the state an
-        // operator is most likely to be paged about and least likely to guess.
+        // The series is spent: `start` is denied until a `reset` clears it
+        // (product decision 37). Nothing is claimed here about admission --
+        // decision 38 keeps whatever posture the policy asked for, so a closed
+        // lobby stays closed, and this narrative cannot read that policy.
         warnings.push({
             code: 'group-formation-series-parked',
             message: `Formation parked in dormant after ${group.formationAttemptCount} attempt(s); ` +
@@ -218,11 +213,14 @@ function groupWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[
         });
     }
     if (group?.transportState === 'halted') {
-        // The valve is orthogonal to the stage (product decision 25), so an
-        // active group can be carrying no application data at all.
+        // The valve is orthogonal to the stage (product decision 25), but it is
+        // only half the data gate: `resume` clears the halt and the forward
+        // gate can still refuse data before activation. `reset` also halts
+        // (product decision 36), so a halt is not evidence of a pause.
         warnings.push({
             code: 'group-transport-halted',
-            message: 'Application data is paused; the routing plane is unaffected and resume restores it.',
+            message: 'Transport is halted, so application data is refused; a reset halts as well as a pause. ' +
+                'Resume clears the halt, which is not sufficient on its own before activation.',
             source: 'group-state'
         });
     }

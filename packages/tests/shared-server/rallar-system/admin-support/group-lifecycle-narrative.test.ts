@@ -27,6 +27,9 @@ describe('the group narrative reports the lifecycle plane', () => {
 
         expect(facts['group.lifecycleState']).toBe('active');
         expect(facts['group.formationEpoch']).toBe(4);
+        // The input the parked warning branches on; unasserted it could be
+        // deleted without failing anything.
+        expect(facts['group.formationAttemptCount']).toBe(1);
         expect(facts['group.transportState']).toBe('flowing');
         // The tuple, never a bare version (product decision 29), so two
         // identities can be told apart by a reader.
@@ -34,15 +37,58 @@ describe('the group narrative reports the lifecycle plane', () => {
     });
 
     it('reports an unconfirmed status as unavailable rather than inventing a band', () => {
-        const narrative = narrativeFor({ activationStatus: null });
+        const narrative = narrativeFor({ activationStatus: null, acceptedLayoutIdentity: null });
+        const byLabel = Object.fromEntries(narrative.facts.map((f) => [f.label, f]));
+
+        for (
+            const label of [
+                'group.activationCondition',
+                'group.activationCoverageRate',
+                'group.activationStatusEpoch',
+                'group.activationConfirmedAtEpochMs'
+            ]
+        ) {
+            expect(byLabel[label]?.value).toBe('unconfirmed');
+            expect(byLabel[label]?.certainty).toBe('unavailable');
+        }
+        expect(byLabel['group.activationCoverageBasis']?.value).toBe('none');
+        // An absent accepted layout is authoritatively absent, not a failed
+        // lookup, but it is reported the same way the file already reports a
+        // missing member or topology view.
+        expect(byLabel['group.acceptedLayoutIdentity']?.value).toBe('none');
+        expect(byLabel['group.acceptedLayoutIdentity']?.certainty).toBe('unavailable');
+    });
+
+    // A status from a spent series describes a layout the group has moved
+    // past; it is still shown, because that staleness is often the thing
+    // being debugged, but it must not be called exact.
+    it('downgrades a status whose series the group has left', () => {
+        const narrative = narrativeFor({
+            formationEpoch: 6,
+            activationStatus: {
+                condition: 'active',
+                coverageRate: 1,
+                coverageBasisLayoutIdentity: {
+                    groupRevision: 9,
+                    presenceRevision: 2,
+                    version: 3,
+                    state: 'active'
+                },
+                formationEpoch: 4,
+                evidenceWatermark: null,
+                confirmedAtEpochMs: NOW - 900
+            }
+        });
         const condition = narrative.facts.find((f) => f.label === 'group.activationCondition');
 
-        expect(condition?.value).toBe('unconfirmed');
-        expect(condition?.certainty).toBe('unavailable');
+        expect(condition?.value).toBe('active');
+        expect(condition?.certainty).toBe('inferred');
     });
 
     it('reports the confirmed status the writer stored', () => {
         const narrative = narrativeFor({
+            // Same series as the status, so it is current rather than stale.
+            formationEpoch: 4,
             activationStatus: {
                 condition: 'degraded',
                 coverageRate: 0.6,
