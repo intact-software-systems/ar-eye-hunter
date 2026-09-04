@@ -5,7 +5,6 @@ import type {
 } from './indexed-db-queue-box-entry.ts';
 import {
     decodeStoredResourceEntryValue,
-    hasSameStoredResourceEntry,
     validateComputedIndexedDbQueueMutations
 } from './indexed-db-queue-box-entry.ts';
 
@@ -68,9 +67,5 @@ function matchesIndexedDbQueueExpectedState(
             return current === undefined;
         case 'revision':
             return current?.revision === expected.revision;
-        case 'legacy-row':
-            return current !== undefined &&
-                current.revision === undefined &&
-                hasSameStoredResourceEntry(current, expected.stored);
     }
 }

@@ -32,29 +32,11 @@ export interface ValidateALInboundBufferedReleaseInput {
     readonly computed: ALInboundCommitBundle;
 }
 
-interface ExactValueComparisonState {
-    readonly comparedCandidates: WeakMap<object, WeakSet<object>>;
-}
-
-interface AppendExactArrayDifferencesInput<Value> {
-    readonly issues: ALInboundAdmissionValidationIssue[];
-    readonly path: string;
-    readonly expected: readonly Value[];
-    readonly candidate: readonly Value[];
-}
-
-interface AppendExactDifferenceInput<Value> {
+interface AppendDifferenceInput<Value> {
     readonly issues: ALInboundAdmissionValidationIssue[];
     readonly path: string;
     readonly expected: Value;
     readonly candidate: Value;
-}
-
-interface AppendExactDataShapeDifferenceInput {
-    readonly issues: ALInboundAdmissionValidationIssue[];
-    readonly path: string;
-    readonly expected: object;
-    readonly candidate: object;
 }
 
 export function validateALInboundAdmission(
@@ -88,77 +70,37 @@ function validateALInboundComputedBundle(
         expected = computeExpected();
     }
     catch (error) {
-        issues.push(toALInboundAdmissionValidationIssue(
+        issues.push(toValidationIssue(
             'computed',
             `cannot be recomputed: ${error instanceof Error ? error.message : String(error)}`
         ));
         return issues;
     }
 
-    if (
-        !appendExactDataShapeDifference({
-            issues,
-            path: 'computed',
-            expected,
-            candidate: computed
-        })
-    ) {
-        return issues;
-    }
-
-    appendExactDifference({
-        issues,
-        path: 'computed.senderId',
-        expected: expected.senderId,
-        candidate: computed.senderId
-    });
-    appendExactDifference({
-        issues,
-        path: 'computed.expectedVersion',
-        expected: expected.expectedVersion,
-        candidate: computed.expectedVersion
-    });
-    appendExactArrayDifferences({
-        issues,
-        path: 'computed.mutations',
-        expected: expected.mutations,
-        candidate: computed.mutations
-    });
-    appendExactArrayDifferences({
-        issues,
-        path: 'computed.durableEffects',
-        expected: expected.durableEffects,
-        candidate: computed.durableEffects
-    });
-    return issues;
-}
-
-function appendExactDataShapeDifference(
-    input: AppendExactDataShapeDifferenceInput
-): boolean {
-    const { issues, path, expected, candidate } = input;
     try {
-        const expectedKeys = Reflect.ownKeys(expected);
-        const candidateKeys = Reflect.ownKeys(candidate);
-        const expectedFieldsAreData = expectedKeys.every((key) =>
-            Object.prototype.hasOwnProperty.call(Object.getOwnPropertyDescriptor(expected, key), 'value')
-        );
-        const candidateFieldsAreData = candidateKeys.every((key) =>
-            Object.prototype.hasOwnProperty.call(Object.getOwnPropertyDescriptor(candidate, key), 'value')
-        );
-        const hasExactShape = Object.getPrototypeOf(expected) === Object.getPrototypeOf(candidate) &&
-            expectedFieldsAreData && candidateFieldsAreData &&
-            expectedKeys.length === candidateKeys.length &&
-            expectedKeys.every((key) => Object.prototype.hasOwnProperty.call(candidate, key));
-        if (!hasExactShape) {
-            issues.push(toALInboundAdmissionValidationIssue(path, 'has a different data shape'));
+        if (!hasExactDataFields(computed, ['senderId', 'expectedVersion', 'mutations', 'durableEffects'])) {
+            issues.push(toValidationIssue('computed', 'has a different data shape'));
+            return issues;
         }
-        return expectedFieldsAreData && candidateFieldsAreData;
+        appendDifference({
+            issues,
+            path: 'computed.senderId',
+            expected: expected.senderId,
+            candidate: computed.senderId
+        });
+        appendDifference({
+            issues,
+            path: 'computed.expectedVersion',
+            expected: expected.expectedVersion,
+            candidate: computed.expectedVersion
+        });
+        appendArrayDifferences(issues, 'computed.mutations', expected.mutations, computed.mutations);
+        appendArrayDifferences(issues, 'computed.durableEffects', expected.durableEffects, computed.durableEffects);
     }
     catch {
-        issues.push(toALInboundAdmissionValidationIssue(path, 'must be inspectable inert data'));
-        return false;
+        issues.push(toValidationIssue('computed', 'must be inspectable inert data'));
     }
+    return issues;
 }
 
 function validateALInboundComputationFacts(
@@ -166,42 +108,41 @@ function validateALInboundComputationFacts(
 ): ALInboundAdmissionValidationIssue[] {
     const issues: ALInboundAdmissionValidationIssue[] = [];
     if (typeof facts.selfPeerId !== 'string' || facts.selfPeerId.length === 0) {
-        issues.push(toALInboundAdmissionValidationIssue('facts.selfPeerId', 'must be a non-empty string'));
+        issues.push(toValidationIssue('facts.selfPeerId', 'must be a non-empty string'));
     }
     if (typeof facts.inboxEntryTypeId !== 'string' || facts.inboxEntryTypeId.length === 0) {
-        issues.push(toALInboundAdmissionValidationIssue('facts.inboxEntryTypeId', 'must be a non-empty string'));
+        issues.push(toValidationIssue('facts.inboxEntryTypeId', 'must be a non-empty string'));
     }
     if (typeof facts.messageIdentitySeed !== 'string' || facts.messageIdentitySeed.length === 0) {
-        issues.push(toALInboundAdmissionValidationIssue('facts.messageIdentitySeed', 'must be a non-empty string'));
+        issues.push(toValidationIssue('facts.messageIdentitySeed', 'must be a non-empty string'));
     }
     if (!Number.isSafeInteger(facts.observedAtEpochMs) || facts.observedAtEpochMs < 0) {
-        issues.push(toALInboundAdmissionValidationIssue(
-            'facts.observedAtEpochMs',
-            'must be a non-negative safe integer'
-        ));
+        issues.push(toValidationIssue('facts.observedAtEpochMs', 'must be a non-negative safe integer'));
     }
     if (!(facts.inboxAudit.date instanceof Temporal.PlainTime)) {
-        issues.push(toALInboundAdmissionValidationIssue('facts.inboxAudit.date', 'must be a PlainTime'));
+        issues.push(toValidationIssue('facts.inboxAudit.date', 'must be a PlainTime'));
     }
     if (!(facts.inboxAudit.createdTs instanceof Temporal.PlainDateTime)) {
-        issues.push(toALInboundAdmissionValidationIssue('facts.inboxAudit.createdTs', 'must be a PlainDateTime'));
+        issues.push(toValidationIssue('facts.inboxAudit.createdTs', 'must be a PlainDateTime'));
     }
     return issues;
 }
 
-function appendExactArrayDifferences<Value>(
-    input: AppendExactArrayDifferencesInput<Value>
+function appendArrayDifferences<Value>(
+    issues: ALInboundAdmissionValidationIssue[],
+    path: string,
+    expected: readonly Value[],
+    candidate: readonly Value[]
 ): void {
-    const { issues, path, expected, candidate } = input;
-    if (!appendExactDataShapeDifference({ issues, path, expected, candidate })) {
+    if (!hasExactArrayShape(candidate)) {
+        issues.push(toValidationIssue(path, 'has a different data shape'));
         return;
     }
     if (expected.length !== candidate.length) {
-        issues.push(toALInboundAdmissionValidationIssue(`${path}.length`, 'differs from the computed value'));
+        issues.push(toValidationIssue(`${path}.length`, 'differs from the computed value'));
     }
-    const comparedLength = Math.min(expected.length, candidate.length);
-    for (let index = 0; index < comparedLength; index += 1) {
-        appendExactDifference({
+    for (let index = 0; index < Math.min(expected.length, candidate.length); index += 1) {
+        appendDifference({
             issues,
             path: `${path}[${index}]`,
             expected: expected[index],
@@ -210,31 +151,27 @@ function appendExactArrayDifferences<Value>(
     }
 }
 
-function appendExactDifference<Value>(
-    input: AppendExactDifferenceInput<Value>
+function appendDifference<Value>(
+    input: AppendDifferenceInput<Value>
 ): void {
     const { issues, path, expected, candidate } = input;
-    try {
-        if (!isExactComputedValue(expected, candidate, { comparedCandidates: new WeakMap() })) {
-            issues.push(toALInboundAdmissionValidationIssue(path, 'differs from the computed value'));
-        }
-    }
-    catch {
-        issues.push(toALInboundAdmissionValidationIssue(path, 'must be inspectable inert data'));
+    if (!isExactDataValue(expected, candidate, new WeakMap())) {
+        issues.push(toValidationIssue(path, 'differs from the computed value'));
     }
 }
 
-function isExactComputedValue<Value>(
+function isExactDataValue<Value>(
     expected: Value,
     candidate: Value,
-    state: ExactValueComparisonState
+    compared: WeakMap<object, WeakSet<object>>
 ): boolean {
     if (Object.is(expected, candidate)) {
         return true;
     }
     if (
         expected === null || candidate === null ||
-        typeof expected !== 'object' || typeof candidate !== 'object'
+        typeof expected !== 'object' || typeof candidate !== 'object' ||
+        Object.getPrototypeOf(expected) !== Object.getPrototypeOf(candidate)
     ) {
         return false;
     }
@@ -247,43 +184,50 @@ function isExactComputedValue<Value>(
     if (expected instanceof Temporal.PlainTime) {
         return candidate instanceof Temporal.PlainTime && Temporal.PlainTime.compare(expected, candidate) === 0;
     }
-    if (Object.getPrototypeOf(expected) !== Object.getPrototypeOf(candidate)) {
-        return false;
-    }
 
-    const expectedObject = expected as object;
-    const candidateObject = candidate as object;
-
-    const compared = state.comparedCandidates.get(expectedObject) ?? new WeakSet<object>();
-    if (compared.has(candidateObject)) {
+    const previous = compared.get(expected) ?? new WeakSet<object>();
+    if (previous.has(candidate)) {
         return true;
     }
-    compared.add(candidateObject);
-    state.comparedCandidates.set(expectedObject, compared);
+    previous.add(candidate);
+    compared.set(expected, previous);
 
-    const expectedFields = Object.getOwnPropertyDescriptors(expectedObject);
-    const candidateFields = Object.getOwnPropertyDescriptors(candidateObject);
+    const expectedFields = Object.getOwnPropertyDescriptors(expected);
+    const candidateFields = Object.getOwnPropertyDescriptors(candidate);
     const expectedKeys = Reflect.ownKeys(expectedFields);
     const candidateKeys = Reflect.ownKeys(candidateFields);
-    if (
-        expectedKeys.length !== candidateKeys.length ||
-        expectedKeys.some((key) => !Object.prototype.hasOwnProperty.call(candidateFields, key))
-    ) {
-        return false;
-    }
-    return expectedKeys.every((key) => {
-        const expectedField = Object.getOwnPropertyDescriptor(expectedObject, key);
-        const candidateField = Object.getOwnPropertyDescriptor(candidateObject, key);
+    return expectedKeys.length === candidateKeys.length && expectedKeys.every((key) => {
+        const expectedField = Object.getOwnPropertyDescriptor(expected, key);
+        const candidateField = Object.getOwnPropertyDescriptor(candidate, key);
         return Boolean(
             expectedField && candidateField &&
                 Object.prototype.hasOwnProperty.call(expectedField, 'value') &&
                 Object.prototype.hasOwnProperty.call(candidateField, 'value') &&
-                isExactComputedValue(expectedField.value, candidateField.value, state)
+                isExactDataValue(expectedField.value, candidateField.value, compared)
         );
     });
 }
 
-function toALInboundAdmissionValidationIssue(
+function hasExactDataFields(candidate: object, fields: readonly string[]): boolean {
+    const descriptors = Object.getOwnPropertyDescriptors(candidate);
+    const keys = Reflect.ownKeys(descriptors);
+    return Object.getPrototypeOf(candidate) === Object.prototype &&
+        keys.length === fields.length &&
+        fields.every((field) => {
+            const descriptor = descriptors[field];
+            return descriptor?.enumerable === true && Object.prototype.hasOwnProperty.call(descriptor, 'value');
+        });
+}
+
+function hasExactArrayShape<Value>(candidate: readonly Value[]): boolean {
+    if (!Array.isArray(candidate) || Object.getPrototypeOf(candidate) !== Array.prototype) {
+        return false;
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(candidate);
+    return Reflect.ownKeys(descriptors).length === candidate.length + 1;
+}
+
+function toValidationIssue(
     path: string,
     reason: string
 ): ALInboundAdmissionValidationIssue {

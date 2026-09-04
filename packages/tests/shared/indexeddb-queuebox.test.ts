@@ -16,35 +16,20 @@ afterEach(() => {
 });
 
 describe('IndexedDbQueueBox', () => {
-    it('rejects a stale write over a concurrently refreshed revisionless row', async () => {
-        const dbName = `indexeddb-legacy-concurrency-${crypto.randomUUID()}`;
+    it('rejects a revisionless persisted row instead of retaining the legacy format', async () => {
+        const dbName = `indexeddb-revisionless-row-${crypto.randomUUID()}`;
         const queue = new IndexedDbQueueBox({ dbName });
-        const original = createEntry('legacy.type', 'legacy-concurrency', {
-            resource: JSON.stringify({ version: 1 })
-        });
-        const candidate = { ...original, resource: JSON.stringify({ version: 2 }) };
-        const concurrent = { ...original, resource: JSON.stringify({ version: 3 }) };
+        const original = createEntry('current.type', 'revisionless-row');
         await queue.enqueue(original);
         const database = await openQueueDatabase(dbName);
         try {
             await writeRawQueueEntry(database, withoutRevision(encodeStoredResourceEntry(original, 0)));
-
-            await expect(queue.enqueueIf(candidate, () => {
-                const transaction = database.transaction(
-                    IndexedDbQueueBox.DEFAULT_STORE_NAME,
-                    'readwrite'
-                );
-                transaction.objectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME).put(
-                    withoutRevision(encodeStoredResourceEntry(concurrent, 0))
-                );
-                return true;
-            })).rejects.toThrow('IndexedDB queue write conflicted');
-
-            expect((await queue.getItem(original.key))?.resource).toBe(concurrent.resource);
         }
         finally {
             database.close();
         }
+
+        await expect(queue.getItem(original.key)).rejects.toThrow('IndexedDB queue row fields are invalid');
     });
 
     it('rejects a persisted row with no expiry instead of inventing one', async () => {
@@ -985,8 +970,8 @@ describe('IndexedDbQueueBox', () => {
 function withoutRevision(
     stored: ReturnType<typeof encodeStoredResourceEntry>
 ): Omit<ReturnType<typeof encodeStoredResourceEntry>, 'revision'> {
-    const { revision: _revision, ...legacy } = stored;
-    return legacy;
+    const { revision: _revision, ...revisionless } = stored;
+    return revisionless;
 }
 
 async function openQueueDatabase(dbName: string): Promise<IDBDatabase> {

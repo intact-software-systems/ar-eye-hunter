@@ -9,7 +9,7 @@ import {
 
 export type StoredResourceEntry = Readonly<{
     keyString: ResourceEntryKeyString;
-    revision?: number;
+    revision: number;
     fairnessDueEpochMs?: number;
     key: Key;
     resource: string;
@@ -31,8 +31,7 @@ export type StoredResourceEntry = Readonly<{
 
 export type IndexedDbQueueExpectedState =
     | Readonly<{ kind: 'missing'; }>
-    | Readonly<{ kind: 'revision'; revision: number; }>
-    | Readonly<{ kind: 'legacy-row'; stored: StoredResourceEntry; }>;
+    | Readonly<{ kind: 'revision'; revision: number; }>;
 
 export type ComputedIndexedDbQueueMutation =
     | Readonly<{
@@ -113,8 +112,8 @@ export function decodeStoredResourceEntryValue(value: unknown): StoredResourceEn
     const stored = requireDataRecord(
         value,
         'IndexedDB queue row',
-        ['keyString', 'key', 'resource', 'typeId', 'audit', 'status', 'dequeueAudit'],
-        ['revision', 'fairnessDueEpochMs']
+        ['keyString', 'revision', 'key', 'resource', 'typeId', 'audit', 'status', 'dequeueAudit'],
+        ['fairnessDueEpochMs']
     );
     const key = requireDataRecord(
         stored.key,
@@ -134,9 +133,7 @@ export function decodeStoredResourceEntryValue(value: unknown): StoredResourceEn
     );
     const canonical = {
         keyString: requireString(stored.keyString, 'IndexedDB queue key string'),
-        ...(stored.revision === undefined
-            ? {}
-            : { revision: requireNonNegativeInteger(stored.revision, 'IndexedDB queue revision') }),
+        revision: requireNonNegativeInteger(stored.revision, 'IndexedDB queue revision'),
         ...(stored.fairnessDueEpochMs === undefined
             ? {}
             : {
@@ -179,23 +176,12 @@ export function decodeStoredResourceEntryValue(value: unknown): StoredResourceEn
     return canonical;
 }
 
-export function hasSameStoredResourceEntry(
-    left: StoredResourceEntry,
-    right: StoredResourceEntry
-): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
-}
-
-export function storedResourceEntryRevision(stored: StoredResourceEntry): number {
-    return stored.revision ?? 0;
-}
-
 export function computeIndexedDbQueuePut(
     stored: StoredResourceEntry | undefined,
     entry: ResourceEntry
 ): Extract<ComputedIndexedDbQueueMutation, { kind: 'put'; }> {
     const expected = toIndexedDbQueueExpectedState(stored);
-    const nextRevision = stored ? storedResourceEntryRevision(stored) + 1 : 0;
+    const nextRevision = stored ? stored.revision + 1 : 0;
     return {
         kind: 'put',
         keyString: toKeyAsString(entry.key),
@@ -241,9 +227,7 @@ export function validateComputedIndexedDbQueueMutations(
         }
         const expectedRevision = mutation.expected.kind === 'missing'
             ? 0
-            : mutation.expected.kind === 'revision'
-            ? mutation.expected.revision + 1
-            : 1;
+            : mutation.expected.revision + 1;
         if (mutation.value.revision !== expectedRevision) {
             throw new TypeError('IndexedDB queue mutation revision is not the next revision');
         }
@@ -355,9 +339,7 @@ function toIndexedDbQueueExpectedState(
         return { kind: 'missing' };
     }
     const canonical = decodeStoredResourceEntryValue(stored);
-    return canonical.revision === undefined
-        ? { kind: 'legacy-row', stored: canonical }
-        : { kind: 'revision', revision: canonical.revision };
+    return { kind: 'revision', revision: canonical.revision };
 }
 
 function validateIndexedDbQueueExpectedState(expected: IndexedDbQueueExpectedState): void {
@@ -367,11 +349,6 @@ function validateIndexedDbQueueExpectedState(expected: IndexedDbQueueExpectedSta
         case 'revision':
             requireNonNegativeInteger(expected.revision, 'IndexedDB queue expected revision');
             return;
-        case 'legacy-row':
-            decodeStoredResourceEntryValue(expected.stored);
-            if (expected.stored.revision !== undefined) {
-                throw new TypeError('IndexedDB queue legacy expectation contains a revision');
-            }
     }
 }
 
