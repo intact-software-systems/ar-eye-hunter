@@ -1,8 +1,9 @@
-import {
-    validateAuthoritativeGroupEvent,
-    validateGroupActivationStatusPayload
-} from './authoritative-state-validation.ts';
+import { validateAuthoritativeGroupEvent } from './authoritative-state-validation.ts';
 import { compareGroupCausalRevision } from './group-client-views.ts';
+import {
+    validateGroupActivationStatusPayload,
+    validateGroupLayoutIdentityPayload
+} from './group-lifecycle/activation-status/validate-group-activation-status-payload.ts';
 import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
 import {
     GROUP_ESTABLISHMENT_TRANSPORTS,
@@ -250,7 +251,7 @@ function validateDeltaGroup(
         }
     }
     if (group.acceptedLayoutIdentity !== null) {
-        validateDeltaGroupLayoutIdentity(
+        validateGroupLayoutIdentityPayload(
             record(group.acceptedLayoutIdentity, `${label}.acceptedLayoutIdentity`),
             `${label}.acceptedLayoutIdentity`
         );
@@ -264,14 +265,6 @@ function validateDeltaGroup(
         );
     }
     return { activeMemberCount: group.activeMemberCount, status: group.status };
-}
-
-function validateDeltaGroupLayoutIdentity(identity: DeltaRecord, label: string): void {
-    exact(identity, GROUP_LAYOUT_IDENTITY_KEYS, label);
-    for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
-        nonNegativeInteger(identity[key], `${label}.${key}`);
-    }
-    enumValue(identity.state, GROUP_LAYOUT_IDENTITY_STATES, `${label}.state`);
 }
 
 function validateDeltaGroupMemberPolicy(memberPolicy: DeltaRecord, label: string): void {
