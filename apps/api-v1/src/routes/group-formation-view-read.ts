@@ -15,9 +15,9 @@ import {
     type GroupCoverageObservation
 } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
 import {
-    computeGroupFormationReadiness,
+    computeGroupFormationReading,
     type GroupFormationReadiness
-} from '@shared/api/group-lifecycle/compute-group-formation-readiness.ts';
+} from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import {
     isSameGroupLayoutIdentity,
@@ -197,11 +197,11 @@ function toCoverageObservation(
         return undefined;
     }
     return {
-        coverageRate: computeGroupFormationReadiness({
+        coverageRate: computeGroupFormationReading({
             planned: basisSnapshot,
             rttMeasurements: authority.rttMeasurements,
             nowEpochMs: authority.nowEpochMs
-        }).observedRate,
+        }).readiness.observedRate,
         successRate: policy.activation.successRate,
         minimumViableRate: policy.activation.minimumViableRate,
         dwellSatisfied: false
@@ -238,11 +238,11 @@ function toFormationReadiness(
 ): GroupFormationReadiness {
     return planned === null
         ? { plannedEdgeCount: 0, observedEdgeCount: 0, observedRate: 1 }
-        : computeGroupFormationReadiness({
+        : computeGroupFormationReading({
             planned,
             rttMeasurements: authority.rttMeasurements,
             nowEpochMs: authority.nowEpochMs
-        });
+        }).readiness;
 }
 
 function resolveManagerPrincipalIds(
