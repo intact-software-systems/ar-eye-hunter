@@ -12,7 +12,7 @@ import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postg
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
-import { computeRtcTopologyEntry } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
@@ -146,7 +146,7 @@ function createFrozenWorkHarness(sql: PSqlSql, now: () => number): FrozenWorkHar
 
 async function runTopologyWork(input: RunTopologyWorkInput): Promise<void> {
     const { harness, groupSnapshot, name, atEpochMs } = input;
-    const entry = computeRtcTopologyEntry({
+    const entry = computeRtcTopologyOutboxInsert({
         commandId: `${groupSnapshot.group.applicationId}-${name}`,
         aggregateRef: groupSnapshot.group,
         acceptedCausalRevision: groupSnapshot.causalRevision,
@@ -160,7 +160,7 @@ async function runTopologyWork(input: RunTopologyWorkInput): Promise<void> {
         resourceId: `${groupSnapshot.group.applicationId}-${name}-topology`,
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),
         publish: true
-    });
+    }).entry;
     expect(await harness.resources.entries.writeIfAbsentOrMatch(entry)).toBe('inserted');
     await runUntilCompleted(harness, entry.key);
 }

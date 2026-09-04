@@ -21,7 +21,7 @@ import {
     type ComputedGroupStateSync
 } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 import {
-    computeRtcTopologyEntry,
+    computeRtcTopologyOutboxInsert,
     type ComputedRtcTopologyOutbox
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
@@ -371,8 +371,8 @@ describe('direct resource outbox writes', () => {
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS
         };
 
-        const first = computeRtcTopologyEntry(computed);
-        const replay = computeRtcTopologyEntry(computed);
+        const first = computeRtcTopologyOutboxInsert(computed).entry;
+        const replay = computeRtcTopologyOutboxInsert(computed).entry;
 
         expect(first).toEqual(replay);
         expect(first.typeId).toBe(EnqueuedType.APP_OUTBOX);
@@ -400,7 +400,7 @@ describe('direct resource outbox writes', () => {
     it('includes canonical RTC topology payload kind in deterministic identity', () => {
         const computed = createComputedRtcTopologyOutbox();
 
-        const entry = computeRtcTopologyEntry(computed);
+        const entry = computeRtcTopologyOutboxInsert(computed).entry;
         const message = JSON.parse(entry.resource);
 
         expect(message.id.msgId).toContain(':rtc-topology-recompute:group-revision:group=4;presence=3');
@@ -410,7 +410,7 @@ describe('direct resource outbox writes', () => {
     it('writes RTC topology work computed before transaction entry', async () => {
         const computed = createComputedRtcTopologyOutbox();
         const database = createResourceInboxDatabase();
-        const entry = computeRtcTopologyEntry(computed);
+        const entry = computeRtcTopologyOutboxInsert(computed).entry;
         const outboxWrite = computeAppOutboxInsert(entry);
 
         await runInPSqlTransaction(database.sql, async (transaction) => {

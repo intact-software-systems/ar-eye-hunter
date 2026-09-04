@@ -88,7 +88,7 @@ interface RtcTopologyWorkEnvelope {
     readonly data: RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork;
 }
 
-export function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): ResourceEntry {
+function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): ResourceEntry {
     const createdBy = toAppQueueCreatedBy(computed.senderId);
     const overlayId = toScopedOverlayId(computed.aggregateRef);
     const sourceGroupStateCausalRevision = readGroupCausalRevision(computed.groupSnapshot);

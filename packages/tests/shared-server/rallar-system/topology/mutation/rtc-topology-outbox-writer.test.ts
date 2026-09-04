@@ -1,6 +1,5 @@
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
-import { computeRtcTopologyEntry } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -12,9 +11,7 @@ describe('RTC topology outbox writer', () => {
         const firstWriter = new RtcTopologyOutboxWriter({ recordWrite: () => recordedWrites.push('first') });
         const secondWriter = new RtcTopologyOutboxWriter({ recordWrite: () => recordedWrites.push('second') });
         const transaction = createInsertTransaction();
-        const computed = computeAppOutboxInsert(
-            computeRtcTopologyEntry(createComputedRtcTopologyOutbox())
-        );
+        const computed = computeRtcTopologyOutboxInsert(createComputedRtcTopologyOutbox());
 
         await firstWriter.write(transaction, computed);
         expect(recordedWrites).toEqual([]);
