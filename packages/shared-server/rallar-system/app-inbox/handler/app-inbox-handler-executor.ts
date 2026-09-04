@@ -16,12 +16,12 @@ import {
 import { AppInboxCommandIdentityError, validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
 import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../app-inbox-contracts.ts';
 import { classifyAppInboxError, type AppInboxErrorClassification } from '../app-inbox-error-classification.ts';
-import { encodeAppInboxFailure } from '../app-inbox-failure.ts';
 import type { AppInboxOptions } from '../app-inbox-options.ts';
 import type { AppInboxResultRepository } from '../app-inbox-persistence-ports.ts';
 import { toAppInboxAttemptTimingDetails, toAppInboxTimingDetails } from './app-inbox-attempt-timing.ts';
+import { computeAppInboxCompletion, validateAppInboxCompletion } from './app-inbox-completion-computation.ts';
 import type { AppInboxHandlerRegistration } from './app-inbox-handler-registration.ts';
-import { AppInboxTransactionWriter, toFinalizedResourceEntry } from './app-inbox-transaction-writer.ts';
+import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
 
 interface AppInboxExecutionAttempt<Command, Result> {
     readonly registration: AppInboxHandlerRegistration<Command, Result>;
@@ -200,16 +200,19 @@ export class AppInboxHandlerExecutor {
             entry: input.entry,
             encodeResult: input.registration.encodeResult
         };
-        await this.transactionWriter.writeTerminalFailure(
-            terminalContext,
-            encodeAppInboxFailure(input.classification.result)
-        );
+        const completionInput = {
+            ...this.transactionWriter.readCompletionFacts(terminalContext),
+            durableResult: input.classification.result,
+            status: EntityStatus.FAILED
+        } as const;
+        const computed = computeAppInboxCompletion(completionInput);
+        const issues = validateAppInboxCompletion(completionInput, computed);
+        if (issues[0] !== undefined) {
+            throw issues[0].cause;
+        }
+        await this.transactionWriter.writeComputedTerminalFailure(terminalContext, computed);
         throw new ResourceInboxFinalizedByHandlerError(
-            toFinalizedResourceEntry(
-                terminalContext,
-                EntityStatus.FAILED,
-                this.nowEpochMs()
-            ),
+            computed.finalizedEntry,
             input.error
         );
     }

@@ -1,11 +1,15 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
-    ResourceInboxResultsRow,
     toPgTimestamp,
     toResultsDomain,
-    toSystemDate
+    toSystemDate,
+    type ResourceInboxResultsRow
 } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    computeResourceInboxResultReplacement,
+    writeResourceInboxResultReplacement
+} from './resource-inbox-result-replacement.ts';
 
 export class ResourceInboxResultsRepository {
     private readonly sql: PSqlSql;
@@ -21,13 +25,9 @@ export class ResourceInboxResultsRepository {
     async begin<T>(
         fn: (repo: ResourceInboxResultsRepository) => Promise<T>
     ): Promise<T> {
-        const newVar = await this.sql.begin<T>(
-            async (sql: PSqlSql) => {
-                return await fn(new ResourceInboxResultsRepository(sql));
-            }
+        return await this.sql.begin(
+            async (sql) => await fn(new ResourceInboxResultsRepository(sql))
         );
-
-        return newVar as T;
     }
 
     async writeIfAbsentOrReplaceExpired(
@@ -83,45 +83,11 @@ export class ResourceInboxResultsRepository {
     }
 
     async replace(entry: ResourceEntry): Promise<ResourceEntry> {
-        const systemDate = toSystemDate(entry);
-
-        const rows = await this.sql<ResourceInboxResultsRow[]>`
-            insert into resource_inbox_results (ris_resource_id,
-                                                ris_topic_id,
-                                                ris_resource,
-                                                ris_type_id,
-                                                ris_status,
-                                                fk_ext_bank_id,
-                                                system_date,
-                                                created_by,
-                                                created_ts,
-                                                expire_ts)
-            values (${entry.key.resourceId},
-                    ${entry.key.topicId},
-                    ${entry.resource},
-                    ${entry.typeId},
-                    ${entry.status},
-                    ${entry.key.contextId},
-                    ${systemDate},
-                    ${entry.audit.createdBy},
-                    ${toPgTimestamp(entry.audit.createdTs)},
-                    ${toPgTimestamp(entry.audit.expiryTs)})
-            on conflict (fk_ext_bank_id, ris_resource_id, ris_topic_id)
-                do update set ris_resource = excluded.ris_resource,
-                              ris_type_id  = excluded.ris_type_id,
-                              ris_status   = excluded.ris_status,
-                              system_date  = excluded.system_date,
-                              created_by   = excluded.created_by,
-                              created_ts   = excluded.created_ts,
-                              expire_ts    = excluded.expire_ts
-            returning *
-        `;
-
-        if (rows.length !== 1) {
-            throw new Error('Replace failed: expected exactly one row');
-        }
-
-        return toResultsDomain(rows[0]);
+        const row = await writeResourceInboxResultReplacement(
+            this.sql,
+            computeResourceInboxResultReplacement(entry)
+        );
+        return toResultsDomain(row);
     }
 
     async findAnyByKey(key: Key): Promise<ResourceEntry | null> {

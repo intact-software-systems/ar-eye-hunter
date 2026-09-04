@@ -30,6 +30,48 @@ load gates, but not a new production performance benchmark or numeric SLO by
 itself. Require the state-write performance comparison only when the same
 change alters a production mutation path or concurrency domain.
 
+Do not move deterministic computation into a transaction to improve an
+apparent timing metric. Keep
+`read -> compute -> validate -> write(transaction, computed)` visible, and
+treat precomputable work as non-waivable even when the computation is cheap or
+a deadline is close.
+
+For both phases, the same explicit input produces the same result. They perform
+no repository reads, clocks, randomness, mutable dependency lookups, or hidden
+side effects. Do not add `prepare`, `prepareWrite`, or another deterministic
+transformation after `compute`; `compute` returns persistence-ready data and
+`validate` checks that exact result. Adding another service mutation phase
+requires explicit human approval. One queue delivery performs one mutation
+attempt. A conflict exits that attempt; queue redelivery starts again from
+`read`. Never improve a transaction-duration metric by adding a handler-local
+or persistence-helper retry loop.
+
+Transaction timing is not value provenance: only
+actual database-returned facts justify inside-transaction refinement, while a
+winner-only clock, key, random value, serialized payload, sorted collection, or
+outbox remains precomputable.
+
+The specialized ResourceInbox policy changes what work is authorized, not
+whether transaction duration is measured. Continue to measure its exact
+PostgreSQL reservation, result, and QueueBox owners as transaction critical
+sections and compare like-for-like workloads. Timing does not establish policy
+ownership: classify the resolved opener and owner first, then interpret the
+measurement under `strict-domain-write` or `specialized-resource-inbox`.
+Do not classify authorized bounded specialized transformations or guarded
+winner-only materialization as a strict precomputable-work violation merely
+because they contribute to the measured transaction duration.
+Calling ResourceInbox from an AppInbox/domain transaction does not transfer the
+specialized policy, and browser IndexedDB transactions remain strict. A shorter
+metric never authorizes external effects, polling, unbounded work, or arbitrary
+callbacks inside a specialized boundary.
+
+When a proof-and-tooling slice has a controller-owned unchanged performance
+baseline, preserve that division of responsibility: do not regenerate,
+replace, or commit benchmark artifacts in the tooling slice. Record the
+controller-owned unchanged performance baseline as external evidence and leave
+candidate comparison to the production mutation-path change that can affect
+the measured workload.
+
 ## Default workflow
 
 Follow this sequence unless the user explicitly asks for a different phase.

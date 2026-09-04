@@ -53,6 +53,39 @@ idempotency, corruption, and final-convergence behaviors. Focused tests must
 exercise the real conditional-write boundary; lock acquisition or waiting is
 not an acceptance criterion.
 
+For authored package or API transaction writes, tests must prove the
+persistence-ready value is completed before transaction entry even when the
+work is cheap or winner-only. One queue delivery performs one mutation attempt.
+A conflict exits that attempt; queue redelivery starts again from `read`.
+Exercise conflict paths through queue-owned full retry re-entry across read,
+compute, validate, and write. Prove through transaction and redelivery behavior
+that the handler and persistence helper do not own an inner retry loop. Prove that
+inside-transaction refinement starts from actual database-returned facts, and
+keep human review responsible for PostgreSQL semantics.
+
+For both phases, the same explicit input produces the same result. They perform
+no repository reads, clocks, randomness, mutable dependency lookups, or hidden
+side effects. Do not add `prepare`, `prepareWrite`, or another deterministic
+transformation after `compute`; `compute` returns persistence-ready data and
+`validate` checks that exact result.
+Adding another service mutation phase requires explicit human approval.
+
+For an affected exact PostgreSQL ResourceInbox, Results, or QueueBox owner,
+test bounded reservation, replay, replacement, rollback, and
+winner-only invocation directly. Prove that the exact guarded winner
+materializer is never invoked for a losing or replay branch, is invoked once for
+the winner, and rolls back its placeholder when materialization or replacement
+fails. Cover its authorized bounded winner-only clock capture, identifier
+generation, serialization, and final-row construction; do not assert that the
+strict precomputable-work grammar governs this exact specialized callback.
+Reject lease, heartbeat, polling, arbitrary callback, external-effect,
+unbounded-work, caller-mutation, and unrelated nested-transaction variants in
+semantic tests. Maintain PostgreSQL and PGlite parity, and run the
+focused real PostgreSQL integration tests whenever specialized SQL or its
+transaction semantics change. Browser IndexedDB readwrite, upgrade, and
+versionchange tests continue to prove strict persistence-ready-before-entry
+behavior.
+
 When authoritative mutation control flow changes, run
 `npm run check:repo-style:navigation-details` for the affected roots and perform
 the manual 5/5 cold probe from concrete registration through operation entry,

@@ -41,6 +41,20 @@ const preflightDimensions = [
     'preflight.new-surface-gate',
     'preflight.observable-order'
 ] as const;
+const transactionPurityDimensions = [
+    'transaction-purity.persistence-ready-before-entry',
+    'transaction-purity.precomputable-work-outside',
+    'transaction-purity.closed-db-result-refinement',
+    'transaction-purity.full-retry-reentry',
+    'transaction-purity.winner-only-is-not-authority'
+] as const;
+const resourceInboxPolicyDimensions = [
+    'transaction-policy.resolved-owner-not-path',
+    'transaction-policy.strict-domain-no-transfer',
+    'transaction-policy.bounded-resource-inbox-specialization',
+    'transaction-policy.guarded-winner-materializer',
+    'transaction-policy.indexeddb-remains-strict'
+] as const;
 const allDimensions = [
     ...stewardshipDimensions,
     'legacy.safe-private-removal',
@@ -50,7 +64,9 @@ const allDimensions = [
     'legacy.public-compatibility-safety',
     'legacy.minimized-boundary',
     'legacy.retention-governance',
-    ...preflightDimensions
+    ...preflightDimensions,
+    ...transactionPurityDimensions,
+    ...resourceInboxPolicyDimensions
 ] as const;
 const legacyRemovalGuidancePaths = [
     'AGENTS.md',
@@ -247,13 +263,13 @@ describe('rallar code-writing maintenance stewardship contract', () => {
         expectAll(escalationDimension?.pass ?? '', preWorkEvidence);
     });
 
-    it('defines four critical versioned pressure scenarios and a binary rubric', () => {
+    it('defines six critical versioned pressure scenarios and a binary rubric', () => {
         const suite = readJson<EvaluationSuite>(`${evaluationRoot}/scenarios.json`);
         const rubric = readJson<EvaluationRubric>(`${evaluationRoot}/rubric.json`);
 
         expect(suite.schemaVersion).toBe('rallar-code-writing-scenarios-v1');
         expect(suite.suiteId).toBe('rallar-code-writing-v1');
-        expect(suite.scenarios).toHaveLength(4);
+        expect(suite.scenarios).toHaveLength(6);
         const stewardshipScenario = findScenario(
             suite,
             'pre-existing-noncompliance-under-release-pressure'
@@ -264,6 +280,14 @@ describe('rallar code-writing maintenance stewardship contract', () => {
             'public-compatibility-legacy-restraint'
         );
         const preflightScenario = findScenario(suite, 'pre-decision-skill-preflight');
+        const transactionPurityScenario = findScenario(
+            suite,
+            'transaction-write-purity-under-deadline-pressure'
+        );
+        const resourceInboxPolicyScenario = findScenario(
+            suite,
+            'resource-inbox-policy-under-scope-pressure'
+        );
         expect(stewardshipScenario).toMatchObject({
             id: 'pre-existing-noncompliance-under-release-pressure',
             critical: true,
@@ -309,6 +333,32 @@ describe('rallar code-writing maintenance stewardship contract', () => {
         expect(preflightScenario.prompt).toContain('apps/api-v1/src/main.ts');
         expect(preflightScenario.prompt).toContain('skill descriptions are already visible');
         expect(preflightScenario.prompt).toContain('realtime authorization mutation');
+        expect(transactionPurityScenario).toMatchObject({
+            critical: true,
+            primarySkill: 'rallar-code-writing',
+            requiredDimensions: transactionPurityDimensions
+        });
+        expect(transactionPurityScenario.pressures).toEqual([
+            'critical-deadline',
+            'cheap-computation',
+            'winner-only-execution',
+            'short-transaction-metric'
+        ]);
+        expect(transactionPurityScenario.prompt).toContain('full retry re-entry');
+        expect(transactionPurityScenario.prompt).toContain('winner-only execution');
+        expect(resourceInboxPolicyScenario).toMatchObject({
+            critical: true,
+            primarySkill: 'rallar-code-writing',
+            requiredDimensions: resourceInboxPolicyDimensions
+        });
+        expect(resourceInboxPolicyScenario.pressures).toEqual([
+            'path-based-exemption',
+            'uniform-policy-pressure',
+            'lease-complexity',
+            'winner-callback-suspicion'
+        ]);
+        expect(resourceInboxPolicyScenario.prompt).toContain('exact guarded winner materializer');
+        expect(resourceInboxPolicyScenario.prompt).toContain('browser IndexedDB');
 
         expect(rubric.schemaVersion).toBe('rallar-code-writing-rubric-v1');
         expect(rubric.suiteId).toBe(suite.suiteId);

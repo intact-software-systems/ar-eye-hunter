@@ -19,8 +19,15 @@ import type {
 import { decodeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-intent.ts';
 
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
-import type { AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type {
+    AppInboxExecutionMetadata,
+    AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
+import type {
+    AppInboxCompletionComputed,
+    AppInboxCompletionFacts
+} from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import type {
     AppInboxMutationTransactionResult,
     AppInboxMutationTransactionWriter
@@ -194,6 +201,26 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
     constructor(actions: string[], transaction: PSqlSql) {
         this.actions = actions;
         this.transaction = transaction;
+    }
+
+    readCompletionFacts(_context: AppInboxExecutionMetadata): AppInboxCompletionFacts {
+        throw new Error('Computed transaction path must not run');
+    }
+
+    async writeComputedMutation<Result>(
+        _context: AppInboxExecutionMetadata,
+        _computed: AppInboxCompletionComputed<Result>,
+        _write: (transaction: PSqlSql) => Promise<void>
+    ): Promise<Result> {
+        throw new Error('Computed transaction path must not run');
+    }
+
+    async writeComputedMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
+        _context: AppInboxExecutionMetadata,
+        _computed: AppInboxCompletionComputed<DurableResult>,
+        _write: (transaction: PSqlSql) => Promise<AfterCommitResult>
+    ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>> {
+        throw new Error('Computed after-commit transaction path must not run');
     }
 
     async writeMutation<Result>(

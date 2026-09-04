@@ -1,7 +1,14 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type {
+    AppInboxExecutionMetadata,
+    AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type {
+    AppInboxCompletionComputed,
+    AppInboxCompletionFacts
+} from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import {
     AppInboxTransactionWriter,
     type AppInboxMutationTransactionResult,
@@ -31,6 +38,17 @@ type DurableResult = Readonly<{ status: 'durable'; }>;
 type AfterCommitResult = Readonly<{ committedSnapshot: GroupSnapshot | undefined; }>;
 type TransactionResult = AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>;
 type ExpectedTransactionWriter = {
+    readCompletionFacts(context: AppInboxExecutionMetadata): AppInboxCompletionFacts;
+    writeComputedMutation<Result>(
+        context: AppInboxExecutionMetadata,
+        computed: AppInboxCompletionComputed<Result>,
+        write: (transaction: PSqlSql) => Promise<void>
+    ): Promise<Result>;
+    writeComputedMutationWithAfterCommitResult<Durable, AfterCommit>(
+        context: AppInboxExecutionMetadata,
+        computed: AppInboxCompletionComputed<Durable>,
+        write: (transaction: PSqlSql) => Promise<AfterCommit>
+    ): Promise<AppInboxMutationTransactionResult<Durable, AfterCommit>>;
     writeMutation<Result>(
         context: AppInboxMessageContext<Result>,
         write: (transaction: PSqlSql) => Promise<Result>
