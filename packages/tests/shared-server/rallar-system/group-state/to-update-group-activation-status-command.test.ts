@@ -81,8 +81,6 @@ function commandFor(overrides: Partial<ToUpdateGroupActivationStatusCommandInput
         coverageBasisLayoutIdentity: BASIS,
         coverageRate: 0.8,
         evidenceWatermark: { version: 4, createdAtEpochMs: 1_000 },
-        replanQueued: false,
-        layoutStale: false,
         dwell: null,
         ...overrides
     });

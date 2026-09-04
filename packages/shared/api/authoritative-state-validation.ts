@@ -2,8 +2,10 @@ import { toScopedOverlayId } from './api-type-utils.ts';
 import type { ClientEvent, ClientSnapshot } from './client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from './group-client-views.ts';
 import { GROUP_ACTIVATION_CONDITIONS } from './group-lifecycle/compute-group-activation-condition.ts';
-import { GROUP_EVIDENCE_WATERMARK_KEYS } from './group-lifecycle/compute-group-formation-reading.ts';
-import { GROUP_ACTIVATION_STATUS_KEYS } from './group-lifecycle/group-activation-status.ts';
+import {
+    GROUP_ACTIVATION_STATUS_KEYS,
+    GROUP_EVIDENCE_WATERMARK_KEYS
+} from './group-lifecycle/group-activation-status.ts';
 import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
 import {
     GROUP_ESTABLISHMENT_TRANSPORTS,
@@ -521,8 +523,9 @@ export function validateAuthoritativeGroupSnapshot(
     );
     validateGroupSnapshotMemberPolicy(record(group.memberPolicy, 'GroupSnapshot.group.memberPolicy'));
     if (group.activationStatus !== null) {
-        validateGroupSnapshotActivationStatus(
-            record(group.activationStatus, 'GroupSnapshot.group.activationStatus')
+        validateGroupActivationStatusPayload(
+            record(group.activationStatus, 'GroupSnapshot.group.activationStatus'),
+            'GroupSnapshot.group.activationStatus'
         );
     }
     const members = array(snapshot.members, 'GroupSnapshot.members');
@@ -1057,11 +1060,20 @@ function validateGroupSnapshotLayoutIdentity(identity: Record<string, unknown>, 
     enumValue(identity.state, GROUP_LAYOUT_IDENTITY_STATES, `${label}.state`);
 }
 
-function validateGroupSnapshotActivationStatus(status: Record<string, unknown>): void {
-    const label = 'GroupSnapshot.group.activationStatus';
+/**
+ * Shared with the delta validator: both wire surfaces carry the same nested
+ * status and both fail the same way, so one check serves them.
+ */
+export function validateGroupActivationStatusPayload(
+    status: Record<string, unknown>,
+    label: string
+): void {
     exact(status, GROUP_ACTIVATION_STATUS_KEYS, label);
     enumValue(status.condition, GROUP_ACTIVATION_CONDITIONS, `${label}.condition`);
-    coverageRate(status.coverageRate, `${label}.coverageRate`);
+    const rate = status.coverageRate;
+    if (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0 || rate > 1) {
+        fail(`${label}.coverageRate must be a rate between 0 and 1`);
+    }
     nonNegativeInteger(status.formationEpoch, `${label}.formationEpoch`);
     nonNegativeInteger(status.confirmedAtEpochMs, `${label}.confirmedAtEpochMs`);
     validateGroupSnapshotLayoutIdentity(
@@ -1074,12 +1086,6 @@ function validateGroupSnapshotActivationStatus(status: Record<string, unknown>):
         for (const key of GROUP_EVIDENCE_WATERMARK_KEYS) {
             nonNegativeInteger(watermark[key], `${label}.evidenceWatermark.${key}`);
         }
-    }
-}
-
-function coverageRate(value: unknown, label: string): void {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
-        fail(`${label} must be a rate between 0 and 1`);
     }
 }
 

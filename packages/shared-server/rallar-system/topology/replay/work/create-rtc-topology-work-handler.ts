@@ -63,6 +63,10 @@ import {
     type DeferredCriterionPetitioner,
     type FormationCriterionPort
 } from './formation-criterion-observer.ts';
+import {
+    petitionGroupActivationStatus,
+    type GroupActivationStatusPort
+} from './group-activation-status-observer.ts';
 
 interface RtcTopologyWorkHandlerOptions {
     readonly runtime: RtcTopologyWorkRuntime;
@@ -84,6 +88,7 @@ interface RtcTopologyWorkHandlerOptions {
      * operator command.
      */
     readonly formationCriterion?: FormationCriterionPort;
+    readonly activationStatus?: GroupActivationStatusPort;
     readonly formationAutomation?: GroupFormationAutomationPort;
     readonly topologyPublication?: TopologyPromotionPublicationPort;
     readonly topologyDelivery?: RtcTopologyDeliveryOptions;
@@ -555,6 +560,9 @@ async function petitionCommittedCriterion(
     }
     await petitionFormationCriterion(options, petition.authority, petition.planned);
     await petitionGroupStageTrigger(options, petition.authority);
+    // The criterion leg returns early outside establishment; the status leg
+    // does not, because coverage is exactly what an `active` group reports.
+    await petitionGroupActivationStatus(options, petition.authority, petition.planned);
 }
 
 function toTopologyPublication(input: ToTopologyPublicationInput): RtcTopologyPublication {

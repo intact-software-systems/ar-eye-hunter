@@ -18,6 +18,7 @@ import {
 import { createRtcTopologyWorkHandler } from '../replay/work/create-rtc-topology-work-handler.ts';
 import { createTopologyPromotionWorkHandler } from '../replay/work/create-topology-promotion-work-handler.ts';
 import type { FormationCriterionPort } from '../replay/work/formation-criterion-observer.ts';
+import type { GroupActivationStatusPort } from '../replay/work/group-activation-status-observer.ts';
 import type { RtcTopologyDeliveryOptions } from '../replay/work/write-rtc-topology-publication-transaction.ts';
 
 export interface InstallTopologyAppOutboxOptions {
@@ -39,6 +40,7 @@ export interface InstallTopologyAppOutboxOptions {
     readonly nowEpochMs: () => number;
     readonly formationAutomation: GroupFormationAutomationPort;
     readonly formationCriterion?: FormationCriterionPort;
+    readonly activationStatus?: GroupActivationStatusPort;
     /** The route-less promotion consumer (decision 27); absent means no automation. */
     readonly topologyPublication?: Readonly<{
         readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
@@ -96,6 +98,7 @@ export function installTopologyAppOutbox(
             rttRefinementService: options.rttRefinementService,
             topologyDelivery: options.topologyDelivery,
             formationCriterion: options.formationCriterion,
+            activationStatus: options.activationStatus,
             formationAutomation: options.formationAutomation,
             topologyPublication: options.topologyPublication,
             serviceId: options.senderId,

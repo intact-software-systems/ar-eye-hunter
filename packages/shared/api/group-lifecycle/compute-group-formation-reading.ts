@@ -45,12 +45,6 @@ export type GroupFormationReading = Readonly<{
     evidenceWatermark: GroupEvidenceWatermark | null;
 }>;
 
-/** The runtime key registry the persistence and wire validators check against. */
-export const GROUP_EVIDENCE_WATERMARK_KEYS = [
-    'version',
-    'createdAtEpochMs'
-] as const satisfies readonly (keyof GroupEvidenceWatermark)[];
-
 /** Later of two watermarks, by version then sample instant. */
 export function resolveNewerEvidenceWatermark(
     left: GroupEvidenceWatermark | null,

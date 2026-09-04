@@ -64,13 +64,6 @@ export type GroupActivationRemediation =
     | 'replan-queued'
     | 'awaiting-application';
 
-/** The runtime registry the validators check against. */
-export const GROUP_ACTIVATION_REMEDIATIONS = [
-    'none',
-    'replan-queued',
-    'awaiting-application'
-] as const satisfies readonly GroupActivationRemediation[];
-
 export interface GroupCoverageObservation {
     readonly coverageRate: number;
     readonly successRate: number;

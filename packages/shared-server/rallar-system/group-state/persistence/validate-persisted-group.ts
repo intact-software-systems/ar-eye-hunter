@@ -1,6 +1,8 @@
 import { GROUP_ACTIVATION_CONDITIONS } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
-import { GROUP_EVIDENCE_WATERMARK_KEYS } from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
-import { GROUP_ACTIVATION_STATUS_KEYS } from '@shared/api/group-lifecycle/group-activation-status.ts';
+import {
+    GROUP_ACTIVATION_STATUS_KEYS,
+    GROUP_EVIDENCE_WATERMARK_KEYS
+} from '@shared/api/group-lifecycle/group-activation-status.ts';
 import {
     GROUP_LAYOUT_IDENTITY_KEYS,
     GROUP_LAYOUT_IDENTITY_STATES
