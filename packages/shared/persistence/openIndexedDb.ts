@@ -22,8 +22,6 @@ interface IndexedDbStoreSchema {
     readonly indexes: readonly IndexedDbIndexSchema[];
 }
 
-const indexedDbOpenTailByName = new Map<string, Promise<void>>();
-
 export class IndexedDbConnection {
     private opening?: Promise<IDBDatabase>;
     private readonly openDatabase: () => Promise<IDBDatabase>;
@@ -60,45 +58,18 @@ export async function openIndexedDbWithStore(
     dbName: string,
     definition: IndexedDbStoreDefinition
 ): Promise<IDBDatabase> {
-    const store = toIndexedDbStoreSchema(definition);
-    return await runSerializedIndexedDbOpen(
-        dbName,
-        () => openIndexedDbWithStoreOnce(dbName, store)
-    );
-}
-
-async function openIndexedDbWithStoreOnce(
-    dbName: string,
-    store: IndexedDbStoreSchema
-): Promise<IDBDatabase> {
     if (typeof indexedDB === 'undefined') {
         throw new Error('IndexedDB is not supported in this environment');
     }
-
-    const initialDb = await openIndexedDb(dbName, store);
+    const store = toIndexedDbStoreSchema(definition);
+    const database = await openIndexedDb(dbName, store);
+    database.onversionchange = () => database.close();
     try {
-        assertCompatibleStoreKeyPath(initialDb, store);
+        assertIndexedDbStoreSchema(database, store);
+        return database;
     }
     catch (error) {
-        initialDb.close();
-        throw error;
-    }
-    if (!hasSchemaMismatch(initialDb, store)) {
-        initialDb.onversionchange = () => initialDb.close();
-        return initialDb;
-    }
-
-    const nextVersion = Math.max(1, initialDb.version) + 1;
-    initialDb.close();
-
-    const upgradedDb = await openIndexedDb(dbName, store, nextVersion);
-    upgradedDb.onversionchange = () => upgradedDb.close();
-    try {
-        assertIndexedDbStoreSchema(upgradedDb, store);
-        return upgradedDb;
-    }
-    catch (error) {
-        upgradedDb.close();
+        database.close();
         throw error;
     }
 }
@@ -117,32 +88,22 @@ function toIndexedDbStoreSchema(definition: IndexedDbStoreDefinition): IndexedDb
     };
 }
 
-function assertCompatibleStoreKeyPath(
-    db: IDBDatabase,
-    store: IndexedDbStoreSchema
-): void {
-    if (!db.objectStoreNames.contains(store.name)) {
-        return;
-    }
-    const actual = db.transaction(store.name).objectStore(store.name).keyPath;
-    if (!isEqualKeyPath(actual, store.keyPath)) {
-        throw new Error(
-            `IndexedDB store "${store.name}" has key path "${formatKeyPath(actual)}"; ` +
-                `expected "${store.keyPath}"`
-        );
-    }
-}
-
 function assertIndexedDbStoreSchema(
     db: IDBDatabase,
     store: IndexedDbStoreSchema
 ): void {
-    assertCompatibleStoreKeyPath(db, store);
     if (!db.objectStoreNames.contains(store.name)) {
-        throw new Error(`IndexedDB store "${store.name}" was not created`);
+        throw new Error(`IndexedDB database does not contain required store "${store.name}"`);
     }
-    if (!hasMatchingIndexes(db, store)) {
-        throw new Error(`IndexedDB indexes for "${store.name}" do not match their schema`);
+    const objectStore = db.transaction(store.name).objectStore(store.name);
+    if (!isEqualKeyPath(objectStore.keyPath, store.keyPath)) {
+        throw new Error(
+            `IndexedDB store "${store.name}" has key path "${formatKeyPath(objectStore.keyPath)}"; ` +
+                `expected "${store.keyPath}"`
+        );
+    }
+    if (store.indexes.some((index) => !isMatchingIndex(objectStore, index))) {
+        throw new Error(`IndexedDB indexes for "${store.name}" do not match their required schema`);
     }
 }
 
@@ -155,84 +116,27 @@ function formatKeyPath(keyPath: string | string[] | null): string {
 
 async function openIndexedDb(
     dbName: string,
-    store: IndexedDbStoreSchema,
-    version?: number
+    store: IndexedDbStoreSchema
 ): Promise<IDBDatabase> {
     return await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = version === undefined
-            ? indexedDB.open(dbName)
-            : indexedDB.open(dbName, version);
+        const request = indexedDB.open(dbName);
 
         request.onupgradeneeded = () => {
-            if (!request.transaction) {
-                reject(new Error('IndexedDB upgrade transaction is unavailable'));
-                return;
-            }
-            writeIndexedDbSchema(request.result, request.transaction, store);
+            createIndexedDbStore(request.result, store);
         };
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'));
     });
 }
 
-async function runSerializedIndexedDbOpen<Value>(
-    dbName: string,
-    open: () => Promise<Value>
-): Promise<Value> {
-    const previous = indexedDbOpenTailByName.get(dbName) ?? Promise.resolve();
-    const opening = previous.then(open);
-    const tail = opening.then(
-        () => undefined,
-        () => undefined
-    );
-    indexedDbOpenTailByName.set(dbName, tail);
-    try {
-        return await opening;
-    }
-    finally {
-        if (indexedDbOpenTailByName.get(dbName) === tail) {
-            indexedDbOpenTailByName.delete(dbName);
-        }
-    }
-}
-
-function writeIndexedDbSchema(
+function createIndexedDbStore(
     db: IDBDatabase,
-    transaction: IDBTransaction,
     store: IndexedDbStoreSchema
 ): void {
-    const objectStore = !db.objectStoreNames.contains(store.name)
-        ? db.createObjectStore(store.name, { keyPath: store.keyPath })
-        : transaction.objectStore(store.name);
+    const objectStore = db.createObjectStore(store.name, { keyPath: store.keyPath });
     for (const index of store.indexes) {
-        if (
-            objectStore.indexNames.contains(index.name) &&
-            !isMatchingIndex(objectStore, index)
-        ) {
-            objectStore.deleteIndex(index.name);
-        }
-        if (!objectStore.indexNames.contains(index.name)) {
-            objectStore.createIndex(index.name, index.keyPath, { unique: index.unique });
-        }
+        objectStore.createIndex(index.name, index.keyPath, { unique: index.unique });
     }
-}
-
-function hasSchemaMismatch(
-    db: IDBDatabase,
-    store: IndexedDbStoreSchema
-): boolean {
-    return !db.objectStoreNames.contains(store.name) || !hasMatchingIndexes(db, store);
-}
-
-function hasMatchingIndexes(
-    db: IDBDatabase,
-    store: IndexedDbStoreSchema
-): boolean {
-    if (!db.objectStoreNames.contains(store.name)) {
-        return false;
-    }
-    const objectStore = db.transaction(store.name).objectStore(store.name);
-    return store.indexes.every((index) => isMatchingIndex(objectStore, index));
 }
 
 function isMatchingIndex(

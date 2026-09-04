@@ -27,9 +27,10 @@ let browserQueueBoxExpiryEvictionPromise: Promise<void> | undefined;
 
 export function createBrowserQueueBox(name: string): QueueBoxResourceEntryRepository {
     if (IndexedDbQueueBox.isSupported()) {
+        const storeName = toBrowserQueueBoxStoreName(name);
         return new IndexedDbQueueBox({
-            dbName: BROWSER_AL_RUNTIME_DB_NAME,
-            storeName: toBrowserQueueBoxStoreName(name)
+            dbName: toBrowserQueueBoxDatabaseName(storeName),
+            storeName
         });
     }
 
@@ -38,6 +39,10 @@ export function createBrowserQueueBox(name: string): QueueBoxResourceEntryReposi
 
 export function toBrowserQueueBoxStoreName(name: string): string {
     return `${BROWSER_QUEUEBOX_STORE_NAME_PREFIX}${name}`;
+}
+
+export function toBrowserQueueBoxDatabaseName(storeName: string): string {
+    return `${BROWSER_AL_RUNTIME_DB_NAME}:${storeName}`;
 }
 
 export function toBrowserSessionQueueBoxStoreNames(
@@ -86,7 +91,7 @@ async function deleteExpiredBrowserQueueBoxEntriesMatching(
     const stores: BrowserQueueBoxCleanupStoreResult[] = [];
     for (const storeName of storeNames) {
         const queueBox = new IndexedDbQueueBox({
-            dbName: BROWSER_AL_RUNTIME_DB_NAME,
+            dbName: toBrowserQueueBoxDatabaseName(storeName),
             storeName
         });
         stores.push({
@@ -156,26 +161,15 @@ function toBrowserQueueBoxCleanupResult(
 }
 
 async function readBrowserQueueBoxStoreNames(): Promise<readonly string[]> {
-    const db = await openBrowserRuntimeDatabase();
-
-    try {
-        return Array.from(db.objectStoreNames)
-            .filter((storeName) => storeName.startsWith(BROWSER_QUEUEBOX_STORE_NAME_PREFIX))
-            .sort();
-    }
-    finally {
-        db.close();
-    }
-}
-
-async function openBrowserRuntimeDatabase(): Promise<IDBDatabase> {
-    return await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open(BROWSER_AL_RUNTIME_DB_NAME);
-
-        request.onerror = () =>
-            reject(
-                request.error ?? new Error('Browser runtime IndexedDB open failed')
-            );
-        request.onsuccess = () => resolve(request.result);
-    });
+    const databaseNamePrefix = `${BROWSER_AL_RUNTIME_DB_NAME}:`;
+    const databases = await indexedDB.databases();
+    return databases
+        .flatMap(({ name }) => {
+            if (!name?.startsWith(databaseNamePrefix)) {
+                return [];
+            }
+            const storeName = name.slice(databaseNamePrefix.length);
+            return storeName.startsWith(BROWSER_QUEUEBOX_STORE_NAME_PREFIX) ? [storeName] : [];
+        })
+        .sort();
 }

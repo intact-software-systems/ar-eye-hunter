@@ -12,10 +12,10 @@ import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-back
 import {
     AL_ADMISSION_REVISION_KEY,
     computeIndexedDbAdmissionRevisionWrite,
+    openIndexedDbAdmissionDatabase,
     readIndexedDbAdmissionSnapshot,
     writeIndexedDbAdmissionMutations
 } from '@shared/alm/indexed-db-admission-storage.ts';
-import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
 import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
 
 import '../../setup-browser-indexeddb.ts';
@@ -108,7 +108,7 @@ describe('admission storage envelopes', () => {
         const databaseName = `admission-write-token-${crypto.randomUUID()}`;
         const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
         await backend.write((transaction) => transaction.set('version:peer-a', '7'));
-        const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
         try {
             const snapshot = await readIndexedDbAdmissionSnapshot(
                 database,
@@ -125,7 +125,7 @@ describe('admission storage envelopes', () => {
 
     it('rejects a persisted data row without the required write token', async () => {
         const databaseName = `admission-missing-write-token-${crypto.randomUUID()}`;
-        const seeded = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
+        const seeded = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
         try {
             await putIndexedDbRows(seeded, 'entries', [{
                 key: 'version:missing-token',
@@ -255,7 +255,7 @@ describe('admission storage envelopes', () => {
                 name: 'ALAdmissionBackendConflictError'
             });
             expect(refreshWritten).toBe(true);
-            const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
+            const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
             try {
                 const snapshot = await readIndexedDbAdmissionSnapshot(
                     database,
@@ -278,7 +278,7 @@ describe('admission storage envelopes', () => {
     it('rejects malformed IndexedDB envelopes on direct and listed reads', async () => {
         const databaseName = `admission-corrupt-${crypto.randomUUID()}`;
         const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
-        const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
         try {
             await putIndexedDbRows(database, 'entries', [{
                 key: 'version:bad',
@@ -302,7 +302,7 @@ describe('admission storage envelopes', () => {
 
     it('rejects malformed IndexedDB metadata when reading cleanup rows', async () => {
         const databaseName = `admission-custom-read-corrupt-${crypto.randomUUID()}`;
-        const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
         try {
             await putIndexedDbRows(database, 'entries', [{
                 key: 'version:bad',
@@ -324,7 +324,7 @@ describe('admission storage envelopes', () => {
 
     it('rejects a malformed guarded-removal row instead of reporting a write conflict', async () => {
         const databaseName = `admission-guarded-remove-corrupt-${crypto.randomUUID()}`;
-        const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
         try {
             await putIndexedDbRows(database, 'entries', [{
                 key: 'version:bad',
@@ -352,7 +352,7 @@ describe('admission storage envelopes', () => {
 
     it('reads only the revision scalar needed for the write compare-and-set', async () => {
         const databaseName = `admission-revision-scalar-${crypto.randomUUID()}`;
-        const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
         try {
             await putIndexedDbRows(database, 'entries', [{
                 key: AL_ADMISSION_REVISION_KEY,
