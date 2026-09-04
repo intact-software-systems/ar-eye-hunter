@@ -277,7 +277,8 @@ export const GROUP_MUTATION_INBOX_TYPES = [
     AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
     AppInboxType.GROUP_FORMATION_AUTOMATION,
     AppInboxType.GROUP_FORMATION_CRITERION,
-    AppInboxType.GROUP_TOPOLOGY_PUBLICATION
+    AppInboxType.GROUP_TOPOLOGY_PUBLICATION,
+    AppInboxType.GROUP_ACTIVATION_STATUS
 ] as const;
 
 export function isAuthenticatedGroupMutationEnqueue(

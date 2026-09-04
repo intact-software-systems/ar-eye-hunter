@@ -176,6 +176,22 @@ export class GroupStateInboxService {
         });
     }
 
+    async enqueueActivationStatusCommand(
+        command: GroupMutationCommand,
+        atEpochMs: number
+    ): Promise<void> {
+        const preparation = await this.groupStateService.prepareActivationStatusMutation(
+            command,
+            atEpochMs
+        );
+        await this.queueEntryWriter.enqueue({
+            type: AppInboxType.GROUP_ACTIVATION_STATUS,
+            resourceId: preparation.queueResourceId,
+            authority: decodeJsonWireValue(preparation, 'Group activation status AppInbox authority'),
+            data: { commandId: preparation.command.commandId }
+        });
+    }
+
     async enqueueGroupSessionCleanup(
         input: GroupPresenceSessionCleanupAppInboxPayload
     ): Promise<number> {
