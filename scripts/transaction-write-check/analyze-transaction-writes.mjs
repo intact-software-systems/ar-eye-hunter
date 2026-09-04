@@ -97,7 +97,12 @@ function analyzeBody(input) {
         if (!body) {
             continue;
         }
-        const identity = `${body.getSourceFile().getFilePath()}:${body.getStart()}:${callable.start}`;
+        const identity = [
+            body.getSourceFile().getFilePath(),
+            body.getStart(),
+            callable.start,
+            boundaryLabel(boundary)
+        ].join(':');
         if (visited.has(identity)) {
             continue;
         }
@@ -165,7 +170,17 @@ function analyzeCall(input) {
         });
     }
     else {
-        for (const callable of resolveCallableBodies(call.getExpression(), project)) {
+        const resolvedCallables = resolveCallableBodies(call.getExpression(), project);
+        if (resolvedCallables.length === 0 && isInvokedCallbackParameter(call.getExpression())) {
+            addFinding({
+                findings,
+                node: call.getExpression(),
+                rule: 'transaction.unresolved-provenance',
+                operation,
+                boundary
+            });
+        }
+        for (const callable of resolvedCallables) {
             callables.push(analysisRoot(callable));
         }
     }
@@ -305,6 +320,12 @@ function isTransactionPort(node) {
     return TRANSACTION_TYPE.test(typeName);
 }
 
+function isInvokedCallbackParameter(node) {
+    const symbol = node.getSymbol();
+    const resolved = symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
+    return resolved?.getDeclarations().some(Node.isParameterDeclaration) ?? false;
+}
+
 function isRetryLoop(loop) {
     const owner = loop.getFirstAncestor(isFunctionDeclaration);
     return /(?:retry|attempt)/iu.test(loop.getText()) ||
@@ -413,7 +434,7 @@ function addFinding(input) {
         operation,
         boundary: boundaryLabel(boundary)
     };
-    findings.set(`${finding.rule}:${finding.path}:${node.getStart()}`, finding);
+    findings.set(`${finding.rule}:${finding.path}:${node.getStart()}:${finding.boundary}`, finding);
 }
 
 function boundaryLabel(boundary) {

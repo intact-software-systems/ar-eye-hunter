@@ -154,6 +154,54 @@ describe('transaction write check', () => {
         }]);
     });
 
+    it('fails closed when a transaction write invokes a callback parameter', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql {
+                (strings: TemplateStringsArray, ...values: readonly unknown[]): Promise<unknown>;
+            }
+            export async function writeInside(
+                transaction: PSqlSql,
+                external: () => string
+            ): Promise<void> {
+                external();
+                await transaction\`select 1\`;
+            }
+        `);
+
+        expect(findings).toMatchObject([{
+            rule: 'transaction.unresolved-provenance',
+            operation: 'external',
+            boundary: 'packages/domain/mutation.ts:5'
+        }]);
+    });
+
+    it('reports a shared helper once for each originating transaction boundary', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        project.createSourceFile(
+            '/packages/domain/shared-write.ts',
+            `export function persist(): string { return JSON.stringify({ value: 1 }); }`
+        );
+        for (const owner of ['first', 'second']) {
+            project.createSourceFile(
+                `/packages/domain/${owner}-owner.ts`,
+                `import { persist } from './shared-write.ts';
+                 interface Sql { begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>; }
+                 declare const database: Sql;
+                 export async function execute(): Promise<void> {
+                     await database.begin(async () => { persist(); });
+                 }`
+            );
+        }
+
+        const findings = analyzeTransactionWrites(project);
+
+        expect(findings).toHaveLength(2);
+        expect(findings.map((finding) => finding.boundary).sort()).toEqual([
+            'packages/domain/first-owner.ts:5',
+            'packages/domain/second-owner.ts:5'
+        ]);
+    });
+
     it('does not follow unrelated helpers with the same name', () => {
         const project = new Project({ useInMemoryFileSystem: true });
         project.createSourceFile(
