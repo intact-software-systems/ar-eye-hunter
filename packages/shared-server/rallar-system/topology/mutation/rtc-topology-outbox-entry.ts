@@ -37,6 +37,13 @@ export type ComputedRtcTopologyOutbox =
         & ComputedRtcTopologyOutboxBase
         & Readonly<{
             payloadKind: 'group-revision';
+            /**
+             * Who asked. The planner freezes `automatic` work under
+             * `commanded` and `corrupt` replanning, so an application command
+             * that arrives stamped `automatic` is discarded by exactly the
+             * mode that exists to honour it (product decision 4).
+             */
+            origin: 'automatic' | 'commanded';
         }>
     )
     | (
@@ -113,7 +120,7 @@ export function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): Re
             ...commonWork,
             kind: 'group-revision',
             sourceGroupStateCausalRevision,
-            origin: 'automatic'
+            origin: computed.origin
         };
     const envelope: RtcTopologyWorkEnvelope = {
         type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,

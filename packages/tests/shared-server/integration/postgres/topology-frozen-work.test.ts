@@ -153,6 +153,7 @@ async function runTopologyWork(input: RunTopologyWorkInput): Promise<void> {
         groupSnapshot,
         effectKind: 'rtc-topology-recompute',
         payloadKind: 'group-revision',
+        origin: 'automatic',
         createdAtEpochMs: atEpochMs,
         expireAtEpochMs: atEpochMs + 60_000,
         senderId: 'topology-frozen-test',

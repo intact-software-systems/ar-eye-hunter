@@ -75,6 +75,9 @@ export class GroupTopologyReconfigureMutation {
             groupSnapshot: snapshot,
             effectKind: 'rtc-topology-recompute',
             payloadKind: 'group-revision',
+            // The route exists to command a replan, so it must not be frozen
+            // by the replanning mode that only runs commanded work.
+            origin: 'commanded',
             createdAtEpochMs: command.capturedAtEpochMs,
             expireAtEpochMs: 253_402_300_799_999,
             senderId: command.actorPrincipalId,

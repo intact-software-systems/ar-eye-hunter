@@ -122,6 +122,7 @@ export function createComputedRtcTopologyOutbox(): ComputedRtcTopologyOutbox {
         groupSnapshot,
         effectKind: 'rtc-topology-recompute',
         payloadKind: 'group-revision',
+        origin: 'automatic',
         senderId: 'server-1',
         resourceId: 'command-1:rtc-topology-recompute:group-revision:group=1;presence=0',
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),
