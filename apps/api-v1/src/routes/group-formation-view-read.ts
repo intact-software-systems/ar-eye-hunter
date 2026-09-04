@@ -18,7 +18,10 @@ import {
     computeGroupFormationReading,
     type GroupFormationReadiness
 } from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
-import type { GroupActivationStatus } from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
+import {
+    isSameGroupActivationSeries,
+    type GroupActivationStatus
+} from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import {
     isSameGroupLayoutIdentity,
@@ -131,7 +134,7 @@ function computeActivationStatus(input: ComputeActivationStatusInput): GroupForm
         // that can say `degraded`. A status from a spent epoch or a replaced
         // basis describes a layout the group has moved past, so the read falls
         // back to what it can derive now rather than publishing a stale band.
-        condition: resolveStoredCondition(group.activationStatus, basisIdentity) ??
+        condition: resolveStoredCondition(group, basisIdentity) ??
             computeGroupActivationCondition({
                 business,
                 lifecycleState: group.lifecycleState,
@@ -155,15 +158,24 @@ function computeActivationStatus(input: ComputeActivationStatusInput): GroupForm
  * group is in now. Product decision 3 persists and pushes this axis, so a
  * read that recomputed it would give one fact two owners -- and the derived
  * one cannot reach `degraded` at all, because no clock has observed it.
+ *
+ * The series is the basis *and* the epoch (product decision 33). Comparing
+ * the basis alone is not enough: a hold-landing `reconfigure` from `active`
+ * advances the epoch while retaining the accepted layout identity, so the
+ * band from the spent series would otherwise be published under the new one.
  */
 function resolveStoredCondition(
-    stored: GroupActivationStatus | null,
+    group: Group,
     basisIdentity: GroupLayoutIdentity | null
 ): GroupActivationCondition | null {
+    const stored: GroupActivationStatus | null = group.activationStatus;
     if (stored === null || basisIdentity === null) {
         return null;
     }
-    return isSameGroupLayoutIdentity(stored.coverageBasisLayoutIdentity, basisIdentity)
+    return isSameGroupActivationSeries(stored, {
+            formationEpoch: group.formationEpoch,
+            coverageBasisLayoutIdentity: basisIdentity
+        })
         ? stored.condition
         : null;
 }
