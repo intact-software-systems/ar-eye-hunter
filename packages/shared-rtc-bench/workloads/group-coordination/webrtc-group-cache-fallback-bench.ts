@@ -320,7 +320,8 @@ function createGroupSnapshotGroup(input: CreateGroupSnapshotInput): GroupSnapsho
         formationElectorate: [],
         acceptedLayoutIdentity: null,
         transportState: 'flowing',
-        memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy())
+        memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy()),
+        activationStatus: null
     };
 }
 

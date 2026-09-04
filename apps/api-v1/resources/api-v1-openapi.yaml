@@ -4689,6 +4689,7 @@ components:
         - acceptedLayoutIdentity
         - transportState
         - memberPolicy
+        - activationStatus
       discriminator:
         propertyName: status
       oneOf:
@@ -4814,6 +4815,61 @@ components:
           enum: [flowing, halted]
         memberPolicy:
           $ref: '#/components/schemas/GroupMemberPolicy'
+        activationStatus:
+          $ref: '#/components/schemas/GroupActivationStatus'
+          nullable: true
+
+    GroupActivationStatus:
+      type: object
+      description: >-
+        The living observed connectivity status (product decision 3): derived,
+        non-authoritative state that no policy or gate reads. Null on the group
+        until a layout carries traffic or is being dialed, because a status
+        with no basis would have to invent the coverage it reports.
+      required:
+        - condition
+        - remediation
+        - coverageRate
+        - coverageBasisLayoutIdentity
+        - formationEpoch
+        - evidenceWatermark
+        - confirmedAtEpochMs
+      properties:
+        condition:
+          type: string
+          enum: [failed, inactive, degraded, active, initialising]
+        remediation:
+          type: string
+          enum: [none, replan-queued, awaiting-application]
+        coverageRate:
+          type: number
+          minimum: 0
+          maximum: 1
+        coverageBasisLayoutIdentity:
+          $ref: '#/components/schemas/GroupLayoutIdentity'
+        formationEpoch:
+          type: integer
+          minimum: 0
+        evidenceWatermark:
+          nullable: true
+          type: object
+          description: >-
+            The newest RTT measurement this status was decided from; null when
+            the reading counted none. Orders two status writes within one
+            (formationEpoch, coverageBasisLayoutIdentity) series.
+          required: [version, createdAtEpochMs]
+          properties:
+            version:
+              type: integer
+              minimum: 0
+            createdAtEpochMs:
+              type: integer
+              minimum: 0
+        confirmedAtEpochMs:
+          type: integer
+          minimum: 0
+          description: >-
+            When this status was last confirmed, not when it last changed.
 
     GroupMemberPolicy:
       type: object

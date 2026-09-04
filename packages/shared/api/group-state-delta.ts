@@ -1,5 +1,11 @@
 import { validateAuthoritativeGroupEvent } from './authoritative-state-validation.ts';
 import { compareGroupCausalRevision } from './group-client-views.ts';
+import {
+    GROUP_ACTIVATION_CONDITIONS,
+    GROUP_ACTIVATION_REMEDIATIONS
+} from './group-lifecycle/compute-group-activation-condition.ts';
+import { GROUP_EVIDENCE_WATERMARK_KEYS } from './group-lifecycle/compute-group-formation-reading.ts';
+import { GROUP_ACTIVATION_STATUS_KEYS } from './group-lifecycle/group-activation-status.ts';
 import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
 import {
     GROUP_ESTABLISHMENT_TRANSPORTS,
@@ -85,7 +91,8 @@ const GROUP_KEYS = [
     'formationElectorate',
     'acceptedLayoutIdentity',
     'transportState',
-    'memberPolicy'
+    'memberPolicy',
+    'activationStatus'
 ];
 const GROUP_MEMBER_KEYS = [
     'applicationId',
@@ -246,16 +253,53 @@ function validateDeltaGroup(
         }
     }
     if (group.acceptedLayoutIdentity !== null) {
-        const accepted = record(group.acceptedLayoutIdentity, `${label}.acceptedLayoutIdentity`);
-        exact(accepted, GROUP_LAYOUT_IDENTITY_KEYS, `${label}.acceptedLayoutIdentity`);
-        for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
-            nonNegativeInteger(accepted[key], `${label}.acceptedLayoutIdentity.${key}`);
-        }
-        enumValue(accepted.state, GROUP_LAYOUT_IDENTITY_STATES, `${label}.acceptedLayoutIdentity.state`);
+        validateDeltaGroupLayoutIdentity(
+            record(group.acceptedLayoutIdentity, `${label}.acceptedLayoutIdentity`),
+            `${label}.acceptedLayoutIdentity`
+        );
     }
     enumValue(group.transportState, GROUP_TRANSPORT_STATES, `${label}.transportState`);
     validateDeltaGroupMemberPolicy(record(group.memberPolicy, `${label}.memberPolicy`), `${label}.memberPolicy`);
+    if (group.activationStatus !== null) {
+        validateDeltaGroupActivationStatus(
+            record(group.activationStatus, `${label}.activationStatus`),
+            `${label}.activationStatus`
+        );
+    }
     return { activeMemberCount: group.activeMemberCount, status: group.status };
+}
+
+function validateDeltaGroupLayoutIdentity(identity: DeltaRecord, label: string): void {
+    exact(identity, GROUP_LAYOUT_IDENTITY_KEYS, label);
+    for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
+        nonNegativeInteger(identity[key], `${label}.${key}`);
+    }
+    enumValue(identity.state, GROUP_LAYOUT_IDENTITY_STATES, `${label}.state`);
+}
+
+function validateDeltaGroupActivationStatus(status: DeltaRecord, label: string): void {
+    exact(status, GROUP_ACTIVATION_STATUS_KEYS, label);
+    enumValue(status.condition, GROUP_ACTIVATION_CONDITIONS, `${label}.condition`);
+    enumValue(status.remediation, GROUP_ACTIVATION_REMEDIATIONS, `${label}.remediation`);
+    if (
+        typeof status.coverageRate !== 'number' || !Number.isFinite(status.coverageRate) ||
+        status.coverageRate < 0 || status.coverageRate > 1
+    ) {
+        fail(`${label}.coverageRate must be a rate between 0 and 1`);
+    }
+    nonNegativeInteger(status.formationEpoch, `${label}.formationEpoch`);
+    nonNegativeInteger(status.confirmedAtEpochMs, `${label}.confirmedAtEpochMs`);
+    validateDeltaGroupLayoutIdentity(
+        record(status.coverageBasisLayoutIdentity, `${label}.coverageBasisLayoutIdentity`),
+        `${label}.coverageBasisLayoutIdentity`
+    );
+    if (status.evidenceWatermark !== null) {
+        const watermark = record(status.evidenceWatermark, `${label}.evidenceWatermark`);
+        exact(watermark, GROUP_EVIDENCE_WATERMARK_KEYS, `${label}.evidenceWatermark`);
+        for (const key of GROUP_EVIDENCE_WATERMARK_KEYS) {
+            nonNegativeInteger(watermark[key], `${label}.evidenceWatermark.${key}`);
+        }
+    }
 }
 
 function validateDeltaGroupMemberPolicy(memberPolicy: DeltaRecord, label: string): void {

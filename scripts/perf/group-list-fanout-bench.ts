@@ -160,6 +160,7 @@ function createGroup(groupId: string, ownerPrincipalId: string): Group {
         acceptedLayoutIdentity: null,
         transportState: 'flowing',
         memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy()),
+        activationStatus: null,
         snapshotVersion: 1,
         metadataVersion: 1,
         rosterVersion: 1,

@@ -112,7 +112,8 @@ function createGroupSnapshot(groupId: string, memberSessionIds: readonly string[
             formationElectorate: [],
             acceptedLayoutIdentity: null,
             transportState: 'flowing',
-            memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy())
+            memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy()),
+            activationStatus: null
         },
         members: memberSessionIds.map((sessionId) => ({
             applicationId,

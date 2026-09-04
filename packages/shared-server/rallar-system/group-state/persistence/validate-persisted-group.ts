@@ -1,4 +1,10 @@
 import {
+    GROUP_ACTIVATION_CONDITIONS,
+    GROUP_ACTIVATION_REMEDIATIONS
+} from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
+import { GROUP_EVIDENCE_WATERMARK_KEYS } from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
+import { GROUP_ACTIVATION_STATUS_KEYS } from '@shared/api/group-lifecycle/group-activation-status.ts';
+import {
     GROUP_LAYOUT_IDENTITY_KEYS,
     GROUP_LAYOUT_IDENTITY_STATES
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -58,7 +64,8 @@ const STORED_GROUP_KEYS = [
     'formationElectorate',
     'acceptedLayoutIdentity',
     'transportState',
-    'memberPolicy'
+    'memberPolicy',
+    'activationStatus'
 ] as const;
 
 const FORMATION_OUTCOME_KEYS = ['outcome', 'observedRate', 'atEpochMs', 'formationEpoch'] as const;
@@ -164,20 +171,86 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
         requireNonEmptyString(principalId, 'Stored group formationElectorate entry');
     }
     if (value.acceptedLayoutIdentity !== null) {
-        const accepted = requireRecord(value.acceptedLayoutIdentity, 'Stored group acceptedLayoutIdentity');
-        assertExactKeys(accepted, GROUP_LAYOUT_IDENTITY_KEYS, 'Stored group acceptedLayoutIdentity');
-        assertRequiredKeys(accepted, GROUP_LAYOUT_IDENTITY_KEYS, 'Stored group acceptedLayoutIdentity');
-        for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
-            requireNonNegativeSafeInteger(accepted[key], `Stored group acceptedLayoutIdentity ${key}`);
-        }
-        requireOneOf(
-            accepted.state,
-            GROUP_LAYOUT_IDENTITY_STATES,
-            'Stored group acceptedLayoutIdentity state'
+        validateStoredGroupLayoutIdentity(
+            requireRecord(value.acceptedLayoutIdentity, 'Stored group acceptedLayoutIdentity'),
+            'Stored group acceptedLayoutIdentity'
         );
     }
     requireOneOf(value.transportState, GROUP_TRANSPORT_STATES, 'Stored group transportState');
     validateStoredGroupMemberPolicy(requireRecord(value.memberPolicy, 'Stored group memberPolicy'));
+    if (value.activationStatus !== null) {
+        validateStoredGroupActivationStatus(
+            requireRecord(value.activationStatus, 'Stored group activationStatus')
+        );
+    }
+}
+
+function validateStoredGroupActivationStatus(activationStatus: StoredGroupRecord): void {
+    assertExactKeys(activationStatus, GROUP_ACTIVATION_STATUS_KEYS, 'Stored group activationStatus');
+    assertRequiredKeys(activationStatus, GROUP_ACTIVATION_STATUS_KEYS, 'Stored group activationStatus');
+    requireOneOf(
+        activationStatus.condition,
+        GROUP_ACTIVATION_CONDITIONS,
+        'Stored group activationStatus condition'
+    );
+    requireOneOf(
+        activationStatus.remediation,
+        GROUP_ACTIVATION_REMEDIATIONS,
+        'Stored group activationStatus remediation'
+    );
+    requireCoverageRate(activationStatus.coverageRate, 'Stored group activationStatus coverageRate');
+    requireNonNegativeSafeInteger(
+        activationStatus.formationEpoch,
+        'Stored group activationStatus formationEpoch'
+    );
+    requireNonNegativeSafeInteger(
+        activationStatus.confirmedAtEpochMs,
+        'Stored group activationStatus confirmedAtEpochMs'
+    );
+    validateStoredGroupLayoutIdentity(
+        requireRecord(
+            activationStatus.coverageBasisLayoutIdentity,
+            'Stored group activationStatus coverageBasisLayoutIdentity'
+        ),
+        'Stored group activationStatus coverageBasisLayoutIdentity'
+    );
+    if (activationStatus.evidenceWatermark !== null) {
+        const watermark = requireRecord(
+            activationStatus.evidenceWatermark,
+            'Stored group activationStatus evidenceWatermark'
+        );
+        assertExactKeys(
+            watermark,
+            GROUP_EVIDENCE_WATERMARK_KEYS,
+            'Stored group activationStatus evidenceWatermark'
+        );
+        assertRequiredKeys(
+            watermark,
+            GROUP_EVIDENCE_WATERMARK_KEYS,
+            'Stored group activationStatus evidenceWatermark'
+        );
+        for (const key of GROUP_EVIDENCE_WATERMARK_KEYS) {
+            requireNonNegativeSafeInteger(
+                watermark[key],
+                `Stored group activationStatus evidenceWatermark ${key}`
+            );
+        }
+    }
+}
+
+function validateStoredGroupLayoutIdentity(identity: StoredGroupRecord, label: string): void {
+    assertExactKeys(identity, GROUP_LAYOUT_IDENTITY_KEYS, label);
+    assertRequiredKeys(identity, GROUP_LAYOUT_IDENTITY_KEYS, label);
+    for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
+        requireNonNegativeSafeInteger(identity[key], `${label} ${key}`);
+    }
+    requireOneOf(identity.state, GROUP_LAYOUT_IDENTITY_STATES, `${label} state`);
+}
+
+function requireCoverageRate(value: unknown, label: string): void {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
+        throw new TypeError(`${label} must be a rate between 0 and 1`);
+    }
 }
 
 function validateStoredGroupMemberPolicy(memberPolicy: StoredGroupRecord): void {
