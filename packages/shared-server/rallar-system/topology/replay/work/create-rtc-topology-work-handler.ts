@@ -562,7 +562,12 @@ async function petitionCommittedCriterion(
     await petitionGroupStageTrigger(options, petition.authority);
     // The criterion leg returns early outside establishment; the status leg
     // does not, because coverage is exactly what an `active` group reports.
-    await petitionGroupActivationStatus(options, petition.authority, petition.planned);
+    await petitionGroupActivationStatus({
+        dependencies: options,
+        authority: petition.authority,
+        planned: petition.planned,
+        dwell: null
+    });
 }
 
 function toTopologyPublication(input: ToTopologyPublicationInput): RtcTopologyPublication {
