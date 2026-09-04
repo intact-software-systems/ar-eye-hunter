@@ -249,6 +249,8 @@ async function persistAndReserveTopologyWork(
             groupSnapshot,
             effectKind: 'rtc-topology-recompute',
             payloadKind: 'group-revision',
+            // A plain recompute, not a commanded reconfigure.
+            origin: 'automatic',
             createdAtEpochMs: nowEpochMs,
             expireAtEpochMs: FUTURE_MS,
             senderId: 'owner',
