@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { encodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
 import { readRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/read-rtc-rtt-mutation.ts';
@@ -174,7 +175,8 @@ export function createRttGroupSnapshot(
     };
 }
 
-type DeepMutable<Value> = Value extends readonly (infer Entry)[] ? DeepMutable<Entry>[] :
+type DeepMutable<Value> = Value extends Temporal.Instant | Temporal.PlainDateTime | Temporal.PlainTime ? Value :
+    Value extends readonly (infer Entry)[] ? DeepMutable<Entry>[] :
     Value extends object ? { -readonly [Key in keyof Value]: DeepMutable<Value[Key]>; } :
     Value;
 
@@ -218,7 +220,7 @@ export function createValidRttWriteCandidate(): Extract<RtcRttMutationComputed, 
 }
 
 export function createMutableRttWriteCandidate(): MutableRttWriteCandidate {
-    return structuredClone(createValidRttWriteCandidate()) as unknown as MutableRttWriteCandidate;
+    return structuredClone(createValidRttWriteCandidate()) as MutableRttWriteCandidate;
 }
 
 export const rttWriteCandidateCorruptions: readonly Readonly<{

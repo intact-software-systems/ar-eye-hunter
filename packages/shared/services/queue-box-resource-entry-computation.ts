@@ -4,7 +4,7 @@ import {
     EntityStatus,
     NEVER_EXPIRE_TS,
     type ResourceEntry
-} from './ResourceEntry.ts';
+} from '../queuebox/ResourceEntry.ts';
 
 export interface ALMessageResourceEntryFacts {
     readonly date: Temporal.PlainTime;
