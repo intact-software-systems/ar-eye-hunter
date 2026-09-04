@@ -18,6 +18,8 @@ import {
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
+import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -215,9 +217,9 @@ describe('AppClientInbox authentication', () => {
             toClientMutationIssuedSessionAuthority(mallory, SCOPE, 'upsertPrincipal')
         );
         const read = await service.read(command);
-        const computed = service.compute(command, read);
+        const computed = computeClientMutation({ command, read });
 
-        expect(() => service.validate(command, read, computed)).toThrow(
+        expect(() => validateClientMutation({ command, read, computed })).toThrow(
             /authority|authenticated|principal/i
         );
     });

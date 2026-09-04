@@ -48,7 +48,7 @@ import type { AuthorisedWsClientMutationResult } from './client-state-inbox-resu
 
 export interface ClientStateInboxHandlerDependencies {
     readonly mutationService: ClientStateMutationService;
-    readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
+    readonly sessionGenerationLifecycle: Pick<WsSessionGenerationLifecycleService, 'read' | 'write'>;
     readonly expiryCandidates: Pick<ClientStateService, 'readExpiredSessionPage'>;
     readonly expiryContinuationWriter: ClientExpiryContinuationWriter;
     readonly snapshotObserver: Pick<ClientStateService, 'observeSnapshot'>;
@@ -86,9 +86,7 @@ export class ClientStateInboxHandler {
                     command,
                     read,
                     completionFacts,
-                    lifecycle: undefined,
-                    mutation: this.dependencies.mutationService,
-                    sessionGeneration: this.dependencies.sessionGenerationLifecycle
+                    lifecycle: undefined
                 })
         );
         timeClientStateMutationPhase(
@@ -99,8 +97,7 @@ export class ClientStateInboxHandler {
                     read,
                     completionFacts,
                     lifecycle: undefined,
-                    computed,
-                    mutation: this.dependencies.mutationService
+                    computed
                 })
         );
         if (computed.outcome === 'idempotency-conflict') {
@@ -141,9 +138,7 @@ export class ClientStateInboxHandler {
                     read,
                     lifecycleFacts,
                     lifecycleRead,
-                    completionFacts,
-                    mutation: this.dependencies.mutationService,
-                    sessionGeneration: this.dependencies.sessionGenerationLifecycle
+                    completionFacts
                 })
         );
         timeClientStateMutationPhase(
@@ -156,9 +151,7 @@ export class ClientStateInboxHandler {
                     lifecycleFacts,
                     lifecycleRead,
                     completionFacts,
-                    computed,
-                    mutation: this.dependencies.mutationService,
-                    sessionGeneration: this.dependencies.sessionGenerationLifecycle
+                    computed
                 })
         );
         if (computed.outcome === 'idempotency-conflict') {
@@ -211,8 +204,7 @@ export class ClientStateInboxHandler {
                         commandInput: input,
                         lifecycleFacts,
                         lifecycleRead,
-                        completionFacts,
-                        sessionGeneration: this.dependencies.sessionGenerationLifecycle
+                        completionFacts
                     })
             );
             timeClientStateMutationPhase(
@@ -251,9 +243,7 @@ export class ClientStateInboxHandler {
                     command,
                     read,
                     completionFacts,
-                    lifecycle: lifecycleInput,
-                    mutation: this.dependencies.mutationService,
-                    sessionGeneration: this.dependencies.sessionGenerationLifecycle
+                    lifecycle: lifecycleInput
                 })
         );
         timeClientStateMutationPhase(
@@ -264,8 +254,7 @@ export class ClientStateInboxHandler {
                     read,
                     completionFacts,
                     lifecycle: lifecycleInput,
-                    computed,
-                    mutation: this.dependencies.mutationService
+                    computed
                 })
         );
         if (computed.outcome === 'idempotency-conflict') {
@@ -313,8 +302,7 @@ export class ClientStateInboxHandler {
             pageInput: input,
             page,
             reads,
-            completionFacts,
-            mutation: this.dependencies.mutationService
+            completionFacts
         } as const;
         const firstRead = reads[0];
         const computed = firstRead
@@ -333,8 +321,7 @@ export class ClientStateInboxHandler {
             page,
             reads,
             completionFacts,
-            computed,
-            mutation: this.dependencies.mutationService
+            computed
         } as const;
         if (firstRead) {
             timeClientStateMutationPhase(

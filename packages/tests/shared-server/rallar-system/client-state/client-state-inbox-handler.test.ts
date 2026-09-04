@@ -32,20 +32,26 @@ import {
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import type {
     ClientMutationCommand,
+    ClientMutationComputedWrite,
     ClientMutationRead
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
 import type { ClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import {
-    computeWsSessionConnectGuard,
-    computeWsSessionGenerationClosed,
-    isWsSessionGenerationClosed,
     toWsSessionLifecycleKey,
     type WsSessionGenerationLifecycleRead,
     type WsSessionHighWaterIdentity
 } from '@shared-server/rallar-system/websocket/ws-session-generation-computation.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import type {
+    AuditStamp,
+    ClientInstance,
+    ClientPrincipal,
+    ClientSession,
+    ClientSnapshot
+} from '@shared/api/client-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { readClientExpiryTestEnqueueData } from './app-client-inbox-expiry-fixtures.ts';
@@ -71,6 +77,13 @@ const CONNECTION = toAuthorisedWsClientConnection({
         expiresAtEpochMs: 9_000
     }
 });
+const CURRENT_AUDIT: AuditStamp = {
+    atEpochMs: 500,
+    actor: { kind: 'service', serviceId: SERVICE_ID },
+    reason: null,
+    traceId: null,
+    requestId: null
+};
 
 describe('ClientStateInboxHandler phases', () => {
     it.each([
@@ -102,10 +115,7 @@ describe('ClientStateInboxHandler phases', () => {
                     'completion.read',
                     'lifecycle.read',
                     'domain.read',
-                    'domain.compute',
-                    'lifecycle.compute-connect',
                     'mutation.compute',
-                    'domain.validate',
                     'mutation.validate',
                     'transaction',
                     'lifecycle.write',
@@ -151,10 +161,7 @@ describe('ClientStateInboxHandler phases', () => {
                     'completion.read',
                     'lifecycle.read',
                     'domain.read',
-                    'domain.compute',
-                    'lifecycle.compute-close',
                     'mutation.compute',
-                    'domain.validate',
                     'mutation.validate',
                     'transaction',
                     'lifecycle.write',
@@ -167,7 +174,6 @@ describe('ClientStateInboxHandler phases', () => {
                     'completion.read',
                     'lifecycle.read',
                     'domain.read',
-                    'lifecycle.compute-close',
                     'mutation.compute',
                     'mutation.validate',
                     'transaction',
@@ -203,11 +209,7 @@ describe('ClientStateInboxHandler phases', () => {
             'expiry.read',
             'domain.read',
             'domain.read',
-            'domain.compute',
-            'domain.compute',
             'mutation.compute',
-            'domain.validate',
-            'domain.validate',
             'mutation.validate',
             'transaction',
             'domain.write',
@@ -305,9 +307,7 @@ describe('ClientStateInboxHandler phases', () => {
         expect(fixture.actions).toEqual([
             'completion.read',
             'domain.read',
-            'domain.compute',
             'mutation.compute',
-            'domain.validate',
             'mutation.validate',
             'transaction',
             'domain.write',
@@ -344,32 +344,9 @@ function createHandlerFixture(options: HandlerFixtureOptions): {
     const mutationService = {
         read: async (command: ClientMutationCommand): Promise<ClientMutationRead> => {
             actions.push('domain.read');
-            return {
-                authoritySession: command.authority.kind === 'issued-session'
-                    ? persistedSession(command)
-                    : null,
-                idempotency: null,
-                principal: null,
-                instance: null,
-                session: options.sessionPresent ? ({} as never) : null,
-                expiredSessionEntry: null,
-                snapshot: null,
-                receiptEvent: null
-            };
+            return clientMutationRead(command, options.sessionPresent);
         },
-        compute: (command: ClientMutationCommand) => {
-            actions.push('domain.compute');
-            return {
-                outcome: 'write',
-                receipt: { commandId: command.commandId },
-                snapshot: { commandId: command.commandId },
-                event: null
-            } as never;
-        },
-        validate: () => {
-            actions.push('domain.validate');
-        },
-        write: async () => {
+        write: async (_transaction: PSqlSql, computed: ClientMutationComputedWrite) => {
             actions.push('domain.write');
             const transactionIndex = writesByTransaction.length - 1;
             writesByTransaction[transactionIndex] = (writesByTransaction[transactionIndex] ?? 0) + 1;
@@ -380,7 +357,7 @@ function createHandlerFixture(options: HandlerFixtureOptions): {
             ) {
                 throw new RuntimeStateWriteConflictError();
             }
-            return {} as never;
+            return computed.receipt;
         }
     };
     const handler = new ClientStateInboxHandler({
@@ -389,16 +366,6 @@ function createHandlerFixture(options: HandlerFixtureOptions): {
             read: async (identity) => {
                 actions.push('lifecycle.read');
                 return lifecycleRead(identity, options.generationClosed);
-            },
-            isGenerationClosed: isWsSessionGenerationClosed,
-            isObservedAtClosed: () => false,
-            computeClosed: (facts, read) => {
-                actions.push('lifecycle.compute-close');
-                return computeWsSessionGenerationClosed(facts, read);
-            },
-            computeConnectGuard: (facts, read) => {
-                actions.push('lifecycle.compute-connect');
-                return computeWsSessionConnectGuard(facts, read);
             },
             write: async () => {
                 actions.push('lifecycle.write');
@@ -456,6 +423,145 @@ function createHandlerFixture(options: HandlerFixtureOptions): {
         pageReads,
         pageReadCount: () => pageReadCount,
         writesByTransaction
+    };
+}
+
+function clientMutationRead(
+    command: ClientMutationCommand,
+    sessionPresent: boolean
+): ClientMutationRead {
+    const base: ClientMutationRead = {
+        authoritySession: command.authority.kind === 'issued-session'
+            ? persistedSession(command)
+            : null,
+        idempotency: null,
+        principal: null,
+        instance: null,
+        session: null,
+        expiredSessionEntry: null,
+        snapshot: null,
+        receiptEvent: null
+    };
+    if (!sessionPresent || !requiresCurrentSession(command)) {
+        return base;
+    }
+    return currentSessionRead(command, base);
+}
+
+type CurrentSessionCommand = Extract<ClientMutationCommand, { operation: 'disconnectSession' | 'disconnectAuthorisedWsSession' | 'expireSession'; }>;
+
+function requiresCurrentSession(command: ClientMutationCommand): command is CurrentSessionCommand {
+    return command.operation === 'disconnectSession' ||
+        command.operation === 'disconnectAuthorisedWsSession' ||
+        command.operation === 'expireSession';
+}
+
+function currentSessionRead(
+    command: CurrentSessionCommand,
+    base: ClientMutationRead
+): ClientMutationRead {
+    const principal = currentPrincipal(command);
+    const instance = currentInstance(command);
+    const session = currentSession(command);
+    return {
+        ...base,
+        principal: runtimeStateEntryValue('client-principal', principal),
+        instance: runtimeStateEntryValue('client-instance', instance),
+        session: runtimeStateEntryValue('client-session', session),
+        snapshot: currentSnapshot(principal, instance, session)
+    };
+}
+
+function currentPrincipal(command: CurrentSessionCommand): ClientPrincipal {
+    const principal: ClientPrincipal = {
+        ...command.aggregateRef,
+        username: command.aggregateRef.principalId,
+        displayName: null,
+        avatarUrl: null,
+        authProvider: null,
+        externalSubjectId: null,
+        status: 'active',
+        roles: [],
+        metadata: {},
+        snapshotVersion: 1,
+        profileVersion: 1,
+        presenceVersion: 1,
+        created: CURRENT_AUDIT,
+        updated: CURRENT_AUDIT,
+        disabled: null,
+        deleted: null,
+        lastSeenAtEpochMs: 700
+    };
+    return principal;
+}
+
+function currentInstance(command: CurrentSessionCommand): ClientInstance {
+    return {
+        ...command.aggregateRef,
+        clientInstanceId: command.clientInstanceId,
+        status: 'active',
+        platform: 'web',
+        deviceLabel: null,
+        appVersion: null,
+        userAgent: null,
+        capabilities: ['ws'],
+        registered: CURRENT_AUDIT,
+        updated: CURRENT_AUDIT,
+        revoked: null
+    };
+}
+
+function currentSession(command: CurrentSessionCommand): ClientSession {
+    const expiresAtEpochMs = command.operation === 'expireSession'
+        ? command.input.observedExpiresAtEpochMs
+        : command.input.expiresAtEpochMs ?? CONNECTION.expiresAtEpochMs;
+    return {
+        ...command.aggregateRef,
+        clientInstanceId: command.clientInstanceId,
+        sessionId: command.sessionId,
+        generationId: command.input.generationId,
+        generationVersion: command.operation === 'expireSession'
+            ? command.input.generationVersion
+            : 1,
+        status: 'active',
+        presenceState: 'online',
+        transport: 'ws',
+        connectionId: command.input.generationId,
+        authenticatedAtEpochMs: 500,
+        connectedAtEpochMs: 600,
+        lastHeartbeatAtEpochMs: 700,
+        expiresAtEpochMs,
+        disconnectedAtEpochMs: null,
+        disconnectReason: null
+    };
+}
+
+function currentSnapshot(
+    principal: ClientPrincipal,
+    instance: ClientInstance,
+    session: ClientSession
+): ClientSnapshot {
+    return {
+        stateRevision: 1,
+        principal,
+        instances: [instance],
+        activeSessions: [session],
+        isOnline: true,
+        activeSessionCount: 1,
+        lastSeenAtEpochMs: 700
+    };
+}
+
+function runtimeStateEntryValue<T>(key: string, value: T): RuntimeStateEntryValue<T> {
+    return {
+        entry: {
+            key,
+            value: JSON.stringify(value),
+            expireAtTimestamp: 10_000,
+            updatedTimestamp: '1970-01-01T00:00:01.000Z',
+            revision: 1
+        },
+        value
     };
 }
 
