@@ -46,10 +46,12 @@ export type GroupFormationView = Readonly<{
      */
     maxFormationAttempts: number | null;
     /**
-     * The observed condition of the layout carrying traffic, computed at this
-     * read (product decision 30). `degraded` and the dwell-held `failed` band
-     * need a dwell clock, which the status writer slice owns, so neither is
-     * reported yet.
+     * The observed condition of the layout carrying traffic (product decision
+     * 30). Reported from the stored status whenever that status still
+     * describes the current series, because the dwell-held bands -- `degraded`
+     * and below-floor `failed` -- exist only where a clock has observed them.
+     * A read with no stored status for this basis derives what it can, which
+     * is every band except those two.
      */
     condition: GroupActivationCondition;
     /** Whose move it is, naming only work the server performs. */
