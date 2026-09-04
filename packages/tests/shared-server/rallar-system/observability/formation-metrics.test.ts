@@ -1,12 +1,48 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    GROUP_LIFECYCLE_TRANSITION_OPERATIONS,
+    type GroupLifecycleTransitionOperation,
+    type GroupMutationCommand
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import {
     createGroupFormationMetricsRecorder,
     emptyGroupFormationMetrics,
     toGroupFormationOperationKind
 } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+
+/**
+ * Every transition the table owns, keyed so the compiler refuses an eighth
+ * without an expectation here.
+ */
+/** Every operation the group inbox can report, so nothing reaches the reserved bucket by accident. */
+const EVERY_GROUP_MUTATION_OPERATION: readonly GroupMutationCommand['operation'][] = [
+    ...GROUP_LIFECYCLE_TRANSITION_OPERATIONS,
+    'createGroup',
+    'updateGroup',
+    'joinGroup',
+    'acceptGroupInvite',
+    'upsertMember',
+    'removeGroupMember',
+    'connectPresence',
+    'heartbeatPresence',
+    'disconnectPresence',
+    'applyPlannedLayout',
+    'pauseGroupTransport',
+    'resumeGroupTransport'
+];
+
+const STAGE_TRANSITION_OPERATIONS: Readonly<Record<GroupLifecycleTransitionOperation, 'stageTransition'>> = {
+    activateGroup: 'stageTransition',
+    reconfigureGroup: 'stageTransition',
+    failGroupFormation: 'stageTransition',
+    planGroupLayout: 'stageTransition',
+    connectGroup: 'stageTransition',
+    startGroupFormation: 'stageTransition',
+    resetGroupFormation: 'stageTransition'
+};
 
 describe('group formation metrics recorder', () => {
     it('maps group mutation operations onto formation operation kinds', () => {
@@ -19,6 +55,53 @@ describe('group formation metrics recorder', () => {
         expect(toGroupFormationOperationKind('setGroupMemberRole')).toBe('membership');
         expect(toGroupFormationOperationKind('createGroup')).toBe('other');
         expect(toGroupFormationOperationKind('unknown-op')).toBe('other');
+    });
+
+    it.each(Object.entries(STAGE_TRANSITION_OPERATIONS))('buckets %s as a stage transition', (operation, kind) => {
+        expect(toGroupFormationOperationKind(operation)).toBe(kind);
+    });
+
+    // The valve writes `transportState` alone and enters no transition table
+    // row (product decision 25), so it is not a stage transition.
+    it.each(['pauseGroupTransport', 'resumeGroupTransport'])('leaves %s outside the stage bucket', (operation) => {
+        expect(toGroupFormationOperationKind(operation)).toBe('other');
+    });
+
+    it('counts a lifecycle transition where the burst artifacts can see it', () => {
+        const recorder = createGroupFormationMetricsRecorder();
+
+        recorder.groupMutation({ operation: 'planGroupLayout', outcome: 'write' });
+        recorder.groupMutation({ operation: 'connectGroup', outcome: 'write' });
+        recorder.groupMutation({ operation: 'activateGroup', outcome: 'rejected' });
+
+        const metrics = recorder.readMetrics();
+        expect(metrics.groupMutationCount.stageTransition).toEqual({ write: 2, noOp: 0, rejected: 1 });
+        expect(metrics.groupMutationCount.other).toEqual({ write: 0, noOp: 0, rejected: 0 });
+    });
+
+    // The promotion is not a transition: it lands the accepted layout without
+    // touching stage, epoch, electorate or attempt count.
+    it('leaves applyPlannedLayout outside the stage bucket', () => {
+        expect(toGroupFormationOperationKind('applyPlannedLayout')).toBe('other');
+    });
+
+    // Reserved for the observed-status writer: the bucket exists so the
+    // artifact shape changes once rather than twice, and reads zero until then.
+    it('routes no operation into the reserved status bucket', () => {
+        const recorder = createGroupFormationMetricsRecorder();
+        for (const operation of EVERY_GROUP_MUTATION_OPERATION) {
+            recorder.groupMutation({ operation, outcome: 'write' });
+        }
+        expect(recorder.readMetrics().groupMutationCount.activationStatus).toEqual({
+            write: 0,
+            noOp: 0,
+            rejected: 0
+        });
+        expect(emptyGroupFormationMetrics().groupMutationCount.activationStatus).toEqual({
+            write: 0,
+            noOp: 0,
+            rejected: 0
+        });
     });
 
     it('counts group mutations by operation kind and outcome', () => {

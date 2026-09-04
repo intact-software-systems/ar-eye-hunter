@@ -10,6 +10,7 @@ import type {
     WsDeliveryDiagnosticsSink
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 
+import { isGroupLifecycleTransitionOperationName } from '../group-state/mutation/group-mutation-contracts.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../topology/mutation/rtc-topology-outbox-entry.ts';
 
 export type GroupFormationGroupMutationEvent = Readonly<{
@@ -88,7 +89,10 @@ export function toGroupFormationOperationKind(operation: string): GroupFormation
         case 'transferGroupOwnership':
             return 'membership';
         default:
-            return 'other';
+            // The transport valve lands in `other` with everything else: it
+            // writes `transportState` alone and is no stage transition
+            // (product decision 25).
+            return isGroupLifecycleTransitionOperationName(operation) ? 'stageTransition' : 'other';
     }
 }
 
@@ -198,6 +202,8 @@ function createMutableGroupFormationMetrics(): MutableGroupFormationMetrics {
             heartbeat: emptyOutcomeCounts(),
             disconnect: emptyOutcomeCounts(),
             membership: emptyOutcomeCounts(),
+            stageTransition: emptyOutcomeCounts(),
+            activationStatus: emptyOutcomeCounts(),
             other: emptyOutcomeCounts()
         },
         presenceSummaryExpansionCount: 0,
