@@ -441,7 +441,8 @@ describe('authoritative mutation guidance integrity', () => {
         const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
         expectAllNormalized(codeWriting, [
             'persistence-ready',
-            'Do not add a post-compute preparation phase',
+            'Do not add a post-compute preparation phase.',
+            'Do not add another mutation phase without explicit human approval.',
             'Never add an inner retry loop',
             'resolved transaction owner'
         ]);
@@ -450,9 +451,10 @@ describe('authoritative mutation guidance integrity', () => {
             'The checker keeps specialized ResourceInbox files'
         );
         expectAllNormalized(readRepo('.agents/skills/rallar-testing/SKILL.md'), [
-            'completed before transaction entry',
+            'For `strict-domain-write` package or API transaction writes',
             'one mutation attempt',
-            'actual database-returned facts'
+            'actual database-returned facts',
+            'incompatible existing schemas fail closed without a schema rewrite'
         ]);
         expectAllNormalized(readRepo('.agents/skills/performance-analysis/SKILL.md'), [
             'Transaction timing is not value provenance',
