@@ -1,6 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import { GROUP_MINIMUM_LAYOUT_AGE_MS } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
+import { GROUP_MINIMUM_LAYOUT_AGE_MS } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';

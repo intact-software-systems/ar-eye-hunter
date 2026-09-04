@@ -1,6 +1,6 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { EffectiveGroupTopologyConfig, GraphDiagnosticReadResponse } from '@shared/api/graph-topology-management-types.ts';
-import type { GroupActivationCondition } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
+import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';

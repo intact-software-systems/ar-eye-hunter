@@ -1,5 +1,5 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import { computeGroupFormationReading } from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
+import { computeGroupFormationReading } from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
 import { evaluateGroupActivationCriterion } from '@shared/api/group-lifecycle/evaluate-group-activation-criterion.ts';
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { consumesFormationDeadlineAt } from '@shared/api/group-lifecycle/resolve-formation-stage-entry.ts';

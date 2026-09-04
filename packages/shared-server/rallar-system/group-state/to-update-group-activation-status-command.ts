@@ -1,4 +1,4 @@
-import type { GroupEvidenceWatermark } from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
+import type { GroupEvidenceWatermark } from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { serializeCanonicalJson } from '../protocol/canonical-json.ts';

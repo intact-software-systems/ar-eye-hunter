@@ -13,12 +13,12 @@ import {
     type GroupActivationCondition,
     type GroupActivationRemediation,
     type GroupCoverageObservation
-} from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
+} from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import {
     computeGroupFormationReading,
     type GroupFormationReadiness
-} from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
-import type { GroupActivationStatus } from '@shared/api/group-lifecycle/group-activation-status.ts';
+} from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
+import type { GroupActivationStatus } from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import {
     isSameGroupLayoutIdentity,

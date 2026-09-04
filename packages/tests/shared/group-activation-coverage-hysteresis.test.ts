@@ -5,8 +5,8 @@ import {
     GROUP_ACTIVATION_HYSTERESIS_WIDTH,
     type GroupActivationCondition,
     type GroupCoverageObservation
-} from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
-import { resolveGroupActivationCoverageWithHysteresis } from '@shared/api/group-lifecycle/group-activation-coverage-hysteresis.ts';
+} from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
+import { resolveGroupActivationCoverageWithHysteresis } from '@shared/api/group-lifecycle/activation-status/group-activation-coverage-hysteresis.ts';
 
 const SUCCESS_RATE = 0.9;
 const MINIMUM_VIABLE_RATE = 0.5;

@@ -1,5 +1,5 @@
-import type { RttMeasurementInfo } from '../api-config.ts';
-import type { RallarOverlayTopologySnapshot } from '../overlay-topology.ts';
+import type { RttMeasurementInfo } from '../../api-config.ts';
+import type { RallarOverlayTopologySnapshot } from '../../overlay-topology.ts';
 
 /**
  * Evidence stays valid this long after its sample time. A server default, not

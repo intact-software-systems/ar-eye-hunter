@@ -10,7 +10,7 @@ import {
     resolveGroupBusinessLiveness,
     type ComputeGroupActivationConditionInput,
     type GroupCoverageObservation
-} from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
+} from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 

@@ -4,7 +4,7 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import {
     computeGroupFormationReading,
     DEFAULT_FORMATION_EVIDENCE_FRESHNESS_MS
-} from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
+} from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 const NOW = 1_000_000;
