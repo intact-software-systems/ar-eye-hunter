@@ -190,9 +190,32 @@ checker does not substitute for following production symbols.
 - Follow the complete doctrine in `references/convergent-service-writing.md`.
 - AppInbox is mandatory for incoming database mutations and owns the transaction
   and retry boundary.
-- Keep a visible `read`, pure `compute`, pure `validate`, then
-  `write(transaction, computed)` dataflow. The service never owns transaction
-  lifecycle or retries.
+- Keep `read -> compute -> validate -> write(transaction, computed)` visible.
+  `compute` and `validate` are pure; `compute` produces persistence-ready data.
+  Do not add a post-compute preparation phase or another mutation phase without
+  explicit human approval.
+- A write executes the validated computed value. Only refine it from actual
+  database-returned facts under the closed grammar in
+  `references/convergent-service-writing.md`.
+- One queue delivery performs one mutation attempt. A conflict exits to outer
+  QueueBox redelivery, which starts again from `read` with fresh data. Never add
+  an inner retry loop in a handler or persistence helper.
+- Policy follows the resolved transaction opener and owner, not a source path.
+  AppInbox and domain-owned transactions use `strict-domain-write`. Calling
+  ResourceInbox code from an AppInbox or domain-owned transaction does not
+  transfer the specialized policy. Browser IndexedDB readwrite and
+  upgrade/versionchange transactions remain strict.
+- Use `specialized-resource-inbox` only for an exact resolved PostgreSQL
+  ResourceInbox, Results, or QueueBox transaction owner. Permit bounded
+  middleware-local SQL coordination and deterministic persisted-value
+  transformations. The strict `transaction.precomputable-work` rule does not
+  apply to this proven specialized owner. Its sole externally supplied callback
+  allowance is the exact guarded winner materializer, which may construct its
+  bounded winner-only row. Outside that allowance, prohibit ordinary domain
+  mutation logic, external effects, timers, polling, unbounded work, and
+  arbitrary unresolved operation callbacks. Treat the checker's explicit file
+  inventory as review evidence, not as a strict pass or an exception. A new
+  file is strict by default until its exact specialized ownership is reviewed.
 - Prefer a functional core with an explicitly owned stateful shell. Model domain
   decisions and conditional-write outcomes as separate typed values.
 - Authoritative persisted and shared contracts use mandatory fields by default.

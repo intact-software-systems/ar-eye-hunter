@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+// Repository-governance maintainers own these publication guards. Replace phrase
+// checks as consumer evaluations cover the same drift risk; they do not prove agent behavior.
 const repoRoot = process.cwd();
 const canonicalServiceWritingPath = '.agents/skills/rallar-code-writing/references/convergent-service-writing.md';
 const codeProducingSpecialistSkills = [
@@ -32,7 +34,6 @@ const currentAppInboxGuidancePaths = [
     'docs/rallar-crdt-production-hardening-runbook.md',
     'docs/README.md'
 ] as const;
-const coreConvergentWriteGuidancePaths = [canonicalServiceWritingPath] as const;
 const canonicalSnapshotOrderingGuidancePaths = [
     canonicalServiceWritingPath,
     'docs/rallar-convergent-state-and-rtc-topology.md'
@@ -60,11 +61,6 @@ const mediumScaleRequirements = [
     'five groups',
     'three Postgres-backed API processes',
     '10 client lanes plus 5 control lanes'
-] as const;
-const performanceGateRequirements = [
-    'npm run perf:api-v1:state-write',
-    'node scripts/perf/compare-api-v1-state-write-results.mjs',
-    'comparative result gate'
 ] as const;
 
 interface PackageJson {
@@ -135,7 +131,7 @@ describe('authoritative mutation guidance integrity', () => {
             'update with expected-revision compare-and-set or `upsertIfRevision`',
             'delete or expire with expected-revision conditional delete or `deleteIfRevision`',
             'a stale expiry observation must not delete or overwrite a refreshed value',
-            'A conflict starts a fresh `read`'
+            'A conflict exits that attempt; queue redelivery starts again from `read`'
         ]);
         expectAllNormalized(realtime, [
             canonicalServiceWritingPath,
@@ -406,15 +402,19 @@ describe('authoritative mutation guidance integrity', () => {
         }
     );
 
-    it.each(coreConvergentWriteGuidancePaths)(
-        '%s independently states the convergent-write doctrine',
-        (filePath) => {
-            const guidance = normalizeWhitespace(readRepo(filePath));
+    it(
+        'the canonical service reference independently states the convergent-write doctrine',
+        () => {
+            const guidance = normalizeWhitespace(readRepo(canonicalServiceWritingPath));
             expect(guidance).toMatch(
                 /`compute` and `validate` .{0,30}(?:phases|functions) are .{0,10}pure/i
             );
             expect(guidance).toMatch(/AppInbox .{0,50}owns .{0,40}transaction .{0,40}retry boundary/i);
             expect(guidance).toMatch(/service write receives the transaction .{0,40}never opens/i);
+            expect(guidance).toContain(
+                'optimistic compare-and-set writes with bounded QueueBox redelivery attempts'
+            );
+            expect(guidance).not.toContain('optimistic compare-and-set writes with bounded retries');
             expect(guidance).toContain('write(transaction, computed)');
             expect(guidance).toMatch(
                 /(?:ResourceInboxRepository.{0,160}same transaction|same transaction.{0,160}ResourceInboxRepository)/i
@@ -423,6 +423,47 @@ describe('authoritative mutation guidance integrity', () => {
             expect(guidance).toMatch(/computed persistence data.{0,40}not.{0,20}(?:called )?a plan/i);
         }
     );
+
+    it('keeps the complete transaction-write doctrine in the authoritative code standard', () => {
+        const codeStyle = readRepo('.agents/skills/rallar-code-writing/references/repo-code-style.md');
+        expectAllNormalized(codeStyle, [
+            'same explicit input produces the same result',
+            'no repository reads, clocks, randomness, mutable dependency lookups, or hidden side effects',
+            'Do not add `prepare`, `prepareWrite`, or another deterministic transformation after `compute`',
+            'Adding another service mutation phase requires explicit human approval',
+            'One queue delivery performs one mutation attempt',
+            'A conflict exits that attempt; queue redelivery starts again from `read`'
+        ]);
+    });
+
+    it('keeps specialist transaction-write guidance concise and role-specific', () => {
+        const repeatedCanonicalSentence = 'same explicit input produces the same result';
+        expect([
+            canonicalServiceWritingPath,
+            '.agents/skills/rallar-code-writing/SKILL.md',
+            '.agents/skills/rallar-testing/SKILL.md',
+            '.agents/skills/performance-analysis/SKILL.md'
+        ].filter((filePath) => readRepo(filePath).includes(repeatedCanonicalSentence))).toEqual([]);
+        expectAllNormalized(readRepo(canonicalServiceWritingPath), [
+            'QueueBox redelivery',
+            'service write receives the transaction',
+            'Specialized ResourceInbox transaction ownership'
+        ]);
+        expectAllNormalized(readRepo('.agents/skills/rallar-code-writing/SKILL.md'), [
+            'persistence-ready',
+            'Do not add a post-compute preparation phase',
+            'Never add an inner retry loop'
+        ]);
+        expectAllNormalized(readRepo('.agents/skills/rallar-testing/SKILL.md'), [
+            'completed before transaction entry',
+            'one mutation attempt',
+            'actual database-returned facts'
+        ]);
+        expectAllNormalized(readRepo('.agents/skills/performance-analysis/SKILL.md'), [
+            'Transaction timing is not value provenance',
+            'actual database-returned facts'
+        ]);
+    });
 
     it.each(canonicalSnapshotOrderingGuidancePaths)(
         '%s requires canonical ordering for authoritative snapshot collections',
@@ -440,11 +481,7 @@ describe('authoritative mutation guidance integrity', () => {
 });
 
 function readRepo(filePath: string): string {
-    return readAbsolute(path.join(repoRoot, filePath));
-}
-
-function readAbsolute(filePath: string): string {
-    return readFileSync(filePath, 'utf8');
+    return readFileSync(path.join(repoRoot, filePath), 'utf8');
 }
 
 function readPackageJson(filePath: string): PackageJson {
