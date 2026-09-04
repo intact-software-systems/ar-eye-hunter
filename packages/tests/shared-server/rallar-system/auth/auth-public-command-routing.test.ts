@@ -28,7 +28,7 @@ interface LogoutRoutedSessionInput {
     readonly session: IssuedAuthSession;
 }
 
-const LEGACY_AUTH_INBOX_POLLING_DEADLINE_MS = 50;
+const MATERIALIZATION_PENDING_OBSERVATION_MS = 50;
 
 it(
     'routes registration, ticket issuance, agent batches, and logout through durable commands',
@@ -56,7 +56,7 @@ it('waits for delayed auth intent materialization before dequeuing', async () =>
             }
         );
 
-        await vi.advanceTimersByTimeAsync(LEGACY_AUTH_INBOX_POLLING_DEADLINE_MS);
+        await vi.advanceTimersByTimeAsync(MATERIALIZATION_PENDING_OBSERVATION_MS);
         expect(settled).toBe(false);
 
         materialization.resolve();
