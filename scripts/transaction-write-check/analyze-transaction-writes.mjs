@@ -58,7 +58,17 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
                 }
                 continue;
             }
-            for (const callback of resolveCallbackBodies(boundary.callback, project)) {
+            const callbacks = resolveCallableBodies(boundary.callback, project);
+            if (isCallbackReference(boundary.callback) && callbacks.length === 0) {
+                addFinding({
+                    findings,
+                    node: boundary.callback,
+                    rule: 'transaction.unresolved-provenance',
+                    operation: nodeOperation(boundary.callback),
+                    boundary: call
+                });
+            }
+            for (const callback of callbacks) {
                 roots.push(analysisRoot(callback));
             }
         }
@@ -71,53 +81,109 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
             start: root.start,
             findings,
             visited,
-            boundary: root.node
+            boundary: root.node,
+            project
         });
     }
     return [...findings.values()].sort(compareFindings);
 }
 
 function analyzeBody(input) {
-    const { root, start, findings, visited, boundary } = input;
-    const body = functionBody(root);
-    if (!body) {
-        return;
-    }
-    const identity = `${body.getSourceFile().getFilePath()}:${body.getStart()}:${start}`;
-    if (visited.has(identity)) {
-        return;
-    }
-    visited.add(identity);
-
-    for (const construct of body.getDescendantsOfKind(SyntaxKind.NewExpression)) {
-        if (construct.getStart() < start) {
+    const { root, start, findings, visited, boundary, project } = input;
+    const callables = [analysisRoot(root, start)];
+    for (let index = 0; index < callables.length; index += 1) {
+        const callable = callables[index];
+        const body = functionBody(callable.node);
+        if (!body) {
             continue;
         }
-        const operation = construct.getExpression().getText();
+        const identity = `${body.getSourceFile().getFilePath()}:${body.getStart()}:${callable.start}`;
+        if (visited.has(identity)) {
+            continue;
+        }
+        visited.add(identity);
+
+        analyzeCallableBody({
+            body,
+            start: callable.start,
+            findings,
+            boundary,
+            project,
+            callables
+        });
+    }
+}
+
+function analyzeCallableBody(input) {
+    const { body, start, findings, boundary, project, callables } = input;
+    analyzeExecutionNode({ node: body, start, findings, boundary, project, callables });
+    body.forEachDescendant((node, traversal) => {
+        if (isFunctionDeclaration(node)) {
+            traversal.skip();
+            return;
+        }
+        analyzeExecutionNode({ node, start, findings, boundary, project, callables });
+    });
+}
+
+function analyzeExecutionNode(input) {
+    const { node, start, findings, boundary, project, callables } = input;
+    if (node.getStart() < start) {
+        return;
+    }
+    if (Node.isNewExpression(node)) {
+        const operation = node.getExpression().getText();
         if (operation === 'Date' || operation === 'TextEncoder') {
             addFinding({
                 findings,
-                node: construct,
+                node,
                 rule: 'transaction.precomputable-work',
                 operation,
                 boundary
             });
         }
+        return;
     }
-    for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-        if (call.getStart() < start) {
-            continue;
+    if (!Node.isCallExpression(node)) {
+        return;
+    }
+
+    analyzeCall({ call: node, findings, boundary, project, callables });
+}
+
+function analyzeCall(input) {
+    const { call, findings, boundary, project, callables } = input;
+    const operation = callOperation(call);
+    const precomputable = precomputableOperation(call, operation);
+    if (precomputable) {
+        addFinding({
+            findings,
+            node: call,
+            rule: 'transaction.precomputable-work',
+            operation: precomputable,
+            boundary
+        });
+    }
+    else {
+        for (const callable of resolveCallableBodies(call.getExpression(), project)) {
+            callables.push(analysisRoot(callable));
         }
-        const operation = callOperation(call);
-        const precomputable = precomputableOperation(call, operation);
-        if (precomputable) {
+    }
+
+    for (const callback of call.getArguments().filter(isCallbackReference)) {
+        const callbackBodies = resolveCallableBodies(callback, project);
+        if (callbackBodies.length === 0) {
             addFinding({
                 findings,
-                node: call,
-                rule: 'transaction.precomputable-work',
-                operation: precomputable,
+                node: callback,
+                rule: 'transaction.unresolved-provenance',
+                operation: nodeOperation(callback),
                 boundary
             });
+            continue;
+        }
+        for (const callbackBody of callbackBodies) {
+            callables.push(analysisRoot(callbackBody));
         }
     }
 }
@@ -229,7 +295,7 @@ function isCallbackReference(node) {
     return node !== undefined && (
         Node.isArrowFunction(node) ||
         Node.isFunctionExpression(node) ||
-        Node.isIdentifier(node)
+        node.getType().getCallSignatures().length > 0
     );
 }
 
@@ -247,38 +313,44 @@ function isUpgradeCallbackAssignment(assignment) {
     return Node.isPropertyAccessExpression(left) && left.getName() === 'onupgradeneeded';
 }
 
-function resolveCallbackBodies(node, project) {
+function resolveCallableBodies(node, project, visitedSymbols = new Set()) {
     if (!node) {
         return [];
     }
     if (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) {
         return [node];
     }
-    if (!Node.isIdentifier(node)) {
-        return [];
-    }
-    return resolveDeclarations(node.getSymbol(), project);
+    return resolveDeclarations(node.getSymbol(), project, visitedSymbols);
 }
 
-function resolveDeclarations(symbol, project) {
+function resolveDeclarations(symbol, project, visitedSymbols) {
     if (!symbol) {
         return [];
     }
     const resolved = symbol.isAlias() ? symbol.getAliasedSymbol() : symbol;
+    if (!resolved || visitedSymbols.has(resolved)) {
+        return [];
+    }
+    visitedSymbols.add(resolved);
+
     const bodies = [];
-    for (const declaration of resolved?.getDeclarations() ?? []) {
+    for (const declaration of resolved.getDeclarations()) {
         const source = sourcePath(declaration.getSourceFile());
         if (!isAnalyzedSource(source) || !project.getSourceFile(declaration.getSourceFile().getFilePath())) {
             continue;
         }
-        if (isFunctionDeclaration(declaration)) {
+        if (isFunctionDeclaration(declaration) && functionBody(declaration)) {
             bodies.push(declaration);
             continue;
         }
-        if (Node.isVariableDeclaration(declaration) || Node.isPropertyAssignment(declaration)) {
+        if (
+            Node.isVariableDeclaration(declaration) ||
+            Node.isPropertyAssignment(declaration) ||
+            Node.isPropertyDeclaration(declaration)
+        ) {
             const initializer = declaration.getInitializer();
-            if (initializer && (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))) {
-                bodies.push(initializer);
+            if (initializer) {
+                bodies.push(...resolveCallableBodies(initializer, project, visitedSymbols));
             }
         }
     }
@@ -307,7 +379,11 @@ function declarationName(declaration) {
 }
 
 function callOperation(call) {
-    return call.getExpression().getText().replaceAll(/\s+/gu, ' ');
+    return nodeOperation(call.getExpression());
+}
+
+function nodeOperation(node) {
+    return node.getText().replaceAll(/\s+/gu, ' ');
 }
 
 function addFinding(input) {
