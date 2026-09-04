@@ -47,7 +47,8 @@ describe('organizing repository structure evaluation result validation', () => {
 
         expect(validation.status).toBe(1);
         expect(validation.stdout).toContain(
-            'FAIL: suite must be adaptive-agent-execution, organizing-repository-structure, or rallar-code-writing'
+            'FAIL: suite must be one of: adaptive-agent-execution, organizing-repository-structure, ' +
+                'rallar-code-writing-v1, rallar-code-writing, rallar-code-writing-v2'
         );
     });
 
