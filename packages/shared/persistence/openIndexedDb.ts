@@ -1,16 +1,14 @@
-export interface IndexedDbIndexDefinition {
+interface IndexedDbIndexDefinition {
     readonly name: string;
     readonly keyPath: string | readonly string[];
     readonly unique?: boolean;
 }
 
-export interface IndexedDbStoreDefinition {
+interface IndexedDbStoreDefinition {
     readonly name: string;
     readonly keyPath: string;
     readonly indexes?: readonly IndexedDbIndexDefinition[];
 }
-
-export type IndexedDbStoreMigration = (database: IDBDatabase) => Promise<void>;
 
 interface IndexedDbIndexSchema {
     readonly name: string;
@@ -60,23 +58,12 @@ export class IndexedDbConnection {
 
 export async function openIndexedDbWithStore(
     dbName: string,
-    definition: IndexedDbStoreDefinition,
-    migrate?: IndexedDbStoreMigration
+    definition: IndexedDbStoreDefinition
 ): Promise<IDBDatabase> {
     const store = toIndexedDbStoreSchema(definition);
     return await runSerializedIndexedDbOpen(
         dbName,
-        async () => {
-            const database = await openIndexedDbWithStoreOnce(dbName, store);
-            try {
-                await migrate?.(database);
-                return database;
-            }
-            catch (error) {
-                database.close();
-                throw error;
-            }
-        }
+        () => openIndexedDbWithStoreOnce(dbName, store)
     );
 }
 

@@ -8,7 +8,7 @@ import {
 } from './indexed-db-queue-box-entry-codec.ts';
 import { EntityStatus, type ResourceEntryKeyString } from './ResourceEntry.ts';
 
-export type ReadFairnessStoredQueueEntriesInput = Readonly<{
+type ReadFairnessStoredQueueEntriesInput = Readonly<{
     db: IDBDatabase;
     indexName: string;
     maxToScan: number;

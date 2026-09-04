@@ -123,12 +123,12 @@ describe('admission storage envelopes', () => {
         }
     });
 
-    it('attaches a write token to a legacy tokenless row before exposing the database', async () => {
-        const databaseName = `admission-token-migration-${crypto.randomUUID()}`;
+    it('rejects a persisted data row without the required write token', async () => {
+        const databaseName = `admission-missing-write-token-${crypto.randomUUID()}`;
         const seeded = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
         try {
             await putIndexedDbRows(seeded, 'entries', [{
-                key: 'version:legacy',
+                key: 'version:missing-token',
                 value: '7',
                 expireAtTimestamp: Number.MAX_SAFE_INTEGER
             }]);
@@ -138,20 +138,10 @@ describe('admission storage envelopes', () => {
         }
 
         const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
-        await backend.ready();
-        const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
-        try {
-            const snapshot = await readIndexedDbAdmissionSnapshot(
-                database,
-                'entries',
-                { kind: 'key', key: 'version:legacy' }
-            );
-            expect(snapshot.stored[0]?.writeToken).toEqual(expect.any(String));
-            expect(await backend.read('version:legacy', decodeVersion)).toBe(7);
-        }
-        finally {
-            database.close();
-        }
+        await expect(backend.read('version:missing-token', decodeVersion)).rejects.toMatchObject({
+            name: 'ALAdmissionCorruptionError',
+            key: 'version:missing-token'
+        });
     });
 
     it('uses the supplied clock for memory and IndexedDB expiry decisions', async () => {
@@ -233,7 +223,7 @@ describe('admission storage envelopes', () => {
     });
 
     it.each(['read', 'list'] as const)(
-        'does not let %s expiry cleanup delete a concurrent legacy refresh',
+        'does not let %s expiry cleanup delete a concurrent refresh',
         async (operation) => {
             const databaseName = `admission-expiry-race-${operation}-${crypto.randomUUID()}`;
             const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', () => 10);
@@ -250,7 +240,8 @@ describe('admission storage envelopes', () => {
                     refresh.objectStore('entries').put({
                         key: 'version:refreshed',
                         value: '8',
-                        expireAtTimestamp: Number.MAX_SAFE_INTEGER
+                        expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                        writeToken: 'replacement'
                     });
                 }
                 return Reflect.apply(transactionImplementation, this, args);
@@ -274,7 +265,8 @@ describe('admission storage envelopes', () => {
                 expect(snapshot.stored).toEqual([{
                     key: 'version:refreshed',
                     value: '8',
-                    expireAtTimestamp: Number.MAX_SAFE_INTEGER
+                    expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                    writeToken: 'replacement'
                 }]);
             }
             finally {
@@ -282,36 +274,6 @@ describe('admission storage envelopes', () => {
             }
         }
     );
-
-    it('leaves an observed expired legacy row for a current writer to migrate safely', async () => {
-        const databaseName = `admission-tokenless-expiry-${crypto.randomUUID()}`;
-        const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', () => 10);
-        await backend.ready();
-        const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
-        try {
-            await putIndexedDbRows(database, 'entries', [{
-                key: 'version:legacy',
-                value: '7',
-                expireAtTimestamp: 1
-            }]);
-
-            await expect(backend.read('version:legacy', decodeVersion)).resolves.toBeUndefined();
-            await expect(backend.list('version:', decodeVersion)).resolves.toEqual([]);
-            const snapshot = await readIndexedDbAdmissionSnapshot(
-                database,
-                'entries',
-                { kind: 'key', key: 'version:legacy' }
-            );
-            expect(snapshot.stored).toEqual([{
-                key: 'version:legacy',
-                value: '7',
-                expireAtTimestamp: 1
-            }]);
-        }
-        finally {
-            database.close();
-        }
-    });
 
     it('rejects malformed IndexedDB envelopes on direct and listed reads', async () => {
         const databaseName = `admission-corrupt-${crypto.randomUUID()}`;
@@ -321,7 +283,8 @@ describe('admission storage envelopes', () => {
             await putIndexedDbRows(database, 'entries', [{
                 key: 'version:bad',
                 value: '7',
-                expireAtTimestamp: NaN
+                expireAtTimestamp: NaN,
+                writeToken: 'write-token'
             }]);
             const corruption = { name: 'ALAdmissionCorruptionError', key: 'version:bad' };
             await expect(backend.read('version:bad', decodeVersion)).rejects.toMatchObject(corruption);

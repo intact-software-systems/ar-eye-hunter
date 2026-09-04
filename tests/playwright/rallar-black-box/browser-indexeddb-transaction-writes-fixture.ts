@@ -7,7 +7,6 @@ import {
     writeIndexedDbAdmissionMutations
 } from '../../../packages/shared/alm/indexed-db-admission-storage.ts';
 import {
-    encodeStoredResourceEntry,
     type StoredResourceEntry
 } from '../../../packages/shared/queuebox/indexed-db-queue-box-entry-codec.ts';
 import { IndexedDbQueueBox } from '../../../packages/shared/queuebox/indexed-db-queue-box.ts';
@@ -23,29 +22,26 @@ const STORE_NAME = 'entries';
 export interface IndexedDbTransactionWriteBrowserProbe {
     readonly databaseVersion: number;
     readonly fairnessIndexPresent: boolean;
-    readonly migratedResource: string | undefined;
-    readonly migratedRevision: number;
+    readonly storedResource: string | undefined;
+    readonly storedRevision: number;
     readonly concurrentResults: readonly string[];
     readonly durableWinner: string | undefined;
-    readonly admissionTokenMigrated: boolean;
+    readonly admissionTokenPresent: boolean;
     readonly guardedAdmissionBatchRolledBack: boolean;
 }
 
 export async function runIndexedDbTransactionWriteBrowserProbe(): Promise<IndexedDbTransactionWriteBrowserProbe> {
     const dbName = `playwright-indexeddb-queue-${crypto.randomUUID()}`;
-    const legacyEntry = createQueueEntry('legacy', 'legacy-value');
-    const encoded = encodeStoredResourceEntry(legacyEntry, 0);
-    const { revision: _revision, ...legacyRow } = encoded;
-    await createLegacyQueueDatabase(dbName, legacyRow);
-
+    const storedEntry = createQueueEntry('stored', 'stored-value');
     const firstQueue = new IndexedDbQueueBox({ dbName, storeName: STORE_NAME });
+    await firstQueue.enqueue(storedEntry);
     const secondQueue = new IndexedDbQueueBox({ dbName, storeName: STORE_NAME });
-    const [migrated, concurrentlyMigrated] = await Promise.all([
-        firstQueue.getItem(legacyEntry.key),
-        secondQueue.getItem(legacyEntry.key)
+    const [firstRead, secondRead] = await Promise.all([
+        firstQueue.getItem(storedEntry.key),
+        secondQueue.getItem(storedEntry.key)
     ]);
-    if (concurrentlyMigrated?.resource !== migrated?.resource) {
-        throw new Error('Concurrent IndexedDB migration readers did not converge');
+    if (secondRead?.resource !== firstRead?.resource) {
+        throw new Error('Concurrent IndexedDB readers did not observe the same stored row');
     }
     const firstCandidate = createQueueEntry('concurrent', 'first-value');
     const secondCandidate = createQueueEntry('concurrent', 'second-value');
@@ -54,35 +50,57 @@ export async function runIndexedDbTransactionWriteBrowserProbe(): Promise<Indexe
         secondQueue.enqueueIfAbsent(secondCandidate)
     ]);
     const durableWinner = await firstQueue.getItem(firstCandidate.key);
-    const databaseState = await inspectQueueDatabase(dbName, legacyEntry.key);
+    const databaseState = await inspectQueueDatabase(dbName, storedEntry.key);
     const admissionState = await runAdmissionStorageProbe();
 
     return {
         ...databaseState,
         ...admissionState,
-        migratedResource: migrated?.resource,
+        storedResource: firstRead?.resource,
         concurrentResults: concurrent.map((entry) => entry.resource),
         durableWinner: durableWinner?.resource
     };
 }
 
 async function runAdmissionStorageProbe(): Promise<
-    Pick<IndexedDbTransactionWriteBrowserProbe, 'admissionTokenMigrated' | 'guardedAdmissionBatchRolledBack'>
+    Pick<IndexedDbTransactionWriteBrowserProbe, 'admissionTokenPresent' | 'guardedAdmissionBatchRolledBack'>
 > {
     const dbName = `playwright-indexeddb-admission-${crypto.randomUUID()}`;
     const storeName = 'admission';
-    await createTokenlessAdmissionDatabase(dbName, storeName);
     const database = await openIndexedDbAdmissionDatabase(dbName, storeName);
     try {
-        const migrated = await readIndexedDbAdmissionSnapshot(
+        const initial = await readIndexedDbAdmissionSnapshot(
             database,
             storeName,
-            { kind: 'key', key: 'legacy' }
+            { kind: 'revision' }
+        );
+        const initialCommitted = await writeIndexedDbAdmissionMutations({
+            db: database,
+            storeName,
+            expectedRevision: initial.revision,
+            mutations: [{
+                kind: 'set',
+                stored: {
+                    key: 'current',
+                    value: 'current',
+                    expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                    writeToken: 'current-row-token'
+                }
+            }],
+            revisionWrite: computeIndexedDbAdmissionRevisionWrite(initial.revision)
+        });
+        if (!initialCommitted) {
+            throw new Error('Initial IndexedDB admission write conflicted');
+        }
+        const stored = await readIndexedDbAdmissionSnapshot(
+            database,
+            storeName,
+            { kind: 'key', key: 'current' }
         );
         const committed = await writeIndexedDbAdmissionMutations({
             db: database,
             storeName,
-            expectedRevision: migrated.revision,
+            expectedRevision: stored.revision,
             mutations: [
                 {
                     kind: 'set',
@@ -95,21 +113,21 @@ async function runAdmissionStorageProbe(): Promise<
                 },
                 {
                     kind: 'remove-if-write-token',
-                    key: 'legacy',
-                    expectedWriteToken: 'not-the-migrated-token'
+                    key: 'current',
+                    expectedWriteToken: 'not-the-current-token'
                 }
             ],
-            revisionWrite: computeIndexedDbAdmissionRevisionWrite(migrated.revision)
+            revisionWrite: computeIndexedDbAdmissionRevisionWrite(stored.revision)
         });
         const afterConflict = await readIndexedDbAdmissionSnapshot(
             database,
             storeName,
-            { kind: 'prefixes', prefixes: ['legacy', 'must-roll-back'] }
+            { kind: 'prefixes', prefixes: ['current', 'must-roll-back'] }
         );
         return {
-            admissionTokenMigrated: typeof migrated.stored[0]?.writeToken === 'string',
+            admissionTokenPresent: stored.stored[0]?.writeToken === 'current-row-token',
             guardedAdmissionBatchRolledBack: !committed &&
-                afterConflict.stored.some((row) => row.key === 'legacy') &&
+                afterConflict.stored.some((row) => row.key === 'current') &&
                 !afterConflict.stored.some((row) => row.key === 'must-roll-back')
         };
     }
@@ -138,50 +156,16 @@ function createQueueEntry(resourceId: string, resource: string): ResourceEntry {
     };
 }
 
-async function createLegacyQueueDatabase(
-    dbName: string,
-    row: Omit<StoredResourceEntry, 'revision'>
-): Promise<void> {
-    const request = indexedDB.open(dbName, 1);
-    request.onupgradeneeded = () => {
-        request.result
-            .createObjectStore(STORE_NAME, { keyPath: 'keyString' })
-            .put(row);
-    };
-    const database = await readIndexedDbRequest(request);
-    database.close();
-}
-
-async function createTokenlessAdmissionDatabase(
-    dbName: string,
-    storeName: string
-): Promise<void> {
-    const request = indexedDB.open(dbName, 1);
-    request.onupgradeneeded = () => {
-        request.result
-            .createObjectStore(storeName, { keyPath: 'key' })
-            .put({
-                key: 'legacy',
-                value: 'legacy',
-                expireAtTimestamp: Number.MAX_SAFE_INTEGER
-            });
-    };
-    const database = await readIndexedDbRequest(request);
-    database.close();
-}
-
 async function inspectQueueDatabase(
     dbName: string,
-    legacyKey: Key
-): Promise<
-    Pick<IndexedDbTransactionWriteBrowserProbe, 'databaseVersion' | 'fairnessIndexPresent' | 'migratedRevision'>
-> {
+    storedKey: Key
+): Promise<Pick<IndexedDbTransactionWriteBrowserProbe, 'databaseVersion' | 'fairnessIndexPresent' | 'storedRevision'>> {
     const database = await readIndexedDbRequest(indexedDB.open(dbName));
     try {
         const transaction = database.transaction(STORE_NAME, 'readonly');
         const store = transaction.objectStore(STORE_NAME);
         const row = await readIndexedDbRequest<StoredResourceEntry>(
-            store.get(toKeyAsString(legacyKey))
+            store.get(toKeyAsString(storedKey))
         );
         await waitForTransaction(transaction);
         return {
@@ -189,7 +173,7 @@ async function inspectQueueDatabase(
             fairnessIndexPresent: store.indexNames.contains(
                 IndexedDbQueueBox.FAIRNESS_INDEX_NAME
             ),
-            migratedRevision: row.revision
+            storedRevision: row.revision
         };
     }
     finally {

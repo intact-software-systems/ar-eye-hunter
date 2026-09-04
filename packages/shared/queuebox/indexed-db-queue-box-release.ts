@@ -12,7 +12,7 @@ import {
 } from './queue-box-types.ts';
 import { EntityStatus, toKeyAsString, type Key, type ResourceEntry } from './ResourceEntry.ts';
 
-export type ComputeIndexedDbQueueReleaseInput = Readonly<{
+type ComputeIndexedDbQueueReleaseInput = Readonly<{
     currentEntries: ReadonlyMap<string, ResourceEntry>;
     disposition: ResourceInboxReleaseDisposition;
     releasedAt: Temporal.Instant;
@@ -20,7 +20,7 @@ export type ComputeIndexedDbQueueReleaseInput = Readonly<{
     storedEntries: ReadonlyMap<string, StoredResourceEntry>;
 }>;
 
-export type ComputedIndexedDbQueueRelease = Readonly<{
+type ComputedIndexedDbQueueRelease = Readonly<{
     mutations: readonly ComputedIndexedDbQueueMutation[];
     result: Map<Key, ResourceEntry>;
 }>;

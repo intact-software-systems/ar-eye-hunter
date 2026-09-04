@@ -27,7 +27,6 @@ import {
     readStoredQueueEntry
 } from './indexed-db-queue-box-store.ts';
 import { IndexedDbQueueWriteConflictError } from './indexed-db-queue-write-conflict-error.ts';
-import { migrateLegacyIndexedDbQueueEntries } from './migrate-legacy-indexed-db-queue-entries.ts';
 import {
     QueueBoxResourceEntryRepository,
     ResourceInboxFairnessReservationInput,
@@ -94,24 +93,20 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             if (!IndexedDbQueueBox.isSupported()) {
                 throw new Error('IndexedDB is not available in this runtime');
             }
-            return await openIndexedDbWithStore(
-                dbName,
-                {
-                    name: this.#storeName,
-                    keyPath: 'keyString',
-                    indexes: [{
-                        name: IndexedDbQueueBox.FAIRNESS_INDEX_NAME,
-                        keyPath: [
-                            'typeId',
-                            'status',
-                            'fairnessDueEpochMs',
-                            'keyString'
-                        ],
-                        unique: false
-                    }]
-                },
-                (database) => migrateLegacyIndexedDbQueueEntries(database, this.#storeName)
-            );
+            return await openIndexedDbWithStore(dbName, {
+                name: this.#storeName,
+                keyPath: 'keyString',
+                indexes: [{
+                    name: IndexedDbQueueBox.FAIRNESS_INDEX_NAME,
+                    keyPath: [
+                        'typeId',
+                        'status',
+                        'fairnessDueEpochMs',
+                        'keyString'
+                    ],
+                    unique: false
+                }]
+            });
         });
     }
 
