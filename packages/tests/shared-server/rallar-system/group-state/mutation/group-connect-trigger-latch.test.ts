@@ -180,8 +180,8 @@ describe('connect intent handoff', () => {
     });
 
     // The superseded candidate is a stored identity the petition compares
-    // against, so every shape it can take is checked closed: a row written
-    // before the field existed is corrupt until the migration backfills it.
+    // against, so every persisted shape is checked closed. Missing current
+    // fields are corruption.
     const SUPERSEDED = { groupRevision: 7, presenceRevision: 3, version: 4, state: 'active' } as const;
 
     it.each([
