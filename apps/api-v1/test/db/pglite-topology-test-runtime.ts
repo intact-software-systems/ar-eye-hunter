@@ -10,6 +10,7 @@ import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     decodeJsonWireText,
+    hashMutationCommand,
     type JsonWireObject,
     type JsonWireValue
 } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -22,6 +23,7 @@ import {
 import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import type { GroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
+import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import {
     createRtcTopologyOutboxPublisher
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
@@ -114,12 +116,12 @@ export function requireTopologyMutationOwners(
     };
 }
 
-export function topologyConfigCommand(
+export async function topologyConfigCommand(
     groupRef: GroupRef,
     requestId: string,
     topologyKind: 'tree' | 'mesh'
-): GroupTopologyConfigMutationCommand {
-    return {
+): Promise<GroupTopologyConfigMutationCommand> {
+    const command = {
         operation: 'putConfig',
         aggregateRef: groupRef,
         commandId: requestId,
@@ -130,15 +132,20 @@ export function topologyConfigCommand(
             ttlMs: null,
             expiresAtEpochMs: null
         }
+    } as const;
+    return {
+        ...command,
+        commandHash: await hashMutationCommand(command),
+        capturedAtEpochMs: 1_000
     };
 }
 
-export function topologyOverrideCommand(
+export async function topologyOverrideCommand(
     groupRef: GroupRef,
     requestId: string,
     topologyKind: 'tree' | 'mesh'
-): GroupTopologyConfigMutationCommand {
-    return {
+): Promise<GroupTopologyConfigMutationCommand> {
+    const command = {
         operation: 'putOverride',
         aggregateRef: groupRef,
         commandId: requestId,
@@ -149,6 +156,11 @@ export function topologyOverrideCommand(
             ttlMs: 60_000,
             expiresAtEpochMs: null
         }
+    } as const;
+    return {
+        ...command,
+        commandHash: await hashMutationCommand(command),
+        capturedAtEpochMs: 1_000
     };
 }
 
@@ -241,22 +253,24 @@ async function persistAndReserveTopologyWork(
     commandId: string
 ): Promise<ReservedPGliteTopologyWork> {
     const { sql, groupRef, groupSnapshot, nowEpochMs, resourceInbox } = setup;
-    const workEntry = await sql.begin((transaction) =>
-        new RtcTopologyOutboxWriter({ recordWrite: () => undefined }).write(transaction, {
-            commandId,
-            resourceId: `${commandId}:rtc-topology-recompute:explicit`,
-            aggregateRef: groupRef,
-            acceptedCausalRevision: groupSnapshot.causalRevision,
-            groupSnapshot,
-            effectKind: 'rtc-topology-recompute',
-            payloadKind: 'group-revision',
-            createdAtEpochMs: nowEpochMs,
-            expireAtEpochMs: FUTURE_MS,
-            senderId: 'owner',
-            requestOptions: toCanonicalGroupTopologyConfigPatch({}),
-            publish: true
-        })
+    const outboxWrite = computeRtcTopologyOutboxInsert({
+        commandId,
+        resourceId: `${commandId}:rtc-topology-recompute:explicit`,
+        aggregateRef: groupRef,
+        acceptedCausalRevision: groupSnapshot.causalRevision,
+        groupSnapshot,
+        effectKind: 'rtc-topology-recompute',
+        payloadKind: 'group-revision',
+        createdAtEpochMs: nowEpochMs,
+        expireAtEpochMs: FUTURE_MS,
+        senderId: 'owner',
+        requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+        publish: true
+    });
+    await sql.begin((transaction) =>
+        new RtcTopologyOutboxWriter({ recordWrite: () => undefined }).write(transaction, outboxWrite)
     );
+    const workEntry = outboxWrite.entry;
     await sql`
     update resource_inbox
     set ri_status = 'RESERVED', ri_attempts = 1,

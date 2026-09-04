@@ -12,6 +12,8 @@ import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-sy
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import type { ClientMutationComputedAppliedWrite } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
+import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
@@ -678,7 +680,7 @@ Deno.test(
             });
             const scope = { applicationId: 'pglite-app', workspaceId: 'pglite-workspace' };
 
-            const prepareClientWrite = async (principalId: string, commandId: string): Promise<ClientMutationComputedAppliedWrite> => {
+            const readComputeValidateClientWrite = async (principalId: string, commandId: string): Promise<ClientMutationComputedAppliedWrite> => {
                 const authority = {
                     clientId: principalId,
                     accessToken: `${principalId}-token`,
@@ -712,8 +714,8 @@ Deno.test(
                     toClientMutationIssuedSessionAuthority(authority, scope, 'upsertPrincipal')
                 );
                 const read = await service.read(command);
-                const computed = service.compute(command, read);
-                service.validate(command, read, computed);
+                const computed = computeClientMutation({ command, read });
+                validateClientMutation({ command, read, computed });
                 assert.equal(computed.outcome, 'write');
                 if (computed.outcome !== 'write') {
                     throw new Error('Expected applied client write');
@@ -722,7 +724,7 @@ Deno.test(
                 return computed;
             };
 
-            const committed = await prepareClientWrite('alice', 'pglite-client-commit');
+            const committed = await readComputeValidateClientWrite('alice', 'pglite-client-commit');
             await sql.begin(async (transaction) => {
                 await service.write(transaction, committed);
             });
@@ -734,11 +736,11 @@ Deno.test(
             );
             assert.equal((await events.listClientEvents({ ...scope, principalId: 'alice' })).length, 1);
             const outbox = createPSqlResourceInboxRepository(sql);
-            for (const entry of committed.outboxEntries) {
-                assert.equal((await outbox.entries.findByKey(entry.key))?.typeId, 'WS_OUTBOX');
+            for (const write of committed.outboxWrites) {
+                assert.equal((await outbox.entries.findByKey(write.entry.key))?.typeId, 'WS_OUTBOX');
             }
 
-            const rolledBack = await prepareClientWrite('bob', 'pglite-client-rollback');
+            const rolledBack = await readComputeValidateClientWrite('bob', 'pglite-client-rollback');
             await assert.rejects(
                 async () => {
                     await sql.begin(async (transaction) => {
@@ -753,8 +755,8 @@ Deno.test(
                 undefined
             );
             assert.equal((await events.listClientEvents({ ...scope, principalId: 'bob' })).length, 0);
-            for (const entry of rolledBack.outboxEntries) {
-                assert.equal(await outbox.entries.findByKey(entry.key), null);
+            for (const write of rolledBack.outboxWrites) {
+                assert.equal(await outbox.entries.findByKey(write.entry.key), null);
             }
         });
     }

@@ -105,9 +105,7 @@ Deno.test(
                         fixture.requestId
                     ) ?? null,
                     outbox: await Promise.all(
-                        fixture.computed.outboxWrites.map((write) =>
-                            outbox.entries.findByKey(write.entry.key)
-                        )
+                        fixture.computed.outboxWrites.map((write) => outbox.entries.findByKey(write.entry.key))
                     ),
                     events: await fixture.events.listClientEvents({
                         ...fixture.scope,
@@ -666,7 +664,7 @@ Deno.test(
                 outboxWriter
             });
             const staleOverrideRead = await baselineMutation.configMutation.read(
-                topologyOverrideCommand(groupRef, 'pglite-topology-b', 'mesh')
+                await topologyOverrideCommand(groupRef, 'pglite-topology-b', 'mesh')
             );
             let staleReadCount = 0;
             let delegatedReadCount = 0;
