@@ -2,7 +2,6 @@ import {
     computeGroupActivationCondition,
     GROUP_ACTIVATION_HYSTERESIS_WIDTH,
     resolveCoverageBasisLayoutIdentity,
-    resolveGroupActivationRemediation,
     resolveGroupBusinessLiveness
 } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
 import { resolveNewerEvidenceWatermark } from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
@@ -56,7 +55,6 @@ function isSupersededByStoredEvidence(
 function isSamePublishedStatus(next: GroupActivationStatus, stored: GroupActivationStatus | null): boolean {
     return stored !== null &&
         stored.condition === next.condition &&
-        stored.remediation === next.remediation &&
         isSameGroupLayoutIdentity(stored.coverageBasisLayoutIdentity, next.coverageBasisLayoutIdentity) &&
         stored.formationEpoch === next.formationEpoch;
 }
@@ -135,14 +133,6 @@ export function computeUpdateGroupActivationStatus(
                 previousCondition: group.activationStatus?.condition,
                 hysteresisWidth: GROUP_ACTIVATION_HYSTERESIS_WIDTH
             })
-        }),
-        remediation: resolveGroupActivationRemediation({
-            business,
-            lifecycleState: group.lifecycleState,
-            attemptBudgetExhausted,
-            replanQueued: command.input.replanQueued,
-            layoutStale: command.input.layoutStale,
-            replanning: resolution.policy.topology.replanning
         }),
         coverageRate: command.input.coverageRate,
         coverageBasisLayoutIdentity: basis,

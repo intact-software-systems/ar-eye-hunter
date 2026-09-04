@@ -234,16 +234,6 @@ export type GroupMutationCommand =
                      * the one that may publish a dwell-held band.
                      */
                     dwellSatisfied: boolean;
-                    /**
-                     * Remediation names whose move it is, and its two
-                     * transient inputs are not on the group row: the
-                     * petitioning topology cycle already holds the planning
-                     * authority they come from, so they travel as
-                     * observations beside the coverage and `compute` still
-                     * derives the axis purely.
-                     */
-                    replanQueued: boolean;
-                    layoutStale: boolean;
                 }>;
         }>
     )

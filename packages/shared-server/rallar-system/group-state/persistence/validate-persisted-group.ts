@@ -1,7 +1,4 @@
-import {
-    GROUP_ACTIVATION_CONDITIONS,
-    GROUP_ACTIVATION_REMEDIATIONS
-} from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
+import { GROUP_ACTIVATION_CONDITIONS } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
 import { GROUP_EVIDENCE_WATERMARK_KEYS } from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
 import { GROUP_ACTIVATION_STATUS_KEYS } from '@shared/api/group-lifecycle/group-activation-status.ts';
 import {
@@ -192,11 +189,6 @@ function validateStoredGroupActivationStatus(activationStatus: StoredGroupRecord
         activationStatus.condition,
         GROUP_ACTIVATION_CONDITIONS,
         'Stored group activationStatus condition'
-    );
-    requireOneOf(
-        activationStatus.remediation,
-        GROUP_ACTIVATION_REMEDIATIONS,
-        'Stored group activationStatus remediation'
     );
     requireCoverageRate(activationStatus.coverageRate, 'Stored group activationStatus coverageRate');
     requireNonNegativeSafeInteger(

@@ -4828,7 +4828,6 @@ components:
         with no basis would have to invent the coverage it reports.
       required:
         - condition
-        - remediation
         - coverageRate
         - coverageBasisLayoutIdentity
         - formationEpoch
@@ -4838,9 +4837,6 @@ components:
         condition:
           type: string
           enum: [failed, inactive, degraded, active, initialising]
-        remediation:
-          type: string
-          enum: [none, replan-queued, awaiting-application]
         coverageRate:
           type: number
           minimum: 0

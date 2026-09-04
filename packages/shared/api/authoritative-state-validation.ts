@@ -1,10 +1,7 @@
 import { toScopedOverlayId } from './api-type-utils.ts';
 import type { ClientEvent, ClientSnapshot } from './client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from './group-client-views.ts';
-import {
-    GROUP_ACTIVATION_CONDITIONS,
-    GROUP_ACTIVATION_REMEDIATIONS
-} from './group-lifecycle/compute-group-activation-condition.ts';
+import { GROUP_ACTIVATION_CONDITIONS } from './group-lifecycle/compute-group-activation-condition.ts';
 import { GROUP_EVIDENCE_WATERMARK_KEYS } from './group-lifecycle/compute-group-formation-reading.ts';
 import { GROUP_ACTIVATION_STATUS_KEYS } from './group-lifecycle/group-activation-status.ts';
 import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
@@ -1064,7 +1061,6 @@ function validateGroupSnapshotActivationStatus(status: Record<string, unknown>):
     const label = 'GroupSnapshot.group.activationStatus';
     exact(status, GROUP_ACTIVATION_STATUS_KEYS, label);
     enumValue(status.condition, GROUP_ACTIVATION_CONDITIONS, `${label}.condition`);
-    enumValue(status.remediation, GROUP_ACTIVATION_REMEDIATIONS, `${label}.remediation`);
     coverageRate(status.coverageRate, `${label}.coverageRate`);
     nonNegativeInteger(status.formationEpoch, `${label}.formationEpoch`);
     nonNegativeInteger(status.confirmedAtEpochMs, `${label}.confirmedAtEpochMs`);
