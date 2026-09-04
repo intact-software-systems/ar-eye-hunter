@@ -31,7 +31,8 @@ export function decodeGroupStateAppInboxCommand(
         type === AppInboxType.GROUP_PRESENCE_EXPIRE ||
         type === AppInboxType.GROUP_FORMATION_AUTOMATION ||
         type === AppInboxType.GROUP_FORMATION_CRITERION ||
-        type === AppInboxType.GROUP_TOPOLOGY_PUBLICATION
+        type === AppInboxType.GROUP_TOPOLOGY_PUBLICATION ||
+        type === AppInboxType.GROUP_ACTIVATION_STATUS
     ) {
         return decodePreparedGroupMutationIdentity(value);
     }
@@ -119,7 +120,8 @@ function isAuthenticatedGroupMutationType(
         type !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP &&
         type !== AppInboxType.GROUP_FORMATION_AUTOMATION &&
         type !== AppInboxType.GROUP_FORMATION_CRITERION &&
-        type !== AppInboxType.GROUP_TOPOLOGY_PUBLICATION;
+        type !== AppInboxType.GROUP_TOPOLOGY_PUBLICATION &&
+        type !== AppInboxType.GROUP_ACTIVATION_STATUS;
 }
 
 function toGroupMutationOperation(
