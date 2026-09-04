@@ -955,6 +955,29 @@
       "description": "Drives the three lifecycle transition commands on a managed-preset group -- forming to connecting to active to reconfiguring and back -- with formation-epoch assertions, a non-manager denial, and an illegal-transition denial."
     },
     {
+      "id": "api-v1-group-status-lifecycle",
+      "recipe": "tests/api-v1/api-v1-group-status-lifecycle.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-status-lifecycle",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Exercises both legs of the activation criterion: a threshold group auto-activates from the evidence produced by its own establishment planning pass, and a deadline group with unconfirmed links fails formation below the floor -- typed outcome, attempt increment, and a parked DORMANT series at the attempt cap."
+    },
+    {
       "id": "api-v1-group-formation-criterion",
       "recipe": "tests/api-v1/api-v1-group-formation-criterion.json",
       "category": "api-v1-black-box",
