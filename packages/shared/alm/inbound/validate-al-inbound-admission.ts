@@ -32,11 +32,10 @@ export interface ValidateALInboundBufferedReleaseInput {
     readonly computed: ALInboundCommitBundle;
 }
 
-interface AppendDifferenceInput<Value> {
-    readonly issues: ALInboundAdmissionValidationIssue[];
+interface AppendDifferenceInput {
     readonly path: string;
-    readonly expected: Value;
-    readonly candidate: Value;
+    readonly expected: unknown;
+    readonly candidate: unknown;
 }
 
 export function validateALInboundAdmission(
@@ -83,17 +82,15 @@ function validateALInboundComputedBundle(
             return issues;
         }
         appendDifference({
-            issues,
             path: 'computed.senderId',
             expected: expected.senderId,
             candidate: computed.senderId
-        });
+        }, issues);
         appendDifference({
-            issues,
             path: 'computed.expectedVersion',
             expected: expected.expectedVersion,
             candidate: computed.expectedVersion
-        });
+        }, issues);
         appendArrayDifferences(issues, 'computed.mutations', expected.mutations, computed.mutations);
         appendArrayDifferences(issues, 'computed.durableEffects', expected.durableEffects, computed.durableEffects);
     }
@@ -143,30 +140,38 @@ function appendArrayDifferences<Value>(
     }
     for (let index = 0; index < Math.min(expected.length, candidate.length); index += 1) {
         appendDifference({
-            issues,
             path: `${path}[${index}]`,
             expected: expected[index],
             candidate: candidate[index]
-        });
+        }, issues);
     }
 }
 
-function appendDifference<Value>(
-    input: AppendDifferenceInput<Value>
+function appendDifference(
+    input: AppendDifferenceInput,
+    issues: ALInboundAdmissionValidationIssue[]
 ): void {
-    const { issues, path, expected, candidate } = input;
-    if (!isExactDataValue(expected, candidate, new WeakMap())) {
+    const { path, expected, candidate } = input;
+    if (!isExactDataValue(expected, candidate)) {
         issues.push(toValidationIssue(path, 'differs from the computed value'));
     }
 }
 
-function isExactDataValue<Value>(
-    expected: Value,
-    candidate: Value,
-    compared: WeakMap<object, WeakSet<object>>
+function isExactDataValue(
+    expected: unknown,
+    candidate: unknown
 ): boolean {
     if (Object.is(expected, candidate)) {
         return true;
+    }
+    if (expected instanceof Temporal.Instant) {
+        return candidate instanceof Temporal.Instant && expected.equals(candidate);
+    }
+    if (expected instanceof Temporal.PlainDateTime) {
+        return candidate instanceof Temporal.PlainDateTime && expected.equals(candidate);
+    }
+    if (expected instanceof Temporal.PlainTime) {
+        return candidate instanceof Temporal.PlainTime && expected.equals(candidate);
     }
     if (
         expected === null || candidate === null ||
@@ -175,22 +180,6 @@ function isExactDataValue<Value>(
     ) {
         return false;
     }
-    if (expected instanceof Temporal.Instant) {
-        return candidate instanceof Temporal.Instant && Temporal.Instant.compare(expected, candidate) === 0;
-    }
-    if (expected instanceof Temporal.PlainDateTime) {
-        return candidate instanceof Temporal.PlainDateTime && Temporal.PlainDateTime.compare(expected, candidate) === 0;
-    }
-    if (expected instanceof Temporal.PlainTime) {
-        return candidate instanceof Temporal.PlainTime && Temporal.PlainTime.compare(expected, candidate) === 0;
-    }
-
-    const previous = compared.get(expected) ?? new WeakSet<object>();
-    if (previous.has(candidate)) {
-        return true;
-    }
-    previous.add(candidate);
-    compared.set(expected, previous);
 
     const expectedFields = Object.getOwnPropertyDescriptors(expected);
     const candidateFields = Object.getOwnPropertyDescriptors(candidate);
@@ -199,12 +188,8 @@ function isExactDataValue<Value>(
     return expectedKeys.length === candidateKeys.length && expectedKeys.every((key) => {
         const expectedField = Object.getOwnPropertyDescriptor(expected, key);
         const candidateField = Object.getOwnPropertyDescriptor(candidate, key);
-        return Boolean(
-            expectedField && candidateField &&
-                Object.prototype.hasOwnProperty.call(expectedField, 'value') &&
-                Object.prototype.hasOwnProperty.call(candidateField, 'value') &&
-                isExactDataValue(expectedField.value, candidateField.value, compared)
-        );
+        return isDataProperty(expectedField) && isDataProperty(candidateField) &&
+            isExactDataValue(expectedField.value, candidateField.value);
     });
 }
 
@@ -215,7 +200,7 @@ function hasExactDataFields(candidate: object, fields: readonly string[]): boole
         keys.length === fields.length &&
         fields.every((field) => {
             const descriptor = descriptors[field];
-            return descriptor?.enumerable === true && Object.prototype.hasOwnProperty.call(descriptor, 'value');
+            return descriptor?.enumerable === true && isDataProperty(descriptor);
         });
 }
 
@@ -225,6 +210,12 @@ function hasExactArrayShape<Value>(candidate: readonly Value[]): boolean {
     }
     const descriptors = Object.getOwnPropertyDescriptors(candidate);
     return Reflect.ownKeys(descriptors).length === candidate.length + 1;
+}
+
+function isDataProperty(
+    descriptor: PropertyDescriptor | undefined
+): descriptor is PropertyDescriptor & Readonly<{ value: unknown; }> {
+    return descriptor !== undefined && Object.prototype.hasOwnProperty.call(descriptor, 'value');
 }
 
 function toValidationIssue(

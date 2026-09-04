@@ -201,7 +201,7 @@ describe('admission storage envelopes', () => {
         }
     });
 
-    it('rejects malformed IndexedDB metadata before a custom row projection', async () => {
+    it('rejects malformed IndexedDB metadata when reading cleanup rows', async () => {
         const databaseName = `admission-custom-read-corrupt-${crypto.randomUUID()}`;
         const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
         try {
@@ -215,8 +215,7 @@ describe('admission storage envelopes', () => {
             await expect(readIndexedDbAdmissionSnapshot(
                 database,
                 'entries',
-                { kind: 'key', key: 'version:bad' },
-                (_stored, key) => key
+                { kind: 'key', key: 'version:bad' }
             )).rejects.toMatchObject({ name: 'ALAdmissionCorruptionError', key: 'version:bad' });
         }
         finally {

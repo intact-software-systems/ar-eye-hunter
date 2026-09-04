@@ -15,8 +15,10 @@ import {
     computeIndexedDbAdmissionRevisionWrite,
     openIndexedDbAdmissionDatabase,
     readIndexedDbAdmissionSnapshot,
+    toALAdmissionStoredValue,
     writeIndexedDbAdmissionMutations,
-    type IndexedDbAdmissionMutation
+    type IndexedDbAdmissionMutation,
+    type IndexedDbAdmissionStoredRow
 } from './indexed-db-admission-storage.ts';
 
 export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
@@ -130,7 +132,7 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWriteContext {
     }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
-        let stored = this.#pending.get(key);
+        let stored: IndexedDbAdmissionStoredRow | ALAdmissionStoredValue | undefined = this.#pending.get(key);
         if (!this.#pending.has(key)) {
             stored = (
                 await readIndexedDbAdmissionSnapshot(
@@ -157,13 +159,13 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWriteContext {
             )
         ).stored;
         const nowMs = this.#nowMs();
-        for (const stored of storedEntries) {
-            if (stored.key === AL_ADMISSION_REVISION_KEY || this.#pending.has(stored.key)) {
+        for (const row of storedEntries) {
+            if (row.key === AL_ADMISSION_REVISION_KEY || this.#pending.has(row.key)) {
                 continue;
             }
-            const [value, expired] = decodeAdmissionValue(stored, stored.key, decode, nowMs);
+            const [value, expired] = decodeAdmissionValue(row, row.key, decode, nowMs);
             if (!expired) {
-                values.set(stored.key, value);
+                values.set(row.key, value);
             }
         }
         for (const [key, stored] of this.#pending) {
@@ -205,12 +207,16 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWriteContext {
 }
 
 function decodeAdmissionValue<V>(
-    stored: ALAdmissionStoredValue,
+    stored: IndexedDbAdmissionStoredRow | ALAdmissionStoredValue,
     key: string,
     decode: ALAdmissionDecoder<V>,
     nowMs: number
 ): readonly [value: V, expired: boolean] {
-    const canonical = decodeALAdmissionValue(stored, key, decodeALAdmissionStoredValue);
+    const canonical = decodeALAdmissionValue(
+        toALAdmissionStoredValue(stored),
+        key,
+        decodeALAdmissionStoredValue
+    );
     const value = decodeALAdmissionValue(canonical.value, key, decode);
     return [value, canonical.expireAtTimestamp <= nowMs];
 }

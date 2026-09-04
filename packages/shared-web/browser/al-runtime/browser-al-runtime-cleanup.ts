@@ -1,5 +1,3 @@
-import { decodeALAdmissionValue } from '@shared/alm/al-admission-decoder.ts';
-import { decodeALAdmissionNumber } from '@shared/alm/al-admission-value-validation.ts';
 import { isIndexedDbALRuntimeStoreSupported } from '@shared/alm/al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import {
@@ -24,12 +22,6 @@ export const BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
 interface BrowserALRuntimeCleanupRead {
     readonly revision: number;
     readonly rows: readonly BrowserALRuntimeCleanupRow[];
-}
-
-interface BrowserALRuntimeCleanupStoredRow {
-    readonly key: string;
-    readonly expireAtTimestamp: unknown;
-    readonly writeToken: unknown;
 }
 
 interface BrowserALRuntimeCleanupRow {
@@ -176,8 +168,7 @@ async function readBrowserALRuntimeCleanup(
         BROWSER_AL_RUNTIME_STORE_NAME,
         readsExpiryIndex
             ? { kind: 'expired', maximumExpireAtTimestamp: policy.nowMs }
-            : { kind: 'prefixes', prefixes: keyPrefixes },
-        readBrowserALRuntimeCleanupStoredRow
+            : { kind: 'prefixes', prefixes: keyPrefixes }
     );
     return {
         revision: snapshot.revision,
@@ -190,37 +181,10 @@ async function readBrowserALRuntimeCleanup(
                 key: stored.key,
                 expireAtTimestamp: policy.kind === 'all'
                     ? null
-                    : decodeBrowserALRuntimeExpiry(stored),
-                writeToken: decodeBrowserALRuntimeWriteToken(stored)
+                    : stored.expireAtTimestamp,
+                writeToken: stored.writeToken ?? null
             }))
     };
-}
-
-function readBrowserALRuntimeCleanupStoredRow(
-    value: unknown,
-    key: string
-): BrowserALRuntimeCleanupStoredRow {
-    return {
-        key,
-        expireAtTimestamp: Reflect.get(value as object, 'expireAtTimestamp'),
-        writeToken: Reflect.get(value as object, 'writeToken')
-    };
-}
-
-function decodeBrowserALRuntimeExpiry(row: BrowserALRuntimeCleanupStoredRow): number {
-    return decodeALAdmissionValue(row.expireAtTimestamp, row.key, decodeALAdmissionNumber);
-}
-
-function decodeBrowserALRuntimeWriteToken(row: BrowserALRuntimeCleanupStoredRow): string | null {
-    if (row.writeToken === undefined) {
-        return null;
-    }
-    return decodeALAdmissionValue(row.writeToken, row.key, (value) => {
-        if (typeof value !== 'string' || value.length === 0) {
-            throw new TypeError('Browser AL runtime write token must be a non-empty string');
-        }
-        return value;
-    });
 }
 
 function computeBrowserALRuntimeCleanup(

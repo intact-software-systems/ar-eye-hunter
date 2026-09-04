@@ -186,6 +186,53 @@ describe('inbound admission computation boundary', () => {
         expect(issues.map((issue) => issue.path)).toEqual(['computed.mutations']);
     });
 
+    it('rejects computed accessors without executing them', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const message = createMessage(1);
+        const read = await stores.admissionStore.readIncomingMessage(message, 'sender', planIncomingMessage);
+        const facts = createComputationFacts('candidate');
+        const computed = computeALInboundAdmission(read, false, facts);
+        const readSenderId = vi.fn(() => computed.senderId);
+        const candidate = { ...computed };
+        Object.defineProperty(candidate, 'senderId', {
+            configurable: true,
+            enumerable: true,
+            get: readSenderId
+        });
+
+        const issues = validateALInboundAdmission({
+            read,
+            canForward: false,
+            facts,
+            computed: candidate
+        });
+
+        expect(readSenderId).not.toHaveBeenCalled();
+        expect(issues.map((issue) => issue.path)).toEqual(['computed']);
+    });
+
+    it('rejects a cyclic computed value', async () => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const message = createMessage(1);
+        const read = await stores.admissionStore.readIncomingMessage(message, 'sender', planIncomingMessage);
+        const facts = createComputationFacts('candidate');
+        const computed = computeALInboundAdmission(read, false, facts);
+        const cyclicMutation = { ...computed.mutations[0] } as Record<string, unknown>;
+        cyclicMutation.senderId = cyclicMutation;
+
+        const issues = validateALInboundAdmission({
+            read,
+            canForward: false,
+            facts,
+            computed: {
+                ...computed,
+                mutations: [cyclicMutation as ALInboundCommitBundle['mutations'][number]]
+            }
+        });
+
+        expect(issues.map((issue) => issue.path)).toEqual(['computed.mutations.length', 'computed.mutations[0]']);
+    });
+
     it('leaves a conflicted candidate uncommitted until outer redelivery recomputes the message', async () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const committedBundles: ALInboundCommitBundle[] = [];

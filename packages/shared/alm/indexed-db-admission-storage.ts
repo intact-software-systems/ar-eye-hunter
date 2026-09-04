@@ -28,9 +28,9 @@ export type IndexedDbAdmissionMutation =
         expectedWriteToken: string;
     }>;
 
-export interface IndexedDbAdmissionSnapshot<Stored = ALAdmissionStoredValue> {
+export interface IndexedDbAdmissionSnapshot {
     readonly revision: number;
-    readonly stored: readonly Stored[];
+    readonly stored: readonly IndexedDbAdmissionStoredRow[];
 }
 
 export interface IndexedDbAdmissionStoredRow {
@@ -97,19 +97,7 @@ export async function readIndexedDbAdmissionSnapshot(
     db: IDBDatabase,
     storeName: string,
     selection: IndexedDbAdmissionSelection
-): Promise<IndexedDbAdmissionSnapshot>;
-export async function readIndexedDbAdmissionSnapshot<Stored>(
-    db: IDBDatabase,
-    storeName: string,
-    selection: IndexedDbAdmissionSelection,
-    projectStored: (stored: IndexedDbAdmissionStoredRow, key: string) => Stored
-): Promise<IndexedDbAdmissionSnapshot<Stored>>;
-export async function readIndexedDbAdmissionSnapshot<Stored>(
-    db: IDBDatabase,
-    storeName: string,
-    selection: IndexedDbAdmissionSelection,
-    projectStored?: (stored: IndexedDbAdmissionStoredRow, key: string) => Stored
-): Promise<IndexedDbAdmissionSnapshot<ALAdmissionStoredValue | Stored>> {
+): Promise<IndexedDbAdmissionSnapshot> {
     const transaction = db.transaction(storeName, 'readonly');
     const store = transaction.objectStore(storeName);
     const completed = waitForIndexedDbTransaction(transaction);
@@ -118,10 +106,7 @@ export async function readIndexedDbAdmissionSnapshot<Stored>(
         readIndexedDbRequest(store.get(AL_ADMISSION_REVISION_KEY))
     ]);
     await completed;
-    const stored = projectStored === undefined
-        ? rows.map(decodeALAdmissionStoredValueFromIndexedDbRow)
-        : rows.map((row) => projectIndexedDbAdmissionStoredRow(row, projectStored));
-    return { stored, revision: decodeIndexedDbAdmissionRevision(revisionValue) };
+    return { stored: rows, revision: decodeIndexedDbAdmissionRevision(revisionValue) };
 }
 
 export async function writeIndexedDbAdmissionMutations(
@@ -243,7 +228,7 @@ function decodeIndexedDbAdmissionRevision(value: IDBRequest['result']): number {
     if (value === undefined) {
         return 0;
     }
-    const stored = decodeALAdmissionStoredValueFromIndexedDbRow(
+    const stored = toALAdmissionStoredValue(
         decodeIndexedDbAdmissionStoredRow(value, AL_ADMISSION_REVISION_KEY)
     );
     return decodeALAdmissionValue(stored.value, AL_ADMISSION_REVISION_KEY, decodeALAdmissionNumber);
@@ -337,10 +322,10 @@ function decodeIndexedDbAdmissionWriteToken(value: PersistedALValue | undefined)
     return value;
 }
 
-function decodeALAdmissionStoredValueFromIndexedDbRow(
-    stored: IndexedDbAdmissionStoredRow
+export function toALAdmissionStoredValue(
+    stored: IndexedDbAdmissionStoredRow | ALAdmissionStoredValue
 ): ALAdmissionStoredValue {
-    if (stored.writeToken !== undefined) {
+    if ('writeToken' in stored && stored.writeToken !== undefined) {
         throw new ALAdmissionCorruptionError(
             stored.key,
             new TypeError('Stored admission envelope has an unexpected write token')
@@ -351,13 +336,6 @@ function decodeALAdmissionStoredValueFromIndexedDbRow(
         value: stored.value,
         expireAtTimestamp: stored.expireAtTimestamp
     };
-}
-
-function projectIndexedDbAdmissionStoredRow<Stored>(
-    stored: IndexedDbAdmissionStoredRow,
-    project: (stored: IndexedDbAdmissionStoredRow, key: string) => Stored
-): Stored {
-    return decodeALAdmissionValue(stored, stored.key, (_value, key) => project(stored, key));
 }
 
 function toIndexedDbPrefixRange(prefix: string): IDBKeyRange | undefined {

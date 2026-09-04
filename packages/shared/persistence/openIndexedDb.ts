@@ -13,12 +13,12 @@ export interface IndexedDbStoreDefinition {
 interface IndexedDbIndexSchema {
     readonly name: string;
     readonly keyPath: string | string[];
-    readonly options: { readonly unique: boolean; };
+    readonly unique: boolean;
 }
 
 interface IndexedDbStoreSchema {
     readonly name: string;
-    readonly options: { readonly keyPath: string; };
+    readonly keyPath: string;
     readonly indexes: readonly IndexedDbIndexSchema[];
 }
 
@@ -67,9 +67,7 @@ export async function openIndexedDbWithStores(
     dbName: string,
     stores: readonly IndexedDbStoreDefinition[]
 ): Promise<IDBDatabase> {
-    return await runSerializedIndexedDbOpen(dbName, async () => {
-        return await openIndexedDbWithStoresOnce(dbName, stores);
-    });
+    return await runSerializedIndexedDbOpen(dbName, () => openIndexedDbWithStoresOnce(dbName, stores));
 }
 
 async function openIndexedDbWithStoresOnce(
@@ -82,13 +80,13 @@ async function openIndexedDbWithStoresOnce(
 
     const schema: readonly IndexedDbStoreSchema[] = stores.map((store) => ({
         name: store.name,
-        options: { keyPath: store.keyPath },
+        keyPath: store.keyPath,
         indexes: (store.indexes ?? []).map((index) => ({
             name: index.name,
             keyPath: typeof index.keyPath === 'string'
                 ? index.keyPath
                 : [...index.keyPath],
-            options: { unique: index.unique ?? false }
+            unique: index.unique ?? false
         }))
     }));
     const initialDb = await openIndexedDb(dbName, schema);
@@ -137,10 +135,10 @@ function assertCompatibleStoreKeyPaths(
             continue;
         }
         const actual = db.transaction(store.name).objectStore(store.name).keyPath;
-        if (!isEqualKeyPath(actual, store.options.keyPath)) {
+        if (!isEqualKeyPath(actual, store.keyPath)) {
             throw new Error(
                 `IndexedDB store "${store.name}" has key path "${formatKeyPath(actual)}"; ` +
-                    `expected "${store.options.keyPath}"`
+                    `expected "${store.keyPath}"`
             );
         }
     }
@@ -207,7 +205,7 @@ function writeIndexedDbSchema(
 ): void {
     for (const store of stores) {
         const objectStore = !db.objectStoreNames.contains(store.name)
-            ? db.createObjectStore(store.name, store.options)
+            ? db.createObjectStore(store.name, { keyPath: store.keyPath })
             : transaction.objectStore(store.name);
         for (const index of store.indexes) {
             if (
@@ -220,7 +218,7 @@ function writeIndexedDbSchema(
                 objectStore.createIndex(
                     index.name,
                     index.keyPath,
-                    index.options
+                    { unique: index.unique }
                 );
             }
         }
@@ -254,7 +252,7 @@ function isMatchingIndex(
     }
 
     const index = store.index(definition.name);
-    return index.unique === definition.options.unique &&
+    return index.unique === definition.unique &&
         isEqualKeyPath(index.keyPath, definition.keyPath);
 }
 
@@ -268,13 +266,6 @@ function isEqualKeyPath(
     if (typeof actual === 'string' || typeof expected === 'string') {
         return actual === expected;
     }
-    if (actual.length !== expected.length) {
-        return false;
-    }
-    for (let index = 0; index < actual.length; index += 1) {
-        if (actual[index] !== expected[index]) {
-            return false;
-        }
-    }
-    return true;
+    return actual.length === expected.length &&
+        actual.every((part, index) => part === expected[index]);
 }
