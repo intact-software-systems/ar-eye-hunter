@@ -1,13 +1,28 @@
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import { type AppInboxEnqueueInput, type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion,
+    type AppInboxCompletionComputed,
+    type AppInboxCompletionFacts
+} from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/persisted-auth-session.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import { requireExactKeys, requireString } from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
-import type { GroupTopologyConfigMutationService } from '../config/group-topology-config-mutation-service.ts';
+import type {
+    GroupTopologyConfigMutationAttemptRead,
+    GroupTopologyConfigMutationService
+} from '../config/group-topology-config-mutation-service.ts';
+import type {
+    GroupTopologyConfigMutationCommand,
+    GroupTopologyConfigMutationComputed
+} from '../config/mutation/group-topology-config-mutation-contracts.ts';
 import { toTopologyConfigMutationResult } from '../config/mutation/to-topology-config-mutation-result.ts';
 
 import { readTopologyConfigReceiptBoundary } from '../config/mutation/topology-config-mutation-boundary.ts';
@@ -16,13 +31,17 @@ import {
     decodeStoredGroupTopologyOverride
 } from '../config/persistence/decode-stored-group-topology-config.ts';
 import { GroupTopologyConfigIdempotencyConflictError } from '../group-topology-errors.ts';
-import type { GroupTopologyReconfigureCommand } from '../reconfigure/group-topology-reconfigure-contracts.ts';
+import type {
+    GroupTopologyReconfigureCommand,
+    GroupTopologyReconfigureComputed,
+    GroupTopologyReconfigureRead
+} from '../reconfigure/group-topology-reconfigure-contracts.ts';
 import type { GroupTopologyReconfigureMutation } from '../reconfigure/group-topology-reconfigure-mutation.ts';
 import {
     createAuthenticatedTopologyEnqueue,
     createAuthenticatedTopologyEnqueueFromValidatedSession,
     decodeTopologyAppInboxAuthority,
-    validateCurrentTopologySession,
+    readAndValidateCurrentTopologySession,
     verifyTopologyAppInboxAuthority
 } from './topology-app-inbox-authority.ts';
 import { toTopologyConfigMutationCommand } from './topology-app-inbox-command.ts';
@@ -30,7 +49,10 @@ import type { TopologyReconfigureAppInboxAuthority } from './topology-app-inbox-
 
 export interface TopologyAppInboxHandlerDependencies {
     readonly groupStateService: Pick<GroupStateService, 'readIssuedAuthSession'>;
-    readonly transactionWriter: Pick<AppInboxMutationTransactionWriter, 'writeMutation'>;
+    readonly transactionWriter: Pick<
+        AppInboxMutationTransactionWriter,
+        'readCompletionFacts' | 'writeComputedMutation'
+    >;
     readonly nowEpochMs: () => number;
     readonly wakeQueue?: () => void;
 }
@@ -38,9 +60,12 @@ export interface TopologyAppInboxHandlerDependencies {
 export interface TopologyAppInboxMutationOwners {
     readonly configMutationService: Pick<
         GroupTopologyConfigMutationService,
-        'prepare' | 'read' | 'compute' | 'validate' | 'write'
+        'read' | 'compute' | 'validate' | 'write' | 'recordCommittedWrite'
     >;
-    readonly reconfigureMutation: Pick<GroupTopologyReconfigureMutation, 'read' | 'compute' | 'validate' | 'write'>;
+    readonly reconfigureMutation: Pick<
+        GroupTopologyReconfigureMutation,
+        'read' | 'compute' | 'validate' | 'write' | 'recordCommittedWrite'
+    >;
 }
 
 export type TopologyConfigInboxResult = ReturnType<typeof toTopologyConfigMutationResult>;
@@ -53,6 +78,24 @@ export interface TopologyReconfigureInboxResult {
 }
 
 export type TopologyAppInboxResult = TopologyConfigInboxResult | TopologyReconfigureInboxResult;
+
+type TopologyConfigOperationComputed =
+    | Readonly<{
+        outcome: 'idempotency-conflict';
+        mutation: Extract<GroupTopologyConfigMutationComputed, { outcome: 'idempotency-conflict'; }>;
+    }>
+    | Readonly<{
+        outcome: 'completed';
+        mutation: Exclude<GroupTopologyConfigMutationComputed, { outcome: 'idempotency-conflict'; }>;
+        durableResult: TopologyConfigInboxResult;
+        completion: AppInboxCompletionComputed<TopologyConfigInboxResult>;
+    }>;
+
+interface TopologyReconfigureOperationComputed {
+    readonly mutation: GroupTopologyReconfigureComputed;
+    readonly durableResult: TopologyReconfigureInboxResult;
+    readonly completion: AppInboxCompletionComputed<TopologyReconfigureInboxResult>;
+}
 
 export function decodeTopologyAppInboxResult(value: JsonWireValue): TopologyAppInboxResult {
     const result = readJsonRecord(value, 'Topology AppInbox result');
@@ -140,11 +183,11 @@ export class TopologyAppInboxHandler {
         });
     }
 
-    async validateCurrentSession(
+    async readAndValidateCurrentSession(
         principalId: string,
         claimedAuthority: IssuedAuthSession
     ): Promise<PersistedAuthSession> {
-        return await validateCurrentTopologySession({
+        return await readAndValidateCurrentTopologySession({
             principalId,
             claimedAuthority,
             groupStateService: this.dependencies.groupStateService,
@@ -172,38 +215,53 @@ export class TopologyAppInboxHandler {
             groupStateService: this.dependencies.groupStateService,
             nowEpochMs: this.dependencies.nowEpochMs
         });
+        const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
         if (authority.kind === 'topology-reconfigure') {
             return await this.processTopologyReconfigureMutation(
                 context,
                 authority,
-                owners.reconfigureMutation
+                owners.reconfigureMutation,
+                completionFacts
             );
         }
-        const preparation = await owners.configMutationService.prepare({
-            command: toTopologyConfigMutationCommand(authority.command),
-            commandHash: authority.command.commandHash,
-            capturedAtEpochMs: authority.command.capturedAtEpochMs
-        });
-        const read = await owners.configMutationService.read(preparation.command);
+        const command = toTopologyConfigMutationCommand(authority.command);
+        const read = await owners.configMutationService.read(command);
         const attemptCount = context.entry.dequeueAudit.attempts;
-        const computed = owners.configMutationService.compute(preparation, read, attemptCount);
-        owners.configMutationService.validate(preparation, read, attemptCount, computed);
+        const computed = this.computeTopologyConfigOperation(
+            command,
+            read,
+            attemptCount,
+            completionFacts,
+            owners.configMutationService
+        );
+        this.validateTopologyConfigOperation(
+            command,
+            read,
+            attemptCount,
+            completionFacts,
+            owners.configMutationService,
+            computed
+        );
         if (computed.outcome === 'idempotency-conflict') {
             throw new GroupTopologyConfigIdempotencyConflictError(
-                computed.existingCommandHash,
-                computed.receivedCommandHash
+                computed.mutation.existingCommandHash,
+                computed.mutation.receivedCommandHash
             );
         }
-        const result = await this.dependencies.transactionWriter.writeMutation(
+        const result = await this.dependencies.transactionWriter.writeComputedMutation(
             context,
+            computed.completion,
             async (transaction) => {
-                if (computed.outcome === 'write' || computed.outcome === 'claim') {
-                    await owners.configMutationService.write(transaction, computed);
+                if (
+                    computed.mutation.outcome === 'write' ||
+                    computed.mutation.outcome === 'claim'
+                ) {
+                    await owners.configMutationService.write(transaction, computed.mutation);
                 }
-                return toTopologyConfigMutationResult(computed);
             }
         );
-        if (computed.outcome === 'write') {
+        if (computed.mutation.outcome === 'write') {
+            owners.configMutationService.recordCommittedWrite();
             this.dependencies.wakeQueue?.();
         }
         return result;
@@ -212,7 +270,8 @@ export class TopologyAppInboxHandler {
     private async processTopologyReconfigureMutation(
         context: AppInboxMessageContext<TopologyAppInboxResult>,
         authority: TopologyReconfigureAppInboxAuthority,
-        mutation: TopologyAppInboxMutationOwners['reconfigureMutation']
+        mutation: TopologyAppInboxMutationOwners['reconfigureMutation'],
+        completionFacts: AppInboxCompletionFacts
     ): Promise<TopologyReconfigureInboxResult> {
         if (authority.command.payload.operation !== 'reconfigureTopology') {
             throw new TypeError('Topology reconfigure authority operation is invalid');
@@ -228,21 +287,142 @@ export class TopologyAppInboxHandler {
             publish: authority.command.payload.publish
         };
         const read = await mutation.read(command);
-        const computed = mutation.compute(command, read);
-        mutation.validate(command, read, computed);
-        const result = await this.dependencies.transactionWriter.writeMutation(
+        const computed = this.computeTopologyReconfigureOperation(
+            command,
+            read,
+            completionFacts,
+            mutation
+        );
+        this.validateTopologyReconfigureOperation(
+            command,
+            read,
+            completionFacts,
+            mutation,
+            computed
+        );
+        const result = await this.dependencies.transactionWriter.writeComputedMutation(
             context,
+            computed.completion,
             async (transaction) => {
-                await mutation.write(transaction, computed);
-                return {
-                    status: 'queued',
-                    groupRef: command.groupRef,
-                    requestId: command.commandId,
-                    outboxId: computed.resourceId
-                } as const;
+                await mutation.write(transaction, computed.mutation);
             }
         );
+        mutation.recordCommittedWrite();
         this.dependencies.wakeQueue?.();
         return result;
+    }
+
+    private computeTopologyConfigOperation(
+        command: GroupTopologyConfigMutationCommand,
+        read: GroupTopologyConfigMutationAttemptRead,
+        attemptCount: number,
+        completionFacts: AppInboxCompletionFacts,
+        mutation: TopologyAppInboxMutationOwners['configMutationService']
+    ): TopologyConfigOperationComputed {
+        const mutationComputed = mutation.compute(command, read, attemptCount);
+        if (mutationComputed.outcome === 'idempotency-conflict') {
+            return { outcome: 'idempotency-conflict', mutation: mutationComputed };
+        }
+        const durableResult = toTopologyConfigMutationResult(mutationComputed);
+        const completionInput = {
+            ...completionFacts,
+            durableResult,
+            status: EntityStatus.COMPLETED
+        } as const;
+        return {
+            outcome: 'completed',
+            mutation: mutationComputed,
+            durableResult,
+            completion: computeAppInboxCompletion(completionInput)
+        };
+    }
+
+    private validateTopologyConfigOperation(
+        command: GroupTopologyConfigMutationCommand,
+        read: GroupTopologyConfigMutationAttemptRead,
+        attemptCount: number,
+        completionFacts: AppInboxCompletionFacts,
+        mutation: TopologyAppInboxMutationOwners['configMutationService'],
+        computed: TopologyConfigOperationComputed
+    ): void {
+        mutation.validate({
+            command,
+            read,
+            attemptCount,
+            computed: computed.mutation
+        });
+        if (computed.outcome === 'idempotency-conflict') {
+            return;
+        }
+        if (
+            !jsonEquals(
+                computed.durableResult,
+                toTopologyConfigMutationResult(computed.mutation)
+            )
+        ) {
+            throw new TypeError('Topology config result differs from its computed mutation');
+        }
+        const completionInput = {
+            ...completionFacts,
+            durableResult: computed.durableResult,
+            status: EntityStatus.COMPLETED
+        } as const;
+        const issues = validateAppInboxCompletion(completionInput, computed.completion);
+        if (issues[0] !== undefined) {
+            throw issues[0].cause;
+        }
+    }
+
+    private computeTopologyReconfigureOperation(
+        command: GroupTopologyReconfigureCommand,
+        read: GroupTopologyReconfigureRead,
+        completionFacts: AppInboxCompletionFacts,
+        mutation: TopologyAppInboxMutationOwners['reconfigureMutation']
+    ): TopologyReconfigureOperationComputed {
+        const mutationComputed = mutation.compute(command, read);
+        const durableResult = {
+            status: 'queued',
+            groupRef: command.groupRef,
+            requestId: command.commandId,
+            outboxId: mutationComputed.resourceId
+        } as const;
+        const completionInput = {
+            ...completionFacts,
+            durableResult,
+            status: EntityStatus.COMPLETED
+        } as const;
+        return {
+            mutation: mutationComputed,
+            durableResult,
+            completion: computeAppInboxCompletion(completionInput)
+        };
+    }
+
+    private validateTopologyReconfigureOperation(
+        command: GroupTopologyReconfigureCommand,
+        read: GroupTopologyReconfigureRead,
+        completionFacts: AppInboxCompletionFacts,
+        mutation: TopologyAppInboxMutationOwners['reconfigureMutation'],
+        computed: TopologyReconfigureOperationComputed
+    ): void {
+        mutation.validate(command, read, computed.mutation);
+        const expectedResult = {
+            status: 'queued',
+            groupRef: command.groupRef,
+            requestId: command.commandId,
+            outboxId: computed.mutation.resourceId
+        } as const;
+        if (!jsonEquals(computed.durableResult, expectedResult)) {
+            throw new TypeError('Topology reconfigure result differs from its computed mutation');
+        }
+        const completionInput = {
+            ...completionFacts,
+            durableResult: computed.durableResult,
+            status: EntityStatus.COMPLETED
+        } as const;
+        const issues = validateAppInboxCompletion(completionInput, computed.completion);
+        if (issues[0] !== undefined) {
+            throw issues[0].cause;
+        }
     }
 }

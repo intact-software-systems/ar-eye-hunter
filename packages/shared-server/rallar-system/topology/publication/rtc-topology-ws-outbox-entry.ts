@@ -1,12 +1,16 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    computeAppOutboxInsert,
+    writeAppOutboxInsert,
+    type AppOutboxInsert
+} from '../../app-outbox/app-outbox-insert.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
 import { validateRtcTopologyPublication } from './validate-rtc-topology-publication.ts';
 
@@ -63,11 +67,31 @@ export function computeRtcTopologyPublicationOutbox(
     };
 }
 
+export function validateRtcTopologyPublicationOutbox(
+    publication: RtcTopologyPublication,
+    outbox: ResourceEntry
+): void {
+    const expected = computeRtcTopologyPublicationOutbox(publication);
+    if (
+        !isKeysEqual(outbox.key, expected.key) ||
+        outbox.resource !== expected.resource ||
+        outbox.typeId !== expected.typeId ||
+        outbox.audit.expiryTs.epochMilliseconds !== expected.audit.expiryTs.epochMilliseconds
+    ) {
+        throw new TypeError('RTC topology delivery outbox differs from its publication');
+    }
+}
+
 export async function writeRtcTopologyPublicationOutbox(
     transaction: PSqlSql,
-    publication: RtcTopologyPublication
+    computed: AppOutboxInsert
 ): Promise<ResourceEntry> {
-    const entry = computeRtcTopologyPublicationOutbox(publication);
-    await new PSqlResourceInboxEntryRepository(transaction).writeIfAbsentOrMatch(entry);
-    return entry;
+    await writeAppOutboxInsert(transaction, computed);
+    return computed.entry;
+}
+
+export function computeRtcTopologyPublicationOutboxInsert(
+    publication: RtcTopologyPublication
+): AppOutboxInsert {
+    return computeAppOutboxInsert(computeRtcTopologyPublicationOutbox(publication));
 }

@@ -1264,19 +1264,19 @@ moved or changed test.
       "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
     },
     {
-      "id": "mutation-registration-collections--binds-topology-loops-to-their-live-types",
+      "id": "mutation-registration-collections--rejects-a-missing-direct-topology-registration",
       "domain": "Mutation handler registration collections",
       "owner": "Rallar server maintainers",
-      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “binds topology loops to their live types”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#binds topology loops to their live types",
+      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects a missing direct topology registration”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a missing direct topology registration",
       "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
     },
     {
-      "id": "mutation-registration-collections--rejects-a-crdt-type-removed-from-its-imported-live-registration-",
+      "id": "mutation-registration-collections--rejects-a-missing-direct-crdt-registration",
       "domain": "Mutation handler registration collections",
       "owner": "Rallar server maintainers",
-      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects a CRDT type removed from its imported live registration collection”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a CRDT type removed from its imported live registration collection",
+      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects a missing direct CRDT registration”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a missing direct CRDT registration",
       "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
     },
     {
@@ -1288,11 +1288,11 @@ moved or changed test.
       "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
     },
     {
-      "id": "mutation-registration-collections--rejects-group-create-removed-from-the-imported-live-group-regist",
+      "id": "mutation-registration-collections--rejects-a-missing-direct-group-registration",
       "domain": "Mutation handler registration collections",
       "owner": "Rallar server maintainers",
-      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects GROUP_CREATE removed from the imported live group registration collection”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection",
+      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects a missing direct group registration”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a missing direct group registration",
       "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
     },
     {
@@ -1320,20 +1320,12 @@ moved or changed test.
       "coverageRelation": "The named test mutates the live auth registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
     },
     {
-      "id": "mutation-registration-predicates--narrows-the-group-registration-array-with-an-exact-equality-filt",
+      "id": "mutation-registration-predicates--rejects-an-auth-registration-filter-that-is-always-false",
       "domain": "Mutation registration predicates",
       "owner": "Rallar server maintainers",
-      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “narrows the group registration array with an exact equality filter”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#narrows the group registration array with an exact equality filter",
-      "coverageRelation": "The named test mutates the live group registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
-    },
-    {
-      "id": "mutation-registration-predicates--rejects-a-group-registration-filter-that-is-always-false",
-      "domain": "Mutation registration predicates",
-      "owner": "Rallar server maintainers",
-      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “rejects a group registration filter that is always false”.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#rejects a group registration filter that is always false",
-      "coverageRelation": "The named test mutates the live group registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “rejects an auth registration filter that is always false”.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#rejects an auth registration filter that is always false",
+      "coverageRelation": "The named test mutates the live auth registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
     },
     {
       "id": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
@@ -3312,48 +3304,37 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects duplicate direct operation properties in the command object"
     },
     {
-      "id": "test-structure-coupling-a68cd62856cac931",
+      "id": "test-structure-coupling-339457838dde3151",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts",
       "kind": "production-source-read",
       "contract": "mutation-registration-collections--binds-direct-client-registrations-to-their-live-types",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Reads the direct client registration collection and resolves each handler to the live imported type it actually installs.",
+      "rationale": "Reads the direct client registration collection and resolves each handler to the live type it actually installs.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#binds direct client registrations to their live types"
-    },
-    {
-      "id": "test-structure-coupling-339457838dde3151",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts",
-      "kind": "production-source-read",
-      "contract": "mutation-registration-collections--binds-topology-loops-to-their-live-types",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Inspects the topology registration loop so the audit evaluates its iterated live type collection rather than only the loop body.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#binds topology loops to their live types"
     },
     {
       "id": "test-structure-coupling-ec228fda47126f7e",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts",
       "kind": "production-source-read",
-      "contract": "mutation-registration-collections--rejects-a-crdt-type-removed-from-its-imported-live-registration-",
+      "contract": "mutation-registration-collections--rejects-a-missing-direct-topology-registration",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Loads the CRDT owner module alongside the shortened collection so the analyzer must compare registrations with their real owner surface.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a CRDT type removed from its imported live registration collection"
+      "rationale": "Rebinds one topology registration in the live owner and requires the audit to report the missing authoritative route.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a missing direct topology registration"
     },
     {
       "id": "test-structure-coupling-ac677f8aefd31dcf",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts",
       "kind": "production-source-read",
-      "contract": "mutation-registration-collections--rejects-a-crdt-type-removed-from-its-imported-live-registration-",
+      "contract": "mutation-registration-collections--rejects-a-missing-direct-crdt-registration",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Removes one CRDT type from the imported live collection, establishing the exact collection mutation the rejection case evaluates.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a CRDT type removed from its imported live registration collection"
+      "rationale": "Rebinds one CRDT registration in the live owner and requires the audit to report the missing authoritative route.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a missing direct CRDT registration"
     },
     {
       "id": "test-structure-coupling-8daaa2a7222a3e9c",
@@ -3370,15 +3351,15 @@ moved or changed test.
       "id": "test-structure-coupling-87348c819775b5e0",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts",
       "kind": "production-source-read",
-      "contract": "mutation-registration-collections--rejects-group-create-removed-from-the-imported-live-group-regist",
+      "contract": "mutation-registration-collections--rejects-a-missing-direct-group-registration",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Deletes GROUP_CREATE from the imported group type collection and requires the owner audit to report that specific missing live route.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection"
+      "rationale": "Rebinds one group registration in the live owner and requires the audit to report that specific missing live route.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a missing direct group registration"
     },
     {
-      "id": "test-structure-coupling-9d52ec4349d2ad4d",
+      "id": "test-structure-coupling-560101002d0a8a81",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts",
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--evaluates-safe-logical-includes-and-identity-map-chains-exactly",
@@ -3389,18 +3370,18 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#evaluates safe logical includes and identity map chains exactly"
     },
     {
-      "id": "test-structure-coupling-560101002d0a8a81",
+      "id": "test-structure-coupling-cbc161a2abbae5c6",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts",
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--fails-closed-for-an-opaque-registration-predicate",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Reads the live group registration predicate that the test makes opaque before executing the analyzer and requiring unknown registration semantics to fail closed.",
+      "rationale": "Reads the live auth registration expression that the test makes opaque before executing the analyzer and requiring unknown registration semantics to fail closed.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#fails closed for an opaque registration predicate"
     },
     {
-      "id": "test-structure-coupling-cbc161a2abbae5c6",
+      "id": "test-structure-coupling-2e15caeb35eae4be",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts",
       "kind": "production-source-read",
       "contract": "mutation-registration-predicates--narrows-the-auth-registration-array-with-an-exact-equality-filte",
@@ -3411,26 +3392,15 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#narrows the auth registration array with an exact equality filter"
     },
     {
-      "id": "test-structure-coupling-2e15caeb35eae4be",
-      "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts",
-      "kind": "production-source-read",
-      "contract": "mutation-registration-predicates--narrows-the-group-registration-array-with-an-exact-equality-filt",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar server maintainers",
-      "rationale": "Reads the live group registration expression that the test narrows before executing the analyzer and requiring the omitted owner family to fail closed.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#narrows the group registration array with an exact equality filter"
-    },
-    {
       "id": "test-structure-coupling-4f6cf14c31fc65a6",
       "path": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts",
       "kind": "production-source-read",
-      "contract": "mutation-registration-predicates--rejects-a-group-registration-filter-that-is-always-false",
+      "contract": "mutation-registration-predicates--rejects-an-auth-registration-filter-that-is-always-false",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Reads the live group registration predicate that the test replaces with false before executing the analyzer and requiring all group owner connections to disappear.",
-      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#rejects a group registration filter that is always false"
+      "rationale": "Reads the live auth registration expression that the test replaces with false before executing the analyzer and requiring all auth owner connections to disappear.",
+      "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#rejects an auth registration filter that is always false"
     },
     {
       "id": "test-structure-coupling-c6c21e820b68b8eb",

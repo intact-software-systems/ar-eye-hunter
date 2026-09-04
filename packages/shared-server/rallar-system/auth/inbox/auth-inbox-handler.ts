@@ -16,10 +16,7 @@ import { toAuthAppInboxType, toAuthIntentContextId } from './auth-app-inbox-rout
 export interface AuthInboxHandlerDependencies {
     readonly mutationService: AuthMutationService;
     readonly credentialIssuer: AuthCredentialIssuer;
-    readonly transactionWriter: Pick<
-        AppInboxMutationTransactionWriter,
-        'readCompletionFacts' | 'writeComputedMutation'
-    >;
+    readonly transactionWriter: AppInboxMutationTransactionWriter;
     readonly nowEpochMs: () => number;
 }
 

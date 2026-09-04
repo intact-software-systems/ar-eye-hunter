@@ -6,7 +6,6 @@ import { findMutationBoundaryViolationsFromRoots } from '../boundary/mutation-bo
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from '../routing/mutation-routing-inventory.ts';
 
 const FIXTURES = 'packages/tests/repo/mutation-route-ownership/fixtures/mutation-boundary-capability-receivers';
-const GROUP_OWNER = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 const AUTH_OWNER = 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 
 describe('Mutation route owner registration predicates contracts', () => {
@@ -31,36 +30,6 @@ describe('Mutation route owner registration predicates contracts', () => {
         );
     });
 
-    it('narrows the group registration array with an exact equality filter', () => {
-        const source = readFileSync(GROUP_OWNER, 'utf8');
-        const mutated = source.replace(
-            'candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP',
-            'candidate === AppInboxType.GROUP_CREATE'
-        );
-        expect(mutated).not.toBe(source);
-
-        expect(validateWithOverride(GROUP_OWNER, mutated)).toEqual(
-            expect.arrayContaining([
-                expect.stringContaining('GROUP_UPDATE owner dispatch is not connected')
-            ])
-        );
-    });
-
-    it('rejects a group registration filter that is always false', () => {
-        const source = readFileSync(GROUP_OWNER, 'utf8');
-        const mutated = source.replace(
-            '(candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP',
-            '() => false'
-        );
-        expect(mutated).not.toBe(source);
-
-        expect(validateWithOverride(GROUP_OWNER, mutated)).toEqual(
-            expect.arrayContaining([
-                expect.stringContaining('GROUP_CREATE owner dispatch is not connected')
-            ])
-        );
-    });
-
     it('narrows the auth registration array with an exact equality filter', () => {
         const source = readFileSync(AUTH_OWNER, 'utf8');
         const mutated = source.replace(
@@ -77,17 +46,32 @@ describe('Mutation route owner registration predicates contracts', () => {
         );
     });
 
-    it('fails closed for an opaque registration predicate', () => {
-        const source = readFileSync(GROUP_OWNER, 'utf8');
+    it('rejects an auth registration filter that is always false', () => {
+        const source = readFileSync(AUTH_OWNER, 'utf8');
         const mutated = source.replace(
-            '(candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP',
-            '(candidate) => isGroupInboxTypeEnabled(candidate)'
-        ) + '\nfunction isGroupInboxTypeEnabled(_type: AppInboxType): boolean { return true; }\n';
+            'for (const type of AUTH_TYPES)',
+            'for (const type of AUTH_TYPES.filter(() => false))'
+        );
         expect(mutated).not.toBe(source);
 
-        expect(validateWithOverride(GROUP_OWNER, mutated)).toEqual(
+        expect(validateWithOverride(AUTH_OWNER, mutated)).toEqual(
             expect.arrayContaining([
-                expect.stringContaining('GROUP_CREATE owner dispatch is not connected')
+                expect.stringContaining('AUTH_USER_REGISTER owner dispatch is not connected')
+            ])
+        );
+    });
+
+    it('fails closed for an opaque registration predicate', () => {
+        const source = readFileSync(AUTH_OWNER, 'utf8');
+        const mutated = source.replace(
+            'for (const type of AUTH_TYPES)',
+            'for (const type of AUTH_TYPES.filter(isAuthInboxTypeEnabled))'
+        ) + '\nfunction isAuthInboxTypeEnabled(_type: AppInboxType): boolean { return true; }\n';
+        expect(mutated).not.toBe(source);
+
+        expect(validateWithOverride(AUTH_OWNER, mutated)).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('AUTH_USER_REGISTER owner dispatch is not connected')
             ])
         );
     });

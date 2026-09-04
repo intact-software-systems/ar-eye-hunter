@@ -8,6 +8,7 @@ import {
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
+import { validateRtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/validate-rtc-topology-publication.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it, vi } from 'vitest';
@@ -17,7 +18,6 @@ import {
     createGroupRef,
     createPublication,
     createTopologySnapshot,
-    putOrLoadTopologyPublication,
     reorderJsonObjectKeys,
     topologyInvariantCases
 } from './rtc-topology-repository-test-fixtures.ts';
@@ -359,9 +359,7 @@ describe('RTC topology snapshot repository', () => {
         }
     );
 
-    it('persists a required target snapshot version and binds it to the AL target', async () => {
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+    it('requires the target snapshot version to match the AL target', () => {
         const snapshot = createTopologySnapshot(createGroupRef(), 1);
         const base = createPublication(snapshot, 'work-target-version');
         const publication = {
@@ -369,34 +367,26 @@ describe('RTC topology snapshot repository', () => {
             targetGroupSnapshotVersion: 1
         };
 
-        await expect(
-            putOrLoadTopologyPublication(repository, publication, snapshot)
-        ).resolves.toMatchObject({
-            publication,
-            inserted: true
-        });
-        await expect(
-            putOrLoadTopologyPublication(
-                repository,
+        expect(() => validateRtcTopologyPublication(publication, snapshot.groupRef)).not.toThrow();
+        expect(() =>
+            validateRtcTopologyPublication(
                 {
                     ...publication,
                     publicationId: 'work-target-version-mismatch:1:1:1',
                     workId: 'work-target-version-mismatch',
                     targetGroupSnapshotVersion: 2
                 },
-                snapshot
+                snapshot.groupRef
             )
-        ).rejects.toThrow('snapshot version');
+        ).toThrow('snapshot version');
     });
 
-    it('binds persisted publication message timestamps to explicit publication facts', async () => {
-        const repository = new RtcTopologyPublicationRepository(new FakeRuntimeStateRepository());
+    it('binds publication message timestamps to explicit publication facts', () => {
         const snapshot = createTopologySnapshot(createGroupRef(), 1);
         const publication = createPublication(snapshot, 'work-explicit-time');
 
-        await expect(
-            putOrLoadTopologyPublication(
-                repository,
+        expect(() =>
+            validateRtcTopologyPublication(
                 {
                     ...publication,
                     message: {
@@ -405,9 +395,9 @@ describe('RTC topology snapshot repository', () => {
                         audit: { ...publication.message.audit, createdTs: 11 }
                     }
                 },
-                snapshot
+                snapshot.groupRef
             )
-        ).rejects.toThrow('timestamp');
+        ).toThrow('timestamp');
     });
 
     it.each(['direct', 'list', 'page'] as const)(

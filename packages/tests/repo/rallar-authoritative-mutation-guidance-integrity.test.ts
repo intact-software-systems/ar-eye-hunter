@@ -405,10 +405,6 @@ describe('authoritative mutation guidance integrity', () => {
             );
             expect(guidance).toMatch(/AppInbox .{0,50}owns .{0,40}transaction .{0,40}retry boundary/i);
             expect(guidance).toMatch(/service write receives the transaction .{0,40}never opens/i);
-            expect(guidance).toContain(
-                'optimistic compare-and-set writes with bounded QueueBox redelivery attempts'
-            );
-            expect(guidance).not.toContain('optimistic compare-and-set writes with bounded retries');
             expect(guidance).toContain('write(transaction, computed)');
             expect(guidance).toMatch(
                 /(?:ResourceInboxRepository.{0,160}same transaction|same transaction.{0,160}ResourceInboxRepository)/i

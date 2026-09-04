@@ -64,8 +64,7 @@ export class RtcRttInboxService {
         const handlers = handlerRuntime.registry;
         this.handler = new RtcRttAppInboxHandler({
             groupStateService: dependencies.groupStateService,
-            writeMutation: async (context, write) =>
-                await handlerRuntime.transactionWriter.writeMutation(context, write),
+            transactionWriter: handlerRuntime.transactionWriter,
             nowEpochMs: config.options?.nowEpochMs ?? Date.now,
             wakeQueue: config.wakeOwningQueue
         });
