@@ -94,7 +94,7 @@ describe('group topology config mutation phases', () => {
         }
     });
 
-    it('executes each prepared runtime write before the APP_OUTBOX write', async () => {
+    it('executes each computed runtime write before the APP_OUTBOX write', async () => {
         const service = createService();
         const mutation = createTopologyConfigMutationTestInput();
         const read = {
