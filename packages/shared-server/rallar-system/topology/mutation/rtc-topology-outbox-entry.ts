@@ -1,5 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
 
+import {
+    computeAppOutboxInsert,
+    type AppOutboxInsert
+} from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType, type RttMeasurementInfo } from '@shared/api/api-config.ts';
@@ -82,7 +86,6 @@ interface RtcTopologyWorkEnvelope {
 }
 
 export function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): ResourceEntry {
-    validateComputedRtcTopologyOutbox(computed);
     const createdBy = toAppQueueCreatedBy(computed.senderId);
     const overlayId = toScopedOverlayId(computed.aggregateRef);
     const sourceGroupStateCausalRevision = readGroupCausalRevision(computed.groupSnapshot);
@@ -170,6 +173,12 @@ export function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): Re
     };
 }
 
+export function computeRtcTopologyOutboxInsert(
+    computed: ComputedRtcTopologyOutbox
+): AppOutboxInsert {
+    return computeAppOutboxInsert(computeRtcTopologyEntry(computed));
+}
+
 export function toRtcTopologyEntryResourceId(computed: ComputedRtcTopologyOutbox): string {
     return computed.resourceId;
 }
@@ -185,7 +194,7 @@ export function deriveRtcTopologyEntryResourceId(
     ].join(':');
 }
 
-function validateComputedRtcTopologyOutbox(computed: ComputedRtcTopologyOutbox): void {
+export function validateComputedRtcTopologyOutbox(computed: ComputedRtcTopologyOutbox): void {
     const snapshot = computed.groupSnapshot;
     validateAuthoritativeGroupSnapshot(snapshot);
     if (

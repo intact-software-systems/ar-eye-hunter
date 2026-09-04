@@ -30,7 +30,7 @@ export function validateTopologyConfigMutationInput(
 ): void {
     validateTopologyConfigCommand(topologyMutation.command);
     validateTopologyConfigRead(topologyMutation.read, topologyMutation.command);
-    validateTopologyConfigFacts(topologyMutation.facts);
+    validateTopologyConfigFacts(topologyMutation.command, topologyMutation.facts);
     validateTopologyConfigAuthority(
         topologyMutation.read.groupSnapshot,
         topologyMutation.command,
@@ -41,13 +41,14 @@ export function validateTopologyConfigMutationInput(
 export function validateTopologyConfigIdempotencyInput(
     command: GroupTopologyConfigMutationCommand,
     read: GroupTopologyConfigMutationRead,
-    authorityFacts: Readonly<{ isPlatformAdmin: boolean; }>
+    authorityFacts: Readonly<{ isPlatformAdmin: boolean; policyNowEpochMs: number; }>
 ): void {
     validateTopologyConfigCommand(command);
     validateTopologyConfigRead(read, command);
     if (typeof authorityFacts.isPlatformAdmin !== 'boolean') {
         throw new TypeError('Topology config admin fact is invalid');
     }
+    validateTopologyStorageRevision(authorityFacts.policyNowEpochMs, 'Topology config policy time');
     validateTopologyConfigAuthority(read.groupSnapshot, command, authorityFacts);
 }
 
@@ -70,7 +71,7 @@ export function requireTopologyConfigRequestId(
 }
 
 function validateTopologyConfigCommand(command: GroupTopologyConfigMutationCommand): void {
-    if (!command || typeof command !== 'object' || 'commandHash' in command) {
+    if (!command || typeof command !== 'object') {
         throw new TypeError('Topology config command is invalid');
     }
     if (!['putConfig', 'deleteConfig', 'putOverride', 'deleteOverride'].includes(command.operation)) {
@@ -78,6 +79,10 @@ function validateTopologyConfigCommand(command: GroupTopologyConfigMutationComma
     }
     validateTopologyGroupRef(command.aggregateRef, 'Topology config command groupRef');
     requireTopologyString(command.commandId, 'Topology config commandId');
+    if (!/^sha256:[0-9a-f]{64}$/.test(command.commandHash)) {
+        throw new TypeError('Topology config command hash is invalid');
+    }
+    validateTopologyStorageRevision(command.capturedAtEpochMs, 'Topology config captured time');
     if (command.requestId !== null) {
         requireTopologyString(command.requestId, 'Topology config requestId');
     }
@@ -165,15 +170,20 @@ function validateTopologyConfigReadGenerations(
     }
 }
 
-function validateTopologyConfigFacts(facts: GroupTopologyConfigMutationFacts): void {
-    validateTopologyStorageRevision(facts.requestedAtEpochMs, 'request fact time');
+function validateTopologyConfigFacts(
+    command: GroupTopologyConfigMutationCommand,
+    facts: GroupTopologyConfigMutationFacts
+): void {
     validateTopologyStorageRevision(facts.policyNowEpochMs, 'policy fact time');
     validateTopologyPositiveInteger(facts.attemptCount, 'attempt fact count');
-    if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
-        throw new TypeError('Topology config command hash is invalid');
-    }
     if (typeof facts.isPlatformAdmin !== 'boolean') {
         throw new TypeError('Topology config admin fact is invalid');
+    }
+    if (command.operation === 'putOverride' && facts.resolvedOverrideExpiresAtEpochMs === null) {
+        throw new TypeError('Topology override expiry fact is required');
+    }
+    if (command.operation !== 'putOverride' && facts.resolvedOverrideExpiresAtEpochMs !== null) {
+        throw new TypeError('Topology override expiry fact differs from operation');
     }
     if (facts.resolvedOverrideExpiresAtEpochMs !== null) {
         validateTopologyStorageRevision(facts.resolvedOverrideExpiresAtEpochMs, 'override expiry fact');
