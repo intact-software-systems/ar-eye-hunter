@@ -285,7 +285,7 @@ async function deletePageRows(
                     select (value ->> 'rowId')::jsonb ->> 0 as store_namespace,
                            (value ->> 'rowId')::jsonb ->> 1 as store_key,
                            value ->> 'revisionToken' as revision_token
-                    from jsonb_array_elements(${deletion.candidateRowsJson}::jsonb)
+                    from jsonb_array_elements(${deletion.candidateRowsJson}::text::jsonb)
                 )
                 delete from runtime_state_store target using expired
                 where target.store_namespace = expired.store_namespace
@@ -300,7 +300,7 @@ async function deletePageRows(
                 with expired as (
                     select (value ->> 'rowId')::bigint as ri_row_id,
                            value ->> 'revisionToken' as revision_token
-                    from jsonb_array_elements(${deletion.candidateRowsJson}::jsonb)
+                    from jsonb_array_elements(${deletion.candidateRowsJson}::text::jsonb)
                 )
                 delete from resource_inbox target using expired
                 where target.ri_row_id = expired.ri_row_id
@@ -313,7 +313,7 @@ async function deletePageRows(
                 with expired as (
                     select (value ->> 'rowId')::bigint as ris_row_id,
                            value ->> 'revisionToken' as revision_token
-                    from jsonb_array_elements(${deletion.candidateRowsJson}::jsonb)
+                    from jsonb_array_elements(${deletion.candidateRowsJson}::text::jsonb)
                 )
                 delete from resource_inbox_results target using expired
                 where target.ris_row_id = expired.ris_row_id
@@ -327,7 +327,7 @@ async function deletePageRows(
                     select (value ->> 'rowId')::jsonb ->> 0 as store_name,
                            (value ->> 'rowId')::jsonb ->> 1 as data_key,
                            value ->> 'revisionToken' as revision_token
-                    from jsonb_array_elements(${deletion.candidateRowsJson}::jsonb)
+                    from jsonb_array_elements(${deletion.candidateRowsJson}::text::jsonb)
                 )
                 delete from app_data_store target using expired
                 where target.app_namespace = ${deletion.appData.namespace}
