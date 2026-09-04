@@ -8,6 +8,7 @@ import {
     createBrowserQueueBox,
     deleteExpiredBrowserQueueBoxEntriesForSession,
     initBrowserQueueBoxExpiryEviction,
+    toBrowserQueueBoxDatabaseName,
     toBrowserQueueBoxStoreName
 } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -120,7 +121,7 @@ function expiredTs(): Temporal.Instant {
 async function readQueueBoxEntryKeys(
     storeName: string
 ): Promise<readonly string[]> {
-    const db = await openBrowserRuntimeDatabase();
+    const db = await openBrowserRuntimeDatabase(storeName);
 
     try {
         if (!db.objectStoreNames.contains(storeName)) {
@@ -153,9 +154,9 @@ async function readQueueBoxEntryKeys(
     }
 }
 
-async function openBrowserRuntimeDatabase(): Promise<IDBDatabase> {
+async function openBrowserRuntimeDatabase(storeName: string): Promise<IDBDatabase> {
     return await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open(BROWSER_AL_RUNTIME_DB_NAME);
+        const request = indexedDB.open(toBrowserQueueBoxDatabaseName(storeName));
 
         request.onerror = () =>
             reject(
@@ -166,8 +167,19 @@ async function openBrowserRuntimeDatabase(): Promise<IDBDatabase> {
 }
 
 async function deleteBrowserRuntimeDatabase(): Promise<void> {
+    const databases = await indexedDB.databases();
+    const queueBoxDatabasePrefix = `${BROWSER_AL_RUNTIME_DB_NAME}:`;
+    await Promise.all(
+        databases
+            .map(({ name }) => name)
+            .filter((name): name is string => name?.startsWith(queueBoxDatabasePrefix) ?? false)
+            .map(deleteDatabase)
+    );
+}
+
+async function deleteDatabase(name: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-        const request = indexedDB.deleteDatabase(BROWSER_AL_RUNTIME_DB_NAME);
+        const request = indexedDB.deleteDatabase(name);
 
         request.onsuccess = () => resolve();
         request.onerror = () =>
