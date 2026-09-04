@@ -45,6 +45,140 @@ describe('transaction write check', () => {
         expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
     });
 
+    it('follows transitive local helpers from the transaction boundary', () => {
+        const findings = analyzeFixture(`
+            interface Sql {
+                begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                query(value: unknown): Promise<void>;
+            }
+            declare const database: Sql;
+            function collectRow(): unknown { return materializeRow(); }
+            function materializeRow(): unknown {
+                const createdAt = Date.now();
+                const nonce = Math.random();
+                const values = [nonce].toSorted();
+                const serialized = JSON.stringify({ createdAt, values });
+                return crypto.subtle.digest('SHA-256', new TextEncoder().encode(serialized));
+            }
+            export async function execute(): Promise<void> {
+                await database.begin(async (transaction) => {
+                    await transaction.query(collectRow());
+                });
+            }
+        `);
+
+        expect(findings.map((finding) => finding.operation)).toEqual([
+            'Date.now',
+            'Math.random',
+            'toSorted',
+            'JSON.stringify',
+            'crypto.subtle.digest',
+            'TextEncoder'
+        ]);
+        expect([...new Set(findings.map((finding) => finding.boundary))]).toEqual([
+            'packages/domain/mutation.ts:16'
+        ]);
+    });
+
+    it('analyzes locally resolved callbacks passed to transaction-bound helpers', () => {
+        const findings = analyzeFixture(`
+            interface Sql {
+                begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                query(value: unknown): Promise<void>;
+            }
+            interface Writer {
+                write(transaction: Sql, materialize: () => string): Promise<void>;
+            }
+            declare const database: Sql;
+            declare const writer: Writer;
+            function materialize(): string { return JSON.stringify({ value: 1 }); }
+            export async function execute(): Promise<void> {
+                await database.begin(async (transaction) => {
+                    await writer.write(transaction, materialize);
+                });
+            }
+        `);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+    });
+
+    it('terminates recursive local helper graphs at a fixed point', () => {
+        const findings = analyzeFixture(`
+            interface Sql { begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>; }
+            declare const database: Sql;
+            function first(depth: number): string {
+                return depth > 0 ? second(depth - 1) : JSON.stringify(depth);
+            }
+            function second(depth: number): string { return first(depth); }
+            export async function execute(): Promise<void> {
+                await database.begin(async () => { first(1); });
+            }
+        `);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+    });
+
+    it('fails closed when transaction-bound callback provenance is unresolved', () => {
+        const findings = analyzeFixture(`
+            interface Sql { begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>; }
+            interface Writer {
+                write(transaction: Sql, materialize: () => string): Promise<void>;
+            }
+            declare const database: Sql;
+            declare const writer: Writer;
+            declare const callbacks: { materialize: () => string };
+            export async function execute(): Promise<void> {
+                await database.begin(async (transaction) => {
+                    await writer.write(transaction, callbacks.materialize);
+                });
+            }
+        `);
+
+        expect(findings).toMatchObject([{
+            rule: 'transaction.unresolved-provenance',
+            operation: 'callbacks.materialize',
+            boundary: 'packages/domain/mutation.ts:10'
+        }]);
+    });
+
+    it('does not follow unrelated helpers with the same name', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        project.createSourceFile(
+            '/packages/domain/safe-work.ts',
+            `export function collectRow(): number { return Date.now(); }`
+        );
+        project.createSourceFile(
+            '/packages/domain/unrelated-work.ts',
+            `export function collectRow(): string { return JSON.stringify({ value: 1 }); }`
+        );
+        project.createSourceFile(
+            '/packages/domain/mutation.ts',
+            `import { collectRow } from './safe-work.ts';
+             interface Sql {
+                 begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                 query(value: unknown): Promise<void>;
+             }
+             declare const database: Sql;
+             export async function execute(): Promise<void> {
+                 await database.begin(async (transaction) => {
+                     await transaction.query(collectRow());
+                 });
+             }`
+        );
+
+        const findings = analyzeTransactionWrites(project);
+
+        expect(findings.map((finding) => ({
+            path: finding.path,
+            operation: finding.operation
+        }))).toEqual([
+            {
+                path: 'packages/domain/safe-work.ts',
+                operation: 'Date.now'
+            }
+        ]);
+    });
+
     it('inspects inferred object-property write implementations', () => {
         const findings = analyzeFixture(`
             interface PSqlSql { query(value: unknown): Promise<void>; }
