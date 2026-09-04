@@ -43,6 +43,8 @@ const SPECIALIZED_TRANSACTION_OWNERS = new Map([
             'reserveRetryExhaustionFinalizations',
             'releaseEntries',
             'enqueue',
+            'enqueueIf',
+            'enqueueOrUpdate',
             'enqueueIfAbsent'
         ])
     ],

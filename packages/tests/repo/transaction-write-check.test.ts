@@ -696,7 +696,7 @@ describe('transaction write check', () => {
         });
     });
 
-    it('fails closed for arbitrary callbacks in specialized ResourceInbox files', () => {
+    it('exempts exact conditional ResourceInbox owners and fails closed for neighboring methods', () => {
         const project = new Project({ useInMemoryFileSystem: true });
         const source = project.createSourceFile(
             '/packages/shared-server/queuebox/postgres/p-sql-queue-box.ts',
@@ -706,6 +706,16 @@ describe('transaction write check', () => {
              export class PSqlQueueBox {
                  constructor(private readonly repository: Repository) {}
                  async enqueueIf(decide: (current: string) => boolean): Promise<void> {
+                     await this.repository.transaction(async () => {
+                         decide('current');
+                     });
+                 }
+                 async enqueueOrUpdate(update: (current: string) => string): Promise<void> {
+                     await this.repository.transaction(async () => {
+                         update('current');
+                     });
+                 }
+                 async unreviewed(decide: (current: string) => boolean): Promise<void> {
                      await this.repository.transaction(async () => {
                          decide('current');
                      });
