@@ -30,13 +30,14 @@ import {
 
 interface RetryAttempt {
     readonly attempt: number;
+    readonly preparedAtEpochMs: number;
     readonly outcome: 'conflict' | 'denied';
     readonly authorized: boolean;
 }
 
 describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, () => {
     it(
-        'restarts the AppInbox group operation ' + 'and denies a retry after authority changes',
+        'restarts read/compute/validate with immutable prepared facts and current authority',
         async () => {
             const nowEpochMs = Date.now();
             const queue = new TestResourceInbox();
@@ -112,7 +113,9 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                         queueResourceId: 'outer-retry-authority-change'
                     };
                 },
-                read: async (command: Readonly<{ facts: { attemptCount: number; }; }>) => ({
+                read: async (
+                    command: Readonly<{ facts: { attemptCount: number; nowEpochMs: number; }; }>
+                ) => ({
                     authorized,
                     command
                 }),
@@ -120,7 +123,9 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     _command: never,
                     read: Readonly<{
                         authorized: boolean;
-                        command: Readonly<{ facts: { attemptCount: number; }; }>;
+                        command: Readonly<{
+                            facts: { attemptCount: number; nowEpochMs: number; };
+                        }>;
                     }>
                 ) => ({
                     outcome: 'write',
@@ -133,13 +138,16 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     computed: Readonly<{
                         read: Readonly<{
                             authorized: boolean;
-                            command: Readonly<{ facts: { attemptCount: number; }; }>;
+                            command: Readonly<{
+                                facts: { attemptCount: number; nowEpochMs: number; };
+                            }>;
                         }>;
                     }>
                 ) => {
                     if (!computed.read.authorized) {
                         attempts.push({
                             attempt: computed.read.command.facts.attemptCount,
+                            preparedAtEpochMs: computed.read.command.facts.nowEpochMs,
                             outcome: 'denied',
                             authorized: false
                         });
@@ -159,12 +167,19 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     computed: Readonly<{
                         read: Readonly<{
                             authorized: boolean;
-                            command: Readonly<{ facts: { attemptCount: number; }; }>;
+                            command: Readonly<{
+                                facts: { attemptCount: number; nowEpochMs: number; };
+                            }>;
                         }>;
                     }>
                 ) => {
                     const attempt = computed.read.command.facts.attemptCount as number;
-                    attempts.push({ attempt, outcome: 'conflict', authorized: true });
+                    attempts.push({
+                        attempt,
+                        preparedAtEpochMs: computed.read.command.facts.nowEpochMs,
+                        outcome: 'conflict',
+                        authorized: true
+                    });
                     authorized = false;
                     throw new RuntimeStateWriteConflictError();
                 }
@@ -222,10 +237,20 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
 
             expect((await pending).left?.message).toContain('Forbidden:');
             expect(attempts).toEqual([
-                { attempt: 1, outcome: 'conflict', authorized: true },
-                { attempt: 2, outcome: 'denied', authorized: false }
+                {
+                    attempt: 1,
+                    preparedAtEpochMs: nowEpochMs + 1,
+                    outcome: 'conflict',
+                    authorized: true
+                },
+                {
+                    attempt: 2,
+                    preparedAtEpochMs: nowEpochMs + 1,
+                    outcome: 'denied',
+                    authorized: false
+                }
             ]);
-            expect(authenticatedReadCount).toBe(2);
+            expect(authenticatedReadCount).toBe(1);
         }
     );
 

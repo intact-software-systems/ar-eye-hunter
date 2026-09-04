@@ -161,8 +161,11 @@ function createTransactionBoundaryExecution(
     const formationMutationEvents: GroupFormationGroupMutationEvent[] = [];
     const handler = new GroupStateInboxHandler({
         mutationService: groupState.service,
-        readAuthenticatedMutation: async () => {
+        prepareAuthenticatedMutation: async () => {
             throw new Error('A reserved transaction-boundary command must already be internal.');
+        },
+        persistPreparedMutation: async () => {
+            throw new Error('A reserved transaction-boundary command must not persist authority.');
         },
         sessionGenerationLifecycle: groupState.service.sessionGenerationLifecycle,
         resultReader: createTestGroupStateRepository(

@@ -46,10 +46,14 @@ export interface GroupStateInboxHandlerDependencies {
     readonly transactionWriter: AppInboxMutationTransactionWriter;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
-    readonly readAuthenticatedMutation: (
+    readonly prepareAuthenticatedMutation: (
         descriptor: AuthorizedGroupMutation['descriptor'],
         authority: GroupMutationAuthority
     ) => Promise<GroupMutationPreparation>;
+    readonly persistPreparedMutation: (
+        context: AppInboxMessageContext<GroupStateInboxDurableResult>,
+        preparation: GroupMutationPreparation
+    ) => Promise<void>;
 }
 
 interface CommitGroupStateMutationInput {
@@ -77,7 +81,7 @@ export class GroupStateInboxHandler {
     async processGroupStateMutation(
         context: AppInboxMessageContext<GroupStateInboxDurableResult>
     ): Promise<GroupStateInboxDurableResult | InactiveGroupPresenceResult> {
-        const prepared = await this.readGroupMutationCommand(context);
+        const prepared = await this.readOrPrepareGroupMutation(context);
         const command: GroupStateMutationCommand = {
             authorityProof: prepared.authorityProof,
             descriptor: prepared.descriptor,
@@ -172,17 +176,19 @@ export class GroupStateInboxHandler {
         return { mutationRead, currentSnapshot, recordedEvent };
     }
 
-    private async readGroupMutationCommand(
+    private async readOrPrepareGroupMutation(
         context: AppInboxMessageContext<GroupStateInboxDurableResult>
     ): Promise<GroupMutationPreparation> {
         const authority = decodeGroupStateInboxAuthority(context.enqueue.authority);
         if (authority.kind === 'prepared') {
             return authority.mutation;
         }
-        return await this.dependencies.readAuthenticatedMutation(
+        const preparation = await this.dependencies.prepareAuthenticatedMutation(
             authority.mutation.descriptor,
             authority.mutation.authorityProof
         );
+        await this.dependencies.persistPreparedMutation(context, preparation);
+        return preparation;
     }
 
     private async commitMutation(

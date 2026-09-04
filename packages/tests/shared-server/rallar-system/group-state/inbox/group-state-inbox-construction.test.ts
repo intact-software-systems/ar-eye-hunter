@@ -51,10 +51,14 @@ type ExpectedHandlerDependencies = {
     readonly transactionWriter: AppInboxMutationTransactionWriter;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
-    readonly readAuthenticatedMutation: (
+    readonly prepareAuthenticatedMutation: (
         descriptor: GroupMutationDescriptor,
         authority: GroupMutationAuthority
     ) => Promise<GroupMutationPreparation>;
+    readonly persistPreparedMutation: (
+        context: AppInboxMessageContext<GroupStateInboxDurableResult>,
+        preparation: GroupMutationPreparation
+    ) => Promise<void>;
 };
 type ExpectedComputedWrite = (input: GroupMutationWriteInput) => GroupMutationComputed;
 
