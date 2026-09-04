@@ -112,7 +112,7 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
             if (boundary.kind === 'indexed-db') {
                 const owner = call.getFirstAncestor(isFunctionDeclaration);
                 if (owner) {
-                    roots.push(analysisRoot(owner, call.getEnd()));
+                    roots.push(analysisRoot(owner, call.getEnd(), call));
                 }
                 continue;
             }
@@ -127,7 +127,7 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
             start: root.start,
             findings,
             visited,
-            boundary: root.node,
+            boundary: root.boundary,
             project
         });
     }
@@ -151,7 +151,7 @@ function addCallbackRoots(input) {
         });
     }
     for (const resolvedCallback of callbacks) {
-        roots.push(analysisRoot(resolvedCallback));
+        roots.push(analysisRoot(resolvedCallback, resolvedCallback.getStart(), call));
     }
 }
 
@@ -373,8 +373,8 @@ function isTransactionParameter(parameter) {
     return /^(?:transaction|tx|sql)$/iu.test(parameter.getName()) || TRANSACTION_TYPE.test(typeText);
 }
 
-function analysisRoot(node, start = node.getStart()) {
-    return { node, start };
+function analysisRoot(node, start = node.getStart(), boundary = node) {
+    return { node, start, boundary };
 }
 
 function precomputableOperation(call, operation) {
@@ -637,6 +637,15 @@ function resolveCallableBodies(node, project, visitedSymbols = new Set()) {
     }
     if (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) {
         return [node];
+    }
+    if (
+        Node.isAsExpression(node) ||
+        Node.isNonNullExpression(node) ||
+        Node.isParenthesizedExpression(node) ||
+        Node.isSatisfiesExpression(node) ||
+        Node.isTypeAssertion(node)
+    ) {
+        return resolveCallableBodies(node.getExpression(), project, visitedSymbols);
     }
     return resolveDeclarations(node.getSymbol(), project, visitedSymbols);
 }
