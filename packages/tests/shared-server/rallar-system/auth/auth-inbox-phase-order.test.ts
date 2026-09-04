@@ -84,9 +84,9 @@ describe('auth inbox mutation phase order', () => {
             'clock',
             'facts',
             'read',
+            'completion',
             'compute',
             'validate',
-            'completion',
             'transaction',
             'write'
         ]);
