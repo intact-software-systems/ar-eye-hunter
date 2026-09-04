@@ -2,7 +2,6 @@ import { PSqlAdmissionMutationCollector } from '@shared-server/al-runtime/postgr
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-import { captureAuthMutationFacts } from '@shared-server/rallar-system/auth/mutation/read/capture-auth-mutation-facts.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -41,11 +40,7 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
             }
         } as const;
         const registrationRead = await auth.read(registration);
-        const registrationFacts = await captureAuthMutationFacts(
-            registration,
-            credentialIssuer,
-            auth.serviceId
-        );
+        const registrationFacts = { kind: registration.kind, serviceId: auth.serviceId } as const;
         const registrationComputed = auth.compute(registration, registrationRead, registrationFacts);
         auth.validate({
             command: registration,
@@ -112,16 +107,12 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
             tickets: agentFacts
         } as const;
         const agentRead = await auth.read(agentCommand);
-        const capturedAgentFacts = await captureAuthMutationFacts(
-            agentCommand,
-            credentialIssuer,
-            auth.serviceId
-        );
-        const agentComputed = auth.compute(agentCommand, agentRead, capturedAgentFacts);
+        const agentMutationFacts = { kind: agentCommand.kind, serviceId: auth.serviceId } as const;
+        const agentComputed = auth.compute(agentCommand, agentRead, agentMutationFacts);
         auth.validate({
             command: agentCommand,
             read: agentRead,
-            facts: capturedAgentFacts,
+            facts: agentMutationFacts,
             computed: agentComputed
         });
         await runtime.insertIfAbsent(

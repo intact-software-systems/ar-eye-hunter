@@ -5,7 +5,6 @@ import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/aut
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import type { IssueAuthWsTicketCommand } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
-import { captureAuthMutationFacts } from '@shared-server/rallar-system/auth/mutation/read/capture-auth-mutation-facts.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -395,11 +394,7 @@ it('rejects websocket ticket issuance when the presented session token differs',
         serviceId: 'auth-test-service'
     });
     const read = await service.read(command);
-    const facts = await captureAuthMutationFacts(
-        command,
-        credentialIssuer,
-        service.serviceId
-    );
+    const facts = { kind: command.kind, serviceId: service.serviceId } as const;
     const computed = service.compute(command, read, facts);
 
     expect(() => service.validate({ command, read, facts, computed })).toThrow(/authority|token/u);
