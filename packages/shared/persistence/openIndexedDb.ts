@@ -8,6 +8,7 @@ interface IndexedDbStoreDefinition {
     readonly name: string;
     readonly keyPath: string;
     readonly indexes?: readonly IndexedDbIndexDefinition[];
+    readonly initialRecords?: readonly unknown[];
 }
 
 interface IndexedDbIndexSchema {
@@ -20,6 +21,7 @@ interface IndexedDbStoreSchema {
     readonly name: string;
     readonly keyPath: string;
     readonly indexes: readonly IndexedDbIndexSchema[];
+    readonly initialRecords: readonly unknown[];
 }
 
 export class IndexedDbConnection {
@@ -84,7 +86,8 @@ function toIndexedDbStoreSchema(definition: IndexedDbStoreDefinition): IndexedDb
                 ? index.keyPath
                 : [...index.keyPath],
             unique: index.unique ?? false
-        }))
+        })),
+        initialRecords: [...(definition.initialRecords ?? [])]
     };
 }
 
@@ -136,6 +139,9 @@ function createIndexedDbStore(
     const objectStore = db.createObjectStore(store.name, { keyPath: store.keyPath });
     for (const index of store.indexes) {
         objectStore.createIndex(index.name, index.keyPath, { unique: index.unique });
+    }
+    for (const record of store.initialRecords) {
+        objectStore.put(record);
     }
 }
 
