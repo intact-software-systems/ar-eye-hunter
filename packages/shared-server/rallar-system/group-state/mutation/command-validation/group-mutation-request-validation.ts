@@ -182,6 +182,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<Record<GroupMutationCommand['operati
     // Internal-only, like failGroupFormation: the publication transaction
     // enqueues it and no HTTP route exists.
     applyPlannedLayout: MUTATION_REQUEST_KEYS,
+    updateGroupActivationStatus: MUTATION_REQUEST_KEYS,
     // The valve carries no operation field: pausing names nothing beyond
     // the actor who decided it (product decision 25).
     pauseGroupTransport: MUTATION_REQUEST_KEYS,

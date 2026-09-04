@@ -74,7 +74,7 @@ describe('internal authority capability matrix', () => {
     // Each mode fails closed outside its exact operation inventory.
     it.each([
         { mode: 'topology-publication' as const, message: 'applyPlannedLayout' },
-        { mode: 'activation-status' as const, message: 'status update' }
+        { mode: 'activation-status' as const, message: 'limited to updateGroupActivationStatus' }
     ])('fails $mode closed on every current operation', (row) => {
         expect(() => assertGroupMutationAuthority(internalJoinCommand(), internalFacts(row.mode)))
             .toThrow(row.message);
