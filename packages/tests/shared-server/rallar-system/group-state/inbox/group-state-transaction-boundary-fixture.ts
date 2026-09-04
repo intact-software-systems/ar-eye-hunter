@@ -166,7 +166,10 @@ function createTransactionBoundaryExecution(
             throw new Error('A reserved transaction-boundary command must already be prepared.');
         },
         sessionGenerationLifecycle: groupState.service.sessionGenerationLifecycle,
-        snapshotObserver: groupState.service,
+        resultReader: createTestGroupStateRepository(
+            storage.runtimeRepository,
+            storage.database.groupEventStore
+        ),
         transactionWriter,
         wakeQueue: () => {
             wakeCount += 1;

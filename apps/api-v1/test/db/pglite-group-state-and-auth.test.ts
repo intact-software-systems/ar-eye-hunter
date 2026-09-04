@@ -229,11 +229,13 @@ Deno.test(
             for (const joiningAuthority of joiningAuthorities) {
                 await authSessions.putSession(joiningAuthority);
             }
+            const groupEvents = new PSqlGroupStateEventRepository(sql);
+            const groups = new GroupStateRepository(runtime, groupEvents);
             const groupState = createGroupStateService({
                 readPlannedLayoutRow: () => Promise.resolve(null),
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
-                groupStateEventStore: new PSqlGroupStateEventRepository(sql),
+                groupStateEventStore: groupEvents,
                 authSessionRepository: authSessions,
                 serviceId: 'pglite-group-service',
                 now: () => nowEpochMs
@@ -244,7 +246,8 @@ Deno.test(
                     resourceInboxRepository: resourceInbox.entries,
                     resourceInboxResultsRepository: resourceResults,
                     database: sql,
-                    groupStateService: groupState
+                    groupStateService: groupState,
+                    resultReader: groups
                 },
                 {
                     serviceId: 'pglite-group-service',
@@ -360,7 +363,7 @@ Deno.test(
                 groupId: 'vertical-group'
             };
             assert.equal(
-                (await new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql)).findGroup(ref))?.displayName,
+                (await groups.findGroup(ref))?.displayName,
                 'Vertical Group'
             );
             assert.equal((await new PSqlGroupStateEventRepository(sql).listGroupEvents(ref)).length, 3);
@@ -437,11 +440,13 @@ Deno.test(
             };
             const authSessions = new AuthSessionRepository(runtime);
             await authSessions.putSession(authority);
+            const groupEvents = new PSqlGroupStateEventRepository(sql);
+            const groups = new GroupStateRepository(runtime, groupEvents);
             const groupState = createGroupStateService({
                 readPlannedLayoutRow: () => Promise.resolve(null),
                 readAcceptedLayoutRow: () => Promise.resolve(null),
                 runtimeRepository: runtime,
-                groupStateEventStore: new PSqlGroupStateEventRepository(sql),
+                groupStateEventStore: groupEvents,
                 authSessionRepository: authSessions,
                 serviceId: 'pglite-summary-fence',
                 now: () => nowEpochMs
@@ -452,7 +457,8 @@ Deno.test(
                     resourceInboxRepository: resourceInbox.entries,
                     resourceInboxResultsRepository: resourceResults,
                     database: sql,
-                    groupStateService: groupState
+                    groupStateService: groupState,
+                    resultReader: groups
                 },
                 {
                     serviceId: 'pglite-summary-fence',
@@ -519,8 +525,7 @@ Deno.test(
                 workspaceId: 'main',
                 groupId: 'fence-group'
             };
-            const repository = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql));
-            const summaryBefore = await repository.findPresenceSummaryEntry(ref);
+            const summaryBefore = await groups.findPresenceSummaryEntry(ref);
             const work = new GroupPresenceSummaryWork({
                 outboxQueueReader: new OutboxQueueReader(
                     new PSqlQueueBox(createPSqlResourceInboxRepository(sql))
@@ -541,7 +546,7 @@ Deno.test(
                 /reservation changed before commit/
             );
 
-            assert.deepEqual(await repository.findPresenceSummaryEntry(ref), summaryBefore);
+            assert.deepEqual(await groups.findPresenceSummaryEntry(ref), summaryBefore);
             const stillReserved = await resourceInbox.entries.findAnyByKey(key);
             assert.equal(stillReserved?.status, EntityStatus.RESERVED);
             assert.equal(stillReserved?.dequeueAudit.attempts, 1);

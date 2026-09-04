@@ -1,7 +1,12 @@
 import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion
+} from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
 import type { AuthMutationIntent, AuthMutationResult } from '../mutation/auth-mutation-contracts.ts';
@@ -47,9 +52,22 @@ export class AuthInboxHandler {
         const read = await this.dependencies.mutationService.read(command);
         const computed = this.dependencies.mutationService.compute(command, read, materialized.facts);
         this.dependencies.mutationService.validate(command, read, computed);
-        return await this.dependencies.transactionWriter.writeMutation(
+        const completionInput = {
+            ...this.dependencies.transactionWriter.readCompletionFacts(context),
+            durableResult: computed.result,
+            status: EntityStatus.COMPLETED
+        } as const;
+        const completion = computeAppInboxCompletion(completionInput);
+        const completionIssues = validateAppInboxCompletion(completionInput, completion);
+        if (completionIssues[0] !== undefined) {
+            throw completionIssues[0].cause;
+        }
+        return await this.dependencies.transactionWriter.writeComputedMutation(
             context,
-            async (transaction) => await this.dependencies.mutationService.write(transaction, computed)
+            completion,
+            async (transaction) => {
+                await this.dependencies.mutationService.write(transaction, computed);
+            }
         );
     }
 }

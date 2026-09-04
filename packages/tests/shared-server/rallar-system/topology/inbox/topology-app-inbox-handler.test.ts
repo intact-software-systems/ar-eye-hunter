@@ -6,6 +6,7 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { EffectiveGroupTopologyConfig, StoredGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 
 import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
@@ -118,11 +119,15 @@ describe('TopologyAppInboxHandler', () => {
             nowEpochMs: () => NOW_EPOCH_MS,
             wakeQueue,
             transactionWriter: {
-                writeMutation: async (_context, write) => {
+                readCompletionFacts: (context) => {
+                    phases.push('completion');
+                    return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS };
+                },
+                writeComputedMutation: async (_context, computed, write) => {
                     phases.push('transaction');
-                    const result = await write({} as PSqlSql);
+                    await write({} as PSqlSql);
                     phases.push('commit');
-                    return result;
+                    return computed.durableResult;
                 }
             }
         });
@@ -132,6 +137,7 @@ describe('TopologyAppInboxHandler', () => {
             'read',
             'compute',
             'validate',
+            'completion',
             'transaction',
             'write',
             'commit',
@@ -143,7 +149,7 @@ describe('TopologyAppInboxHandler', () => {
     it('rejects idempotency conflict before transaction or wake', async () => {
         const phases: string[] = [];
         const context = await topologyContext(phases);
-        const writeMutation = async () => {
+        const unreachableTransaction = (): never => {
             phases.push('transaction');
             throw new Error('Idempotency conflicts must not open a transaction');
         };
@@ -170,7 +176,10 @@ describe('TopologyAppInboxHandler', () => {
         const handler = new TopologyAppInboxHandler({
             groupStateService: sessionReader(phases),
             nowEpochMs: () => NOW_EPOCH_MS,
-            transactionWriter: { writeMutation },
+            transactionWriter: {
+                readCompletionFacts: unreachableTransaction,
+                writeComputedMutation: async () => unreachableTransaction()
+            },
             wakeQueue
         });
 
@@ -209,11 +218,15 @@ describe('TopologyAppInboxHandler', () => {
             nowEpochMs: () => NOW_EPOCH_MS,
             wakeQueue,
             transactionWriter: {
-                writeMutation: async (_context, write) => {
+                readCompletionFacts: (context) => {
+                    phases.push('completion');
+                    return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS };
+                },
+                writeComputedMutation: async (_context, computed, write) => {
                     phases.push('transaction');
-                    const result = await write({} as PSqlSql);
+                    await write({} as PSqlSql);
                     phases.push('commit');
-                    return result;
+                    return computed.durableResult;
                 }
             }
         });
@@ -227,6 +240,7 @@ describe('TopologyAppInboxHandler', () => {
             'read',
             'compute',
             'validate',
+            'completion',
             'transaction',
             'write',
             'commit',
@@ -325,6 +339,7 @@ function createMessageContext(
         encodeResult: (result) => encodeAppInboxResult(result, 'Topology handler test result'),
         entry: {
             ...entry,
+            status: EntityStatus.RESERVED,
             dequeueAudit: { ...entry.dequeueAudit, attempts: 7 }
         }
     };

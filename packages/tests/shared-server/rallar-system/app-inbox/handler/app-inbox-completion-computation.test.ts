@@ -49,6 +49,37 @@ describe('AppInbox successful completion computation', () => {
         expect(harness.database.beginCalls).toBe(0);
     });
 
+    it('rejects completion projections that do not match the durable result', () => {
+        const harness = createAtomicHarness();
+        const writer = new AppInboxTransactionWriter({ database: harness.database.sql }, { serviceId: 'server-1' });
+        const input = {
+            ...writer.readCompletionFacts(harness.context),
+            status: EntityStatus.COMPLETED,
+            durableResult: { status: 'accepted', revision: 2 }
+        } as const;
+        const computed = computeAppInboxCompletion(input);
+
+        const issues = validateAppInboxCompletion(input, {
+            ...computed,
+            encodedResult: { status: 'substituted' },
+            resultReplacement: {
+                ...computed.resultReplacement,
+                resource: JSON.stringify({ status: 'substituted' })
+            },
+            finalizedEntry: {
+                ...computed.finalizedEntry,
+                resource: 'substituted request'
+            }
+        });
+
+        expect(issues.map((issue) => issue.path)).toEqual([
+            'computed.encodedResult',
+            'computed.resultReplacement',
+            'computed.finalizedEntry'
+        ]);
+        expect(harness.database.beginCalls).toBe(0);
+    });
+
     it('validates reservation identity by value rather than object identity', () => {
         const harness = createAtomicHarness();
         const writer = new AppInboxTransactionWriter({ database: harness.database.sql }, { serviceId: 'server-1' });
@@ -102,24 +133,5 @@ describe('AppInbox successful completion computation', () => {
         const key = toKeyAsString(harness.entry.key);
         expect(harness.database.state.results.get(key)?.resource).toBe(JSON.stringify(durableResult));
         expect(harness.database.state.inbox.get(key)?.status).toBe(EntityStatus.COMPLETED);
-    });
-
-    it('keeps private after-commit data separate from the computed durable result', async () => {
-        const harness = createAtomicHarness();
-        const writer = new AppInboxTransactionWriter({ database: harness.database.sql }, { serviceId: 'server-1' });
-        const durableResult = { status: 'accepted' } as const;
-        const input = { ...writer.readCompletionFacts(harness.context), status: EntityStatus.COMPLETED, durableResult };
-        const computed = computeAppInboxCompletion(input);
-        expect(validateAppInboxCompletion(input, computed)).toEqual([]);
-        const afterCommitResult = { wakeQueue: true };
-
-        const result = await writer.writeComputedMutationWithAfterCommitResult(
-            harness.context,
-            computed,
-            async () => afterCommitResult
-        );
-
-        expect(result).toEqual({ durableResult, afterCommitResult });
-        expect(harness.database.state.results.get(toKeyAsString(harness.entry.key))?.resource).toBe(JSON.stringify(durableResult));
     });
 });
