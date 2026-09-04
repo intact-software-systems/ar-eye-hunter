@@ -28,6 +28,10 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 - HTTP API calls: `packages/shared-web/browser/api-integration.ts`.
 - Canonical authoritative group state:
   `packages/shared-server/rallar-system/group-state/**`.
+- Group formation lifecycle: the stage a group is in gates topology planning,
+  dialing and pre-activation application data. Read
+  `docs/rallar-group-formation-architecture.md` before changing anything that
+  reads `lifecycleState`, the lifecycle policy, or the activation status.
 - Canonical topology inbox handling:
   `packages/shared-server/rallar-system/topology/inbox/**`.
 - Durable RTC topology delivery replay and reconnect/gap hydration:
@@ -47,6 +51,13 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 ## Rules Of Thumb
 
 - Prefer `GroupRef` over bare `groupId` when application/workspace scope matters.
+- Formation readiness and the activation status are observation, never
+  authority. A criterion evaluator may petition a transition by enqueueing a
+  command; the command re-authorizes through AppInbox against fresh state.
+  Nothing gates a decision on an observed fraction.
+- A group with no `lifecyclePolicy` is the `optimistic` preset, which is
+  exactly the behaviour groups had before the layer existed. Every enforcement
+  point reads an absent policy that way; do not add a fourth answer.
 - Do not trust warm in-memory presence blindly; check expiry and durable read-through paths.
 - For authoritative database or realtime service mutations, read
   `.agents/skills/rallar-code-writing/references/convergent-service-writing.md`
