@@ -455,7 +455,8 @@ describe('authoritative mutation guidance integrity', () => {
         expectAllNormalized(readRepo('.agents/skills/rallar-testing/SKILL.md'), [
             'For `strict-domain-write` package or API transaction writes',
             'one mutation attempt',
-            'actual database-returned facts'
+            'actual database-returned facts',
+            'incompatible existing schemas fail closed without a schema rewrite'
         ]);
         expectAllNormalized(readRepo('.agents/skills/performance-analysis/SKILL.md'), [
             'Transaction timing is not value provenance',

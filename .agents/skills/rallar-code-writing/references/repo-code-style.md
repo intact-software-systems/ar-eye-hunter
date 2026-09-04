@@ -1037,6 +1037,10 @@ write transactions, including AppInbox and domain-owned transactions. Calling
 ResourceInbox code from an AppInbox or domain-owned transaction does not
 transfer the specialized policy.
 
+Browser IndexedDB readwrite transactions and initial versionchange schema
+creation remain strict. An existing database must already match the current
+schema; reject a mismatch without rewriting it.
+
 The `specialized-resource-inbox` policy applies only when resolution proves an
 exact PostgreSQL ResourceInbox, Results, or QueueBox transaction owner. Those
 owners may bind parameters, coordinate their SQL reservation, deduplication,
