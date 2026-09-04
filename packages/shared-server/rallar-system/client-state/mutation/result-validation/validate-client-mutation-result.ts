@@ -15,9 +15,10 @@ import { rejectClientMutation } from '../../validation/client-mutation-rejection
 import {
     decodeClientValidationRecord,
     requireExactKeys,
-    type ClientValidationRecord
+    type ClientValidationRecord,
+    type ClientValidationValue
 } from '../../validation/client-record-validation.ts';
-import { requireSha256 } from '../../validation/client-string-validation.ts';
+import { requireSha256, requireString } from '../../validation/client-string-validation.ts';
 import { validateClientPrincipalRef } from '../../validation/validate-client-principal-ref.ts';
 import type { ClientMutationComputed, ConditionalCandidate } from '../client-mutation-contracts.ts';
 
@@ -64,7 +65,8 @@ function validateNoOpResult(value: ClientValidationRecord): void {
                 'idempotency',
                 'receipt',
                 'snapshot',
-                'event'
+                'event',
+                'persistence'
             ]
             : ['outcome', 'persistIdempotency', 'receipt', 'snapshot', 'event'],
         'Client mutation computed'
@@ -80,6 +82,7 @@ function validateNoOpResult(value: ClientValidationRecord): void {
             value.idempotency,
             'Client mutation computed.idempotency'
         );
+        validateClientPersistence(value.persistence);
     }
 }
 
@@ -106,7 +109,8 @@ function validateAppliedWriteResult(value: ClientValidationRecord): void {
             'snapshot',
             'idempotency',
             'stateSync',
-            'outboxEntries'
+            'outboxEntries',
+            'persistence'
         ],
         'Client mutation computed'
     );
@@ -144,13 +148,69 @@ function validateAppliedWriteResult(value: ClientValidationRecord): void {
     if (!Array.isArray(value.outboxEntries) || value.outboxEntries.length !== 2) {
         rejectClientMutation('Client mutation computed outboxEntries must contain snapshot and event');
     }
+    validateClientPersistence(value.persistence);
+}
+
+function validateClientPersistence(value: ClientValidationValue): void {
+    const persistence = decodeClientValidationRecord(
+        value,
+        'Client mutation computed.persistence'
+    );
+    requireExactKeys(
+        persistence,
+        ['runtimeWrites', 'eventWrite'],
+        'Client mutation computed.persistence'
+    );
+    if (!Array.isArray(persistence.runtimeWrites)) {
+        rejectClientMutation('Client mutation computed.persistence.runtimeWrites must be an array');
+    }
+    persistence.runtimeWrites.forEach(validateClientRuntimeWrite);
+    if (persistence.eventWrite === null) {
+        return;
+    }
+    const eventWrite = decodeClientValidationRecord(
+        persistence.eventWrite,
+        'Client mutation computed.persistence.eventWrite'
+    );
+    requireExactKeys(
+        eventWrite,
+        ['event', 'workspaceKey', 'eventJson'],
+        'Client mutation computed.persistence.eventWrite'
+    );
+    validateClientEvent(eventWrite.event, 'Client mutation computed.persistence.eventWrite.event');
+    requireString(
+        eventWrite.workspaceKey,
+        'Client mutation computed.persistence.eventWrite.workspaceKey'
+    );
+    requireString(eventWrite.eventJson, 'Client mutation computed.persistence.eventWrite.eventJson');
+}
+
+function validateClientRuntimeWrite(value: ClientValidationValue, index: number): void {
+    const label = `Client mutation computed.persistence.runtimeWrites[${index}]`;
+    const write = decodeClientValidationRecord(value, label);
+    const commonKeys = ['kind', 'namespace', 'key', 'value', 'expireAtIsoTimestamp'];
+    requireExactKeys(write, [...commonKeys, 'expectedRevision'], label);
+    requireString(write.namespace, `${label}.namespace`);
+    requireString(write.key, `${label}.key`);
+    requireString(write.value, `${label}.value`);
+    requireString(write.expireAtIsoTimestamp, `${label}.expireAtIsoTimestamp`);
+    if (write.kind === 'insert' && write.expectedRevision === null) {
+        return;
+    }
+    if (
+        write.kind !== 'update' ||
+        !Number.isSafeInteger(write.expectedRevision) ||
+        (write.expectedRevision as number) < 0
+    ) {
+        rejectClientMutation(`${label} guard is invalid`);
+    }
 }
 
 function validateConditionalCandidate<T>(
-    value: unknown,
+    value: ClientValidationValue,
     label: string,
-    validateValue: (value: unknown, label: string) => void
-): asserts value is ConditionalCandidate<T> {
+    validateValue: (value: ClientValidationValue, label: string) => void
+): asserts value is ClientValidationRecord & ConditionalCandidate<T> {
     const candidate = decodeClientValidationRecord(value, label);
     switch (candidate.operation) {
         case 'none':

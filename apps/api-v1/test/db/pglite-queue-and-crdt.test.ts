@@ -17,6 +17,7 @@ import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/top
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
+import { computeRtcTopologyInputFingerprintWrite } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -735,11 +736,14 @@ Deno.test(
             assert.equal(metrics.topologyUpdateCount, 1);
 
             const mismatchedFingerprint = `sha256:${'0'.repeat(64)}`;
+            const mismatchedFingerprintWrite = computeRtcTopologyInputFingerprintWrite(
+                groupRef,
+                mismatchedFingerprint
+            );
             await sql.begin(async (transaction) =>
                 await executionRepository.writeTopologyInputFingerprint(
                     transaction,
-                    groupRef,
-                    mismatchedFingerprint
+                    mismatchedFingerprintWrite
                 )
             );
             await runCoalescedIntent(currentSnapshot);

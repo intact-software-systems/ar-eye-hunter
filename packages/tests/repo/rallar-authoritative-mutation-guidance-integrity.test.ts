@@ -40,6 +40,10 @@ const strictMutationPhaseGuidancePaths = [
     '.agents/skills/rallar-testing/SKILL.md',
     '.agents/skills/performance-analysis/SKILL.md'
 ] as const;
+const transactionWriteCheckGuidancePaths = [
+    '.agents/skills/rallar-code-writing/SKILL.md',
+    '.agents/skills/rallar-testing/SKILL.md'
+] as const;
 const canonicalSnapshotOrderingGuidancePaths = [
     canonicalServiceWritingPath,
     'docs/rallar-convergent-state-and-rtc-topology.md'
@@ -430,6 +434,17 @@ describe('authoritative mutation guidance integrity', () => {
                 'Adding another service mutation phase requires explicit human approval',
                 'One queue delivery performs one mutation attempt',
                 'A conflict exits that attempt; queue redelivery starts again from `read`'
+            ]);
+        }
+    );
+
+    it.each(transactionWriteCheckGuidancePaths)(
+        '%s publishes the transaction-write check without overstating its proof',
+        (filePath) => {
+            expectAllNormalized(readRepo(filePath), [
+                'npm run check:transaction-writes',
+                'helper provenance',
+                'human review'
             ]);
         }
     );

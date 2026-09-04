@@ -1,6 +1,7 @@
 import type { AuthMutationCommand, AuthMutationComputed, AuthMutationRead } from '../auth-mutation-contracts.ts';
 import { AuthMutationRejectedError } from '../auth-mutation-rejected-error.ts';
-import { requireMatchingAuthKind } from './auth-mutation-validation.ts';
+import { computeAuthPersistence } from '../compute/compute-auth-persistence.ts';
+import { equalAuthJson, requireMatchingAuthKind } from './auth-mutation-validation.ts';
 import { validateAuthAgentTicketMutation } from './validate-auth-agent-ticket-mutation.ts';
 import { validateAuthSessionMutation } from './validate-auth-session-mutation.ts';
 import { validateAuthTicketMutation } from './validate-auth-ticket-mutation.ts';
@@ -21,17 +22,26 @@ export function validateAuthMutation(
     const commandKind = command.kind;
     switch (commandKind) {
         case 'register-user':
-            return validateAuthUserMutation({ kind: commandKind, command, read });
+            validateAuthUserMutation({ kind: commandKind, command, read });
+            break;
         case 'issue-session':
             validateAuthSessionMutation({ kind: commandKind, command, read, computed });
-            return validateAuthUserMutation({ kind: commandKind, command, read });
+            validateAuthUserMutation({ kind: commandKind, command, read });
+            break;
         case 'logout-session':
-            return validateAuthSessionMutation({ kind: commandKind, command, read, computed });
+            validateAuthSessionMutation({ kind: commandKind, command, read, computed });
+            break;
         case 'issue-ws-ticket':
         case 'consume-ws-ticket':
-            return validateAuthTicketMutation({ kind: commandKind, command, read });
+            validateAuthTicketMutation({ kind: commandKind, command, read });
+            break;
         case 'issue-agent-tickets':
         case 'consume-agent-ticket':
-            return validateAuthAgentTicketMutation({ kind: commandKind, command, read, computed });
+            validateAuthAgentTicketMutation({ kind: commandKind, command, read, computed });
+            break;
+    }
+    const expectedPersistence = computeAuthPersistence(computed, commandKind);
+    if (!equalAuthJson(expectedPersistence, computed.persistence)) {
+        throw new AuthMutationRejectedError('Auth computed persistence differs');
     }
 }

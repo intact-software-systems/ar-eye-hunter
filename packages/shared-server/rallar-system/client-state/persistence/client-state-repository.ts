@@ -9,8 +9,6 @@ import type {
 } from '@shared/api/client-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
-import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
@@ -18,7 +16,6 @@ import type {
 } from '../../../runtime-state/runtime-state-repository.ts';
 import { toSessionPurgeAfterEpochMs } from '../../presence/session-expiry.ts';
 import type { ClientStateEventStore } from '../../state-events/client-state-event-store.ts';
-import { PSqlClientStateEventRepository } from '../../state-events/postgres/p-sql-client-state-event-repository.ts';
 import { clientStateIdempotencyStorageKey } from './client-state-idempotency-storage-key.ts';
 import { clientStateInstanceStorageKey } from './client-state-instance-storage-key.ts';
 import { type ClientMutationIdempotencyRecord } from './client-state-persistence-contracts.ts';
@@ -38,13 +35,6 @@ import {
     validatePersistedClientPrincipal,
     validatePersistedClientSession
 } from './validate-persisted-client-state.ts';
-
-export function createTransactionBoundClientStateRepository(
-    transaction: PSqlSql
-): ClientStateRepository {
-    const runtime = new PSqlRuntimeStateRepository(transaction);
-    return new ClientStateRepository(runtime, new PSqlClientStateEventRepository(transaction));
-}
 
 export class ClientStateRepository extends ClientStateSnapshotRepository {
     constructor(repository: RuntimeStateRepositoryLike, events: ClientStateEventStore) {

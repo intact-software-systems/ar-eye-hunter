@@ -3,7 +3,7 @@ import { decodePersistedAuthSession, type PersistedAuthSession } from '../../per
 import { requireIssueSessionLifecycle } from '../../sessions/require-issue-session-lifecycle.ts';
 import type {
     AuthMutationCommand,
-    AuthMutationComputed,
+    AuthMutationDomainComputed,
     AuthMutationRead,
     AuthMutationResult,
     IssueAuthSessionCommand,
@@ -36,7 +36,7 @@ interface ToConsumedAuthSessionResultInput {
 
 export function computeAuthSessionMutation(
     input: ComputeAuthSessionMutationInput
-): AuthMutationComputed {
+): AuthMutationDomainComputed {
     switch (input.kind) {
         case 'issue-session':
             return computeIssueAuthSession(
@@ -80,7 +80,7 @@ export function requireConsumedAuthSession(
 function computeIssueAuthSession(
     command: IssueAuthSessionCommand,
     read: Extract<AuthMutationRead, { kind: 'issue-session'; }>
-): AuthMutationComputed {
+): AuthMutationDomainComputed {
     const session = decodePersistedAuthSession(command.session);
     requireIssueSessionLifecycle(command.capturedAtEpochMs, session);
     return {
@@ -98,7 +98,7 @@ function computeLogoutAuthSession(
     command: LogoutAuthSessionCommand,
     read: Extract<AuthMutationRead, { kind: 'logout-session'; }>,
     serviceId: string
-): AuthMutationComputed {
+): AuthMutationDomainComputed {
     const result = { requestId: command.requestId, loggedOut: true };
     const outcome = read.bySession === null && read.byToken === null ? 'no-op' : 'write';
     const logoutOutbox = read.bySession ? toAuthLogoutOutbox(command, serviceId) : null;

@@ -68,7 +68,8 @@ describe('auth inbox mutation phase order', () => {
             sessions: [{ session: command.session }],
             agentTickets: [],
             logoutOutbox: null,
-            outcome: 'write'
+            outcome: 'write',
+            persistence: { operations: [], logoutOutbox: null }
         };
         const written: Array<readonly [PSqlSql, AuthMutationComputed]> = [];
         const handler = new AuthInboxHandler({
