@@ -29,7 +29,7 @@ export interface TopologyPromotionRead {
     readonly policy: GroupLifecyclePolicyRead | null;
 }
 
-export interface ComputeTopologyPromotionRequestInput {
+interface ComputeTopologyPromotionRequestInput {
     readonly read: TopologyPromotionRead | null;
     readonly serviceId: string | undefined;
     readonly entry: ResourceEntry;

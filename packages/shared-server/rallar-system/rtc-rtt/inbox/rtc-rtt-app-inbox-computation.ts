@@ -16,7 +16,7 @@ import type {
 import { validateRtcRttMutation } from '../mutation/validate-rtc-rtt-mutation.ts';
 import { toRtcRttAppInboxResult, type RtcRttAppInboxResult } from './rtc-rtt-app-inbox-result.ts';
 
-export interface RtcRttAppInboxMutationInput {
+interface RtcRttAppInboxMutationInput {
     readonly command: RtcRttMutationCommand;
     readonly read: RtcRttMutationRead;
     readonly facts: RtcRttMutationFacts;

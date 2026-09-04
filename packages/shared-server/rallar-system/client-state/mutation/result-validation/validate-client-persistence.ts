@@ -1,3 +1,4 @@
+import { validateComputedProjection } from '../../../computed-data-validation.ts';
 import { assertPersistableClientStateEvent } from '../../../state-events/postgres/client-state-event-row-codec.ts';
 import { validateClientEvent } from '../../client-state-contract-validation.ts';
 import { assertCanonicalClientStateIdempotencyRecord } from '../../persistence/client-state-repository-reads.ts';
@@ -65,10 +66,12 @@ export function validateExactClientPersistence(
         return;
     }
     validateClientPersistenceInput(computed);
-    if (
-        JSON.stringify(computeClientPersistence(computed)) !==
-            JSON.stringify(computed.persistence)
-    ) {
+    const issue = validateComputedProjection(
+        computeClientPersistence(computed),
+        computed.persistence,
+        'Client mutation computed.persistence'
+    )[0];
+    if (issue !== undefined) {
         throw new ClientMutationRejectedError('Client computed persistence differs');
     }
 }

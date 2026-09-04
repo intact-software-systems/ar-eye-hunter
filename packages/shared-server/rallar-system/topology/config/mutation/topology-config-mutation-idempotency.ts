@@ -1,3 +1,4 @@
+import { validateComputedProjection } from '../../../computed-data-validation.ts';
 import type {
     GroupTopologyConfigMutationCommand,
     GroupTopologyConfigMutationComputed,
@@ -59,10 +60,10 @@ export function validateTopologyConfigMutationIdempotency(
         idempotencyValidation.read,
         idempotencyValidation.commandHash
     );
-    if (
-        canonical.outcome === 'miss' ||
-        JSON.stringify(canonical) !== JSON.stringify(idempotencyValidation.computed)
-    ) {
+    const projectionIssue = canonical.outcome === 'miss'
+        ? undefined
+        : validateComputedProjection(canonical, idempotencyValidation.computed, 'computed')[0];
+    if (canonical.outcome === 'miss' || projectionIssue !== undefined) {
         throw new TypeError('Topology config idempotency result is not canonical');
     }
 }

@@ -5,7 +5,6 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { arrayEquals, jsonEquals } from '@shared/repository/state-utils.ts';
 import type { AppInboxExecutionMetadata } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import {
@@ -19,6 +18,7 @@ import {
     isExactAppOutboxInsert,
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
+import { validateComputedProjection } from '../../computed-data-validation.ts';
 import {
     computeWsSessionConnectGuard,
     computeWsSessionGenerationClosed,
@@ -56,7 +56,7 @@ import type {
     InactiveAuthorisedWsSessionResult
 } from './client-state-inbox-result-codec.ts';
 
-export type ClientMutationLifecycleInput =
+type ClientMutationLifecycleInput =
     | Readonly<{
         kind: 'connect';
         facts: WsSessionGenerationGuardFacts;
@@ -68,7 +68,7 @@ export type ClientMutationLifecycleInput =
         read: WsSessionGenerationLifecycleRead;
     }>;
 
-export type ClientMutationOperationComputed =
+type ClientMutationOperationComputed =
     | Readonly<{
         outcome: 'idempotency-conflict';
         mutation: Extract<ClientMutationComputed, { outcome: 'idempotency-conflict'; }>;
@@ -83,7 +83,7 @@ export type ClientMutationOperationComputed =
         committedSnapshots: readonly ClientSnapshot[];
     }>;
 
-export type AuthorisedWsConnectOperationComputed =
+type AuthorisedWsConnectOperationComputed =
     | ClientMutationOperationComputed
     | Readonly<{
         outcome: 'inactive';
@@ -91,13 +91,13 @@ export type AuthorisedWsConnectOperationComputed =
         completion: AppInboxCompletionComputed<InactiveAuthorisedWsSessionResult>;
     }>;
 
-export interface MissingSessionDisconnectComputed {
+interface MissingSessionDisconnectComputed {
     readonly lifecycleComputed: WsSessionGenerationLifecycleComputed;
     readonly durableResult: InactiveAuthorisedWsSessionResult;
     readonly completion: AppInboxCompletionComputed<InactiveAuthorisedWsSessionResult>;
 }
 
-export type ExpiredSessionsOperationComputed =
+type ExpiredSessionsOperationComputed =
     | Readonly<{
         outcome: 'idempotency-conflict';
         mutations: readonly ClientMutationComputed[];
@@ -117,14 +117,14 @@ export interface ClientExpiredSessionMutationRead {
     readonly read: ClientMutationRead;
 }
 
-export interface ComputeClientMutationOperationInput {
+interface ComputeClientMutationOperationInput {
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
     readonly completionFacts: AppInboxCompletionFacts;
     readonly lifecycle: ClientMutationLifecycleInput | undefined;
 }
 
-export interface ValidateClientMutationOperationInput {
+interface ValidateClientMutationOperationInput {
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
     readonly completionFacts: AppInboxCompletionFacts;
@@ -132,7 +132,7 @@ export interface ValidateClientMutationOperationInput {
     readonly computed: ClientMutationOperationComputed;
 }
 
-export interface ComputeAuthorisedWsConnectOperationInput {
+interface ComputeAuthorisedWsConnectOperationInput {
     readonly connection: ClientAuthorisedWsSessionConnectAppInboxPayload;
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
@@ -141,7 +141,7 @@ export interface ComputeAuthorisedWsConnectOperationInput {
     readonly completionFacts: AppInboxCompletionFacts;
 }
 
-export interface ValidateAuthorisedWsConnectOperationInput {
+interface ValidateAuthorisedWsConnectOperationInput {
     readonly connection: ClientAuthorisedWsSessionConnectAppInboxPayload;
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
@@ -151,14 +151,14 @@ export interface ValidateAuthorisedWsConnectOperationInput {
     readonly computed: AuthorisedWsConnectOperationComputed;
 }
 
-export interface ComputeMissingSessionDisconnectInput {
+interface ComputeMissingSessionDisconnectInput {
     readonly commandInput: ClientAuthorisedWsSessionDisconnectAppInboxPayload;
     readonly lifecycleFacts: WsSessionGenerationCloseFacts;
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
     readonly completionFacts: AppInboxCompletionFacts;
 }
 
-export interface ValidateMissingSessionDisconnectInput {
+interface ValidateMissingSessionDisconnectInput {
     readonly commandInput: ClientAuthorisedWsSessionDisconnectAppInboxPayload;
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
@@ -168,7 +168,7 @@ export interface ValidateMissingSessionDisconnectInput {
     readonly computed: MissingSessionDisconnectComputed;
 }
 
-export interface ComputeExpiredSessionsOperationInput {
+interface ComputeExpiredSessionsOperationInput {
     readonly context: AppInboxExecutionMetadata;
     readonly pageInput: ClientExpiredSessionPageInput;
     readonly page: ClientExpiredSessionPage;
@@ -176,7 +176,7 @@ export interface ComputeExpiredSessionsOperationInput {
     readonly completionFacts: AppInboxCompletionFacts;
 }
 
-export interface ValidateExpiredSessionsOperationInput {
+interface ValidateExpiredSessionsOperationInput {
     readonly context: AppInboxExecutionMetadata;
     readonly pageInput: ClientExpiredSessionPageInput;
     readonly page: ClientExpiredSessionPage;
@@ -432,14 +432,20 @@ export function validateExpiredSessionsOperation(
         (mutation) => mutation.outcome === 'write'
     );
     const expectedWrites = input.computed.mutations.filter(requiresClientWrite);
-    if (
-        !jsonEquals(input.computed.durableResult, expectedApplied.map(toClientStateWritten)) ||
-        !arrayEquals(input.computed.writes, expectedWrites) ||
-        !arrayEquals(
-            input.computed.committedSnapshots,
-            expectedApplied.map((mutation) => mutation.snapshot)
-        )
-    ) {
+    const projectionIssue = validateComputedProjection(
+        {
+            durableResult: expectedApplied.map(toClientStateWritten),
+            writes: expectedWrites,
+            committedSnapshots: expectedApplied.map((mutation) => mutation.snapshot)
+        },
+        {
+            durableResult: input.computed.durableResult,
+            writes: input.computed.writes,
+            committedSnapshots: input.computed.committedSnapshots
+        },
+        'computed'
+    )[0];
+    if (projectionIssue !== undefined) {
         throw new TypeError('Expired client mutation projections differ');
     }
     assertValidCompletion(
@@ -501,11 +507,20 @@ function assertMutationProjections(
     const expectedWrites = requiresClientWrite(computed.mutation)
         ? [computed.mutation]
         : [];
-    if (
-        !jsonEquals(computed.durableResult, toClientStateWritten(computed.mutation)) ||
-        !arrayEquals(computed.writes, expectedWrites) ||
-        !arrayEquals(computed.committedSnapshots, [computed.mutation.snapshot])
-    ) {
+    const projectionIssue = validateComputedProjection(
+        {
+            durableResult: toClientStateWritten(computed.mutation),
+            writes: expectedWrites,
+            committedSnapshots: [computed.mutation.snapshot]
+        },
+        {
+            durableResult: computed.durableResult,
+            writes: computed.writes,
+            committedSnapshots: computed.committedSnapshots
+        },
+        'computed'
+    )[0];
+    if (projectionIssue !== undefined) {
         throw new TypeError('Client mutation projections differ');
     }
 }

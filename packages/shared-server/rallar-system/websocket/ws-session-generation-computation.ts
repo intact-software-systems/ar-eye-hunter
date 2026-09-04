@@ -1,3 +1,4 @@
+import { validateComputedProjection } from '../computed-data-validation.ts';
 import { requireEpoch, requireExactKeys, requireString } from '../protocol/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../protocol/json-wire-identity.ts';
 
@@ -344,14 +345,8 @@ function validateWsSessionGenerationLifecycleComputed(
     expected: WsSessionGenerationLifecycleComputed,
     computed: WsSessionGenerationLifecycleComputed
 ): void {
-    if (
-        expected.outcome !== computed.outcome ||
-        expected.key !== computed.key ||
-        expected.expectedRevision !== computed.expectedRevision ||
-        expected.value !== computed.value ||
-        expected.expireAtIsoTimestamp !== computed.expireAtIsoTimestamp ||
-        JSON.stringify(expected.state) !== JSON.stringify(computed.state)
-    ) {
+    const projectionIssue = validateComputedProjection(expected, computed, 'computed')[0];
+    if (projectionIssue !== undefined) {
         throw new TypeError('WebSocket session lifecycle computed result differs');
     }
 }
