@@ -49,16 +49,20 @@ export interface GroupActivationStatusPetitionDependencies {
  * no-ops an unchanged band, so a steady group pays an enqueue and nothing
  * durable.
  */
-export async function petitionGroupActivationStatus(
-    dependencies: GroupActivationStatusPetitionDependencies,
-    authority: GroupTopologyPlanningAuthority,
-    planned: RallarOverlayTopologySnapshot | null,
+export interface PetitionGroupActivationStatusInput {
+    readonly dependencies: GroupActivationStatusPetitionDependencies;
+    readonly authority: GroupTopologyPlanningAuthority;
+    readonly planned: RallarOverlayTopologySnapshot | null;
     /**
      * The clock's own confirmation. Null for the evidence leg, which may not
      * publish a dwell-held band; set when the durable clock came due, which is
      * the only path allowed to confirm one.
      */
-    dwell: Readonly<{ satisfied: true; dueAtEpochMs: number; }> | null = null
+    readonly dwell: Readonly<{ satisfied: true; dueAtEpochMs: number; }> | null;
+}
+
+export async function petitionGroupActivationStatus(
+    { dependencies, authority, planned, dwell }: PetitionGroupActivationStatusInput
 ): Promise<void> {
     if (!dependencies.activationStatus) {
         return;
@@ -124,7 +128,13 @@ export async function petitionGroupActivationStatus(
         // Steady is still worth a heartbeat: coverage decays by evidence
         // ageing out, which nothing else observes, so the group must ask
         // itself again. enqueueIfAbsent makes this one row per group.
-        await armEvidenceExpiry(dependencies, groupRef, group.formationEpoch, basis, authority.nowEpochMs);
+        await armEvidenceExpiry({
+            dependencies,
+            groupRef,
+            formationEpoch: group.formationEpoch,
+            coverageBasisLayoutIdentity: basis,
+            nowEpochMs: authority.nowEpochMs
+        });
         return;
     }
     if (action.kind === 'arm-dwell' && dwell !== null) {
@@ -165,16 +175,26 @@ export async function petitionGroupActivationStatus(
         }),
         authority.nowEpochMs
     );
-    await armEvidenceExpiry(dependencies, groupRef, group.formationEpoch, basis, authority.nowEpochMs);
+    await armEvidenceExpiry({
+        dependencies,
+        groupRef,
+        formationEpoch: group.formationEpoch,
+        coverageBasisLayoutIdentity: basis,
+        nowEpochMs: authority.nowEpochMs
+    });
 }
 
 /** The self-rescheduling heartbeat: consumed when it fires, re-armed by the reading it causes. */
+interface ArmEvidenceExpiryInput {
+    readonly dependencies: GroupActivationStatusPetitionDependencies;
+    readonly groupRef: GroupRef;
+    readonly formationEpoch: number;
+    readonly coverageBasisLayoutIdentity: GroupLayoutIdentity;
+    readonly nowEpochMs: number;
+}
+
 async function armEvidenceExpiry(
-    dependencies: GroupActivationStatusPetitionDependencies,
-    groupRef: GroupRef,
-    formationEpoch: number,
-    coverageBasisLayoutIdentity: GroupLayoutIdentity,
-    nowEpochMs: number
+    { dependencies, groupRef, formationEpoch, coverageBasisLayoutIdentity, nowEpochMs }: ArmEvidenceExpiryInput
 ): Promise<void> {
     await dependencies.activationStatus?.armStatusClock({
         kind: 'evidence-expiry',

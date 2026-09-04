@@ -88,7 +88,7 @@ export function computeActivationStatusClockEntry(
     return {
         key,
         typeId: EnqueuedType.APP_OUTBOX,
-        resource: JSON.stringify(toActivationStatusClockMessage(input, work, key, createdBy)),
+        resource: JSON.stringify(toActivationStatusClockMessage({ input, work, key, createdBy })),
         status: EntityStatus.NEW,
         audit: {
             date: createdTs.toPlainTime(),
@@ -103,11 +103,15 @@ export function computeActivationStatusClockEntry(
     };
 }
 
+interface ToActivationStatusClockMessageInput {
+    readonly input: ComputeActivationStatusClockEntryInput;
+    readonly work: GroupActivationStatusClockWork;
+    readonly key: ReturnType<typeof toAppQueueKey>;
+    readonly createdBy: string;
+}
+
 function toActivationStatusClockMessage(
-    input: ComputeActivationStatusClockEntryInput,
-    work: GroupActivationStatusClockWork,
-    key: ReturnType<typeof toAppQueueKey>,
-    createdBy: string
+    { input, work, key, createdBy }: ToActivationStatusClockMessageInput
 ): ALMessage {
     return {
         id: { v: 2, msgId: key.resourceId, ts: input.createdAtEpochMs, senderId: createdBy },

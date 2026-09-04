@@ -16,6 +16,7 @@ import {
 import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
+import { validateStoredGroupActivationStatus } from './validate-persisted-group-activation-status.ts';
 
 import {
     assertExactKeys,
@@ -179,56 +180,9 @@ export function validateStoredGroup(group: unknown, ref: GroupRef): asserts grou
     validateStoredGroupMemberPolicy(requireRecord(value.memberPolicy, 'Stored group memberPolicy'));
     if (value.activationStatus !== null) {
         validateStoredGroupActivationStatus(
-            requireRecord(value.activationStatus, 'Stored group activationStatus')
+            requireRecord(value.activationStatus, 'Stored group activationStatus'),
+            validateStoredGroupLayoutIdentity
         );
-    }
-}
-
-function validateStoredGroupActivationStatus(activationStatus: StoredGroupRecord): void {
-    assertExactKeys(activationStatus, GROUP_ACTIVATION_STATUS_KEYS, 'Stored group activationStatus');
-    assertRequiredKeys(activationStatus, GROUP_ACTIVATION_STATUS_KEYS, 'Stored group activationStatus');
-    requireOneOf(
-        activationStatus.condition,
-        GROUP_ACTIVATION_CONDITIONS,
-        'Stored group activationStatus condition'
-    );
-    requireCoverageRate(activationStatus.coverageRate, 'Stored group activationStatus coverageRate');
-    requireNonNegativeSafeInteger(
-        activationStatus.formationEpoch,
-        'Stored group activationStatus formationEpoch'
-    );
-    requireNonNegativeSafeInteger(
-        activationStatus.confirmedAtEpochMs,
-        'Stored group activationStatus confirmedAtEpochMs'
-    );
-    validateStoredGroupLayoutIdentity(
-        requireRecord(
-            activationStatus.coverageBasisLayoutIdentity,
-            'Stored group activationStatus coverageBasisLayoutIdentity'
-        ),
-        'Stored group activationStatus coverageBasisLayoutIdentity'
-    );
-    if (activationStatus.evidenceWatermark !== null) {
-        const watermark = requireRecord(
-            activationStatus.evidenceWatermark,
-            'Stored group activationStatus evidenceWatermark'
-        );
-        assertExactKeys(
-            watermark,
-            GROUP_EVIDENCE_WATERMARK_KEYS,
-            'Stored group activationStatus evidenceWatermark'
-        );
-        assertRequiredKeys(
-            watermark,
-            GROUP_EVIDENCE_WATERMARK_KEYS,
-            'Stored group activationStatus evidenceWatermark'
-        );
-        for (const key of GROUP_EVIDENCE_WATERMARK_KEYS) {
-            requireNonNegativeSafeInteger(
-                watermark[key],
-                `Stored group activationStatus evidenceWatermark ${key}`
-            );
-        }
     }
 }
 
@@ -239,12 +193,6 @@ function validateStoredGroupLayoutIdentity(identity: StoredGroupRecord, label: s
         requireNonNegativeSafeInteger(identity[key], `${label} ${key}`);
     }
     requireOneOf(identity.state, GROUP_LAYOUT_IDENTITY_STATES, `${label} state`);
-}
-
-function requireCoverageRate(value: unknown, label: string): void {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
-        throw new TypeError(`${label} must be a rate between 0 and 1`);
-    }
 }
 
 function validateStoredGroupMemberPolicy(memberPolicy: StoredGroupRecord): void {
