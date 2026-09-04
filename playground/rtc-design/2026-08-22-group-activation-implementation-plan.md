@@ -3141,6 +3141,24 @@ status → topology work → petition → status from sustaining itself; and no 
 the section registers none and the status command cannot reuse `formation-automation`,
 `topology-publication` or `formation-criterion`.
 
+### Slice 12b close-out — the writer is complete; the changed-style gate is not (2026-09-04)
+
+Both clocks, the command, the compute, the petition and the view flip are in and green:
+`npm run typecheck` clean with the tests ratchet at 1023 files, `deno task check` clean, 9136 unit
+tests and 1200 repo-governance tests passing, and the headless bundle back under its 217 KiB ceiling
+without raising it. The state-write gate measured the row width as free (I41's sibling measurement,
+recorded above). Per I38 the three recipes are the second PR, so the writer PR is otherwise done.
+
+**What blocks marking it ready:** `check:repo-style:changed` exits 1. The slice added three files to
+`packages/shared/api/group-lifecycle`, taking it to 22 direct production TypeScript files against a
+review threshold of 20, and the `resolve` prefix now appears in five of them. The checker is explicit
+that this is a feature-ownership review and _not_ an instruction to create pass-through folders, so
+the fix is a judgement about whether the activation-status axis — the stored record, the coverage
+banding, the band-versus-clock decision and the condition computer — is its own feature worth its own
+directory, or whether the directory's contents should be regrouped differently. Twenty-five files
+import across that boundary, so it is a real move rather than a rename, and it wants a recorded
+decision rather than a mechanical shuffle under gate pressure.
+
 ## Slice 13 — Operator and observability surfaces (C9)
 
 **Lands:** the stage, epoch, accepted and planned layout identities, `transportState`, both status axes
