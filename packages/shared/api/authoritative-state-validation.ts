@@ -1052,7 +1052,7 @@ function causalRevision(
     };
 }
 
-function validateGroupSnapshotLayoutIdentity(identity: Record<string, unknown>, label: string): void {
+function validateGroupSnapshotLayoutIdentity(identity: NarrowedWireObject, label: string): void {
     exact(identity, GROUP_LAYOUT_IDENTITY_KEYS, label);
     for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
         nonNegativeInteger(identity[key], `${label}.${key}`);
@@ -1065,7 +1065,7 @@ function validateGroupSnapshotLayoutIdentity(identity: Record<string, unknown>, 
  * status and both fail the same way, so one check serves them.
  */
 export function validateGroupActivationStatusPayload(
-    status: Record<string, unknown>,
+    status: NarrowedWireObject,
     label: string
 ): void {
     exact(status, GROUP_ACTIVATION_STATUS_KEYS, label);
@@ -1088,6 +1088,9 @@ export function validateGroupActivationStatusPayload(
         }
     }
 }
+
+/** Whatever `record` narrows an untrusted value to; the helpers below consume it. */
+type NarrowedWireObject = ReturnType<typeof record>;
 
 function record(value: unknown, label: string): Record<string, unknown> {
     if (!isRecord(value)) {
