@@ -28,22 +28,15 @@ import type {
     AppInboxCompletionComputed,
     AppInboxCompletionFacts
 } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
-import { materializeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/materialize-auth-mutation-intent.ts';
+import { readAuthMutationAttempt } from '@shared-server/rallar-system/auth/mutation/read-auth-mutation-attempt.ts';
 
 const decodeOrderCase = 'decodes before queue identity validation and exits before mutation phases on mismatch';
 
 describe('auth inbox mutation phase order', () => {
-    it('materializes worker facts before mutation phases', async () => {
+    it('reads worker facts and authoritative state before mutation computation', async () => {
         const actions: string[] = [];
         const transaction = {} as PSqlSql;
         const intent = createIssueSessionIntent();
-        const command = (
-            await materializeAuthMutationIntent(intent, {
-                credentialIssuer: createCredentialIssuer([]),
-                nowEpochMs: () => 1_000,
-                serviceId: 'auth-service'
-            })
-        ).command as Extract<AuthMutationCommand, { kind: 'issue-session'; }>;
         const read: AuthMutationRead = {
             kind: 'issue-session',
             userByUsername: null,
@@ -53,6 +46,16 @@ describe('auth inbox mutation phase order', () => {
             expiredByTokenEntry: null,
             expiredBySessionEntry: null
         };
+        const command = (
+            await readAuthMutationAttempt(intent, {
+                credentialIssuer: createCredentialIssuer([]),
+                mutationService: {
+                    serviceId: 'auth-service',
+                    read: async () => read
+                },
+                nowEpochMs: () => 1_000
+            })
+        ).command as Extract<AuthMutationCommand, { kind: 'issue-session'; }>;
         const result: AuthMutationResult = {
             requestId: command.requestId,
             kind: 'session-issued',

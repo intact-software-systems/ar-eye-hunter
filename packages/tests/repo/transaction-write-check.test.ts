@@ -46,26 +46,34 @@ describe('transaction write check', () => {
     });
 
     it('follows transitive local helpers from the transaction boundary', () => {
-        const findings = analyzeFixture(`
-            interface Sql {
-                begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
-                query(value: unknown): Promise<void>;
-            }
-            declare const database: Sql;
-            function collectRow(): unknown { return materializeRow(); }
-            function materializeRow(): unknown {
-                const createdAt = Date.now();
-                const nonce = Math.random();
-                const values = [nonce].toSorted();
-                const serialized = JSON.stringify({ createdAt, values });
-                return crypto.subtle.digest('SHA-256', new TextEncoder().encode(serialized));
-            }
-            export async function execute(): Promise<void> {
-                await database.begin(async (transaction) => {
-                    await transaction.query(collectRow());
-                });
-            }
-        `);
+        const project = new Project({ useInMemoryFileSystem: true });
+        project.createSourceFile(
+            '/packages/domain/materialize-row.ts',
+            `export function collectRow(): unknown { return materializeRow(); }
+             function materializeRow(): unknown {
+                 const createdAt = Date.now();
+                 const nonce = Math.random();
+                 const values = [nonce].toSorted();
+                 const serialized = JSON.stringify({ createdAt, values });
+                 return crypto.subtle.digest('SHA-256', new TextEncoder().encode(serialized));
+             }`
+        );
+        project.createSourceFile(
+            '/packages/domain/mutation.ts',
+            `import { collectRow } from './materialize-row.ts';
+             interface Sql {
+                 begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                 query(value: unknown): Promise<void>;
+             }
+             declare const database: Sql;
+             export async function execute(): Promise<void> {
+                 await database.begin(
+                     async (transaction) => transaction.query(collectRow())
+                 );
+             }`
+        );
+
+        const findings = analyzeTransactionWrites(project);
 
         expect(findings.map((finding) => finding.operation)).toEqual([
             'Date.now',
@@ -75,26 +83,31 @@ describe('transaction write check', () => {
             'crypto.subtle.digest',
             'TextEncoder'
         ]);
+        expect([...new Set(findings.map((finding) => finding.path))]).toEqual([
+            'packages/domain/materialize-row.ts'
+        ]);
         expect([...new Set(findings.map((finding) => finding.boundary))]).toEqual([
-            'packages/domain/mutation.ts:16'
+            'packages/domain/mutation.ts:8'
         ]);
     });
 
     it('analyzes locally resolved callbacks passed to transaction-bound helpers', () => {
         const findings = analyzeFixture(`
-            interface Sql {
-                begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+            interface PSqlSql {
+                (strings: TemplateStringsArray, ...values: readonly unknown[]): Promise<unknown>;
+                begin<T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T>;
                 query(value: unknown): Promise<void>;
             }
             interface Writer {
-                write(transaction: Sql, materialize: () => string): Promise<void>;
+                write(transaction: PSqlSql, materialize: () => string): Promise<void>;
             }
-            declare const database: Sql;
+            declare const database: PSqlSql;
             declare const writer: Writer;
             function materialize(): string { return JSON.stringify({ value: 1 }); }
+            const materializeCallback = materialize as () => string;
             export async function execute(): Promise<void> {
                 await database.begin(async (transaction) => {
-                    await writer.write(transaction, materialize);
+                    await writer.write(transaction, materializeCallback);
                 });
             }
         `);
