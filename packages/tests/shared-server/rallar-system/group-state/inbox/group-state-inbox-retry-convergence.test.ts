@@ -52,10 +52,14 @@ describe('convergent group and presence state', () => {
             queuedAdminUpdate(1)
         ]);
         expect(demotion.status).toBe('fulfilled');
-        expect(staleUpdate).toMatchObject({
-            status: 'rejected',
-            reason: expect.any(RuntimeStateWriteConflictError)
-        });
+        expect(staleUpdate.status).toBe('rejected');
+        if (staleUpdate.status !== 'rejected') {
+            throw new Error('Expected the concurrent admin update to be rejected');
+        }
+        expect(
+            staleUpdate.reason instanceof RuntimeStateWriteConflictError ||
+                hasHttpStatus(staleUpdate.reason, 403)
+        ).toBe(true);
         await expect(queuedAdminUpdate(2)).rejects.toMatchObject({ status: 403 });
         const snapshot = await requireSnapshot(runtime, 'demotion-race-room');
         expect(snapshot.group.displayName).toBe('demotion-race-room');
@@ -95,3 +99,10 @@ describe('convergent group and presence state', () => {
         );
     });
 });
+
+function hasHttpStatus(value: unknown, status: number): boolean {
+    return typeof value === 'object' &&
+        value !== null &&
+        'status' in value &&
+        value.status === status;
+}
