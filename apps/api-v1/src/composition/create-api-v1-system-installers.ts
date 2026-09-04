@@ -3,6 +3,7 @@ import type { RallarServerApplicationSystemInstallers } from '@shared-server/ral
 import { installRtcSignalingWsTopic } from '@shared-server/rallar-system/communication/install-rtc-signaling-ws-topic.ts';
 import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+import { computeActivationStatusClockEntry } from '@shared-server/rallar-system/group-state/activation-status-clock-outbox-entry.ts';
 import { GroupConnectTriggerLatchRepository } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
 import { installRtcRttSystemTopic } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
 import {
@@ -30,6 +31,9 @@ export interface CreateApiV1SystemInstallersInput {
     readonly crdtLogRepository: RallarCrdtAdminReadRepository;
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
 }
+
+/** A clock outlives its due instant long enough to survive a slow queue, and no longer. */
+const ACTIVATION_STATUS_CLOCK_EXPIRY_MS = 5 * 60_000;
 
 export function createApiV1SystemInstallers(
     input: CreateApiV1SystemInstallersInput
@@ -111,7 +115,23 @@ function createTopologyAppOutboxOptions(
             // producer, and the write is derived, non-authoritative state no
             // policy or gate reads (product decision 3).
             submitCommand: (command, atEpochMs) =>
-                runtime.groupStateInboxService.enqueueActivationStatusCommand(command, atEpochMs)
+                runtime.groupStateInboxService.enqueueActivationStatusCommand(command, atEpochMs),
+            readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
+            // enqueueIfAbsent is the arm: the entry's key is the series and the
+            // band, so N nodes observing one dip write one row, and a re-arm
+            // inside the dwell leaves the original due instant standing --
+            // which is the dwell's meaning, continuous time rather than a
+            // restart.
+            armStatusClock: async (work) => {
+                await runtime.outboxQueueReader.outbox.enqueueIfAbsent(
+                    computeActivationStatusClockEntry({
+                        work,
+                        senderId: input.serviceId,
+                        createdAtEpochMs: input.nowEpochMs(),
+                        expireAtEpochMs: work.dueAtEpochMs + ACTIVATION_STATUS_CLOCK_EXPIRY_MS
+                    })
+                );
+            }
         },
         topologyPublication: {
             readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
