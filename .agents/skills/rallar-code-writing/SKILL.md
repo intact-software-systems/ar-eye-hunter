@@ -196,7 +196,9 @@ checker does not substitute for following production symbols.
   explicit human approval.
 - A write executes the validated computed value. Only refine it from actual
   database-returned facts under the closed grammar in
-  `references/convergent-service-writing.md`.
+  `references/repo-code-style.md`; use
+  `references/convergent-service-writing.md` only for its service-composition,
+  AppInbox, retry, and specialized ResourceInbox deltas.
 - One queue delivery performs one mutation attempt. A conflict exits to outer
   QueueBox redelivery, which starts again from `read` with fresh data. Never add
   an inner retry loop in a handler or persistence helper.
