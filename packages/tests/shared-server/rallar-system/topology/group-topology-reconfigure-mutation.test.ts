@@ -79,13 +79,24 @@ describe('GroupTopologyReconfigureMutation', () => {
         ).toThrow('Forbidden: An active group member is required for this operation.');
     });
 
-    it('rejects altered computation before the transaction boundary', () => {
+    it.each([
+        ['publication flag', (computed: object) => ({ ...computed, publish: false })],
+        ['payload kind', (computed: object) => ({ ...computed, payloadKind: 'snapshot' })],
+        ['request options', (computed: object) => ({ ...computed, requestOptions: { topologyKind: 'tree', unexpected: true } })],
+        [
+            'aggregate identity',
+            (computed: ReturnType<GroupTopologyReconfigureMutation['compute']>) => ({
+                ...computed,
+                aggregateRef: { ...computed.aggregateRef, groupId: 'other-group' }
+            })
+        ]
+    ])('rejects an altered %s before the transaction boundary', (_label, corrupt) => {
         const mutation = createMutation();
         const command = createCommand();
         const read = createRead();
-        const computed = { ...mutation.compute(command, read), publish: false };
+        const computed = corrupt(mutation.compute(command, read));
 
-        expect(() => mutation.validate(command, read, computed)).toThrow(
+        expect(() => Reflect.apply(mutation.validate, mutation, [command, read, computed])).toThrow(
             'Topology reconfigure computation is invalid'
         );
     });

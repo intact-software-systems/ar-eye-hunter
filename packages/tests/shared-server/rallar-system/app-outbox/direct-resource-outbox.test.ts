@@ -397,22 +397,6 @@ describe('direct resource outbox writes', () => {
         expect(database.nestedBeginCalls).toBe(0);
     });
 
-    it.each([
-        ['missing', undefined],
-        ['wrong', 'snapshot']
-    ])('rejects %s RTC topology payload kind', (_label, payloadKind) => {
-        const { payloadKind: canonicalPayloadKind, ...withoutPayloadKind } = createComputedRtcTopologyOutbox();
-        void canonicalPayloadKind;
-        const computed = {
-            ...withoutPayloadKind,
-            ...(payloadKind === undefined ? {} : { payloadKind })
-        };
-
-        expect(() => validateUntrustedRtcTopologyOutbox(computed)).toThrow(
-            'Computed RTC topology outbox facts are invalid'
-        );
-    });
-
     it('includes canonical RTC topology payload kind in deterministic identity', () => {
         const computed = createComputedRtcTopologyOutbox();
 
@@ -421,31 +405,6 @@ describe('direct resource outbox writes', () => {
 
         expect(message.id.msgId).toContain(':rtc-topology-recompute:group-revision:group=4;presence=3');
         expect(message.route).toEqual(entry.key);
-    });
-
-    it.each([
-        ['unknown', { topologyKind: 'tree', unexpected: true }],
-        ['wrong type', { topologyKind: 1 }]
-    ])('rejects %s durable RTC topology request options', (_label, requestOptions) => {
-        const computed = {
-            ...createComputedRtcTopologyOutbox(),
-            payloadKind: 'group-revision',
-            origin: 'automatic',
-            requestOptions
-        };
-
-        expect(() => validateUntrustedRtcTopologyOutbox(computed)).toThrow();
-    });
-
-    it('rejects RTC topology work whose aggregate contradicts its snapshot', () => {
-        const computed = createComputedRtcTopologyOutbox();
-        const forged: ComputedRtcTopologyOutbox = {
-            ...computed,
-            aggregateRef: { ...computed.aggregateRef, groupId: 'other-group' }
-        };
-        expect(() => computeRtcTopologyEntry(forged)).toThrow(
-            'Computed RTC topology outbox facts are invalid'
-        );
     });
 
     it('writes RTC topology work computed before transaction entry', async () => {
@@ -968,10 +927,6 @@ function validateUntrustedClientStateSync(computed: object): void {
 
 function validateUntrustedGroupStateSync(computed: object): void {
     Reflect.apply(computeGroupStateSyncEntries, undefined, [computed, 'server-1']);
-}
-
-function validateUntrustedRtcTopologyOutbox(computed: object): void {
-    Reflect.apply(computeRtcTopologyEntry, undefined, [computed]);
 }
 
 interface TestResourceInboxRow {

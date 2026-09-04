@@ -20,7 +20,6 @@ import { PSqlResourceInboxEntryRepository } from '../../queuebox/postgres/p-sql-
 import { replaceFinishedResourceEntryIfMatch } from '../../queuebox/postgres/resource-inbox-finished-replacement.ts';
 import {
     computeAppOutboxInsert,
-    isExactAppOutboxInsert,
     writeAppOutboxInsert,
     type AppOutboxInsert
 } from './app-outbox-insert.ts';
@@ -95,16 +94,6 @@ export function computeCoalescedAppOutboxWork(
         entryWrite: computeAppOutboxInsert(entry),
         successorWrite: computeAppOutboxInsert(successorEntry)
     };
-}
-
-export function isExactComputedCoalescedAppOutboxWork(
-    expected: ComputedCoalescedAppOutboxWork,
-    candidate: ComputedCoalescedAppOutboxWork
-): boolean {
-    return candidate.expectedEntry === expected.expectedEntry &&
-        candidate.expectedGeneration === expected.expectedGeneration &&
-        isExactAppOutboxInsert(expected.entryWrite.entry, candidate.entryWrite) &&
-        isExactAppOutboxInsert(expected.successorWrite.entry, candidate.successorWrite);
 }
 
 function readCoalescedGeneration(entry: ResourceEntry): number {
