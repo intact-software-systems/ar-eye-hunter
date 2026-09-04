@@ -27,7 +27,7 @@ interface AppInboxExecutionAttempt<Command, Result> {
     readonly registration: AppInboxHandlerRegistration<Command, Result>;
     readonly message: ALMessage;
     readonly entry: ResourceEntry;
-    readonly fallbackEnqueue: AppInboxEnqueueInput;
+    readonly undecodedEnqueue: AppInboxEnqueueInput;
 }
 
 interface BegunAppInboxExecution<Command, Result> {
@@ -77,7 +77,7 @@ export class AppInboxHandlerExecutor {
         message: ALMessage,
         entry: ResourceEntry
     ): Promise<void> {
-        const fallbackEnqueue: AppInboxEnqueueInput = {
+        const undecodedEnqueue: AppInboxEnqueueInput = {
             type: registration.type,
             resourceId: entry.key.resourceId,
             contextId: entry.key.contextId,
@@ -97,7 +97,7 @@ export class AppInboxHandlerExecutor {
                     resourceId: entry.key.resourceId
                 }
             },
-            async () => await this.executeAttempt({ registration, message, entry, fallbackEnqueue })
+            async () => await this.executeAttempt({ registration, message, entry, undecodedEnqueue })
         );
     }
 
@@ -187,7 +187,7 @@ export class AppInboxHandlerExecutor {
         }
         if (input.classification.kind === 'retryable') {
             this.recordQueueRetryTiming(
-                input.context?.enqueue ?? input.fallbackEnqueue,
+                input.context?.enqueue ?? input.undecodedEnqueue,
                 input.entry,
                 input.classification,
                 input.error
@@ -195,7 +195,7 @@ export class AppInboxHandlerExecutor {
             throw input.error;
         }
         const terminalContext = input.context ?? {
-            enqueue: input.fallbackEnqueue,
+            enqueue: input.undecodedEnqueue,
             message: input.message,
             entry: input.entry,
             encodeResult: input.registration.encodeResult
