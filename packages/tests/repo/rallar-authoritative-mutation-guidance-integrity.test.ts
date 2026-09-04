@@ -93,6 +93,12 @@ describe('authoritative mutation guidance integrity', () => {
         expect(realtime).toContain('building-rallar-apps');
         expectAll(games, ['message.raw.targets', 'realtime payload', 'roomRef']);
         expectAll(realtime, ['message.raw.targets', 'realtime payload', 'roomRef']);
+        expectAll(realtime, [
+            'docs/rallar-group-formation-architecture.md',
+            'are observation, never',
+            'is the `optimistic` preset'
+        ]);
+        expect(realtime).toMatch(/observation, never\s+authority/);
         expect(platform).toContain('Required fields are the default');
         expect(platform).toMatch(/absence is a meaningful domain\s+state/);
         expect(platform).toMatch(/explicitly ask\s+the human/);
