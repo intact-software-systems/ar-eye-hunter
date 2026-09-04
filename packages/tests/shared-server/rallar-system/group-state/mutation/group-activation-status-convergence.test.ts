@@ -105,7 +105,7 @@ function storedStatus(evidenceWatermark: { version: number; createdAtEpochMs: nu
         coverageBasisLayoutIdentity: BASIS,
         formationEpoch: FORMATION_EPOCH,
         evidenceWatermark,
-        confirmedAtEpochMs: 1_500
+        publishedAtEpochMs: 1_500
     };
 }
 

@@ -44,8 +44,8 @@ export function validateStoredGroupActivationStatus(
         'Stored group activationStatus formationEpoch'
     );
     requireNonNegativeSafeInteger(
-        activationStatus.confirmedAtEpochMs,
-        'Stored group activationStatus confirmedAtEpochMs'
+        activationStatus.publishedAtEpochMs,
+        'Stored group activationStatus publishedAtEpochMs'
     );
     validateLayoutIdentity(
         requireRecord(

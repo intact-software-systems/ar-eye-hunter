@@ -6,16 +6,16 @@ import {
 } from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 
-const acceptedLayout: GroupLayoutIdentity = {
+const carryingLayout: GroupLayoutIdentity = {
     groupRevision: 7,
     presenceRevision: 3,
     version: 2,
-    state: 'accepted'
+    state: 'active'
 };
 
 const series: GroupActivationSeries = {
     formationEpoch: 4,
-    coverageBasisLayoutIdentity: acceptedLayout
+    coverageBasisLayoutIdentity: carryingLayout
 };
 
 describe('group activation series', () => {
@@ -26,7 +26,7 @@ describe('group activation series', () => {
     it('rejects a status whose basis was replaced', () => {
         expect(isSameGroupActivationSeries(series, {
             formationEpoch: 4,
-            coverageBasisLayoutIdentity: { ...acceptedLayout, version: 3 }
+            coverageBasisLayoutIdentity: { ...carryingLayout, version: 3 }
         })).toBe(false);
     });
 
@@ -36,14 +36,14 @@ describe('group activation series', () => {
     it('rejects a status from a spent epoch on an unchanged basis', () => {
         expect(isSameGroupActivationSeries(series, {
             formationEpoch: 5,
-            coverageBasisLayoutIdentity: acceptedLayout
+            coverageBasisLayoutIdentity: carryingLayout
         })).toBe(false);
     });
 
     it('separates two layouts differing only in state', () => {
         expect(isSameGroupActivationSeries(series, {
             formationEpoch: 4,
-            coverageBasisLayoutIdentity: { ...acceptedLayout, state: 'planned' }
+            coverageBasisLayoutIdentity: { ...carryingLayout, state: 'removed' }
         })).toBe(false);
     });
 });

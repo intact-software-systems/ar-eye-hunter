@@ -701,27 +701,33 @@ far more often than right.
 publishing the band without the coverage, basis and instant it came from is what makes a status
 untruthful about its lag:
 
-| Field                         | Meaning                                                                                                                                  |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `condition`                   | the band: `inactive`, `initialising`, `active`, `degraded`, `failed`                                                                     |
-| `coverageRate`                | the fraction the band was computed from                                                                                                  |
-| `coverageBasisLayoutIdentity` | the layout the coverage was measured against — the accepted one when one exists, otherwise the frozen candidate being dialed             |
-| `formationEpoch`              | the epoch the status was computed under, which is not always the group's current one                                                     |
-| `evidenceWatermark`           | the newest evidence the reading counted, or `null` when it counted none                                                                  |
-| `confirmedAtEpochMs`          | when the status was last _confirmed_, not when it last changed — which is what lets a reader tell "still active" from "last seen active" |
+| Field                         | Meaning                                                                                                                                                                       |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `condition`                   | the band: `inactive`, `initialising`, `active`, `degraded`, `failed`                                                                                                          |
+| `coverageRate`                | the fraction the band was computed from                                                                                                                                       |
+| `coverageBasisLayoutIdentity` | the layout the coverage was measured against — the accepted one when one exists, otherwise the frozen candidate being dialed                                                  |
+| `formationEpoch`              | the epoch the status was computed under, which is not always the group's current one                                                                                          |
+| `evidenceWatermark`           | the newest evidence the reading counted, or `null` when it counted none                                                                                                       |
+| `publishedAtEpochMs`          | when this band was published. A reading that re-observes the band already on the row writes nothing, so this is the instant of the last _change_, not of the last observation |
 
-The basis identity and the epoch together name a causal series (product decision 33). A write must
-strictly advance the watermark **within** one series; a petition carrying an equal or older watermark
-is a typed drop rather than a rejection, because it is a duplicate observation, not an error. A
-status from a spent epoch or a replaced basis is not compared against at all — the formation view
+The basis identity and the epoch together name a causal series (product decision 33), and
+`isSameGroupActivationSeries` is the one predicate that decides it — the writer's guards and the
+formation view all ask it, so neither half can be dropped from one of them. A write must strictly
+advance the watermark **within** one series; a petition carrying an equal or older watermark is a
+typed drop rather than a rejection, because it is a duplicate observation, not an error. A status
+whose series is not the group's current one is not compared against at all — the formation view
 falls back to the read-time computation rather than publishing a band about a layout the group has
-moved past.
+moved past. Both halves matter: a hold-landing `reconfigure` from `active` advances the epoch while
+retaining the accepted layout identity, so a basis comparison alone would carry the spent series'
+band into the live one.
 
 ### Who writes it
 
 Two producers submit the same `updateGroupActivationStatus` command, and both go through AppInbox like
 every other mutation: the compute re-reads state, drops a non-advancing watermark, and no-ops an
-unchanged band, so a steady group pays an enqueue and nothing durable.
+unchanged band. That compute-side no-op is the cluster-race backstop, not the primary damper — a
+steady group never reaches it, because the reading resolves to `none` and submits no command at
+all.
 
 - **The evidence leg** rides the topology work cycle rather than widening the criterion's
   establishment guard. Widening that guard is what would turn an `active` group's zero criterion
@@ -729,14 +735,17 @@ unchanged band, so a steady group pays an enqueue and nothing durable.
   dampers already sitting between evidence and this point — the RTT refinement gate and the input
   fingerprint skip — so the status costs no new evaluation rate of its own.
 - **The durable clocks** own what evidence cannot say. `resolveGroupActivationStatusAction` decides
-  which by computing the band twice, with the dwell satisfied and without: when the two answers
-  agree it publishes immediately, and when they disagree the coverage implies a band only a clock may
-  confirm, so it publishes nothing and arms a clock at `GROUP_ACTIVATION_STATUS_DWELL_MS` (3 s).
+  which by computing the band twice, with the dwell satisfied and without. When the two answers agree
+  it publishes immediately — or resolves to `none` when that band is already on the row. When they
+  disagree the coverage implies a band only a clock may confirm, so it publishes nothing and arms a
+  clock at `GROUP_ACTIVATION_STATUS_DWELL_MS` (3 s); a group already holding that band resolves to
+  `none` instead, so it does not re-arm a dwell every cycle.
   Publishing the undwelled band there would report the group healthier than the evidence says while
   the dwell is still running. A second clock arms at `GROUP_ACTIVATION_EVIDENCE_EXPIRY_MS` (30 s),
   because a decay that _is_ the absence of evidence can never arrive as evidence — and it is
   self-terminating, arming again only while a status and a watermark are both present, so a group
-  that has published its decay stops paying for the clock.
+  that has published its decay stops paying for the clock. `none` is therefore not free: it publishes
+  nothing, but the cycle it belongs to still arms that durable row.
 
 Neither clock needs polling or an in-process timer. Both are `APP_OUTBOX` rows inserted with
 `dequeueAudit.nextTs` at their due time, so the queue's own visibility filter keeps them invisible
@@ -832,7 +841,7 @@ every policy denial is the generic NACK reason `unauthorized`.
 The pure core is pinned in `packages/tests/shared/`: `group-lifecycle-policy.test.ts`
 (normalization, clamps, the validity matrix including the `none` + `manager` deadlock),
 `group-lifecycle-transitions.test.ts`, `group-activation-criterion.test.ts`,
-`group-formation-readiness.test.ts`, `group-admission-decision.test.ts`, and
+`group-formation-reading.test.ts`, `group-admission-decision.test.ts`, and
 `group-lifecycle-managers.test.ts`. The server side is pinned in `packages/tests/shared-server/`:
 `group-policy.test.ts`, `group-create-lifecycle-policy.test.ts`,
 `group-lifecycle-policy-repository.test.ts`, `group-state/group-lifecycle-command-policy.test.ts`,
@@ -871,7 +880,7 @@ both replays its request ids with fresh login sessions and self-conflicts on ide
 The product plan names **twenty-six** acceptance scenarios, and that list is the denominator this
 workstream is finished against. Recording only what is covered would make the denominator invisible,
 so every scenario has a row here whether or not anything pins it yet, and
-`packages/tests/repo/rallar-group-docs-compat.test.ts` compares this table against the plan's list as
+`packages/tests/repo/rallar-group-documentation.test.ts` compares this table against the plan's list as
 a set — a scenario that disappears from either side fails.
 
 | Scenario                   | Pinned by                                                                                                                                                                                                                |
@@ -903,9 +912,12 @@ a set — a scenario that disappears from either side fails.
 | `start-rebuilds-unchanged` | `api-v1-group-lifecycle-transitions` (`startResetLifecycleSeries` re-plans an unchanged member set)                                                                                                                      |
 | `absent-policy-parity`     | `api-v1-group-lifecycle-policy` (absent policy is byte-identical to an explicit `optimistic`)                                                                                                                            |
 
-Nine scenarios are unpinned today. Six of them need infrastructure this workstream does not own —
-live-RTC lifecycle manifests, a headless pacing sweep, and browser-side coverage — and three are
-server-side gaps a recipe could close.
+**7 scenarios are unpinned** today, and one more (`status-lifecycle`) is in review rather than on
+`main`. Five of the seven need infrastructure this workstream does not own — two live-RTC lifecycle
+manifests, one headless pacing sweep, two browser-side derivations — and two are server-side gaps a
+recipe could close. Two further rows, `apply-landing` and `attempt-series-resets`, name a half that
+is unpinned inside an otherwise covered scenario. The count in this paragraph is checked against the
+table itself, so it cannot drift as rows change.
 
 ### Scale tiers
 
@@ -964,9 +976,10 @@ writing this document:
   The `match` preset therefore has no per-edge audit trail — a disputed session has "we were at
   94%" rather than "edge (A, B) never confirmed at T" — and no server-controlled establishment
   ordering.
-- **A pushed coverage fraction.** The stored status carries the banded `condition` and the
-  `coverageRate` it was banded from, but no consumer receives the fraction as a stream: a reader
-  wanting it between status changes polls the formation view (product decision 40).
+- **A continuously pushed coverage fraction.** The stored `coverageRate` does reach consumers — it
+  is a field of `activationStatus`, which every group response and delta carries — but only when a
+  status change publishes it. A reader wanting the fraction between status changes polls the
+  formation view (product decision 40).
 - **The `elected-by-rank` rank source.** The selection is in the vocabulary and resolves zero
   managers; `resolveGroupLifecycleManagers` already takes `rankByPrincipalId`, so the remaining work
   is a `GroupMember` rank field, its join plumbing, and switching the `match` preset back.

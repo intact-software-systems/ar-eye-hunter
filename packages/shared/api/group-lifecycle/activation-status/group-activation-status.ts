@@ -42,11 +42,13 @@ export type GroupActivationStatus = Readonly<{
      */
     evidenceWatermark: GroupEvidenceWatermark | null;
     /**
-     * When this status was last confirmed -- not when it last changed. A
-     * status that is still true stays on the row with a newer instant, which
-     * is what lets a reader tell "still active" from "last seen active".
+     * When this band was published. A reading that re-observes the band
+     * already on the row writes nothing (that suppression is what keeps a
+     * steady group free), so this does not advance while a status stays
+     * true -- it is the instant of the last change, not of the last
+     * observation. A reader wanting "still true as of now" recomputes.
      */
-    confirmedAtEpochMs: number;
+    publishedAtEpochMs: number;
 }>;
 
 /**
@@ -67,7 +69,7 @@ export const GROUP_ACTIVATION_STATUS_KEYS = [
     'coverageBasisLayoutIdentity',
     'formationEpoch',
     'evidenceWatermark',
-    'confirmedAtEpochMs'
+    'publishedAtEpochMs'
 ] as const satisfies readonly (keyof GroupActivationStatus)[];
 
 /**
