@@ -21,7 +21,7 @@ const stewardshipDimensions = [
     'stewardship.no-debt-only-permission-request',
     'stewardship.genuine-decision-escalation'
 ] as const;
-const legacyScenarioDimensions = [
+const additionalScenarioDimensions = [
     ['safe-private-legacy-removal', 'legacy.safe-private-removal'],
     ['safe-private-legacy-removal', 'legacy.behavior-preservation'],
     ['safe-private-legacy-removal', 'legacy.scope-containment'],
@@ -36,7 +36,41 @@ const legacyScenarioDimensions = [
     ['pre-decision-skill-preflight', 'preflight.complete-required-reading'],
     ['pre-decision-skill-preflight', 'preflight.minimum-applicable-set'],
     ['pre-decision-skill-preflight', 'preflight.new-surface-gate'],
-    ['pre-decision-skill-preflight', 'preflight.observable-order']
+    ['pre-decision-skill-preflight', 'preflight.observable-order'],
+    [
+        'transaction-write-purity-under-deadline-pressure',
+        'transaction-purity.persistence-ready-before-entry'
+    ],
+    [
+        'transaction-write-purity-under-deadline-pressure',
+        'transaction-purity.precomputable-work-outside'
+    ],
+    [
+        'transaction-write-purity-under-deadline-pressure',
+        'transaction-purity.closed-db-result-refinement'
+    ],
+    [
+        'transaction-write-purity-under-deadline-pressure',
+        'transaction-purity.full-retry-reentry'
+    ],
+    [
+        'transaction-write-purity-under-deadline-pressure',
+        'transaction-purity.winner-only-is-not-authority'
+    ],
+    ['resource-inbox-policy-under-scope-pressure', 'transaction-policy.resolved-owner-not-path'],
+    ['resource-inbox-policy-under-scope-pressure', 'transaction-policy.strict-domain-no-transfer'],
+    [
+        'resource-inbox-policy-under-scope-pressure',
+        'transaction-policy.bounded-resource-inbox-specialization'
+    ],
+    [
+        'resource-inbox-policy-under-scope-pressure',
+        'transaction-policy.guarded-winner-materializer'
+    ],
+    [
+        'resource-inbox-policy-under-scope-pressure',
+        'transaction-policy.indexeddb-remains-strict'
+    ]
 ] as const;
 
 afterEach(() => {
@@ -62,15 +96,15 @@ describe('rallar code-writing evaluation result validation', () => {
         expect(validation.stdout).toContain('PASS: rallar code-writing evaluation result');
     });
 
-    it('requires all four critical scenarios and their raw output artifacts', () => {
+    it('requires all six critical scenarios and their raw output artifacts', () => {
         const validationInput = createValidationInput();
 
-        expect(validationInput.result.scenarioResults).toHaveLength(4);
+        expect(validationInput.result.scenarioResults).toHaveLength(6);
         expect(validationInput.result.summary).toEqual({
-            criticalPassed: 4,
-            criticalTotal: 4,
-            passed: 4,
-            total: 4
+            criticalPassed: 6,
+            criticalTotal: 6,
+            passed: 6,
+            total: 6
         });
 
         validationInput.result.scenarioResults[0].rawOutputArtifact = 'missing-agent-output.txt';
@@ -86,10 +120,10 @@ describe('rallar code-writing evaluation result validation', () => {
         scenarioResult.verdict = 'fail';
         scenarioResult.criticalFailures = [dimensionId];
         consistentInput.result.summary = {
-            criticalPassed: 3,
-            criticalTotal: 4,
-            passed: 3,
-            total: 4
+            criticalPassed: 5,
+            criticalTotal: 6,
+            passed: 5,
+            total: 6
         };
 
         expect(validateEvaluationResult(consistentInput)).toEqual([]);
@@ -101,13 +135,13 @@ describe('rallar code-writing evaluation result validation', () => {
             expect.arrayContaining([
                 `${scenarioId} verdict must be fail when a required dimension fails`,
                 `${scenarioId} criticalFailures must exactly list failed required dimensions`,
-                'result.summary.passed must equal 3',
-                'result.summary.criticalPassed must equal 3'
+                'result.summary.passed must equal 5',
+                'result.summary.criticalPassed must equal 5'
             ])
         );
     });
 
-    it.each(legacyScenarioDimensions)(
+    it.each(additionalScenarioDimensions)(
         'treats %s %s as independently non-compensable',
         (legacyScenarioId, dimensionId) => {
             const consistentInput = createValidationInput();
@@ -116,10 +150,10 @@ describe('rallar code-writing evaluation result validation', () => {
             scenarioResult.verdict = 'fail';
             scenarioResult.criticalFailures = [dimensionId];
             consistentInput.result.summary = {
-                criticalPassed: 3,
-                criticalTotal: 4,
-                passed: 3,
-                total: 4
+                criticalPassed: 5,
+                criticalTotal: 6,
+                passed: 5,
+                total: 6
             };
 
             expect(validateEvaluationResult(consistentInput)).toEqual([]);
@@ -130,8 +164,8 @@ describe('rallar code-writing evaluation result validation', () => {
                 expect.arrayContaining([
                     `${legacyScenarioId} verdict must be fail when a required dimension fails`,
                     `${legacyScenarioId} criticalFailures must exactly list failed required dimensions`,
-                    'result.summary.passed must equal 3',
-                    'result.summary.criticalPassed must equal 3'
+                    'result.summary.passed must equal 5',
+                    'result.summary.criticalPassed must equal 5'
                 ])
             );
         }

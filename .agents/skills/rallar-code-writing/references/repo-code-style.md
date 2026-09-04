@@ -984,9 +984,53 @@ compare-and-set semantics, permissive convergence, immutable facts, canonical
 identity, and concurrency verification.
 
 The local shape rule remains: expose a functional core through an explicitly
-owned stateful shell, keep `read`, `compute`, `validate`, and
-`write(transaction, computed)` visible, and represent expected decisions and
-conflicts as typed values rather than exceptions.
+owned stateful shell and keep the exact dataflow
+`read -> compute -> validate -> write(transaction, computed)` visible.
+For both phases, the same explicit input produces the same result. They perform
+no repository reads, clocks, randomness, mutable dependency lookups, or hidden
+side effects. Do not add `prepare`, `prepareWrite`, or another deterministic
+transformation after `compute`; `compute` returns persistence-ready data and
+`validate` checks that exact result.
+Adding another service mutation phase requires explicit human approval.
+Transaction write code primarily executes persistence-ready data from the prior
+phase. It may execute or iterate computed writes, select computed variants from
+actual database outcomes, apply the closed database-result refinement grammar,
+and construct the typed write outcome. Keep clocks, randomness, serialization,
+hashing, canonicalization, validation, sorting, candidate/event/outbox
+construction, arbitrary helpers, and all other precomputable work before
+transaction entry. Deterministic work is non-waivable even when cheap or under
+deadline pressure.
+
+Transaction timing is not provenance. A value desired only for a transaction
+winner is not thereby database-derived; this includes a timestamp, key, or
+random value whose caller wants only after a successful winner. Only actual
+database-returned facts justify inside-transaction refinement. One queue
+delivery performs one mutation attempt. A conflict exits that attempt; queue
+redelivery starts again from `read`, then performs `compute`, `validate`, and
+`write(transaction, computed)` with fresh data. Never add a handler-local or
+persistence-helper retry loop, and never carry mutable or partially computed
+attempt state forward. Continue to represent expected decisions and conflicts
+as typed values rather than exceptions.
+
+Policy follows the resolved transaction opener and owner, not a source path.
+The default `strict-domain-write` policy applies to authored package and API
+write transactions, including AppInbox and domain-owned transactions. Calling
+ResourceInbox code from an AppInbox or domain-owned transaction does not
+transfer the specialized policy. Browser IndexedDB readwrite and
+upgrade/versionchange transactions remain strict.
+
+The `specialized-resource-inbox` policy applies only when resolution proves an
+exact PostgreSQL ResourceInbox, Results, or QueueBox transaction owner. Those
+owners may perform bounded middleware-local SQL coordination whose result and
+rollback semantics exist only inside that transaction. They may not perform
+ordinary domain mutation logic, external effects, timers, polling, unbounded
+work, or arbitrary unresolved operation callbacks. The
+`transaction.precomputable-work` rule does not apply to a proven
+`specialized-resource-inbox` boundary: bounded deterministic persisted-value
+transformations integral to that middleware transaction remain local. The one
+externally supplied callback allowance is the exact guarded winner materializer
+defined by the convergent-service reference. A specialized boundary is reported
+separately for review; it is neither a strict-policy pass nor an exception.
 
 ## Configuration sources
 
