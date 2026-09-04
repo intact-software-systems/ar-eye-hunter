@@ -192,12 +192,13 @@ describe('inbound admission computation boundary', () => {
         const read = await stores.admissionStore.readIncomingMessage(message, 'sender', planIncomingMessage);
         const facts = createComputationFacts('candidate');
         const computed = computeALInboundAdmission(read, false, facts);
-        const readSenderId = vi.fn(() => computed.senderId);
         const candidate = { ...computed };
         Object.defineProperty(candidate, 'senderId', {
             configurable: true,
             enumerable: true,
-            get: readSenderId
+            get: () => {
+                throw new Error('Computed admission validation must not invoke accessors');
+            }
         });
 
         const issues = validateALInboundAdmission({
@@ -207,7 +208,6 @@ describe('inbound admission computation boundary', () => {
             computed: candidate
         });
 
-        expect(readSenderId).not.toHaveBeenCalled();
         expect(issues.map((issue) => issue.path)).toEqual(['computed']);
     });
 

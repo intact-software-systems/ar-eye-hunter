@@ -8,22 +8,24 @@ import { createComputedRtcTopologyOutbox } from '../rtc-topology-test-fixtures.t
 
 describe('RTC topology outbox writer', () => {
     it('records committed writes only when the transaction owner reports success', async () => {
-        const firstObserver = vi.fn();
-        const secondObserver = vi.fn();
-        const firstWriter = new RtcTopologyOutboxWriter({ recordWrite: firstObserver });
-        const secondWriter = new RtcTopologyOutboxWriter({ recordWrite: secondObserver });
+        const recordedWrites: string[] = [];
+        const firstWriter = new RtcTopologyOutboxWriter({
+            recordWrite: () => recordedWrites.push('first')
+        });
+        const secondWriter = new RtcTopologyOutboxWriter({
+            recordWrite: () => recordedWrites.push('second')
+        });
         const transaction = createInsertTransaction();
         const computed = computeAppOutboxInsert(
             computeRtcTopologyEntry(createComputedRtcTopologyOutbox())
         );
 
         await firstWriter.write(transaction, computed);
-        expect(firstObserver).not.toHaveBeenCalled();
+        expect(recordedWrites).toEqual([]);
         firstWriter.recordCommittedWrites(1);
         secondWriter.recordCommittedWrites(2);
 
-        expect(firstObserver).toHaveBeenCalledTimes(1);
-        expect(secondObserver).toHaveBeenCalledTimes(2);
+        expect(recordedWrites).toEqual(['first', 'second', 'second']);
     });
 
     it('keeps observer failures outside durable write behavior', () => {

@@ -144,18 +144,27 @@ describe('PSqlQueueBox', () => {
             ...observed,
             resource: JSON.stringify({ resourceId: 'entry-1', version: 3 })
         };
-        const predicate = vi.fn(() => true);
+        let predicateConsumed = false;
+        const predicate = () => {
+            if (predicateConsumed) {
+                throw new Error('Conditional enqueue predicate must not be recomputed');
+            }
+            predicateConsumed = true;
+            return true;
+        };
         const repo = createRepo({
             findAnyByKey: vi.fn(async () => observed),
-            findAnyByKeyForUpdate: vi.fn(async () => current)
+            findAnyByKeyForUpdate: vi.fn(async () => current),
+            replace: async () => {
+                throw new Error('A stale conditional enqueue must not write');
+            }
         });
         const queue = new PSqlQueueBox(repo as never);
 
         await expect(queue.enqueueIf(replacement, predicate)).rejects.toThrow(
             'Resource inbox entry changed before conditional write'
         );
-        expect(predicate).toHaveBeenCalledTimes(1);
-        expect(repo.entries.replace).not.toHaveBeenCalled();
+        expect(predicateConsumed).toBe(true);
     });
 
     it('enqueueIf overwrites expired entries without calling the predicate', async () => {
@@ -216,18 +225,27 @@ describe('PSqlQueueBox', () => {
             ...observed,
             resource: JSON.stringify({ resourceId: 'entry-1', version: 3 })
         };
-        const updateExisting = vi.fn(() => replacement);
+        let updateConsumed = false;
+        const updateExisting = () => {
+            if (updateConsumed) {
+                throw new Error('Conditional update must not be recomputed');
+            }
+            updateConsumed = true;
+            return replacement;
+        };
         const repo = createRepo({
             findAnyByKey: vi.fn(async () => observed),
-            findAnyByKeyForUpdate: vi.fn(async () => current)
+            findAnyByKeyForUpdate: vi.fn(async () => current),
+            replace: async () => {
+                throw new Error('A stale conditional update must not write');
+            }
         });
         const queue = new PSqlQueueBox(repo as never);
 
         await expect(queue.enqueueOrUpdate(observed, updateExisting)).rejects.toThrow(
             'Resource inbox entry changed before conditional write'
         );
-        expect(updateExisting).toHaveBeenCalledTimes(1);
-        expect(repo.entries.replace).not.toHaveBeenCalled();
+        expect(updateConsumed).toBe(true);
     });
 
     it('skips entries that can no longer be reserved after selection', async () => {

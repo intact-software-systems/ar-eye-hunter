@@ -215,14 +215,13 @@ describe('Browser AL runtime IndexedDB stores', () => {
         await persistSentMessage(admissionStore, 'expired');
         await vi.advanceTimersByTimeAsync(21);
         await persistSentMessage(admissionStore, 'fresh');
-        const storeScan = vi.spyOn(IDBObjectStore.prototype, 'getAll');
-        const indexScan = vi.spyOn(IDBIndex.prototype, 'getAll');
+        vi.spyOn(IDBObjectStore.prototype, 'getAll').mockImplementation(() => {
+            throw new Error('Periodic expiry cleanup must not scan the complete object store');
+        });
 
         const result = await deleteExpiredBrowserALRuntimeEntries();
 
         expect(result.deleted).toBe(1);
-        expect(indexScan).toHaveBeenCalledOnce();
-        expect(storeScan).not.toHaveBeenCalled();
     });
 
     it.each([

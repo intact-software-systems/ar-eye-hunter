@@ -120,14 +120,19 @@ describe('IndexedDbQueueBox computed writes', () => {
             { name: storeName, keyPath: 'keyString' }
         );
         const computed = computeIndexedDbQueuePut(undefined, createEntry('value', 'stored-key'));
-        const transaction = vi.spyOn(db, 'transaction');
+        const transactionForbidden = new Proxy(db, {
+            get: (target, property, receiver) => {
+                if (property === 'transaction') {
+                    throw new Error('Invalid computed writes must not open a transaction');
+                }
+                return Reflect.get(target, property, receiver);
+            }
+        });
 
-        await expect(writeComputedIndexedDbQueueMutations(db, storeName, [{
+        await expect(writeComputedIndexedDbQueueMutations(transactionForbidden, storeName, [{
             ...computed,
             keyString: toKeyAsString(createEntry('value', 'other-key').key)
         }])).rejects.toThrow('mutation key differs');
-
-        expect(transaction).not.toHaveBeenCalled();
     });
 
     it('computes fairness ordering without reading the IndexedDB global', () => {
