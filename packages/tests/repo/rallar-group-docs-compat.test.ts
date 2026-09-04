@@ -10,6 +10,7 @@ const repoRoot = process.cwd();
 
 const GROUP_DOCS = [
     'docs/rallar-group-formation-architecture.md',
+    'docs/rallar-group-lifecycle-cutover-runbook.md',
     'docs/rallar-api-reference.md',
     'docs/rallar-quickstart-and-recipes.md'
 ] as const;
