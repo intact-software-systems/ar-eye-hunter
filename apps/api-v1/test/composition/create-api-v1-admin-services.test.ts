@@ -120,6 +120,7 @@ function createInput(
         topologyQuery: {
             readTopologyView: rejectUnusedOperation
         },
+        readLifecyclePolicy: rejectUnusedOperation,
         clientStateService: {
             readSnapshot: () => Promise.resolve(undefined),
             readPresenceSnapshot: () => Promise.resolve(undefined),
