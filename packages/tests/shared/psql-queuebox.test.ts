@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -121,10 +122,7 @@ describe('PSqlQueueBox', () => {
                 return previous;
             }),
             findAnyByKeyForUpdate: vi.fn(async () => previous),
-            transaction: async (work) => {
-                events.push('transaction');
-                return await work(repo);
-            }
+            transactionStarted: () => events.push('transaction')
         });
         const queue = new PSqlQueueBox(repo as never);
 
@@ -195,10 +193,7 @@ describe('PSqlQueueBox', () => {
                 return previous;
             }),
             findAnyByKeyForUpdate: vi.fn(async () => previous),
-            transaction: async (work) => {
-                events.push('transaction');
-                return await work(repo);
-            }
+            transactionStarted: () => events.push('transaction')
         });
         const queue = new PSqlQueueBox(repo as never);
 
@@ -675,7 +670,7 @@ function createRepo(overrides: {
         }, ResourceEntry>
     >;
     startFinalizationRecovery?: (entry: ResourceEntry, processingAttempts: number) => Promise<Either<{ kind: 'expired-or-missing'; key: Key; }, ResourceEntry>>;
-    transaction?: (work: (repository: unknown) => Promise<unknown>) => Promise<unknown>;
+    transactionStarted?: () => void;
 }) {
     const entries = {
         findAnyByKey: overrides.findAnyByKey ?? vi.fn(async () => null),
@@ -712,20 +707,26 @@ function createRepo(overrides: {
         startFinalizationRecovery: overrides.startFinalizationRecovery ??
             vi.fn(async (entry: ResourceEntry) => Either.ofRight<{ kind: 'expired-or-missing'; key: Key; }, ResourceEntry>(entry))
     };
-    let repositoryForTransaction: unknown;
-    const repo = {
+    const repositoryForTransaction = {
         entries,
         reservations,
         finalization,
         maintenance: {
             deleteExpired: vi.fn(async () => 0)
         },
-        transaction: vi.fn(
-            overrides.transaction ??
-                (async (fn: (txRepo: unknown) => Promise<unknown>) => await fn(repositoryForTransaction))
-        )
+        transaction: async <T>(): Promise<T> => {
+            throw new Error('Nested test transaction is not supported');
+        }
+    } as never as PSqlResourceInboxRepository;
+    const repo = {
+        ...repositoryForTransaction,
+        transaction: vi.fn(async <T>(
+            work: (repository: PSqlResourceInboxRepository) => Promise<T>
+        ): Promise<T> => {
+            overrides.transactionStarted?.();
+            return await work(repositoryForTransaction);
+        })
     };
-    repositoryForTransaction = repo;
 
     return repo;
 }
