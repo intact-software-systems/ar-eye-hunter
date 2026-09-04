@@ -291,7 +291,8 @@ function createGroupSnapshotGroup(
             state: 'active'
         },
         transportState: 'flowing',
-        memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy())
+        memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy()),
+        activationStatus: null
     };
 }
 

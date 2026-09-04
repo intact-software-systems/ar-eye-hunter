@@ -678,7 +678,8 @@ function makeGroupSnapshot(
             ),
             acceptedLayoutIdentity: null,
             transportState: 'flowing',
-            memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy())
+            memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy()),
+            activationStatus: null
         },
         members: Array.from({ length: memberCount }, (_, index) => ({
             ...ref,

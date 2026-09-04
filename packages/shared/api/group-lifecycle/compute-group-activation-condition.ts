@@ -50,10 +50,26 @@ export type GroupActivationCondition =
     | 'active'
     | 'initialising';
 
+/** The runtime registry the validators check against. */
+export const GROUP_ACTIVATION_CONDITIONS = [
+    'failed',
+    'inactive',
+    'degraded',
+    'active',
+    'initialising'
+] as const satisfies readonly GroupActivationCondition[];
+
 export type GroupActivationRemediation =
     | 'none'
     | 'replan-queued'
     | 'awaiting-application';
+
+/** The runtime registry the validators check against. */
+export const GROUP_ACTIVATION_REMEDIATIONS = [
+    'none',
+    'replan-queued',
+    'awaiting-application'
+] as const satisfies readonly GroupActivationRemediation[];
 
 export interface GroupCoverageObservation {
     readonly coverageRate: number;

@@ -52,7 +52,8 @@ export function createTestGroup(overrides: Partial<Group> = {}): Group {
         formationElectorate: ['alice'],
         acceptedLayoutIdentity: null,
         transportState: 'flowing',
-        memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy())
+        memberPolicy: toGroupMemberPolicy(createDefaultGroupLifecyclePolicy()),
+        activationStatus: null
     };
 
     // `Group` correlates `status` with `archived`/`deleted`, and a spread of

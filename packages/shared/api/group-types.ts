@@ -1,4 +1,5 @@
 import type { ApiJsonObject } from './api-json-value.ts';
+import type { GroupActivationStatus } from './group-lifecycle/group-activation-status.ts';
 import type { GroupLayoutIdentity } from './group-lifecycle/group-layout-identity.ts';
 import type {
     GroupFormationOutcome,
@@ -120,6 +121,16 @@ type GroupBase =
 
         /** Resolved once at creation and never rewritten, like the policy it comes from. */
         memberPolicy: GroupMemberPolicy;
+
+        /**
+         * The living observed status (product decision 3): derived,
+         * non-authoritative, and read by no policy or gate. Null until a
+         * layout carries traffic or is being dialed, because a status with no
+         * basis would have to invent the coverage it claims to be computed
+         * from. New fields go last so the serialized wire order stays stable
+         * (I4).
+         */
+        activationStatus: GroupActivationStatus | null;
     }>;
 
 export type Group =

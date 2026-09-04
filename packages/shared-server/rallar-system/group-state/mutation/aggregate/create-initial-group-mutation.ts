@@ -49,7 +49,10 @@ export function createInitialGroup({
         formationElectorate: [command.input.createdByPrincipalId],
         acceptedLayoutIdentity: null,
         transportState: 'flowing',
-        memberPolicy: toGroupMemberPolicy(lifecyclePolicy)
+        memberPolicy: toGroupMemberPolicy(lifecyclePolicy),
+        // No layout carries traffic or is being dialed yet, so there is no
+        // coverage to report and nothing for the status writer to confirm.
+        activationStatus: null
     };
 }
 
