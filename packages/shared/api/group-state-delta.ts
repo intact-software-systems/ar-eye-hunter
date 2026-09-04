@@ -1,9 +1,6 @@
 import { validateAuthoritativeGroupEvent } from './authoritative-state-validation.ts';
 import { compareGroupCausalRevision } from './group-client-views.ts';
-import {
-    GROUP_ACTIVATION_CONDITIONS,
-    GROUP_ACTIVATION_REMEDIATIONS
-} from './group-lifecycle/compute-group-activation-condition.ts';
+import { GROUP_ACTIVATION_CONDITIONS } from './group-lifecycle/compute-group-activation-condition.ts';
 import { GROUP_EVIDENCE_WATERMARK_KEYS } from './group-lifecycle/compute-group-formation-reading.ts';
 import { GROUP_ACTIVATION_STATUS_KEYS } from './group-lifecycle/group-activation-status.ts';
 import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
@@ -280,7 +277,6 @@ function validateDeltaGroupLayoutIdentity(identity: DeltaRecord, label: string):
 function validateDeltaGroupActivationStatus(status: DeltaRecord, label: string): void {
     exact(status, GROUP_ACTIVATION_STATUS_KEYS, label);
     enumValue(status.condition, GROUP_ACTIVATION_CONDITIONS, `${label}.condition`);
-    enumValue(status.remediation, GROUP_ACTIVATION_REMEDIATIONS, `${label}.remediation`);
     if (
         typeof status.coverageRate !== 'number' || !Number.isFinite(status.coverageRate) ||
         status.coverageRate < 0 || status.coverageRate > 1

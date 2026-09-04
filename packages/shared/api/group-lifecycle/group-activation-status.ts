@@ -1,7 +1,4 @@
-import type {
-    GroupActivationCondition,
-    GroupActivationRemediation
-} from './compute-group-activation-condition.ts';
+import type { GroupActivationCondition } from './compute-group-activation-condition.ts';
 import type { GroupEvidenceWatermark } from './compute-group-formation-reading.ts';
 import type { GroupLayoutIdentity } from './group-layout-identity.ts';
 
@@ -9,14 +6,17 @@ import type { GroupLayoutIdentity } from './group-layout-identity.ts';
  * One confirmed observation of a group's connectivity, written by internal
  * authority and read by no policy or gate (product decision 3). It is stored
  * whole because every field is decided by the same reading: publishing the
- * axes without the coverage, basis and instant they came from is what makes a
- * status untruthful about its lag.
+ * condition without the coverage, basis and instant it came from is what
+ * makes a status untruthful about its lag.
+ *
+ * The remediation axis is deliberately absent. Its inputs are transient -- a
+ * queued replan drains and a temporary override expires, neither of which
+ * writes a status -- so a stored value would be stale far more often than
+ * right. It stays derived at read, where those facts are current (I40).
  */
 export type GroupActivationStatus = Readonly<{
     /** Coverage of the layout carrying traffic (product decision 30). */
     condition: GroupActivationCondition;
-    /** Whose move it is, naming only work the server performs. */
-    remediation: GroupActivationRemediation;
     /** The coverage fraction this condition was banded from. */
     coverageRate: number;
     /**
@@ -52,7 +52,6 @@ export type GroupActivationStatus = Readonly<{
 /** The runtime key registry the persistence and wire validators check against. */
 export const GROUP_ACTIVATION_STATUS_KEYS = [
     'condition',
-    'remediation',
     'coverageRate',
     'coverageBasisLayoutIdentity',
     'formationEpoch',

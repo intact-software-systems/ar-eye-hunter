@@ -352,9 +352,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
         'expectedLayout',
         'coverageRate',
         'evidenceWatermark',
-        'dwellSatisfied',
-        'replanQueued',
-        'layoutStale'
+        'dwellSatisfied'
     ],
     pauseGroupTransport: ACTOR_INPUT_KEYS,
     resumeGroupTransport: ACTOR_INPUT_KEYS,

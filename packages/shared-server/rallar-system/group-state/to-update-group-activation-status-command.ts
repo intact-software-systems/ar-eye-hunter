@@ -11,8 +11,6 @@ export interface ToUpdateGroupActivationStatusCommandInput {
     readonly coverageBasisLayoutIdentity: GroupLayoutIdentity;
     readonly coverageRate: number;
     readonly evidenceWatermark: GroupEvidenceWatermark | null;
-    readonly replanQueued: boolean;
-    readonly layoutStale: boolean;
     /**
      * The durable clock's own write, and the only one that may publish a
      * dwell-held band. It also carries the clock's due instant, because a
@@ -70,9 +68,7 @@ export function toUpdateGroupActivationStatusCommand(
             expectedLayout: input.coverageBasisLayoutIdentity,
             coverageRate: input.coverageRate,
             evidenceWatermark: input.evidenceWatermark,
-            dwellSatisfied: input.dwell?.satisfied ?? false,
-            replanQueued: input.replanQueued,
-            layoutStale: input.layoutStale
+            dwellSatisfied: input.dwell?.satisfied ?? false
         }
     };
 }
