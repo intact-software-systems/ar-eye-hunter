@@ -82,8 +82,12 @@ and authoritative persisted/shared contracts use mandatory fields by default.
 - [Rallar Group Formation Architecture](./rallar-group-formation-architecture.md)
   Formation intent lifecycle, the lifecycle policy document and presets,
   admission and the manager role, readiness and the activation criterion,
-  pre-activation data gating, the read surface, and the recipes that pin each
-  behaviour.
+  pre-activation data gating, the observed activation status, the read surface,
+  and the recipes that pin each behaviour.
+- [Rallar Group Lifecycle Cutover Runbook](./rallar-group-lifecycle-cutover-runbook.md)
+  Why the lifecycle ships as a hard cutover, what to verify before resetting,
+  the stop/drain/reset/deploy ordering across both databases and both servers,
+  and the rollback path when a decode fails afterwards.
 
 ## Repo Codex Skills
 

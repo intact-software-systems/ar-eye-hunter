@@ -4,7 +4,8 @@ This document describes how a Rallar group forms: the authoritative formation li
 moves through, the policy document that drives it, how admission, the manager role, the activation
 criterion, and pre-activation data gating enforce that policy server-side, what the read surface
 exposes, and which black-box recipes verify each behaviour. The design history lives in
-`playground/rtc-design/`.
+`playground/rtc-design/`, and `docs/rallar-group-lifecycle-cutover-runbook.md` covers deploying it:
+the layer ships as a hard cutover, and durable rows written before it cannot be decoded after it.
 
 The property that makes the whole layer safe to ship is this: **a group created without a
 `lifecyclePolicy` is the `optimistic` preset, which is exactly the behaviour groups had before the
