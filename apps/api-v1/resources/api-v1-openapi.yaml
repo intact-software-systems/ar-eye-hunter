@@ -3286,6 +3286,12 @@ components:
         - forbidden-role
         - last-owner
         - formation-attempts-exhausted
+        - lifecycle-transition-invalid
+        - lifecycle-manager-unavailable
+        - group-admission-closed
+        - group-admission-deadline-passed
+        - group-admission-capacity-reached
+        - group-data-blocked-until-active
 
     ErrorResponse:
       type: object
