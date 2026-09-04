@@ -125,16 +125,22 @@ export async function petitionGroupActivationStatus(
         nowEpochMs: authority.nowEpochMs
     });
     if (action.kind === 'none') {
-        // Steady is still worth a heartbeat: coverage decays by evidence
-        // ageing out, which nothing else observes, so the group must ask
-        // itself again. enqueueIfAbsent makes this one row per group.
-        await armEvidenceExpiry({
-            dependencies,
-            groupRef,
-            formationEpoch: group.formationEpoch,
-            coverageBasisLayoutIdentity: basis,
-            nowEpochMs: authority.nowEpochMs
-        });
+        // Coverage decays by evidence ageing out, which nothing else
+        // observes, so a steady group has to ask itself again -- but only
+        // while it has something to decay. A group with no published status
+        // has nothing to decay from, and a reading that counted no evidence
+        // is already at this basis' floor, so re-arming there would leave a
+        // row that never drains. Terminating on both is what keeps the
+        // durable work convergent.
+        if (group.activationStatus !== null && reading.evidenceWatermark !== null) {
+            await armEvidenceExpiry({
+                dependencies,
+                groupRef,
+                formationEpoch: group.formationEpoch,
+                coverageBasisLayoutIdentity: basis,
+                nowEpochMs: authority.nowEpochMs
+            });
+        }
         return;
     }
     if (action.kind === 'arm-dwell' && dwell !== null) {
@@ -175,13 +181,17 @@ export async function petitionGroupActivationStatus(
         }),
         authority.nowEpochMs
     );
-    await armEvidenceExpiry({
-        dependencies,
-        groupRef,
-        formationEpoch: group.formationEpoch,
-        coverageBasisLayoutIdentity: basis,
-        nowEpochMs: authority.nowEpochMs
-    });
+    if (reading.evidenceWatermark !== null) {
+        // Same rule as the steady path: a status written from evidence can
+        // still decay, one written from an absence cannot decay further.
+        await armEvidenceExpiry({
+            dependencies,
+            groupRef,
+            formationEpoch: group.formationEpoch,
+            coverageBasisLayoutIdentity: basis,
+            nowEpochMs: authority.nowEpochMs
+        });
+    }
 }
 
 /** The self-rescheduling heartbeat: consumed when it fires, re-armed by the reading it causes. */
