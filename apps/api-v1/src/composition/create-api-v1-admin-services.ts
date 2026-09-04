@@ -22,6 +22,7 @@ import type { RallarServerWsStatus } from '@shared-server/rallar-system/websocke
 import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
+import type { GroupAdminSupportDependencies } from '@shared-server/rallar-system/admin-support/admin-support-contracts.ts';
 import {
     createApiV1AdminOperationUseCases,
     type CreateApiV1AdminOperationUseCasesInput
@@ -31,6 +32,7 @@ import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts'
 
 export interface CreateApiV1AdminServicesInput extends CreateApiV1AdminOperationUseCasesInput {
     readonly topologyQuery: AdminSupportTopologyQuery;
+    readonly readLifecyclePolicy: GroupAdminSupportDependencies['readLifecyclePolicy'];
     readonly clientStateService: Pick<ClientStateService, 'readSnapshot' | 'readPresenceSnapshot' | 'listRecentEvents'>;
     readonly groupStateService: Pick<
         CachedGroupStateService,
@@ -62,6 +64,7 @@ export function createApiV1AdminServices(
             clientStateService: input.clientStateService,
             groupStateService: input.groupStateService,
             topologyQuery: input.topologyQuery,
+            readLifecyclePolicy: input.readLifecyclePolicy,
             wsStatus: readWebSocketStatus,
             crdtAdminRepository: input.crdtAdminRepository,
             timing: input.timing

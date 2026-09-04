@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { projectGroupAdminSupportNarrative } from '@shared-server/rallar-system/admin-support/narratives/project-group-admin-support-narrative.ts';
 import type { AdminSupportJsonValue } from '@shared/api/admin-support/admin-support-types.ts';
+import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
+import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../../../create-test-group.ts';
@@ -111,17 +113,56 @@ describe('the group narrative reports the lifecycle plane', () => {
         expect(byLabel['group.activationCoverageBasis']?.value).toBe('active r9/2 v3');
     });
 
-    // Product decision 38: a parked series keeps its admission posture, so the
-    // lobby looks open while nothing will dial. That is the state an operator
-    // is least likely to guess.
-    it('warns that a parked series looks open but will not dial', () => {
-        const codes = warningCodesFor({ lifecycleState: 'dormant', formationAttemptCount: 2 });
+    // The valve is only half the gate: under `blocked-until-active` the
+    // forward gate composes with it, so `flowing` alone does not mean data
+    // flows (product decision 25).
+    it('reports the data gate, not just the valve', () => {
+        const match = resolveGroupLifecyclePolicyPreset('match');
+
+        expect(factsFor({ lifecycleState: 'connecting', transportState: 'flowing' }, match)['group.dataGate'])
+            .toBe('blocked');
+        expect(factsFor({ lifecycleState: 'active', transportState: 'flowing' }, match)['group.dataGate'])
+            .toBe('flows');
+        expect(factsFor({ lifecycleState: 'active', transportState: 'halted' }, match)['group.dataGate'])
+            .toBe('halted');
+    });
+
+    it('reports the remediation axis as inferred, because it cannot see the planning fingerprint', () => {
+        const narrative = narrativeFor({ lifecycleState: 'dormant', formationAttemptCount: 3 });
+        const remediation = narrative.facts.find((f) => f.label === 'group.activationRemediation');
+
+        // An exhausted series in dormant is the application's move.
+        expect(remediation?.value).toBe('awaiting-application');
+        expect(remediation?.certainty).toBe('inferred');
+    });
+
+    it('degrades the policy-fed facts rather than lying when the policy is unreadable', () => {
+        const facts = factsFor({ lifecycleState: 'active' }, null);
+
+        for (const label of ['group.dataGate', 'group.activationRemediation', 'group.maxFormationAttempts']) {
+            expect(facts[label]).toBe('unreadable');
+        }
+    });
+
+    // Decision 37: the spent series denies a fresh `start` until a reset. No
+    // claim is made about admission -- decision 38 keeps the policy's posture,
+    // so a closed lobby stays closed.
+    it('warns that a spent series will not dial until a reset', () => {
+        const codes = warningCodesFor({ lifecycleState: 'dormant', formationAttemptCount: 3 });
 
         expect(codes).toContain('group-formation-series-parked');
     });
 
     it('does not call a never-started group parked', () => {
         const codes = warningCodesFor({ lifecycleState: 'dormant', formationAttemptCount: 0 });
+
+        expect(codes).not.toContain('group-formation-series-parked');
+    });
+
+    // Keyed on the budget, not on a non-zero count: a group part-way through
+    // its attempts is dormant with attempts spent but is not parked.
+    it('does not call a group with budget left parked', () => {
+        const codes = warningCodesFor({ lifecycleState: 'dormant', formationAttemptCount: 1 });
 
         expect(codes).not.toContain('group-formation-series-parked');
     });
@@ -134,7 +175,10 @@ describe('the group narrative reports the lifecycle plane', () => {
     });
 });
 
-function narrativeFor(overrides: Partial<Parameters<typeof createTestGroup>[0]>) {
+function narrativeFor(
+    overrides: Partial<Parameters<typeof createTestGroup>[0]>,
+    policy: GroupLifecyclePolicy | null = resolveGroupLifecyclePolicyPreset('managed')
+) {
     const snapshot: GroupSnapshot = {
         causalRevision: { groupRevision: 7, presenceRevision: 3 },
         group: createTestGroup({ ...GROUP_REF, displayName: 'Room 1', ...overrides }),
@@ -150,16 +194,22 @@ function narrativeFor(overrides: Partial<Parameters<typeof createTestGroup>[0]>)
         topologyView: undefined,
         hasGroupStateService: true,
         hasTopologyQuery: true,
+        hasLifecyclePolicyReader: true,
+        policy,
         generatedAtEpochMs: NOW
     });
 }
 
 function factsFor(
-    overrides: Partial<Parameters<typeof createTestGroup>[0]>
+    overrides: Partial<Parameters<typeof createTestGroup>[0]>,
+    policy?: GroupLifecyclePolicy | null
 ): Record<string, AdminSupportJsonValue> {
-    return Object.fromEntries(narrativeFor(overrides).facts.map((f) => [f.label, f.value]));
+    return Object.fromEntries(narrativeFor(overrides, policy).facts.map((f) => [f.label, f.value]));
 }
 
-function warningCodesFor(overrides: Partial<Parameters<typeof createTestGroup>[0]>): readonly string[] {
-    return narrativeFor(overrides).warnings.map((w) => w.code);
+function warningCodesFor(
+    overrides: Partial<Parameters<typeof createTestGroup>[0]>,
+    policy?: GroupLifecyclePolicy | null
+): readonly string[] {
+    return narrativeFor(overrides, policy).warnings.map((w) => w.code);
 }

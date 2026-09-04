@@ -2,6 +2,7 @@ import type {
     AdminSupportExplainGroupRequest,
     AdminSupportNarrativeResponse
 } from '@shared/api/admin-support/admin-support-types.ts';
+import { toReadGroupLifecyclePolicy } from '../group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { AdminSupportWriteInput, GroupAdminSupportDependencies } from './admin-support-contracts.ts';
 import { projectGroupAdminSupportNarrative } from './narratives/project-group-admin-support-narrative.ts';
 import { readAdminSupportRecentEventLimit } from './read-admin-support-recent-event-limit.ts';
@@ -29,10 +30,12 @@ export class GroupAdminSupport {
                 const limit = readAdminSupportRecentEventLimit(
                     input.request.limitRecentEvents
                 );
-                const [snapshot, recentEvents, topologyView] = await Promise.all([
+                const readPolicy = this.dependencies.readLifecyclePolicy;
+                const [snapshot, recentEvents, topologyView, policyRead] = await Promise.all([
                     service?.readSnapshot(groupRef),
                     service?.listRecentEvents?.(groupRef, { limit }) ?? Promise.resolve([]),
-                    topologyQuery?.readTopologyView(groupRef)
+                    topologyQuery?.readTopologyView(groupRef),
+                    readPolicy?.(groupRef)
                 ]);
                 return projectGroupAdminSupportNarrative({
                     request: input.request,
@@ -42,7 +45,9 @@ export class GroupAdminSupport {
                     hasTopologyQuery: Boolean(topologyQuery),
                     snapshot,
                     recentEvents,
-                    topologyView
+                    topologyView,
+                    hasLifecyclePolicyReader: Boolean(readPolicy),
+                    policy: policyRead === undefined ? null : toReadGroupLifecyclePolicy(policyRead)
                 });
             }
         });

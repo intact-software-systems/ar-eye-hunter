@@ -13,6 +13,7 @@ import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 import type { ClientStateService } from '../client-state/client-state-service-contracts.ts';
 import type { GroupStateService } from '../group-state/group-state-service-contracts.ts';
+import type { GroupLifecyclePolicyRead } from '../group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { RallarTimingSink } from '../observability/timing.ts';
 import type { RallarServerWsStatus } from '../websocket/router/rallar-server-ws-status.ts';
 
@@ -73,6 +74,13 @@ export interface ClientAdminSupportDependencies extends AdminSupportExecutionDep
 export interface GroupAdminSupportDependencies extends AdminSupportExecutionDependencies {
     readonly groupStateService?: AdminSupportGroupStateService;
     readonly topologyQuery?: AdminSupportTopologyQuery;
+    /**
+     * The stored lifecycle policy, which the remediation axis, the data gate
+     * and the real exhaustion predicate all need. Optional like the other two
+     * readers: an unconfigured one degrades the facts it feeds rather than
+     * failing the explanation.
+     */
+    readonly readLifecyclePolicy?: (groupRef: GroupRef) => Promise<GroupLifecyclePolicyRead>;
 }
 
 export interface CrdtAdminSupportDependencies extends AdminSupportExecutionDependencies {
