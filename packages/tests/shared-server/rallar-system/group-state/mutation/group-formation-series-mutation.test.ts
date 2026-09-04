@@ -44,7 +44,7 @@ describe('group formation series computation', () => {
             lastFormationOutcome: null,
             acceptedLayoutIdentity: null
         });
-        const summaryMessage = JSON.parse(computed.outboxEntries[0]!.resource);
+        const summaryMessage = JSON.parse(computed.outboxWrites[0]!.entry.resource);
         expect(JSON.parse(summaryMessage.payload.resource)).toMatchObject({
             data: { event: { payload: { topologyReplanOrigin: 'commanded' } } }
         });
@@ -119,7 +119,7 @@ describe('group formation series computation', () => {
         // consumes no deadline, and the default preset forms immediately, so
         // the stage triggers arm nothing either: the write arms no timer.
         expect(written.formationAttemptCount).toBe(0);
-        expect(computed.outboxEntries.map((entry) => entry.key.topicId))
+        expect(computed.outboxWrites.map((write) => write.entry.key.topicId))
             .not.toContain(APP_OUTBOX_FORMATION_TIMER_TOPIC);
     });
 

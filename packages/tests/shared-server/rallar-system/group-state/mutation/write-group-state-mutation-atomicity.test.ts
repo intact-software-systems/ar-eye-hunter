@@ -7,7 +7,8 @@ import {
     groupStatePresenceSessionStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
 import { GroupStateEventCollisionError } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
-import { RuntimeStateRetryExhaustedError, RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { ApplyingGuardedBatchRepository, OrderedGroupEventStore } from './group-mutation-test-runtime.ts';
@@ -35,36 +36,75 @@ const SCOPE = {
 } as const;
 
 describe('GroupStateService guarded batch atomicity', () => {
+    it('surfaces a write conflict after one explicit mutation attempt', async () => {
+        const runtime = new ApplyingGuardedBatchRepository();
+        const eventStore = new OrderedGroupEventStore(runtime);
+        runtime.forceNextConflict('guard');
+        const service = createTestGroupStateService({
+            runtimeRepository: runtime,
+            groupStateEventStoreFor: () => eventStore,
+            now: () => 1_000,
+            randomId: () => 'single-attempt-id',
+            serviceId: 'single-attempt-service'
+        });
+
+        await expect(createGroup(service, 'single-attempt')).rejects.toBeInstanceOf(
+            RuntimeStateWriteConflictError
+        );
+
+        expect(runtime.beginCount).toBe(1);
+        expect(runtime.batches).toHaveLength(1);
+        expect(runtime.transactionOrder).toEqual(['batch']);
+        expect(eventStore.events).toEqual([]);
+    });
+
     it.each(['guard', 'initial-presence-summary', 'receipt'] as const)(
-        'retries a forced %s conflict from a fully fresh read',
+        're-enters a forced %s conflict through an explicit fresh outer attempt',
         async (conflictTarget) => {
             const runtime = new ApplyingGuardedBatchRepository();
             const eventStore = new OrderedGroupEventStore(runtime);
-            const retryDelays: number[] = [];
-            const sleep = async (delayMs: number): Promise<void> => {
-                expect(runtime.activeTransactionDepth).toBe(0);
-                retryDelays.push(delayMs);
-            };
             runtime.forceNextConflict(conflictTarget);
-            const service = createTestGroupStateService({
+            const attemptOne = createTestGroupStateService({
                 runtimeRepository: runtime,
                 groupStateEventStoreFor: () => eventStore,
                 now: () => 1_000,
                 randomId: () => `retry-${conflictTarget}-id`,
-                sleep,
+                attemptCount: 1,
                 serviceId: 'group-batch-retry-service'
             });
-
-            const written = await service.createGroup(SCOPE, {
+            const request = {
                 groupId: `retry-${conflictTarget}`,
                 displayName: `Retry ${conflictTarget}`,
                 kind: 'room',
                 joinMode: 'open',
                 createdByPrincipalId: 'alice',
                 requestId: `retry-${conflictTarget}-request`
-            });
+            } as const;
+
+            await expect(attemptOne.createGroup(SCOPE, request)).rejects.toBeInstanceOf(
+                RuntimeStateWriteConflictError
+            );
+            const written = await createTestGroupStateService({
+                runtimeRepository: runtime,
+                groupStateEventStoreFor: () => eventStore,
+                now: () => 1_000,
+                randomId: () => `retry-${conflictTarget}-id`,
+                attemptCount: 2,
+                serviceId: 'group-batch-retry-service'
+            }).createGroup(SCOPE, request);
 
             expect(written.result?.event).not.toBeNull();
+            expect(
+                (
+                    await createTestGroupStateRepository(
+                        runtime,
+                        eventStore
+                    ).findIdempotentGroupMutationReceipt(
+                        { ...SCOPE, groupId: request.groupId },
+                        request.requestId
+                    )
+                )?.receipt.attemptCount
+            ).toBe(2);
             expect(runtime.beginCount).toBe(2);
             expect(runtime.batches).toHaveLength(2);
             expect(runtime.readCountsBeforeBatch[1]).toBeGreaterThan(
@@ -73,26 +113,19 @@ describe('GroupStateService guarded batch atomicity', () => {
             expect(runtime.transactionOrder).toEqual(['batch', 'batch', 'event', 'commit']);
             expect([...runtime.data.values()].every(({ revision }) => revision === 0)).toBe(true);
             expect(eventStore.events).toHaveLength(1);
-            expect(retryDelays).toEqual([2]);
         }
     );
 
-    it('retries admission conflict and rolls its session guard back', async () => {
+    it('re-enters an admission conflict through an explicit fresh outer attempt', async () => {
         const runtime = new ApplyingGuardedBatchRepository();
         const eventStore = new OrderedGroupEventStore(runtime);
         const nowEpochMs = 1_900_000_000_000;
-        const retryDelays: number[] = [];
-        const sleep = async (delayMs: number): Promise<void> => {
-            expect(runtime.activeTransactionDepth).toBe(0);
-            retryDelays.push(delayMs);
-        };
         let generatedId = 0;
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
             groupStateEventStoreFor: () => eventStore,
             now: () => nowEpochMs,
             randomId: () => `admission-retry-id-${++generatedId}`,
-            sleep,
             serviceId: 'admission-retry-service'
         });
         const ref = { ...SCOPE, groupId: 'admission-retry' };
@@ -107,7 +140,27 @@ describe('GroupStateService guarded batch atomicity', () => {
         runtime.resetObservations();
         runtime.forceNextConflict('presence-admission');
 
-        const receipt = await service.connectPresenceSessionReceipt(
+        const connect = () =>
+            service.connectPresenceSessionReceipt(
+                SCOPE,
+                ref.groupId,
+                'session-admission-retry',
+                {
+                    principalId: 'alice',
+                    generationId: 'generation-admission-retry',
+                    expiresAtEpochMs: nowEpochMs + 30_000,
+                    requestId: 'admission-retry-request'
+                }
+            );
+        await expect(connect()).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        const receipt = await createTestGroupStateService({
+            runtimeRepository: runtime,
+            groupStateEventStoreFor: () => eventStore,
+            now: () => nowEpochMs,
+            randomId: () => `admission-retry-id-${++generatedId}`,
+            attemptCount: 2,
+            serviceId: 'admission-retry-service'
+        }).connectPresenceSessionReceipt(
             SCOPE,
             ref.groupId,
             'session-admission-retry',
@@ -146,49 +199,35 @@ describe('GroupStateService guarded batch atomicity', () => {
             )?.revision
         ).toBe(0);
         expect(eventStore.events).toHaveLength(2);
-        expect(retryDelays).toEqual([2]);
     });
 
-    it('exhausts repeated guard conflicts without leaking rows or events', async () => {
+    it('surfaces every explicit outer guard conflict without leaking rows or events', async () => {
         const runtime = new ApplyingGuardedBatchRepository();
         const eventStore = new OrderedGroupEventStore(runtime);
-        const delays: number[] = [];
-        const sleep = async (delayMs: number): Promise<void> => {
-            expect(runtime.activeTransactionDepth).toBe(0);
-            delays.push(delayMs);
-        };
         runtime.forceNextConflict('guard');
         runtime.forceNextConflict('guard');
         runtime.forceNextConflict('guard');
-        const service = createTestGroupStateService({
-            runtimeRepository: runtime,
-            groupStateEventStoreFor: () => eventStore,
-            now: () => 1_000,
-            randomId: () => 'guard-exhaustion-id',
-            sleep,
-            serviceId: 'guard-exhaustion-service'
-        });
         const before = new Map(runtime.data);
 
-        let caught: unknown;
-        try {
-            await createGroup(service, 'guard-exhaustion');
-        }
-        catch (error) {
-            caught = error;
+        for (const attemptCount of [1, 2, 3]) {
+            const service = createTestGroupStateService({
+                runtimeRepository: runtime,
+                groupStateEventStoreFor: () => eventStore,
+                now: () => 1_000,
+                randomId: () => 'guard-exhaustion-id',
+                attemptCount,
+                serviceId: 'guard-exhaustion-service'
+            });
+            await expect(createGroup(service, 'guard-exhaustion')).rejects.toBeInstanceOf(
+                RuntimeStateWriteConflictError
+            );
         }
 
-        expect(caught).toBeInstanceOf(RuntimeStateRetryExhaustedError);
-        if (!(caught instanceof Error)) {
-            throw new Error('Expected retry exhaustion to throw an Error');
-        }
-        expect(caught.cause).toBeInstanceOf(RuntimeStateWriteConflictError);
         expect(runtime.beginCount).toBe(3);
         expect(runtime.batches).toHaveLength(3);
         expect(runtime.transactionOrder).toEqual(['batch', 'batch', 'batch']);
         expect(runtime.data).toEqual(before);
         expect(eventStore.events).toEqual([]);
-        expect(delays).toEqual([2, 8]);
     });
 
     it('keeps an event collision terminal and rolls its batch back', async () => {
@@ -199,7 +238,6 @@ describe('GroupStateService guarded batch atomicity', () => {
             groupStateEventStoreFor: () => eventStore,
             now: () => 1_000,
             randomId: () => 'event-conflict-id',
-            sleep: rejectUnexpectedRetry,
             serviceId: 'event-conflict-service'
         });
         const before = new Map(runtime.data);
@@ -222,7 +260,6 @@ describe('GroupStateService guarded batch atomicity', () => {
             groupStateEventStoreFor: () => eventStore,
             now: () => 1_000,
             randomId: () => 'missing-member-result-id',
-            sleep: rejectUnexpectedRetry,
             serviceId: 'missing-member-result-service'
         });
         const before = new Map(runtime.data);
@@ -234,10 +271,6 @@ describe('GroupStateService guarded batch atomicity', () => {
         expectTerminalRollback(runtime, eventStore.events, before);
     });
 });
-
-function rejectUnexpectedRetry(): Promise<never> {
-    return Promise.reject(new Error('Terminal group mutation failure must not retry'));
-}
 
 function createGroup(service: ReturnType<typeof createTestGroupStateService>, groupId: string) {
     return service.createGroup(SCOPE, {

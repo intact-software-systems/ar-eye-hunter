@@ -86,7 +86,7 @@ describe('group transport mutation computation', () => {
         if (computed.outcome !== 'write') {
             return;
         }
-        expect(computed.outboxEntries.map((entry) => entry.key.topicId)).toEqual([
+        expect(computed.outboxWrites.map((write) => write.entry.key.topicId)).toEqual([
             GROUP_PRESENCE_SUMMARY_TOPIC
         ]);
         // The establishment clock the connecting stage started is untouched,

@@ -12,7 +12,7 @@ import type {
 import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
-import { assertGroupMutationIdempotencyRecord } from '../mutation/result-validation/assert-group-mutation-result.ts';
+import { assertGroupMutationIdempotencyRecord } from '../mutation/state-validation/assert-group-mutation-result.ts';
 import { assertStoredIdempotency, canonicalStoredGroup } from './aggregate/group-aggregate-repository.ts';
 import { groupStateGroupStorageKey, groupStateScopeStorageKey } from './aggregate/group-aggregate-storage-keys.ts';
 import { decodeStoredGroupStateValue } from './group-state-persistence-contracts.ts';

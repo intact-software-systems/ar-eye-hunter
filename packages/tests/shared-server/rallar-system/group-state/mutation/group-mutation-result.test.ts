@@ -1,3 +1,4 @@
+import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import type {
     GroupMutationCommand,
     GroupMutationFacts,
@@ -5,8 +6,8 @@ import type {
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/assert-group-mutation-result.ts';
-import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
+import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation-result.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type {
     AuditStamp,
@@ -163,14 +164,12 @@ describe('group mutation receipt causal invariants', () => {
                     causalRevision: { groupRevision: 1 }
                 }
             });
-            expect(() =>
-                assertGroupMutation({
-                    command,
-                    read: fencedRead,
-                    facts,
-                    computed
-                })
-            ).not.toThrow();
+            expect(validateGroupMutation({
+                command,
+                read: fencedRead,
+                facts,
+                computed
+            })).toEqual([]);
         });
 
         it('rejects malformed computed guards, receipts, and outbox projections', () => {
@@ -195,16 +194,19 @@ describe('group mutation receipt causal invariants', () => {
                 },
                 {
                     ...computed,
-                    outboxEntries: []
+                    outboxWrites: []
                 },
                 {
                     ...computed,
-                    outboxEntries: [
+                    outboxWrites: [
                         {
-                            ...computed.outboxEntries[0],
-                            key: {
-                                ...computed.outboxEntries[0].key,
-                                resourceId: 'non-canonical-summary-entry'
+                            ...computed.outboxWrites[0],
+                            entry: {
+                                ...computed.outboxWrites[0]!.entry,
+                                key: {
+                                    ...computed.outboxWrites[0]!.entry.key,
+                                    resourceId: 'non-canonical-summary-entry'
+                                }
                             }
                         }
                     ]
@@ -212,14 +214,14 @@ describe('group mutation receipt causal invariants', () => {
             ] as const;
 
             for (const malformed of cases) {
-                expect(() =>
-                    assertGroupMutation({
+                expect(
+                    validateGroupMutation({
                         command,
                         read,
                         facts,
                         computed: malformed as never
                     })
-                ).toThrow(/scope|revision|snapshot|effect|outbox|receipt/i);
+                ).not.toEqual([]);
             }
         });
 
@@ -238,8 +240,8 @@ describe('group mutation receipt causal invariants', () => {
             const consistentlyWrongEvent = {
                 ...computed,
                 event: sessionEvent,
-                outboxEntries: [
-                    computeGroupPresenceSummaryEntry(
+                outboxWrites: [
+                    computeAppOutboxInsert(computeGroupPresenceSummaryEntry(
                         {
                             effectKind: 'group-presence-summary',
                             aggregateRef: command.aggregateRef,
@@ -250,7 +252,7 @@ describe('group mutation receipt causal invariants', () => {
                             event: sessionEvent
                         },
                         facts.serviceId
-                    )
+                    ))
                 ]
             };
             const injectedSummary: GroupPresenceSummary = {
@@ -278,18 +280,15 @@ describe('group mutation receipt causal invariants', () => {
                     ['dependent admission', wrongDependent]
                 ] as const
             ) {
-                expect
-                    .soft(
-                        () =>
-                            assertGroupMutation({
-                                command,
-                                read,
-                                facts,
-                                computed: malformed as never
-                            }),
-                        label
-                    )
-                    .toThrow(/canonical|deterministic|projection|operation|unexpected key/i);
+                expect.soft(
+                    validateGroupMutation({
+                        command,
+                        read,
+                        facts,
+                        computed: malformed as never
+                    }),
+                    label
+                ).not.toEqual([]);
             }
         });
     });

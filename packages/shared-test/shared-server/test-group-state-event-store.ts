@@ -25,6 +25,10 @@ export class TestGroupStateEventStore implements GroupStateEventStore {
         }
     }
 
+    async readGroupEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined> {
+        return this.events.find((event) => isEventForRef(event, ref) && event.eventId === eventId);
+    }
+
     async listGroupEvents(ref: GroupRef): Promise<readonly GroupEvent[]> {
         return this.events
             .filter((event) => isEventForRef(event, ref))

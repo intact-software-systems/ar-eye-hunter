@@ -5,7 +5,10 @@ import type {
     RuntimeStateGuardedBatchGuardResult,
     RuntimeStateGuardedBatchResult
 } from '../guarded-batch/runtime-state-guarded-batch.ts';
-import { validateRuntimeStateGuardedBatchResult } from '../guarded-batch/validate-runtime-state-guarded-batch-result.ts';
+import {
+    validateComputedRuntimeStateGuardedBatchResult,
+    validateRuntimeStateGuardedBatchResult
+} from '../guarded-batch/validate-runtime-state-guarded-batch-result.ts';
 import { decodeRuntimeStateRevision } from './runtime-state-row-codec.ts';
 
 export interface RuntimeStateGuardedBatchDatabaseRow {
@@ -27,6 +30,26 @@ interface DecodedRuntimeStateGuardedBatchRow {
 }
 
 export function decodeRuntimeStateGuardedBatchRows(
+    batch: RuntimeStateGuardedBatch,
+    rows: readonly RuntimeStateGuardedBatchDatabaseRow[]
+): RuntimeStateGuardedBatchResult {
+    return validateRuntimeStateGuardedBatchResult(
+        batch,
+        decodeGuardedBatchRows(batch, rows)
+    );
+}
+
+export function decodeComputedRuntimeStateGuardedBatchRows(
+    batch: RuntimeStateGuardedBatch,
+    rows: readonly RuntimeStateGuardedBatchDatabaseRow[]
+): RuntimeStateGuardedBatchResult {
+    return validateComputedRuntimeStateGuardedBatchResult(
+        batch,
+        decodeGuardedBatchRows(batch, rows)
+    );
+}
+
+function decodeGuardedBatchRows(
     batch: RuntimeStateGuardedBatch,
     rows: readonly RuntimeStateGuardedBatchDatabaseRow[]
 ): RuntimeStateGuardedBatchResult {
@@ -52,7 +75,7 @@ export function decodeRuntimeStateGuardedBatchRows(
         if (effectRows.size > 0) {
             throw invalidDatabaseResult('effects applied without guard authority');
         }
-        return validateRuntimeStateGuardedBatchResult(batch, {
+        return {
             guard: {
                 status: 'conflict',
                 operation: batch.guard.operation,
@@ -68,7 +91,7 @@ export function decodeRuntimeStateGuardedBatchRows(
                 key: effect.key,
                 reason: 'guard-conflict'
             }))
-        });
+        };
     }
 
     const guardResult = toAppliedGuardResult(batch, guardRow);
@@ -96,10 +119,10 @@ export function decodeRuntimeStateGuardedBatchRows(
         throw invalidDatabaseResult('received an unexpected effect row');
     }
 
-    return validateRuntimeStateGuardedBatchResult(batch, {
+    return {
         guard: guardResult,
         effects
-    });
+    };
 }
 
 function decodeRow(

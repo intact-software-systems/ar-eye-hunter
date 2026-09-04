@@ -74,9 +74,10 @@ export function createPostgresAppInboxWorkerServices(
         clientStateEventStore: new PSqlClientStateEventRepository(input.sql),
         serviceId: input.serviceId
     });
+    const groupEventStore = new PSqlGroupStateEventRepository(input.sql);
     const groupState = createGroupStateService({
         runtimeRepository,
-        groupStateEventStore: new PSqlGroupStateEventRepository(input.sql),
+        groupStateEventStore: groupEventStore,
         authSessionRepository: authSessions,
         now: () => input.atEpochMs,
         serviceId: input.serviceId,
@@ -103,7 +104,8 @@ export function createPostgresAppInboxWorkerServices(
             resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: resourceInboxResults,
             database: input.transactionSql,
-            groupStateService: groupState
+            groupStateService: groupState,
+            resultReader: createTestGroupStateRepository(runtimeRepository, groupEventStore)
         },
         {
             serviceId: input.serviceId,
@@ -113,7 +115,7 @@ export function createPostgresAppInboxWorkerServices(
     );
     const topologyGroupStateRepository = createTestGroupStateRepository(
         runtimeRepository,
-        new PSqlGroupStateEventRepository(input.sql)
+        groupEventStore
     );
     const topologyConfigRepository = new GroupTopologyConfigRepository(topologyRuntimeRepository);
     const topologyRuntimeOwners = createGroupTopologyRuntimeOwners({

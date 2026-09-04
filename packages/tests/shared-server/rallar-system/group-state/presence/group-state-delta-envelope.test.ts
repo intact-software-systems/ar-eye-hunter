@@ -22,7 +22,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import type { GroupStateTestService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { convergeSummaryForTest, createService } from './group-presence-test-runtime.ts';
+import { convergeSummaryForTest, createService, summaryReservationRead } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -39,7 +39,7 @@ describe('group-state delta envelope construction', () => {
             trigger: (event) => event.eventType === 'member-joined'
         });
 
-        const envelope = readGroupStateEventRowEnvelope(computed.downstreamOutboxEntries[0]);
+        const envelope = decodeGroupStateEventRowEnvelope(computed.downstreamOutboxWrites[0]?.entry);
         expect(() => validateGroupStateDeltaEnvelope(envelope)).not.toThrow();
         expect(envelope.event).toEqual(command.event);
         if (read.presence.current === null) {
@@ -76,7 +76,7 @@ describe('group-state delta envelope construction', () => {
             trigger: (event) => event.eventType === 'session-connected'
         });
 
-        const envelope = readGroupStateEventRowEnvelope(computed.downstreamOutboxEntries[0]);
+        const envelope = decodeGroupStateEventRowEnvelope(computed.downstreamOutboxWrites[0]?.entry);
         expect(command.event.eventType).toBe('session-connected');
         expect(envelope.members).toEqual([]);
         expect(envelope.sessions).toEqual(
@@ -96,7 +96,8 @@ describe('group-state delta envelope construction', () => {
             work: createSummaryWorkService(runtime),
             runtime,
             ref: groupRef('delta-noop-group'),
-            commandId: 'delta-noop-converge'
+            commandId: 'delta-noop-converge',
+            nowEpochMs: BASE_EPOCH_MS + 1_000
         });
 
         const { computed } = await computeSummaryWork({
@@ -107,7 +108,7 @@ describe('group-state delta envelope construction', () => {
         });
 
         expect(computed.summary.outcome).toBe('no-op');
-        const envelope = readGroupStateEventRowEnvelope(computed.downstreamOutboxEntries[0]);
+        const envelope = decodeGroupStateEventRowEnvelope(computed.downstreamOutboxWrites[0]?.entry);
         expect(envelope.predecessorCausalRevision).toEqual(envelope.resultingCausalRevision);
         expect(envelope.resultingCausalRevision).toEqual(computed.snapshot.causalRevision);
     });
@@ -117,8 +118,49 @@ describe('group-state delta envelope construction', () => {
         const second = await computeShuffledScenarioEventRow(['s-b', 's-c', 's-a']);
 
         expect(first.resource).toBe(second.resource);
-        const envelope = readGroupStateEventRowEnvelope(first);
+        const envelope = decodeGroupStateEventRowEnvelope(first);
         expect(envelope.activeSessionIds).toEqual(['s-a', 's-b', 's-c', 's-trigger']);
+    });
+
+    it('computes from the explicit observation time without consulting a hidden clock', async () => {
+        const runtime = new GroupBarrierRepository();
+        const service = createService(runtime, BASE_EPOCH_MS);
+        await seedGroupWithBob(service, 'delta-explicit-time-group');
+        const ref = groupRef('delta-explicit-time-group');
+        const repository = createTestGroupStateRepository(runtime);
+        const event = (await repository.listEvents(ref)).find(
+            (candidate) => candidate.eventType === 'member-joined'
+        );
+        if (!event) {
+            throw new Error('Missing member-joined event');
+        }
+        const command: GroupPresenceSummaryWorkData = {
+            effectKind: 'group-presence-summary',
+            aggregateRef: ref,
+            commandId: 'delta-explicit-time-command',
+            createdAtEpochMs: event.occurredAtEpochMs,
+            expireAtEpochMs: 253_402_300_799_999,
+            acceptedCausalRevision: event.causalRevision,
+            event
+        };
+        const work = new GroupPresenceSummaryWork({
+            outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+            recomputeDebounceMs: 0,
+            runtimeRepository: runtime,
+            now: () => {
+                throw new Error('compute read the worker clock');
+            },
+            serviceId: 'summary-worker'
+        });
+        const read = await work.read(
+            command,
+            summaryReservationRead(command.commandId),
+            BASE_EPOCH_MS + 1_000
+        );
+
+        const computed = work.compute(command, read);
+
+        expect(computed.summary.evaluatedAtEpochMs).toBe(BASE_EPOCH_MS + 1_000);
     });
 });
 
@@ -141,7 +183,7 @@ async function computeShuffledScenarioEventRow(
             event.actor.kind !== 'service' &&
             event.actor.principalId === 'alice'
     });
-    const event = computed.downstreamOutboxEntries[0];
+    const event = computed.downstreamOutboxWrites[0]?.entry;
     if (event === undefined) {
         throw new Error('Expected emitted group state event row');
     }
@@ -220,13 +262,17 @@ async function computeSummaryWork(input: SummaryWorkInput): Promise<ComputedSumm
         acceptedCausalRevision: event.causalRevision,
         event
     };
-    const read = await work.read(command);
+    const read = await work.read(
+        command,
+        summaryReservationRead(command.commandId),
+        BASE_EPOCH_MS + 1_000
+    );
     const computed = work.compute(command, read);
-    work.validate(command, read, computed);
+    expect(work.validate(command, read, computed)).toEqual([]);
     return { command, read, computed };
 }
 
-function readGroupStateEventRowEnvelope(entry: ResourceEntry | undefined): GroupStateDeltaEnvelope {
+function decodeGroupStateEventRowEnvelope(entry: ResourceEntry | undefined): GroupStateDeltaEnvelope {
     if (entry === undefined) {
         throw new Error('Expected emitted group state event row');
     }

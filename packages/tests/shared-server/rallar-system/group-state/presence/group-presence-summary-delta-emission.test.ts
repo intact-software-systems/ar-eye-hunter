@@ -4,9 +4,9 @@ import {
     it
 } from 'vitest';
 
+import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import {
     computeGroupStateDeltaEnvelope,
-    validateGroupPresenceSummaryOutboxEntries,
     type GroupPresenceSummaryComputedWork,
     type GroupPresenceSummaryWorkRead
 } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
@@ -25,7 +25,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { createService } from './group-presence-test-runtime.ts';
+import { createService, summaryReservationRead } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -33,17 +33,17 @@ describe('group presence summary delta emission', () => {
     it('emits only the canonical envelope event row', async () => {
         const result = await computeSummaryWork(await createConnectedScenario('emit-delta-row'));
 
-        expect(topicIds(result.computed.downstreamOutboxEntries)).toEqual([
+        expect(topicIds(result.computed.downstreamOutboxWrites.map((write) => write.entry))).toEqual([
             AppTopics.groupStateEvent
         ]);
-        const eventRow = result.computed.downstreamOutboxEntries[0];
+        const eventRow = result.computed.downstreamOutboxWrites[0]?.entry;
         if (eventRow === undefined) {
             throw new Error('Expected emitted group state event row');
         }
         expect(decodePersistedALMessage(eventRow.resource).id.msgId).toContain(
             ':member-state:delta-envelope:'
         );
-        expect(readEventRowPayload(eventRow)).toEqual(
+        expect(decodeEventRowPayload(eventRow)).toEqual(
             computeGroupStateDeltaEnvelope({
                 event: result.command.event,
                 summary: result.computed.summary,
@@ -76,35 +76,46 @@ describe('group presence summary delta emission', () => {
             const scenario = await createConnectedScenario('emit-tampered-envelope');
             const { work, command, read, computed } = await computeSummaryWork(scenario);
 
-            expect(() => work.validate(command, read, computed)).not.toThrow();
+            expect(work.validate(command, read, computed)).toEqual([]);
 
             const tampered: GroupPresenceSummaryComputedWork = {
                 ...computed,
-                downstreamOutboxEntries: [
-                    tamperEventRowEnvelope(computed.downstreamOutboxEntries[0], tamper),
-                    ...computed.downstreamOutboxEntries.slice(1)
+                downstreamOutboxWrites: [
+                    computeAppOutboxInsert(
+                        tamperEventRowEnvelope(computed.downstreamOutboxWrites[0]?.entry, tamper)
+                    ),
+                    ...computed.downstreamOutboxWrites.slice(1)
                 ]
             };
-            expect(() => work.validate(command, read, tampered)).toThrow(
-                'Presence-summary downstream outbox entries are not canonical'
-            );
-            expect(() =>
-                validateGroupPresenceSummaryOutboxEntries(tampered.downstreamOutboxEntries, {
-                    work: command,
-                    summary: computed.summary,
-                    summaryPredecessorCausalRevision: read.presence.current?.value.causalRevision ?? null,
-                    snapshot: computed.snapshot,
-                    audience: {
-                        kind: 'group',
-                        applicationId: command.aggregateRef.applicationId,
-                        workspaceId: command.aggregateRef.workspaceId,
-                        resourceId: command.aggregateRef.groupId
-                    },
-                    serviceId: 'summary-worker'
-                })
-            ).toThrow('Presence-summary downstream outbox entries are not canonical');
+            expect(work.validate(command, read, tampered)).not.toEqual([]);
         }
     );
+
+    it('rejects altered outbox persistence and reservation-finish fields', async () => {
+        const { work, command, read, computed } = await computeSummaryWork(
+            await createConnectedScenario('emit-tampered-persistence')
+        );
+        const outboxWrite = computed.downstreamOutboxWrites[0];
+        if (outboxWrite === undefined) {
+            throw new Error('Expected computed downstream outbox write');
+        }
+
+        const issues = work.validate(command, read, {
+            ...computed,
+            downstreamOutboxWrites: [{
+                ...outboxWrite,
+                createdAt: '2000-01-01T00:00:00.000Z'
+            }],
+            reservationFinish: {
+                ...computed.reservationFinish,
+                expectedAttempts: computed.reservationFinish.expectedAttempts + 1
+            }
+        });
+        expect(issues.map((issue) => issue.path)).toEqual(expect.arrayContaining([
+            'computed.downstreamOutboxWrites.0.createdAt',
+            'computed.reservationFinish.expectedAttempts'
+        ]));
+    });
 });
 
 interface ConnectedScenario {
@@ -170,9 +181,13 @@ async function computeSummaryWork(scenario: ConnectedScenario): Promise<Computed
         acceptedCausalRevision: event.causalRevision,
         event
     };
-    const read = await work.read(command);
+    const read = await work.read(
+        command,
+        summaryReservationRead(command.commandId),
+        BASE_EPOCH_MS + 1_000
+    );
     const computed = work.compute(command, read);
-    work.validate(command, read, computed);
+    expect(work.validate(command, read, computed)).toEqual([]);
     return { work, command, read, computed };
 }
 
@@ -180,7 +195,7 @@ function topicIds(entries: readonly ResourceEntry[]): readonly string[] {
     return entries.map((entry) => entry.key.topicId);
 }
 
-function readEventRowPayload(entry: ResourceEntry): GroupStateDeltaEnvelope {
+function decodeEventRowPayload(entry: ResourceEntry): GroupStateDeltaEnvelope {
     const message = decodePersistedALMessage(entry.resource);
     const envelope: unknown = JSON.parse(message.payload.resource);
     validateGroupStateDeltaEnvelope(envelope);
@@ -195,7 +210,7 @@ function tamperEventRowEnvelope(
         throw new Error('Expected emitted group state event row');
     }
     const message = decodePersistedALMessage(entry.resource);
-    const envelope = readEventRowPayload(entry);
+    const envelope = decodeEventRowPayload(entry);
     const tamperedMessage: ALMessage = {
         ...message,
         payload: {

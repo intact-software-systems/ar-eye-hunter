@@ -1,6 +1,6 @@
 import { GroupMutationIdempotencyConflictError } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 import { BASE_EPOCH_MS, requireJoinCodeResult } from './group-state-concurrency-test-fixtures.ts';
@@ -49,17 +49,26 @@ describe('convergent group and presence state', () => {
         await seedOpenGroup(runtime, 'retry-default-code-room');
         runtime.failNextGroupCas(1);
         let randomCalls = 0;
-        const service = createService(
+        const attemptOne = createService(
             runtime,
             BASE_EPOCH_MS + 2_000,
-            undefined,
+            1,
             () => `retry-default-${++randomCalls}`
         );
+        const request = {
+            actorPrincipalId: 'alice',
+            requestId: 'retry-default-code'
+        } as const;
+        await expect(
+            attemptOne.rotateGroupJoinCode(SCOPE, 'retry-default-code-room', request)
+        ).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
         const result = requireJoinCodeResult(
-            await service.rotateGroupJoinCode(SCOPE, 'retry-default-code-room', {
-                actorPrincipalId: 'alice',
-                requestId: 'retry-default-code'
-            })
+            await createService(
+                runtime,
+                BASE_EPOCH_MS + 2_000,
+                2,
+                () => `retry-default-${++randomCalls}`
+            ).rotateGroupJoinCode(SCOPE, 'retry-default-code-room', request)
         );
         const idempotency = await createTestGroupStateRepository(runtime).findIdempotentGroupMutationReceipt(
             groupRef('retry-default-code-room'),
@@ -137,23 +146,19 @@ describe('convergent group and presence state', () => {
         );
     });
 
-    it('uses bounded retry delays and exposes exhaustion after forced conflicts', async () => {
+    it('surfaces each bounded outer conflict attempt', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'retry-exhaustion-room');
         runtime.failNextGroupCas(3);
-        const retryDelaysMs: number[] = [];
-        const sleep = (delayMs: number): Promise<void> => {
-            retryDelaysMs.push(delayMs);
-            return Promise.resolve();
-        };
-        await expect(
-            createService(runtime, 2_000, sleep).updateGroup(SCOPE, 'retry-exhaustion-room', {
-                displayName: 'Never committed',
-                actorPrincipalId: 'alice',
-                requestId: 'retry-exhaustion'
-            })
-        ).rejects.toBeInstanceOf(RuntimeStateRetryExhaustedError);
-        expect(retryDelaysMs).toEqual([2, 8]);
+        for (const attemptCount of [1, 2, 3]) {
+            await expect(
+                createService(runtime, 2_000, attemptCount).updateGroup(SCOPE, 'retry-exhaustion-room', {
+                    displayName: 'Never committed',
+                    actorPrincipalId: 'alice',
+                    requestId: 'retry-exhaustion'
+                })
+            ).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        }
         expect((await requireSnapshot(runtime, 'retry-exhaustion-room')).group.displayName).toBe(
             'retry-exhaustion-room'
         );

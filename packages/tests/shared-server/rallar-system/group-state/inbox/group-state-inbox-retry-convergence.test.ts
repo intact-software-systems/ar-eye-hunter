@@ -1,4 +1,5 @@
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { describe, expect, it } from 'vitest';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { SCOPE } from '../mutation/group-mutation-test-runtime.ts';
@@ -32,23 +33,30 @@ describe('convergent group and presence state', () => {
         });
         runtime.conflictNextGroupDisplayName('Must not commit after demotion');
         runtime.armGroupReadBarrier(2);
+        const queuedAdminUpdate = (attemptCount: number) =>
+            createService(
+                runtime,
+                2_001,
+                attemptCount
+            ).updateGroup(SCOPE, 'demotion-race-room', {
+                displayName: 'Must not commit after demotion',
+                actorPrincipalId: 'bob',
+                requestId: 'queued-admin-update'
+            });
         const [demotion, staleUpdate] = await Promise.allSettled([
             createService(runtime, 2_000).setGroupMemberRole(SCOPE, 'demotion-race-room', 'bob', {
                 role: 'member',
                 actorPrincipalId: 'alice',
                 requestId: 'demote-bob'
             }),
-            createService(runtime, 2_001).updateGroup(SCOPE, 'demotion-race-room', {
-                displayName: 'Must not commit after demotion',
-                actorPrincipalId: 'bob',
-                requestId: 'queued-admin-update'
-            })
+            queuedAdminUpdate(1)
         ]);
         expect(demotion.status).toBe('fulfilled');
         expect(staleUpdate).toMatchObject({
             status: 'rejected',
-            reason: { status: 403 }
+            reason: expect.any(RuntimeStateWriteConflictError)
         });
+        await expect(queuedAdminUpdate(2)).rejects.toMatchObject({ status: 403 });
         const snapshot = await requireSnapshot(runtime, 'demotion-race-room');
         expect(snapshot.group.displayName).toBe('demotion-race-room');
         expect(snapshot.members.find((member) => member.principalId === 'bob')).toMatchObject({
@@ -64,7 +72,7 @@ describe('convergent group and presence state', () => {
         const service = createService(
             runtime,
             2_000,
-            () => Promise.resolve(),
+            1,
             undefined,
             (event) => timing.push(event)
         );
