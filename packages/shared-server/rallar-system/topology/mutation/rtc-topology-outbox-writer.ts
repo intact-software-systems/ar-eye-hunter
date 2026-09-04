@@ -1,9 +1,10 @@
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import { computeRtcTopologyEntry, type ComputedRtcTopologyOutbox } from './rtc-topology-outbox-entry.ts';
+import {
+    writeAppOutboxInsert,
+    type AppOutboxInsert
+} from '../../app-outbox/app-outbox-insert.ts';
 
+// deno-lint-ignore no-namespace
 export namespace RtcTopologyOutboxWriter {
     export interface Dependencies {
         readonly recordWrite: () => void;
@@ -19,16 +20,19 @@ export class RtcTopologyOutboxWriter {
 
     async write(
         transaction: PSqlSql,
-        computed: ComputedRtcTopologyOutbox
-    ): Promise<ResourceEntry> {
-        const entry = computeRtcTopologyEntry(computed);
-        await new PSqlResourceInboxEntryRepository(transaction).writeIfAbsentOrMatch(entry);
-        try {
-            this.dependencies.recordWrite();
+        computed: AppOutboxInsert
+    ): Promise<void> {
+        await writeAppOutboxInsert(transaction, computed);
+    }
+
+    recordCommittedWrites(count: number): void {
+        for (let index = 0; index < count; index += 1) {
+            try {
+                this.dependencies.recordWrite();
+            }
+            catch {
+                // Observability must never alter a durable topology write.
+            }
         }
-        catch {
-            // Observability must never alter a durable topology write.
-        }
-        return entry;
     }
 }

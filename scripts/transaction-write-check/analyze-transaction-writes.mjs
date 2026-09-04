@@ -57,6 +57,10 @@ const SPECIALIZED_TRANSACTION_OWNERS = new Map([
 ]);
 const TRANSACTION_FORWARDING_CALLBACKS = new Map([
     [
+        'packages/shared-server/postgres/run-in-p-sql-transaction.ts',
+        new Map([['runInPSqlTransaction', new Set(['write'])]])
+    ],
+    [
         'apps/api-v1/src/db/pglite-sql-adapter.ts',
         new Map([['attachPGliteBegin', new Set(['fn'])]])
     ],

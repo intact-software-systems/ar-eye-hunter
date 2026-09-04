@@ -749,6 +749,11 @@ describe('transaction write check', () => {
                 'begin',
                 'fn'
             ],
+            [
+                '/packages/shared-server/postgres/run-in-p-sql-transaction.ts',
+                'runInPSqlTransaction',
+                'write'
+            ],
             ['/packages/domain/unreviewed-transaction-forwarder.ts', 'inTransaction', 'write']
         ] as const;
         for (const [path, functionName, parameterName] of forwardingSources) {

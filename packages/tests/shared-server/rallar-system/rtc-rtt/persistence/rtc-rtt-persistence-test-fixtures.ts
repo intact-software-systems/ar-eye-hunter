@@ -218,7 +218,7 @@ export function createValidRttWriteCandidate(): Extract<RtcRttMutationComputed, 
 }
 
 export function createMutableRttWriteCandidate(): MutableRttWriteCandidate {
-    return structuredClone(createValidRttWriteCandidate()) as MutableRttWriteCandidate;
+    return structuredClone(createValidRttWriteCandidate()) as unknown as MutableRttWriteCandidate;
 }
 
 export const rttWriteCandidateCorruptions: readonly Readonly<{

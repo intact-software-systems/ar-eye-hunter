@@ -181,9 +181,7 @@ function toSetTopologyConfigPatch(
 export function resolveOverrideExpiresAtEpochMs(
     input: ResolveOverrideExpiresAtEpochMsInput
 ): number {
-    const maxExpiresAtEpochMs = input.nowEpochMs + MAX_GROUP_TOPOLOGY_OVERRIDE_TTL_MS;
-    const requestedExpiresAtEpochMs = input.expiresAtEpochMs ??
-        input.nowEpochMs + (input.ttlMs ?? DEFAULT_GROUP_TOPOLOGY_OVERRIDE_TTL_MS);
+    const requestedExpiresAtEpochMs = computeOverrideExpiresAtEpochMs(input);
     if (
         !Number.isFinite(requestedExpiresAtEpochMs) ||
         requestedExpiresAtEpochMs <= input.nowEpochMs
@@ -200,7 +198,18 @@ export function resolveOverrideExpiresAtEpochMs(
             }
         ]);
     }
-    return Math.min(requestedExpiresAtEpochMs, maxExpiresAtEpochMs);
+    return requestedExpiresAtEpochMs;
+}
+
+export function computeOverrideExpiresAtEpochMs(
+    input: ResolveOverrideExpiresAtEpochMsInput
+): number {
+    const requestedExpiresAtEpochMs = input.expiresAtEpochMs ??
+        input.nowEpochMs + (input.ttlMs ?? DEFAULT_GROUP_TOPOLOGY_OVERRIDE_TTL_MS);
+    return Math.min(
+        requestedExpiresAtEpochMs,
+        input.nowEpochMs + MAX_GROUP_TOPOLOGY_OVERRIDE_TTL_MS
+    );
 }
 
 function throwIfIssues(issues: readonly GroupTopologyValidationIssue[]): void {
