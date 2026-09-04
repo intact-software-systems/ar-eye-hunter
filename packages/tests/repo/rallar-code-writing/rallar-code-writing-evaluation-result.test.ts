@@ -274,6 +274,7 @@ interface EvaluationScenario {
 }
 
 interface EvaluationSuite {
+    readonly suiteId: string;
     readonly scenarios: readonly EvaluationScenario[];
 }
 
