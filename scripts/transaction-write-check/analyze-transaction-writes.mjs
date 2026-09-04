@@ -54,7 +54,7 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
             if (boundary.kind === 'indexed-db') {
                 const owner = call.getFirstAncestor(isFunctionDeclaration);
                 if (owner) {
-                    roots.push(analysisRoot(owner, call.getEnd()));
+                    roots.push(analysisRoot(owner, call.getEnd(), call));
                 }
                 continue;
             }
@@ -69,7 +69,7 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
                 });
             }
             for (const callback of callbacks) {
-                roots.push(analysisRoot(callback));
+                roots.push(analysisRoot(callback, callback.getStart(), call));
             }
         }
     }
@@ -81,7 +81,7 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
             start: root.start,
             findings,
             visited,
-            boundary: root.node,
+            boundary: root.boundary,
             project
         });
     }
@@ -188,8 +188,8 @@ function analyzeCall(input) {
     }
 }
 
-function analysisRoot(node, start = node.getStart()) {
-    return { node, start };
+function analysisRoot(node, start = node.getStart(), boundary = node) {
+    return { node, start, boundary };
 }
 
 function precomputableOperation(call, operation) {
@@ -295,8 +295,14 @@ function isCallbackReference(node) {
     return node !== undefined && (
         Node.isArrowFunction(node) ||
         Node.isFunctionExpression(node) ||
-        node.getType().getCallSignatures().length > 0
+        (!isTransactionPort(node) && node.getType().getCallSignatures().length > 0)
     );
+}
+
+function isTransactionPort(node) {
+    const type = node.getType();
+    const typeName = type.getAliasSymbol()?.getName() ?? type.getSymbol()?.getName() ?? '';
+    return TRANSACTION_TYPE.test(typeName);
 }
 
 function isRetryLoop(loop) {
@@ -319,6 +325,15 @@ function resolveCallableBodies(node, project, visitedSymbols = new Set()) {
     }
     if (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) {
         return [node];
+    }
+    if (
+        Node.isAsExpression(node) ||
+        Node.isNonNullExpression(node) ||
+        Node.isParenthesizedExpression(node) ||
+        Node.isSatisfiesExpression(node) ||
+        Node.isTypeAssertion(node)
+    ) {
+        return resolveCallableBodies(node.getExpression(), project, visitedSymbols);
     }
     return resolveDeclarations(node.getSymbol(), project, visitedSymbols);
 }

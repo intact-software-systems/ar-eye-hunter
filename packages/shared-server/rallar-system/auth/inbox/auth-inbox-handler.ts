@@ -10,7 +10,7 @@ import {
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
 import type { AuthMutationIntent, AuthMutationResult } from '../mutation/auth-mutation-contracts.ts';
-import { materializeAuthMutationIntent } from '../mutation/materialize-auth-mutation-intent.ts';
+import { readAuthMutationAttempt } from '../mutation/read-auth-mutation-attempt.ts';
 import { toAuthAppInboxType, toAuthIntentContextId } from './auth-app-inbox-routing.ts';
 
 export interface AuthInboxHandlerDependencies {
@@ -47,18 +47,16 @@ export class AuthInboxHandler {
         ) {
             throw new TypeError('Auth AppInbox command identity differs from queue key');
         }
-        const materialized = await materializeAuthMutationIntent(intent, {
+        const read = await readAuthMutationAttempt(intent, {
             credentialIssuer: this.dependencies.credentialIssuer,
-            nowEpochMs: this.dependencies.nowEpochMs,
-            serviceId: this.dependencies.mutationService.serviceId
+            mutationService: this.dependencies.mutationService,
+            nowEpochMs: this.dependencies.nowEpochMs
         });
-        const command = materialized.command;
-        const read = await this.dependencies.mutationService.read(command);
         const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
         const computedMutation = this.dependencies.mutationService.compute(
-            command,
-            read,
-            materialized.facts
+            read.command,
+            read.authoritativeState,
+            read.facts
         );
         const completionInput = {
             ...completionFacts,
@@ -67,9 +65,9 @@ export class AuthInboxHandler {
         } as const;
         const computedCompletion = computeAppInboxCompletion(completionInput);
         this.dependencies.mutationService.validate({
-            command,
-            read,
-            facts: materialized.facts,
+            command: read.command,
+            read: read.authoritativeState,
+            facts: read.facts,
             computed: computedMutation
         });
         const completionIssues = validateAppInboxCompletion(completionInput, computedCompletion);
