@@ -7,6 +7,8 @@ import {
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { PSqlResourceInboxFinalizationRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-finalization-repository.ts';
+import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import { writeResourceInboxResultReplacement } from '../../../queuebox/postgres/resource-inbox-result-replacement.ts';
 import { ResourceInboxResultsRepository } from '../../../queuebox/postgres/resource-inbox-results-repository.ts';
 import type { RallarTimingDetails, RallarTimingSink } from '../../observability/timing.ts';
 import { timeRallarAsync } from '../../observability/timing.ts';
@@ -17,6 +19,7 @@ import {
     type AppInboxMessageContext
 } from '../app-inbox-contracts.ts';
 import { toAppInboxAttemptTimingDetails } from './app-inbox-attempt-timing.ts';
+import type { AppInboxCompletionComputed, AppInboxCompletionFacts } from './app-inbox-completion-computation.ts';
 
 export type AppInboxHandlerFinalization =
     | Readonly<{ state: 'pending'; }>
@@ -32,6 +35,20 @@ export interface AppInboxMutationTransactionResult<DurableResult, AfterCommitRes
 }
 
 export interface AppInboxMutationTransactionWriter {
+    readCompletionFacts(context: AppInboxExecutionMetadata): AppInboxCompletionFacts;
+
+    writeComputedMutation<Result>(
+        context: AppInboxExecutionMetadata,
+        computed: AppInboxCompletionComputed<Result>,
+        write: (transaction: PSqlSql) => Promise<void>
+    ): Promise<Result>;
+
+    writeComputedMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
+        context: AppInboxExecutionMetadata,
+        computed: AppInboxCompletionComputed<DurableResult>,
+        write: (transaction: PSqlSql) => Promise<AfterCommitResult>
+    ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>;
+
     writeMutation<Result>(
         context: AppInboxMessageContext<Result>,
         write: (transaction: PSqlSql) => Promise<Result>
@@ -76,12 +93,37 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         this.config = config;
     }
 
-    begin<Result>(context: AppInboxMessageContext<Result>): void {
+    begin(context: AppInboxExecutionMetadata): void {
         this.finalizationByContext.set(context, { state: 'pending' });
     }
 
-    read<Result>(context: AppInboxMessageContext<Result>): AppInboxHandlerFinalization {
+    read(context: AppInboxExecutionMetadata): AppInboxHandlerFinalization {
         return this.finalizationByContext.get(context) ?? { state: 'pending' };
+    }
+
+    readCompletionFacts(context: AppInboxExecutionMetadata): AppInboxCompletionFacts {
+        return {
+            entry: context.entry,
+            completedAtEpochMs: this.nowEpochMs()
+        };
+    }
+
+    async writeComputedMutation<Result>(
+        context: AppInboxExecutionMetadata,
+        computed: AppInboxCompletionComputed<Result>,
+        write: (transaction: PSqlSql) => Promise<void>
+    ): Promise<Result> {
+        await this.writeComputedFinalizedMutation(context, computed, write);
+        return computed.durableResult;
+    }
+
+    async writeComputedMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
+        context: AppInboxExecutionMetadata,
+        computed: AppInboxCompletionComputed<DurableResult>,
+        write: (transaction: PSqlSql) => Promise<AfterCommitResult>
+    ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>> {
+        const afterCommitResult = await this.writeComputedFinalizedMutation(context, computed, write);
+        return { durableResult: computed.durableResult, afterCommitResult };
     }
 
     async writeMutation<Result>(
@@ -175,7 +217,37 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         });
     }
 
-    private ensurePending<Result>(context: AppInboxMessageContext<Result>): void {
+    async writeComputedTerminalFailure<Result>(
+        context: AppInboxExecutionMetadata,
+        computed: AppInboxCompletionComputed<Result>
+    ): Promise<void> {
+        await this.writeComputedFinalizedMutation(context, computed, async () => {});
+    }
+
+    private async writeComputedFinalizedMutation<DurableResult, WriteResult>(
+        context: AppInboxExecutionMetadata,
+        computed: AppInboxCompletionComputed<DurableResult>,
+        write: (transaction: PSqlSql) => Promise<WriteResult>
+    ): Promise<WriteResult> {
+        this.ensurePending(context);
+        const result = await this.inTransaction(context, this.toTimingDetails(context), async (transaction) => {
+            const writeResult = await write(transaction);
+            await writeResourceInboxResultReplacement(transaction, computed.resultReplacement);
+            const completed = await writeResourceInboxReservationFinish(transaction, computed.reservationFinish);
+            if (!completed) {
+                throw new AppInboxReservationConflictError(context.entry.key);
+            }
+            return writeResult;
+        });
+        this.finalizationByContext.set(context, {
+            state: 'transaction-finalized',
+            status: computed.reservationFinish.status,
+            result: computed.encodedResult
+        });
+        return result;
+    }
+
+    private ensurePending(context: AppInboxExecutionMetadata): void {
         const current = this.finalizationByContext.get(context);
         if (current?.state === 'transaction-finalized') {
             throw new Error('App inbox handler context is already finalized');
@@ -185,8 +257,8 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         }
     }
 
-    private async inTransaction<ReturnResult, Result>(
-        context: AppInboxMessageContext<Result>,
+    private async inTransaction<ReturnResult>(
+        context: AppInboxExecutionMetadata,
         details: RallarTimingDetails,
         write: (
             transaction: PSqlSql,

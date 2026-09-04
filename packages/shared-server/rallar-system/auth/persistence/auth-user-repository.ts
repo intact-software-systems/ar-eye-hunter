@@ -6,10 +6,13 @@ import type {
 } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { normalizeAuthUsername } from '../credentials/normalize-auth-username.ts';
+import {
+    AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
+    AUTH_USERS_BY_USERNAME_NAMESPACE,
+    authClientIdKey,
+    authNormalizedUsernameKey
+} from './auth-storage-keys.ts';
 import { decodePersistedAuthUser, type PersistedAuthUser } from './persisted-auth-user.ts';
-
-const AUTH_USERS_BY_USERNAME_NAMESPACE = 'auth-users:by-username';
-const AUTH_USERS_BY_CLIENT_ID_NAMESPACE = 'auth-users:by-client-id';
 
 export class AuthUserRepository extends RuntimeStateJsonStore {
     constructor(repository: RuntimeStateRepositoryLike) {
@@ -20,12 +23,12 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
         const persisted = decodePersistedAuthUser(user);
         await this.putValue(
             AUTH_USERS_BY_USERNAME_NAMESPACE,
-            this.normalizedUsernameKey(persisted.normalizedUsername),
+            authNormalizedUsernameKey(persisted.normalizedUsername),
             persisted
         );
         await this.putValue(
             AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
-            this.clientIdKey(persisted.clientId),
+            authClientIdKey(persisted.clientId),
             persisted
         );
     }
@@ -36,7 +39,7 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
         const persisted = decodePersistedAuthUser(user);
         return await this.putValueIfAbsent(
             AUTH_USERS_BY_USERNAME_NAMESPACE,
-            this.normalizedUsernameKey(persisted.normalizedUsername),
+            authNormalizedUsernameKey(persisted.normalizedUsername),
             persisted
         );
     }
@@ -45,7 +48,7 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
         const persisted = decodePersistedAuthUser(user);
         return await this.putValueIfAbsent(
             AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
-            this.clientIdKey(persisted.clientId),
+            authClientIdKey(persisted.clientId),
             persisted
         );
     }
@@ -63,7 +66,7 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
     ): Promise<RuntimeStateEntryValue<PersistedAuthUser> | undefined> {
         const stored = await this.getJsonEntryValue(
             AUTH_USERS_BY_USERNAME_NAMESPACE,
-            this.normalizedUsernameKey(normalizedUsername)
+            authNormalizedUsernameKey(normalizedUsername)
         );
         if (!stored) {
             return undefined;
@@ -84,7 +87,7 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
     ): Promise<RuntimeStateEntryValue<PersistedAuthUser> | undefined> {
         const stored = await this.getJsonEntryValue(
             AUTH_USERS_BY_CLIENT_ID_NAMESPACE,
-            this.clientIdKey(clientId)
+            authClientIdKey(clientId)
         );
         if (!stored) {
             return undefined;
@@ -97,18 +100,10 @@ export class AuthUserRepository extends RuntimeStateJsonStore {
     }
 
     normalizedUsernameStorageKey(normalizedUsername: string): string {
-        return this.normalizedUsernameKey(normalizedUsername);
+        return authNormalizedUsernameKey(normalizedUsername);
     }
 
     normalizedUsernameNamespace(): string {
         return AUTH_USERS_BY_USERNAME_NAMESPACE;
-    }
-
-    private normalizedUsernameKey(normalizedUsername: string): string {
-        return this.idKey('username', normalizedUsername);
-    }
-
-    private clientIdKey(clientId: string): string {
-        return this.idKey('client', clientId);
     }
 }

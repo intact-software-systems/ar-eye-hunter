@@ -109,14 +109,15 @@ export function readAuthenticatedClientMutationIngress(
 
 export function validateIssuedClientMutationIngress(
     authority: IssuedAuthSession,
-    ingress: AuthenticatedClientMutationIngress
+    ingress: AuthenticatedClientMutationIngress,
+    nowEpochMs: number
 ): void {
     if (
         !authority.accessToken ||
         !authority.sessionId ||
         !authority.clientId ||
         authority.issuedAtEpochMs >= authority.expiresAtEpochMs ||
-        authority.expiresAtEpochMs <= Date.now()
+        authority.expiresAtEpochMs <= nowEpochMs
     ) {
         throw new NonRetryableException(
             'Authenticated client mutation session is invalid or expired.'

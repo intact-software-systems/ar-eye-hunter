@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { ResourceInboxReservationFinish } from '@shared-server/queuebox/postgres/resource-inbox-reservation-write.ts';
 import { createAdminPruneCommand, decodeAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import {
     ADMIN_PRUNE_APP_OUTBOX_TOPIC,
@@ -6,8 +7,13 @@ import {
     toAdminPruneOutbox,
     type AdminPrunePageWork
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
-import { AdminPrunePageWorker, type AdminPrunePageRepository } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
+import {
+    AdminPrunePageWorker,
+    type AdminPrunePageDelete,
+    type AdminPrunePageRepository
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
 import { createAdminPruneAggregate, toAdminPruneAggregateEntry } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
+import type { AppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { describe, expect, it } from 'vitest';
@@ -69,8 +75,11 @@ describe('AdminPrunePageWorker', () => {
         const read = await work.read(command);
         const computed = work.compute(command, read);
 
-        work.validate(command, read, computed);
-        expect(read.rowIds).toEqual(['1', '2']);
+        expect(work.validate(command, read, computed)).toEqual([]);
+        expect(read.candidates).toEqual([
+            { rowId: '1', revisionToken: '1' },
+            { rowId: '2', revisionToken: '2' }
+        ]);
         expect(computed).toMatchObject({
             kind: 'page',
             category: 'runtime-state',
@@ -82,13 +91,80 @@ describe('AdminPrunePageWorker', () => {
             }
         });
 
-        await work.write(repository.transaction, computed, entry);
+        await work.write(repository.transaction, computed);
 
         expect(repository.deleted).toEqual(['1', '2']);
         expect(repository.calls[0]).toBe('progress');
         expect(repository.writtenEntries).toHaveLength(1);
         expect(repository.finished).toEqual([entry.key]);
         expect(computed.next?.expireAtEpochMs).toBe(resourceInboxRetryExpiryAtEpochMs(NOW));
+    });
+
+    it('rejects prepared persistence data that differs from the read facts', async () => {
+        const repository = new MemoryPruneRepository(['1', '2', '3']);
+        const work = new AdminPrunePageWorker({
+            database: repository.database,
+            repository,
+            serviceId: 'server-1',
+            pageSize: 2,
+            now: () => NOW,
+            readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' })
+        });
+        const entry = createReservedEntry({
+            kind: 'page',
+            jobId: 'prune-exact-validation',
+            category: 'runtime-state',
+            capturedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            pageSize: 2,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: null
+        });
+        const command = decodeAdminPruneWork(entry);
+        const read = await work.read(command);
+        const computed = work.compute(command, read);
+        if (computed.successorOutboxWrite === null) {
+            throw new Error('Expected successor page work');
+        }
+        const alteredCandidates = [
+            {
+                ...computed,
+                deletion: {
+                    ...computed.deletion,
+                    candidates: [
+                        { rowId: '1', revisionToken: '9' },
+                        { rowId: '2', revisionToken: '2' }
+                    ],
+                    candidateRowsJson: '[{"revisionToken":"9","rowId":"1"},{"revisionToken":"2","rowId":"2"}]'
+                }
+            },
+            {
+                ...computed,
+                aggregateSuccessorExpiryAtIsoTimestamp: '2099-01-01T00:00:00Z'
+            },
+            {
+                ...computed,
+                reservationFinish: {
+                    ...computed.reservationFinish,
+                    key: { ...computed.reservationFinish.key, resourceId: 'different' }
+                }
+            },
+            {
+                ...computed,
+                successorOutboxWrite: {
+                    ...computed.successorOutboxWrite,
+                    entry: { ...computed.successorOutboxWrite.entry, resource: '{}' }
+                }
+            }
+        ];
+
+        for (const altered of alteredCandidates) {
+            expect(work.validate(command, read, altered)[0]).toMatchObject({
+                code: 'admin-prune-page-invalid',
+                status: 400
+            });
+        }
     });
 
     it('excludes the currently executing resource-inbox row from its page', async () => {
@@ -117,7 +193,7 @@ describe('AdminPrunePageWorker', () => {
         const read = await work.read(command);
 
         expect(repository.lastExcludedResourceKey).toEqual(entry.key);
-        expect(read.rowIds).toEqual(['10', '11', '12']);
+        expect(read.candidates.map((candidate) => candidate.rowId)).toEqual(['10', '11', '12']);
     });
 
     it('rolls deletion and successor back when reservation fencing fails', async () => {
@@ -180,6 +256,41 @@ describe('AdminPrunePageWorker', () => {
         expect(repository.finished).toEqual([]);
         expect(repository.progressWrites).toBe(0);
         expect(wakeCount).toBe(0);
+    });
+
+    it('computes denied work as data and rejects it during validation', async () => {
+        const repository = new MemoryPruneRepository(['1', '2', '3']);
+        const work = new AdminPrunePageWorker({
+            database: repository.database,
+            repository,
+            serviceId: 'server-1',
+            pageSize: 2,
+            now: () => NOW,
+            readAuthority: () => Promise.resolve({ allowed: false, code: 'session-revoked' })
+        });
+        const command = decodeAdminPruneWork(createReservedEntry({
+            kind: 'page',
+            jobId: 'prune-denied-validation',
+            category: 'runtime-state',
+            capturedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            pageSize: 2,
+            afterCursor: null,
+            pageIndex: 0,
+            appData: null
+        }));
+        const read = await work.read(command);
+
+        const invalidRead = {
+            ...read,
+            candidates: [...read.candidates, { rowId: '3', revisionToken: '3' }]
+        };
+        const computed = work.compute(command, invalidRead);
+
+        expect(work.validate(command, invalidRead, computed).map((issue) => issue.code)).toEqual([
+            'admin-prune-authority-denied',
+            'admin-prune-page-invalid'
+        ]);
     });
 
     it('rolls aggregate, deletion, successor, and reservation back on outbox collision', async () => {
@@ -409,7 +520,7 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
         }
     });
     readonly deleted: string[] = [];
-    readonly writtenEntries: ResourceEntry[] = [];
+    readonly writtenEntries: Array<Readonly<ResourceEntry>> = [];
     readonly finished: ResourceEntry['key'][] = [];
     readonly calls: string[] = [];
     lastExcludedResourceKey: ResourceEntry['key'] | null = null;
@@ -421,20 +532,23 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
     rejectOutbox = false;
     rejectProgressOnce = false;
 
-    private readonly rowIds: readonly string[];
+    private readonly candidates: readonly Readonly<{ rowId: string; revisionToken: string; }>[];
 
     constructor(rowIds: readonly string[]) {
-        this.rowIds = rowIds;
+        this.candidates = rowIds.map((rowId, index) => ({
+            rowId,
+            revisionToken: String(index + 1)
+        }));
     }
 
     readPage(input: { pageSize: number; excludedResourceKey: ResourceEntry['key'] | null; }) {
         this.readPageCalls += 1;
         this.lastExcludedResourceKey = input.excludedResourceKey;
-        const selected = this.rowIds
+        const selected = this.candidates
             .slice(0, input.pageSize);
         return Promise.resolve({
-            rowIds: selected,
-            hasMore: this.rowIds.length > selected.length
+            candidates: selected,
+            hasMore: this.candidates.length > selected.length
         });
     }
 
@@ -459,15 +573,15 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
         return Promise.resolve({ aggregate, resource: entry.resource });
     }
 
-    deletePage(_transaction: never, _command: unknown, rowIds: readonly string[]) {
+    deletePage(_transaction: never, deletion: AdminPrunePageDelete) {
         this.calls.push('delete');
-        this.deleted.push(...rowIds);
-        return Promise.resolve(rowIds.length);
+        this.deleted.push(...deletion.candidates.map((candidate) => candidate.rowId));
+        return Promise.resolve(deletion.candidates.length);
     }
 
-    writeOutbox(_transaction: never, entry: ResourceEntry) {
+    writeOutbox(_transaction: never, computed: AppOutboxInsert) {
         this.calls.push('outbox');
-        this.writtenEntries.push(entry);
+        this.writtenEntries.push(computed.entry);
         if (this.rejectOutbox) {
             throw new Error('Admin prune outbox collision');
         }
@@ -486,11 +600,11 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
         return Promise.resolve();
     }
 
-    finishReserved(_transaction: never, entry: ResourceEntry) {
+    finishReserved(_transaction: never, completion: ResourceInboxReservationFinish) {
         if (this.loseReservation) {
             return Promise.resolve(false);
         }
-        this.finished.push(entry.key);
+        this.finished.push(completion.key);
         return Promise.resolve(true);
     }
 }

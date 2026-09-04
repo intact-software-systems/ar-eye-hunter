@@ -51,12 +51,16 @@ describe('admin prune retry lifetime', () => {
             expiredRows: { 'runtime-state': 3 }
         });
         const read: AdminPrunePageRead = {
-            rowIds: ['1', '2'],
+            candidates: [
+                { rowId: '1', revisionToken: '1' },
+                { rowId: '2', revisionToken: '2' }
+            ],
             hasMore: true,
             aggregate,
             expectedAggregate: JSON.stringify(aggregate),
             authority: { allowed: true, code: 'allowed' },
-            nowEpochMs: NOW
+            nowEpochMs: NOW,
+            serviceId: 'server-1'
         };
 
         const computed = service.compute(command, read);
@@ -93,7 +97,13 @@ describe('admin prune retry lifetime', () => {
         const repository: AdminPrunePageRepository = {
             readPage: () => {
                 calls.pageReads += 1;
-                return Promise.resolve({ rowIds: ['1', '2'], hasMore: false });
+                return Promise.resolve({
+                    candidates: [
+                        { rowId: '1', revisionToken: '1' },
+                        { rowId: '2', revisionToken: '2' }
+                    ],
+                    hasMore: false
+                });
             },
             readAggregate: () => {
                 calls.aggregateReads += 1;

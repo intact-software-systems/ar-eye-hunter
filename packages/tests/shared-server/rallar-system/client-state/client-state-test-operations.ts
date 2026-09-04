@@ -33,12 +33,20 @@ export function createClientStateTestDriverOperations(
         ...createPrincipalAndInstanceOperations(context),
         ...createSessionOperations(context),
         ...createAuthorisedWsOperations(context),
-        expireExpiredSessions: async (atEpochMs) =>
-            await Promise.all(
-                (await context.service.listExpiredSessionCandidates(atEpochMs)).map(
+        expireExpiredSessions: async (atEpochMs) => {
+            const page = await context.service.readExpiredSessionPage({
+                atEpochMs,
+                afterKey: null
+            });
+            if (page.nextAfterKey !== null) {
+                throw new Error('Client state test driver expiry exceeds one bounded page');
+            }
+            return await Promise.all(
+                page.candidates.map(
                     async (candidate) => await context.execute(() => toExpireClientSessionMutationInput(candidate))
                 )
-            )
+            );
+        }
     };
 }
 

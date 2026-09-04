@@ -39,10 +39,6 @@ const directValidationImportOwners = [
     {
         ownerPath: 'packages/shared-server/rallar-system/auth/mutation/compute/compute-auth-user-registration.ts',
         source: '../validate/auth-mutation-validation.ts'
-    },
-    {
-        ownerPath: 'packages/shared-server/rallar-system/auth/mutation/write/write-auth-ticket-mutation.ts',
-        source: '../validate/auth-mutation-validation.ts'
     }
 ] as const;
 

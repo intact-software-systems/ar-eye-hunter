@@ -1,3 +1,8 @@
+import {
+    computeAppOutboxInsert,
+    isExactAppOutboxInsert
+} from '../../../app-outbox/app-outbox-insert.ts';
+import { validateComputedProjection } from '../../../computed-data-validation.ts';
 import { computeClientStateSyncEntries } from '../../../state-sync/state-sync-entry-computation.ts';
 import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
 import type {
@@ -9,12 +14,11 @@ import {
     validateClientMutationCommand,
     validateClientMutationFacts
 } from '../command-validation/validate-client-mutation-command.ts';
-import {
-    // Authority policy remains a direct dependency on its canonical owner.
-    validateClientMutationAuthorityPolicy
-} from './validate-client-mutation-authority-policy.ts';
+import { computeClientMutation } from '../compute/compute-client-mutation.ts';
+import { validateClientMutationAuthorityPolicy } from './validate-client-mutation-authority-policy.ts';
 import { validateClientMutationRead } from './validate-client-mutation-read.ts';
 import { validateClientMutationResult } from './validate-client-mutation-result.ts';
+import { validateExactClientPersistence } from './validate-client-persistence.ts';
 
 export class ClientMutationIdempotencyConflictError extends Error {
     readonly code = 'client-mutation-idempotency-conflict';
@@ -47,6 +51,7 @@ export function validateClientMutation(
     const { command, read, computed } = input;
     validateClientMutationCommand(command);
     validateClientMutationFacts(command.facts);
+    assertExactClientMutationComputation(command, read, computed);
     validateClientMutationResult(computed);
     validateClientMutationIdentity(command);
     validateClientMutationRead(command, read);
@@ -60,10 +65,27 @@ export function validateClientMutation(
         );
     }
     validateClientMutationReceiptIdentity(command, computed);
+    validateExactClientPersistence(computed);
     if (computed.outcome !== 'write') {
         return;
     }
     validateEffectfulClientMutation(command, read, computed);
+}
+
+function assertExactClientMutationComputation(
+    command: ClientMutationCommand,
+    read: ClientMutationRead,
+    computed: ClientMutationComputed
+): void {
+    const expected = computeClientMutation({ command, read });
+    const issue = validateComputedProjection(
+        expected,
+        computed,
+        'Client mutation computed'
+    )[0];
+    if (issue) {
+        throw new ClientMutationRejectedError(issue.message);
+    }
 }
 
 function validateClientMutationIdentity(command: ClientMutationCommand): void {
@@ -137,13 +159,16 @@ function validateClientMutationOutbox(
     command: ClientMutationCommand,
     computed: Extract<ClientMutationComputed, { outcome: 'write'; }>
 ): void {
-    const expectedOutboxEntries = computed.stateSync.flatMap((stateSync) =>
-        computeClientStateSyncEntries(stateSync, command.facts.serviceId)
-    );
+    const expectedOutboxWrites = computed.stateSync
+        .flatMap((stateSync) => computeClientStateSyncEntries(stateSync, command.facts.serviceId))
+        .map(computeAppOutboxInsert);
     if (
-        JSON.stringify(expectedOutboxEntries) !== JSON.stringify(computed.outboxEntries) ||
+        expectedOutboxWrites.length !== computed.outboxWrites.length ||
+        expectedOutboxWrites.some((expected, index) =>
+            !isExactAppOutboxInsert(expected.entry, computed.outboxWrites[index]!)
+        ) ||
         JSON.stringify(computed.receipt.outboxIds) !==
-            JSON.stringify(expectedOutboxEntries.map((entry) => entry.key.resourceId))
+            JSON.stringify(expectedOutboxWrites.map((write) => write.entry.key.resourceId))
     ) {
         throw new ClientMutationRejectedError('Client mutation WS outbox differs');
     }

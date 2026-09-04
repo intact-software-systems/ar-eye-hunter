@@ -1,5 +1,9 @@
 import type { PersistedAuthUser } from '../../persistence/persisted-auth-user.ts';
-import type { AuthMutationComputed, AuthMutationRead, RegisterAuthUserCommand } from '../auth-mutation-contracts.ts';
+import type {
+    AuthMutationDomainComputed,
+    AuthMutationRead,
+    RegisterAuthUserCommand
+} from '../auth-mutation-contracts.ts';
 import { equalAuthJson } from '../validate/auth-mutation-validation.ts';
 
 type RegisterAuthUserRead = Extract<AuthMutationRead, { kind: 'register-user'; }>;
@@ -7,7 +11,7 @@ type RegisterAuthUserRead = Extract<AuthMutationRead, { kind: 'register-user'; }
 export function computeAuthUserRegistration(
     command: RegisterAuthUserCommand,
     read: RegisterAuthUserRead
-): AuthMutationComputed {
+): AuthMutationDomainComputed {
     return {
         command,
         read,

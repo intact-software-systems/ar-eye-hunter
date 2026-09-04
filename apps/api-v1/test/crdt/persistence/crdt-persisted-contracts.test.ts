@@ -4,11 +4,17 @@ import {
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
     type RallarCrdtDocumentRef,
+    type RallarCrdtJsonValue,
     type RallarCrdtOperationBatch,
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
 
-import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
+import type { PSqlParameter, PSqlRows } from '@shared-server/postgres/p-sql-sql.ts';
+
+import {
+    PSqlCrdtMutationRepository,
+    writePSqlCrdtMutation
+} from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 
 import { CrdtMutationConflictError, type CrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
@@ -43,8 +49,8 @@ interface CrdtUpdateReadRecorder {
 }
 
 interface RecordedSqlRead {
-    readonly bindings: readonly unknown[];
-    readonly rows: readonly unknown[];
+    readonly bindings: readonly PSqlParameter[];
+    readonly rows: PSqlRows;
 }
 
 Deno.test(
@@ -143,8 +149,9 @@ Deno.test('CRDT CAS guards revision, lifecycle, and append sequence', async () =
       set lifecycle = 'archived', last_append_sequence = 99
       where document_key = ${second.documentKey}
     `;
+        assert.deepEqual(service.validate({ command: second, read: observed, computed }), []);
         await assert.rejects(
-            sql.begin(async (transaction) => await service.write(transaction, computed)),
+            sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, computed)),
             CrdtMutationConflictError
         );
     });
@@ -352,10 +359,12 @@ Deno.test('overlapping CRDT transaction writers keep one winner and no lost coun
         ]);
         const computed = await Promise.all(commands.map(async (entry) => {
             const read = await service.read(entry);
-            return service.compute({ command: entry, read });
+            const mutation = service.compute({ command: entry, read });
+            assert.deepEqual(service.validate({ command: entry, read, computed: mutation }), []);
+            return mutation;
         }));
         const writes = await Promise.allSettled(
-            computed.map(async (entry) => await sql.begin(async (transaction) => await service.write(transaction, entry)))
+            computed.map(async (entry) => await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, entry)))
         );
         assert.equal(writes.filter((result) => result.status === 'fulfilled').length, 1);
         assert.equal(writes.filter((result) => result.status === 'rejected').length, 1);
@@ -373,11 +382,6 @@ function mutationService(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]
             { sql, authorize: () => Promise.resolve(true) },
             { policies: [{ documentType: 'checklist', rollout: 'production' }] }
         ),
-        createWriter: (transaction) =>
-            new PSqlCrdtMutationRepository(
-                { sql: transaction, authorize: () => Promise.resolve(true) },
-                { policies: [{ documentType: 'checklist', rollout: 'production' }] }
-            ),
         serviceId: 'server-1'
     });
 }
@@ -389,7 +393,10 @@ function createCrdtUpdateReadRecorder(sql: PGliteSql): CrdtUpdateReadRecorder {
             const result = Reflect.apply(target, thisArgument, argumentList);
             return Promise.resolve(result).then((rows) => {
                 if (Array.isArray(rows)) {
-                    reads.push({ bindings: argumentList.slice(1), rows });
+                    reads.push({
+                        bindings: argumentList.slice(1) as PSqlParameter[],
+                        rows: rows as PSqlRows
+                    });
                 }
                 return rows;
             });
@@ -398,7 +405,7 @@ function createCrdtUpdateReadRecorder(sql: PGliteSql): CrdtUpdateReadRecorder {
     return { sql: recordingSql, reads };
 }
 
-function rowCountsBoundTo(reads: readonly RecordedSqlRead[], value: unknown): number[] {
+function rowCountsBoundTo(reads: readonly RecordedSqlRead[], value: PSqlParameter): number[] {
     return reads.filter((read) => read.bindings.includes(value)).map((read) => read.rows.length);
 }
 
@@ -408,8 +415,8 @@ function rowCountsContaining(reads: readonly RecordedSqlRead[], field: string): 
         .map((read) => read.rows.length);
 }
 
-function hasOwnField(value: unknown, field: string): boolean {
-    return typeof value === 'object' && value !== null && Object.hasOwn(value, field);
+function hasOwnField(value: object | undefined, field: string): boolean {
+    return value !== undefined && Object.hasOwn(value, field);
 }
 
 async function apply(
@@ -420,7 +427,7 @@ async function apply(
     const read = await service.read(input);
     const computed = service.compute({ command: input, read });
     assert.deepEqual(service.validate({ command: input, read, computed }), []);
-    await sql.begin(async (transaction) => await service.write(transaction, computed));
+    await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, computed));
 }
 
 async function command(commandId: string, updateId: string, capturedAtEpochMs: number) {
@@ -491,7 +498,7 @@ function update(updateId: string, createdAtEpochMs: number): RallarCrdtUpdateEnv
     };
 }
 
-function snapshot(snapshotId: string, value: unknown) {
+function snapshot(snapshotId: string, value: RallarCrdtJsonValue) {
     return {
         protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
         document: DOCUMENT,

@@ -10,6 +10,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
+import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type { PreparedAuthUserRegistration } from '../login/prepare-auth-user-registration.ts';
 import type { IssuedAuthSession } from '../persistence/auth-session-types.ts';
 import type { PersistedAuthSession } from '../persistence/persisted-auth-session.ts';
@@ -277,13 +278,14 @@ export type AuthMutationRead =
 
 export type AuthMutationFacts = Readonly<{
     kind: AuthMutationCommand['kind'];
+    serviceId: string;
 }>;
 
 export type AuthComputedSession = Readonly<{
     session: PersistedAuthSession;
 }>;
 
-export type AuthMutationComputed = Readonly<{
+export type AuthMutationDomainComputed = Readonly<{
     command: AuthMutationCommand;
     read: AuthMutationRead;
     result: AuthMutationResult;
@@ -292,3 +294,36 @@ export type AuthMutationComputed = Readonly<{
     logoutOutbox: ResourceEntry | null;
     outcome: 'write' | 'replay' | 'no-op';
 }>;
+
+export type AuthPersistenceOperation =
+    | Readonly<{
+        kind: 'insert';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedRevision: null;
+    }>
+    | Readonly<{
+        kind: 'update';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedRevision: number;
+    }>
+    | Readonly<{
+        kind: 'delete';
+        namespace: string;
+        key: string;
+        expectedRevision: number;
+    }>;
+
+export type AuthMutationComputed =
+    & AuthMutationDomainComputed
+    & Readonly<{
+        persistence: Readonly<{
+            operations: readonly AuthPersistenceOperation[];
+            logoutOutbox: AppOutboxInsert | null;
+        }>;
+    }>;

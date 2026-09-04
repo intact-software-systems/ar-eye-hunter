@@ -132,9 +132,10 @@ it.each([
         owner: 'processCommand',
         calls: [
             'this.mutationService.read(command)',
-            'this.mutationService.compute({ command, read })',
-            'this.mutationService.validate({ command, read, computed })',
-            'this.mutationService.write(transaction, computed)'
+            'computeCrdtInboxMutation(read)',
+            'validateCrdtInboxMutation(read, computed)',
+            'this.transactionWriter.writeComputedMutation(',
+            'writePSqlCrdtMutation(transaction, computed.mutation)'
         ]
     },
     {
@@ -142,10 +143,11 @@ it.each([
         source: sources.appAdmin,
         owner: 'processCommand',
         calls: [
-            'this.read(command)',
-            'this.compute(read)',
-            'this.validate(computed)',
-            'this.transactionWriter.writeMutation(context'
+            'this.read(command, context)',
+            'computeAdminPruneMutation(read)',
+            'validateAdminPruneMutation(read, computed)',
+            'this.transactionWriter.writeComputedMutation(',
+            'this.write(transaction, computed)'
         ]
     },
     {

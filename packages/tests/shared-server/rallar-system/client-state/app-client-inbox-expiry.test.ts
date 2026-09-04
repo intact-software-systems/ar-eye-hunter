@@ -5,8 +5,8 @@ import {
 } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { ClientExpiredSessionPageInput } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
-import { type ClientExpiredSessionsAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
@@ -83,10 +83,10 @@ it('keeps at most one active waiting client expiry entry across timestamps', asy
     const queue = new ClientExpiryTestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new ClientExpiryTestResourceInboxResults();
-    const expiryCandidateReads: number[] = [];
-    const listExpiredSessionCandidates = async (atEpochMs: number) => {
-        expiryCandidateReads.push(atEpochMs);
-        return [];
+    const expiryCandidateReads: ClientExpiredSessionPageInput[] = [];
+    const readExpiredSessionPage = async (input: ClientExpiredSessionPageInput) => {
+        expiryCandidateReads.push(input);
+        return { candidates: [], nextAfterKey: null };
     };
     const service = new AppClientInboxService(
         {
@@ -94,7 +94,7 @@ it('keeps at most one active waiting client expiry entry across timestamps', asy
             resourceInboxRepository: queue,
             resourceInboxResultsRepository: results,
             database: createAppInboxTestDatabase(queue, results),
-            clientStateService: { ...createClientStateServiceFixture(), listExpiredSessionCandidates }
+            clientStateService: { ...createClientStateServiceFixture(), readExpiredSessionPage }
         },
         {
             serviceId: 'server-12345678'
@@ -110,24 +110,24 @@ it('keeps at most one active waiting client expiry entry across timestamps', asy
     expect(listActiveClientExpiryTestEntries(entries)).toHaveLength(1);
     expect(entries[0].key.resourceId).toBe('expire-client-sessions');
     expect(
-        readClientExpiryTestEnqueueData<ClientExpiredSessionsAppInboxPayload>(entries[0]).atEpochMs
-    ).toBe(60_000);
+        readClientExpiryTestEnqueueData<ClientExpiredSessionPageInput>(entries[0])
+    ).toEqual({ atEpochMs: 60_000, afterKey: null });
 
     await dequeueClientInbox(reader);
 
     await expect(first).resolves.toMatchObject({ right: [] });
     await expect(second).resolves.toMatchObject({ right: [] });
-    expect(expiryCandidateReads).toEqual([60_000]);
+    expect(expiryCandidateReads).toEqual([{ atEpochMs: 60_000, afterKey: null }]);
 });
 
 it('durably enqueues each client expiry reconciliation tick', async () => {
     const queue = new ClientExpiryTestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new ClientExpiryTestResourceInboxResults();
-    const expiryCandidateReads: number[] = [];
-    const listExpiredSessionCandidates = async (atEpochMs: number) => {
-        expiryCandidateReads.push(atEpochMs);
-        return [];
+    const expiryCandidateReads: ClientExpiredSessionPageInput[] = [];
+    const readExpiredSessionPage = async (input: ClientExpiredSessionPageInput) => {
+        expiryCandidateReads.push(input);
+        return { candidates: [], nextAfterKey: null };
     };
     const service = new AppClientInboxService(
         {
@@ -135,7 +135,7 @@ it('durably enqueues each client expiry reconciliation tick', async () => {
             resourceInboxRepository: queue,
             resourceInboxResultsRepository: results,
             database: createAppInboxTestDatabase(queue, results),
-            clientStateService: { ...createClientStateServiceFixture(), listExpiredSessionCandidates }
+            clientStateService: { ...createClientStateServiceFixture(), readExpiredSessionPage }
         },
         {
             serviceId: 'server-12345678'

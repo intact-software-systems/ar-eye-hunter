@@ -14,6 +14,7 @@ export async function materializeAuthMutationIntent(
     dependencies: Readonly<{
         credentialIssuer: AuthCredentialIssuer;
         nowEpochMs: () => number;
+        serviceId: string;
     }>
 ): Promise<AuthMutationMaterialization> {
     const capturedAtEpochMs = dependencies.nowEpochMs();
@@ -22,7 +23,10 @@ export async function materializeAuthMutationIntent(
         capturedAtEpochMs,
         dependencies.credentialIssuer
     );
-    return { command, facts: { kind: command.kind } };
+    return {
+        command,
+        facts: { kind: command.kind, serviceId: dependencies.serviceId }
+    };
 }
 
 async function materializeAuthMutationCommand(

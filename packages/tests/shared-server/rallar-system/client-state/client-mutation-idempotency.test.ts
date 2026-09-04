@@ -9,6 +9,7 @@ import type { ClientPrincipalUpsertAppInboxPayload } from '@shared-server/rallar
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -233,15 +234,23 @@ describe('client mutation idempotency convergence', () => {
                 requestId: 'same-request'
             } as const;
             runtime.armPrincipalReadBarrier(2);
-            const [first, second] = await Promise.all([
-                createService(runtime, 1_000).upsertPrincipal(SCOPE, 'alice', request),
+            const firstAttempt = () => createService(runtime, 1_000).upsertPrincipal(SCOPE, 'alice', request);
+            const secondAttempt = () =>
                 createService(runtime, 9_000).upsertPrincipal(SCOPE, 'alice', {
                     requestId: 'same-request',
                     metadata: { two: 2, one: 1 },
                     displayName: 'Alice',
                     username: 'alice'
-                })
+                });
+            const [firstResult, secondResult] = await Promise.allSettled([
+                firstAttempt(),
+                secondAttempt()
             ]);
+            const rejectedEqual = [firstResult, secondResult].filter((result) => result.status === 'rejected');
+            expect(rejectedEqual).toHaveLength(1);
+            expect(rejectedEqual[0]).toMatchObject({ reason: expect.any(RuntimeStateWriteConflictError) });
+            const first = firstResult.status === 'fulfilled' ? firstResult.value : await firstAttempt();
+            const second = secondResult.status === 'fulfilled' ? secondResult.value : await secondAttempt();
 
             expect(second.result?.event).toEqual(first.result?.event);
             const idempotent = await createTestClientStateRepository(
@@ -255,23 +264,30 @@ describe('client mutation idempotency convergence', () => {
 
             const conflictRuntime = new AggregateBarrierRepository();
             conflictRuntime.armPrincipalReadBarrier(2);
-            const results = await Promise.allSettled([
+            const firstConflictAttempt = () =>
                 createService(conflictRuntime, 1_000).upsertPrincipal(SCOPE, 'bob', {
                     username: 'bob',
                     displayName: 'First',
                     requestId: 'different-content'
-                }),
+                });
+            const secondConflictAttempt = () =>
                 createService(conflictRuntime, 1_001).upsertPrincipal(SCOPE, 'bob', {
                     username: 'bob',
                     displayName: 'Second',
                     requestId: 'different-content'
-                })
+                });
+            const results = await Promise.allSettled([
+                firstConflictAttempt(),
+                secondConflictAttempt()
             ]);
             expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
             const rejected = results.find((result) => result.status === 'rejected');
             expect(rejected).toMatchObject({
-                reason: expect.any(ClientMutationIdempotencyConflictError)
+                reason: expect.any(RuntimeStateWriteConflictError)
             });
+            const rejectedIndex = results.findIndex((result) => result.status === 'rejected');
+            await expect(rejectedIndex === 0 ? firstConflictAttempt() : secondConflictAttempt())
+                .rejects.toBeInstanceOf(ClientMutationIdempotencyConflictError);
             expect(await outboxFor(conflictRuntime, ['different-content'])).toHaveLength(2);
         }
     );

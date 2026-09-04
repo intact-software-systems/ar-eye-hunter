@@ -11,9 +11,9 @@ import type {
     ClientSnapshot,
     ClientTransport
 } from '@shared/api/client-types.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
+import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type { JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import type { ComputedClientStateSync } from '../../state-sync/state-sync-entry-computation.ts';
 import type {
@@ -240,7 +240,7 @@ export type ConditionalCandidate<T> =
     | Readonly<{ operation: 'insert'; value: T; }>
     | Readonly<{ operation: 'update'; value: T; expectedRevision: number; }>;
 
-export type ClientMutationComputedPersistedNoOp = Readonly<{
+export type ClientMutationDomainPersistedNoOp = Readonly<{
     outcome: 'no-op';
     persistIdempotency: true;
     aggregateRef: ClientPrincipalRef;
@@ -258,7 +258,7 @@ export type ClientMutationComputedNonPersistedNoOp = Readonly<{
     event: null;
 }>;
 
-export type ClientMutationComputedAppliedWrite = Readonly<{
+export type ClientMutationDomainAppliedWrite = Readonly<{
     outcome: 'write';
     principal: Exclude<ConditionalCandidate<ClientPrincipal>, { operation: 'none'; }>;
     instance: ConditionalCandidate<ClientInstance>;
@@ -268,10 +268,53 @@ export type ClientMutationComputedAppliedWrite = Readonly<{
     receipt: ClientMutationReceipt;
     idempotency: ClientMutationIdempotencyRecord | null;
     stateSync: readonly ComputedClientStateSync[];
-    outboxEntries: readonly ResourceEntry[];
+    outboxWrites: readonly AppOutboxInsert[];
 }>;
 
-export type ClientMutationComputedWrite = ClientMutationComputedAppliedWrite | ClientMutationComputedPersistedNoOp;
+export type ClientRuntimePersistenceOperation =
+    | Readonly<{
+        kind: 'insert';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedRevision: null;
+    }>
+    | Readonly<{
+        kind: 'update';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedRevision: number;
+    }>;
+
+export type ClientMutationPersistence = Readonly<{
+    runtimeWrites: readonly ClientRuntimePersistenceOperation[];
+    eventWrite:
+        | Readonly<{
+            event: ClientEvent;
+            workspaceKey: string;
+            eventJson: string;
+        }>
+        | null;
+}>;
+
+export type ClientMutationComputedPersistedNoOp =
+    & ClientMutationDomainPersistedNoOp
+    & Readonly<{ persistence: ClientMutationPersistence; }>;
+
+export type ClientMutationComputedAppliedWrite =
+    & ClientMutationDomainAppliedWrite
+    & Readonly<{ persistence: ClientMutationPersistence; }>;
+
+export type ClientMutationDomainWrite =
+    | ClientMutationDomainAppliedWrite
+    | ClientMutationDomainPersistedNoOp;
+
+export type ClientMutationComputedWrite =
+    | ClientMutationComputedAppliedWrite
+    | ClientMutationComputedPersistedNoOp;
 
 export type ClientMutationComputed =
     | Readonly<{

@@ -6,6 +6,11 @@ import {
     type ClientStateService,
     type ClientStateWritten
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import {
+    timeClientStateMutationCommit,
+    timeClientStateMutationPhase,
+    type ClientStateMutationTiming
+} from '@shared-server/rallar-system/client-state/client-state-service-timing.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import {
     toClientMutationIssuedSessionAuthority,
@@ -34,7 +39,6 @@ import {
 
 const TEST_AUTH_ISSUED_AT_EPOCH_MS = 0;
 const TEST_AUTH_EXPIRES_AT_EPOCH_MS = 253_402_300_799_000;
-const MAX_TEST_MUTATION_ATTEMPTS = 8;
 
 type ClientMutationInput = Parameters<typeof toClientMutationCommand>[0];
 interface ClientStateTestExecutorInput {
@@ -45,6 +49,7 @@ interface ClientStateTestExecutorInput {
     readonly serviceId: string;
     readonly nowEpochMs: () => number;
     readonly nextSequence: () => number;
+    readonly mutationTiming: ClientStateMutationTiming;
 }
 
 interface ClientStateTestDriverDependencies {
@@ -84,6 +89,7 @@ export function createClientStatePhaseTestDriver(
             service,
             serviceId,
             nowEpochMs,
+            mutationTiming: { sink: options.timing, serviceId },
             nextSequence: () => ++commandSequence
         }),
         nextId: () => `test-client-command-${++commandSequence}`
@@ -104,37 +110,36 @@ export function createClientStateTestDriver(
 function createClientStateTestMutationExecutor(
     input: ClientStateTestExecutorInput
 ): ClientStateTestMutationExecutor {
+    const attemptsByCommandId = new Map<string, number>();
     return async (inputFactory) => {
-        for (let attempt = 1; attempt <= MAX_TEST_MUTATION_ATTEMPTS; attempt += 1) {
-            const computed = await computeClientStateTestMutation(input, inputFactory, attempt);
-            try {
-                if (requiresClientWrite(computed)) {
-                    await writeClientStateTestMutation(input, computed);
-                }
-                if (computed.outcome === 'idempotency-conflict') {
-                    throw new Error('Validated idempotency conflict is unreachable');
-                }
-                return toClientStateWritten(computed);
+        const commandInput = inputFactory();
+        const attempt = (attemptsByCommandId.get(commandInput.commandId) ?? 0) + 1;
+        attemptsByCommandId.set(commandInput.commandId, attempt);
+        try {
+            const computed = await computeClientStateTestMutation(input, commandInput, attempt);
+            if (requiresClientWrite(computed)) {
+                await writeClientStateTestMutation(input, computed);
             }
-            catch (error) {
-                if (
-                    !(error instanceof RuntimeStateWriteConflictError) ||
-                    attempt === MAX_TEST_MUTATION_ATTEMPTS
-                ) {
-                    throw error;
-                }
+            if (computed.outcome === 'idempotency-conflict') {
+                throw new Error('Validated idempotency conflict is unreachable');
             }
+            attemptsByCommandId.delete(commandInput.commandId);
+            return toClientStateWritten(computed);
         }
-        throw new Error('Client test driver retry loop exhausted');
+        catch (error) {
+            if (!(error instanceof RuntimeStateWriteConflictError)) {
+                attemptsByCommandId.delete(commandInput.commandId);
+            }
+            throw error;
+        }
     };
 }
 
 async function computeClientStateTestMutation(
     context: ClientStateTestExecutorInput,
-    inputFactory: () => ClientMutationInput,
+    input: ClientMutationInput,
     attempt: number
 ): Promise<ClientMutationComputed> {
-    const input = inputFactory();
     const authority = await toTestAuthority(context.authSessions, input, context.serviceId);
     const command = await toClientMutationCommand(
         input,
@@ -148,8 +153,14 @@ async function computeClientStateTestMutation(
         authority
     );
     const read = await context.service.read(command);
-    const computed = context.service.compute(command, read);
-    context.service.validate(command, read, computed);
+    const computed = timeClientStateMutationPhase(
+        { timing: context.mutationTiming, command, operation: 'mutation.compute' },
+        () => context.service.compute(command, read)
+    );
+    timeClientStateMutationPhase(
+        { timing: context.mutationTiming, command, operation: 'mutation.validate' },
+        () => context.service.validate(command, read, computed)
+    );
     return computed;
 }
 
@@ -157,26 +168,30 @@ async function writeClientStateTestMutation(
     context: ClientStateTestExecutorInput,
     computed: Parameters<ClientStateService['write']>[1]
 ): Promise<void> {
-    await context.runtimeRepository.begin(async (runtime) => {
-        const outboxBefore = captureClientStateTestOutbox(context.runtimeRepository);
-        const eventsBefore = [...context.eventStore.events];
-        try {
-            await context.service.write(
-                createClientStateTestTransaction({
-                    runtime,
-                    runtimeRepository: context.runtimeRepository,
-                    eventStore: context.eventStore
-                }),
-                computed
-            );
-        }
-        catch (error) {
-            restoreClientStateTestOutbox(context.runtimeRepository, outboxBefore);
-            context.eventStore.events.length = 0;
-            context.eventStore.events.push(...eventsBefore);
-            throw error;
-        }
-    });
+    await timeClientStateMutationCommit(
+        { timing: context.mutationTiming, writes: [computed] },
+        async () =>
+            await context.runtimeRepository.begin(async (runtime) => {
+                const outboxBefore = captureClientStateTestOutbox(context.runtimeRepository);
+                const eventsBefore = [...context.eventStore.events];
+                try {
+                    await context.service.write(
+                        createClientStateTestTransaction({
+                            runtime,
+                            runtimeRepository: context.runtimeRepository,
+                            eventStore: context.eventStore
+                        }),
+                        computed
+                    );
+                }
+                catch (error) {
+                    restoreClientStateTestOutbox(context.runtimeRepository, outboxBefore);
+                    context.eventStore.events.length = 0;
+                    context.eventStore.events.push(...eventsBefore);
+                    throw error;
+                }
+            })
+    );
 }
 
 async function toTestAuthority(

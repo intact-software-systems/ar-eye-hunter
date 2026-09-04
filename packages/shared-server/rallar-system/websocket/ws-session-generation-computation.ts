@@ -62,12 +62,20 @@ export interface WsSessionGenerationLifecycleRead {
     readonly state: WsSessionCloseHighWaterState | null;
 }
 
-export interface WsSessionGenerationLifecycleComputed {
-    readonly outcome: 'none' | 'insert' | 'update';
+type WsSessionGenerationLifecycleComputedValue = Readonly<{
     readonly key: string;
-    readonly expectedRevision: number | null;
     readonly state: WsSessionCloseHighWaterState;
-}
+    readonly value: string;
+    readonly expireAtIsoTimestamp: string;
+}>;
+
+export type WsSessionGenerationLifecycleComputed =
+    & WsSessionGenerationLifecycleComputedValue
+    & (
+        | Readonly<{ outcome: 'none'; expectedRevision: number | null; }>
+        | Readonly<{ outcome: 'insert'; expectedRevision: null; }>
+        | Readonly<{ outcome: 'update'; expectedRevision: number; }>
+    );
 
 export function isWsSessionGenerationClosed(
     facts: WsSessionGenerationFacts,
@@ -126,6 +134,28 @@ export function computeWsSessionConnectGuard(
                 : { ...read.state, expireAtEpochMs }
         );
     return toComputed('update', read, state);
+}
+
+export function validateWsSessionGenerationClosed(
+    facts: WsSessionGenerationCloseFacts,
+    read: WsSessionGenerationLifecycleRead,
+    computed: WsSessionGenerationLifecycleComputed
+): void {
+    validateWsSessionGenerationLifecycleComputed(
+        computeWsSessionGenerationClosed(facts, read),
+        computed
+    );
+}
+
+export function validateWsSessionConnectGuard(
+    facts: WsSessionGenerationGuardFacts,
+    read: WsSessionGenerationLifecycleRead,
+    computed: WsSessionGenerationLifecycleComputed
+): void {
+    validateWsSessionGenerationLifecycleComputed(
+        computeWsSessionConnectGuard(facts, read),
+        computed
+    );
 }
 
 export function decodeWsSessionCloseHighWaterState(
@@ -292,12 +322,38 @@ function toComputed(
     read: WsSessionGenerationLifecycleRead,
     state: WsSessionCloseHighWaterState
 ): WsSessionGenerationLifecycleComputed {
-    return {
-        outcome,
+    const value = {
         key: read.key,
-        expectedRevision: read.revision,
-        state
+        state,
+        value: JSON.stringify(state),
+        expireAtIsoTimestamp: new Date(state.expireAtEpochMs).toISOString()
     };
+    if (outcome === 'insert') {
+        return { ...value, outcome, expectedRevision: null };
+    }
+    if (outcome === 'update') {
+        if (read.revision === null) {
+            throw new TypeError('WebSocket session close high-water update revision is missing');
+        }
+        return { ...value, outcome, expectedRevision: read.revision };
+    }
+    return { ...value, outcome, expectedRevision: read.revision };
+}
+
+function validateWsSessionGenerationLifecycleComputed(
+    expected: WsSessionGenerationLifecycleComputed,
+    computed: WsSessionGenerationLifecycleComputed
+): void {
+    if (
+        expected.outcome !== computed.outcome ||
+        expected.key !== computed.key ||
+        expected.expectedRevision !== computed.expectedRevision ||
+        expected.value !== computed.value ||
+        expected.expireAtIsoTimestamp !== computed.expireAtIsoTimestamp ||
+        JSON.stringify(expected.state) !== JSON.stringify(computed.state)
+    ) {
+        throw new TypeError('WebSocket session lifecycle computed result differs');
+    }
 }
 
 function toClosedHighWaterState(

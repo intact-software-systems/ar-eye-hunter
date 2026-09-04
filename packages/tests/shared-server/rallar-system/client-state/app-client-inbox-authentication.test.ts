@@ -10,7 +10,11 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
+import {
+    readAuthenticatedClientMutationIngress,
+    toAuthenticatedClientMutationContextId,
+    validateIssuedClientMutationIngress
+} from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
@@ -33,6 +37,47 @@ import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 
 describe('AppClientInbox authentication', () => {
+    it('validates issued authority from an explicit observation time without reading the clock', () => {
+        const authority = issuedSession('alice', 'alice-session');
+        const ingress = readAuthenticatedClientMutationIngress({
+            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            resourceId: 'explicit-validation-time',
+            contextId: toAuthenticatedClientMutationContextId({
+                scope: SCOPE,
+                principalId: 'alice',
+                callerClientId: authority.clientId,
+                callerSessionId: authority.sessionId
+            }),
+            senderId: authority.clientId,
+            data: {
+                scope: SCOPE,
+                principalId: 'alice',
+                request: {
+                    requestId: 'explicit-validation-time',
+                    actorPrincipalId: authority.clientId,
+                    actorSessionId: authority.sessionId
+                }
+            }
+        });
+        const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => {
+            throw new Error('validation read the clock');
+        });
+
+        try {
+            expect(() =>
+                validateIssuedClientMutationIngress(
+                    authority,
+                    ingress,
+                    authority.issuedAtEpochMs + 1
+                )
+            ).not.toThrow();
+        }
+        finally {
+            dateNow.mockRestore();
+        }
+    });
+
     it('returns the exact terminal left for a malformed completed client result', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);

@@ -5,8 +5,7 @@ import {
     type CrdtAppendCommand,
     type CrdtMutationCommand,
     type CrdtMutationComputed,
-    type CrdtMutationRead,
-    type CrdtMutationRepository
+    type CrdtMutationRead
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import {
@@ -15,6 +14,7 @@ import {
     toRallarCrdtDocumentKey,
     type RallarCrdtDocumentMetadata,
     type RallarCrdtDocumentRef,
+    type RallarCrdtJsonValue,
     type RallarCrdtSnapshotEnvelope,
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
@@ -34,7 +34,7 @@ describe('CRDT command and outbox invariants', () => {
         const accepted = compute(command, read());
         const acceptedWire = outboxPayload(accepted, 'reply');
 
-        expect(accepted.outboxEntries).toHaveLength(2);
+        expect(accepted.outboxWrites).toHaveLength(2);
         expect(acceptedWire.results).toEqual([
             {
                 status: 'accepted',
@@ -52,7 +52,7 @@ describe('CRDT command and outbox invariants', () => {
                 existingAppend: accepted.append
             })
         );
-        expect(replay.outboxEntries).toHaveLength(1);
+        expect(replay.outboxWrites).toHaveLength(1);
         expect(outboxPayload(replay, 'reply').results[0]).toMatchObject({
             status: 'duplicate',
             update: command.update,
@@ -61,7 +61,7 @@ describe('CRDT command and outbox invariants', () => {
         });
 
         const denied = compute(command, read({ authorized: false }));
-        expect(denied.outboxEntries).toHaveLength(0);
+        expect(denied.outboxWrites).toHaveLength(0);
         expect(toAppendResult(denied)).toMatchObject({
             status: 'rejected',
             update: command.update,
@@ -172,14 +172,9 @@ describe('CRDT command and outbox invariants', () => {
 });
 
 function compute(command: CrdtMutationCommand, state: CrdtMutationRead): CrdtMutationComputed {
-    const repository: CrdtMutationRepository = {
-        readMutation: () => Promise.resolve(state),
-        writeMutation: () => Promise.resolve(),
-        writeOutbox: () => Promise.resolve()
-    };
+    const repository = { readMutation: () => Promise.resolve(state) };
     const service = createCrdtMutationService({
         repository,
-        createWriter: () => repository,
         serviceId: 'server-1'
     });
     const computed = service.compute({ command, read: state });
@@ -284,7 +279,11 @@ function update(updateId: string): RallarCrdtUpdateEnvelope {
     };
 }
 
-function snapshotFor(document: RallarCrdtDocumentRef, snapshotId: string, value: unknown): RallarCrdtSnapshotEnvelope {
+function snapshotFor(
+    document: RallarCrdtDocumentRef,
+    snapshotId: string,
+    value: RallarCrdtJsonValue
+): RallarCrdtSnapshotEnvelope<RallarCrdtJsonValue> {
     return {
         protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
         document,
@@ -320,7 +319,9 @@ function metadata(overrides: Partial<RallarCrdtDocumentMetadata> = {}): RallarCr
 }
 
 function outboxMessage(computed: CrdtMutationComputed, effect: string) {
-    const entry = computed.outboxEntries.find((candidate) => candidate.key.resourceId.endsWith(`:${effect}`));
+    const entry = computed.outboxWrites
+        .map((write) => write.entry)
+        .find((candidate) => candidate.key.resourceId.endsWith(`:${effect}`));
     if (!entry) {
         throw new Error(`Missing ${effect} outbox entry`);
     }

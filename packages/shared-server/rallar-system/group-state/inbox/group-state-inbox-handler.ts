@@ -23,7 +23,10 @@ export interface GroupStateInboxHandlerDependencies {
     readonly mutationService: GroupStateMutationService;
     readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
     readonly snapshotObserver: Pick<GroupStateService, 'observeSnapshot'>;
-    readonly transactionWriter: AppInboxMutationTransactionWriter;
+    readonly transactionWriter: Pick<
+        AppInboxMutationTransactionWriter,
+        'writeMutation' | 'writeMutationWithAfterCommitResult'
+    >;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
     readonly prepareMutation: (
