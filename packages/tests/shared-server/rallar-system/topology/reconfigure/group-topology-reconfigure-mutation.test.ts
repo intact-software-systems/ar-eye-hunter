@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
@@ -22,7 +23,7 @@ describe('GroupTopologyReconfigureMutation', () => {
             commandId: 'reconfigure-request',
             resourceId: 'reconfigure-request:rtc-topology-recompute:explicit',
             aggregateRef: createTopologyTestGroupRef(),
-            acceptedCausalRevision: { groupRevision: 1, presenceRevision: 0 },
+            acceptedCausalRevision: { groupRevision: 1, presenceRevision: 1 },
             effectKind: 'rtc-topology-recompute',
             payloadKind: 'group-revision',
             createdAtEpochMs: 1_000,
@@ -49,26 +50,26 @@ describe('GroupTopologyReconfigureMutation', () => {
         );
     });
 
-    it('uses the mutation authority dependency as the sole administrator decision', () => {
-        const read = createRead();
+    it('uses only the administrator decision captured in read', () => {
         const command = { ...createCommand(), actorPrincipalId: 'intruder' };
-        const allowedMutation = createMutation(() => true);
-        const deniedMutation = createMutation(() => false);
+        const mutation = createMutation(() => {
+            throw new Error('Validate must not reread administrator authority');
+        });
         const callerDeniedCommand = { ...command, isPlatformAdmin: false };
         const callerAllowedCommand = { ...command, isPlatformAdmin: true };
 
         expect(() =>
-            allowedMutation.validate(
+            mutation.validate(
                 callerDeniedCommand,
-                read,
-                allowedMutation.compute(callerDeniedCommand, read)
+                createRead(true),
+                mutation.compute(callerDeniedCommand, createRead(true))
             )
         ).not.toThrow();
         expect(() =>
-            deniedMutation.validate(
+            mutation.validate(
                 callerAllowedCommand,
-                read,
-                deniedMutation.compute(callerAllowedCommand, read)
+                createRead(false),
+                mutation.compute(callerAllowedCommand, createRead(false))
             )
         ).toThrow('Forbidden: An active group member is required for this operation.');
     });
@@ -83,7 +84,47 @@ describe('GroupTopologyReconfigureMutation', () => {
             'Topology reconfigure computation is invalid'
         );
     });
+
+    it('writes the computed authority and outbox without decoding in the transaction', async () => {
+        const mutation = createMutation();
+        const command = createCommand();
+        const read = createRead();
+        const computed = mutation.compute(command, read);
+        mutation.validate(command, read, computed);
+        const parse = vi.spyOn(JSON, 'parse').mockImplementation(() => {
+            throw new Error('Decoding entered the transaction');
+        });
+
+        try {
+            await expect(mutation.write(createSuccessfulTransaction(), computed)).resolves.toBeUndefined();
+        }
+        finally {
+            parse.mockRestore();
+        }
+    });
 });
+
+function createSuccessfulTransaction(): PSqlSql {
+    function sql<Result>(
+        strings: TemplateStringsArray,
+        ..._values: readonly PSqlParameter[]
+    ): Promise<Result>;
+    function sql(_values: readonly PSqlParameter[]): object;
+    function sql(stringsOrValues: TemplateStringsArray | readonly PSqlParameter[]): Promise<unknown> | object {
+        if (Array.isArray(stringsOrValues) && !Object.hasOwn(stringsOrValues, 'raw')) {
+            return {};
+        }
+        const query = (stringsOrValues as TemplateStringsArray).join(' ');
+        return Promise.resolve(
+            query.includes('returning ri_row_id') ? [{ ri_row_id: 1n }] : [{ revision: 1 }]
+        );
+    }
+    return Object.assign(sql, {
+        begin: async <T>(_write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
+            throw new Error('Reconfigure write must not open a transaction');
+        }
+    });
+}
 
 function createMutation(
     isPlatformAdmin: (principalId: string) => boolean = () => false
@@ -107,7 +148,7 @@ function createCommand() {
     } as const;
 }
 
-function createRead() {
+function createRead(actorIsPlatformAdmin = false) {
     return {
         authority: {
             group: createTopologyTestGroupSnapshot(),
@@ -117,6 +158,7 @@ function createRead() {
             replanning: 'auto' as const,
             nowEpochMs: 1_000
         },
-        authorityGuard: createTopologyTestAuthorityGuard()
+        authorityGuard: createTopologyTestAuthorityGuard(),
+        actorIsPlatformAdmin
     };
 }

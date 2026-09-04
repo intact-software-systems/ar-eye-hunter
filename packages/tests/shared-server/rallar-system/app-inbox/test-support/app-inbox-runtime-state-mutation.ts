@@ -154,10 +154,11 @@ function readDate(
     value: AppInboxTestSqlExecution['values'][number],
     label: string
 ): Date {
-    if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
+    const date = typeof value === 'string' ? new Date(value) : value;
+    if (!(date instanceof Date) || !Number.isFinite(date.getTime())) {
         throw new TypeError(`${label} must be a valid Date`);
     }
-    return value;
+    return date;
 }
 
 function readRevision(

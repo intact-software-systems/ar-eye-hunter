@@ -38,9 +38,12 @@ export interface TopologyAppInboxHandlerDependencies {
 export interface TopologyAppInboxMutationOwners {
     readonly configMutationService: Pick<
         GroupTopologyConfigMutationService,
-        'prepare' | 'read' | 'compute' | 'validate' | 'write'
+        'read' | 'compute' | 'validate' | 'write' | 'recordCommittedWrite'
     >;
-    readonly reconfigureMutation: Pick<GroupTopologyReconfigureMutation, 'read' | 'compute' | 'validate' | 'write'>;
+    readonly reconfigureMutation: Pick<
+        GroupTopologyReconfigureMutation,
+        'read' | 'compute' | 'validate' | 'write' | 'recordCommittedWrite'
+    >;
 }
 
 export type TopologyConfigInboxResult = ReturnType<typeof toTopologyConfigMutationResult>;
@@ -179,15 +182,11 @@ export class TopologyAppInboxHandler {
                 owners.reconfigureMutation
             );
         }
-        const preparation = await owners.configMutationService.prepare({
-            command: toTopologyConfigMutationCommand(authority.command),
-            commandHash: authority.command.commandHash,
-            capturedAtEpochMs: authority.command.capturedAtEpochMs
-        });
-        const read = await owners.configMutationService.read(preparation.command);
+        const command = toTopologyConfigMutationCommand(authority.command);
+        const read = await owners.configMutationService.read(command);
         const attemptCount = context.entry.dequeueAudit.attempts;
-        const computed = owners.configMutationService.compute(preparation, read, attemptCount);
-        owners.configMutationService.validate(preparation, read, attemptCount, computed);
+        const computed = owners.configMutationService.compute(command, read, attemptCount);
+        owners.configMutationService.validate({ command, read, attemptCount, computed });
         if (computed.outcome === 'idempotency-conflict') {
             throw new GroupTopologyConfigIdempotencyConflictError(
                 computed.existingCommandHash,
@@ -204,6 +203,7 @@ export class TopologyAppInboxHandler {
             }
         );
         if (computed.outcome === 'write') {
+            owners.configMutationService.recordCommittedWrite();
             this.dependencies.wakeQueue?.();
         }
         return result;
@@ -242,6 +242,7 @@ export class TopologyAppInboxHandler {
                 } as const;
             }
         );
+        mutation.recordCommittedWrite();
         this.dependencies.wakeQueue?.();
         return result;
     }

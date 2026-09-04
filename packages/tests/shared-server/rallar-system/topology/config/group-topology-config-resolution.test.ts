@@ -2,6 +2,7 @@ import type { PutGroupTopologyConfigRequest, PutGroupTopologyOverrideRequest } f
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
+    computeOverrideExpiresAtEpochMs,
     DEFAULT_GROUP_TOPOLOGY_OVERRIDE_TTL_MS,
     GroupTopologyConfigValidationError,
     MAX_GROUP_TOPOLOGY_OVERRIDE_TTL_MS,
@@ -89,6 +90,7 @@ describe('group topology config resolution', () => {
     });
 
     it('defaults override expiry to 15 minutes, caps it at 24 hours, and rejects elapsed values', () => {
+        expect(computeOverrideExpiresAtEpochMs({ nowEpochMs: 1_000, ttlMs: 0 })).toBe(1_000);
         expect(resolveOverrideExpiresAtEpochMs({ nowEpochMs: 1_000 })).toBe(
             1_000 + DEFAULT_GROUP_TOPOLOGY_OVERRIDE_TTL_MS
         );

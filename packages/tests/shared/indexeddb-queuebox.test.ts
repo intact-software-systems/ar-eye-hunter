@@ -117,6 +117,27 @@ describe('IndexedDbQueueBox', () => {
         expect((await queue.getItem(original.key))?.resource).toBe(acceptedReplacement.resource);
     });
 
+    it('computes an enqueueIf replacement before opening its write transaction', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const queue = new IndexedDbQueueBox({ dbName });
+        const original = createEntry('presence.state.v1', 'prepared-write', {
+            resource: JSON.stringify({ version: 1 })
+        });
+        const replacement = createEntry('presence.state.v1', 'prepared-write', {
+            resource: JSON.stringify({ version: 2 })
+        });
+        await queue.enqueue(original);
+
+        const transaction = vi.spyOn(IDBDatabase.prototype, 'transaction');
+        await queue.enqueueIf(replacement, () => {
+            expect(transaction.mock.calls.some((call) => call[1] === 'readwrite')).toBe(false);
+            return true;
+        });
+
+        expect(transaction.mock.calls.some((call) => call[1] === 'readonly')).toBe(true);
+        expect(transaction.mock.calls.some((call) => call[1] === 'readwrite')).toBe(true);
+    });
+
     it('overwrites expired entries with enqueueIf without calling the predicate', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'presence.state.v1';

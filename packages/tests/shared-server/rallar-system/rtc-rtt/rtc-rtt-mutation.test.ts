@@ -315,7 +315,7 @@ describe('RTC RTT mutation phases', () => {
         });
     });
 
-    it('rejects a malformed complete RTT write candidate before opening a transaction', async () => {
+    it('rejects a malformed complete RTT write candidate during validation', () => {
         const rtt = {
             sessionIdFrom: 'session-a',
             sessionIdTo: 'session-b',
@@ -324,7 +324,7 @@ describe('RTC RTT mutation phases', () => {
             version: 1
         };
         const group = rttGroupSnapshot(['session-a', 'session-b']);
-        const computed = computeRtcRttMutation({
+        const input = {
             command: {
                 rtt,
                 alSenderId: 'session-a',
@@ -346,7 +346,8 @@ describe('RTC RTT mutation phases', () => {
                 commandHash: RTT_COMMAND_HASH,
                 attemptCount: 1
             }
-        });
+        } as const;
+        const computed = computeRtcRttMutation(input);
         if (computed.outcome !== 'write') {
             throw new Error('Expected RTT write');
         }
@@ -356,18 +357,61 @@ describe('RTC RTT mutation phases', () => {
                 causalRevision?: unknown;
             }
         ).causalRevision;
-        const queries: string[] = [];
-        const transaction = createUnopenedTransactionSql(queries);
+        expect(() => validateRtcRttMutation({ ...input, computed: malformed })).toThrow(
+            'differs from canonical'
+        );
+    });
 
-        await expect(
-            writeRtcRttMutation({
-                transaction,
-                repositoryOptions: { ttlMs: 60_000, now: () => 1 },
-                computed: malformed,
+    it('executes persistence-ready RTT data without serializing in the transaction', async () => {
+        const rtt = {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 5,
+            createdAtEpochMs: 1,
+            version: 1
+        };
+        const input = {
+            command: {
+                rtt,
+                alSenderId: 'session-a',
+                candidateGroups: [rttGroupSnapshot(['session-a', 'session-b'])],
+                overlaySnapshotsByGroupKey: new Map(),
+                degreeLimit: 1
+            },
+            read: {
+                receipt: null,
+                expiredMeasurementEntry: null,
+                measurement: null,
+                endpointAdmissions: [],
+                expiredEndpointAdmissionEntries: [],
+                measurements: []
+            },
+            facts: {
+                requestedAtEpochMs: 1,
+                purgeAfterEpochMs: 60_001,
+                commandHash: RTT_COMMAND_HASH,
+                attemptCount: 1
+            }
+        } as const;
+        const computed = computeRtcRttMutation(input);
+        validateRtcRttMutation({ ...input, computed });
+        if (computed.outcome !== 'write') {
+            throw new Error('Expected RTT write');
+        }
+        const stringify = vi.spyOn(JSON, 'stringify').mockImplementation(() => {
+            throw new Error('Serialization entered the transaction');
+        });
+
+        try {
+            await expect(writeRtcRttMutation({
+                transaction: createSuccessfulRttTransaction(),
+                computed,
                 outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
-            })
-        ).rejects.toThrow('Stored group snapshot has invalid keys');
-        expect(queries).toEqual([]);
+            })).resolves.toBe('accepted');
+        }
+        finally {
+            stringify.mockRestore();
+        }
     });
 
     it('requires both RTT endpoint sessions to cover the full active interval at acceptance time', () => {
@@ -892,16 +936,29 @@ function rttGroupSnapshot(
     };
 }
 
-function createUnopenedTransactionSql(queries: string[]): PSqlSql {
-    return Object.assign(
-        () => {
-            queries.push('query');
-            throw new Error('RTT write must not query the transaction');
-        },
-        {
-            begin: () => {
-                throw new Error('RTT write must not open a transaction');
-            }
+function createSuccessfulRttTransaction(): PSqlSql {
+    const revisions = [0, 0, 0, 0];
+    function sql<Result>(
+        strings: TemplateStringsArray,
+        ..._values: readonly unknown[]
+    ): Promise<Result>;
+    function sql(_values: readonly unknown[]): object;
+    function sql(stringsOrValues: TemplateStringsArray | readonly unknown[]): Promise<unknown> | object {
+        if (Array.isArray(stringsOrValues) && !Object.hasOwn(stringsOrValues, 'raw')) {
+            return {};
         }
-    );
+        const query = (stringsOrValues as TemplateStringsArray).join(' ');
+        if (query.includes('returning ri_row_id')) {
+            return Promise.resolve([{ ri_row_id: 1n }]);
+        }
+        if (query.includes('returning revision')) {
+            return Promise.resolve([{ revision: revisions.shift() ?? 0 }]);
+        }
+        return Promise.resolve([]);
+    }
+    return Object.assign(sql, {
+        begin: async <T>(_write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
+            throw new Error('RTC RTT write must not open a transaction');
+        }
+    });
 }

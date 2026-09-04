@@ -260,7 +260,7 @@ it('writes topology config state, receipt, authority fence, and APP_OUTBOX atomi
         'writeTopologyConfigAuthorityFence(',
         'writeTopologyConfigState(',
         'insertMutationRecord(',
-        'input.outboxWriter.write(transaction, computed.outbox)'
+        'input.outboxWriter.write(transaction, computed.outboxWrite)'
     ]);
     expectInOrder(readFunctionBody(sources.topologyConfig, 'writeTopologyConfigAuthorityFence'), [
         'advanceGroupStateAuthorityFence(',
@@ -276,7 +276,7 @@ it('fences explicit reconfigure authority before inserting APP_OUTBOX', () => {
         'advanceGroupStateAuthorityFence(',
         'computed.authorityGuard',
         'throw new RuntimeStateWriteConflictError()',
-        'this.dependencies.outboxWriter.write(transaction, computed)'
+        'this.dependencies.outboxWriter.write(transaction, computed.outboxWrite)'
     ]);
 });
 
