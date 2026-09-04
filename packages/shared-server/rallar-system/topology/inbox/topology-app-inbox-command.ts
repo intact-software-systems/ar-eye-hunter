@@ -370,6 +370,8 @@ function topologyConfigMutationCommand(
         aggregateRef: command.groupRef,
         commandId: command.requestId,
         requestId: command.requestId,
+        commandHash: command.commandHash,
+        capturedAtEpochMs: command.capturedAtEpochMs,
         input: {
             config,
             updatedByPrincipalId: command.actor.principalId,

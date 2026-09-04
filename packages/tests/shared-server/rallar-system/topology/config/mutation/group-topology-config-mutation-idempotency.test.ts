@@ -21,17 +21,20 @@ describe('topology config mutation idempotency', () => {
         const replay = probeTopologyConfigMutationIdempotency(
             mutation.command,
             read,
-            mutation.facts.commandHash
+            mutation.command.commandHash
         );
 
         expect(replay).toMatchObject({ outcome: 'replay', receipt: accepted.receipt });
+        if (replay.outcome !== 'replay') {
+            throw new Error('Expected topology config replay');
+        }
         expect(() =>
             validateTopologyConfigMutationIdempotency({
                 command: mutation.command,
                 read,
-                commandHash: mutation.facts.commandHash,
-                authorityFacts: { isPlatformAdmin: false },
-                computed: replay as never
+                commandHash: mutation.command.commandHash,
+                authorityFacts: { isPlatformAdmin: false, policyNowEpochMs: 1_000 },
+                computed: replay
             })
         ).not.toThrow();
     });
@@ -50,7 +53,7 @@ describe('topology config mutation idempotency', () => {
 
         expect(conflict).toEqual({
             outcome: 'idempotency-conflict',
-            existingCommandHash: mutation.facts.commandHash,
+            existingCommandHash: mutation.command.commandHash,
             receivedCommandHash: `sha256:${'d'.repeat(64)}`
         });
     });
@@ -64,10 +67,13 @@ describe('topology config mutation idempotency', () => {
         if (accepted.outcome !== 'write') {
             throw new Error('Expected topology config write');
         }
+        if (mutation.command.requestId === null) {
+            throw new Error('Expected topology config request id');
+        }
         const corruptRecord = {
             groupRef: mutation.command.aggregateRef,
-            requestId: mutation.command.requestId!,
-            commandHash: mutation.facts.commandHash,
+            requestId: mutation.command.requestId,
+            commandHash: mutation.command.commandHash,
             receipt: {
                 ...accepted.receipt,
                 operation: 'putOverride' as const,
@@ -77,9 +83,26 @@ describe('topology config mutation idempotency', () => {
         };
         const read = { ...mutation.read, idempotency: runtimeEntry(corruptRecord) };
 
-        expect(() => probeTopologyConfigMutationIdempotency(mutation.command, read, mutation.facts.commandHash)).toThrow(
-            'Topology config receipt operation differs from command'
+        const replay = probeTopologyConfigMutationIdempotency(
+            mutation.command,
+            read,
+            mutation.command.commandHash
         );
+        if (replay.outcome === 'miss') {
+            throw new Error('Expected topology config replay');
+        }
+        expect(() =>
+            validateTopologyConfigMutationIdempotency({
+                command: mutation.command,
+                read,
+                commandHash: mutation.command.commandHash,
+                authorityFacts: {
+                    isPlatformAdmin: mutation.facts.isPlatformAdmin,
+                    policyNowEpochMs: mutation.facts.policyNowEpochMs
+                },
+                computed: replay
+            })
+        ).toThrow('Topology config receipt operation differs from command');
     });
 });
 

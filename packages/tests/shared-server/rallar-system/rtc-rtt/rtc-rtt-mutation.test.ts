@@ -1,9 +1,6 @@
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
-import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/write-rtc-rtt-mutation.ts';
-import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -282,7 +279,7 @@ describe('RTC RTT mutation phases', () => {
         });
     });
 
-    it('rejects a malformed complete RTT write candidate before opening a transaction', async () => {
+    it('rejects a malformed complete RTT write candidate at the pure validation boundary', () => {
         const rtt = {
             sessionIdFrom: 'session-a',
             sessionIdTo: 'session-b',
@@ -291,7 +288,7 @@ describe('RTC RTT mutation phases', () => {
             version: 1
         };
         const group = rttGroupSnapshot(['session-a', 'session-b']);
-        const computed = computeRtcRttMutation({
+        const input = {
             command: {
                 rtt,
                 alSenderId: 'session-a',
@@ -313,7 +310,8 @@ describe('RTC RTT mutation phases', () => {
                 commandHash: RTT_COMMAND_HASH,
                 attemptCount: 1
             }
-        });
+        } as const;
+        const computed = computeRtcRttMutation(input);
         if (computed.outcome !== 'write') {
             throw new Error('Expected RTT write');
         }
@@ -323,18 +321,9 @@ describe('RTC RTT mutation phases', () => {
                 causalRevision?: unknown;
             }
         ).causalRevision;
-        const queries: string[] = [];
-        const transaction = createUnopenedTransactionSql(queries);
-
-        await expect(
-            writeRtcRttMutation({
-                transaction,
-                repositoryOptions: { ttlMs: 60_000, now: () => 1 },
-                computed: malformed,
-                outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
-            })
-        ).rejects.toThrow('Stored group snapshot has invalid keys');
-        expect(queries).toEqual([]);
+        expect(() => validateRtcRttMutation({ ...input, computed: malformed })).toThrow(
+            'RTC RTT mutation differs from canonical computation'
+        );
     });
 
     it('requires both RTT endpoint sessions to cover the full active interval at acceptance time', () => {
@@ -857,18 +846,4 @@ function rttGroupSnapshot(
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length
     };
-}
-
-function createUnopenedTransactionSql(queries: string[]): PSqlSql {
-    return Object.assign(
-        () => {
-            queries.push('query');
-            throw new Error('RTT write must not query the transaction');
-        },
-        {
-            begin: () => {
-                throw new Error('RTT write must not open a transaction');
-            }
-        }
-    );
 }
