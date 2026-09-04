@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { GROUP_POLICY_REASON_CODES } from '@shared/api/group-policy-types.ts';
+
 const repoRoot = process.cwd();
 
 const apiReference = readRepoFile('docs/rallar-api-reference.md');
@@ -36,6 +38,19 @@ describe('Rallar group public contracts', () => {
             'Room Switch Recovery',
             'RallarRoomSwitchPartialFailureError'
         ]);
+    });
+
+    /**
+     * Nothing coupled these two before, and the absence cost something real:
+     * an edge adding `formation-attempts-exhausted` to the enum was reverted
+     * twice by a blanket checkout after a formatting run, and both times the
+     * loss was silent -- no gate, no test, no type error, and once it shipped
+     * as a false claim in a delivery record.
+     */
+    it('publishes exactly the policy reason codes the const declares', () => {
+        const published = schema('GroupPolicyReasonCode').enum ?? [];
+
+        expect([...published].sort()).toEqual([...GROUP_POLICY_REASON_CODES].sort());
     });
 
     it('documents stable policy reasons and the strict read rollout switch', () => {
