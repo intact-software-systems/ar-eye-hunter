@@ -188,56 +188,25 @@ export function isStoredQueueEntryTimedOut(
     return Temporal.Instant.compare(now, startTs.add(duration)) >= 0;
 }
 
-function temporalText(value: string | object, fallback: string): string {
-    if (typeof value === 'string' && value.length > 0 && value !== '[object Object]') {
-        return value;
-    }
-
-    if (
-        value &&
-        typeof value === 'object' &&
-        'toString' in value &&
-        typeof value.toString === 'function'
-    ) {
-        const text = value.toString();
-        if (text.length > 0 && text !== '[object Object]') {
-            return text;
-        }
-    }
-
-    return fallback;
-}
-
 function toPlainTime(value: string | Temporal.PlainTime): Temporal.PlainTime {
-    const fallback = Temporal.Now.plainTimeISO();
-    try {
-        return Temporal.PlainTime.from(temporalText(value, fallback.toString()));
+    if (typeof value !== 'string' && !(value instanceof Temporal.PlainTime)) {
+        throw new TypeError('IndexedDB queue audit date must be a plain time');
     }
-    catch {
-        return fallback;
-    }
+    return Temporal.PlainTime.from(value);
 }
 
 function toPlainDateTime(value: string | Temporal.PlainDateTime): Temporal.PlainDateTime {
-    const fallback = Temporal.Now.plainDateTimeISO();
-    try {
-        return Temporal.PlainDateTime.from(temporalText(value, fallback.toString()));
+    if (typeof value !== 'string' && !(value instanceof Temporal.PlainDateTime)) {
+        throw new TypeError('IndexedDB queue creation timestamp must be a plain date-time');
     }
-    catch {
-        return fallback;
-    }
+    return Temporal.PlainDateTime.from(value);
 }
 
-function toInstant(
-    value: string | Temporal.Instant,
-    fallback: Temporal.Instant = NEVER_EXPIRE_TS
-): Temporal.Instant {
-    try {
-        return Temporal.Instant.from(temporalText(value, fallback.toString()));
+function toInstant(value: string | Temporal.Instant): Temporal.Instant {
+    if (typeof value !== 'string' && !(value instanceof Temporal.Instant)) {
+        throw new TypeError('IndexedDB queue timestamp must be an instant');
     }
-    catch {
-        return fallback;
-    }
+    return Temporal.Instant.from(value);
 }
 
 function toOptionalInstant(
@@ -247,10 +216,5 @@ function toOptionalInstant(
         return undefined;
     }
 
-    try {
-        return Temporal.Instant.from(temporalText(value, ''));
-    }
-    catch {
-        return undefined;
-    }
+    return toInstant(value);
 }

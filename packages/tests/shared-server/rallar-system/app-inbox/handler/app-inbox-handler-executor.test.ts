@@ -33,10 +33,11 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
         harness.service.onStateMessage(
             AppInboxType.GROUP_CREATE,
             async (_data, context) =>
-                await harness.service.commit(context, async () => ({
-                    status: 'accepted',
-                    source: 'transaction'
-                }))
+                await harness.service.commit(
+                    context,
+                    { status: 'accepted', source: 'transaction' },
+                    async () => {}
+                )
         );
 
         const pending = harness.service.enqueueAndWait(harness.enqueue);
@@ -58,10 +59,11 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
             timing: (event) => timing.push(event)
         });
         harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async (_data, context) => {
-            await harness.service.commit(context, async () => ({
-                status: 'accepted',
-                source: 'transaction'
-            }));
+            await harness.service.commit(
+                context,
+                { status: 'accepted', source: 'transaction' },
+                async () => {}
+            );
             throw new Error('secret-after-commit');
         });
 
@@ -245,9 +247,8 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
             });
             let acceptedMutationExecutions = 0;
             const handler = async (_data: JsonWireValue, context: Parameters<typeof harness.service.commit>[0]) =>
-                await harness.service.commit(context, async () => {
+                await harness.service.commit(context, { status: 'accepted' }, async () => {
                     acceptedMutationExecutions += 1;
-                    return { status: 'accepted' };
                 });
             harness.service.onStateMessage(outerType as AppInboxType, handler);
             harness.service.enqueueWithoutWaiting(harness.enqueue);
@@ -298,9 +299,8 @@ describe('AppInboxHandlerExecutor registered handler finalization', () => {
         const harness = createRegisteredHandlerHarness();
         let mutationCommitted = false;
         const handler = async (_data: JsonWireValue, context: Parameters<typeof harness.service.commit>[0]) =>
-            await harness.service.commit(context, async () => {
+            await harness.service.commit(context, { status: 'accepted' }, async () => {
                 mutationCommitted = true;
-                return { status: 'accepted' };
             });
         harness.service.onStateMessage(AppInboxType.GROUP_UPDATE, handler);
         harness.service.enqueueWithoutWaiting(harness.enqueue);

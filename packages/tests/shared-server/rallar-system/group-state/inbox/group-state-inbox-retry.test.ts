@@ -54,16 +54,19 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     commandMac: 'a'.repeat(64)
                 },
                 descriptor: {
-                    operation: 'updateGroup' as const,
+                    operation: 'heartbeatPresence' as const,
                     scope: SCOPE,
                     groupId: 'outer-retry-room',
                     targetPrincipalId: null,
-                    sessionId: null,
+                    sessionId: 'owner-session',
                     request: {
-                        displayName: 'Must Not Apply',
                         actorPrincipalId: 'owner',
                         actorSessionId: 'owner-session',
-                        requestId: 'outer-retry-authority-change'
+                        requestId: 'outer-retry-authority-change',
+                        principalId: 'owner',
+                        generationId: 'owner-generation',
+                        lastHeartbeatAtEpochMs: nowEpochMs,
+                        expiresAtEpochMs: nowEpochMs + 60_000
                     }
                 }
             };
@@ -72,27 +75,20 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                 prepareAppInboxMutation: async () => ({
                     ...authorizedMutation,
                     command: {
-                        operation: 'updateGroup',
+                        operation: 'heartbeatPresence',
                         aggregateRef: { ...SCOPE, groupId: 'outer-retry-room' },
                         commandId: 'outer-retry-authority-change',
                         requestId: 'outer-retry-authority-change',
+                        sessionId: 'owner-session',
                         input: {
                             actorPrincipalId: 'owner',
                             actorSessionId: 'owner-session',
                             reason: null,
                             traceId: null,
-                            slug: null,
-                            displayName: 'Must Not Apply',
-                            description: null,
-                            kind: null,
-                            status: null,
-                            joinMode: null,
-                            maxMembers: null,
-                            maxSessionsPerMember: null,
-                            metadata: null,
-                            expiresAtEpochMs: null,
-                            emptySinceEpochMs: null,
-                            purgeAfterEpochMs: null
+                            principalId: 'owner',
+                            generationId: 'owner-generation',
+                            lastHeartbeatAtEpochMs: nowEpochMs,
+                            expiresAtEpochMs: nowEpochMs + 60_000
                         }
                     },
                     facts: {
@@ -169,7 +165,11 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                     resourceInboxRepository: queue,
                     resourceInboxResultsRepository: results,
                     database: createAppInboxTestDatabase(queue, results),
-                    groupStateService: phaseService as never
+                    groupStateService: phaseService as never,
+                    resultReader: {
+                        readSnapshot: async () => undefined,
+                        readEvent: async () => undefined
+                    }
                 },
                 {
                     serviceId: 'server-12345678'
@@ -183,18 +183,22 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             });
             const pending = service.processAuthenticatedGroupEntryUntilCompletion(
                 {
-                    type: AppInboxType.GROUP_UPDATE,
+                    type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
                     resourceId: 'outer-retry-authority-change',
                     contextId: 'ar-eye-hunter:default:outer-retry-room',
                     senderId: 'owner',
                     data: {
                         scope: SCOPE,
                         groupId: 'outer-retry-room',
+                        sessionId: 'owner-session',
                         request: {
-                            displayName: 'Must Not Apply',
                             actorPrincipalId: 'owner',
                             actorSessionId: 'owner-session',
-                            requestId: 'outer-retry-authority-change'
+                            requestId: 'outer-retry-authority-change',
+                            principalId: 'owner',
+                            generationId: 'owner-generation',
+                            lastHeartbeatAtEpochMs: nowEpochMs,
+                            expiresAtEpochMs: nowEpochMs + 60_000
                         }
                     }
                 },

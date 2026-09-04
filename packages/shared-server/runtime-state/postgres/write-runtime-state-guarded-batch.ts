@@ -1,37 +1,18 @@
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type {
-    RuntimeStateGuardedBatch,
-    RuntimeStateGuardedBatchEffect,
-    RuntimeStateGuardedBatchResult
+    RuntimeStateGuardedBatchResult,
+    RuntimeStateGuardedBatchWrite
 } from '../guarded-batch/runtime-state-guarded-batch.ts';
-import { validateRuntimeStateGuardedBatch } from '../guarded-batch/validate-runtime-state-guarded-batch.ts';
 import {
     decodeComputedRuntimeStateGuardedBatchRows,
     type RuntimeStateGuardedBatchDatabaseRow
 } from './decode-runtime-state-guarded-batch-rows.ts';
 
-interface RuntimeStateGuardedBatchSqlDescriptor {
-    readonly effectId?: string;
-    readonly operation: RuntimeStateGuardedBatchEffect['operation'];
-    readonly namespace: string;
-    readonly key: string;
-    readonly expectedRevision?: number;
-    readonly value?: string;
-    readonly expireAtTimestamp?: string;
-}
-
-export async function executeRuntimeStateGuardedBatch(
+export async function writeRuntimeStateGuardedBatch(
     sql: PSqlSql,
-    input: RuntimeStateGuardedBatch
+    computed: RuntimeStateGuardedBatchWrite
 ): Promise<RuntimeStateGuardedBatchResult> {
-    const batch = validateRuntimeStateGuardedBatch(input);
-    return await executeComputedRuntimeStateGuardedBatch(sql, batch);
-}
-
-export async function executeComputedRuntimeStateGuardedBatch(
-    sql: PSqlSql,
-    batch: RuntimeStateGuardedBatch
-): Promise<RuntimeStateGuardedBatchResult> {
+    const batch = computed;
     const rows = await sql<RuntimeStateGuardedBatchDatabaseRow[]>`
         with guard_input as (
             select descriptor ->> 'operation' as operation,
@@ -40,7 +21,7 @@ export async function executeComputedRuntimeStateGuardedBatch(
                    descriptor ->> 'value' as store_value,
                    (descriptor ->> 'expireAtTimestamp')::timestamptz as expire_at_ts,
                    (descriptor ->> 'expectedRevision')::bigint as expected_revision
-            from (select ${toSqlDescriptor(batch.guard)}::jsonb as descriptor) guard_json
+            from (select ${computed.guardSqlDescriptor}::jsonb as descriptor) guard_json
         ),
         effect_input as (
             select descriptor ->> 'effectId' as effect_id,
@@ -50,7 +31,7 @@ export async function executeComputedRuntimeStateGuardedBatch(
                    descriptor ->> 'value' as store_value,
                    (descriptor ->> 'expireAtTimestamp')::timestamptz as expire_at_ts,
                    (descriptor ->> 'expectedRevision')::bigint as expected_revision
-            from jsonb_array_elements(${batch.effects.map(toSqlDescriptor)}::jsonb) descriptor
+            from jsonb_array_elements(${computed.effectSqlDescriptors}::jsonb) descriptor
         ),
         guard_insert as (
             insert into runtime_state_store (store_namespace,
@@ -270,26 +251,4 @@ export async function executeComputedRuntimeStateGuardedBatch(
     `;
 
     return decodeComputedRuntimeStateGuardedBatchRows(batch, rows);
-}
-
-function toSqlDescriptor(
-    input: RuntimeStateGuardedBatch['guard'] | RuntimeStateGuardedBatchEffect
-): RuntimeStateGuardedBatchSqlDescriptor {
-    const effectId = 'effectId' in input ? input.effectId : undefined;
-    const expectedRevision = 'expectedRevision' in input
-        ? input.expectedRevision
-        : undefined;
-    const value = 'value' in input ? input.value : undefined;
-    const expireAtTimestamp = 'expireAtTimestamp' in input
-        ? new Date(input.expireAtTimestamp).toISOString()
-        : undefined;
-    return {
-        effectId,
-        operation: input.operation,
-        namespace: input.namespace,
-        key: input.key,
-        expectedRevision,
-        value,
-        expireAtTimestamp
-    };
 }

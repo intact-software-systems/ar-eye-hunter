@@ -136,6 +136,7 @@ interface ApiV1MutationResources {
 
 interface CreateGroupStateInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
     readonly groupStateService: ReturnType<typeof createCachedGroupStateService>;
+    readonly resultReader: ApiV1MutationResources['groupsRepository'];
     readonly groupFormationRecomputeDebounceMs: number;
 }
 
@@ -200,6 +201,7 @@ export function createApiV1MutationRuntime(
         createGroupStateInboxService: createGroupStateInboxServiceFactory({
             ...stateDependencies,
             groupStateService,
+            resultReader: resources.groupsRepository,
             groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs
         }),
         createAppClientInboxService: createAppClientInboxServiceFactory(stateDependencies),
@@ -323,7 +325,8 @@ function createGroupStateInboxServiceFactory(
                 resourceInboxRepository: input.resourceInboxRepository.entries,
                 resourceInboxResultsRepository: input.resourceInboxResultsRepository,
                 database: input.database,
-                groupStateService: input.groupStateService
+                groupStateService: input.groupStateService,
+                resultReader: input.resultReader
             },
             {
                 serviceId: input.serviceId,

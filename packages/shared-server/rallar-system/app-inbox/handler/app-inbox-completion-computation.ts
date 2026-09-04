@@ -9,6 +9,7 @@ import {
     computeResourceInboxResultReplacement,
     type ResourceInboxResultReplacement
 } from '../../../queuebox/postgres/resource-inbox-result-replacement.ts';
+import { serializeCanonicalJson } from '../../protocol/canonical-json.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { AppInboxReservationConflictError } from '../app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '../app-inbox-registration-codecs.ts';
@@ -76,8 +77,18 @@ export function validateAppInboxCompletion<Result>(
     computed: AppInboxCompletionComputed<Result>
 ): readonly AppInboxCompletionValidationIssue[] {
     const issues = validateAppInboxCompletionFacts(input);
+    if (issues.length > 0) {
+        return issues;
+    }
+    const expected = computeAppInboxCompletion(input);
     if (computed.durableResult !== input.durableResult) {
         issues.push(toAppInboxCompletionValidationIssue('computed.durableResult', 'must be the computed result'));
+    }
+    if (!hasSameJsonWireValue(computed.encodedResult, expected.encodedResult)) {
+        issues.push(toAppInboxCompletionValidationIssue(
+            'computed.encodedResult',
+            'must encode the computed durable result'
+        ));
     }
     if (
         !hasSameResourceInboxKey(computed.reservationFinish.key, input.entry.key) ||
@@ -91,10 +102,7 @@ export function validateAppInboxCompletion<Result>(
         ));
     }
     if (
-        computed.resultReplacement.resourceId !== input.entry.key.resourceId ||
-        computed.resultReplacement.topicId !== input.entry.key.topicId ||
-        computed.resultReplacement.contextId !== input.entry.key.contextId ||
-        computed.resultReplacement.status !== input.status
+        !hasSameResultReplacement(computed.resultReplacement, expected.resultReplacement)
     ) {
         issues.push(toAppInboxCompletionValidationIssue(
             'computed.resultReplacement',
@@ -102,14 +110,20 @@ export function validateAppInboxCompletion<Result>(
         ));
     }
     if (
-        !hasSameResourceInboxKey(computed.finalizedEntry.key, input.entry.key) ||
-        computed.finalizedEntry.status !== input.status ||
-        computed.finalizedEntry.dequeueAudit.endTs?.epochMilliseconds !== input.completedAtEpochMs ||
-        computed.finalizedEntry.dequeueAudit.nextTs !== undefined
+        !hasSameFinalizedEntry(computed.finalizedEntry, expected.finalizedEntry)
     ) {
         issues.push(toAppInboxCompletionValidationIssue(
             'computed.finalizedEntry',
             'must describe the completed reservation'
+        ));
+    }
+    if (
+        !(computed.reservationConflict instanceof AppInboxReservationConflictError) ||
+        !hasSameResourceInboxKey(computed.reservationConflict.key, input.entry.key)
+    ) {
+        issues.push(toAppInboxCompletionValidationIssue(
+            'computed.reservationConflict',
+            'must describe the reserved entry'
         ));
     }
     return issues;
@@ -145,6 +159,56 @@ function hasSameResourceInboxKey(
     return left.topicId === right.topicId &&
         left.resourceId === right.resourceId &&
         left.contextId === right.contextId;
+}
+
+function hasSameJsonWireValue(left: JsonWireValue, right: JsonWireValue): boolean {
+    try {
+        return serializeCanonicalJson(left) === serializeCanonicalJson(right);
+    }
+    catch {
+        return false;
+    }
+}
+
+function hasSameResultReplacement(
+    left: ResourceInboxResultReplacement,
+    right: ResourceInboxResultReplacement
+): boolean {
+    return left.resourceId === right.resourceId &&
+        left.topicId === right.topicId &&
+        left.resource === right.resource &&
+        left.typeId === right.typeId &&
+        left.status === right.status &&
+        left.contextId === right.contextId &&
+        left.systemDate === right.systemDate &&
+        left.createdBy === right.createdBy &&
+        left.createdAt === right.createdAt &&
+        left.expiresAt === right.expiresAt;
+}
+
+function hasSameFinalizedEntry(left: ResourceEntry, right: ResourceEntry): boolean {
+    return hasSameResourceInboxKey(left.key, right.key) &&
+        left.resource === right.resource &&
+        left.typeId === right.typeId &&
+        left.status === right.status &&
+        left.audit.date.equals(right.audit.date) &&
+        left.audit.createdBy === right.audit.createdBy &&
+        left.audit.createdTs.equals(right.audit.createdTs) &&
+        left.audit.expiryTs.equals(right.audit.expiryTs) &&
+        hasSameOptionalInstant(left.dequeueAudit.startTs, right.dequeueAudit.startTs) &&
+        hasSameOptionalInstant(left.dequeueAudit.endTs, right.dequeueAudit.endTs) &&
+        hasSameOptionalInstant(left.dequeueAudit.nextTs, right.dequeueAudit.nextTs) &&
+        left.dequeueAudit.attempts === right.dequeueAudit.attempts &&
+        left.db?.id === right.db?.id;
+}
+
+function hasSameOptionalInstant(
+    left: Temporal.Instant | undefined,
+    right: Temporal.Instant | undefined
+): boolean {
+    return left === undefined || right === undefined
+        ? left === right
+        : left.equals(right);
 }
 
 function toAppInboxCompletionValidationIssue(

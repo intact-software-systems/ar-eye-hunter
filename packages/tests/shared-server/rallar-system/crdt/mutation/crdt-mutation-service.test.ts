@@ -80,8 +80,8 @@ describe('CRDT mutation service', () => {
         });
         await applyCrdtMutation(service, repository, await createAppendCommand('append-first', 'update-1'));
 
-        const replay = await computeCrdtMutation(service, await createAppendCommand('append-replay', 'update-1'));
-        const collision = await computeCrdtMutation(service, await createAppendCommand('append-collision', 'update-1', 'different'));
+        const replay = await readComputeValidateCrdtMutation(service, await createAppendCommand('append-replay', 'update-1'));
+        const collision = await readComputeValidateCrdtMutation(service, await createAppendCommand('append-collision', 'update-1', 'different'));
 
         expect(replay.outcome).toBe('replay');
         expect(collision).toMatchObject({
@@ -99,7 +99,7 @@ describe('CRDT mutation service', () => {
             serviceId: 'server-1'
         });
         const command = await createAppendCommand('append-conflict', 'update-1');
-        const first = await computeCrdtMutation(service, command);
+        const first = await readComputeValidateCrdtMutation(service, command);
         repository.failNextConflict = true;
 
         await expect(service.write(repository.transaction, first)).rejects.toBeInstanceOf(CrdtMutationConflictError);
@@ -108,7 +108,7 @@ describe('CRDT mutation service', () => {
             documentRevision: 1,
             archivedAtEpochMs: 1_000
         });
-        const retried = await computeCrdtMutation(service, command);
+        const retried = await readComputeValidateCrdtMutation(service, command);
 
         expect(retried).toMatchObject({
             outcome: 'rejected',
@@ -200,6 +200,86 @@ describe('CRDT mutation service', () => {
         expect(service.validate({ command, read, computed: commandMismatch })).toMatchObject([{ code: 'computed-identity-differs' }]);
         expect(service.validate({ command, read, computed: readMismatch })).toMatchObject([{ code: 'computed-identity-differs' }]);
         expect(service.validate({ command, read, computed: persistenceMismatch })).toMatchObject([{ code: 'computed-persistence-differs' }]);
+    });
+
+    it('rejects prepared CRDT persistence that differs from the computed domain result', async () => {
+        const repository = new MemoryCrdtMutationRepository();
+        const service = createCrdtMutationService({
+            repository,
+            createWriter: () => repository,
+            serviceId: 'server-1'
+        });
+        const command = await createAppendCommand('append-persistence-validation', 'update-persistence-validation');
+        const read = await service.read(command);
+        const computed = service.compute({ command, read });
+        if (computed.outcome !== 'write' || computed.updateWrite === null) {
+            throw new TypeError('Expected an accepted append mutation');
+        }
+        const firstOutboxWrite = computed.outboxWrites[0];
+        if (firstOutboxWrite === undefined) {
+            throw new TypeError('Expected an append outbox write');
+        }
+        const tampered = [
+            {
+                ...computed,
+                documentWrite: { ...computed.documentWrite, retentionJson: '{"kind":"tampered"}' }
+            },
+            {
+                ...computed,
+                updateWrite: { ...computed.updateWrite, updateEnvelopeJson: '{"kind":"tampered"}' }
+            },
+            {
+                ...computed,
+                outboxWrites: [
+                    { ...firstOutboxWrite, createdAt: '2000-01-01T00:00:00.000Z' },
+                    ...computed.outboxWrites.slice(1)
+                ]
+            }
+        ];
+
+        for (const candidate of tampered) {
+            expect(service.validate({ command, read, computed: candidate })).toMatchObject([
+                { code: 'computed-persistence-differs' }
+            ]);
+        }
+    });
+
+    it('rejects a prepared CRDT snapshot row that differs from the computed snapshot', async () => {
+        const repository = new MemoryCrdtMutationRepository();
+        repository.metadata = createMetadata();
+        const service = createCrdtMutationService({
+            repository,
+            createWriter: () => repository,
+            serviceId: 'server-1'
+        });
+        const command = await createCrdtMutationCommand({
+            operation: 'compact',
+            commandId: 'compact-persistence-validation',
+            actor: createActor(),
+            capturedAtEpochMs: 1_000,
+            expireAtEpochMs: 61_000,
+            document: DOCUMENT,
+            snapshotId: 'snapshot-persistence-validation',
+            snapshot: null,
+            reason: 'persistence-validation',
+            responseAudience: createAudience()
+        });
+        const read = await service.read(command);
+        const computed = service.compute({ command, read });
+        if (computed.outcome !== 'write' || computed.snapshotWrite === null) {
+            throw new TypeError('Expected an accepted compact mutation');
+        }
+        const tampered = {
+            ...computed,
+            snapshotWrite: {
+                ...computed.snapshotWrite,
+                snapshotEnvelopeJson: '{"kind":"tampered"}'
+            }
+        };
+
+        expect(service.validate({ command, read, computed: tampered })).toMatchObject([
+            { code: 'computed-persistence-differs' }
+        ]);
     });
 
     it('returns all ordered validation issues for a malformed compact accepted result', async () => {
@@ -392,7 +472,7 @@ function createUnusedTransaction(): PSqlSql {
     return transaction;
 }
 
-async function computeCrdtMutation(
+async function readComputeValidateCrdtMutation(
     service: ReturnType<typeof createCrdtMutationService>,
     command: Awaited<ReturnType<typeof createAppendCommand>>
 ) {
@@ -407,6 +487,6 @@ async function applyCrdtMutation(
     repository: MemoryCrdtMutationRepository,
     command: Awaited<ReturnType<typeof createAppendCommand>>
 ) {
-    const computed = await computeCrdtMutation(service, command);
+    const computed = await readComputeValidateCrdtMutation(service, command);
     return await service.write(repository.transaction, computed);
 }

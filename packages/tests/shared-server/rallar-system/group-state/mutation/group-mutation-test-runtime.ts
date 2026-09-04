@@ -11,7 +11,8 @@ import {
     type RuntimeStateGuardedBatchEffectResult,
     type RuntimeStateGuardedBatchGuard,
     type RuntimeStateGuardedBatchGuardResult,
-    type RuntimeStateGuardedBatchResult
+    type RuntimeStateGuardedBatchResult,
+    type RuntimeStateGuardedBatchWrite
 } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
 import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
@@ -336,13 +337,16 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
         return result;
     }
 
-    override async executeGuardedBatch(
-        input: RuntimeStateGuardedBatch
+    override async writeGuardedBatch(
+        input: RuntimeStateGuardedBatchWrite
     ): Promise<RuntimeStateGuardedBatchResult> {
         if (this.transactionDepth === 0) {
             throw new Error('Guarded batch requires an active transaction');
         }
-        const batch = validateRuntimeStateGuardedBatch(input);
+        const batch = validateRuntimeStateGuardedBatch({
+            guard: input.guard,
+            effects: input.effects
+        });
         this.batches.push(batch);
         this.readCountsBeforeBatch.push(this.outsideTransactionReadCount);
         this.transactionOrder.push('batch');

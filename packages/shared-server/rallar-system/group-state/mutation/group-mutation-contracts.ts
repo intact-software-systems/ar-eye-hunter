@@ -21,8 +21,8 @@ import type {
 } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type {
-    RuntimeStateGuardedBatch,
-    RuntimeStateGuardedBatchEffect
+    RuntimeStateGuardedBatchEffect,
+    RuntimeStateGuardedBatchWrite
 } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { GroupConnectTriggerLatchRow } from '../persistence/group-connect-trigger-latch-repository.ts';
 import type {
@@ -516,7 +516,7 @@ export type GroupMutationDomainWrite = Readonly<{
 }>;
 
 export type GroupMutationPersistence = Readonly<{
-    guardedBatch: RuntimeStateGuardedBatch;
+    guardedBatch: RuntimeStateGuardedBatchWrite;
     lifecyclePolicyWrite:
         | Readonly<{
             namespace: string;

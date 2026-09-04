@@ -92,6 +92,10 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
         return await this.events.listGroupEvents(ref);
     }
 
+    async readEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined> {
+        return await this.events.readGroupEvent(ref, eventId);
+    }
+
     async listRecentEvents(
         ref: GroupRef,
         query: StateEventListQuery = {}

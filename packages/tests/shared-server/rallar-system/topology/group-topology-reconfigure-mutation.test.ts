@@ -9,7 +9,7 @@ import {
     createTopologyTestAuthorityGuard,
     createTopologyTestGroupRef,
     createTopologyTestGroupSnapshot
-} from '../config/mutation/group-topology-config-mutation-test-fixtures.ts';
+} from './config/mutation/group-topology-config-mutation-test-fixtures.ts';
 
 describe('GroupTopologyReconfigureMutation', () => {
     it('computes the deterministic explicit outbox intent from the captured command', () => {
@@ -105,12 +105,10 @@ describe('GroupTopologyReconfigureMutation', () => {
 });
 
 function createSuccessfulTransaction(): PSqlSql {
-    function sql<Result>(
-        strings: TemplateStringsArray,
+    const sql = (
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
         ..._values: readonly PSqlParameter[]
-    ): Promise<Result>;
-    function sql(_values: readonly PSqlParameter[]): object;
-    function sql(stringsOrValues: TemplateStringsArray | readonly PSqlParameter[]): Promise<unknown> | object {
+    ): Promise<readonly object[]> | object => {
         if (Array.isArray(stringsOrValues) && !Object.hasOwn(stringsOrValues, 'raw')) {
             return {};
         }
@@ -118,12 +116,12 @@ function createSuccessfulTransaction(): PSqlSql {
         return Promise.resolve(
             query.includes('returning ri_row_id') ? [{ ri_row_id: 1n }] : [{ revision: 1 }]
         );
-    }
+    };
     return Object.assign(sql, {
         begin: async <T>(_write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
             throw new Error('Reconfigure write must not open a transaction');
         }
-    });
+    }) as PSqlSql;
 }
 
 function createMutation(

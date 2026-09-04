@@ -1,6 +1,8 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
+import { computeRuntimeStateGuardedBatchWrite } from '../../../../runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import {
+    type RuntimeStateGuardedBatch,
     type RuntimeStateGuardedBatchEffect,
     type RuntimeStateGuardedBatchGuard
 } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
@@ -40,7 +42,9 @@ export function computeGroupMutationPersistence(
     computed: GroupMutationDomainWrite
 ): GroupMutationPersistence {
     return {
-        guardedBatch: computeGroupMutationGuardedBatch(computed),
+        guardedBatch: computeRuntimeStateGuardedBatchWrite(
+            computeGroupMutationGuardedBatch(computed)
+        ),
         lifecyclePolicyWrite: computed.lifecyclePolicy === null
             ? null
             : {
@@ -64,7 +68,7 @@ export function computeGroupMutationPersistence(
 
 function computeGroupMutationGuardedBatch(
     computed: GroupMutationDomainWrite
-): GroupMutationPersistence['guardedBatch'] {
+): RuntimeStateGuardedBatch {
     const effects: RuntimeStateGuardedBatchEffect[] = [];
     effects.push(...computePresenceAndMembershipEffects(computed));
     if (computed.acceptedLayoutPromotion) {

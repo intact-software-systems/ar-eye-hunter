@@ -71,6 +71,22 @@ export async function readAllPSqlGroupStateEventRows(
     `;
 }
 
+export async function readPSqlGroupStateEventRow(
+    sql: PSqlSql,
+    ref: GroupRef,
+    eventId: string
+): Promise<GroupStateEventRow | undefined> {
+    const [row] = await sql<GroupStateEventRow[]>`
+        select event_id, event_type, snapshot_version, occurred_at_epoch_ms, event_json
+        from group_state_events
+        where application_id = ${ref.applicationId}
+          and workspace_key = ${groupStateEventWorkspaceKey(ref.workspaceId)}
+          and group_id = ${ref.groupId}
+          and event_id = ${eventId}
+    `;
+    return row;
+}
+
 export async function readRecentPSqlGroupStateEventRows(
     input: GroupStateEventRowsQuery
 ): Promise<readonly GroupStateEventRow[]> {

@@ -15,6 +15,7 @@ import {
     readAllPSqlGroupStateEventRows,
     readPSqlGroupStateEventCollision,
     readPSqlGroupStateEventPageRows,
+    readPSqlGroupStateEventRow,
     readRecentPSqlGroupStateEventRows
 } from './p-sql-group-state-event-queries.ts';
 
@@ -40,6 +41,11 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
     async listGroupEvents(ref: GroupRef): Promise<readonly GroupEvent[]> {
         const rows = await readAllPSqlGroupStateEventRows(this.sql, ref);
         return rows.map((row) => toValidatedGroupStateEvent(row, ref));
+    }
+
+    async readGroupEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined> {
+        const row = await readPSqlGroupStateEventRow(this.sql, ref, eventId);
+        return row === undefined ? undefined : toValidatedGroupStateEvent(row, ref);
     }
 
     async listRecentGroupEvents(

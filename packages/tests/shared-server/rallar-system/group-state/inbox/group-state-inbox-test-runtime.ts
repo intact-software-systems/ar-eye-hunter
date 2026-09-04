@@ -148,7 +148,11 @@ function createAuthorityAppInboxService(
             resourceInboxRepository: input.queue,
             resourceInboxResultsRepository: input.results,
             database: input.database,
-            groupStateService: input.groupStateService
+            groupStateService: input.groupStateService,
+            resultReader: {
+                readSnapshot: (ref) => input.groupStateService.readSnapshot(ref),
+                readEvent: (ref, eventId) => input.database.groupEventStore.readGroupEvent(ref, eventId)
+            }
         },
         {
             serviceId: 'server-12345678',

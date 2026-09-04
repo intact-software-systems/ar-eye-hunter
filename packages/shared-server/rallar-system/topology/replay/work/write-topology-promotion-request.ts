@@ -8,10 +8,7 @@ import { GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS } from '@shared-server/rallar-s
 import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { computeTopologyPromotionEntry } from '@shared-server/rallar-system/group-state/topology-promotion-outbox-entry.ts';
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
-import {
-    PSqlResourceInboxEntryRepository,
-    ResourceInboxInvariantCorruptionError
-} from '../../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { PSqlResourceInboxEntryRepository } from '../../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 
 /**
  * The route-less promotion producer's read surface (decision 27): present
@@ -95,16 +92,5 @@ export async function writeTopologyPromotionRequest(
     if (requestEntry === null) {
         return;
     }
-    try {
-        await new PSqlResourceInboxEntryRepository(transaction).writeIfAbsentOrMatch(requestEntry);
-    }
-    catch (error) {
-        // A same-identity request with different audit bytes already exists:
-        // the promotion is already durably requested, which is this write's
-        // whole goal — swallow the mismatch instead of wedging the
-        // publication transaction.
-        if (!(error instanceof ResourceInboxInvariantCorruptionError)) {
-            throw error;
-        }
-    }
+    await new PSqlResourceInboxEntryRepository(transaction).writeIfAbsentOrMatch(requestEntry);
 }

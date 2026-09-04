@@ -4,7 +4,11 @@ import '../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
 import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
-import { encodeStoredResourceEntry } from '@shared/queuebox/indexed-db-queue-box-entry.ts';
+import {
+    decodeStoredResourceEntry,
+    encodeStoredResourceEntry,
+    type StoredResourceEntry
+} from '@shared/queuebox/indexed-db-queue-box-entry.ts';
 import { computeIndexedDbFairnessReservation } from '@shared/queuebox/indexed-db-queue-box-fairness.ts';
 import { readStoredQueueEntry } from '@shared/queuebox/indexed-db-queue-box-store.ts';
 import { writeComputedIndexedDbQueueMutations } from '@shared/queuebox/indexed-db-queue-box-write.ts';
@@ -12,6 +16,30 @@ import { EntityStatus, NEVER_EXPIRE_TS, ResourceEntry, toKeyAsString } from '@sh
 import { describe, expect, it, vi } from 'vitest';
 
 describe('IndexedDbQueueBox computed writes', () => {
+    it.each(
+        [
+            ['audit.date', (stored: StoredResourceEntry) => ({ ...stored, audit: { ...stored.audit, date: 'not-a-time' } })],
+            ['audit.createdTs', (stored: StoredResourceEntry) => ({ ...stored, audit: { ...stored.audit, createdTs: 'not-a-time' } })],
+            ['audit.expiryTs', (stored: StoredResourceEntry) => ({ ...stored, audit: { ...stored.audit, expiryTs: 'not-a-time' } })],
+            ['dequeueAudit.startTs', (stored: StoredResourceEntry) => ({
+                ...stored,
+                dequeueAudit: { ...stored.dequeueAudit, startTs: 'not-a-time' }
+            })],
+            ['dequeueAudit.endTs', (stored: StoredResourceEntry) => ({
+                ...stored,
+                dequeueAudit: { ...stored.dequeueAudit, endTs: 'not-a-time' }
+            })],
+            ['dequeueAudit.nextTs', (stored: StoredResourceEntry) => ({
+                ...stored,
+                dequeueAudit: { ...stored.dequeueAudit, nextTs: 'not-a-time' }
+            })]
+        ] as const
+    )('rejects malformed persisted %s instead of substituting a fallback', (_field, corrupt) => {
+        const stored = encodeStoredResourceEntry(createEntry('malformed-timestamp'), 0);
+
+        expect(() => decodeStoredResourceEntry(corrupt(stored))).toThrow();
+    });
+
     it('allows only one writer to commit a computed revision', async () => {
         const storeName = 'entries';
         const db = await openIndexedDbWithStore(

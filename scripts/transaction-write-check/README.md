@@ -14,15 +14,17 @@ The checker reports:
 
 It recognizes PostgreSQL/PGlite `begin` and `transaction` callbacks, the
 `runInPSqlTransaction` wrapper, IndexedDB `readwrite` transactions, IndexedDB
-upgrade callbacks, and callback identifiers that resolve to authored source.
+upgrade callbacks, AppInbox computed-write callbacks, and callback identifiers
+that resolve to authored source.
 It inspects the lexical transaction body rather than expanding arbitrary helper
 graphs; suspiciously named compute/prepare/serialize/hash helpers still fail at
 their call site. Readonly IndexedDB transactions, tests, fixtures,
 generated/vendor code, `packages/shared-test/**`, and
 `packages/shared-rtc-bench/**` are excluded.
-Exact PostgreSQL ResourceInbox owners under
-`packages/shared-server/queuebox/postgres/**` are governed by their specialized
-SQL review and semantic tests instead.
+The explicitly inventoried PostgreSQL ResourceInbox owners in the analyzer are
+governed by their specialized SQL review and semantic tests instead. Directory
+placement alone grants no specialization: a new file is analyzed by default
+until its exact ownership is reviewed and added to that inventory.
 
 This is intentionally a narrow check. It does not attempt whole-program
 provenance, arbitrary helper-body expansion, SQL semantic proof, dynamic

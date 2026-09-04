@@ -1,8 +1,8 @@
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryRepository } from '../../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-import type { RuntimeStateGuardedBatch } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { RuntimeStateGuardedBatchWrite } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
-import { executeComputedRuntimeStateGuardedBatch } from '../../../../runtime-state/postgres/execute-runtime-state-guarded-batch.ts';
+import { writeRuntimeStateGuardedBatch } from '../../../../runtime-state/postgres/write-runtime-state-guarded-batch.ts';
 import { GroupStateEventCollisionError } from '../../../state-events/group-state-event-store.ts';
 import type { GroupStateEventCollisionRow } from '../../../state-events/postgres/group-state-event-row-codec.ts';
 import type {
@@ -29,9 +29,9 @@ export async function writeGroupMutation(
 
 async function executeGuardedGroupMutationBatch(
     transaction: PSqlSql,
-    batch: RuntimeStateGuardedBatch
+    computed: RuntimeStateGuardedBatchWrite
 ): Promise<void> {
-    const result = await executeComputedRuntimeStateGuardedBatch(transaction, batch);
+    const result = await writeRuntimeStateGuardedBatch(transaction, computed);
     if (result.guard.status === 'conflict') {
         throw new RuntimeStateWriteConflictError();
     }

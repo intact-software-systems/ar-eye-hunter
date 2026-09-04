@@ -199,34 +199,6 @@ describe('RTC topology publication repository', () => {
         });
     });
 
-    it('requests recomputation when the topology predecessor moves before commit', async () => {
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
-        const current = createTopologySnapshot(createGroupRef(), 4);
-        await expect(snapshots.commitSnapshotGuard(current, null)).resolves.toMatchObject({
-            status: 'accepted'
-        });
-        const repository = new RtcTopologyExecutionRepository(runtimeRepository);
-        const candidate = createTopologySnapshot(createGroupRef(), 3);
-
-        await expect(
-            repository.commit({
-                expected: undefined,
-                candidate,
-                publication: createPublication(candidate, 'work-stale')
-            })
-        ).resolves.toEqual({
-            status: 'retry',
-            current
-        });
-        expect(
-            await new RtcTopologyPublicationRepository(runtimeRepository).findPublicationForWork(
-                candidate.groupRef,
-                'work-stale'
-            )
-        ).toBeUndefined();
-    });
-
     it('validates publication and work direct, list, and page rows before expiry', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);

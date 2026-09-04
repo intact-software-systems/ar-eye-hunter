@@ -122,7 +122,7 @@ it.each([
             'this.dependencies.mutationService.read(command)',
             'this.dependencies.mutationService.compute(command, read, materialized.facts)',
             'this.dependencies.mutationService.validate(command, read, computed)',
-            'this.dependencies.transactionWriter.writeMutation(',
+            'this.dependencies.transactionWriter.writeComputedMutation(',
             'this.dependencies.mutationService.write(transaction, computed)'
         ]
     },
@@ -166,10 +166,14 @@ it.each([
         source: sources.groupHandler,
         owner: 'processGroupStateMutation',
         calls: [
-            'this.dependencies.mutationService.read(command)',
-            'this.dependencies.mutationService.compute(command, read)',
-            'this.dependencies.mutationService.validate(command, read, computed)',
-            'this.commitMutation({ context, command, computed })'
+            'this.readResultFacts(command)',
+            'this.dependencies.mutationService.compute(command, resultRead.mutationRead)',
+            'computeGroupStateInboxResult(resultInput)',
+            'computeAppInboxCompletion(completionInput)',
+            'this.dependencies.mutationService.validate(command, resultRead.mutationRead, computed)',
+            'validateGroupStateInboxResult(resultInput, durableResult)',
+            'this.validateCompletion(completionInput, completion)',
+            'this.commitMutation({ context, command, computed, durableResult, completion })'
         ]
     },
     {
@@ -180,7 +184,7 @@ it.each([
             'owners.configMutationService.read(',
             'owners.configMutationService.compute(',
             'owners.configMutationService.validate(',
-            'this.dependencies.transactionWriter.writeMutation(',
+            'this.dependencies.transactionWriter.writeComputedMutation(',
             'owners.configMutationService.write('
         ]
     },
@@ -192,7 +196,7 @@ it.each([
             'mutation.read(command)',
             'mutation.compute(command, read)',
             'mutation.validate(command, read, computed)',
-            'this.dependencies.transactionWriter.writeMutation(',
+            'this.dependencies.transactionWriter.writeComputedMutation(',
             'mutation.write(transaction, computed)'
         ]
     },
@@ -244,8 +248,8 @@ it('keeps AppInbox as the only retry and transaction owner for HTTP and WS mutat
         expect(source).not.toMatch(/waitForRuntimeStateWriteRetry/);
         expect(source).not.toMatch(/for\s*\([^)]*attempt/);
     }
-    expect(sources.topologyHandler).toContain('this.dependencies.transactionWriter.writeMutation(');
-    expect(sources.rtcHandler).toContain('this.dependencies.writeMutation(');
+    expect(sources.topologyHandler).toContain('this.dependencies.transactionWriter.writeComputedMutation(');
+    expect(sources.rtcHandler).toContain('this.dependencies.transactionWriter.writeComputedMutation(');
     expect(sources.rtcInbox).toContain('AppInboxType.RTC_RTT_SUBMIT');
     expect(sources.topologyInbox).toContain('AppInboxType.TOPOLOGY_RECONFIGURE');
 });
@@ -254,39 +258,41 @@ it('keeps transport boundaries free of direct mutators and persistence owners', 
     expect(findMutationBoundaryViolations()).toEqual([]);
 }, 15_000);
 
-it('writes topology config state, receipt, authority fence, and APP_OUTBOX atomically', () => {
+it('executes prepared topology config runtime writes before prepared APP_OUTBOX', () => {
     const seam = readFunctionBody(sources.topologyConfig, 'writeTopologyConfigMutation');
     expectInOrder(seam, [
-        'writeTopologyConfigAuthorityFence(',
-        'writeTopologyConfigState(',
-        'insertMutationRecord(',
-        'input.outboxWriter.write(transaction, computed.outboxWrite)'
+        'for (const write of input.computed.runtimeWrites)',
+        'executeTopologyConfigRuntimeWrite(input.transaction, write)',
+        'input.outboxWriter.write(input.transaction, input.computed.outboxWrite)'
     ]);
-    expectInOrder(readFunctionBody(sources.topologyConfig, 'writeTopologyConfigAuthorityFence'), [
-        'advanceGroupStateAuthorityFence(',
-        'computed.groupAuthorityGuard',
+    expectInOrder(readFunctionBody(sources.topologyConfig, 'executeTopologyConfigRuntimeWrite'), [
+        'switch (write.operation)',
+        'requireExpectedRevision('
+    ]);
+    expect(readFunctionBody(sources.topologyConfig, 'requireExpectedRevision')).toContain(
         'throw new RuntimeStateWriteConflictError()'
-    ]);
+    );
     expect(seam).not.toContain('StateMutation' + 'Outbox');
 });
 
 it('fences explicit reconfigure authority before inserting APP_OUTBOX', () => {
     const seam = readMethodBody(sources.topologyReconfigure, 'write');
     expectInOrder(seam, [
-        'advanceGroupStateAuthorityFence(',
-        'computed.authorityGuard',
+        'const write = computed.authorityWrite',
+        'where store_namespace = ${write.namespace}',
+        'decodeRuntimeStateRevision(rows[0].revision) !== write.expectedResultRevision',
         'throw new RuntimeStateWriteConflictError()',
         'this.dependencies.outboxWriter.write(transaction, computed.outboxWrite)'
     ]);
 });
 
-it('writes RTT admission, measurement, receipt, and direct APP_OUTBOX rows atomically', () => {
+it('executes prepared RTT runtime and APP_OUTBOX writes atomically', () => {
     const seam = readFunctionBody(sources.rtt, 'writeRtcRttMutation');
     expectInOrder(seam, [
-        'commitEndpointAdmission(',
-        'commitMeasurement(',
-        'insertMutationReceipt(',
-        'input.outboxWriter.write(transaction,'
+        'for (const write of input.computed.runtimeWrites)',
+        'executeRuntimeWrite(input.transaction, write)',
+        'for (const outboxWrite of input.computed.outboxWrites)',
+        'input.outboxWriter.write(input.transaction, outboxWrite)'
     ]);
     expect(seam).not.toContain('insertRecomputeIntent');
     expect(seam).not.toContain('StateMutation' + 'Outbox');
