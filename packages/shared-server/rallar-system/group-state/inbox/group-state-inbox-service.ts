@@ -2,7 +2,11 @@ import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import {
+    AppInboxType,
+    type AppInboxEnqueueInput,
+    type AppInboxMessageContext
+} from '../../app-inbox/app-inbox-contracts.ts';
 import { type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
 import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
@@ -18,7 +22,7 @@ import { AppInboxTransactionWriter } from '../../app-inbox/handler/app-inbox-tra
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
-import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type { GroupStateService } from '../group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';
@@ -226,19 +230,198 @@ export class GroupStateInboxService {
     }
 
     private registerMessageHandlers(): void {
-        for (
-            const type of GROUP_MUTATION_INBOX_TYPES.filter(
-                (candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP
-            )
-        ) {
-            this.handlers.registerHandler({
-                type,
-                decodeCommand: (value) => decodeGroupStateAppInboxCommand(type, value),
-                encodeResult: (result) => encodeAppInboxResult(result, 'Group state AppInbox result'),
-                handle: async (_command, context) =>
-                    await this.groupStateInboxHandler.processGroupStateMutation(context)
-            });
-        }
+        const encodeGroupStateResult = (result: GroupStateInboxDurableResult) =>
+            encodeAppInboxResult(result, 'Group state AppInbox result');
+        const processGroupStateMutation = async (
+            _command: JsonWireValue,
+            context: AppInboxMessageContext<GroupStateInboxDurableResult>
+        ) => await this.groupStateInboxHandler.processGroupStateMutation(context);
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_CREATE,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_CREATE, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_UPDATE,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_UPDATE, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_DIRECTOR_APPOINT,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_DIRECTOR_APPOINT, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_PLAN,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_PLAN, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_CONNECT,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_CONNECT, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_ACTIVATE,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_ACTIVATE, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_RECONFIGURE,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_RECONFIGURE, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_JOIN,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_JOIN, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_INVITE_CREATE,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_INVITE_CREATE, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_INVITE_REVOKE,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_INVITE_REVOKE, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_INVITE_ACCEPT,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_INVITE_ACCEPT, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_ADMISSION_GRANT,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_ADMISSION_GRANT, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_ADMISSION_DECLINE,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_ADMISSION_DECLINE, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_JOIN_CODE_ROTATE,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_JOIN_CODE_ROTATE, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_MEMBER_REMOVE,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_MEMBER_REMOVE, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_MEMBER_BAN,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_MEMBER_BAN, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_MEMBER_UNBAN,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_MEMBER_UNBAN, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_MEMBER_ROLE_SET,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_MEMBER_ROLE_SET, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_OWNERSHIP_TRANSFER,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_OWNERSHIP_TRANSFER, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_MEMBER_UPSERT,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_MEMBER_UPSERT, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_PRESENCE_CONNECT,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_PRESENCE_CONNECT, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_PRESENCE_HEARTBEAT, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_PRESENCE_DISCONNECT, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_TRANSPORT_PAUSE,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_TRANSPORT_PAUSE, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_TRANSPORT_RESUME,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_TRANSPORT_RESUME, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_FORMATION_START,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_FORMATION_START, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_FORMATION_RESET,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_FORMATION_RESET, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_PRESENCE_EXPIRE,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_PRESENCE_EXPIRE, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_FORMATION_AUTOMATION,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_FORMATION_AUTOMATION, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_FORMATION_CRITERION,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_FORMATION_CRITERION, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.GROUP_TOPOLOGY_PUBLICATION,
+            decodeCommand: (value) => decodeGroupStateAppInboxCommand(AppInboxType.GROUP_TOPOLOGY_PUBLICATION, value),
+            encodeResult: encodeGroupStateResult,
+            handle: processGroupStateMutation
+        });
         this.handlers.registerHandler({
             type: AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
             decodeCommand: decodeGroupPresenceSessionCleanupAppInboxPayload,

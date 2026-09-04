@@ -463,8 +463,7 @@ export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerServ
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
             selfPeerId: input.sessionId,
-            toInboxEntry: (message) =>
-                QueueBoxUtilities.toResourceEntryFromMsg(message, WebRtcRxStreamerService.ENQUEUE_TYPE)
+            inboxEntryTypeId: WebRtcRxStreamerService.ENQUEUE_TYPE
         }),
         epochNow: input.nowEpochMs ?? Date.now,
         heartbeat: input.heartbeat ?? {

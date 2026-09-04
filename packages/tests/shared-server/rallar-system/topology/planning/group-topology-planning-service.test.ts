@@ -28,6 +28,7 @@ describe('GroupTopologyPlanningService', () => {
             group,
             config,
             kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+            rttReportingDegreeLimit: 7,
             rttMeasurements: [],
             replanning: 'auto',
             nowEpochMs: 2_000
@@ -58,6 +59,7 @@ describe('GroupTopologyPlanningService', () => {
                 group: inactive,
                 config: resolveGroupTopologyConfig({}),
                 kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+                rttReportingDegreeLimit: 5,
                 rttMeasurements: [],
                 replanning: 'debounced',
                 nowEpochMs: 2_000
@@ -76,6 +78,29 @@ describe('GroupTopologyPlanningService', () => {
                 nextHopsBySessionId: {}
             }
         });
+    });
+
+    it('computes from explicit authority without metrics or hidden snapshot state', () => {
+        const group = groupWithSessionsIn('active');
+        const authority = planningAuthority(group);
+        const cleanTopology = new RallarRtcTopologyService({ now: () => 2_000 });
+        const cleanPlanning = createPlanningService({ group, topologyService: cleanTopology });
+        const expected = cleanPlanning.computeTopologyFromAuthority(
+            authority,
+            undefined,
+            { intent: 'full-rebuild', origin: 'automatic' }
+        );
+        const statefulTopology = new RallarRtcTopologyService({ now: () => 2_000 });
+        statefulTopology.observeCommittedTopologySnapshot(requirePlannedTopology(expected).snapshot);
+        const statefulPlanning = createPlanningService({ group, topologyService: statefulTopology });
+
+        expect(statefulPlanning.computeTopologyFromAuthority(
+            authority,
+            undefined,
+            { intent: 'full-rebuild', origin: 'automatic' }
+        )).toEqual(expected);
+        expect(cleanTopology.readMetrics().topologyUpdateCount).toBe(0);
+        expect(statefulTopology.readMetrics().topologyUpdateCount).toBe(0);
     });
 
     it('holds topology planning while the group is FORMING', () => {
@@ -292,6 +317,7 @@ function planningAuthority(
         group,
         config: resolveGroupTopologyConfig({}),
         kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+        rttReportingDegreeLimit: 5,
         rttMeasurements: [],
         replanning,
         nowEpochMs: 2_000

@@ -1,5 +1,6 @@
 import type { ClientPrincipalRef } from '../api/client-types.ts';
 import type { GroupRef } from '../api/group-types.ts';
+import { computeALMessage, computeALUnicastMessage } from './al-message-computation.ts';
 import type { ALQosPolicyRequest } from './al-policy.ts';
 
 // -------------------------------------------------------
@@ -180,43 +181,6 @@ export function newALEventRoute(
     return newALRoute(topicId, contextId, resourceId);
 }
 
-function buildALMessage<T>(
-    senderId: string,
-    route: ALRoute,
-    typeId: string,
-    resource: T,
-    options?: ALMessageBuilderOptions,
-    msgId: string = crypto.randomUUID()
-): ALMessage {
-    const now = Date.now();
-    const expiresAtMs = options?.ttlMs !== undefined
-        ? now + options.ttlMs
-        : undefined;
-
-    return {
-        id: {
-            v: 2,
-            msgId,
-            ts: now,
-            senderId: senderId
-        },
-        route,
-        constraints: expiresAtMs !== undefined
-            ? { expiresAtMs }
-            : undefined,
-        qos: options?.qos,
-        payload: {
-            typeId: typeId,
-            contentType: 'application/json',
-            resource: JSON.stringify(resource)
-        },
-        audit: {
-            createdBy: senderId,
-            createdTs: now
-        }
-    };
-}
-
 export function newALUntargetedMessage<T>(
     senderId: string,
     route: ALRoute,
@@ -224,7 +188,14 @@ export function newALUntargetedMessage<T>(
     resource: T,
     options?: ALMessageBuilderOptions
 ): ALMessage {
-    return buildALMessage(senderId, route, typeId, resource, options);
+    return computeALMessage({
+        senderId,
+        route,
+        typeId,
+        resource,
+        facts: { msgId: crypto.randomUUID(), nowEpochMs: Date.now() },
+        options
+    });
 }
 
 export function newALUnicastMessage<T>(
@@ -235,13 +206,15 @@ export function newALUnicastMessage<T>(
     resource: T,
     options?: ALMessageBuilderOptions
 ): ALMessage {
-    return {
-        ...newALUntargetedMessage(senderId, route, typeId, resource, options),
-        targets: {
-            mode: 'unicast',
-            toPeerId
-        }
-    };
+    return computeALUnicastMessage({
+        senderId,
+        route,
+        toPeerId,
+        typeId,
+        resource,
+        facts: { msgId: crypto.randomUUID(), nowEpochMs: Date.now() },
+        options
+    });
 }
 
 export function newALMulticastMessage<T>(

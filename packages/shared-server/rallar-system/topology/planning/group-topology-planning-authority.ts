@@ -18,6 +18,7 @@ export interface GroupTopologyPlanningAuthority {
     readonly group: GroupSnapshot;
     readonly config: GroupTopologyConfigView;
     readonly kindHysteresisWidths: RtcTopologyKindHysteresisWidths;
+    readonly rttReportingDegreeLimit: number;
     readonly rttMeasurements: readonly RttMeasurementInfo[];
     /**
      * The replanning mode the planning gate consults. Read from the stored

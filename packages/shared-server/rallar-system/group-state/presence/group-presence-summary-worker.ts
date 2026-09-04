@@ -131,11 +131,12 @@ export class GroupPresenceSummaryWork {
 
     public compute(
         work: GroupPresenceSummaryWorkData,
-        read: GroupPresenceSummaryWorkRead
+        read: GroupPresenceSummaryWorkRead,
+        nowEpochMs: number
     ): GroupPresenceSummaryComputedWork {
         return computeGroupPresenceSummaryWork(work, read, {
             serviceId: this.options.serviceId,
-            nowEpochMs: this.now(),
+            nowEpochMs,
             recomputeDebounceMs: this.options.recomputeDebounceMs,
             minimumLayoutAgeMs: GROUP_MINIMUM_LAYOUT_AGE_MS
         });
@@ -194,7 +195,7 @@ export class GroupPresenceSummaryWork {
         }
         const work = decodeCanonicalGroupPresenceSummaryWork(message, entry);
         const read = await this.read(work);
-        const computed = this.compute(work, read);
+        const computed = this.compute(work, read, this.now());
         this.validate(work, read, computed);
         const completedAt = new Date(this.now());
         await runInPSqlTransaction(this.options.database, async (transaction) => {

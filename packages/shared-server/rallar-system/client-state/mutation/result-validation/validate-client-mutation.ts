@@ -15,7 +15,7 @@ import {
 } from './validate-client-mutation-authority-policy.ts';
 import { validateClientMutationRead } from './validate-client-mutation-read.ts';
 import { validateClientMutationResult } from './validate-client-mutation-result.ts';
-import { validateClientPersistence } from './validate-client-persistence.ts';
+import { validateExactClientPersistence } from './validate-client-persistence.ts';
 
 export class ClientMutationIdempotencyConflictError extends Error {
     readonly code = 'client-mutation-idempotency-conflict';
@@ -61,7 +61,7 @@ export function validateClientMutation(
         );
     }
     validateClientMutationReceiptIdentity(command, computed);
-    validateClientPersistence(computed);
+    validateExactClientPersistence(computed);
     if (computed.outcome !== 'write') {
         return;
     }

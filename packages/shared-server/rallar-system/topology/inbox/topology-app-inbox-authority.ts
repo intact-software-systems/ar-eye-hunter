@@ -46,7 +46,7 @@ export async function createAuthenticatedTopologyEnqueue(
     input: CreateAuthenticatedTopologyEnqueueInput
 ): Promise<AppInboxEnqueueInput> {
     const command = await readAuthenticatedTopologyCommand(input.enqueue, input.claimedAuthority);
-    const currentSession = await validateCurrentTopologySession({
+    const currentSession = await readAndValidateCurrentTopologySession({
         principalId: command.actor.principalId,
         claimedAuthority: input.claimedAuthority,
         groupStateService: input.groupStateService,
@@ -186,7 +186,7 @@ export function constantTimeTopologyProofEqual(left: string, right: string): boo
     return difference === 0;
 }
 
-export async function validateCurrentTopologySession(
+export async function readAndValidateCurrentTopologySession(
     input: ValidateCurrentTopologySessionInput
 ): Promise<PersistedAuthSession> {
     const session = await input.groupStateService.readIssuedAuthSession(

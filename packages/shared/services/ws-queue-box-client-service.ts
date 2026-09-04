@@ -686,8 +686,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
             selfPeerId: input.sessionId,
-            toInboxEntry: (message) =>
-                QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxClientService.INBOX_ENQUEUE_TYPE)
+            inboxEntryTypeId: WsQueueBoxClientService.INBOX_ENQUEUE_TYPE
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({ stores: input.outboundStores }),
         outboundDiagnostics: input.outboundDiagnostics,

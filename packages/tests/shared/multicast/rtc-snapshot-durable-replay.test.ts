@@ -10,7 +10,6 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import {
     afterEach,
     beforeEach,
@@ -372,7 +371,7 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
         inbox,
         planIncomingMessage: planner,
         readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
-        toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'),
+        inboxEntryTypeId: 'inbox',
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },

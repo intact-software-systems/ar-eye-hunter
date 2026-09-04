@@ -23,6 +23,11 @@ import {
     type ClientStateService,
     type ClientStateWritten
 } from '../client-state-service-contracts.ts';
+import {
+    timeClientStateMutationCommit,
+    timeClientStateMutationPhase,
+    type ClientStateMutationTiming
+} from '../client-state-service-timing.ts';
 import { toClientMutationCommand, type ClientMutationPersistedFacts } from '../mutation/client-mutation-command.ts';
 import type {
     ClientMutationCommand,
@@ -49,6 +54,7 @@ export interface ClientStateInboxHandlerDependencies {
     readonly expiryCandidates: Pick<ClientStateService, 'listExpiredSessionCandidates'>;
     readonly snapshotObserver: Pick<ClientStateService, 'observeSnapshot'>;
     readonly transactionWriter: AppInboxMutationTransactionWriter;
+    readonly mutationTiming: ClientStateMutationTiming;
     readonly serviceId: string;
 }
 
@@ -73,8 +79,8 @@ export class ClientStateInboxHandler {
     ): Promise<ClientStateWritten> {
         const command = await this.toCommand(context, input);
         const read = await this.dependencies.mutationService.read(command);
-        const computed = this.dependencies.mutationService.compute(command, read);
-        this.dependencies.mutationService.validate(command, read, computed);
+        const computed = this.computeMutation(command, read);
+        this.validateMutation(command, read, computed);
         return await this.commitComputed(context, computed);
     }
 
@@ -122,8 +128,8 @@ export class ClientStateInboxHandler {
                 lifecycleComputed
             });
         }
-        const computed = this.dependencies.mutationService.compute(command, read);
-        this.dependencies.mutationService.validate(command, read, computed);
+        const computed = this.computeMutation(command, read);
+        this.validateMutation(command, read, computed);
         return await this.commitComputed(context, computed, lifecycleComputed);
     }
 
@@ -136,16 +142,19 @@ export class ClientStateInboxHandler {
         const durableResult = applied.map(toClientStateWritten);
         const committedSnapshots = applied.map((successor) => successor.snapshot);
         const completion = this.readComputeValidateCompletion(context, durableResult);
-        const result = await this.dependencies.transactionWriter.writeComputedMutation(
-            context,
-            completion,
-            async (transaction) => {
-                for (const successor of computed) {
-                    if (requiresClientWrite(successor)) {
-                        await this.dependencies.mutationService.write(transaction, successor);
+        const writes = computed.filter(requiresClientWrite);
+        const result = await timeClientStateMutationCommit(
+            { timing: this.dependencies.mutationTiming, writes },
+            async () =>
+                await this.dependencies.transactionWriter.writeComputedMutation(
+                    context,
+                    completion,
+                    async (transaction) => {
+                        for (const successor of writes) {
+                            await this.dependencies.mutationService.write(transaction, successor);
+                        }
                     }
-                }
-            }
+                )
         );
         await this.observeCommittedSnapshots(committedSnapshots);
         return result;
@@ -155,8 +164,8 @@ export class ClientStateInboxHandler {
         command: ClientMutationCommand
     ): Promise<ClientMutationComputed> {
         const read = await this.dependencies.mutationService.read(command);
-        const computed = this.dependencies.mutationService.compute(command, read);
-        this.dependencies.mutationService.validate(command, read, computed);
+        const computed = this.computeMutation(command, read);
+        this.validateMutation(command, read, computed);
         return computed;
     }
 
@@ -171,15 +180,41 @@ export class ClientStateInboxHandler {
         const durableResult = toClientStateWritten(computed);
         const committedSnapshots = [computed.snapshot];
         const completion = this.readComputeValidateCompletion(context, durableResult);
-        const result = await this.dependencies.transactionWriter.writeComputedMutation(
-            context,
-            completion,
-            async (transaction) => {
-                await this.writeClientMutation(transaction, computed, lifecycleComputed);
-            }
+        const writes = requiresClientWrite(computed) ? [computed] : [];
+        const result = await timeClientStateMutationCommit(
+            { timing: this.dependencies.mutationTiming, writes },
+            async () =>
+                await this.dependencies.transactionWriter.writeComputedMutation(
+                    context,
+                    completion,
+                    async (transaction) => {
+                        await this.writeClientMutation(transaction, computed, lifecycleComputed);
+                    }
+                )
         );
         await this.observeCommittedSnapshots(committedSnapshots);
         return result;
+    }
+
+    private computeMutation(
+        command: ClientMutationCommand,
+        read: Awaited<ReturnType<ClientStateMutationService['read']>>
+    ): ClientMutationComputed {
+        return timeClientStateMutationPhase(
+            { timing: this.dependencies.mutationTiming, command, operation: 'mutation.compute' },
+            () => this.dependencies.mutationService.compute(command, read)
+        );
+    }
+
+    private validateMutation(
+        command: ClientMutationCommand,
+        read: Awaited<ReturnType<ClientStateMutationService['read']>>,
+        computed: ClientMutationComputed
+    ): void {
+        timeClientStateMutationPhase(
+            { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
+            () => this.dependencies.mutationService.validate(command, read, computed)
+        );
     }
 
     private async writeClientMutation(

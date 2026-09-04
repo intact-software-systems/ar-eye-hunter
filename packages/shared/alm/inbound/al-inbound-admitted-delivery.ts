@@ -13,7 +13,7 @@ import type { ALInboundAdmissionStore, ALPersistedInboundEffect } from './al-inb
 import { shouldDeferALInboundLocalDelivery } from './al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import { computeALInboundBufferedRelease } from './compute-al-inbound-admission.ts';
-import { prepareALInboundCommitBundle } from './prepare-al-inbound-commit-bundle.ts';
+import { readALInboundComputationFacts } from './read-al-inbound-computation-facts.ts';
 
 export namespace ALInboundAdmittedDelivery {
     export interface Dependencies extends
@@ -27,7 +27,8 @@ export namespace ALInboundAdmittedDelivery {
             | 'sendControlMessage'
             | 'forwardMessage'
             | 'clock'
-            | 'effectPreparation'
+            | 'selfPeerId'
+            | 'inboxEntryTypeId'
         > {
         readonly commitRetryPolicy: TryWithPolicy;
     }
@@ -142,8 +143,11 @@ export class ALInboundAdmittedDelivery {
         ) {
             return 'retry';
         }
-        const computed = computeALInboundBufferedRelease(read, plan);
-        const bundle = prepareALInboundCommitBundle(computed, this.dependencies.effectPreparation);
+        const bundle = computeALInboundBufferedRelease(
+            read,
+            plan,
+            readALInboundComputationFacts(this.dependencies)
+        );
         const status = await this.admissionStore.commitBundle(bundle);
         if (status === 'conflict') {
             throw new RetryableConflictError('Buffered inbound release commit conflict');

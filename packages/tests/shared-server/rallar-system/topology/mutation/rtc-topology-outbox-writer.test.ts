@@ -43,7 +43,7 @@ function createInsertTransaction(): PSqlSql {
         ..._values: readonly PSqlParameter[]
     ): Promise<Result>;
     function sql(_values: readonly PSqlParameter[]): object;
-    function sql(stringsOrValues: TemplateStringsArray | readonly PSqlParameter[]): Promise<unknown> | object {
+    function sql(stringsOrValues: TemplateStringsArray | readonly PSqlParameter[]) {
         return Array.isArray(stringsOrValues) && !Object.hasOwn(stringsOrValues, 'raw')
             ? {}
             : Promise.resolve([{ ri_row_id: 1n }]);

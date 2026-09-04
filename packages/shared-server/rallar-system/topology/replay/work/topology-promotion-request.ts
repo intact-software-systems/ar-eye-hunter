@@ -23,6 +23,16 @@ export interface TopologyPromotionPublicationPort {
 
 export interface ReadTopologyPromotionRequestInput {
     readonly publication: TopologyPromotionPublicationPort | undefined;
+    readonly groupRef: GroupRef;
+}
+
+export interface TopologyPromotionRead {
+    readonly group: Group | null;
+    readonly policy: GroupLifecyclePolicyRead | null;
+}
+
+export interface ComputeTopologyPromotionRequestInput {
+    readonly read: TopologyPromotionRead | null;
     readonly serviceId: string | undefined;
     readonly entry: ResourceEntry;
     readonly target: RallarOverlayTopologySnapshot | null;
@@ -33,23 +43,35 @@ export interface ReadTopologyPromotionRequestInput {
  * port's group and policy reads run on the shared database handle, and a
  * single-session backend (PGlite) deadlocks if they run while the
  * transaction holds that session. Every gate fact is read fresh here — the
- * current group snapshot, never the work payload's enqueue-time copy — and
- * the read also reconciles: an entry is produced whenever the group's
- * accepted identity trails the target layout, so a cycle that once saw a
- * stale stage heals on the next pass. The cheap checks run before the
- * policy read; hold promotes only through activate; a corrupt policy and an
- * absent consumer port fail closed; and the entry never expires, so an
- * outbox backlog delays a promotion but cannot drop it.
+ * current group snapshot, never the work payload's enqueue-time copy. An
+ * inactive or missing current group avoids the policy read.
  */
-export async function readTopologyPromotionRequest(
+export async function readTopologyPromotion(
     input: ReadTopologyPromotionRequestInput
-): Promise<ResourceEntry | null> {
-    const { publication, target } = input;
-    if (!publication || target === null || target.state !== 'active') {
+): Promise<TopologyPromotionRead | null> {
+    const { publication, groupRef } = input;
+    if (!publication) {
         return null;
     }
-    const group = await publication.findCurrentGroup(target.groupRef);
+    const group = await publication.findCurrentGroup(groupRef);
     if (group === null || group.lifecycleState !== 'active') {
+        return { group, policy: null };
+    }
+    return {
+        group,
+        policy: await publication.readLifecyclePolicy(groupRef)
+    };
+}
+
+export function computeTopologyPromotionRequest(
+    input: ComputeTopologyPromotionRequestInput
+): ResourceEntry | null {
+    const { read, target } = input;
+    if (read === null || target === null || target.state !== 'active') {
+        return null;
+    }
+    const { group, policy: policyRead } = read;
+    if (group === null || group.lifecycleState !== 'active' || policyRead === null) {
         return null;
     }
     const targetIdentity = toGroupLayoutIdentity(target);
@@ -59,7 +81,6 @@ export async function readTopologyPromotionRequest(
     ) {
         return null;
     }
-    const policyRead = await publication.readLifecyclePolicy(target.groupRef);
     if (policyRead.status === 'corrupt') {
         return null;
     }

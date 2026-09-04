@@ -8,11 +8,10 @@ import {
 } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 
-export async function finishRtcTopologyWork(
+export async function writeRtcTopologyWorkCompletion(
     database: PSqlSql,
-    entry: ResourceEntry
+    computed: ResourceInboxReservationFinish
 ): Promise<void> {
-    const computed = computeRtcTopologyReservationFinish(entry, new Date());
     await runInPSqlTransaction(database, async (transaction) => {
         await finishRtcTopologyReservation(transaction, computed);
     });

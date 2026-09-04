@@ -1,12 +1,9 @@
-import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type {
     EffectiveGroupTopologyConfig,
     ReconfigureGroupTopologyResponse
 } from '@shared/api/graph-topology-management-types.ts';
-import { readGroupCreatedByPrincipalId, readGroupMemberSessionIds } from '@shared/api/group-client-views.ts';
-import { toCanonicalGroupRef, type GroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
@@ -14,14 +11,17 @@ import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/gro
 import { filterRtcRttMeasurementsForGroup } from '../../rtc-rtt/policy/rtc-rtt-measurement-policy.ts';
 import type { GroupTopologyConfigQueryService } from '../config/group-topology-config-query-service.ts';
 import type { GroupTopologyServerOptions } from '../config/group-topology-config.ts';
-import { GroupTopologyValidationError } from '../group-topology-errors.ts';
-import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
 import { RTC_TOPOLOGY_REPLAY_RETENTION_MS } from '../replay/consumer/rtc-topology-replay-policy.ts';
 import {
     RallarRtcTopologyService,
-    type RallarRtcTopologyUpdateResult,
-    type RtcTopologyPlanningIntent
+    type RallarRtcTopologyUpdateResult
 } from '../runtime/rallar-rtc-topology-service.ts';
+import {
+    computeGroupTopologyFromAuthority,
+    requireFrozenTopology,
+    validateComputedGroupTopology,
+    type TopologyPlanningRequest
+} from './compute-group-topology-from-authority.ts';
 import type {
     GroupTopologyPlanningAuthority,
     ReadGroupTopologyPlanningAuthorityInput
@@ -41,10 +41,7 @@ import {
     type TopologyPlanAction,
     type TopologyWorkOrigin
 } from './resolve-topology-plan-action.ts';
-import {
-    isGroupTopologyActiveAt,
-    selectGroupTopologyPlanningSnapshot
-} from './select-group-topology-planning-snapshot.ts';
+import { selectGroupTopologyPlanningSnapshot } from './select-group-topology-planning-snapshot.ts';
 
 export interface GroupTopologyPlanningServiceDependencies {
     readonly findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
@@ -68,11 +65,6 @@ export interface GroupTopologyPlanningServiceDependencies {
     readonly readLifecyclePolicy?: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
     readonly publisher?: GroupTopologyPublisher;
     readonly serverDefaults?: GroupTopologyServerOptions;
-}
-
-export interface TopologyPlanningRequest {
-    readonly intent: RtcTopologyPlanningIntent;
-    readonly origin: TopologyWorkOrigin;
 }
 
 export class GroupTopologyPlanningService {
@@ -113,6 +105,10 @@ export class GroupTopologyPlanningService {
             group,
             config,
             kindHysteresisWidths: this.dependencies.topologyService.readKindHysteresisWidths(),
+            rttReportingDegreeLimit: this.dependencies.topologyService.readRttReportingDegreeLimit({
+                ...config.effective,
+                rttReportingDegreeLimit: this.dependencies.serverDefaults?.rttReportingDegreeLimit
+            }),
             rttMeasurements,
             replanning,
             nowEpochMs: this.dependencies.topologyService.readNowEpochMs()
@@ -124,38 +120,10 @@ export class GroupTopologyPlanningService {
         previous: RallarOverlayTopologySnapshot | undefined,
         planning: TopologyPlanningRequest
     ): ReconcileGroupTopologyResult {
-        if (!isGroupTopologyActiveAt(authority.group, authority.nowEpochMs)) {
-            return removedTopologyResult(authority.group, previous);
-        }
-        const action = resolveTopologyPlanAction({
-            lifecycleState: authority.group.group.lifecycleState,
-            replanning: authority.replanning,
-            workOrigin: planning.origin,
-            previous
-        });
-        if (action === 'publish-removal') {
-            return removedTopologyResult(authority.group, previous);
-        }
-        if (action === 'freeze') {
-            return { action: 'frozen', current: requireFrozenTopology(previous) };
-        }
-        const filteredRttMeasurements = this.filterRttMeasurementsForGroup(
-            authority.group,
-            authority.rttMeasurements,
-            authority.config.effective,
-            previous
-        );
-        const result = this.dependencies.topologyService.planGroupTopologyAt(
-            authority.group,
-            filteredRttMeasurements,
-            { previous, topologyOptions: authority.config.effective, planningIntent: planning.intent },
-            authority.nowEpochMs
-        );
-        this.validateTopology(result.snapshot);
-        return { ...result, action: 'planned' };
+        return computeGroupTopologyFromAuthority(authority, previous, planning);
     }
 
-    async computeGroupTopology(
+    private async readAndComputeGroupTopology(
         group: GroupSnapshot,
         previous: RallarOverlayTopologySnapshot | undefined
     ): Promise<ReconcileGroupTopologyResult> {
@@ -165,10 +133,12 @@ export class GroupTopologyPlanningService {
             snapshotSelection: 'prefer-current'
         });
         // The machinery's own reconcile sweep: automatic by definition.
-        return this.computeTopologyFromAuthority(authority, previous, {
+        const computed = this.computeTopologyFromAuthority(authority, previous, {
             intent: 'full-rebuild',
             origin: 'automatic'
         });
+        validateComputedGroupTopology(computed);
+        return computed;
     }
 
     async reconfigureGroupTopology(
@@ -203,7 +173,7 @@ export class GroupTopologyPlanningService {
             ),
             { previous, topologyOptions: config.effective }
         );
-        this.validateTopology(result.snapshot);
+        validateComputedGroupTopology({ ...result, action: 'planned' });
         const published = await this.publishIfRequested(
             group,
             result,
@@ -223,7 +193,7 @@ export class GroupTopologyPlanningService {
             throw new TypeError('Persistent topology reconciliation requires APP_OUTBOX');
         }
         const previous = this.dependencies.topologyService.readSnapshot(group);
-        const result = await this.computeGroupTopology(group, previous);
+        const result = await this.readAndComputeGroupTopology(group, previous);
         if (result.action === 'frozen') {
             return result;
         }
@@ -267,7 +237,7 @@ export class GroupTopologyPlanningService {
         if (!result) {
             return undefined;
         }
-        this.validateTopology(result.snapshot);
+        validateComputedGroupTopology({ ...result, action: 'planned' });
         const published = await this.publishIfRequested(
             group,
             result,
@@ -351,27 +321,6 @@ export class GroupTopologyPlanningService {
         });
     }
 
-    private validateTopology(snapshot: RallarOverlayTopologySnapshot): void {
-        if (snapshot.state === 'removed') {
-            return;
-        }
-        const result = validateGroupTopologyNextHops({
-            activeSessionIds: new Set(snapshot.activeSessionIds),
-            nextHopsBySessionId: snapshot.nextHopsBySessionId,
-            maxDegree: snapshot.degreeLimit
-        });
-        if (!result.valid) {
-            throw new GroupTopologyValidationError(
-                result.issues.map((issue) => ({
-                    code: issue.code,
-                    path: issue.sessionId ? ['nextHopsBySessionId', issue.sessionId] : undefined,
-                    message: issue.code,
-                    details: issue
-                }))
-            );
-        }
-    }
-
     private async publishIfRequested(
         group: GroupSnapshot,
         result: RallarRtcTopologyUpdateResult,
@@ -415,44 +364,6 @@ function requireGroupTopologyPlanningSnapshot(
         throw new Error(`Group snapshot not found: ${groupRef.groupId}`);
     }
     return snapshot;
-}
-
-function requireFrozenTopology(
-    previous: RallarOverlayTopologySnapshot | undefined
-): RallarOverlayTopologySnapshot {
-    if (!previous) {
-        throw new TypeError('A frozen topology plan requires a stored layout');
-    }
-    return previous;
-}
-
-function removedTopologyResult(
-    group: GroupSnapshot,
-    previous: RallarOverlayTopologySnapshot | undefined
-): ReconcileGroupTopologyResult {
-    const activeSessionIds = [
-        ...new Set([...(previous?.activeSessionIds ?? []), ...readGroupMemberSessionIds(group)])
-    ].sort(compareRtcTopologyIdentifiers);
-    return {
-        action: 'planned',
-        snapshot: {
-            sourceGroupStateCausalRevision: group.causalRevision,
-            state: 'removed',
-            overlayId: toScopedOverlayId(group.group),
-            groupRef: toCanonicalGroupRef(group.group),
-            name: previous?.name ?? group.group.displayName,
-            topology: previous?.topology ?? 'star',
-            activeSessionIds,
-            nextHopsBySessionId: Object.fromEntries(activeSessionIds.map((sessionId) => [sessionId, []])),
-            degreeLimit: previous?.degreeLimit ?? 1,
-            version: previous?.version ?? 0,
-            createdByClientId: previous?.createdByClientId ?? readGroupCreatedByPrincipalId(group),
-            createdAtEpochMs: previous?.createdAtEpochMs ?? group.group.created.atEpochMs,
-            updatedAtEpochMs: group.group.updated.atEpochMs
-        },
-        previous: previous ?? null,
-        changed: previous?.state !== 'removed'
-    };
 }
 
 interface ReconfigureGroupTopologyResponseInput {

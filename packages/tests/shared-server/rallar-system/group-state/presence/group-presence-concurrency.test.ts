@@ -339,7 +339,8 @@ describe('group presence concurrency', () => {
                 work,
                 runtime,
                 ref,
-                commandId: `inactive-summary-${operation}-${order}`
+                commandId: `inactive-summary-${operation}-${order}`,
+                nowEpochMs: BASE_EPOCH_MS + 3_000
             });
             expect((await repository.findPresenceSummaryEntry(ref))?.value).toMatchObject({
                 activePrincipalIds: [],
@@ -360,7 +361,8 @@ describe('group presence concurrency', () => {
                 work,
                 runtime,
                 ref,
-                commandId: `reactivated-summary-${operation}-${order}`
+                commandId: `reactivated-summary-${operation}-${order}`,
+                nowEpochMs: BASE_EPOCH_MS + 3_000
             });
             expect((await repository.findPresenceSummaryEntry(ref))?.value).toMatchObject({
                 activePrincipalIds: [],

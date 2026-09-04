@@ -141,14 +141,36 @@ export class AppCrdtInboxService {
             context: AppInboxExecutionMetadata
         ) => await this.processCommand(command, context);
         const encodeCrdtResult = (result: CrdtMutationResult) => encodeAppInboxResult(result, 'CRDT AppInbox result');
-        for (const type of CRDT_MUTATION_INBOX_TYPES) {
-            this.handlers.registerHandler({
-                type,
-                decodeCommand: decodeCrdtMutationCommand,
-                encodeResult: encodeCrdtResult,
-                handle: processCrdtCommand
-            });
-        }
+        this.handlers.registerHandler({
+            type: AppInboxType.CRDT_UPDATE_APPEND,
+            decodeCommand: decodeCrdtMutationCommand,
+            encodeResult: encodeCrdtResult,
+            handle: processCrdtCommand
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.CRDT_PROJECTION_REBUILD,
+            decodeCommand: decodeCrdtMutationCommand,
+            encodeResult: encodeCrdtResult,
+            handle: processCrdtCommand
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.CRDT_SNAPSHOT_COMPACT,
+            decodeCommand: decodeCrdtMutationCommand,
+            encodeResult: encodeCrdtResult,
+            handle: processCrdtCommand
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.CRDT_LIFECYCLE_UPDATE,
+            decodeCommand: decodeCrdtMutationCommand,
+            encodeResult: encodeCrdtResult,
+            handle: processCrdtCommand
+        });
+        this.handlers.registerHandler({
+            type: AppInboxType.CRDT_ERASE,
+            decodeCommand: decodeCrdtMutationCommand,
+            encodeResult: encodeCrdtResult,
+            handle: processCrdtCommand
+        });
         this.handlers.assertRegistrationComplete(CRDT_MUTATION_INBOX_TYPES);
     }
 

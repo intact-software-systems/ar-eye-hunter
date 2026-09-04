@@ -152,6 +152,7 @@ function createRead(actorIsPlatformAdmin = false) {
             group: createTopologyTestGroupSnapshot(),
             config: resolveGroupTopologyConfig({}),
             kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+            rttReportingDegreeLimit: 5,
             rttMeasurements: [],
             replanning: 'auto' as const,
             nowEpochMs: 1_000

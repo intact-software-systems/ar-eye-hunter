@@ -221,7 +221,7 @@ describe('transaction write check', () => {
             transactionSource('Date.now()')
         );
         const browser = project.createSourceFile(
-            '/packages/shared/queuebox/indexed-db-queue-box-write.ts',
+            '/packages/shared/queuebox/write-computed-indexed-db-queue-mutations.ts',
             `declare const db: IDBDatabase;
              export function write(): void {
                  const transaction = db.transaction('items', 'readwrite');
@@ -233,7 +233,7 @@ describe('transaction write check', () => {
 
         expect(findings).toHaveLength(1);
         expect(findings[0]).toMatchObject({
-            path: 'packages/shared/queuebox/indexed-db-queue-box-write.ts',
+            path: 'packages/shared/queuebox/write-computed-indexed-db-queue-mutations.ts',
             operation: 'JSON.stringify'
         });
     });

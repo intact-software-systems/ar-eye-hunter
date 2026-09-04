@@ -202,7 +202,7 @@ async function readComputedSummary(seeded: SeededScenario): Promise<GroupPresenc
         serviceId: 'summary-worker'
     });
     const read = await work.read(seeded.command);
-    const computed = work.compute(seeded.command, read);
+    const computed = work.compute(seeded.command, read, BASE_EPOCH_MS + 1_000);
     work.validate(seeded.command, read, computed);
     return computed;
 }

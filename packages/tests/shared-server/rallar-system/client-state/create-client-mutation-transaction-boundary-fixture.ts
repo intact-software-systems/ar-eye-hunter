@@ -32,6 +32,7 @@ const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'defaul
 
 interface ClientMutationTransactionBoundaryOptions {
     readonly failTransaction?: boolean;
+    readonly recordMutationTiming?: boolean;
     readonly rejectSnapshotReadInTransaction?: boolean;
 }
 
@@ -97,6 +98,12 @@ export async function createClientMutationTransactionBoundaryFixture(
                 return context.message.id.ts;
             }
         }),
+        mutationTiming: {
+            serviceId: 'client-inbox-service',
+            sink: options.recordMutationTiming
+                ? (event) => actions.push(event.operation)
+                : undefined
+        },
         serviceId: 'client-inbox-service'
     });
     return {

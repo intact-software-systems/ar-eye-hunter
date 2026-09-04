@@ -1,10 +1,3 @@
-import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import {
-    newALAckControlMessage,
-    newALNackControlMessage,
-    newALRepairControlMessage
-} from '../../al-contracts/al-control.ts';
-import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '../ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from './al-inbound-admission-store.ts';
@@ -12,7 +5,7 @@ import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from './al-inbou
 
 export interface DefaultALInboundRuntimeResourceInput {
     readonly selfPeerId: string;
-    readonly toInboxEntry: (msg: ALMessage) => ResourceEntry;
+    readonly inboxEntryTypeId: string;
     readonly stores?: ALInboundRuntimeStores;
 }
 
@@ -42,14 +35,9 @@ export function createDefaultALInboundRuntimeResources(
     });
     return {
         admissionStore,
+        selfPeerId: input.selfPeerId,
+        inboxEntryTypeId: input.inboxEntryTypeId,
         effectWorkerId: `al-inbound:${crypto.randomUUID()}`,
-        effectPreparation: {
-            selfPeerId: input.selfPeerId,
-            createInboxEntry: input.toInboxEntry,
-            createAckMessage: newALAckControlMessage,
-            createNackMessage: newALNackControlMessage,
-            createRepairMessage: newALRepairControlMessage
-        },
         clock: { nowMs: () => Date.now() },
         scheduler: {
             schedule: (callback, delayMs) => {

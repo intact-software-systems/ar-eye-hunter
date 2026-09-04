@@ -7,10 +7,8 @@ import { PSqlResourceInboxEntryRepository } from '../../../../queuebox/postgres/
 import { computeGroupConnectTriggerEntry } from '../../../group-state/group-connect-trigger-outbox-entry.ts';
 import { GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS } from '../../../group-state/group-state-service-contracts.ts';
 import { serializeCanonicalJson } from '../../../protocol/canonical-json.ts';
-import type { GroupFormationAutomationPort } from './create-group-connect-trigger-work-handler.ts';
-
 export interface PublicationConnectTriggerRequestsInput {
-    readonly automation: GroupFormationAutomationPort | undefined;
+    readonly automationEnabled: boolean;
     readonly target: RallarOverlayTopologySnapshot | null;
     readonly entry: ResourceEntry;
 }
@@ -18,8 +16,8 @@ export interface PublicationConnectTriggerRequestsInput {
 export function computePublicationConnectTriggerRequests(
     input: PublicationConnectTriggerRequestsInput
 ): readonly ResourceEntry[] {
-    const { automation, target, entry } = input;
-    if (automation === undefined || target === null || target.state !== 'active') {
+    const { automationEnabled, target, entry } = input;
+    if (!automationEnabled || target === null || target.state !== 'active') {
         return [];
     }
     return [computeGroupConnectTriggerEntry({

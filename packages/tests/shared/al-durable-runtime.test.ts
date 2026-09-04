@@ -409,7 +409,7 @@ function createDefaultInboundRuntime(
                 supersedenceStore: runtime.supersedenceStore
             }),
         readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        inboxEntryTypeId: 'inbox',
         dispatchInboxEntry: async (entry: ResourceEntry) => {
             const msg = decodePersistedALMessage(entry.resource);
             dispatchedMsgIds.push(msg.id.msgId);

@@ -124,6 +124,7 @@ export class AppClientInboxService {
             expiryCandidates: dependencies.clientStateService,
             snapshotObserver: dependencies.clientStateService,
             transactionWriter: handlerRuntime.transactionWriter,
+            mutationTiming: { sink: config.timing, serviceId: config.serviceId },
             serviceId: config.serviceId
         });
         this.registerClientStateMessages();
@@ -135,7 +136,7 @@ export class AppClientInboxService {
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, ClientStateWritten>> {
         const ingress = readAuthenticatedClientMutationIngress(enqueue);
-        validateIssuedClientMutationIngress(authority, ingress);
+        validateIssuedClientMutationIngress(authority, ingress, Date.now());
         const result = await this.commandClient.enqueueAndWaitForResult(
             {
                 ...enqueue,

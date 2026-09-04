@@ -41,7 +41,6 @@ interface CriterionFingerprintFixture {
     readonly queue: InMemoryQueueBox;
     readonly snapshots: RtcTopologySnapshotRepository;
     readonly handler: OnMessageCallback;
-    readonly computeTopology: MockInstance<GroupTopologyPlanningService['computeTopologyFromAuthority']>;
     readonly skippedFingerprint: MockInstance<GroupTopologyPlanningService['recordTopologyRebuildSkippedFingerprint']>;
     readonly recordPublication: MockInstance<GroupTopologyPlanningService['recordTopologyPublication']>;
     process(input: ProcessGroupRevisionInput): Promise<ResourceEntry>;
@@ -58,13 +57,11 @@ describe('formation criterion after unchanged topology inputs', () => {
             expect(published).toMatchObject({ state: 'active', activeSessionIds: [], version: 1 });
             expect(fixture.submitted).toEqual([]);
             fixture.effects.length = 0;
-            fixture.computeTopology.mockClear();
             fixture.recordPublication.mockClear();
 
             const entry = await fixture.process({ group: lifecycleSnapshot(stage, 2), origin: 'automatic' });
 
             expect(fixture.skippedFingerprint).toHaveBeenCalledOnce();
-            expect(fixture.computeTopology).not.toHaveBeenCalled();
             expect(fixture.recordPublication).not.toHaveBeenCalled();
             expect(await fixture.snapshots.findSnapshot(fixture.current.group)).toEqual(published);
             expect((await fixture.queue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
@@ -131,15 +128,14 @@ describe('formation criterion after unchanged topology inputs', () => {
             if (state === 'removed') {
                 await fixture.snapshots.commitSnapshot({ candidate: { ...published, state: 'removed' } });
             }
-            fixture.computeTopology.mockImplementationOnce(() => {
-                throw new Error('Rebuild must complete before criterion evaluation');
-            });
-
-            await expect(fixture.process({ group: lifecycleSnapshot('connecting', 2), origin: 'automatic' }))
-                .rejects.toThrow('Rebuild must complete before criterion evaluation');
+            await fixture.process({ group: lifecycleSnapshot('connecting', 2), origin: 'automatic' });
 
             expect(fixture.skippedFingerprint).not.toHaveBeenCalled();
-            expect(fixture.submitted).toEqual([]);
+            expect(await fixture.snapshots.findSnapshot(fixture.current.group)).toMatchObject({
+                state: 'active',
+                sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 0 }
+            });
+            expect(fixture.submitted).toHaveLength(1);
         }
     );
 
@@ -218,7 +214,6 @@ function createCriterionFingerprintFixture(): CriterionFingerprintFixture {
         topologyService: new RallarRtcTopologyService({ now: () => NOW }),
         topologySnapshotRepository: snapshots
     }).planning;
-    const computeTopology = vi.spyOn(planning, 'computeTopologyFromAuthority');
     const skippedFingerprint = vi.spyOn(planning, 'recordTopologyRebuildSkippedFingerprint');
     const recordPublication = vi.spyOn(planning, 'recordTopologyPublication');
     const runtime = createRtcTopologyOutboxPublisher({ outboxQueueReader: new OutboxQueueReader(queue) });
@@ -251,7 +246,7 @@ function createCriterionFingerprintFixture(): CriterionFingerprintFixture {
         await handler.onMessage(decodePersistedALMessage(entry.resource), entry);
         return entry;
     };
-    return Object.assign(state, { queue, snapshots, handler, computeTopology, skippedFingerprint, recordPublication, process });
+    return Object.assign(state, { queue, snapshots, handler, skippedFingerprint, recordPublication, process });
 }
 
 interface ProcessGroupRevisionInput {

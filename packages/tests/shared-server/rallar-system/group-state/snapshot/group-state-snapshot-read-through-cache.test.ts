@@ -219,7 +219,7 @@ async function convergePresenceSummaryForCacheTest(
         serviceId: 'cache-convergence-test'
     });
     const read = await work.read(command);
-    const computed = work.compute(command, read);
+    const computed = work.compute(command, read, 2_001);
     work.validate(command, read, computed);
     await runtime.begin(async (transaction) => {
         if (computed.summary.outcome === 'no-op') {

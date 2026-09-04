@@ -17,10 +17,7 @@ import type {
 import { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
 import { ALInboundDurableEffectWorker } from './al-inbound-durable-effect-worker.ts';
 import { computeALInboundAdmission } from './compute-al-inbound-admission.ts';
-import {
-    prepareALInboundCommitBundle,
-    type ALInboundEffectPreparationDependencies
-} from './prepare-al-inbound-commit-bundle.ts';
+import { readALInboundComputationFacts } from './read-al-inbound-computation-facts.ts';
 
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
@@ -38,7 +35,8 @@ export namespace ALInboundMessageRuntime {
 
     export interface Resources {
         readonly admissionStore: ALInboundAdmissionStore;
-        readonly effectPreparation: ALInboundEffectPreparationDependencies;
+        readonly selfPeerId: string;
+        readonly inboxEntryTypeId: string;
         readonly effectWorkerId: string;
         readonly clock: Clock;
         readonly scheduler: Scheduler;
@@ -184,8 +182,11 @@ export class ALInboundMessageRuntime {
         );
         const canForward = !read.plan.dropReason && this.dependencies.forwardMessage !== undefined &&
             (this.dependencies.canForwardMessage?.(msg) ?? true);
-        const computed = computeALInboundAdmission(read, canForward);
-        const bundle = prepareALInboundCommitBundle(computed, this.dependencies.effectPreparation);
+        const bundle = computeALInboundAdmission(
+            read,
+            canForward,
+            readALInboundComputationFacts(this.dependencies)
+        );
         const status = await this.admissionStore.commitBundle(bundle);
         if (status === 'conflict') {
             throw new RetryableConflictError('Inbound commit conflict');

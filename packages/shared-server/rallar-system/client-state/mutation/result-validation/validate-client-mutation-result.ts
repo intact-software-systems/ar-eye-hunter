@@ -18,9 +18,10 @@ import {
     type ClientValidationRecord,
     type ClientValidationValue
 } from '../../validation/client-record-validation.ts';
-import { requireSha256, requireString } from '../../validation/client-string-validation.ts';
+import { requireSha256 } from '../../validation/client-string-validation.ts';
 import { validateClientPrincipalRef } from '../../validation/validate-client-principal-ref.ts';
 import type { ClientMutationComputed, ConditionalCandidate } from '../client-mutation-contracts.ts';
+import { validateClientPersistenceShape } from './validate-client-persistence.ts';
 
 export function validateClientMutationResult(
     computed: unknown
@@ -82,7 +83,7 @@ function validateNoOpResult(value: ClientValidationRecord): void {
             value.idempotency,
             'Client mutation computed.idempotency'
         );
-        validateClientPersistence(value.persistence);
+        validateClientPersistenceShape(value.persistence);
     }
 }
 
@@ -148,62 +149,7 @@ function validateAppliedWriteResult(value: ClientValidationRecord): void {
     if (!Array.isArray(value.outboxEntries) || value.outboxEntries.length !== 2) {
         rejectClientMutation('Client mutation computed outboxEntries must contain snapshot and event');
     }
-    validateClientPersistence(value.persistence);
-}
-
-function validateClientPersistence(value: ClientValidationValue): void {
-    const persistence = decodeClientValidationRecord(
-        value,
-        'Client mutation computed.persistence'
-    );
-    requireExactKeys(
-        persistence,
-        ['runtimeWrites', 'eventWrite'],
-        'Client mutation computed.persistence'
-    );
-    if (!Array.isArray(persistence.runtimeWrites)) {
-        rejectClientMutation('Client mutation computed.persistence.runtimeWrites must be an array');
-    }
-    persistence.runtimeWrites.forEach(validateClientRuntimeWrite);
-    if (persistence.eventWrite === null) {
-        return;
-    }
-    const eventWrite = decodeClientValidationRecord(
-        persistence.eventWrite,
-        'Client mutation computed.persistence.eventWrite'
-    );
-    requireExactKeys(
-        eventWrite,
-        ['event', 'workspaceKey', 'eventJson'],
-        'Client mutation computed.persistence.eventWrite'
-    );
-    validateClientEvent(eventWrite.event, 'Client mutation computed.persistence.eventWrite.event');
-    requireString(
-        eventWrite.workspaceKey,
-        'Client mutation computed.persistence.eventWrite.workspaceKey'
-    );
-    requireString(eventWrite.eventJson, 'Client mutation computed.persistence.eventWrite.eventJson');
-}
-
-function validateClientRuntimeWrite(value: ClientValidationValue, index: number): void {
-    const label = `Client mutation computed.persistence.runtimeWrites[${index}]`;
-    const write = decodeClientValidationRecord(value, label);
-    const commonKeys = ['kind', 'namespace', 'key', 'value', 'expireAtIsoTimestamp'];
-    requireExactKeys(write, [...commonKeys, 'expectedRevision'], label);
-    requireString(write.namespace, `${label}.namespace`);
-    requireString(write.key, `${label}.key`);
-    requireString(write.value, `${label}.value`);
-    requireString(write.expireAtIsoTimestamp, `${label}.expireAtIsoTimestamp`);
-    if (write.kind === 'insert' && write.expectedRevision === null) {
-        return;
-    }
-    if (
-        write.kind !== 'update' ||
-        !Number.isSafeInteger(write.expectedRevision) ||
-        (write.expectedRevision as number) < 0
-    ) {
-        rejectClientMutation(`${label} guard is invalid`);
-    }
+    validateClientPersistenceShape(value.persistence);
 }
 
 function validateConditionalCandidate<T>(

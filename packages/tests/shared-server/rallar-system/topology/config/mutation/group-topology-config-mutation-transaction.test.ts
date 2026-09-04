@@ -102,7 +102,7 @@ function createSuccessfulTransaction(): PSqlSql {
     function sql(_values: readonly PSqlParameter[]): object;
     function sql(
         stringsOrValues: TemplateStringsArray | readonly PSqlParameter[]
-    ): Promise<unknown> | object {
+    ) {
         if (Array.isArray(stringsOrValues) && !Object.hasOwn(stringsOrValues, 'raw')) {
             return {};
         }

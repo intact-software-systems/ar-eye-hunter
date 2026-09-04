@@ -120,7 +120,7 @@ describe('RTC snapshot rejection controls', () => {
                 };
             },
             readStoredEntry: () => message,
-            toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'test-inbox'),
+            inboxEntryTypeId: 'test-inbox',
             dispatchInboxEntry: async (entry) => {
                 delivered.push(entry.resource);
             },
@@ -190,7 +190,7 @@ function createSnapshotAdmissionFixture(): SnapshotAdmissionFixture {
                 nowMs: 100
             }),
         readStoredEntry: () => message,
-        toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'test-inbox'),
+        inboxEntryTypeId: 'test-inbox',
         dispatchInboxEntry: async () => {
             delivered.push(message.id.msgId);
         },

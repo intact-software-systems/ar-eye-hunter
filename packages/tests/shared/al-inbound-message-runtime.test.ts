@@ -13,6 +13,7 @@ import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendC
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
+    ALAdmissionCorruptionError,
     createALInboundAdmissionStore,
     createDefaultInMemoryALInboundRuntimeStores,
     InMemoryPersistenceProvider,
@@ -22,8 +23,6 @@ import {
     normalizeALRuntimeStoreRetention,
     parseALControlMessage,
     planALMessageHandling,
-    QueueBoxUtilities,
-    ALAdmissionCorruptionError,
     type ALControlAcceptance,
     type ALInboundMessageRuntime,
     type ALInboundRuntimeStores,
@@ -723,7 +722,7 @@ function createInboundHarness(
                 supersedenceStore: runtimeStores.supersedenceStore
             }),
         readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
-        toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
+        inboxEntryTypeId: 'inbox',
         dispatchInboxEntry: overrides.dispatchInboxEntry ?? (async (
             entry: ResourceEntry,
             _plan?: ALMessageHandlingPlan

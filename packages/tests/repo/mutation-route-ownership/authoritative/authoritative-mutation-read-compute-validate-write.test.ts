@@ -156,8 +156,8 @@ it.each([
         owner: 'processCommand',
         calls: [
             'this.dependencies.mutationService.read(command)',
-            'this.dependencies.mutationService.compute(command, read)',
-            'this.dependencies.mutationService.validate(command, read, computed)',
+            'this.computeMutation(command, read)',
+            'this.validateMutation(command, read, computed)',
             'this.commitComputed(context, computed)'
         ]
     },

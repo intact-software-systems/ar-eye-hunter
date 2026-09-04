@@ -11,8 +11,8 @@ import {
 } from '@shared/queuebox/indexed-db-queue-box-entry.ts';
 import { computeIndexedDbFairnessReservation } from '@shared/queuebox/indexed-db-queue-box-fairness.ts';
 import { readStoredQueueEntry } from '@shared/queuebox/indexed-db-queue-box-store.ts';
-import { writeComputedIndexedDbQueueMutations } from '@shared/queuebox/indexed-db-queue-box-write.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, ResourceEntry, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
+import { writeComputedIndexedDbQueueMutations } from '@shared/queuebox/write-computed-indexed-db-queue-mutations.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 describe('IndexedDbQueueBox computed writes', () => {
