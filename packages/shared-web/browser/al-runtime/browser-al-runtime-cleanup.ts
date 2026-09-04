@@ -1,10 +1,13 @@
 import { isIndexedDbALRuntimeStoreSupported } from '@shared/alm/al-runtime-stores.ts';
+import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import {
-    decodeALAdmissionStoredValue,
-    type ALAdmissionStoredValue
-} from '@shared/alm/al-admission-backend.ts';
-import { decodeALAdmissionValue } from '@shared/alm/al-admission-decoder.ts';
-import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
+    AL_ADMISSION_REVISION_KEY,
+    computeIndexedDbAdmissionRevisionWrite,
+    openIndexedDbAdmissionDatabase,
+    readIndexedDbAdmissionSnapshot,
+    writeIndexedDbAdmissionMutations,
+    type IndexedDbAdmissionMutation
+} from '@shared/alm/indexed-db-admission-storage.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 
 import {
@@ -16,11 +19,29 @@ import {
 
 export const BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
 
-interface BrowserALRuntimeCleanupScan {
-    readonly db: IDBDatabase;
-    readonly keyPrefixes: readonly string[];
-    readonly shouldDelete: (entry: ALAdmissionStoredValue) => boolean;
+interface BrowserALRuntimeCleanupRead {
+    readonly revision: number;
+    readonly rows: readonly BrowserALRuntimeCleanupRow[];
 }
+
+interface BrowserALRuntimeCleanupRow {
+    readonly key: string;
+    readonly expireAtTimestamp: number | null;
+    readonly writeToken: string | null;
+}
+
+interface BrowserALRuntimeCleanupComputed {
+    readonly mutations: readonly IndexedDbAdmissionMutation[];
+    readonly revisionWrite: Readonly<{
+        key: typeof AL_ADMISSION_REVISION_KEY;
+        value: number;
+        expireAtTimestamp: number;
+    }>;
+}
+
+type BrowserALRuntimeDeletionPolicy =
+    | Readonly<{ kind: 'all'; }>
+    | Readonly<{ kind: 'expired'; nowMs: number; }>;
 
 export type BrowserALRuntimeCleanupResult = Readonly<{
     dbName: string;
@@ -44,7 +65,7 @@ export async function deleteExpiredBrowserALRuntimeEntries(
 
     return await deleteBrowserALRuntimeEntriesMatching({
         keyPrefixes: options.keyPrefixes ?? [BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX],
-        shouldDelete: (entry) => isExpiredBrowserALRuntimeEntry(entry, nowMs)
+        deletionPolicy: { kind: 'expired', nowMs }
     });
 }
 
@@ -63,7 +84,7 @@ export async function deleteBrowserALRuntimeEntriesForSession(
 ): Promise<BrowserALRuntimeCleanupResult> {
     return await deleteBrowserALRuntimeEntriesMatching({
         keyPrefixes: toBrowserSessionALRuntimeEntryKeyPrefixes(sessionId),
-        shouldDelete: () => true
+        deletionPolicy: { kind: 'all' }
     });
 }
 
@@ -104,93 +125,117 @@ export async function initBrowserALRuntimeExpiryEviction(
 async function deleteBrowserALRuntimeEntriesMatching(
     options: Readonly<{
         keyPrefixes: readonly string[];
-        shouldDelete: (entry: ALAdmissionStoredValue) => boolean;
+        deletionPolicy: BrowserALRuntimeDeletionPolicy;
     }>
 ): Promise<BrowserALRuntimeCleanupResult> {
     const keyPrefixes = [...new Set(options.keyPrefixes)].filter((prefix) => prefix.length > 0);
-    const emptyResult = toBrowserALRuntimeCleanupResult(keyPrefixes, 0, 0);
 
     if (keyPrefixes.length === 0 || !isIndexedDbALRuntimeStoreSupported()) {
-        return emptyResult;
+        return toBrowserALRuntimeCleanupResult(keyPrefixes, 0, 0);
     }
 
-    const db = await openIndexedDbWithStore(
+    const db = await openIndexedDbAdmissionDatabase(
         BROWSER_AL_RUNTIME_DB_NAME,
-        {
-            name: BROWSER_AL_RUNTIME_STORE_NAME,
-            keyPath: 'key'
-        }
+        BROWSER_AL_RUNTIME_STORE_NAME
     );
 
     try {
-        return await scanBrowserALRuntimeEntries({
-            db,
+        const read = await readBrowserALRuntimeCleanup(db, keyPrefixes, options.deletionPolicy);
+        const computed = computeBrowserALRuntimeCleanup(read, options.deletionPolicy);
+        assertBrowserALRuntimeCleanup(read, options.deletionPolicy, computed);
+        await writeBrowserALRuntimeCleanup(db, read.revision, computed);
+        return toBrowserALRuntimeCleanupResult(
             keyPrefixes,
-            shouldDelete: options.shouldDelete
-        });
+            read.rows.length,
+            computed.mutations.length
+        );
     }
     finally {
         db.close();
     }
 }
 
-function scanBrowserALRuntimeEntries(
-    input: BrowserALRuntimeCleanupScan
-): Promise<BrowserALRuntimeCleanupResult> {
-    return new Promise<BrowserALRuntimeCleanupResult>((resolve, reject) => {
-        const tx = input.db.transaction(BROWSER_AL_RUNTIME_STORE_NAME, 'readwrite');
-        const store = tx.objectStore(BROWSER_AL_RUNTIME_STORE_NAME);
-        const request = store.openCursor();
-        let scanned = 0;
-        let deleted = 0;
+async function readBrowserALRuntimeCleanup(
+    db: IDBDatabase,
+    keyPrefixes: readonly string[],
+    policy: BrowserALRuntimeDeletionPolicy
+): Promise<BrowserALRuntimeCleanupRead> {
+    const readsExpiryIndex = policy.kind === 'expired' &&
+        keyPrefixes.length === 1 &&
+        keyPrefixes[0] === BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX;
+    const snapshot = await readIndexedDbAdmissionSnapshot(
+        db,
+        BROWSER_AL_RUNTIME_STORE_NAME,
+        readsExpiryIndex
+            ? { kind: 'expired', maximumExpireAtTimestamp: policy.nowMs }
+            : { kind: 'prefixes', prefixes: keyPrefixes }
+    );
+    return {
+        revision: snapshot.revision,
+        rows: snapshot.stored
+            .filter((stored) =>
+                stored.key !== AL_ADMISSION_REVISION_KEY &&
+                matchesAnyBrowserALRuntimePrefix(stored.key, keyPrefixes)
+            )
+            .map((stored) => ({
+                key: stored.key,
+                expireAtTimestamp: policy.kind === 'all'
+                    ? null
+                    : stored.expireAtTimestamp,
+                writeToken: stored.writeToken ?? null
+            }))
+    };
+}
 
-        tx.oncomplete = () =>
-            resolve(
-                toBrowserALRuntimeCleanupResult(input.keyPrefixes, scanned, deleted)
-            );
-        tx.onabort = () => reject(tx.error ?? new Error('Browser AL runtime cleanup aborted'));
-        tx.onerror = () => reject(tx.error ?? new Error('Browser AL runtime cleanup failed'));
-        request.onerror = () =>
-            reject(
-                request.error ?? new Error('Browser AL runtime cleanup cursor failed')
-            );
-        request.onsuccess = () => {
-            try {
-                const cursor = request.result;
-                if (!cursor) {
-                    return;
-                }
-                const key = cursor.primaryKey;
-                if (typeof key !== 'string') {
-                    throw new TypeError('Browser AL runtime cleanup row key must be a string');
-                }
-                if (!matchesAnyBrowserALRuntimePrefix(key, input.keyPrefixes)) {
-                    cursor.continue();
-                    return;
-                }
+function computeBrowserALRuntimeCleanup(
+    read: BrowserALRuntimeCleanupRead,
+    deletionPolicy: BrowserALRuntimeDeletionPolicy
+): BrowserALRuntimeCleanupComputed {
+    return {
+        mutations: read.rows
+            .filter((row) =>
+                row.writeToken !== null &&
+                (deletionPolicy.kind === 'all' ||
+                    (row.expireAtTimestamp !== null && row.expireAtTimestamp <= deletionPolicy.nowMs))
+            )
+            .map((row): IndexedDbAdmissionMutation => ({
+                kind: 'remove-if-write-token',
+                key: row.key,
+                expectedWriteToken: row.writeToken!
+            })),
+        revisionWrite: computeIndexedDbAdmissionRevisionWrite(read.revision)
+    };
+}
 
-                const entry = decodeALAdmissionValue(cursor.value, key, decodeALAdmissionStoredValue);
-                scanned += 1;
-                if (!input.shouldDelete(entry)) {
-                    cursor.continue();
-                    return;
-                }
+function assertBrowserALRuntimeCleanup(
+    read: BrowserALRuntimeCleanupRead,
+    deletionPolicy: BrowserALRuntimeDeletionPolicy,
+    computed: BrowserALRuntimeCleanupComputed
+): void {
+    const expected = computeBrowserALRuntimeCleanup(read, deletionPolicy);
+    if (JSON.stringify(computed) !== JSON.stringify(expected)) {
+        throw new TypeError('Browser AL runtime cleanup differs from its canonical computation');
+    }
+}
 
-                deleted += 1;
-                const deleteRequest = cursor.delete();
-                deleteRequest.onerror = () =>
-                    reject(
-                        deleteRequest.error ??
-                            new Error('Browser AL runtime cleanup delete failed')
-                    );
-                deleteRequest.onsuccess = () => cursor.continue();
-            }
-            catch (error) {
-                reject(error);
-                tx.abort();
-            }
-        };
+async function writeBrowserALRuntimeCleanup(
+    db: IDBDatabase,
+    expectedRevision: number,
+    computed: BrowserALRuntimeCleanupComputed
+): Promise<void> {
+    if (computed.mutations.length === 0) {
+        return;
+    }
+    const committed = await writeIndexedDbAdmissionMutations({
+        db,
+        storeName: BROWSER_AL_RUNTIME_STORE_NAME,
+        expectedRevision,
+        mutations: computed.mutations,
+        revisionWrite: computed.revisionWrite
     });
+    if (!committed) {
+        throw new ALAdmissionBackendConflictError('Browser AL runtime cleanup conflicted');
+    }
 }
 
 function toBrowserALRuntimeCleanupResult(
@@ -212,11 +257,4 @@ function matchesAnyBrowserALRuntimePrefix(
     keyPrefixes: readonly string[]
 ): boolean {
     return keyPrefixes.some((prefix) => key.startsWith(prefix));
-}
-
-function isExpiredBrowserALRuntimeEntry(
-    entry: ALAdmissionStoredValue,
-    nowMs: number
-): boolean {
-    return entry.expireAtTimestamp <= nowMs;
 }
