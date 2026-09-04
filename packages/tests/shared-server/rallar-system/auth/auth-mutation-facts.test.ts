@@ -68,10 +68,14 @@ describe('auth mutation facts', () => {
         for (let index = 0; index < commands.length; index += 1) {
             calls.length = 0;
             const command = commands[index];
-            const facts = await captureAuthMutationFacts(command, credentialIssuer);
+            const facts = await captureAuthMutationFacts(
+                command,
+                credentialIssuer,
+                'auth-service'
+            );
 
-            expect(facts).toEqual({ kind: command.kind });
-            expect(Object.keys(facts)).toEqual(['kind']);
+            expect(facts).toEqual({ kind: command.kind, serviceId: 'auth-service' });
+            expect(Object.keys(facts)).toEqual(['kind', 'serviceId']);
             expect(calls).toEqual(expectedCalls[index]);
         }
     });
@@ -88,15 +92,28 @@ describe('auth mutation facts', () => {
             throw new Error(`Missing auth facts fixture: ${kind}`);
         }
 
-        const rejection = await captureAuthMutationFacts(
-            withFirstCredentialDigest(command, 'mismatched-digest'),
-            recordingCredentialIssuer([])
-        ).catch((error: unknown) => error);
+        const rejection = await captureFactsRejection(command);
 
         expect(rejection).toBeInstanceOf(AuthMutationRejectedError);
         expect(rejection).toMatchObject({ message, code: 'auth-mutation-rejected', status: 409 });
     });
 });
+
+async function captureFactsRejection(command: AuthMutationCommand): Promise<Error> {
+    try {
+        await captureAuthMutationFacts(
+            withFirstCredentialDigest(command, 'mismatched-digest'),
+            recordingCredentialIssuer([]),
+            'auth-service'
+        );
+    }
+    catch (error) {
+        return error instanceof Error
+            ? error
+            : new TypeError('Auth facts rejected with a non-Error value');
+    }
+    throw new Error('Expected auth facts rejection');
+}
 
 function recordingCredentialIssuer(calls: string[]): AuthCredentialIssuer {
     return {

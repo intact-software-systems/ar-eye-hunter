@@ -6,12 +6,14 @@ import {
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { PSqlAdminPruneRepository } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-prune-repository.ts';
 import { toAdminPruneOutbox, type AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+import { toAdminPrunePageDelete } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
 import {
     advanceAdminPruneAggregate,
     createAdminPruneAggregate,
     toAdminPruneAggregateEntry,
     toAdminPruneAggregateKey
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
+import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import assert from 'node:assert/strict';
 import { createResourceEntry, readPGliteDatabaseEpochMs, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
@@ -39,7 +41,7 @@ Deno.test('admin prune PSQL repository reads and deletes one deterministic page'
             appData: null,
             excludedResourceKey: null
         });
-        assert.equal(read.rowIds.length, 2);
+        assert.equal(read.candidates.length, 2);
         assert.equal(read.hasMore, true);
 
         const work: AdminPrunePageWork = {
@@ -55,8 +57,9 @@ Deno.test('admin prune PSQL repository reads and deletes one deterministic page'
             pageIndex: 0,
             appData: null
         };
+        const deletion = toAdminPrunePageDelete(work, read.candidates);
         await sql.begin(async (transaction) => {
-            assert.equal(await repository.deletePage(transaction, work, read.rowIds), 2);
+            assert.equal(await repository.deletePage(transaction, deletion), 2);
         });
         const [remaining] = await sql<{ count: string | number; }[]>`
       select count(*) as count from runtime_state_store where expire_at_ts <= ${new Date(now)}
@@ -90,7 +93,7 @@ Deno.test('admin prune PSQL repository excludes its executing resource row', asy
                 contextId: 'ctx-smoke'
             }
         });
-        assert.equal(read.rowIds.length, 2);
+        assert.equal(read.candidates.length, 2);
         const rows = await sql<{
             ri_resource_id: string;
             ri_topic_id: string;
@@ -98,7 +101,7 @@ Deno.test('admin prune PSQL repository excludes its executing resource row', asy
         }[]>`
       select ri_resource_id, ri_topic_id, fk_ext_bank_id
       from resource_inbox
-      where ri_row_id in ${sql(read.rowIds.map(Number))}
+      where ri_row_id in ${sql(read.candidates.map((candidate) => Number(candidate.rowId)))}
       order by ri_resource_id, ri_topic_id, fk_ext_bank_id
     `;
         assert.deepEqual(rows, [
@@ -135,12 +138,13 @@ Deno.test('admin prune successor outbox rejects an identical active identity', a
             },
             'server-1'
         );
+        const outboxWrite = computeAppOutboxInsert(entry);
         await createPSqlResourceInboxRepository(sql).entries.write(entry);
 
         await assert.rejects(
             () =>
                 sql.begin(async (transaction) => {
-                    await new PSqlAdminPruneRepository(sql).writeOutbox(transaction, entry);
+                    await new PSqlAdminPruneRepository(sql).writeOutbox(transaction, outboxWrite);
                 }),
             Error
         );
@@ -164,23 +168,24 @@ Deno.test('admin prune PSQL progress CAS completes the aggregate result', async 
         await new ResourceInboxResultsRepository(sql).replace(aggregateEntry);
 
         const repository = new PSqlAdminPruneRepository(sql);
+        const page = {
+            kind: 'page',
+            jobId: 'job-aggregate',
+            category: 'runtime-state',
+            rowIds: ['1', '2'],
+            deletedRows: 2,
+            next: null
+        } as const;
+        const aggregateSuccessor = toAdminPruneAggregateEntry(
+            advanceAdminPruneAggregate(aggregate, page)
+        );
+        const progressWrite = {
+            expectedAggregate: aggregateEntry.resource,
+            aggregateSuccessor,
+            aggregateSuccessorExpiryAtIsoTimestamp: aggregateSuccessor.audit.expiryTs.toString()
+        };
         await sql.begin(async (transaction) => {
-            const page = {
-                kind: 'page',
-                jobId: 'job-aggregate',
-                category: 'runtime-state',
-                rowIds: ['1', '2'],
-                deletedRows: 2,
-                next: null
-            } as const;
-            await repository.writeProgress(transaction, {
-                ...page,
-                expectedAggregate: aggregateEntry.resource,
-                aggregateSuccessor: toAdminPruneAggregateEntry(
-                    advanceAdminPruneAggregate(aggregate, page)
-                ),
-                finishedAtEpochMs: now
-            });
+            await repository.writeProgress(transaction, progressWrite);
         });
 
         const result = await new ResourceInboxResultsRepository(sql).findAnyByKey(

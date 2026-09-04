@@ -89,17 +89,18 @@ function compute(command: AuthMutationCommand, read: AuthMutationRead) {
     return computeAuthMutation({
         command,
         read,
-        facts: { kind: command.kind },
-        serviceId: 'auth-service'
+        facts: { kind: command.kind, serviceId: 'auth-service' }
     });
 }
 
-function catchComputeRejection(command: AuthMutationCommand, read: AuthMutationRead): unknown {
+function catchComputeRejection(command: AuthMutationCommand, read: AuthMutationRead): Error {
     try {
         compute(command, read);
     }
     catch (error) {
-        return error;
+        return error instanceof Error
+            ? error
+            : new TypeError('Auth compute rejected with a non-Error value');
     }
     throw new Error('Expected auth compute rejection');
 }

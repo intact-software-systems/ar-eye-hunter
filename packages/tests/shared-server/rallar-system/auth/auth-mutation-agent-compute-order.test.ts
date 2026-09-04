@@ -24,8 +24,7 @@ describe('auth agent-ticket compute order', () => {
                 tickets: [null, null],
                 expiredTicketEntries: [null, null]
             },
-            facts: { kind: command.kind },
-            serviceId: 'auth-service'
+            facts: { kind: command.kind, serviceId: 'auth-service' }
         });
 
         expect(reads).toEqual([...ticketConversionReads('first'), ...ticketConversionReads('second')]);

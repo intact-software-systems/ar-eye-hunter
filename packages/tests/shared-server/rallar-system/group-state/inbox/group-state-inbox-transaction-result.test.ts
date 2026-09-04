@@ -5,9 +5,11 @@ import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.t
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
-import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { GroupMutationPreparation } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
-import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
+import {
+    GroupStateInboxHandler,
+    type GroupStateInboxHandlerDependencies
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import { decodeGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -120,7 +122,7 @@ describe('group-state AppInbox transaction result boundary', () => {
 
     it('persists an inactive presence result once without active mutation effects', async () => {
         const actions: string[] = [];
-        const transactionWriter: AppInboxMutationTransactionWriter = {
+        const transactionWriter: GroupStateInboxHandlerDependencies['transactionWriter'] = {
             writeMutation: async (_context, write) => {
                 actions.push('inactive-transaction');
                 return await write(createUnusedTransaction());

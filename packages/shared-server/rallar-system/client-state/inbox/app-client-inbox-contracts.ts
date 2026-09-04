@@ -67,8 +67,6 @@ export type ClientAuthorisedWsSessionDisconnectAppInboxPayload = Readonly<{
     reason: string;
 }>;
 
-export type ClientExpiredSessionsAppInboxPayload = Readonly<{ atEpochMs: number; }>;
-
 export const CLIENT_STATE_INBOX_REGISTRATION_TYPES = [
     AppInboxType.CLIENT_PRINCIPAL_UPSERT,
     AppInboxType.CLIENT_INSTANCE_UPSERT,

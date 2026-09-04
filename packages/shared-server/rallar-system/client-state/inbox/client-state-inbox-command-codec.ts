@@ -15,10 +15,10 @@ import {
     requireString
 } from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import type { ClientExpiredSessionPageInput } from '../client-state-service-contracts.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
     ClientAuthorisedWsSessionDisconnectAppInboxPayload,
-    ClientExpiredSessionsAppInboxPayload,
     ClientInstanceUpsertAppInboxPayload,
     ClientPrincipalUpsertAppInboxPayload,
     ClientSessionConnectAppInboxPayload,
@@ -169,10 +169,13 @@ export function decodeClientAuthorisedWsSessionDisconnectAppInboxPayload(
 
 export function decodeClientExpiredSessionsAppInboxPayload(
     value: JsonWireValue
-): ClientExpiredSessionsAppInboxPayload {
+): ClientExpiredSessionPageInput {
     const payload = requireJsonWireObject(value, 'Client expiry AppInbox payload');
-    requireExactKeys(payload, ['atEpochMs'], 'Client expiry AppInbox payload');
-    return { atEpochMs: readEpoch(payload.atEpochMs, 'Client expiry time') };
+    requireExactKeys(payload, ['atEpochMs', 'afterKey'], 'Client expiry AppInbox payload');
+    return {
+        atEpochMs: readEpoch(payload.atEpochMs, 'Client expiry time'),
+        afterKey: readNullableString(payload.afterKey, 'Client expiry cursor')
+    };
 }
 
 function decodeClientSessionPayload(value: JsonWireValue, label: string): Readonly<{
@@ -239,7 +242,7 @@ function decodeUpsertClientPrincipalRequest(
         ...(request.roles === undefined ? {} : { roles: readStringArray(request.roles, 'Client principal roles') }),
         ...(request.metadata === undefined
             ? {}
-            : { metadata: readJsonObject(request.metadata, 'Client principal metadata') }),
+            : { metadata: requireJsonWireObject(request.metadata, 'Client principal metadata') }),
         ...optionalEpochField(request, 'lastSeenAtEpochMs')
     };
 }
@@ -404,10 +407,6 @@ function readStringArray(value: JsonWireValue | undefined, label: string): reado
     return value.map((entry, index) => readString(entry, `${label} ${index}`));
 }
 
-function readJsonObject(value: JsonWireValue | undefined, label: string): JsonWireObject {
-    return requireJsonWireObject(value, label);
-}
-
 function requireJsonWireValue(value: JsonWireValue | undefined, label: string): JsonWireValue {
     if (value === undefined) {
         throw new TypeError(`${label} is required`);
@@ -421,13 +420,9 @@ function requireJsonWireObject(
 ): JsonWireObject {
     if (
         value === null || value === undefined || typeof value !== 'object' ||
-        isJsonWireArray(value)
+        Array.isArray(value)
     ) {
         throw new TypeError(`${label} must be an exact object`);
     }
-    return value;
-}
-
-function isJsonWireArray(value: JsonWireValue): value is readonly JsonWireValue[] {
-    return Array.isArray(value);
+    return value as JsonWireObject;
 }

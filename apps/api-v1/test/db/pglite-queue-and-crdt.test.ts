@@ -10,13 +10,17 @@ import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.t
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
-import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
+import {
+    CoalescedAppOutboxWorkService,
+    computeCoalescedAppOutboxWork
+} from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
+import { computeRtcTopologyInputFingerprintWrite } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -512,11 +516,10 @@ Deno.test(
             );
 
             const updated = await sql.begin(async (transaction) =>
-                await service.write(transaction, {
-                    expectedEntry: first,
-                    entry: second,
-                    successorEntry: successor
-                })
+                await service.write(
+                    transaction,
+                    computeCoalescedAppOutboxWork(first, second, successor)
+                )
             );
             assert.equal(updated.action, 'updated');
             assert.equal((await repository.entries.findByKey(first.key))?.resource, second.resource);
@@ -530,13 +533,8 @@ Deno.test(
             const observedReserved = [...reserved.values()][0];
             assert.ok(observedReserved);
             const third = advanceCoalescedGeneration(second, 3);
-            const blocked = await sql.begin(async (transaction) =>
-                await service.write(transaction, {
-                    expectedEntry: observedReserved,
-                    entry: third,
-                    successorEntry: successor
-                })
-            );
+            const blockedWrite = computeCoalescedAppOutboxWork(observedReserved, third, successor);
+            const blocked = await sql.begin(async (transaction) => await service.write(transaction, blockedWrite));
 
             assert.equal(blocked.action, 'successor');
             assert.equal(blocked.blockedByReserved, true);
@@ -544,30 +542,20 @@ Deno.test(
             assert.equal((await repository.entries.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
             assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
 
-            const replay = await sql.begin(async (transaction) =>
-                await service.write(transaction, {
-                    expectedEntry: observedReserved,
-                    entry: third,
-                    successorEntry: successor
-                })
-            );
+            const replay = await sql.begin(async (transaction) => await service.write(transaction, blockedWrite));
             assert.equal(replay.action, 'successor');
             assert.equal((await repository.entries.findAnyByKey(first.key))?.resource, second.resource);
             assert.equal((await repository.entries.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
             assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
 
+            const conflictingSuccessorWrite = computeCoalescedAppOutboxWork(
+                observedReserved,
+                third,
+                { ...successor, resource: JSON.stringify({ different: true }) }
+            );
             await assert.rejects(
                 async () => {
-                    await sql.begin(async (transaction) =>
-                        await service.write(transaction, {
-                            expectedEntry: observedReserved,
-                            entry: third,
-                            successorEntry: {
-                                ...successor,
-                                resource: JSON.stringify({ different: true })
-                            }
-                        })
-                    );
+                    await sql.begin(async (transaction) => await service.write(transaction, conflictingSuccessorWrite));
                 },
                 (error) =>
                     error instanceof ResourceInboxInvariantCorruptionError &&
@@ -618,26 +606,15 @@ Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in plac
             typeId: first.typeId,
             payload: { generation: 2, kind: 'successor' }
         });
-        const revived = await sql.begin(async (transaction) =>
-            await service.write(transaction, {
-                expectedEntry: finished!,
-                entry: revivedEntry,
-                successorEntry: successor
-            })
-        );
+        const revivedWrite = computeCoalescedAppOutboxWork(finished!, revivedEntry, successor);
+        const revived = await sql.begin(async (transaction) => await service.write(transaction, revivedWrite));
         assert.equal(revived.action, 'updated');
         const stored = await repository.entries.findByKey(first.key);
         assert.equal(stored?.status, EntityStatus.NEW);
         assert.equal(stored?.resource, revivedEntry.resource);
         assert.equal(stored?.dequeueAudit.attempts, 0);
 
-        const staleExpected = await sql.begin(async (transaction) =>
-            await service.write(transaction, {
-                expectedEntry: finished!,
-                entry: revivedEntry,
-                successorEntry: successor
-            })
-        );
+        const staleExpected = await sql.begin(async (transaction) => await service.write(transaction, revivedWrite));
         assert.equal(staleExpected.action, 'successor');
         assert.equal((await repository.entries.findByKey(first.key))?.resource, revivedEntry.resource);
         assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
@@ -701,7 +678,7 @@ Deno.test(
                     origin: 'automatic',
                     previousEntry
                 });
-            const coalescedKey = toCoalescedComputed(currentSnapshot, null).entry.key;
+            const coalescedKey = toCoalescedComputed(currentSnapshot, null).entryWrite.entry.key;
             const runCoalescedIntent = async (snapshot: GroupSnapshot) => {
                 currentSnapshot = snapshot;
                 const previousEntry = (await queue.getItem(coalescedKey)) ?? null;
@@ -735,11 +712,14 @@ Deno.test(
             assert.equal(metrics.topologyUpdateCount, 1);
 
             const mismatchedFingerprint = `sha256:${'0'.repeat(64)}`;
+            const mismatchedFingerprintWrite = computeRtcTopologyInputFingerprintWrite(
+                groupRef,
+                mismatchedFingerprint
+            );
             await sql.begin(async (transaction) =>
                 await executionRepository.writeTopologyInputFingerprint(
                     transaction,
-                    groupRef,
-                    mismatchedFingerprint
+                    mismatchedFingerprintWrite
                 )
             );
             await runCoalescedIntent(currentSnapshot);

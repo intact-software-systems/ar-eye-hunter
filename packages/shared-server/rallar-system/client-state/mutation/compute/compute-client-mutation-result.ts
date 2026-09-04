@@ -5,6 +5,7 @@ import type {
     ClientSession,
     ClientSnapshot
 } from '@shared/api/client-types.ts';
+import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import {
     computeClientStateSyncEntries,
     type ComputedClientStateSync
@@ -16,10 +17,13 @@ import { ClientMutationRejectedError } from '../../validation/client-mutation-re
 import type {
     ClientMutationCommand,
     ClientMutationComputed,
+    ClientMutationDomainAppliedWrite,
+    ClientMutationDomainPersistedNoOp,
     ClientMutationRead,
     ConditionalCandidate
 } from '../client-mutation-contracts.ts';
 import { toClientMutationActor } from './compute-client-mutation-state.ts';
+import { computeClientPersistence } from './compute-client-persistence.ts';
 
 export type AppliedClientMutationInput = Readonly<{
     command: ClientMutationCommand;
@@ -47,16 +51,18 @@ export function computeClientMutationResult(
         stateRevision
     });
     const stateSync = toClientStateSync(command, snapshot, event);
-    const outboxEntries = stateSync.flatMap((computed) => computeClientStateSyncEntries(computed, facts.serviceId));
+    const outboxWrites = stateSync
+        .flatMap((computed) => computeClientStateSyncEntries(computed, facts.serviceId))
+        .map(computeAppOutboxInsert);
     const receipt = toAppliedClientMutationReceipt({
         command,
         read,
         principal,
         event,
         stateRevision,
-        outboxIds: outboxEntries.map((entry) => entry.key.resourceId)
+        outboxIds: outboxWrites.map((write) => write.entry.key.resourceId)
     });
-    return {
+    const computed: ClientMutationDomainAppliedWrite = {
         outcome: 'write',
         principal: read.principal
             ? { operation: 'update', value: principal, expectedRevision: read.principal.entry.revision }
@@ -70,8 +76,9 @@ export function computeClientMutationResult(
             ? null
             : { requestId: command.requestId, commandHash: facts.commandHash, receipt },
         stateSync,
-        outboxEntries
+        outboxWrites
     };
+    return { ...computed, persistence: computeClientPersistence(computed) };
 }
 
 export function computeClientMutationNoOp(
@@ -91,7 +98,7 @@ export function computeClientMutationNoOp(
     const receipt = toNoOpClientMutationReceipt(command, read);
     const snapshot = requireClientMutationReadSnapshot(read, command);
     if (persistIdempotency && command.requestId !== null) {
-        return {
+        const computed: ClientMutationDomainPersistedNoOp = {
             outcome: 'no-op',
             persistIdempotency: true,
             aggregateRef: command.aggregateRef,
@@ -104,6 +111,7 @@ export function computeClientMutationNoOp(
             snapshot,
             event: null
         };
+        return { ...computed, persistence: computeClientPersistence(computed) };
     }
     return {
         outcome: 'no-op',

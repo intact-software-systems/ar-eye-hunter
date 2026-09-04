@@ -395,11 +395,12 @@ it('rejects websocket ticket issuance when the presented session token differs',
         serviceId: 'auth-test-service'
     });
     const read = await service.read(command);
-    const computed = service.compute(
+    const facts = await captureAuthMutationFacts(
         command,
-        read,
-        await captureAuthMutationFacts(command, credentialIssuer)
+        credentialIssuer,
+        service.serviceId
     );
+    const computed = service.compute(command, read, facts);
 
-    expect(() => service.validate(command, read, computed)).toThrow(/authority|token/u);
+    expect(() => service.validate({ command, read, facts, computed })).toThrow(/authority|token/u);
 });

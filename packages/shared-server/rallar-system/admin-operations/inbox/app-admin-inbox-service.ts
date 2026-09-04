@@ -4,16 +4,13 @@ import {
     type AdminPruneExpiredRequest
 } from '@shared/api/admin-operations-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
-import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
-
-import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { toUnavailableAppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import {
@@ -31,13 +28,12 @@ import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-i
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
 import { AppInboxTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
+import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type { AdminExpiredDataPruner } from '../admin-expired-data-pruner.ts';
 import { toAdminPruneExpiredOptions } from '../admin-prune-options.ts';
-import { toAdminPruneOutbox } from '../prune/admin-prune-page-codec.ts';
+import { writeAdminPruneAggregate } from '../postgres/p-sql-admin-prune-repository.ts';
 import {
-    createAdminPruneAggregate,
     decodeAdminPruneAggregate,
-    toAdminPruneAggregateEntry,
     toAdminPruneAggregateKey,
     toAdminPruneCompletedResultForCommand
 } from '../prune/admin-prune-progress.ts';
@@ -47,7 +43,7 @@ import {
     type AdminPruneCommand
 } from './admin-prune-command-codec.ts';
 
-import { AppInboxType, type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import { AppInboxType, type AppInboxExecutionMetadata } from '../../app-inbox/app-inbox-contracts.ts';
 
 import { recordRallarTiming, timeRallarAsync, type RallarTimingSink } from '../../observability/timing.ts';
 import {
@@ -66,7 +62,13 @@ import {
     type AdminPruneIdempotencyIdentityInput,
     type AdminPruneTimingIdentity
 } from './admin-prune-inbox-identity.ts';
-import { throwOnAdminPruneValidationIssues, type AdminPruneValidationIssue } from './admin-prune-inbox-validation.ts';
+import { throwOnAdminPruneValidationIssues } from './admin-prune-inbox-validation.ts';
+import {
+    computeAdminPruneMutation,
+    validateAdminPruneMutation,
+    type AdminPruneComputed,
+    type AdminPruneRead
+} from './compute-admin-prune-mutation.ts';
 
 export interface AdminPruneAuthorityReaderInput {
     readonly requestedBy: string;
@@ -102,20 +104,6 @@ export interface AppAdminInboxServiceConfig {
     readonly pageSize: number;
     readonly timing?: RallarTimingSink;
     readonly appInbox: AppInboxOptions;
-}
-
-interface AdminPruneRead {
-    readonly command: AdminPruneCommand;
-    readonly expiredRows: Readonly<Record<AdminPruneExpiredCategory, number>>;
-    readonly authority: AdminPruneAuthority;
-    readonly nowEpochMs: number;
-}
-
-interface AdminPruneComputed {
-    readonly read: AdminPruneRead;
-    readonly result: AdminPruneEnqueueResult;
-    readonly outboxEntries: readonly ResourceEntry[];
-    readonly aggregateEntry: ResourceEntry | null;
 }
 
 export class AppAdminInboxService {
@@ -229,7 +217,7 @@ export class AppAdminInboxService {
 
     private async processCommand(
         value: AdminPruneCommand,
-        context: AppInboxMessageContext<AdminPruneEnqueueResult>
+        context: AppInboxExecutionMetadata
     ): Promise<AdminPruneEnqueueResult> {
         const command = decodeAdminPruneCommand(value);
         await assertAdminPruneQueueIdentity(command, context);
@@ -237,38 +225,35 @@ export class AppAdminInboxService {
         const read = await this.timeAdminPrunePhase(
             'read',
             command,
-            async () => await this.read(command)
+            async () => await this.read(command, context)
         );
-        const computed = await this.timeAdminPrunePhase('compute', command, () => Promise.resolve(this.compute(read)));
+        const computed = await this.timeAdminPrunePhase(
+            'compute',
+            command,
+            () => Promise.resolve(computeAdminPruneMutation(read))
+        );
         const issues = await this.timeAdminPrunePhase(
             'validate',
             command,
-            () => Promise.resolve(this.validate(computed))
+            () => Promise.resolve(validateAdminPruneMutation(read, computed))
         );
         throwOnAdminPruneValidationIssues(issues);
 
-        const result = await this.transactionWriter.writeMutation(context, async (transaction) => {
-            const outbox = new PSqlResourceInboxEntryRepository(transaction);
-            for (const entry of computed.outboxEntries) {
-                await outbox.write(entry);
-            }
-            if (computed.aggregateEntry !== null) {
-                const stored = await new ResourceInboxResultsRepository(
-                    transaction
-                ).writeIfAbsentOrReplaceExpired(computed.aggregateEntry);
-                if (stored.resource !== computed.aggregateEntry.resource) {
-                    throw new Error('Admin prune aggregate collides with an active job');
-                }
-            }
-            return computed.result;
-        });
+        const result = await this.transactionWriter.writeComputedMutation(
+            context,
+            computed.completion,
+            async (transaction) => await this.write(transaction, computed)
+        );
         if (!command.dryRun) {
             this.dependencies.wakeQueueEngine();
         }
         return result;
     }
 
-    private async read(command: AdminPruneCommand): Promise<AdminPruneRead> {
+    private async read(
+        command: AdminPruneCommand,
+        context: AppInboxExecutionMetadata
+    ): Promise<AdminPruneRead> {
         const nowEpochMs = this.config.appInbox.nowEpochMs?.() ?? Date.now();
         const countPairs = ADMIN_PRUNE_EXPIRED_CATEGORIES.map(async (category) => {
             const count = command.categories.includes(category)
@@ -293,79 +278,23 @@ export class AppAdminInboxService {
         for (const [category, count] of pairs) {
             expiredRows[category] = count;
         }
-        return { command, expiredRows, authority, nowEpochMs };
-    }
-
-    private compute(read: AdminPruneRead): AdminPruneComputed {
-        const command = read.command;
-        const results = command.categories.map((category) => ({
-            category,
-            expiredRows: read.expiredRows[category],
-            deletedRows: 0,
-            dryRun: command.dryRun
-        }));
         return {
-            read,
-            outboxEntries: createInitialAdminPrunePages(command, this.serviceId),
-            aggregateEntry: command.dryRun
-                ? null
-                : toAdminPruneAggregateEntry(
-                    createAdminPruneAggregate({
-                        jobId: command.jobId,
-                        generatedAtEpochMs: command.capturedAtEpochMs,
-                        expireAtEpochMs: command.expireAtEpochMs,
-                        serverId: this.serviceId,
-                        requestedBy: command.requestedBy,
-                        requestedSessionId: command.requestedSessionId,
-                        categories: command.categories,
-                        expiredRows: read.expiredRows
-                    })
-                ),
-            result: {
-                generatedAtEpochMs: command.capturedAtEpochMs,
-                serverId: this.serviceId,
-                warnings: [],
-                operation: 'maintenance.prune-expired',
-                status: command.dryRun ? 'dry-run' : 'queued',
-                changed: false,
-                jobId: command.jobId,
-                results
-            }
+            command,
+            expiredRows,
+            authority,
+            nowEpochMs,
+            serviceId: this.serviceId,
+            completionFacts: this.transactionWriter.readCompletionFacts(context)
         };
     }
 
-    private validate(computed: AdminPruneComputed): readonly AdminPruneValidationIssue[] {
-        const { command } = computed.read;
-        const issues: AdminPruneValidationIssue[] = [];
-        if (!computed.read.authority.allowed || command.expireAtEpochMs <= computed.read.nowEpochMs) {
-            issues.push({
-                code: 'admin-prune-authority-denied',
-                message: 'Admin prune current authority is denied',
-                status: 403
-            });
+    private async write(transaction: PSqlSql, computed: AdminPruneComputed): Promise<void> {
+        for (const outboxWrite of computed.outboxWrites) {
+            await writeAppOutboxInsert(transaction, outboxWrite);
         }
-        if (computed.result.jobId !== command.jobId) {
-            issues.push({
-                code: 'admin-prune-computed-identity-invalid',
-                message: 'Admin prune computed identity differs from command',
-                status: 400
-            });
+        if (computed.aggregateWrite !== null) {
+            await writeAdminPruneAggregate(transaction, computed.aggregateWrite);
         }
-        if (computed.outboxEntries.length !== (command.dryRun ? 0 : command.categories.length)) {
-            issues.push({
-                code: 'admin-prune-computed-category-count-invalid',
-                message: 'Admin prune computed category count is invalid',
-                status: 400
-            });
-        }
-        if ((computed.aggregateEntry === null) !== command.dryRun) {
-            issues.push({
-                code: 'admin-prune-aggregate-presence-invalid',
-                message: 'Admin prune aggregate presence is invalid',
-                status: 400
-            });
-        }
-        return issues;
     }
 
     private async toCallerResult(
@@ -455,31 +384,4 @@ function createWaitPolicy(label: string, options: AppInboxOptions): TryWithPolic
             options.waitMaxRetryIntervalMsecs ?? DEFAULT_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MSECS
         )
         .jitterRatio(options.waitJitterRatio ?? DEFAULT_APP_INBOX_WAIT_JITTER_RATIO);
-}
-
-function createInitialAdminPrunePages(
-    command: AdminPruneCommand,
-    serviceId: string
-): readonly ResourceEntry[] {
-    if (command.dryRun) {
-        return [];
-    }
-    return command.categories.map((category) =>
-        toAdminPruneOutbox(
-            {
-                kind: 'page',
-                jobId: command.jobId,
-                category,
-                requestedBy: command.requestedBy,
-                requestedSessionId: command.requestedSessionId,
-                capturedAtEpochMs: command.capturedAtEpochMs,
-                expireAtEpochMs: command.expireAtEpochMs,
-                pageSize: command.pageSize,
-                afterCursor: null,
-                pageIndex: 0,
-                appData: category === 'app-data' ? command.appData : null
-            },
-            serviceId
-        )
-    );
 }

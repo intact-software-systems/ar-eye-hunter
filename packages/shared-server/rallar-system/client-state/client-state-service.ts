@@ -2,16 +2,17 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import type { ClientSession } from '@shared/api/client-types.ts';
 import { toClientSessionExpiryCandidate } from '../presence/session-expiry.ts';
 import { createWsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
-import { type ClientStateService, type ClientStateServiceDependencies } from './client-state-service-contracts.ts';
+import {
+    CLIENT_EXPIRED_SESSION_PAGE_SIZE,
+    type ClientStateService,
+    type ClientStateServiceDependencies
+} from './client-state-service-contracts.ts';
 import { createTimedClientStateService } from './client-state-service-timing.ts';
 import { computeClientMutation } from './mutation/compute/compute-client-mutation.ts';
 import { readClientMutation } from './mutation/read-client-mutation.ts';
 import { validateClientMutation } from './mutation/result-validation/validate-client-mutation.ts';
 import { writeClientMutation } from './mutation/write-client-mutation.ts';
-import {
-    ClientStateRepository,
-    createTransactionBoundClientStateRepository
-} from './persistence/client-state-repository.ts';
+import { ClientStateRepository } from './persistence/client-state-repository.ts';
 
 export function createClientStateService(
     dependencies: ClientStateServiceDependencies
@@ -32,16 +33,20 @@ export function createClientStateService(
             await readClientMutation(repositoryFor(runtimeRepository), authSessionRepository, command),
         compute: (command, read) => computeClientMutation({ command, read }),
         validate: (command, read, computed) => validateClientMutation({ command, read, computed }),
-        write: async (transaction, computed) =>
-            await writeClientMutation(
-                transaction,
-                createTransactionBoundClientStateRepository(transaction),
-                computed
-            ),
-        listExpiredSessionCandidates: async (atEpochMs) =>
-            (await repositoryFor(runtimeRepository).listAllSessions())
-                .filter(isExpiredActiveSession(atEpochMs))
-                .map(toClientSessionExpiryCandidate),
+        write: async (transaction, computed) => await writeClientMutation(transaction, computed),
+        readExpiredSessionPage: async (input) => {
+            const page = await repositoryFor(runtimeRepository).readSessionPage({
+                afterKey: input.afterKey,
+                limit: CLIENT_EXPIRED_SESSION_PAGE_SIZE
+            });
+            return {
+                candidates: page.sessions
+                    .map((session) => session.value)
+                    .filter(isExpiredActiveSession(input.atEpochMs))
+                    .map(toClientSessionExpiryCandidate),
+                nextAfterKey: page.nextAfterKey
+            };
+        },
         findSessionBySessionId: async (sessionId) =>
             await findClientSessionBySessionId(repositoryFor(runtimeRepository), sessionId),
         readIssuedAuthSession: async (sessionId) => await authSessionRepository.findBySessionId(sessionId),

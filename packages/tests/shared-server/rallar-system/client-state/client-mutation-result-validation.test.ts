@@ -1,26 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
+import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
-import { validateClientMutationRead } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-read.ts';
 import { validateClientMutationResult } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-result.ts';
 import {
     ClientMutationIdempotencyConflictError,
     validateClientMutation
 } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
+import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 
 import { emptyRead, entryValue, principalCommand, readAfterWrite, requireWrite } from './client-mutation-compute-test-fixtures.ts';
 
 describe('client mutation result validation', () => {
-    it('accepts a complete computed result through each named validation owner', async () => {
+    it('accepts the canonical computed result', async () => {
         const command = await principalCommand();
         const read = emptyRead(command);
         const computed = requireWrite(computeClientMutation({ command, read }));
 
-        expect(() => validateClientMutationRead(command, read)).not.toThrow();
-        expect(() => validateClientMutationAuthorityPolicy(command, read)).not.toThrow();
-        expect(() => validateClientMutationResult(computed)).not.toThrow();
         expect(() => validateClientMutation({ command, read, computed })).not.toThrow();
     });
 
@@ -62,6 +59,35 @@ describe('client mutation result validation', () => {
 
         expect(() => validateClientMutation({ command: conflicting, read, computed })).toThrow(
             ClientMutationIdempotencyConflictError
+        );
+    });
+
+    it('rejects self-consistent state sync and outbox values that differ from canonical computation', async () => {
+        const command = await principalCommand();
+        const read = emptyRead(command);
+        const computed = requireWrite(computeClientMutation({ command, read }));
+        const shiftedStateSync = computed.stateSync.map((stateSync) => ({
+            ...stateSync,
+            createdAtEpochMs: stateSync.createdAtEpochMs + 1
+        }));
+        const selfConsistentButNoncanonical = {
+            ...computed,
+            stateSync: shiftedStateSync,
+            outboxWrites: shiftedStateSync
+                .flatMap((stateSync) => computeClientStateSyncEntries(stateSync, command.facts.serviceId))
+                .map(computeAppOutboxInsert)
+        };
+
+        expect(() =>
+            validateClientMutation({
+                command,
+                read,
+                computed: selfConsistentButNoncanonical
+            })
+        ).toThrowError(
+            new ClientMutationRejectedError(
+                'Client mutation computed.stateSync.0.createdAtEpochMs differs from the computed value'
+            )
         );
     });
 });
