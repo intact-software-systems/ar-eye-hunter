@@ -49,6 +49,17 @@ export type GroupActivationStatus = Readonly<{
     confirmedAtEpochMs: number;
 }>;
 
+/**
+ * The watermark's stored key registry lives here rather than beside the
+ * computation that produces it: the validators need only these two names, and
+ * importing them from the computation drags the whole reading module into
+ * every browser bundle that validates a group.
+ */
+export const GROUP_EVIDENCE_WATERMARK_KEYS = [
+    'version',
+    'createdAtEpochMs'
+] as const satisfies readonly (keyof GroupEvidenceWatermark)[];
+
 /** The runtime key registry the persistence and wire validators check against. */
 export const GROUP_ACTIVATION_STATUS_KEYS = [
     'condition',

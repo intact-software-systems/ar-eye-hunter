@@ -106,6 +106,13 @@ function createTopologyAppOutboxOptions(
             submitCommand: (command, atEpochMs) =>
                 runtime.groupStateInboxService.enqueueFormationCriterionCommand(command, atEpochMs)
         },
+        activationStatus: {
+            // Route-less and internal: the topology work cycle is the only
+            // producer, and the write is derived, non-authoritative state no
+            // policy or gate reads (product decision 3).
+            submitCommand: (command, atEpochMs) =>
+                runtime.groupStateInboxService.enqueueActivationStatusCommand(command, atEpochMs)
+        },
         topologyPublication: {
             readLifecyclePolicy: (ref) => topology.groupStateRepository.readLifecyclePolicy(ref),
             // Durable, never the snapshot cache: the mint gate's stage and

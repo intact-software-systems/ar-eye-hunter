@@ -767,6 +767,19 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         dispatchSource: 'G'
     },
     {
+        transport: 'MAINTENANCE',
+        entrypoint: 'observed activation status write',
+        type: 'GROUP_ACTIVATION_STATUS',
+        source: 'ci',
+        registrationMarker: 'activationStatus',
+        enqueueSource: 'ci',
+        enqueueMarker: 'enqueueActivationStatusCommand',
+        ownerSource: 'H',
+        owner: 'GroupStateInboxHandler.processGroupStateMutation',
+        typeOwnerSource: 'I',
+        dispatchSource: 'G'
+    },
+    {
         transport: 'WS_LIFECYCLE',
         entrypoint: 'websocket onClose group cleanup',
         type: 'GROUP_PRESENCE_SESSION_CLEANUP',
