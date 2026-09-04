@@ -104,7 +104,9 @@ Deno.test(
                         fixture.requestId
                     ) ?? null,
                     outbox: await Promise.all(
-                        fixture.computed.outboxEntries.map((entry) => outbox.entries.findByKey(entry.key))
+                        fixture.computed.outboxWrites.map((write) =>
+                            outbox.entries.findByKey(write.entry.key)
+                        )
                     ),
                     events: await fixture.events.listClientEvents({
                         ...fixture.scope,
@@ -119,7 +121,7 @@ Deno.test(
                     snapshot: fixture.before,
                     instance: null,
                     receipt: null,
-                    outbox: fixture.computed.outboxEntries.map(() => null),
+                    outbox: fixture.computed.outboxWrites.map(() => null),
                     events: eventsBeforeWrite
                 }
             );
@@ -164,8 +166,8 @@ Deno.test(
                 fixture.computed.event
             );
             const outbox = createPSqlResourceInboxRepository(sql);
-            for (const entry of fixture.computed.outboxEntries) {
-                assert.equal((await outbox.entries.findByKey(entry.key))?.typeId, 'WS_OUTBOX');
+            for (const write of fixture.computed.outboxWrites) {
+                assert.equal((await outbox.entries.findByKey(write.entry.key))?.typeId, 'WS_OUTBOX');
             }
         });
     }

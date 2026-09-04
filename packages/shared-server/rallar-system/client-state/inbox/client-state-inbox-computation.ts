@@ -20,6 +20,9 @@ import {
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
 import {
+    computeWsSessionConnectGuard,
+    computeWsSessionGenerationClosed,
+    isWsSessionGenerationClosed,
     validateWsSessionConnectGuard,
     validateWsSessionGenerationClosed,
     type WsSessionGenerationCloseFacts,
@@ -28,14 +31,12 @@ import {
     type WsSessionGenerationLifecycleComputed,
     type WsSessionGenerationLifecycleRead
 } from '../../websocket/ws-session-generation-computation.ts';
-import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
 import {
     CLIENT_EXPIRED_SESSION_PAGE_SIZE,
     requiresClientWrite,
     toClientStateWritten,
     type ClientExpiredSessionPage,
     type ClientExpiredSessionPageInput,
-    type ClientStateMutationService,
     type ClientStateWritten
 } from '../client-state-service-contracts.ts';
 import type {
@@ -44,7 +45,9 @@ import type {
     ClientMutationComputedWrite,
     ClientMutationRead
 } from '../mutation/client-mutation-contracts.ts';
+import { computeClientMutation } from '../mutation/compute/compute-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '../mutation/result-validation/validate-client-mutation-authority-policy.ts';
+import { validateClientMutation } from '../mutation/result-validation/validate-client-mutation.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
     ClientAuthorisedWsSessionDisconnectAppInboxPayload
@@ -119,8 +122,6 @@ export interface ComputeClientMutationOperationInput {
     readonly read: ClientMutationRead;
     readonly completionFacts: AppInboxCompletionFacts;
     readonly lifecycle: ClientMutationLifecycleInput | undefined;
-    readonly mutation: Pick<ClientStateMutationService, 'compute'>;
-    readonly sessionGeneration: Pick<WsSessionGenerationLifecycleService, 'computeClosed' | 'computeConnectGuard'>;
 }
 
 export interface ValidateClientMutationOperationInput {
@@ -129,7 +130,6 @@ export interface ValidateClientMutationOperationInput {
     readonly completionFacts: AppInboxCompletionFacts;
     readonly lifecycle: ClientMutationLifecycleInput | undefined;
     readonly computed: ClientMutationOperationComputed;
-    readonly mutation: Pick<ClientStateMutationService, 'validate'>;
 }
 
 export interface ComputeAuthorisedWsConnectOperationInput {
@@ -139,8 +139,6 @@ export interface ComputeAuthorisedWsConnectOperationInput {
     readonly lifecycleFacts: WsSessionGenerationFacts;
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
     readonly completionFacts: AppInboxCompletionFacts;
-    readonly mutation: Pick<ClientStateMutationService, 'compute'>;
-    readonly sessionGeneration: Pick<WsSessionGenerationLifecycleService, 'computeConnectGuard' | 'isGenerationClosed'>;
 }
 
 export interface ValidateAuthorisedWsConnectOperationInput {
@@ -151,8 +149,6 @@ export interface ValidateAuthorisedWsConnectOperationInput {
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
     readonly completionFacts: AppInboxCompletionFacts;
     readonly computed: AuthorisedWsConnectOperationComputed;
-    readonly mutation: Pick<ClientStateMutationService, 'validate'>;
-    readonly sessionGeneration: Pick<WsSessionGenerationLifecycleService, 'isGenerationClosed'>;
 }
 
 export interface ComputeMissingSessionDisconnectInput {
@@ -160,7 +156,6 @@ export interface ComputeMissingSessionDisconnectInput {
     readonly lifecycleFacts: WsSessionGenerationCloseFacts;
     readonly lifecycleRead: WsSessionGenerationLifecycleRead;
     readonly completionFacts: AppInboxCompletionFacts;
-    readonly sessionGeneration: Pick<WsSessionGenerationLifecycleService, 'computeClosed'>;
 }
 
 export interface ValidateMissingSessionDisconnectInput {
@@ -179,7 +174,6 @@ export interface ComputeExpiredSessionsOperationInput {
     readonly page: ClientExpiredSessionPage;
     readonly reads: readonly ClientExpiredSessionMutationRead[];
     readonly completionFacts: AppInboxCompletionFacts;
-    readonly mutation: Pick<ClientStateMutationService, 'compute'>;
 }
 
 export interface ValidateExpiredSessionsOperationInput {
@@ -189,23 +183,22 @@ export interface ValidateExpiredSessionsOperationInput {
     readonly reads: readonly ClientExpiredSessionMutationRead[];
     readonly completionFacts: AppInboxCompletionFacts;
     readonly computed: ExpiredSessionsOperationComputed;
-    readonly mutation: Pick<ClientStateMutationService, 'validate'>;
 }
 
 export function computeClientMutationOperation(
     input: ComputeClientMutationOperationInput
 ): ClientMutationOperationComputed {
-    const mutation = input.mutation.compute(input.command, input.read);
+    const mutation = computeClientMutation({ command: input.command, read: input.read });
     if (mutation.outcome === 'idempotency-conflict') {
         return { outcome: 'idempotency-conflict', mutation };
     }
     const lifecycleComputed = input.lifecycle?.kind === 'connect'
-        ? input.sessionGeneration.computeConnectGuard(
+        ? computeWsSessionConnectGuard(
             input.lifecycle.facts,
             input.lifecycle.read
         )
         : input.lifecycle?.kind === 'disconnect'
-        ? input.sessionGeneration.computeClosed(
+        ? computeWsSessionGenerationClosed(
             input.lifecycle.facts,
             input.lifecycle.read
         )
@@ -225,7 +218,11 @@ export function computeClientMutationOperation(
 export function validateClientMutationOperation(
     input: ValidateClientMutationOperationInput
 ): void {
-    input.mutation.validate(input.command, input.read, input.computed.mutation);
+    validateClientMutation({
+        command: input.command,
+        read: input.read,
+        computed: input.computed.mutation
+    });
     if (input.computed.outcome === 'idempotency-conflict') {
         return;
     }
@@ -254,7 +251,7 @@ export function validateClientMutationOperation(
 export function computeAuthorisedWsConnectOperation(
     input: ComputeAuthorisedWsConnectOperationInput
 ): AuthorisedWsConnectOperationComputed {
-    if (input.sessionGeneration.isGenerationClosed(input.lifecycleFacts, input.lifecycleRead)) {
+    if (isWsSessionGenerationClosed(input.lifecycleFacts, input.lifecycleRead)) {
         const durableResult = {
             status: 'inactive',
             sessionId: input.connection.authSession.sessionId,
@@ -266,7 +263,7 @@ export function computeAuthorisedWsConnectOperation(
             completion: computeCompletion(input.completionFacts, durableResult)
         };
     }
-    const mutation = input.mutation.compute(input.command, input.read);
+    const mutation = computeClientMutation({ command: input.command, read: input.read });
     if (mutation.outcome === 'idempotency-conflict') {
         return { outcome: 'idempotency-conflict', mutation };
     }
@@ -274,7 +271,7 @@ export function computeAuthorisedWsConnectOperation(
         input.connection,
         input.lifecycleFacts
     );
-    const lifecycleComputed = input.sessionGeneration.computeConnectGuard(
+    const lifecycleComputed = computeWsSessionConnectGuard(
         lifecycleGuardFacts,
         input.lifecycleRead
     );
@@ -293,7 +290,7 @@ export function computeAuthorisedWsConnectOperation(
 export function validateAuthorisedWsConnectOperation(
     input: ValidateAuthorisedWsConnectOperationInput
 ): void {
-    const generationClosed = input.sessionGeneration.isGenerationClosed(
+    const generationClosed = isWsSessionGenerationClosed(
         input.lifecycleFacts,
         input.lifecycleRead
     );
@@ -315,7 +312,11 @@ export function validateAuthorisedWsConnectOperation(
     if (generationClosed) {
         throw new TypeError('Active WebSocket client mutation used a closed generation');
     }
-    input.mutation.validate(input.command, input.read, input.computed.mutation);
+    validateClientMutation({
+        command: input.command,
+        read: input.read,
+        computed: input.computed.mutation
+    });
     if (input.computed.outcome === 'idempotency-conflict') {
         return;
     }
@@ -338,7 +339,7 @@ export function validateAuthorisedWsConnectOperation(
 export function computeMissingSessionDisconnect(
     input: ComputeMissingSessionDisconnectInput
 ): MissingSessionDisconnectComputed {
-    const lifecycleComputed = input.sessionGeneration.computeClosed(
+    const lifecycleComputed = computeWsSessionGenerationClosed(
         input.lifecycleFacts,
         input.lifecycleRead
     );
@@ -380,7 +381,7 @@ export function validateMissingSessionDisconnect(
 export function computeExpiredSessionsOperation(
     input: ComputeExpiredSessionsOperationInput
 ): ExpiredSessionsOperationComputed {
-    const mutations = input.reads.map(({ command, read }) => input.mutation.compute(command, read));
+    const mutations = input.reads.map(({ command, read }) => computeClientMutation({ command, read }));
     if (mutations.some((mutation) => mutation.outcome === 'idempotency-conflict')) {
         return { outcome: 'idempotency-conflict', mutations };
     }
@@ -422,7 +423,7 @@ export function validateExpiredSessionsOperation(
         if (!mutation) {
             throw new TypeError('Expired client mutation aggregate entry is missing');
         }
-        input.mutation.validate(command, read, mutation);
+        validateClientMutation({ command, read, computed: mutation });
     }
     if (input.computed.outcome === 'idempotency-conflict') {
         return;

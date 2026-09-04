@@ -74,12 +74,6 @@ export type ClientStateService = Readonly<{
         query: StateEventListQuery
     ): Promise<StateEventPage<ClientEvent>>;
     read(command: ClientMutationCommand): Promise<ClientMutationRead>;
-    compute(command: ClientMutationCommand, read: ClientMutationRead): ClientMutationComputed;
-    validate(
-        command: ClientMutationCommand,
-        read: ClientMutationRead,
-        computed: ClientMutationComputed
-    ): void;
     write(
         transaction: PSqlSql,
         computed: ClientMutationComputedWrite
@@ -90,7 +84,7 @@ export type ClientStateService = Readonly<{
     observeSnapshot(snapshot: ClientSnapshot): Promise<ClientSnapshot>;
 }>;
 
-export type ClientStateMutationService = Pick<ClientStateService, 'read' | 'compute' | 'validate' | 'write'>;
+export type ClientStateMutationService = Pick<ClientStateService, 'read' | 'write'>;
 
 export type ClientStateServiceDependencies = Readonly<{
     runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;

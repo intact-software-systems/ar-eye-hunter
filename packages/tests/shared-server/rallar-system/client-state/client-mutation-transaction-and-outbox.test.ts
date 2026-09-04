@@ -92,33 +92,6 @@ describe('client mutation transaction and outbox', () => {
         expect(harness.observedSnapshots).toEqual([]);
         expect(await harness.results.findByKey(harness.context.entry.key)).toBeUndefined();
     });
-
-    it('rejects an accessor-bearing computed snapshot before opening the transaction', async () => {
-        const harness = await createClientMutationTransactionBoundaryFixture({
-            rejectSnapshotReadInTransaction: true
-        });
-
-        await expect(
-            harness.handler.processCommand(
-                harness.context,
-                toUpsertClientPrincipalMutationInput({
-                    scope: SCOPE,
-                    principalId: 'alice',
-                    request: {
-                        username: 'alice',
-                        actorPrincipalId: 'alice',
-                        actorSessionId: 'alice-session',
-                        requestId: 'client-snapshot-selection'
-                    },
-                    defaultCommandId: 'client-snapshot-selection'
-                })
-            )
-        ).rejects.toThrow('Client mutation computed.snapshot must be a data property');
-
-        expect(harness.actions).toEqual(['completion']);
-        expect(harness.observedSnapshots).toEqual([]);
-        expect(await harness.results.findByKey(harness.context.entry.key)).toBeUndefined();
-    });
 });
 
 describe('client mutation AppInbox retry and rollback', () => {
@@ -218,7 +191,15 @@ function createRetryHarness(): RetryHarness {
                 clientStateService: createRetryClientState(state, durable)
             },
             {
-                serviceId: 'server-12345678'
+                serviceId: 'server-12345678',
+                timing: (event) => {
+                    if (
+                        event.operation === 'mutation.compute' ||
+                        event.operation === 'mutation.validate'
+                    ) {
+                        state.phases.push(event.operation === 'mutation.compute' ? 'compute' : 'validate');
+                    }
+                }
             }
         )
     };
@@ -230,14 +211,6 @@ function createRetryClientState(state: RetryHarnessState, durable: ClientStateSe
         read: async (command) => {
             state.phases.push('read');
             return await durable.read(command);
-        },
-        compute: (command, read) => {
-            state.phases.push('compute');
-            return durable.compute(command, read);
-        },
-        validate: (command, read, computed) => {
-            state.phases.push('validate');
-            durable.validate(command, read, computed);
         },
         write: async (transaction, computed) => {
             state.writeAttempt += 1;

@@ -18,6 +18,8 @@ import {
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import type { ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
@@ -155,11 +157,11 @@ async function computeClientStateTestMutation(
     const read = await context.service.read(command);
     const computed = timeClientStateMutationPhase(
         { timing: context.mutationTiming, command, operation: 'mutation.compute' },
-        () => context.service.compute(command, read)
+        () => computeClientMutation({ command, read })
     );
     timeClientStateMutationPhase(
         { timing: context.mutationTiming, command, operation: 'mutation.validate' },
-        () => context.service.validate(command, read, computed)
+        () => validateClientMutation({ command, read, computed })
     );
     return computed;
 }
