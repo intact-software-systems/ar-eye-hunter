@@ -742,12 +742,12 @@ describe('the series anchor on coalesced rows', () => {
         const message = JSON.parse(first.entryWrite.entry.resource);
         const envelope = JSON.parse(message.payload.resource);
         delete envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].windowOpenedAtEpochMs;
-        const legacy = {
+        const malformedPredecessor = {
             ...first.entryWrite.entry,
             resource: JSON.stringify({ ...message, payload: { ...message.payload, resource: JSON.stringify(envelope) } })
         };
 
-        expect(() => createReplan(BASE_EPOCH_MS + 400, legacy)).toThrow(/not coalesced topology work/);
+        expect(() => createReplan(BASE_EPOCH_MS + 400, malformedPredecessor)).toThrow(/not coalesced topology work/);
     });
 
     it('keeps a head that already failed an attempt retryable when the bound makes a merge due at once', () => {
