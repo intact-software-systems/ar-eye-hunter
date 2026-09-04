@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { ALMessage } from '../al-contracts/al-contract.ts';
+import { computeResourceEntryFromALMessage } from '../queuebox/al-message-resource-entry-computation.ts';
 import { DequeueController } from '../queuebox/DequeueController.ts';
 import {
     DequeueResourceEntryController,
@@ -82,30 +83,9 @@ export class QueueBoxUtilities {
     }
 
     static toResourceEntryFromMsg(msg: ALMessage, typeId: string): ResourceEntry {
-        const expireAtMs = msg.constraints?.expiresAtMs ?? msg.qos?.expiry?.opts?.expiresAtMs;
-        const expiryTs = expireAtMs !== undefined
-            ? Temporal.Instant.fromEpochMilliseconds(expireAtMs)
-            : NEVER_EXPIRE_TS;
-
-        return {
-            key: {
-                topicId: msg.route.topicId,
-                resourceId: msg.route.resourceId,
-                contextId: msg.route.contextId
-            },
-            resource: JSON.stringify(msg),
-            typeId: typeId,
-            audit: {
-                date: Temporal.Now.plainTimeISO(),
-                createdBy: msg.audit?.createdBy ?? 'test',
-                createdTs: Temporal.Now.plainDateTimeISO(),
-                expiryTs
-            },
-            status: EntityStatus.NEW,
-            dequeueAudit: {
-                attempts: 0
-            },
-            db: undefined
-        };
+        return computeResourceEntryFromALMessage(msg, typeId, {
+            date: Temporal.Now.plainTimeISO(),
+            createdTs: Temporal.Now.plainDateTimeISO()
+        });
     }
 }

@@ -25,7 +25,10 @@ import {
 import type { TopologyAppInboxRequestPayload } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import type { TopologyAppInboxResult } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
-import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
+import type {
+    GroupTopologyPlanningAuthority,
+    ReadGroupTopologyPlanningAuthorityInput
+} from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { toApiMutationRouteFailure } from './api-mutation-route-failure.ts';
@@ -78,12 +81,7 @@ export interface GraphTopologyRouteQuery {
 
 export interface GraphTopologyRoutePlanning {
     readTopologyPlanningAuthority(
-        input: Readonly<{
-            groupRef: GroupRef;
-            requestOptions?: undefined;
-            knownGroup?: GroupSnapshot;
-            snapshotSelection: 'prefer-current' | 'preserve-known-revision';
-        }>
+        input: ReadGroupTopologyPlanningAuthorityInput
     ): Promise<GroupTopologyPlanningAuthority>;
 }
 

@@ -20,7 +20,7 @@ import type { RtcRttInboxService } from '../rtc-rtt/inbox/rtc-rtt-inbox-service.
 import type { TopologyInboxService } from '../topology/inbox/topology-inbox-service.ts';
 import type { RtcTopologyExecutionRepository } from '../topology/persistence/rtc-topology-execution-repository.ts';
 import type { RtcTopologyPublicationRepository } from '../topology/publication/rtc-topology-publication-repository.ts';
-import type { RtcTopologyDeliveryAppendPort } from '../topology/replay/delivery/rtc-topology-delivery-append-port.ts';
+import type { RtcTopologyDeliveryRuntime } from '../topology/replay/delivery/rtc-topology-delivery-runtime.ts';
 import type { WsServerTargetResolutionOptions } from '../websocket/targets/ws-server-target-resolution-options.ts';
 import type {
     RallarAdminInboxServiceFactory,
@@ -89,10 +89,7 @@ export interface CreateRallarMiddlewareOptions {
     readonly groupsRepository: GroupStateRepository;
     readonly rtcTopologyPublicationRepository?: RtcTopologyPublicationRepository;
     readonly rtcTopologyExecutionRepository?: RtcTopologyExecutionRepository;
-    readonly rtcTopologyDelivery?: Readonly<{
-        publisherStreamId: string;
-        append: RtcTopologyDeliveryAppendPort;
-    }>;
+    readonly rtcTopologyDelivery?: RtcTopologyDeliveryRuntime;
     readonly rtcTopologyReplay?: RtcTopologyReplayRuntime;
     readonly queuePubSubBridge?: Omit<InstallQueueBoxPubSubBridgeOptions, 'wsQBoxServerService'>;
     readonly readiness?: Promise<void>;

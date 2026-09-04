@@ -22,6 +22,10 @@ describe('in-memory group state event identity', () => {
         await store.appendGroupEvent(event);
         await store.appendGroupEvent(structuredClone(event));
 
+        await expect(store.readGroupEvent(event, event.eventId)).resolves.toBe(event);
+        await expect(
+            store.readGroupEvent({ ...event, groupId: 'another-group' }, event.eventId)
+        ).resolves.toBeUndefined();
         await expect(store.listGroupEvents(event)).resolves.toEqual([event]);
     });
 });

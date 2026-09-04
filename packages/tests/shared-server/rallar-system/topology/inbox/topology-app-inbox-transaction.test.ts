@@ -35,6 +35,7 @@ import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 
@@ -395,7 +396,14 @@ describe('topology AppInbox transaction and idempotency', () => {
             nowEpochMs: () => harness.nowEpochMs,
             wakeQueue,
             transactionWriter: {
-                writeMutation: async (_context, write) => await harness.database.begin(write)
+                readCompletionFacts: (context) => ({
+                    entry: context.entry,
+                    completedAtEpochMs: harness.nowEpochMs
+                }),
+                writeComputedMutation: async (_context, computed, write) => {
+                    await harness.database.begin(write);
+                    return computed.durableResult;
+                }
             }
         });
 
@@ -404,7 +412,11 @@ describe('topology AppInbox transaction and idempotency', () => {
                 {
                     enqueue: wireEnqueue,
                     message,
-                    entry: { ...entry, dequeueAudit: { ...entry.dequeueAudit, attempts: 1 } },
+                    entry: {
+                        ...entry,
+                        status: EntityStatus.RESERVED,
+                        dequeueAudit: { ...entry.dequeueAudit, attempts: 1 }
+                    },
                     encodeResult: (result) => encodeAppInboxResult(result, 'Topology transaction test result')
                 } satisfies AppInboxMessageContext<TopologyAppInboxResult>,
                 management.mutationOwners

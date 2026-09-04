@@ -673,9 +673,9 @@ deployment boundary described by this architecture.
 
 ## Verification
 
-Focused concurrency coverage lives in:
+Focused transaction-ownership and concurrency coverage lives in:
 
-- `packages/tests/repo/mutation-route-ownership/authoritative/authoritative-mutation-read-compute-validate-write.test.ts`
+- `packages/tests/repo/transaction-write-check.test.ts`
 - `packages/tests/shared-server/rallar-system/state-sync/cached-state-services.test.ts`
 - `packages/tests/shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.test.ts`
 - `packages/tests/shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-log.test.ts`

@@ -45,6 +45,197 @@ describe('transaction write check', () => {
         expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
     });
 
+    it('follows imported authored helpers reached from a transaction callback', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        project.createSourceFile(
+            '/packages/domain/write-helper.ts',
+            `export function bindRow(value: object): string { return JSON.stringify(value); }`
+        );
+        project.createSourceFile(
+            '/packages/domain/mutation.ts',
+            `import { bindRow } from './write-helper.ts';
+             interface Sql {
+                 begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                 query(value: string): Promise<void>;
+             }
+             declare const database: Sql;
+             function persist(transaction: Sql, computed: object): Promise<void> {
+                 return transaction.query(bindRow(computed));
+             }
+             export async function execute(computed: object): Promise<void> {
+                 await database.begin(async (transaction) => await persist(transaction, computed));
+             }`
+        );
+
+        const findings = analyzeTransactionWrites(project);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+    });
+
+    it('follows authored method bodies reached through a typed owner', () => {
+        const findings = analyzeFixture(`
+            interface Sql {
+                begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                query(value: string): Promise<void>;
+            }
+            declare const database: Sql;
+            class Writer {
+                persist(transaction: Sql, computed: object): Promise<void> {
+                    return transaction.query(JSON.stringify(computed));
+                }
+            }
+            const writer = new Writer();
+            export async function execute(computed: object): Promise<void> {
+                await database.begin(async (transaction) => await writer.persist(transaction, computed));
+            }
+        `);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+    });
+
+    it('fails closed for authored declarations without an inspectable body', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        project.createSourceFile(
+            '/packages/domain/external.d.ts',
+            `export function materialize(value: object): string;`
+        );
+        project.createSourceFile(
+            '/packages/domain/mutation.ts',
+            `import { materialize } from './external.ts';
+             interface Sql {
+                 begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                 query(value: string): Promise<void>;
+             }
+             declare const database: Sql;
+             export async function execute(computed: object): Promise<void> {
+                 await database.begin(async (transaction) => {
+                     await transaction.query(materialize(computed));
+                 });
+             }`
+        );
+
+        expect(analyzeTransactionWrites(project)).toMatchObject([{
+            rule: 'transaction.unresolved-provenance',
+            operation: 'materialize'
+        }]);
+    });
+
+    it('allows dispatching prepared subsets through transaction-bound write ports', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql {}
+            interface ServiceA { write(transaction: PSqlSql, computed: string): Promise<void>; }
+            interface ServiceB { finish(transaction: PSqlSql, computed: number): Promise<void>; }
+            declare const serviceA: ServiceA;
+            declare const serviceB: ServiceB;
+            export async function write(
+                transaction: PSqlSql,
+                computed: { readonly forServiceA: string; readonly forServiceB: number }
+            ): Promise<void> {
+                await serviceA.write(transaction, computed.forServiceA);
+                await serviceB.finish(transaction, computed.forServiceB);
+            }
+        `);
+
+        expect(findings).toEqual([]);
+    });
+
+    it('does not treat a callable SQL transaction argument as a callback', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql {
+                (strings: TemplateStringsArray, ...values: readonly unknown[]): Promise<unknown>;
+            }
+            interface Writer { write(transaction: PSqlSql, computed: string): Promise<void>; }
+            declare const writer: Writer;
+            export async function writeMutation(
+                transaction: PSqlSql,
+                computed: string
+            ): Promise<void> {
+                await writer.write(transaction, computed);
+            }
+        `);
+
+        expect(findings).toEqual([]);
+    });
+
+    it('does not analyze a callback that is only constructed in the transaction', () => {
+        const findings = analyzeFixture(`
+            interface Sql {
+                begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                query(value: string): Promise<void>;
+            }
+            declare const database: Sql;
+            export async function execute(): Promise<void> {
+                await database.begin(async (transaction) => {
+                    const later = () => JSON.stringify({ value: 1 });
+                    await transaction.query('prepared');
+                    void later;
+                });
+            }
+        `);
+
+        expect(findings).toEqual([]);
+    });
+
+    it('analyzes immediately invoked collection callbacks', () => {
+        const findings = analyzeFixture(`
+            interface Sql {
+                begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+                query(value: string): Promise<void>;
+            }
+            declare const database: Sql;
+            export async function execute(values: readonly object[]): Promise<void> {
+                await database.begin(async (transaction) => {
+                    const encoded = values.map((value) => JSON.stringify(value));
+                    await transaction.query(encoded[0]);
+                });
+            }
+        `);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+    });
+
+    it('discovers only resolved AppInbox writeComputedMutation callbacks', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql { query(value: unknown): Promise<void>; }
+            interface AppInboxMutationTransactionWriter {
+                writeComputedMutation<Result>(
+                    context: object,
+                    computed: Result,
+                    write: (transaction: PSqlSql) => Promise<void>
+                ): Promise<Result>;
+            }
+            interface UnrelatedWriter {
+                writeComputedMutation<Result>(
+                    context: object,
+                    computed: Result,
+                    write: (transaction: PSqlSql) => Promise<void>
+                ): Promise<Result>;
+            }
+            declare const transactionWriter: AppInboxMutationTransactionWriter;
+            declare const unrelatedWriter: UnrelatedWriter;
+            declare const context: object;
+            declare const computed: { value: number };
+            export async function process(): Promise<void> {
+                await transactionWriter.writeComputedMutation(
+                    context,
+                    computed,
+                    async (transaction) => {
+                        await transaction.query(JSON.stringify(computed));
+                    }
+                );
+                await unrelatedWriter.writeComputedMutation(
+                    context,
+                    computed,
+                    async () => {
+                        Math.random();
+                    }
+                );
+            }
+        `);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+    });
+
     it('follows transitive local helpers from the transaction boundary', () => {
         const project = new Project({ useInMemoryFileSystem: true });
         project.createSourceFile(
@@ -87,7 +278,7 @@ describe('transaction write check', () => {
             'packages/domain/materialize-row.ts'
         ]);
         expect([...new Set(findings.map((finding) => finding.boundary))]).toEqual([
-            'packages/domain/mutation.ts:8'
+            'packages/domain/mutation.ts:9'
         ]);
     });
 
@@ -327,6 +518,71 @@ describe('transaction write check', () => {
         expect(findings).toEqual([]);
     });
 
+    it('reports parameter-only persisted-value construction inside a write', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql {
+                insert(value: object): Promise<void>;
+                update(value: number): Promise<void>;
+            }
+            export async function writeMutation(
+                transaction: PSqlSql,
+                validatedComputed: { readonly resource: string; readonly revision: number }
+            ): Promise<void> {
+                await transaction.insert({ resource: validatedComputed.resource });
+                await transaction.update(validatedComputed.revision + 1);
+            }
+        `);
+
+        expect(findings).toMatchObject([
+            {
+                rule: 'transaction.precomputable-work',
+                operation: 'transaction.insert argument'
+            },
+            {
+                rule: 'transaction.precomputable-work',
+                operation: 'transaction.update argument'
+            }
+        ]);
+    });
+
+    it('allows direct prepared values and database-result refinements as write arguments', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql {
+                insert(value: object): Promise<{ id: number }>;
+                update(value: object): Promise<void>;
+            }
+            export async function writeMutation(
+                transaction: PSqlSql,
+                computed: { readonly row: object; readonly status: string }
+            ): Promise<void> {
+                const inserted = await transaction.insert(computed.row);
+                await transaction.update({
+                    id: Number(inserted.id),
+                    status: computed.status
+                });
+            }
+        `);
+
+        expect(findings).toEqual([]);
+    });
+
+    it('fails closed when transaction work invokes a callable parameter', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql { query(value: string): Promise<void>; }
+            export async function writeMutation(
+                transaction: PSqlSql,
+                materialize: () => string
+            ): Promise<void> {
+                await transaction.query(materialize());
+            }
+        `);
+
+        expect(findings).toMatchObject([{
+            rule: 'transaction.unresolved-provenance',
+            operation: 'materialize'
+        }]);
+    });
+
     it('recognizes IndexedDB readwrite and upgrade callbacks but excludes readonly work', () => {
         const findings = analyzeFixture(`
             declare const db: IDBDatabase;
@@ -382,14 +638,48 @@ describe('transaction write check', () => {
         }]);
     });
 
+    it('reports transactions beneath ordinary for, while, and do loops', () => {
+        const findings = analyzeFixture(`
+            interface Sql { begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>; }
+            declare const database: Sql;
+            export async function repeatWithFor(): Promise<void> {
+                for (let index = 0; index < 2; index += 1) {
+                    await database.begin(async () => undefined);
+                }
+            }
+            export async function repeatWithWhile(): Promise<void> {
+                while (true) {
+                    await database.begin(async () => undefined);
+                }
+            }
+            export async function repeatWithDo(): Promise<void> {
+                do {
+                    await database.begin(async () => undefined);
+                } while (false);
+            }
+        `);
+
+        expect(findings.map((finding) => finding.rule)).toEqual([
+            'transaction.inner-retry',
+            'transaction.inner-retry',
+            'transaction.inner-retry'
+        ]);
+    });
+
     it('exempts exact PostgreSQL ResourceInbox owners but not browser QueueBox writes', () => {
         const project = new Project({ useInMemoryFileSystem: true });
         const specialized = project.createSourceFile(
             '/packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts',
-            transactionSource('Date.now()')
+            `interface Sql { begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>; }
+             export class PSqlResourceInboxEntryRepository {
+                 constructor(private readonly sql: Sql) {}
+                 async writeMaterializedIfAbsentOrReplaceExpired(): Promise<void> {
+                     await this.sql.begin(async () => { Date.now(); });
+                 }
+             }`
         );
         const browser = project.createSourceFile(
-            '/packages/shared/queuebox/indexed-db-queue-box-write.ts',
+            '/packages/shared/queuebox/write-computed-indexed-db-queue-mutations.ts',
             `declare const db: IDBDatabase;
              export function write(): void {
                  const transaction = db.transaction('items', 'readwrite');
@@ -401,9 +691,103 @@ describe('transaction write check', () => {
 
         expect(findings).toHaveLength(1);
         expect(findings[0]).toMatchObject({
-            path: 'packages/shared/queuebox/indexed-db-queue-box-write.ts',
+            path: 'packages/shared/queuebox/write-computed-indexed-db-queue-mutations.ts',
             operation: 'JSON.stringify'
         });
+    });
+
+    it('fails closed for arbitrary callbacks in specialized ResourceInbox files', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        const source = project.createSourceFile(
+            '/packages/shared-server/queuebox/postgres/p-sql-queue-box.ts',
+            `interface Repository {
+                 transaction<T>(write: (transaction: Repository) => Promise<T>): Promise<T>;
+             }
+             export class PSqlQueueBox {
+                 constructor(private readonly repository: Repository) {}
+                 async enqueueIf(decide: (current: string) => boolean): Promise<void> {
+                     await this.repository.transaction(async () => {
+                         decide('current');
+                     });
+                 }
+             }`
+        );
+
+        expect(analyzeTransactionWrites(project, [source])).toMatchObject([{
+            rule: 'transaction.unresolved-provenance',
+            operation: 'decide'
+        }]);
+    });
+
+    it('does not exempt new files merely because they share the ResourceInbox directory', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        const source = project.createSourceFile(
+            '/packages/shared-server/queuebox/postgres/unreviewed-domain-write.ts',
+            transactionSource('Date.now()')
+        );
+
+        const findings = analyzeTransactionWrites(project, [source]);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['Date.now']);
+    });
+
+    it('allows only reviewed transaction-forwarding callback parameters', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        const forwardingSources = [
+            [
+                '/apps/api-v1/src/db/pglite-sql-adapter.ts',
+                'attachPGliteBegin',
+                'fn'
+            ],
+            [
+                '/packages/shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts',
+                'inTransaction',
+                'write'
+            ],
+            [
+                '/packages/shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts',
+                'begin',
+                'fn'
+            ],
+            ['/packages/domain/unreviewed-transaction-forwarder.ts', 'inTransaction', 'write']
+        ] as const;
+        for (const [path, functionName, parameterName] of forwardingSources) {
+            project.createSourceFile(
+                path,
+                transactionForwardingSource(functionName, parameterName)
+            );
+        }
+
+        const findings = analyzeTransactionWrites(project);
+
+        expect(findings).toMatchObject([{
+            rule: 'transaction.unresolved-provenance',
+            path: 'packages/domain/unreviewed-transaction-forwarder.ts',
+            operation: 'write'
+        }]);
+    });
+
+    it('excludes final non-production source classes from analysis', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        const excludedPaths = [
+            '/packages/tests/domain/write.ts',
+            '/packages/shared-test/domain/write.ts',
+            '/packages/shared-rtc-bench/domain/write.ts',
+            '/packages/domain/generated/write.ts',
+            '/packages/domain/vendor/write.ts',
+            '/packages/domain/fixtures/write.ts',
+            '/packages/domain/mocks/write.ts',
+            '/packages/domain/write.test.ts',
+            '/packages/domain/write.spec.ts'
+        ];
+        for (const path of excludedPaths) {
+            project.createSourceFile(path, transactionSource('Date.now()'));
+        }
+        project.createSourceFile('/packages/domain/write.ts', transactionSource('Date.now()'));
+
+        const findings = analyzeTransactionWrites(project);
+
+        expect(findings.map((finding) => finding.path)).toEqual(['packages/domain/write.ts']);
     });
 });
 
@@ -419,6 +803,22 @@ function transactionSource(work: string): string {
         declare const database: Sql;
         export async function write(): Promise<void> {
             await database.begin(async () => { ${work}; });
+        }
+    `;
+}
+
+function transactionForwardingSource(functionName: string, parameterName: string): string {
+    return `
+        interface PSqlSql {}
+        declare function runInPSqlTransaction<T>(
+            database: PSqlSql,
+            write: (transaction: PSqlSql) => Promise<T>
+        ): Promise<T>;
+        declare const database: PSqlSql;
+        export function ${functionName}(
+            ${parameterName}: (transaction: PSqlSql) => Promise<void>
+        ): Promise<void> {
+            return runInPSqlTransaction(database, ${parameterName});
         }
     `;
 }

@@ -29,6 +29,7 @@ import type {
     AppInboxCompletionFacts
 } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import { readAuthMutationAttempt } from '@shared-server/rallar-system/auth/mutation/read-auth-mutation-attempt.ts';
+import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 
 const decodeOrderCase = 'decodes before queue identity validation and exits before mutation phases on mismatch';
 
@@ -198,7 +199,7 @@ function createCredentialIssuer(actions: string[]): AuthCredentialIssuer {
     };
 }
 
-class RecordingTransactionWriter {
+class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
     private readonly actions: string[];
     private readonly transaction: PSqlSql;
 

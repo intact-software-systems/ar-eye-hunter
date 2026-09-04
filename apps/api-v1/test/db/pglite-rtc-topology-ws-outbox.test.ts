@@ -10,7 +10,14 @@ import { toRtcTopologyPublicationId, toRtcTopologyPublicationMessageId } from '@
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { hashRtcTopologyExecutionCommand } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
-import { writeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/topology/publication/rtc-topology-ws-outbox-entry.ts';
+import {
+    computeRtcTopologyPublicationOutboxInsert,
+    writeRtcTopologyPublicationOutbox
+} from '@shared-server/rallar-system/topology/publication/rtc-topology-ws-outbox-entry.ts';
+import {
+    computeRtcTopologyReservationFinish,
+    finishRtcTopologyReservation
+} from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-completion.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
@@ -24,10 +31,11 @@ Deno.test('PGlite persists distinct topology publications with one logical route
     const sql = lifecycle.database;
     try {
         const publications = [publication('work-1'), publication('work-2')];
+        const outboxWrites = publications.map(computeRtcTopologyPublicationOutboxInsert);
         const entries = await sql.begin(async (transaction) => {
             const written = [];
-            for (const item of publications) {
-                written.push(await writeRtcTopologyPublicationOutbox(transaction, item));
+            for (const write of outboxWrites) {
+                written.push(await writeRtcTopologyPublicationOutbox(transaction, write));
             }
             return written;
         });
@@ -118,19 +126,22 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
         assert.ok(reserved);
         assert.equal(reserved.status, EntityStatus.RESERVED);
         assert.equal(reserved.dequeueAudit.attempts, 1);
-        await sql.begin(async (transaction) => {
-            await executions.writeTopologyMutation(transaction, computed);
-            await writeRtcTopologyPublicationOutbox(transaction, stalePublication);
-            assert.equal(
-                await createPSqlResourceInboxRepository(transaction).finalization.finishReserved(
-                    reserved.key,
-                    1,
-                    EntityStatus.COMPLETED,
-                    new Date()
-                ),
-                true
-            );
-        });
+        const outboxWrite = computeRtcTopologyPublicationOutboxInsert(stalePublication);
+        const reservationFinish = computeRtcTopologyReservationFinish(reserved, new Date());
+        const stringify = JSON.stringify;
+        JSON.stringify = () => {
+            throw new Error('serialization must finish before the transaction');
+        };
+        try {
+            await sql.begin(async (transaction) => {
+                await executions.writeTopologyMutation(transaction, computed);
+                await writeRtcTopologyPublicationOutbox(transaction, outboxWrite);
+                await finishRtcTopologyReservation(transaction, reservationFinish);
+            });
+        }
+        finally {
+            JSON.stringify = stringify;
+        }
 
         const after = await snapshots.findSnapshotEntry(currentSnapshot.groupRef);
         assert.ok(after);

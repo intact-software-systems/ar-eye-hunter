@@ -9,6 +9,11 @@ export interface RtcTopologyDeliveryAppendInput {
     readonly retainUntilEpochMs: number;
 }
 
+export interface RtcTopologyDeliveryPublicationReadInput {
+    readonly groupRef: GroupRef;
+    readonly publicationId: string;
+}
+
 export interface RtcTopologyDeliveryStream {
     readonly streamId: string;
     readonly headSequence: number;
