@@ -18,10 +18,8 @@ import {
     computeGroupFormationReading,
     type GroupFormationReadiness
 } from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
-import {
-    isSameGroupActivationSeries,
-    type GroupActivationStatus
-} from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
+import type { GroupActivationStatus } from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
+import { isSameGroupActivationSeries } from '@shared/api/group-lifecycle/activation-status/is-same-group-activation-series.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import {
     isSameGroupLayoutIdentity,
