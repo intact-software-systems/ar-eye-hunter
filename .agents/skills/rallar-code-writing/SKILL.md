@@ -200,22 +200,11 @@ checker does not substitute for following production symbols.
 - One queue delivery performs one mutation attempt. A conflict exits to outer
   QueueBox redelivery, which starts again from `read` with fresh data. Never add
   an inner retry loop in a handler or persistence helper.
-- Policy follows the resolved transaction opener and owner, not a source path.
-  AppInbox and domain-owned transactions use `strict-domain-write`. Calling
-  ResourceInbox code from an AppInbox or domain-owned transaction does not
-  transfer the specialized policy. Browser IndexedDB readwrite and
-  upgrade/versionchange transactions remain strict.
-- Use `specialized-resource-inbox` only for an exact resolved PostgreSQL
-  ResourceInbox, Results, or QueueBox transaction owner. Permit bounded
-  middleware-local SQL coordination and deterministic persisted-value
-  transformations. The strict `transaction.precomputable-work` rule does not
-  apply to this proven specialized owner. Its sole externally supplied callback
-  allowance is the exact guarded winner materializer, which may construct its
-  bounded winner-only row. Outside that allowance, prohibit ordinary domain
-  mutation logic, external effects, timers, polling, unbounded work, and
-  arbitrary unresolved operation callbacks. Treat the checker's explicit file
-  inventory as review evidence, not as a strict pass or an exception. A new
-  file is strict by default until its exact specialized ownership is reviewed.
+- Apply the authoritative repository standard's closed transaction grammar.
+  Classify policy from the resolved transaction owner, never from a file path
+  or helper name. Apply the exact `specialized-resource-inbox` delta only as
+  defined in `references/convergent-service-writing.md`; all other authored
+  writes use the strict rule.
 - Prefer a functional core with an explicitly owned stateful shell. Model domain
   decisions and conditional-write outcomes as separate typed values.
 - Authoritative persisted and shared contracts use mandatory fields by default.

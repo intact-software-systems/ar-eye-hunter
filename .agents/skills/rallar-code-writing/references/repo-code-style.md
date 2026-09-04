@@ -977,11 +977,15 @@ pure function called directly by the use case or route.
 
 ## Database write safety
 
-For authoritative database or realtime service mutations, read
+This section is the canonical owner of the repository's transaction phase,
+purity, and closed write-grammar rules. For authoritative database or realtime
+service mutations, also read
 `.agents/skills/rallar-code-writing/references/convergent-service-writing.md`
-completely. That reference owns AppInbox transaction/retry rules, optimistic
+completely. That reference owns service composition, AppInbox transaction and
+retry rules, optimistic
 compare-and-set semantics, permissive convergence, immutable facts, canonical
-identity, and concurrency verification.
+identity, specialized ResourceInbox behavior, and concurrency verification; it
+does not restate or relax this grammar.
 
 The local shape rule remains: expose a functional core through an explicitly
 owned stateful shell and keep the exact dataflow
@@ -992,14 +996,29 @@ side effects. Do not add `prepare`, `prepareWrite`, or another deterministic
 transformation after `compute`; `compute` returns persistence-ready data and
 `validate` checks that exact result.
 Adding another service mutation phase requires explicit human approval.
-Transaction write code primarily executes persistence-ready data from the prior
-phase. It may execute or iterate computed writes, select computed variants from
-actual database outcomes, apply the closed database-result refinement grammar,
-and construct the typed write outcome. Keep clocks, randomness, serialization,
-hashing, canonicalization, validation, sorting, candidate/event/outbox
-construction, arbitrary helpers, and all other precomputable work before
+Transaction write code uses this closed grammar:
+
+- construct a transaction-bound adapter and bind already computed SQL
+  parameters;
+- execute or iterate prepared writes;
+- perform conditional writes, compare-and-set, constraints, savepoints,
+  rollback, and conflict handling;
+- select an already computed variant from an actual database outcome;
+- directly project, compare, or scalar-normalize database-returned facts,
+  enforce an invariant or error check on those facts, and attach
+  database-generated keys, revisions, sequences, timestamps, or constraint
+  results; and
+- construct the typed write outcome from the computed input and those exact
+  database-returned facts.
+
+Keep clocks, randomness, serialization, hashing, canonicalization, validation,
+sorting, candidate/event/outbox construction, arbitrary helpers, unknown
+dynamic or external behavior, and all other precomputable work before
 transaction entry. Deterministic work is non-waivable even when cheap or under
-deadline pressure.
+deadline pressure. SQL values may be direct parameters or casts, database
+generated values, current-row expressions, compare-and-set predicates,
+constraints, and `RETURNING` projections; persisted-value transformations that
+could have been computed from caller data remain outside.
 
 Transaction timing is not provenance. A value desired only for a transaction
 winner is not thereby database-derived; this includes a timestamp, key, or
@@ -1021,16 +1040,15 @@ upgrade/versionchange transactions remain strict.
 
 The `specialized-resource-inbox` policy applies only when resolution proves an
 exact PostgreSQL ResourceInbox, Results, or QueueBox transaction owner. Those
-owners may perform bounded middleware-local SQL coordination whose result and
-rollback semantics exist only inside that transaction. They may not perform
-ordinary domain mutation logic, external effects, timers, polling, unbounded
-work, or arbitrary unresolved operation callbacks. The
-`transaction.precomputable-work` rule does not apply to a proven
-`specialized-resource-inbox` boundary: bounded deterministic persisted-value
-transformations integral to that middleware transaction remain local. The one
-externally supplied callback allowance is the exact guarded winner materializer
-defined by the convergent-service reference. A specialized boundary is reported
-separately for review; it is neither a strict-policy pass nor an exception.
+owners may bind parameters, coordinate their SQL reservation, deduplication,
+result replacement, and queue state, and transform only rows returned by the
+current statement within an explicit one-row or batch limit. They may not
+perform ordinary domain mutation logic, transform caller-provided domain values,
+run external effects, timers, or polling, process unbounded rows, invoke
+arbitrary callbacks, or own an unrelated nested transaction. The one callback
+allowance is the exact guarded winner materializer defined by the
+convergent-service reference. This is a separate policy, not a strict-policy
+pass or a compatibility exception.
 
 ## Configuration sources
 

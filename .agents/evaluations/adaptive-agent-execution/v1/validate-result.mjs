@@ -14,9 +14,17 @@ const suiteDefinitions = {
         evaluationRoot: path.resolve(evaluationRoot, '../../organizing-repository-structure/v1'),
         passLabel: 'organizing repository structure evaluation result'
     },
-    'rallar-code-writing': {
+    'rallar-code-writing-v1': {
         evaluationRoot: path.resolve(evaluationRoot, '../../rallar-code-writing/v1'),
+        passLabel: 'rallar code-writing v1 evaluation result'
+    },
+    'rallar-code-writing': {
+        evaluationRoot: path.resolve(evaluationRoot, '../../rallar-code-writing/v2'),
         passLabel: 'rallar code-writing evaluation result'
+    },
+    'rallar-code-writing-v2': {
+        evaluationRoot: path.resolve(evaluationRoot, '../../rallar-code-writing/v2'),
+        passLabel: 'rallar code-writing v2 evaluation result'
     }
 };
 

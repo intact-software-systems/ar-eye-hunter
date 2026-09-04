@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { validateEvaluationResult } from '../../../../.agents/evaluations/adaptive-agent-execution/v1/validate-result.mjs';
 
 const repoRoot = process.cwd();
-const evaluationRoot = '.agents/evaluations/rallar-code-writing/v1';
+const evaluationRoot = '.agents/evaluations/rallar-code-writing/v2';
 const canonicalValidator = '.agents/evaluations/adaptive-agent-execution/v1/validate-result.mjs';
 const rawArtifact = 'packages/tests/repo/rallar-code-writing/rallar-code-writing-evaluation-result.test.ts';
 const temporaryDirectories: string[] = [];
@@ -94,6 +94,19 @@ describe('rallar code-writing evaluation result validation', () => {
 
         expect(validation.status).toBe(0);
         expect(validation.stdout).toContain('PASS: rallar code-writing evaluation result');
+    });
+
+    it('preserves validation of immutable v1 result artifacts', () => {
+        const input = createValidationInput('.agents/evaluations/rallar-code-writing/v1');
+        const resultPath = writeResult(input.result);
+        const validation = spawnSync(
+            process.execPath,
+            [path.join(repoRoot, canonicalValidator), '--suite', 'rallar-code-writing-v1', resultPath],
+            { cwd: repoRoot, encoding: 'utf8' }
+        );
+
+        expect(validation.status).toBe(0);
+        expect(validation.stdout).toContain('PASS: rallar code-writing v1 evaluation result');
     });
 
     it('requires all six critical scenarios and their raw output artifacts', () => {
@@ -197,17 +210,17 @@ function findScenarioResult(
     return scenarioResult!;
 }
 
-function createValidationInput(): EvaluationValidationInput {
-    const suite = readJson<EvaluationSuite>(`${evaluationRoot}/scenarios.json`);
-    const rubric = readJson<object>(`${evaluationRoot}/rubric.json`);
+function createValidationInput(root = evaluationRoot): EvaluationValidationInput {
+    const suite = readJson<EvaluationSuite>(`${root}/scenarios.json`);
+    const rubric = readJson<EvaluationRubric>(`${root}/rubric.json`);
     const scenarios = suite.scenarios.filter(
         (scenario) => scenario.primarySkill === 'rallar-code-writing'
     );
     const criticalTotal = scenarios.filter((scenario) => scenario.critical).length;
     const result: EvaluationResult = {
-        schemaVersion: 'rallar-code-writing-result-v1',
+        schemaVersion: rubric.resultContract.schemaVersion,
         runId: 'fixture-rallar-code-writing-result',
-        suiteId: 'rallar-code-writing-v1',
+        suiteId: suite.suiteId,
         primarySkill: 'rallar-code-writing',
         skillVariant: 'with-skill',
         model: 'fresh-agent',
@@ -262,6 +275,10 @@ interface EvaluationScenario {
 
 interface EvaluationSuite {
     readonly scenarios: readonly EvaluationScenario[];
+}
+
+interface EvaluationRubric {
+    readonly resultContract: Readonly<{ schemaVersion: string; }>;
 }
 
 interface EvaluationDimensionResult {

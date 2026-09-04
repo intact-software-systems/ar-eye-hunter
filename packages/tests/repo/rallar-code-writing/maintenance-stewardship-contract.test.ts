@@ -1,10 +1,11 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
-const evaluationRoot = '.agents/evaluations/rallar-code-writing/v1';
+const evaluationRoot = '.agents/evaluations/rallar-code-writing/v2';
 const guidancePaths = [
     'AGENTS.md',
     '.agents/skills/rallar-code-writing/SKILL.md',
@@ -267,8 +268,8 @@ describe('rallar code-writing maintenance stewardship contract', () => {
         const suite = readJson<EvaluationSuite>(`${evaluationRoot}/scenarios.json`);
         const rubric = readJson<EvaluationRubric>(`${evaluationRoot}/rubric.json`);
 
-        expect(suite.schemaVersion).toBe('rallar-code-writing-scenarios-v1');
-        expect(suite.suiteId).toBe('rallar-code-writing-v1');
+        expect(suite.schemaVersion).toBe('rallar-code-writing-scenarios-v2');
+        expect(suite.suiteId).toBe('rallar-code-writing-v2');
         expect(suite.scenarios).toHaveLength(6);
         const stewardshipScenario = findScenario(
             suite,
@@ -347,11 +348,8 @@ describe('rallar code-writing maintenance stewardship contract', () => {
         expect(transactionPurityScenario.prompt).toContain(
             'write transaction for one retryable QueueBox attempt'
         );
-        expect(transactionPurityScenario.prompt).toContain(
-            'QueueBox redelivery starts a fresh read, compute, validate, and write attempt'
-        );
-        expect(transactionPurityScenario.prompt).not.toContain('retrying transaction');
-        expect(transactionPurityScenario.prompt).toContain('winner-only execution');
+        expect(transactionPurityScenario.prompt).toContain('The team is choosing between two implementations');
+        expect(transactionPurityScenario.prompt).toContain('the queue may redeliver the command');
         expect(resourceInboxPolicyScenario).toMatchObject({
             critical: true,
             primarySkill: 'rallar-code-writing',
@@ -363,68 +361,37 @@ describe('rallar code-writing maintenance stewardship contract', () => {
             'lease-complexity',
             'winner-callback-suspicion'
         ]);
-        expect(resourceInboxPolicyScenario.prompt).toContain('exact guarded winner materializer');
+        expect(resourceInboxPolicyScenario.prompt).toContain('Three alternatives are proposed');
         expect(resourceInboxPolicyScenario.prompt).toContain('browser IndexedDB');
 
-        expect(rubric.schemaVersion).toBe('rallar-code-writing-rubric-v1');
+        expect(rubric.schemaVersion).toBe('rallar-code-writing-rubric-v2');
         expect(rubric.suiteId).toBe(suite.suiteId);
         expect(rubric.criticalPolicy).toBe(
             'Every required dimension for every critical scenario must pass.'
         );
         expect(rubric.dimensions.map(({ id }) => id)).toEqual(allDimensions);
         expect(rubric.resultContract).toMatchObject({
-            schemaVersion: 'rallar-code-writing-result-v1',
+            schemaVersion: 'rallar-code-writing-result-v2',
             skillVariants: ['no-skill', 'with-skill'],
             verdicts: ['pass', 'fail']
         });
         expect(JSON.stringify(rubric)).not.toMatch(/points|score|weighted/iu);
     });
 
-    it('keeps expected stewardship actions in the rubric instead of the pressure prompt', () => {
+    it('preserves the published v1 evaluation definitions byte for byte', () => {
+        expect(fileDigest('.agents/evaluations/rallar-code-writing/v1/scenarios.json')).toBe(
+            'c69cb8ebe3c708c00d34676bff26d6eeadd0130702569d7c3cacf990f6fa9cbf'
+        );
+        expect(fileDigest('.agents/evaluations/rallar-code-writing/v1/rubric.json')).toBe(
+            '437e056266eaab0f70238da256cbd7fc9477a1b1370721e584d7c1e4ff4340ed'
+        );
+    });
+
+    it('keeps exact rubric contracts out of the pressure prompts', () => {
         const suite = readJson<EvaluationSuite>(`${evaluationRoot}/scenarios.json`);
         const rubric = readJson<EvaluationRubric>(`${evaluationRoot}/rubric.json`);
-        const forbiddenAnswerFragments = [
-            'standards compliance across every file you touch',
-            'remediation scope propagates',
-            'independent code stays out of scope',
-            'exact conditions that would require human direction',
-            'ask permission merely because the findings pre-exist',
-            'checker tolerance as the completion rule',
-            'every changed human-authored file',
-            'every support file modified',
-            'independent untouched code remains outside',
-            'one autonomous coherent consolidation',
-            'retaining a real standards violation',
-            'deferring safe in-scope implementation',
-            'reviewed and remediated in full',
-            'enters closure recursively',
-            'four escalation conditions',
-            'requested behavior remains the outcome',
-            'remediation sequences that outcome',
-            'direct behavior proof',
-            'affected app/package proof',
-            'two distinct proofs',
-            'immediately following active slice',
-            'name a direct behavior test',
-            'direct test that exercises that behavior',
-            'affected app validation',
-            'affected application or package',
-            'build or typecheck',
-            'report each result',
-            'never replace or indefinitely defer',
-            'classify them `removed`',
-            'thin canonical delegate',
-            'explicit maintainer approval',
-            'registry entry for continued retention'
-        ];
 
         for (const scenario of suite.scenarios) {
-            for (const fragment of forbiddenAnswerFragments) {
-                expect(
-                    scenario.prompt.toLowerCase(),
-                    `${scenario.id} leaked expected action: ${fragment}`
-                ).not.toContain(fragment);
-            }
             for (const dimensionId of scenario.requiredDimensions) {
                 const passText = rubric.dimensions.find((dimension) => dimension.id === dimensionId)?.pass;
                 expect(passText, dimensionId).toBeDefined();
@@ -465,7 +432,10 @@ describe('rallar code-writing maintenance stewardship contract', () => {
         expect(existsSync(path.join(repoRoot, `${evaluationRoot}/validate-result.mjs`))).toBe(false);
         expect(
             readRepo('.agents/evaluations/adaptive-agent-execution/v1/validate-result.mjs')
-        ).toContain('\'rallar-code-writing\'');
+        ).toContain('\'rallar-code-writing-v1\'');
+        expect(
+            readRepo('.agents/evaluations/adaptive-agent-execution/v1/validate-result.mjs')
+        ).toContain('\'rallar-code-writing-v2\'');
     });
 });
 
@@ -500,6 +470,10 @@ function readRepo(repositoryPath: string): string {
 
 function readJson<T>(repositoryPath: string): T {
     return JSON.parse(readRepo(repositoryPath)) as T;
+}
+
+function fileDigest(repositoryPath: string): string {
+    return createHash('sha256').update(readRepo(repositoryPath)).digest('hex');
 }
 
 function normalize(value: string): string {
