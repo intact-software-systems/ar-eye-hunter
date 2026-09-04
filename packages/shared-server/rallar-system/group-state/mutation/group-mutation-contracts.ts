@@ -1,3 +1,4 @@
+import type { GroupEvidenceWatermark } from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type {
     GroupLifecyclePolicy,
@@ -201,6 +202,48 @@ export type GroupMutationCommand =
                 & Readonly<{
                     expectedFormationEpoch: number;
                     expectedLayout: GroupLayoutIdentity;
+                }>;
+        }>
+    )
+    | (
+        & GroupMutationCommandBase
+        & Readonly<{
+            // Route-less: only the topology work cycle's status petition and the
+            // dwell timer enqueue it, under activation-status authority. It
+            // writes the observed status and nothing else -- no stage, no
+            // epoch, no electorate, no layout (product decision 3), and no
+            // policy or gate ever reads what it writes. The fences are
+            // non-null by construction: both builders supply them and no
+            // authenticated route exists.
+            operation: 'updateGroupActivationStatus';
+            input:
+                & NullableActorInput
+                & Readonly<{
+                    expectedFormationEpoch: number;
+                    /** The coverage basis this reading measured (product decision 33). */
+                    expectedLayout: GroupLayoutIdentity;
+                    coverageRate: number;
+                    /**
+                     * The newest evidence the reading counted, null when it
+                     * counted none. A dwell or expiry write carries null: a
+                     * decay that is the absence of evidence advances nothing.
+                     */
+                    evidenceWatermark: GroupEvidenceWatermark | null;
+                    /**
+                     * True only for the durable clock's own write, which is
+                     * the one that may publish a dwell-held band.
+                     */
+                    dwellSatisfied: boolean;
+                    /**
+                     * Remediation names whose move it is, and its two
+                     * transient inputs are not on the group row: the
+                     * petitioning topology cycle already holds the planning
+                     * authority they come from, so they travel as
+                     * observations beside the coverage and `compute` still
+                     * derives the axis purely.
+                     */
+                    replanQueued: boolean;
+                    layoutStale: boolean;
                 }>;
         }>
     )
@@ -615,7 +658,8 @@ export function isLayoutFencedGroupMutationCommand(command: GroupMutationCommand
             command.operation === 'activateGroup' ||
             command.operation === 'failGroupFormation' ||
             command.operation === 'applyPlannedLayout' ||
-            command.operation === 'connectGroup'
+            command.operation === 'connectGroup' ||
+            command.operation === 'updateGroupActivationStatus'
         ) &&
         command.input.expectedLayout !== null
     );

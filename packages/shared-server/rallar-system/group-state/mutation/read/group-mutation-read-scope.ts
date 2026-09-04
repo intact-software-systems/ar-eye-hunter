@@ -26,7 +26,10 @@ export function readsGroupLifecyclePolicy(
         isGroupLifecycleTransitionOperation(operation) ||
         isGroupTransportOperation(operation) ||
         isGroupAdmissionPolicyReadOperation(operation) ||
-        operation === 'applyPlannedLayout'
+        operation === 'applyPlannedLayout' ||
+        // The status write bands against the activation rates and reads the
+        // replanning mode for its remediation axis.
+        operation === 'updateGroupActivationStatus'
     );
 }
 

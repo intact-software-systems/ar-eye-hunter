@@ -248,6 +248,7 @@ const GROUP_MUTATION_OPERATIONS = new Set([
     'reconfigureGroup',
     'failGroupFormation',
     'applyPlannedLayout',
+    'updateGroupActivationStatus',
     'pauseGroupTransport',
     'resumeGroupTransport',
     'joinGroup',
@@ -301,7 +302,8 @@ const AGGREGATE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operat
     'activateGroup',
     'reconfigureGroup',
     'failGroupFormation',
-    'applyPlannedLayout'
+    'applyPlannedLayout',
+    'updateGroupActivationStatus'
 ]);
 
 const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation'], readonly string[]>> = {
@@ -344,6 +346,16 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<Record<GroupMutationCommand['operation
     reconfigureGroup: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'landing'],
     failGroupFormation: [...ACTOR_INPUT_KEYS, 'observedRate', 'expectedFormationEpoch', 'expectedLayout'],
     applyPlannedLayout: [...ACTOR_INPUT_KEYS, 'expectedFormationEpoch', 'expectedLayout'],
+    updateGroupActivationStatus: [
+        ...ACTOR_INPUT_KEYS,
+        'expectedFormationEpoch',
+        'expectedLayout',
+        'coverageRate',
+        'evidenceWatermark',
+        'dwellSatisfied',
+        'replanQueued',
+        'layoutStale'
+    ],
     pauseGroupTransport: ACTOR_INPUT_KEYS,
     resumeGroupTransport: ACTOR_INPUT_KEYS,
     joinGroup: [...ACTOR_INPUT_KEYS, 'inviteToken', 'joinCode'],

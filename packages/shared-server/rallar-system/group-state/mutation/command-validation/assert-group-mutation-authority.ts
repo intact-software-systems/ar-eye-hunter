@@ -57,9 +57,7 @@ function assertInternalMutationAuthority(
         case 'topology-publication':
             return assertTopologyPublicationAuthority(command);
         case 'activation-status':
-            throw new TypeError(
-                'Activation-status authority is limited to the status update, which does not exist yet'
-            );
+            return assertActivationStatusAuthority(command);
         case 'none':
             throw new TypeError('Internal group mutation cannot carry the none authority mode');
         default: {
@@ -109,6 +107,20 @@ function assertFormationAutomationAuthority(command: GroupMutationCommand): void
     }
     if (command.operation === 'connectGroup' && !command.input.connectTriggerGeneration) {
         throw new TypeError('Automatic connect requires a durable trigger identity');
+    }
+}
+
+function assertActivationStatusAuthority(command: GroupMutationCommand): void {
+    if (command.operation !== 'updateGroupActivationStatus') {
+        throw new TypeError('Activation-status authority is limited to updateGroupActivationStatus');
+    }
+    // The contract types the fences non-null; the wire defense still rejects
+    // an absent or null value a hand-built payload could carry.
+    if (command.input.expectedFormationEpoch === null || command.input.expectedFormationEpoch === undefined) {
+        throw new TypeError('Activation status must carry the expected formation epoch fence');
+    }
+    if (command.input.expectedLayout === null || command.input.expectedLayout === undefined) {
+        throw new TypeError('Activation status must carry the coverage basis layout fence');
     }
 }
 

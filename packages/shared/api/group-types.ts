@@ -294,6 +294,7 @@ export interface GroupSnapshot {
 export type GroupEventType =
     | 'group-created'
     | 'group-updated'
+    | 'group-activation-status-changed'
     | 'group-archived'
     | 'group-deleted'
     | 'member-invited'

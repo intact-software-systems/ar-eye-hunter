@@ -19,6 +19,7 @@ import { AppTopics } from '@shared/api/api-config.ts';
  */
 /** Every operation the group inbox can report, so nothing reaches the reserved bucket by accident. */
 const EVERY_GROUP_MUTATION_OPERATION: readonly GroupMutationCommand['operation'][] = [
+    'updateGroupActivationStatus',
     ...GROUP_LIFECYCLE_TRANSITION_OPERATIONS,
     'createGroup',
     'updateGroup',
@@ -85,18 +86,25 @@ describe('group formation metrics recorder', () => {
         expect(toGroupFormationOperationKind('applyPlannedLayout')).toBe('other');
     });
 
-    // Reserved for the observed-status writer: the bucket exists so the
-    // artifact shape changes once rather than twice, and reads zero until then.
-    it('routes no operation into the reserved status bucket', () => {
+    // The bucket reserved in slice 13a now has its writer, and it must hold
+    // that writer alone: a status write is not a stage transition, so routing
+    // it into `stageTransition` would make the burst artifacts overstate how
+    // often a group actually moved.
+    it('routes only the status writer into the status bucket', () => {
         const recorder = createGroupFormationMetricsRecorder();
         for (const operation of EVERY_GROUP_MUTATION_OPERATION) {
             recorder.groupMutation({ operation, outcome: 'write' });
         }
+
         expect(recorder.readMetrics().groupMutationCount.activationStatus).toEqual({
-            write: 0,
+            write: 1,
             noOp: 0,
             rejected: 0
         });
+        expect(toGroupFormationOperationKind('updateGroupActivationStatus')).toBe('activationStatus');
+    });
+
+    it('starts the status bucket empty', () => {
         expect(emptyGroupFormationMetrics().groupMutationCount.activationStatus).toEqual({
             write: 0,
             noOp: 0,

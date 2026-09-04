@@ -191,6 +191,7 @@ const CLIENT_EVENT_TYPES = [
 const GROUP_EVENT_TYPES = [
     'group-created',
     'group-updated',
+    'group-activation-status-changed',
     'group-archived',
     'group-deleted',
     'member-invited',

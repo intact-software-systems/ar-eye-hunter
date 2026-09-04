@@ -7,6 +7,7 @@ import {
 } from '../aggregate/compute-group-aggregate-mutation.ts';
 import { computeGroupTransportMutation } from '../aggregate/compute-group-transport-mutation.ts';
 import { computeLifecycleTransition } from '../aggregate/compute-lifecycle-transition.ts';
+import { computeUpdateGroupActivationStatus } from '../aggregate/compute-update-group-activation-status.ts';
 import { assertGroupMutationAuthority } from '../command-validation/assert-group-mutation-authority.ts';
 import { assertGroupMutationCommand } from '../command-validation/assert-group-mutation-command.ts';
 import type {
@@ -88,6 +89,8 @@ function computeFreshGroupMutation(
             return computeLifecycleTransition(command, read, facts);
         case 'applyPlannedLayout':
             return computeApplyPlannedLayout(command, read, facts);
+        case 'updateGroupActivationStatus':
+            return computeUpdateGroupActivationStatus(command, read, facts);
         case 'pauseGroupTransport':
         case 'resumeGroupTransport':
             return computeGroupTransportMutation(command, read, facts);

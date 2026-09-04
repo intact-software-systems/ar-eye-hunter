@@ -88,6 +88,8 @@ export function toGroupFormationOperationKind(operation: string): GroupFormation
         case 'setGroupMemberRole':
         case 'transferGroupOwnership':
             return 'membership';
+        case 'updateGroupActivationStatus':
+            return 'activationStatus';
         default:
             // The transport valve lands in `other` with everything else: it
             // writes `transportState` alone and is no stage transition
