@@ -126,10 +126,11 @@ describe('Postgres runtime-state guarded batches', () => {
             if (computed.outcome !== 'write' || computed.guard.kind !== 'group') {
                 throw new Error('Reset must produce a group guarded write');
             }
-            const [outboxEntry] = computed.outboxEntries;
-            if (computed.outboxEntries.length !== 1 || outboxEntry === undefined || computed.idempotency === null) {
+            const [outboxWrite] = computed.outboxWrites;
+            if (computed.outboxWrites.length !== 1 || outboxWrite === undefined || computed.idempotency === null) {
                 throw new Error('Reset must produce an idempotency receipt and presence-summary outbox entry');
             }
+            const outboxEntry = outboxWrite.entry;
             const mismatchingOutboxEntry = {
                 ...outboxEntry,
                 resource: `${outboxEntry.resource}mismatch`

@@ -98,7 +98,7 @@ type TestGroupStateServiceDependencies =
         groupStateEventStoreFor?: (
             runtime: RuntimeStateOptimisticTransactionalRepositoryLike
         ) => GroupStateEventStore;
-        sleep?: (delayMs: number) => Promise<void>;
+        attemptCount?: number;
         readPlannedLayoutRow?: GroupStateServiceDependencies['readPlannedLayoutRow'];
         readAcceptedLayoutRow?: GroupStateServiceDependencies['readAcceptedLayoutRow'];
     }>;
@@ -145,15 +145,21 @@ export function createTestGroupStateRuntime(
         runtimeRepository: dependencies.runtimeRepository,
         groupStateEventStoreFor: eventStoreFor,
         serviceId: dependencies.serviceId,
-        randomId,
-        sleep: dependencies.sleep
+        randomId
     });
-    const service = createAuthenticatedTestGroupStateService(durable, issued, mutationExecutor);
-    const maintenance = createTestGroupStateMaintenanceService(
-        dependencies.runtimeRepository,
+    const attemptCount = dependencies.attemptCount ?? 1;
+    const service = createAuthenticatedTestGroupStateService({
+        durable,
+        issued,
+        mutationExecutor,
+        attemptCount
+    });
+    const maintenance = createTestGroupStateMaintenanceService({
+        runtimeRepository: dependencies.runtimeRepository,
         repositoryFor,
-        mutationExecutor
-    );
+        mutationExecutor,
+        attemptCount
+    });
     return { service, durable, maintenance };
 }
 
@@ -174,11 +180,19 @@ function resolveGroupStateEventStoreFactory(
     return () => eventStore;
 }
 
-function createAuthenticatedTestGroupStateService(
-    durable: GroupStateService,
-    issued: Map<string, PersistedAuthSession>,
-    mutationExecutor: GroupStateTestMutationExecutor
-): GroupStateTestService {
+interface CreateAuthenticatedTestGroupStateServiceInput {
+    readonly durable: GroupStateService;
+    readonly issued: Map<string, PersistedAuthSession>;
+    readonly mutationExecutor: GroupStateTestMutationExecutor;
+    readonly attemptCount: number;
+}
+
+function createAuthenticatedTestGroupStateService({
+    durable,
+    issued,
+    mutationExecutor,
+    attemptCount
+}: CreateAuthenticatedTestGroupStateServiceInput): GroupStateTestService {
     let testRequestSequence = 0;
     const service = Object.assign({}, durable);
     for (const method of USER_MUTATIONS) {
@@ -207,7 +221,8 @@ function createAuthenticatedTestGroupStateService(
                 return await mutationExecutor.executeAuthenticated(
                     descriptor,
                     authority,
-                    method.endsWith('Receipt')
+                    method.endsWith('Receipt'),
+                    attemptCount
                 );
             }
         });
@@ -215,13 +230,21 @@ function createAuthenticatedTestGroupStateService(
     return service as GroupStateTestService;
 }
 
-function createTestGroupStateMaintenanceService(
-    runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
-    repositoryFor: (
+interface CreateTestGroupStateMaintenanceServiceInput {
+    readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
+    readonly repositoryFor: (
         runtime: RuntimeStateOptimisticTransactionalRepositoryLike
-    ) => GroupStateRepository,
-    mutationExecutor: GroupStateTestMutationExecutor
-): TestGroupStateMaintenanceService {
+    ) => GroupStateRepository;
+    readonly mutationExecutor: GroupStateTestMutationExecutor;
+    readonly attemptCount: number;
+}
+
+function createTestGroupStateMaintenanceService({
+    runtimeRepository,
+    repositoryFor,
+    mutationExecutor,
+    attemptCount
+}: CreateTestGroupStateMaintenanceServiceInput): TestGroupStateMaintenanceService {
     const maintenance: TestGroupStateMaintenanceService = {
         disconnectPresenceSessionsBySessionId: async (sessionId, disconnectedAtEpochMs) =>
             (
@@ -239,7 +262,8 @@ function createTestGroupStateMaintenanceService(
                 const computed = await mutationExecutor.executeInternal(
                     toSessionCleanupCommand(session, disconnectedAtEpochMs),
                     'session-cleanup',
-                    disconnectedAtEpochMs
+                    disconnectedAtEpochMs,
+                    attemptCount
                 );
                 results.push(await mutationExecutor.toMutationResult('disconnectPresence', computed));
             }
@@ -254,7 +278,8 @@ function createTestGroupStateMaintenanceService(
                 const computed = await mutationExecutor.executeInternal(
                     toExpiryCommand(session, atEpochMs),
                     'expiry',
-                    atEpochMs
+                    atEpochMs,
+                    attemptCount
                 );
                 if (computed.outcome !== 'write') {
                     continue;

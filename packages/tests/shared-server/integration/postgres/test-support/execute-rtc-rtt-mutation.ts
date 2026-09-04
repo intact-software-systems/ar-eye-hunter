@@ -1,35 +1,35 @@
-import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-
-import { encodeJsonWireValue, hashMutationCommand } from '../../protocol/json-wire-identity.ts';
-import type { RtcTopologyOutboxWriter } from '../../topology/mutation/rtc-topology-outbox-writer.ts';
-import { RtcRttRepository } from '../persistence/rtc-rtt-repository.ts';
-import { computeRtcRttMutation } from './compute-rtc-rtt-mutation.ts';
-import { readRtcRttMutation } from './read-rtc-rtt-mutation.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { encodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
+import { readRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/read-rtc-rtt-mutation.ts';
 import type {
     RtcRttMutationCommand,
     RtcRttMutationComputed,
     RtcRttMutationFacts,
     RtcRttMutationLifecycleFacts,
     RtcRttStableRequest
-} from './rtc-rtt-mutation-contracts.ts';
-import { validateRtcRttMutation } from './validate-rtc-rtt-mutation.ts';
-import { writeRtcRttMutation } from './write-rtc-rtt-mutation.ts';
+} from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
+import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
+import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/write-rtc-rtt-mutation.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
+import type { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 
-export interface ExecuteRtcRttMutationResult {
+interface ExecuteRtcRttMutationResult {
     readonly computed: RtcRttMutationComputed;
     readonly updated: boolean;
 }
 
-export interface ExecuteRtcRttMutationInput {
+interface ExecuteRtcRttMutationInput {
     readonly repository: RtcRttRepository;
     readonly transaction: PSqlSql;
     readonly outboxWriter: RtcTopologyOutboxWriter;
-    readFacts: () => RtcRttMutationLifecycleFacts | Promise<RtcRttMutationLifecycleFacts>;
+    readonly readFacts: () => RtcRttMutationLifecycleFacts | Promise<RtcRttMutationLifecycleFacts>;
     readonly request: RtcRttStableRequest;
-    readCommand: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;
+    readonly readCommand: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;
     readonly attemptCount: number;
 }
 
+/** Executes one deliberately transaction-controlled RTT mutation for concurrency tests. */
 export async function executeRtcRttMutation(
     input: ExecuteRtcRttMutationInput
 ): Promise<ExecuteRtcRttMutationResult> {

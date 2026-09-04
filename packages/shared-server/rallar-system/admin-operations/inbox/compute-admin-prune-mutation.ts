@@ -1,3 +1,5 @@
+import { Temporal } from '@js-temporal/polyfill';
+
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
@@ -15,6 +17,7 @@ import {
     isExactAppOutboxInsert,
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
+import { serializeCanonicalJson } from '../../protocol/canonical-json.ts';
 import { toAdminPruneOutbox } from '../prune/admin-prune-page-codec.ts';
 import {
     createAdminPruneAggregate,
@@ -39,6 +42,7 @@ export interface AdminPruneAggregateWrite {
     readonly systemDate: string;
     readonly createdAt: string;
     readonly expiresAt: string;
+    readonly replaceExpiredAt: string;
 }
 
 export interface AdminPruneComputed {
@@ -70,16 +74,19 @@ export function computeAdminPruneMutation(read: AdminPruneRead): AdminPruneCompu
         outboxWrites: computeInitialAdminPrunePages(command, read.serviceId),
         aggregateWrite: command.dryRun
             ? null
-            : computeAdminPruneAggregateWrite(toAdminPruneAggregateEntry(createAdminPruneAggregate({
-                jobId: command.jobId,
-                generatedAtEpochMs: command.capturedAtEpochMs,
-                expireAtEpochMs: command.expireAtEpochMs,
-                serverId: read.serviceId,
-                requestedBy: command.requestedBy,
-                requestedSessionId: command.requestedSessionId,
-                categories: command.categories,
-                expiredRows: read.expiredRows
-            }))),
+            : computeAdminPruneAggregateWrite(
+                toAdminPruneAggregateEntry(createAdminPruneAggregate({
+                    jobId: command.jobId,
+                    generatedAtEpochMs: command.capturedAtEpochMs,
+                    expireAtEpochMs: command.expireAtEpochMs,
+                    serverId: read.serviceId,
+                    requestedBy: command.requestedBy,
+                    requestedSessionId: command.requestedSessionId,
+                    categories: command.categories,
+                    expiredRows: read.expiredRows
+                })),
+                read.nowEpochMs
+            ),
         completion: computeAppInboxCompletion({
             ...read.completionFacts,
             durableResult: result,
@@ -101,11 +108,7 @@ export function validateAdminPruneMutation(
             status: 403
         });
     }
-    if (
-        computed.result.jobId !== read.command.jobId ||
-        computed.result.serverId !== read.serviceId ||
-        computed.result.status !== (read.command.dryRun ? 'dry-run' : 'queued')
-    ) {
+    if (!hasSameAdminPruneResult(computed.result, expected.result)) {
         issues.push({
             code: 'admin-prune-computed-identity-invalid',
             message: 'Admin prune computed identity differs from its read facts',
@@ -143,6 +146,18 @@ export function validateAdminPruneMutation(
     return issues;
 }
 
+function hasSameAdminPruneResult(
+    left: AdminPruneEnqueueResult,
+    right: AdminPruneEnqueueResult
+): boolean {
+    try {
+        return serializeCanonicalJson(left) === serializeCanonicalJson(right);
+    }
+    catch {
+        return false;
+    }
+}
+
 function hasExactAdminPrunePersistence(
     computed: AdminPruneComputed,
     expected: AdminPruneComputed
@@ -175,7 +190,8 @@ function hasSameAdminPruneAggregateWrite(
         left.entry.audit.createdBy === right.entry.audit.createdBy &&
         left.systemDate === right.systemDate &&
         left.createdAt === right.createdAt &&
-        left.expiresAt === right.expiresAt;
+        left.expiresAt === right.expiresAt &&
+        left.replaceExpiredAt === right.replaceExpiredAt;
 }
 
 function computeInitialAdminPrunePages(
@@ -202,7 +218,10 @@ function computeInitialAdminPrunePages(
     );
 }
 
-function computeAdminPruneAggregateWrite(entry: ResourceEntry): AdminPruneAggregateWrite {
+function computeAdminPruneAggregateWrite(
+    entry: ResourceEntry,
+    replaceExpiredAtEpochMs: number
+): AdminPruneAggregateWrite {
     const snapshot: Readonly<ResourceEntry> = {
         ...entry,
         key: { ...entry.key },
@@ -213,6 +232,7 @@ function computeAdminPruneAggregateWrite(entry: ResourceEntry): AdminPruneAggreg
         entry: snapshot,
         systemDate: toSystemDate(snapshot),
         createdAt: toPgTimestamp(snapshot.audit.createdTs),
-        expiresAt: toPgTimestamp(snapshot.audit.expiryTs)
+        expiresAt: toPgTimestamp(snapshot.audit.expiryTs),
+        replaceExpiredAt: toPgTimestamp(Temporal.Instant.fromEpochMilliseconds(replaceExpiredAtEpochMs))
     };
 }

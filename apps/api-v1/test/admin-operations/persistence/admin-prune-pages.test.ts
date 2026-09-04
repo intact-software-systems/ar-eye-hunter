@@ -41,7 +41,7 @@ Deno.test('admin prune PSQL repository reads and deletes one deterministic page'
             appData: null,
             excludedResourceKey: null
         });
-        assert.equal(read.rowIds.length, 2);
+        assert.equal(read.candidates.length, 2);
         assert.equal(read.hasMore, true);
 
         const work: AdminPrunePageWork = {
@@ -57,7 +57,7 @@ Deno.test('admin prune PSQL repository reads and deletes one deterministic page'
             pageIndex: 0,
             appData: null
         };
-        const deletion = toAdminPrunePageDelete(work, read.rowIds);
+        const deletion = toAdminPrunePageDelete(work, read.candidates);
         await sql.begin(async (transaction) => {
             assert.equal(await repository.deletePage(transaction, deletion), 2);
         });
@@ -93,7 +93,7 @@ Deno.test('admin prune PSQL repository excludes its executing resource row', asy
                 contextId: 'ctx-smoke'
             }
         });
-        assert.equal(read.rowIds.length, 2);
+        assert.equal(read.candidates.length, 2);
         const rows = await sql<{
             ri_resource_id: string;
             ri_topic_id: string;
@@ -101,7 +101,7 @@ Deno.test('admin prune PSQL repository excludes its executing resource row', asy
         }[]>`
       select ri_resource_id, ri_topic_id, fk_ext_bank_id
       from resource_inbox
-      where ri_row_id in ${sql(read.rowIds.map(Number))}
+      where ri_row_id in ${sql(read.candidates.map((candidate) => Number(candidate.rowId)))}
       order by ri_resource_id, ri_topic_id, fk_ext_bank_id
     `;
         assert.deepEqual(rows, [

@@ -16,6 +16,7 @@ import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/t
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-stream-service.ts';
+import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
@@ -33,7 +34,6 @@ import {
     activeTopologySnapshot,
     createPGliteRemovalPlanningScenario,
     createPGliteTopologyWorkFixture,
-    readRtcTopologyDeliveryState,
     topologyGroupSnapshot,
     topologyGroupSnapshotWithSessionIds
 } from './pglite-topology-test-runtime.ts';
@@ -250,8 +250,7 @@ Deno.test(
                 }
             });
             const authority = await service.planning.readTopologyPlanningAuthority({
-                groupRef,
-                snapshotSelection: 'prefer-current'
+                groupRef
             });
             assert.deepEqual(authority.rttMeasurements, [storedRtt]);
 
@@ -386,7 +385,7 @@ Deno.test(
     }
 );
 
-Deno.test('PGlite topology worker classifies exact WS outbox replay as idempotent', async () => {
+Deno.test('PGlite topology worker rolls back an exact orphan WS outbox collision', async () => {
     await withPGliteSql(async (sql) => {
         const fixture = await createPGliteTopologyWorkFixture(
             sql,
@@ -394,21 +393,24 @@ Deno.test('PGlite topology worker classifies exact WS outbox replay as idempoten
         );
         await createPSqlResourceInboxRepository(sql).entries.write(fixture.publicationEntry);
 
-        await fixture.handler.onMessage(fixture.message, fixture.reserved);
-        assert.equal(fixture.readReplayWakeCount(), 1);
+        await assert.rejects(
+            () => fixture.handler.onMessage(fixture.message, fixture.reserved),
+            ResourceInboxInvariantCorruptionError
+        );
+        assert.equal(fixture.readReplayWakeCount(), 0);
 
         const consumed = await fixture.resourceInbox.entries.findAnyByKey(fixture.workEntry.key);
-        assert.equal(consumed?.status, EntityStatus.COMPLETED);
-        assert.deepEqual(
+        assert.equal(consumed?.status, EntityStatus.RESERVED);
+        assert.equal(
             await fixture.executionRepository.findPublicationForWork(
                 fixture.groupRef,
                 fixture.workId
             ),
-            fixture.publication
+            undefined
         );
-        assert.deepEqual(
+        assert.equal(
             await fixture.executionRepository.findSnapshot(fixture.groupRef),
-            fixture.topology
+            undefined
         );
         assert.equal(
             Number(
@@ -421,8 +423,8 @@ Deno.test('PGlite topology worker classifies exact WS outbox replay as idempoten
             1
         );
         assert.deepEqual(
-            await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
-            { headSequence: 1, sequences: [1] }
+            await fixture.readDeliveryState(),
+            { headSequence: 0, sequences: [] }
         );
     });
 });
@@ -453,15 +455,109 @@ Deno.test(
 
             await fixture.handler.onMessage(fixture.message, replayReservation);
 
-            assert.equal(fixture.readAppendCount(), 2);
+            assert.equal(fixture.readAppendCount(), 1);
             assert.equal(fixture.readReplayWakeCount(), 2);
             assert.deepEqual(
-                await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+                await fixture.readDeliveryState(),
                 { headSequence: 1, sequences: [1] }
             );
             assert.equal(
                 (await fixture.resourceInbox.entries.findAnyByKey(fixture.workEntry.key))?.status,
                 EntityStatus.COMPLETED
+            );
+        });
+    }
+);
+
+Deno.test(
+    'PGlite topology worker rejects a conflicting durable outbox on a loaded work claim',
+    async () => {
+        await withPGliteSql(async (sql) => {
+            const fixture = await createPGliteTopologyWorkFixture(
+                sql,
+                'pglite-topology-conflicting-loaded-outbox'
+            );
+            await fixture.handler.onMessage(fixture.message, fixture.reserved);
+            await sql`
+      update resource_inbox
+      set ri_status = 'RESERVED', ri_attempts = 2,
+          start_ts = now() at time zone 'UTC', end_ts = null, next_ts = null
+      where ri_topic_id = ${fixture.workEntry.key.topicId}
+        and ri_resource_id = ${fixture.workEntry.key.resourceId}
+        and fk_ext_bank_id = ${fixture.workEntry.key.contextId}
+    `;
+            await sql`
+      update resource_inbox
+      set ri_resource = '{"conflicting":"publication-outbox"}'
+      where ri_topic_id = ${fixture.publicationEntry.key.topicId}
+        and ri_resource_id = ${fixture.publicationEntry.key.resourceId}
+        and fk_ext_bank_id = ${fixture.publicationEntry.key.contextId}
+    `;
+            const replayReservation = await fixture.resourceInbox.entries.findAnyByKey(
+                fixture.workEntry.key
+            );
+            assert.ok(replayReservation);
+
+            await assert.rejects(
+                () => fixture.handler.onMessage(fixture.message, replayReservation),
+                RtcTopologyDeliveryCorruptionError
+            );
+
+            assert.equal(fixture.readAppendCount(), 1);
+            assert.equal(fixture.readReplayWakeCount(), 1);
+            assert.equal(
+                (await fixture.resourceInbox.entries.findAnyByKey(fixture.workEntry.key))?.status,
+                EntityStatus.RESERVED
+            );
+            assert.deepEqual(
+                await fixture.readDeliveryState(),
+                { headSequence: 1, sequences: [1] }
+            );
+        });
+    }
+);
+
+Deno.test(
+    'PGlite topology worker rejects conflicting durable delivery on a loaded work claim',
+    async () => {
+        await withPGliteSql(async (sql) => {
+            const fixture = await createPGliteTopologyWorkFixture(
+                sql,
+                'pglite-topology-conflicting-loaded-delivery'
+            );
+            await fixture.handler.onMessage(fixture.message, fixture.reserved);
+            await sql`
+      update resource_inbox
+      set ri_status = 'RESERVED', ri_attempts = 2,
+          start_ts = now() at time zone 'UTC', end_ts = null, next_ts = null
+      where ri_topic_id = ${fixture.workEntry.key.topicId}
+        and ri_resource_id = ${fixture.workEntry.key.resourceId}
+        and fk_ext_bank_id = ${fixture.workEntry.key.contextId}
+    `;
+            await sql`
+      update rtc_topology_delivery_log
+      set outbox_resource_id = 'conflicting-resource'
+      where publication_id = ${fixture.publication.publicationId}
+    `;
+            const replayReservation = await fixture.resourceInbox.entries.findAnyByKey(
+                fixture.workEntry.key
+            );
+            assert.ok(replayReservation);
+
+            await assert.rejects(
+                () => fixture.handler.onMessage(fixture.message, replayReservation),
+                RtcTopologyDeliveryCorruptionError
+            );
+
+            assert.equal(fixture.readAppendCount(), 1);
+            assert.equal(fixture.readReplayWakeCount(), 1);
+            assert.equal(
+                (await fixture.resourceInbox.entries.findAnyByKey(fixture.workEntry.key))?.status,
+                EntityStatus.RESERVED
+            );
+            assert.deepEqual(
+                await fixture.readDeliveryState(),
+                { headSequence: 1, sequences: [1] }
             );
         });
     }
@@ -498,7 +594,7 @@ Deno.test(
                 null
             );
             assert.deepEqual(
-                await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+                await fixture.readDeliveryState(),
                 { headSequence: 0, sequences: [] }
             );
             assert.equal(
@@ -551,7 +647,7 @@ Deno.test(
                 divergentResource
             );
             assert.deepEqual(
-                await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+                await fixture.readDeliveryState(),
                 { headSequence: 0, sequences: [] }
             );
             assert.equal(fixture.readReplayWakeCount(), 0);
@@ -599,7 +695,7 @@ Deno.test(
             assert.equal(consumed?.status, EntityStatus.RESERVED);
             assert.equal(consumed?.dequeueAudit.attempts, 1);
             assert.deepEqual(
-                await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+                await fixture.readDeliveryState(),
                 { headSequence: 0, sequences: [] }
             );
             assert.equal(fixture.readReplayWakeCount(), 0);

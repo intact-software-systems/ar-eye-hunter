@@ -6,7 +6,11 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 
 import { RtcTopologyPlanner } from '../planning/rtc-topology-planner.ts';
-import { RtcTopologyMetrics, type RallarRtcTopologyMetrics } from './rtc-topology-metrics.ts';
+import {
+    RtcTopologyMetrics,
+    type RallarRtcTopologyMetrics,
+    type RtcTopologyPlanningObservation
+} from './rtc-topology-metrics.ts';
 import {
     RtcTopologyRttRebuildScheduler,
     type RallarRtcTopologyRttQueueResult
@@ -83,6 +87,10 @@ export class RallarRtcTopologyService {
         this.metrics.recordPublish(changed);
     }
 
+    recordTopologyPlanningObservation(observation: RtcTopologyPlanningObservation): void {
+        this.metrics.recordPlanningObservation(observation);
+    }
+
     recordTopologyRebuildSkippedFingerprint(): void {
         this.metrics.recordFingerprintSkip();
     }
@@ -126,7 +134,7 @@ export class RallarRtcTopologyService {
         const activePlanningInput = this.planner.createActivePlanningInput(group, rttMeasurements);
         const overlayId = toScopedOverlayId(group.group);
         const previous = options.previous?.overlayId === overlayId ? options.previous : this.snapshots.get(overlayId);
-        return this.planner.planPrepared(
+        return this.planner.planCanonical(
             {
                 group,
                 ...activePlanningInput,

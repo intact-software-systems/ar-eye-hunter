@@ -11,9 +11,9 @@ import type {
     ClientSnapshot,
     ClientTransport
 } from '@shared/api/client-types.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
+import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type { JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import type { ComputedClientStateSync } from '../../state-sync/state-sync-entry-computation.ts';
 import type {
@@ -268,7 +268,7 @@ export type ClientMutationDomainAppliedWrite = Readonly<{
     receipt: ClientMutationReceipt;
     idempotency: ClientMutationIdempotencyRecord | null;
     stateSync: readonly ComputedClientStateSync[];
-    outboxEntries: readonly ResourceEntry[];
+    outboxWrites: readonly AppOutboxInsert[];
 }>;
 
 export type ClientRuntimePersistenceOperation =

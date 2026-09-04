@@ -40,6 +40,7 @@ export function validateCrdtInboxMutation(
     const issues = [...validateCrdtMutation({
         command: read.command,
         read: read.read,
+        serviceId: read.serviceId,
         computed: computed.mutation
     })];
     issues.push(

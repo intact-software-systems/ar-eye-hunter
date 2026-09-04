@@ -1,191 +1,156 @@
-import { isExactAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
-import { computeCrdtMutationWrites } from './compute-crdt-mutation-outcome.ts';
+import { Temporal } from '@js-temporal/polyfill';
+
+import { computeCrdtMutation } from './compute-crdt-mutation.ts';
 import type {
-    CrdtDocumentWrite,
-    CrdtMutationCommand,
     CrdtMutationComputed,
-    CrdtMutationRead,
     CrdtMutationValidationIssue,
-    CrdtSnapshotWrite,
-    CrdtUpdateWrite,
     ValidateCrdtMutationInput
 } from './crdt-mutation-contracts.ts';
-import { decodeCrdtMutationResult } from './decode-crdt-mutation-result.ts';
 
-interface UntrustedCrdtRecord {
-    readonly [key: string]: object | string | number | boolean | null | undefined;
+type CrdtComputedComparable =
+    | object
+    | string
+    | number
+    | boolean
+    | bigint
+    | symbol
+    | null
+    | undefined;
+
+interface IsExactCrdtObjectInput {
+    readonly actual: object;
+    readonly expected: object;
+    readonly compared: WeakMap<object, object>;
+}
+
+interface IsExactCrdtDataPropertyInput {
+    readonly actual: object;
+    readonly expected: object;
+    readonly key: string;
+    readonly compared: WeakMap<object, object>;
 }
 
 export function validateCrdtMutation(
     input: ValidateCrdtMutationInput
 ): readonly CrdtMutationValidationIssue[] {
-    const { command, read, computed } = input;
-    const issues: CrdtMutationValidationIssue[] = [];
-    if (
-        computed.command !== command ||
-        computed.read !== read ||
-        computed.commandId !== command.commandId ||
-        computed.commandHash !== command.commandHash ||
-        computed.documentKey !== command.documentKey
-    ) {
-        issues.push({
-            code: 'computed-identity-differs',
-            message: 'CRDT computed identity differs from command'
+    let expected: CrdtMutationComputed;
+    try {
+        expected = computeCrdtMutation({
+            command: input.command,
+            read: input.read,
+            serviceId: input.serviceId
         });
     }
-    if (
-        computed.outcome === 'write' &&
-        read.document &&
-        computed.expectedDocumentRevision !== read.document.documentRevision
-    ) {
-        issues.push({
-            code: 'computed-predecessor-differs',
-            message: 'CRDT computed predecessor differs from read document'
-        });
+    catch (caught) {
+        return [{
+            code: 'computed-input-invalid',
+            message: caught instanceof Error ? caught.message : String(caught)
+        }];
     }
-    if (command.operation === 'compact' && computed.outcome === 'write') {
-        const result = toRecord(computed.result);
-        const resultSnapshot = result?.operation === 'compact' &&
-                result.status === 'accepted' &&
-                typeof result.snapshot === 'object'
-            ? result.snapshot
-            : null;
+
+    try {
         if (
-            readSnapshotReason(computed.snapshot) !== command.reason ||
-            result?.operation !== 'compact' ||
-            result.status !== 'accepted' ||
-            readSnapshotReason(resultSnapshot) !== command.reason
+            input.computed.command !== input.command ||
+            input.computed.read !== input.read ||
+            !isExactCrdtComputedValue(input.computed, expected, new WeakMap())
         ) {
-            issues.push({
-                code: 'compact-reason-differs',
-                message: 'CRDT compact reason differs across command and computed result'
-            });
+            return [{
+                code: 'computed-mutation-differs',
+                message: 'CRDT computed mutation differs from canonical computation'
+            }];
         }
     }
-    try {
-        decodeCrdtMutationResult(computed.result);
+    catch {
+        return [{
+            code: 'computed-mutation-differs',
+            message: 'CRDT computed mutation differs from canonical computation'
+        }];
     }
-    catch (error) {
-        issues.push({
-            code: 'result-codec-invalid',
-            message: error instanceof Error ? error.message : String(error)
-        });
-    }
-    if (!hasConsistentCrdtPersistence(computed)) {
-        issues.push({
-            code: 'computed-persistence-differs',
-            message: 'CRDT computed persistence differs from the computed mutation'
-        });
-    }
-    return issues;
+    return [];
 }
 
-function hasConsistentCrdtPersistence(computed: CrdtMutationComputed): boolean {
-    const outboxMatches = computed.outboxWrites.length === computed.outboxEntries.length &&
-        computed.outboxWrites.every((write, index) => {
-            const entry = computed.outboxEntries[index];
-            return entry !== undefined && isExactAppOutboxInsert(entry, write);
-        });
-    if (!outboxMatches || computed.outcome !== 'write') {
-        return outboxMatches;
+function isExactCrdtComputedValue(
+    actual: CrdtComputedComparable,
+    expected: CrdtComputedComparable,
+    compared: WeakMap<object, object>
+): boolean {
+    if (Object.is(actual, expected)) {
+        return true;
     }
-    try {
-        const expected = computeCrdtMutationWrites({
-            read: computed.read,
-            document: computed.document,
-            update: computed.update,
-            append: computed.append,
-            snapshot: computed.snapshot
-        });
-        return sameDocumentWrite(computed.documentWrite, expected.documentWrite) &&
-            sameOptionalUpdateWrite(computed.updateWrite, expected.updateWrite) &&
-            sameOptionalSnapshotWrite(computed.snapshotWrite, expected.snapshotWrite);
+    if (actual instanceof Date || expected instanceof Date) {
+        return actual instanceof Date &&
+            expected instanceof Date &&
+            Date.prototype.getTime.call(actual) === Date.prototype.getTime.call(expected);
     }
-    catch {
+    if (actual instanceof Temporal.Instant || expected instanceof Temporal.Instant) {
+        return actual instanceof Temporal.Instant &&
+            expected instanceof Temporal.Instant &&
+            Temporal.Instant.compare(actual, expected) === 0;
+    }
+    if (actual instanceof Temporal.PlainDateTime || expected instanceof Temporal.PlainDateTime) {
+        return actual instanceof Temporal.PlainDateTime &&
+            expected instanceof Temporal.PlainDateTime &&
+            Temporal.PlainDateTime.compare(actual, expected) === 0;
+    }
+    if (actual instanceof Temporal.PlainTime || expected instanceof Temporal.PlainTime) {
+        return actual instanceof Temporal.PlainTime &&
+            expected instanceof Temporal.PlainTime &&
+            Temporal.PlainTime.compare(actual, expected) === 0;
+    }
+    if (
+        typeof actual !== 'object' ||
+        actual === null ||
+        typeof expected !== 'object' ||
+        expected === null
+    ) {
         return false;
     }
+    return isExactCrdtObject({ actual, expected, compared });
 }
 
-function sameDocumentWrite(left: CrdtDocumentWrite, right: CrdtDocumentWrite): boolean {
-    return left.operation === right.operation &&
-        left.documentKey === right.documentKey &&
-        left.applicationId === right.applicationId &&
-        left.workspaceId === right.workspaceId &&
-        left.scope === right.scope &&
-        left.documentType === right.documentType &&
-        left.documentId === right.documentId &&
-        left.documentRefJson === right.documentRefJson &&
-        left.documentRevision === right.documentRevision &&
-        left.lifecycle === right.lifecycle &&
-        sameDate(left.createdAt, right.createdAt) &&
-        sameDate(left.updatedAt, right.updatedAt) &&
-        sameOptionalDate(left.archivedAt, right.archivedAt) &&
-        sameOptionalDate(left.destroyedAt, right.destroyedAt) &&
-        left.lastAppendSequence === right.lastAppendSequence &&
-        left.updateCount === right.updateCount &&
-        left.snapshotCount === right.snapshotCount &&
-        left.storedUpdateBytes === right.storedUpdateBytes &&
-        left.retentionJson === right.retentionJson &&
-        left.quotaJson === right.quotaJson &&
-        left.projectionIdsJson === right.projectionIdsJson &&
-        (left.operation === 'insert' || right.operation === 'insert' || (
-            left.expectedRevision === right.expectedRevision &&
-            left.expectedLifecycle === right.expectedLifecycle &&
-            left.expectedAppendSequence === right.expectedAppendSequence
-        ));
-}
-
-function sameOptionalUpdateWrite(
-    left: CrdtUpdateWrite | null,
-    right: CrdtUpdateWrite | null
-): boolean {
-    if (left === null || right === null) {
-        return left === right;
+function isExactCrdtObject(input: IsExactCrdtObjectInput): boolean {
+    const { actual, expected, compared } = input;
+    const prior = compared.get(actual);
+    if (prior !== undefined) {
+        return prior === expected;
     }
-    return left.documentKey === right.documentKey &&
-        left.appendSequence === right.appendSequence &&
-        left.updateId === right.updateId &&
-        left.updateEnvelopeJson === right.updateEnvelopeJson &&
-        left.acceptedUpdateHash === right.acceptedUpdateHash &&
-        left.actorId === right.actorId &&
-        left.principalId === right.principalId &&
-        left.sessionId === right.sessionId &&
-        left.serverId === right.serverId &&
-        left.authorizationScope === right.authorizationScope &&
-        sameDate(left.acceptedAt, right.acceptedAt);
-}
+    compared.set(actual, expected);
 
-function sameOptionalSnapshotWrite(
-    left: CrdtSnapshotWrite | null,
-    right: CrdtSnapshotWrite | null
-): boolean {
-    if (left === null || right === null) {
-        return left === right;
+    if (Object.getPrototypeOf(actual) !== Object.getPrototypeOf(expected)) {
+        return false;
     }
-    return left.documentKey === right.documentKey &&
-        left.snapshotId === right.snapshotId &&
-        left.appendSequence === right.appendSequence &&
-        left.snapshotEnvelopeJson === right.snapshotEnvelopeJson &&
-        sameDate(left.createdAt, right.createdAt) &&
-        left.reason === right.reason;
+
+    const actualKeys = readCrdtObjectKeys(actual);
+    const expectedKeys = readCrdtObjectKeys(expected);
+    if (actualKeys === null || expectedKeys === null) {
+        return false;
+    }
+    return actualKeys.length === expectedKeys.length &&
+        actualKeys.every((key, index) =>
+            key === expectedKeys[index] &&
+            isExactCrdtDataProperty({ actual, expected, key, compared })
+        );
 }
 
-function sameDate(left: Date, right: Date): boolean {
-    return left instanceof Date && right instanceof Date && left.getTime() === right.getTime();
+function readCrdtObjectKeys(value: object): readonly string[] | null {
+    const keys = Reflect.ownKeys(value);
+    if (keys.some((key) => typeof key !== 'string')) {
+        return null;
+    }
+    return (keys as string[]).toSorted();
 }
 
-function sameOptionalDate(left: Date | null, right: Date | null): boolean {
-    return left === null || right === null ? left === right : sameDate(left, right);
-}
-
-function readSnapshotReason(snapshot: object | null | undefined): string | null {
-    const snapshotRecord = toRecord(snapshot);
-    const metadata = snapshotRecord && typeof snapshotRecord.metadata === 'object'
-        ? toRecord(snapshotRecord.metadata)
-        : null;
-    return typeof metadata?.reason === 'string' ? metadata.reason : null;
-}
-
-function toRecord(value: object | null | undefined): UntrustedCrdtRecord | null {
-    return typeof value === 'object' && value !== null ? (value as UntrustedCrdtRecord) : null;
+function isExactCrdtDataProperty(input: IsExactCrdtDataPropertyInput): boolean {
+    const { actual, expected, key, compared } = input;
+    const actualDescriptor = Object.getOwnPropertyDescriptor(actual, key);
+    const expectedDescriptor = Object.getOwnPropertyDescriptor(expected, key);
+    return actualDescriptor !== undefined &&
+        expectedDescriptor !== undefined &&
+        Object.hasOwn(actualDescriptor, 'value') &&
+        Object.hasOwn(expectedDescriptor, 'value') &&
+        isExactCrdtComputedValue(
+            actualDescriptor.value as CrdtComputedComparable,
+            expectedDescriptor.value as CrdtComputedComparable,
+            compared
+        );
 }

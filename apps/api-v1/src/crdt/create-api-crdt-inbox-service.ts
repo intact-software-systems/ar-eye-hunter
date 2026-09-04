@@ -74,8 +74,6 @@ export function createApiCrdtInboxService(
             database: input.database,
             mutationService: createCrdtMutationService({
                 repository,
-                createWriter: (transaction: PSqlSql) =>
-                    new PSqlCrdtMutationRepository({ sql: transaction, authorize }, { policies }),
                 serviceId: input.serviceId
             }),
             readCurrentSession: async ({ sessionId, atEpochMs }) => {

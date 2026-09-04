@@ -1,0 +1,592 @@
+import { Temporal } from '@js-temporal/polyfill';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import { arrayEquals, jsonEquals } from '@shared/repository/state-utils.ts';
+import type { AppInboxExecutionMetadata } from '../../app-inbox/app-inbox-contracts.ts';
+import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion,
+    type AppInboxCompletionComputed,
+    type AppInboxCompletionFacts
+} from '../../app-inbox/handler/app-inbox-completion-computation.ts';
+import {
+    computeAppOutboxInsert,
+    isExactAppOutboxInsert,
+    type AppOutboxInsert
+} from '../../app-outbox/app-outbox-insert.ts';
+import {
+    validateWsSessionConnectGuard,
+    validateWsSessionGenerationClosed,
+    type WsSessionGenerationCloseFacts,
+    type WsSessionGenerationFacts,
+    type WsSessionGenerationGuardFacts,
+    type WsSessionGenerationLifecycleComputed,
+    type WsSessionGenerationLifecycleRead
+} from '../../websocket/ws-session-generation-computation.ts';
+import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
+import {
+    CLIENT_EXPIRED_SESSION_PAGE_SIZE,
+    requiresClientWrite,
+    toClientStateWritten,
+    type ClientExpiredSessionPage,
+    type ClientExpiredSessionPageInput,
+    type ClientStateMutationService,
+    type ClientStateWritten
+} from '../client-state-service-contracts.ts';
+import type {
+    ClientMutationCommand,
+    ClientMutationComputed,
+    ClientMutationComputedWrite,
+    ClientMutationRead
+} from '../mutation/client-mutation-contracts.ts';
+import { validateClientMutationAuthorityPolicy } from '../mutation/result-validation/validate-client-mutation-authority-policy.ts';
+import type {
+    ClientAuthorisedWsSessionConnectAppInboxPayload,
+    ClientAuthorisedWsSessionDisconnectAppInboxPayload
+} from './app-client-inbox-contracts.ts';
+import type {
+    InactiveAuthorisedWsSessionResult
+} from './client-state-inbox-result-codec.ts';
+
+export type ClientMutationLifecycleInput =
+    | Readonly<{
+        kind: 'connect';
+        facts: WsSessionGenerationGuardFacts;
+        read: WsSessionGenerationLifecycleRead;
+    }>
+    | Readonly<{
+        kind: 'disconnect';
+        facts: WsSessionGenerationCloseFacts;
+        read: WsSessionGenerationLifecycleRead;
+    }>;
+
+export type ClientMutationOperationComputed =
+    | Readonly<{
+        outcome: 'idempotency-conflict';
+        mutation: Extract<ClientMutationComputed, { outcome: 'idempotency-conflict'; }>;
+    }>
+    | Readonly<{
+        outcome: 'completed';
+        mutation: Exclude<ClientMutationComputed, { outcome: 'idempotency-conflict'; }>;
+        lifecycleComputed: WsSessionGenerationLifecycleComputed | undefined;
+        durableResult: ClientStateWritten;
+        completion: AppInboxCompletionComputed<ClientStateWritten>;
+        writes: readonly ClientMutationComputedWrite[];
+        committedSnapshots: readonly ClientSnapshot[];
+    }>;
+
+export type AuthorisedWsConnectOperationComputed =
+    | ClientMutationOperationComputed
+    | Readonly<{
+        outcome: 'inactive';
+        durableResult: InactiveAuthorisedWsSessionResult;
+        completion: AppInboxCompletionComputed<InactiveAuthorisedWsSessionResult>;
+    }>;
+
+export interface MissingSessionDisconnectComputed {
+    readonly lifecycleComputed: WsSessionGenerationLifecycleComputed;
+    readonly durableResult: InactiveAuthorisedWsSessionResult;
+    readonly completion: AppInboxCompletionComputed<InactiveAuthorisedWsSessionResult>;
+}
+
+export type ExpiredSessionsOperationComputed =
+    | Readonly<{
+        outcome: 'idempotency-conflict';
+        mutations: readonly ClientMutationComputed[];
+    }>
+    | Readonly<{
+        outcome: 'completed';
+        mutations: readonly Exclude<ClientMutationComputed, { outcome: 'idempotency-conflict'; }>[];
+        durableResult: readonly ClientStateWritten[];
+        completion: AppInboxCompletionComputed<readonly ClientStateWritten[]>;
+        writes: readonly ClientMutationComputedWrite[];
+        committedSnapshots: readonly ClientSnapshot[];
+        successorWrite: AppOutboxInsert | null;
+    }>;
+
+export interface ClientExpiredSessionMutationRead {
+    readonly command: ClientMutationCommand;
+    readonly read: ClientMutationRead;
+}
+
+export interface ComputeClientMutationOperationInput {
+    readonly command: ClientMutationCommand;
+    readonly read: ClientMutationRead;
+    readonly completionFacts: AppInboxCompletionFacts;
+    readonly lifecycle: ClientMutationLifecycleInput | undefined;
+    readonly mutation: Pick<ClientStateMutationService, 'compute'>;
+    readonly sessionGeneration: Pick<WsSessionGenerationLifecycleService, 'computeClosed' | 'computeConnectGuard'>;
+}
+
+export interface ValidateClientMutationOperationInput {
+    readonly command: ClientMutationCommand;
+    readonly read: ClientMutationRead;
+    readonly completionFacts: AppInboxCompletionFacts;
+    readonly lifecycle: ClientMutationLifecycleInput | undefined;
+    readonly computed: ClientMutationOperationComputed;
+    readonly mutation: Pick<ClientStateMutationService, 'validate'>;
+}
+
+export interface ComputeAuthorisedWsConnectOperationInput {
+    readonly connection: ClientAuthorisedWsSessionConnectAppInboxPayload;
+    readonly command: ClientMutationCommand;
+    readonly read: ClientMutationRead;
+    readonly lifecycleFacts: WsSessionGenerationFacts;
+    readonly lifecycleRead: WsSessionGenerationLifecycleRead;
+    readonly completionFacts: AppInboxCompletionFacts;
+    readonly mutation: Pick<ClientStateMutationService, 'compute'>;
+    readonly sessionGeneration: Pick<WsSessionGenerationLifecycleService, 'computeConnectGuard' | 'isGenerationClosed'>;
+}
+
+export interface ValidateAuthorisedWsConnectOperationInput {
+    readonly connection: ClientAuthorisedWsSessionConnectAppInboxPayload;
+    readonly command: ClientMutationCommand;
+    readonly read: ClientMutationRead;
+    readonly lifecycleFacts: WsSessionGenerationFacts;
+    readonly lifecycleRead: WsSessionGenerationLifecycleRead;
+    readonly completionFacts: AppInboxCompletionFacts;
+    readonly computed: AuthorisedWsConnectOperationComputed;
+    readonly mutation: Pick<ClientStateMutationService, 'validate'>;
+    readonly sessionGeneration: Pick<WsSessionGenerationLifecycleService, 'isGenerationClosed'>;
+}
+
+export interface ComputeMissingSessionDisconnectInput {
+    readonly commandInput: ClientAuthorisedWsSessionDisconnectAppInboxPayload;
+    readonly lifecycleFacts: WsSessionGenerationCloseFacts;
+    readonly lifecycleRead: WsSessionGenerationLifecycleRead;
+    readonly completionFacts: AppInboxCompletionFacts;
+    readonly sessionGeneration: Pick<WsSessionGenerationLifecycleService, 'computeClosed'>;
+}
+
+export interface ValidateMissingSessionDisconnectInput {
+    readonly commandInput: ClientAuthorisedWsSessionDisconnectAppInboxPayload;
+    readonly command: ClientMutationCommand;
+    readonly read: ClientMutationRead;
+    readonly lifecycleFacts: WsSessionGenerationCloseFacts;
+    readonly lifecycleRead: WsSessionGenerationLifecycleRead;
+    readonly completionFacts: AppInboxCompletionFacts;
+    readonly computed: MissingSessionDisconnectComputed;
+}
+
+export interface ComputeExpiredSessionsOperationInput {
+    readonly context: AppInboxExecutionMetadata;
+    readonly pageInput: ClientExpiredSessionPageInput;
+    readonly page: ClientExpiredSessionPage;
+    readonly reads: readonly ClientExpiredSessionMutationRead[];
+    readonly completionFacts: AppInboxCompletionFacts;
+    readonly mutation: Pick<ClientStateMutationService, 'compute'>;
+}
+
+export interface ValidateExpiredSessionsOperationInput {
+    readonly context: AppInboxExecutionMetadata;
+    readonly pageInput: ClientExpiredSessionPageInput;
+    readonly page: ClientExpiredSessionPage;
+    readonly reads: readonly ClientExpiredSessionMutationRead[];
+    readonly completionFacts: AppInboxCompletionFacts;
+    readonly computed: ExpiredSessionsOperationComputed;
+    readonly mutation: Pick<ClientStateMutationService, 'validate'>;
+}
+
+export function computeClientMutationOperation(
+    input: ComputeClientMutationOperationInput
+): ClientMutationOperationComputed {
+    const mutation = input.mutation.compute(input.command, input.read);
+    if (mutation.outcome === 'idempotency-conflict') {
+        return { outcome: 'idempotency-conflict', mutation };
+    }
+    const lifecycleComputed = input.lifecycle?.kind === 'connect'
+        ? input.sessionGeneration.computeConnectGuard(
+            input.lifecycle.facts,
+            input.lifecycle.read
+        )
+        : input.lifecycle?.kind === 'disconnect'
+        ? input.sessionGeneration.computeClosed(
+            input.lifecycle.facts,
+            input.lifecycle.read
+        )
+        : undefined;
+    const durableResult = toClientStateWritten(mutation);
+    return {
+        outcome: 'completed',
+        mutation,
+        lifecycleComputed,
+        durableResult,
+        completion: computeCompletion(input.completionFacts, durableResult),
+        writes: requiresClientWrite(mutation) ? [mutation] : [],
+        committedSnapshots: [mutation.snapshot]
+    };
+}
+
+export function validateClientMutationOperation(
+    input: ValidateClientMutationOperationInput
+): void {
+    input.mutation.validate(input.command, input.read, input.computed.mutation);
+    if (input.computed.outcome === 'idempotency-conflict') {
+        return;
+    }
+    assertMutationProjections(input.computed);
+    if (input.lifecycle?.kind === 'connect' && input.computed.lifecycleComputed) {
+        validateWsSessionConnectGuard(
+            input.lifecycle.facts,
+            input.lifecycle.read,
+            input.computed.lifecycleComputed
+        );
+    }
+    if (input.lifecycle?.kind === 'disconnect' && input.computed.lifecycleComputed) {
+        validateWsSessionGenerationClosed(
+            input.lifecycle.facts,
+            input.lifecycle.read,
+            input.computed.lifecycleComputed
+        );
+    }
+    assertValidCompletion(
+        input.completionFacts,
+        input.computed.durableResult,
+        input.computed.completion
+    );
+}
+
+export function computeAuthorisedWsConnectOperation(
+    input: ComputeAuthorisedWsConnectOperationInput
+): AuthorisedWsConnectOperationComputed {
+    if (input.sessionGeneration.isGenerationClosed(input.lifecycleFacts, input.lifecycleRead)) {
+        const durableResult = {
+            status: 'inactive',
+            sessionId: input.connection.authSession.sessionId,
+            generationId: input.connection.generationId
+        } as const;
+        return {
+            outcome: 'inactive',
+            durableResult,
+            completion: computeCompletion(input.completionFacts, durableResult)
+        };
+    }
+    const mutation = input.mutation.compute(input.command, input.read);
+    if (mutation.outcome === 'idempotency-conflict') {
+        return { outcome: 'idempotency-conflict', mutation };
+    }
+    const lifecycleGuardFacts = toWsSessionGenerationGuardFacts(
+        input.connection,
+        input.lifecycleFacts
+    );
+    const lifecycleComputed = input.sessionGeneration.computeConnectGuard(
+        lifecycleGuardFacts,
+        input.lifecycleRead
+    );
+    const durableResult = toClientStateWritten(mutation);
+    return {
+        outcome: 'completed',
+        mutation,
+        lifecycleComputed,
+        durableResult,
+        completion: computeCompletion(input.completionFacts, durableResult),
+        writes: requiresClientWrite(mutation) ? [mutation] : [],
+        committedSnapshots: [mutation.snapshot]
+    };
+}
+
+export function validateAuthorisedWsConnectOperation(
+    input: ValidateAuthorisedWsConnectOperationInput
+): void {
+    const generationClosed = input.sessionGeneration.isGenerationClosed(
+        input.lifecycleFacts,
+        input.lifecycleRead
+    );
+    if (input.computed.outcome === 'inactive') {
+        if (
+            !generationClosed ||
+            input.computed.durableResult.sessionId !== input.lifecycleFacts.sessionId ||
+            input.computed.durableResult.generationId !== input.lifecycleFacts.generationId
+        ) {
+            throw new TypeError('Inactive WebSocket client completion differs');
+        }
+        assertValidCompletion(
+            input.completionFacts,
+            input.computed.durableResult,
+            input.computed.completion
+        );
+        return;
+    }
+    if (generationClosed) {
+        throw new TypeError('Active WebSocket client mutation used a closed generation');
+    }
+    input.mutation.validate(input.command, input.read, input.computed.mutation);
+    if (input.computed.outcome === 'idempotency-conflict') {
+        return;
+    }
+    assertMutationProjections(input.computed);
+    if (!input.computed.lifecycleComputed) {
+        throw new TypeError('Active WebSocket client lifecycle computation is missing');
+    }
+    validateWsSessionConnectGuard(
+        toWsSessionGenerationGuardFacts(input.connection, input.lifecycleFacts),
+        input.lifecycleRead,
+        input.computed.lifecycleComputed
+    );
+    assertValidCompletion(
+        input.completionFacts,
+        input.computed.durableResult,
+        input.computed.completion
+    );
+}
+
+export function computeMissingSessionDisconnect(
+    input: ComputeMissingSessionDisconnectInput
+): MissingSessionDisconnectComputed {
+    const lifecycleComputed = input.sessionGeneration.computeClosed(
+        input.lifecycleFacts,
+        input.lifecycleRead
+    );
+    const durableResult = {
+        status: 'inactive',
+        sessionId: input.commandInput.connection.authSession.sessionId,
+        generationId: input.commandInput.connection.generationId
+    } as const;
+    return {
+        lifecycleComputed,
+        durableResult,
+        completion: computeCompletion(input.completionFacts, durableResult)
+    };
+}
+
+export function validateMissingSessionDisconnect(
+    input: ValidateMissingSessionDisconnectInput
+): void {
+    validateClientMutationAuthorityPolicy(input.command, input.read);
+    validateWsSessionGenerationClosed(
+        input.lifecycleFacts,
+        input.lifecycleRead,
+        input.computed.lifecycleComputed
+    );
+    if (
+        input.computed.durableResult.sessionId !==
+            input.commandInput.connection.authSession.sessionId ||
+        input.computed.durableResult.generationId !== input.commandInput.connection.generationId
+    ) {
+        throw new TypeError('Missing-session WebSocket completion differs');
+    }
+    assertValidCompletion(
+        input.completionFacts,
+        input.computed.durableResult,
+        input.computed.completion
+    );
+}
+
+export function computeExpiredSessionsOperation(
+    input: ComputeExpiredSessionsOperationInput
+): ExpiredSessionsOperationComputed {
+    const mutations = input.reads.map(({ command, read }) => input.mutation.compute(command, read));
+    if (mutations.some((mutation) => mutation.outcome === 'idempotency-conflict')) {
+        return { outcome: 'idempotency-conflict', mutations };
+    }
+    const completedMutations = mutations.filter(
+        (mutation): mutation is Exclude<ClientMutationComputed, { outcome: 'idempotency-conflict'; }> =>
+            mutation.outcome !== 'idempotency-conflict'
+    );
+    const applied = completedMutations.filter((mutation) => mutation.outcome === 'write');
+    const durableResult = applied.map(toClientStateWritten);
+    return {
+        outcome: 'completed',
+        mutations: completedMutations,
+        durableResult,
+        completion: computeCompletion(input.completionFacts, durableResult),
+        writes: completedMutations.filter(requiresClientWrite),
+        committedSnapshots: applied.map((mutation) => mutation.snapshot),
+        successorWrite: computeExpiredSessionSuccessorWrite(input)
+    };
+}
+
+export function validateExpiredSessionsOperation(
+    input: ValidateExpiredSessionsOperationInput
+): void {
+    if (
+        input.page.candidates.length > CLIENT_EXPIRED_SESSION_PAGE_SIZE ||
+        input.computed.mutations.length !== input.reads.length ||
+        input.reads.length !== input.page.candidates.length
+    ) {
+        throw new TypeError('Expired client mutation aggregate length differs');
+    }
+    if (
+        input.page.nextAfterKey !== null &&
+        input.page.nextAfterKey === input.pageInput.afterKey
+    ) {
+        throw new TypeError('Expired client session page cursor did not advance');
+    }
+    for (const [index, { command, read }] of input.reads.entries()) {
+        const mutation = input.computed.mutations[index];
+        if (!mutation) {
+            throw new TypeError('Expired client mutation aggregate entry is missing');
+        }
+        input.mutation.validate(command, read, mutation);
+    }
+    if (input.computed.outcome === 'idempotency-conflict') {
+        return;
+    }
+    const expectedApplied = input.computed.mutations.filter(
+        (mutation) => mutation.outcome === 'write'
+    );
+    const expectedWrites = input.computed.mutations.filter(requiresClientWrite);
+    if (
+        !jsonEquals(input.computed.durableResult, expectedApplied.map(toClientStateWritten)) ||
+        !arrayEquals(input.computed.writes, expectedWrites) ||
+        !arrayEquals(
+            input.computed.committedSnapshots,
+            expectedApplied.map((mutation) => mutation.snapshot)
+        )
+    ) {
+        throw new TypeError('Expired client mutation projections differ');
+    }
+    assertValidCompletion(
+        input.completionFacts,
+        input.computed.durableResult,
+        input.computed.completion
+    );
+    const expectedSuccessor = computeExpiredSessionSuccessorWrite(input);
+    if (
+        expectedSuccessor === null
+            ? input.computed.successorWrite !== null
+            : input.computed.successorWrite === null ||
+                !isExactAppOutboxInsert(expectedSuccessor.entry, input.computed.successorWrite)
+    ) {
+        throw new TypeError('Expired client session successor differs');
+    }
+}
+
+function computeExpiredSessionSuccessorWrite(
+    input: Pick<ComputeExpiredSessionsOperationInput, 'context' | 'pageInput' | 'page' | 'completionFacts'>
+): AppOutboxInsert | null {
+    const entry = computeExpiredSessionSuccessorEntry({
+        context: input.context,
+        pageInput: input.pageInput,
+        nextAfterKey: input.page.nextAfterKey,
+        createdAtEpochMs: input.completionFacts.completedAtEpochMs
+    });
+    return entry === null ? null : computeAppOutboxInsert(entry);
+}
+
+function computeCompletion<Result>(
+    facts: AppInboxCompletionFacts,
+    durableResult: Result
+): AppInboxCompletionComputed<Result> {
+    return computeAppInboxCompletion({
+        ...facts,
+        durableResult,
+        status: EntityStatus.COMPLETED
+    });
+}
+
+function assertValidCompletion<Result>(
+    facts: AppInboxCompletionFacts,
+    durableResult: Result,
+    completion: AppInboxCompletionComputed<Result>
+): void {
+    const issues = validateAppInboxCompletion(
+        { ...facts, durableResult, status: EntityStatus.COMPLETED },
+        completion
+    );
+    if (issues[0] !== undefined) {
+        throw issues[0].cause;
+    }
+}
+
+function assertMutationProjections(
+    computed: Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>
+): void {
+    const expectedWrites = requiresClientWrite(computed.mutation)
+        ? [computed.mutation]
+        : [];
+    if (
+        !jsonEquals(computed.durableResult, toClientStateWritten(computed.mutation)) ||
+        !arrayEquals(computed.writes, expectedWrites) ||
+        !arrayEquals(computed.committedSnapshots, [computed.mutation.snapshot])
+    ) {
+        throw new TypeError('Client mutation projections differ');
+    }
+}
+
+function toWsSessionGenerationGuardFacts(
+    connection: ClientAuthorisedWsSessionConnectAppInboxPayload,
+    lifecycleFacts: WsSessionGenerationFacts
+): WsSessionGenerationGuardFacts {
+    return {
+        ...lifecycleFacts,
+        expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(
+            connection.generationStartedAtEpochMs,
+            connection.expiresAtEpochMs
+        )
+    };
+}
+
+interface ComputeExpiredSessionSuccessorEntryInput {
+    readonly context: AppInboxExecutionMetadata;
+    readonly pageInput: ClientExpiredSessionPageInput;
+    readonly nextAfterKey: string | null;
+    readonly createdAtEpochMs: number;
+}
+
+function computeExpiredSessionSuccessorEntry(
+    input: ComputeExpiredSessionSuccessorEntryInput
+): ResourceEntry | null {
+    const { context, pageInput, nextAfterKey, createdAtEpochMs } = input;
+    if (nextAfterKey === null) {
+        return null;
+    }
+    const key = toAppQueueKey({
+        topicId: context.entry.key.topicId,
+        resourceId: `expire-client-sessions:${pageInput.atEpochMs}:${nextAfterKey}`,
+        contextId: context.entry.key.contextId
+    });
+    const successorInput: ClientExpiredSessionPageInput = {
+        atEpochMs: pageInput.atEpochMs,
+        afterKey: nextAfterKey
+    };
+    const enqueue = {
+        ...context.enqueue,
+        topicId: key.topicId,
+        resourceId: key.resourceId,
+        contextId: key.contextId,
+        data: encodeAppInboxCommand(
+            successorInput,
+            'Expired client sessions AppInbox continuation'
+        )
+    };
+    const message: ALMessage = {
+        id: {
+            v: 2,
+            msgId: key.resourceId,
+            ts: createdAtEpochMs,
+            senderId: context.message.id.senderId
+        },
+        route: key,
+        payload: {
+            typeId: enqueue.type,
+            contentType: 'application/json',
+            resource: JSON.stringify(enqueue)
+        },
+        audit: {
+            createdBy: context.message.id.senderId,
+            createdTs: createdAtEpochMs
+        }
+    };
+    const createdAt = Temporal.Instant.fromEpochMilliseconds(createdAtEpochMs)
+        .toZonedDateTimeISO('UTC')
+        .toPlainDateTime();
+    return {
+        key,
+        resource: JSON.stringify(message),
+        typeId: EnqueuedType.APP_INBOX,
+        status: EntityStatus.NEW,
+        audit: {
+            date: createdAt.toPlainTime(),
+            createdBy: context.entry.audit.createdBy,
+            createdTs: createdAt,
+            expiryTs: context.entry.audit.expiryTs
+        },
+        dequeueAudit: { attempts: 0 }
+    };
+}

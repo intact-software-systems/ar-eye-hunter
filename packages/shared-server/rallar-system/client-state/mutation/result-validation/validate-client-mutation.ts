@@ -1,3 +1,7 @@
+import {
+    computeAppOutboxInsert,
+    isExactAppOutboxInsert
+} from '../../../app-outbox/app-outbox-insert.ts';
 import { computeClientStateSyncEntries } from '../../../state-sync/state-sync-entry-computation.ts';
 import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
 import type {
@@ -139,13 +143,16 @@ function validateClientMutationOutbox(
     command: ClientMutationCommand,
     computed: Extract<ClientMutationComputed, { outcome: 'write'; }>
 ): void {
-    const expectedOutboxEntries = computed.stateSync.flatMap((stateSync) =>
-        computeClientStateSyncEntries(stateSync, command.facts.serviceId)
-    );
+    const expectedOutboxWrites = computed.stateSync
+        .flatMap((stateSync) => computeClientStateSyncEntries(stateSync, command.facts.serviceId))
+        .map(computeAppOutboxInsert);
     if (
-        JSON.stringify(expectedOutboxEntries) !== JSON.stringify(computed.outboxEntries) ||
+        expectedOutboxWrites.length !== computed.outboxWrites.length ||
+        expectedOutboxWrites.some((expected, index) =>
+            !isExactAppOutboxInsert(expected.entry, computed.outboxWrites[index]!)
+        ) ||
         JSON.stringify(computed.receipt.outboxIds) !==
-            JSON.stringify(expectedOutboxEntries.map((entry) => entry.key.resourceId))
+            JSON.stringify(expectedOutboxWrites.map((write) => write.entry.key.resourceId))
     ) {
         throw new ClientMutationRejectedError('Client mutation WS outbox differs');
     }

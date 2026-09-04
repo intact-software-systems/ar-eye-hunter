@@ -12,7 +12,10 @@ import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { createCrdtMutationService, type CrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
-import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
+import {
+    PSqlCrdtMutationRepository,
+    writePSqlCrdtMutation
+} from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 import {
     decodeJsonWireValue,
     type JsonWireObject,
@@ -207,11 +210,6 @@ function createTestCrdtMutationService(
             { sql, authorize: () => Promise.resolve(true) },
             { policies: [] }
         ),
-        createWriter: (transaction) =>
-            new PSqlCrdtMutationRepository(
-                { sql: transaction, authorize: () => Promise.resolve(true) },
-                { policies: [] }
-            ),
         serviceId: 'server-1'
     });
 }
@@ -244,7 +242,8 @@ async function seedCrdtAdminDocument(
     });
     const read = await mutationService.read(initial);
     const computed = mutationService.compute({ command: initial, read });
-    await sql.begin(async (transaction) => await mutationService.write(transaction, computed));
+    assert.deepEqual(mutationService.validate({ command: initial, read, computed }), []);
+    await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, computed));
     await sql`
     update crdt_documents set
       retention_policy = ${JSON.stringify({ mode: 'retain', reason: 'existing' })},

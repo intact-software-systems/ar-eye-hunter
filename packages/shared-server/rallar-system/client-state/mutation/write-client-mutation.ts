@@ -1,6 +1,6 @@
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { ClientStateEventCollisionError } from '../../state-events/client-state-event-store.ts';
 import type { ClientStateEventCollisionRow } from '../../state-events/postgres/client-state-event-row-codec.ts';
 import type { ClientMutationReceipt } from '../persistence/client-state-persistence-contracts.ts';
@@ -21,9 +21,8 @@ export async function writeClientMutation(
         await writeClientEvent(transaction, computed.persistence.eventWrite);
     }
     if (computed.outcome === 'write') {
-        const outbox = new PSqlResourceInboxEntryRepository(transaction);
-        for (const entry of computed.outboxEntries) {
-            await outbox.writeIfAbsentOrMatch(entry);
+        for (const outboxWrite of computed.outboxWrites) {
+            await writeAppOutboxInsert(transaction, outboxWrite);
         }
     }
     return computed.receipt;

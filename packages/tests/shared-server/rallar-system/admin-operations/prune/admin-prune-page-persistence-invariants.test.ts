@@ -33,7 +33,11 @@ describe('admin prune page persistence invariants', () => {
         const repository = new PSqlAdminPruneRepository((() => undefined) as never);
         const deleted = await repository.deletePage(
             transaction,
-            toAdminPrunePageDelete(pageWork({ category: 'resource-inbox' }), ['1', '2', '3'])
+            toAdminPrunePageDelete(pageWork({ category: 'resource-inbox' }), [
+                { rowId: '1', revisionToken: '11' },
+                { rowId: '2', revisionToken: '12' },
+                { rowId: '3', revisionToken: '13' }
+            ])
         );
 
         expect(deleted).toBe(3);
@@ -75,7 +79,7 @@ describe('admin prune page persistence invariants', () => {
         });
         const command = decodeAdminPruneWork(entry);
         const read = {
-            rowIds: [],
+            candidates: [],
             hasMore: false,
             aggregate,
             expectedAggregate: JSON.stringify(aggregate),

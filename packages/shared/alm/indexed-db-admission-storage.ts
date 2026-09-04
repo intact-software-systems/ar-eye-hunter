@@ -1,3 +1,8 @@
+import {
+    readIndexedDbRequest,
+    waitForIndexedDbTransaction
+} from '../persistence/indexed-db-request.ts';
+import { openIndexedDbWithStore } from '../persistence/openIndexedDb.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 import {
     decodeALAdmissionStoredValue,
@@ -7,25 +12,27 @@ import { ALAdmissionCorruptionError, decodeALAdmissionValue } from './al-admissi
 import { decodeALAdmissionNumber } from './al-admission-value-validation.ts';
 
 export const AL_ADMISSION_REVISION_KEY = '__rallar_al_admission_revision__';
+export const AL_ADMISSION_EXPIRY_INDEX_NAME = 'expireAtTimestamp';
 
 export type IndexedDbAdmissionMutation =
     | Readonly<{ kind: 'set'; stored: ALAdmissionStoredValue; }>
-    | Readonly<{ kind: 'remove'; key: string; }>;
+    | Readonly<{ kind: 'remove'; key: string; }>
+    | Readonly<{
+        kind: 'remove-if-write-token';
+        key: string;
+        expectedWriteToken: string;
+    }>;
 
-export interface IndexedDbAdmissionReadSnapshot {
+export interface IndexedDbAdmissionSnapshot<Stored = ALAdmissionStoredValue> {
     readonly revision: number;
-    readonly stored: ALAdmissionStoredValue | undefined;
+    readonly stored: readonly Stored[];
 }
 
-export interface IndexedDbAdmissionListSnapshot {
-    readonly revision: number;
-    readonly stored: readonly ALAdmissionStoredValue[];
-}
-
-export interface IndexedDbAdmissionKeySnapshot {
-    readonly revision: number;
-    readonly keys: readonly string[];
-}
+export type IndexedDbAdmissionSelection =
+    | Readonly<{ kind: 'key'; key: string; }>
+    | Readonly<{ kind: 'prefixes'; prefixes: readonly string[]; }>
+    | Readonly<{ kind: 'expired'; maximumExpireAtTimestamp: number; }>
+    | Readonly<{ kind: 'revision'; }>;
 
 export interface IndexedDbAdmissionRevisionWrite {
     readonly key: typeof AL_ADMISSION_REVISION_KEY;
@@ -51,90 +58,49 @@ export function computeIndexedDbAdmissionRevisionWrite(
     };
 }
 
+export async function openIndexedDbAdmissionDatabase(
+    dbName: string,
+    storeName: string
+): Promise<IDBDatabase> {
+    return await openIndexedDbWithStore(dbName, {
+        name: storeName,
+        keyPath: 'key',
+        indexes: [{
+            name: AL_ADMISSION_EXPIRY_INDEX_NAME,
+            keyPath: 'expireAtTimestamp'
+        }]
+    });
+}
+
 export async function readIndexedDbAdmissionSnapshot(
     db: IDBDatabase,
     storeName: string,
-    key: string
-): Promise<IndexedDbAdmissionReadSnapshot> {
+    selection: IndexedDbAdmissionSelection
+): Promise<IndexedDbAdmissionSnapshot>;
+export async function readIndexedDbAdmissionSnapshot<Stored>(
+    db: IDBDatabase,
+    storeName: string,
+    selection: IndexedDbAdmissionSelection,
+    readStored: (value: unknown, key: string) => Stored
+): Promise<IndexedDbAdmissionSnapshot<Stored>>;
+export async function readIndexedDbAdmissionSnapshot<Stored>(
+    db: IDBDatabase,
+    storeName: string,
+    selection: IndexedDbAdmissionSelection,
+    readStored: (value: unknown, key: string) => Stored = decodeALAdmissionStoredValue as (
+        value: unknown,
+        key: string
+    ) => Stored
+): Promise<IndexedDbAdmissionSnapshot<Stored>> {
     const transaction = db.transaction(storeName, 'readonly');
     const store = transaction.objectStore(storeName);
-    const completed = transactionDone(transaction);
-    const valuePromise = requestToPromise(store.get(key));
-    const revisionPromise = requestToPromise(store.get(AL_ADMISSION_REVISION_KEY));
-    const [value, revisionValue] = await Promise.all([valuePromise, revisionPromise]);
+    const completed = waitForIndexedDbTransaction(transaction);
+    const [stored, revisionValue] = await Promise.all([
+        readIndexedDbAdmissionSelection(store, selection, readStored),
+        readIndexedDbRequest(store.get(AL_ADMISSION_REVISION_KEY))
+    ]);
     await completed;
-    return {
-        revision: decodeIndexedDbAdmissionRevision(revisionValue),
-        stored: value === undefined
-            ? undefined
-            : decodeALAdmissionValue(value, key, decodeALAdmissionStoredValue)
-    };
-}
-
-export async function listIndexedDbAdmissionSnapshot(
-    db: IDBDatabase,
-    storeName: string,
-    prefix: string
-): Promise<IndexedDbAdmissionListSnapshot> {
-    const transaction = db.transaction(storeName, 'readonly');
-    const store = transaction.objectStore(storeName);
-    const completed = transactionDone(transaction);
-    const valuesPromise = collectIndexedDbAdmissionStoredValues(store, prefix);
-    const revisionPromise = requestToPromise(store.get(AL_ADMISSION_REVISION_KEY));
-    const [stored, revisionValue] = await Promise.all([valuesPromise, revisionPromise]);
-    await completed;
-    return { revision: decodeIndexedDbAdmissionRevision(revisionValue), stored };
-}
-
-export async function readIndexedDbAdmissionKeySnapshot(
-    db: IDBDatabase,
-    storeName: string,
-    keyPrefixes: readonly string[]
-): Promise<IndexedDbAdmissionKeySnapshot> {
-    const transaction = db.transaction(storeName, 'readonly');
-    const store = transaction.objectStore(storeName);
-    const completed = transactionDone(transaction);
-    const keysPromise = collectIndexedDbAdmissionKeys(store, keyPrefixes);
-    const revisionPromise = requestToPromise(store.get(AL_ADMISSION_REVISION_KEY));
-    const [keys, revisionValue] = await Promise.all([keysPromise, revisionPromise]);
-    await completed;
-    return { revision: decodeIndexedDbAdmissionRevision(revisionValue), keys };
-}
-
-export async function readIndexedDbAdmissionRevision(
-    db: IDBDatabase,
-    storeName: string
-): Promise<number> {
-    const stored = await readIndexedDbAdmissionStoredValue(db, storeName, AL_ADMISSION_REVISION_KEY);
-    return stored === undefined
-        ? 0
-        : decodeALAdmissionValue(stored.value, AL_ADMISSION_REVISION_KEY, decodeALAdmissionNumber);
-}
-
-export async function readIndexedDbAdmissionStoredValue(
-    db: IDBDatabase,
-    storeName: string,
-    key: string
-): Promise<ALAdmissionStoredValue | undefined> {
-    const transaction = db.transaction(storeName, 'readonly');
-    const completed = transactionDone(transaction);
-    const value = await requestToPromise(transaction.objectStore(storeName).get(key));
-    await completed;
-    return value === undefined
-        ? undefined
-        : decodeALAdmissionValue(value, key, decodeALAdmissionStoredValue);
-}
-
-export async function listIndexedDbAdmissionStoredValues(
-    db: IDBDatabase,
-    storeName: string,
-    prefix: string
-): Promise<readonly ALAdmissionStoredValue[]> {
-    const transaction = db.transaction(storeName, 'readonly');
-    const completed = transactionDone(transaction);
-    const values = await collectIndexedDbAdmissionStoredValues(transaction.objectStore(storeName), prefix);
-    await completed;
-    return values;
+    return { stored, revision: decodeIndexedDbAdmissionRevision(revisionValue) };
 }
 
 export async function writeIndexedDbAdmissionMutations(
@@ -154,13 +120,6 @@ export async function writeIndexedDbAdmissionMutations(
             }
             reject(transaction.error ?? new Error('IndexedDB AL admission write aborted'));
         };
-        transaction.onerror = () => {
-            if (!conflict) {
-                reject(transaction.error ?? new Error('IndexedDB AL admission write failed'));
-            }
-        };
-        revisionRequest.onerror = () =>
-            reject(revisionRequest.error ?? new Error('IndexedDB AL admission revision read failed'));
         revisionRequest.onsuccess = () => {
             const actualRevision = decodeIndexedDbAdmissionRevision(revisionRequest.result);
             if (actualRevision !== input.expectedRevision) {
@@ -168,19 +127,46 @@ export async function writeIndexedDbAdmissionMutations(
                 transaction.abort();
                 return;
             }
-            for (const mutation of input.mutations) {
-                const request = mutation.kind === 'set'
-                    ? store.put(mutation.stored)
-                    : store.delete(mutation.key);
-                request.onerror = () => reject(request.error ?? new Error('IndexedDB AL admission mutation failed'));
+            const guardedRemovals = input.mutations.filter(
+                (mutation) => mutation.kind === 'remove-if-write-token'
+            );
+            if (guardedRemovals.length === 0) {
+                applyIndexedDbAdmissionMutations(store, input);
+                return;
             }
-            if (input.mutations.length > 0) {
-                const request = store.put(input.revisionWrite);
-                request.onerror = () =>
-                    reject(request.error ?? new Error('IndexedDB AL admission revision write failed'));
+            let remaining = guardedRemovals.length;
+            for (const removal of guardedRemovals) {
+                const request = store.get(removal.key);
+                request.onsuccess = () => {
+                    if (conflict) {
+                        return;
+                    }
+                    const current = request.result as Readonly<{ writeToken?: unknown; }> | undefined;
+                    if (current?.writeToken !== removal.expectedWriteToken) {
+                        conflict = true;
+                        transaction.abort();
+                        return;
+                    }
+                    remaining -= 1;
+                    if (remaining === 0) {
+                        applyIndexedDbAdmissionMutations(store, input);
+                    }
+                };
             }
         };
     });
+}
+
+function applyIndexedDbAdmissionMutations(
+    store: IDBObjectStore,
+    input: WriteIndexedDbAdmissionMutationsInput
+): void {
+    for (const mutation of input.mutations) {
+        mutation.kind === 'set'
+            ? store.put(mutation.stored)
+            : store.delete(mutation.key);
+    }
+    store.put(input.revisionWrite);
 }
 
 function decodeIndexedDbAdmissionRevision(value: IDBRequest['result']): number {
@@ -191,32 +177,71 @@ function decodeIndexedDbAdmissionRevision(value: IDBRequest['result']): number {
     return decodeALAdmissionValue(stored.value, AL_ADMISSION_REVISION_KEY, decodeALAdmissionNumber);
 }
 
-async function collectIndexedDbAdmissionStoredValues(
+async function readIndexedDbAdmissionSelection<Stored>(
     store: IDBObjectStore,
-    prefix: string
-): Promise<readonly ALAdmissionStoredValue[]> {
-    const values: ALAdmissionStoredValue[] = [];
-    await cursorEach(store, (cursor) => {
-        const key = requireStringKey(cursor.primaryKey);
-        if (key.startsWith(prefix)) {
-            values.push(decodeALAdmissionValue(cursor.value, key, decodeALAdmissionStoredValue));
+    selection: IndexedDbAdmissionSelection,
+    readStored: (value: unknown, key: string) => Stored
+): Promise<readonly Stored[]> {
+    switch (selection.kind) {
+        case 'key': {
+            const value = await readIndexedDbRequest(store.get(selection.key));
+            return value === undefined
+                ? []
+                : [decodeALAdmissionValue(value, selection.key, readStored)];
         }
-    });
-    return values;
+        case 'prefixes':
+            return await collectIndexedDbAdmissionStoredValuesForPrefixes(
+                store,
+                selection.prefixes,
+                readStored
+            );
+        case 'expired':
+            return await readIndexedDbAdmissionRange(
+                store.index(AL_ADMISSION_EXPIRY_INDEX_NAME),
+                IDBKeyRange.upperBound(selection.maximumExpireAtTimestamp),
+                readStored
+            );
+        case 'revision':
+            return [];
+    }
 }
 
-async function collectIndexedDbAdmissionKeys(
+async function collectIndexedDbAdmissionStoredValuesForPrefixes<Stored>(
     store: IDBObjectStore,
-    keyPrefixes: readonly string[]
-): Promise<readonly string[]> {
-    const keys: string[] = [];
-    await cursorEach(store, (cursor) => {
-        const key = requireStringKey(cursor.primaryKey);
-        if (keyPrefixes.some((prefix) => key.startsWith(prefix))) {
-            keys.push(key);
-        }
+    prefixes: readonly string[],
+    readStored: (value: unknown, key: string) => Stored
+): Promise<readonly Stored[]> {
+    const stored = await Promise.all(
+        prefixes.map((prefix) =>
+            readIndexedDbAdmissionRange(
+                store,
+                toIndexedDbPrefixRange(prefix),
+                readStored
+            )
+        )
+    );
+    return stored.flat();
+}
+
+async function readIndexedDbAdmissionRange<Stored>(
+    source: IDBObjectStore | IDBIndex,
+    range: IDBKeyRange | undefined,
+    readStored: (value: unknown, key: string) => Stored
+): Promise<readonly Stored[]> {
+    const [values, keys] = await Promise.all([
+        readIndexedDbRequest(source.getAll(range)),
+        readIndexedDbRequest(source.getAllKeys(range))
+    ]);
+    return values.map((value, index) => {
+        const key = requireStringKey(keys[index]);
+        return decodeALAdmissionValue(value, key, readStored);
     });
-    return keys;
+}
+
+function toIndexedDbPrefixRange(prefix: string): IDBKeyRange | undefined {
+    return prefix.length === 0
+        ? undefined
+        : IDBKeyRange.bound(prefix, `${prefix}\uffff`);
 }
 
 function requireStringKey(key: IDBValidKey): string {
@@ -224,43 +249,4 @@ function requireStringKey(key: IDBValidKey): string {
         throw new ALAdmissionCorruptionError(String(key), new TypeError('Admission row key must be a string'));
     }
     return key;
-}
-
-async function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
-    return await new Promise<T>((resolve, reject) => {
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
-    });
-}
-
-async function cursorEach(
-    store: IDBObjectStore,
-    handler: (cursor: IDBCursorWithValue) => void
-): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-        const request = store.openCursor();
-        request.onerror = () => reject(request.error ?? new Error('IndexedDB cursor failed'));
-        request.onsuccess = () => {
-            const cursor = request.result;
-            if (cursor === null) {
-                resolve();
-                return;
-            }
-            try {
-                handler(cursor);
-                cursor.continue();
-            }
-            catch (error) {
-                reject(error);
-            }
-        };
-    });
-}
-
-async function transactionDone(transaction: IDBTransaction): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-        transaction.oncomplete = () => resolve();
-        transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted'));
-        transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed'));
-    });
 }

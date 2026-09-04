@@ -269,10 +269,6 @@ export class AppInboxHandlerExecutor {
         );
     }
 
-    private nowEpochMs(): number {
-        return this.options.nowEpochMs?.() ?? Date.now();
-    }
-
     private timingNowEpochMs(): number {
         return this.options.timingNowEpochMs?.() ?? Date.now();
     }

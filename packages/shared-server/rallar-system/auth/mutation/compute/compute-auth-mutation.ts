@@ -16,7 +16,6 @@ export interface ComputeAuthMutationInput {
     readonly command: AuthMutationCommand;
     readonly read: AuthMutationRead;
     readonly facts: AuthMutationFacts;
-    readonly serviceId: string;
 }
 
 export function computeAuthMutation(input: ComputeAuthMutationInput): AuthMutationComputed {
@@ -36,7 +35,7 @@ export function computeAuthMutation(input: ComputeAuthMutationInput): AuthMutati
                     kind: commandKind,
                     command: input.command,
                     read: input.read,
-                    serviceId: input.serviceId
+                    serviceId: input.facts.serviceId
                 });
             case 'issue-ws-ticket':
             case 'consume-ws-ticket':

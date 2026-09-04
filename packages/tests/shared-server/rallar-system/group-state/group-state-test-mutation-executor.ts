@@ -24,7 +24,7 @@ import { decodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-
 import type { GroupStateEventStore } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 import type { RuntimeStateGuardedBatchTransaction } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateComputedRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
-import { RuntimeStateRetryExhaustedError, RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type {
     RuntimeStateGuardedBatchTransactionalRepositoryLike,
     RuntimeStateOptimisticTransactionalRepositoryLike
@@ -45,7 +45,6 @@ interface GroupStateTestMutationExecutorDependencies {
     ) => GroupStateEventStore;
     readonly serviceId: string;
     readonly randomId: () => string;
-    readonly sleep?: (delayMs: number) => Promise<void>;
 }
 
 type GroupStateTestMaintenanceCommand = ReturnType<typeof toExpiryCommand> | ReturnType<typeof toSessionCleanupCommand>;
@@ -60,76 +59,59 @@ export class GroupStateTestMutationExecutor {
     async executeAuthenticated(
         descriptor: GroupMutationDescriptor,
         authority: IssuedAuthSession,
-        receiptOnly: boolean
+        receiptOnly: boolean,
+        attemptCount: number
     ): Promise<GroupStateTestMutationResult> {
         const prepared = await this.dependencies.durableService.prepareMutation(descriptor, authority);
-        let computed: GroupMutationComputed | undefined;
-        for (let attempt = 1; attempt <= 3; attempt += 1) {
-            const command: GroupStateMutationCommand = {
-                authorityProof: prepared.authorityProof,
-                descriptor: prepared.descriptor,
-                command: prepared.command,
-                facts: { ...prepared.facts, attemptCount: attempt }
-            };
-            try {
-                const read = await this.dependencies.durableService.read(command);
-                computed = this.dependencies.durableService.compute(command, read);
-                this.dependencies.durableService.validate(command, read, computed);
-                if (computed.outcome === 'idempotency-conflict') {
-                    throw new TypeError('Validated idempotency conflict is unreachable');
-                }
-                if (computed.outcome === 'write') {
-                    await this.writeComputed(computed);
-                }
-                return await this.toMutationResult(prepared.command.operation, computed, receiptOnly);
-            }
-            catch (error) {
-                await this.handleWriteConflict(error, attempt);
-            }
+        const command: GroupStateMutationCommand = {
+            authorityProof: prepared.authorityProof,
+            descriptor: prepared.descriptor,
+            command: prepared.command,
+            facts: { ...prepared.facts, attemptCount }
+        };
+        const read = await this.dependencies.durableService.read(command);
+        const computed = this.dependencies.durableService.compute(command, read);
+        this.dependencies.durableService.validate(command, read, computed);
+        if (computed.outcome === 'idempotency-conflict') {
+            throw new TypeError('Validated idempotency conflict is unreachable');
         }
-        throw new TypeError(`Missing computed group mutation: ${String(computed)}`);
+        if (computed.outcome === 'write') {
+            await this.writeComputed(computed);
+        }
+        return await this.toMutationResult(prepared.command.operation, computed, receiptOnly);
     }
 
     async executeInternal(
         command: GroupStateTestMaintenanceCommand,
         authority: GroupMutationFacts['internalAuthority'],
-        atEpochMs: number
+        atEpochMs: number,
+        attemptCount: number
     ): Promise<Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>> {
         const commandHash = await hashMutationCommand(
             decodeJsonWireValue(command, 'Group maintenance command')
         );
-        let computed: GroupMutationComputed | undefined;
-        for (let attempt = 1; attempt <= 3; attempt += 1) {
-            const read = await readGroupMutation(this.repository(), command);
-            const facts: GroupMutationFacts = {
-                nowEpochMs: atEpochMs,
-                expireAtEpochMs: TEST_OUTBOX_EXPIRE_AT_EPOCH_MS,
-                serviceId: this.dependencies.serviceId,
-                eventId: this.dependencies.randomId(),
-                commandHash,
-                attemptCount: attempt,
-                resolvedJoinCode: null,
-                joinCodeVerifier: null,
-                internalAuthority: authority,
-                authenticatedAuthority: null
-            };
-            computed = computeGroupMutation({ command, read, facts });
-            assertGroupMutation({ command, read, facts, computed });
-            if (computed.outcome === 'idempotency-conflict') {
-                throw new TypeError('Validated idempotency conflict is unreachable');
-            }
-            if (computed.outcome !== 'write') {
-                return computed;
-            }
-            try {
-                await this.writeComputed(computed);
-                return computed;
-            }
-            catch (error) {
-                await this.handleWriteConflict(error, attempt);
-            }
+        const read = await readGroupMutation(this.repository(), command);
+        const facts: GroupMutationFacts = {
+            nowEpochMs: atEpochMs,
+            expireAtEpochMs: TEST_OUTBOX_EXPIRE_AT_EPOCH_MS,
+            serviceId: this.dependencies.serviceId,
+            eventId: this.dependencies.randomId(),
+            commandHash,
+            attemptCount,
+            resolvedJoinCode: null,
+            joinCodeVerifier: null,
+            internalAuthority: authority,
+            authenticatedAuthority: null
+        };
+        const computed = computeGroupMutation({ command, read, facts });
+        assertGroupMutation({ command, read, facts, computed });
+        if (computed.outcome === 'idempotency-conflict') {
+            throw new TypeError('Validated idempotency conflict is unreachable');
         }
-        throw new TypeError(`Missing internal group mutation: ${String(computed)}`);
+        if (computed.outcome === 'write') {
+            await this.writeComputed(computed);
+        }
+        return computed;
     }
 
     async toMutationResult(
@@ -200,16 +182,6 @@ export class GroupStateTestMutationExecutor {
             await repository.appendEvent(computed.event);
         });
         return computed.receipt;
-    }
-
-    private async handleWriteConflict(error: unknown, attempt: number): Promise<void> {
-        if (!(error instanceof RuntimeStateWriteConflictError)) {
-            throw error;
-        }
-        if (attempt === 3) {
-            throw new RuntimeStateRetryExhaustedError(error);
-        }
-        await this.dependencies.sleep?.(attempt === 1 ? 2 : 8);
     }
 
     private async receiptEvent(repository: GroupStateRepository, receipt: GroupMutationReceipt): Promise<GroupEvent | null> {

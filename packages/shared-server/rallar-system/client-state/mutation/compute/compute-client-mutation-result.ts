@@ -5,6 +5,7 @@ import type {
     ClientSession,
     ClientSnapshot
 } from '@shared/api/client-types.ts';
+import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import {
     computeClientStateSyncEntries,
     type ComputedClientStateSync
@@ -50,14 +51,16 @@ export function computeClientMutationResult(
         stateRevision
     });
     const stateSync = toClientStateSync(command, snapshot, event);
-    const outboxEntries = stateSync.flatMap((computed) => computeClientStateSyncEntries(computed, facts.serviceId));
+    const outboxWrites = stateSync
+        .flatMap((computed) => computeClientStateSyncEntries(computed, facts.serviceId))
+        .map(computeAppOutboxInsert);
     const receipt = toAppliedClientMutationReceipt({
         command,
         read,
         principal,
         event,
         stateRevision,
-        outboxIds: outboxEntries.map((entry) => entry.key.resourceId)
+        outboxIds: outboxWrites.map((write) => write.entry.key.resourceId)
     });
     const computed: ClientMutationDomainAppliedWrite = {
         outcome: 'write',
@@ -73,7 +76,7 @@ export function computeClientMutationResult(
             ? null
             : { requestId: command.requestId, commandHash: facts.commandHash, receipt },
         stateSync,
-        outboxEntries
+        outboxWrites
     };
     return { ...computed, persistence: computeClientPersistence(computed) };
 }

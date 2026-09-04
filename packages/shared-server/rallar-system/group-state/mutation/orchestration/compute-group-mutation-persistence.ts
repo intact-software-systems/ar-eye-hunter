@@ -56,7 +56,8 @@ export function computeGroupMutationPersistence(
                         decodeJsonWireValue(computed.lifecyclePolicy, 'Group lifecycle policy')
                     )
                 }),
-                expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
+                expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString(),
+                updatedAtIsoTimestamp: new Date(computed.event.occurredAtEpochMs).toISOString()
             },
         eventWrite: {
             event: computed.event,

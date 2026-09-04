@@ -135,6 +135,7 @@ export function createApiRtcTopologyRuntime(
         executionRepository,
         topologyDelivery: {
             publisherStreamId: input.publisherStreamId,
+            reader: deliveryRepository,
             append: deliveryRepository
         },
         readiness: Promise.all([

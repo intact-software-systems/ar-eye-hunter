@@ -1,8 +1,8 @@
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import type { RuntimeStateGuardedBatchWrite } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { writeRuntimeStateGuardedBatch } from '../../../../runtime-state/postgres/write-runtime-state-guarded-batch.ts';
+import { writeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import { GroupStateEventCollisionError } from '../../../state-events/group-state-event-store.ts';
 import type { GroupStateEventCollisionRow } from '../../../state-events/postgres/group-state-event-row-codec.ts';
 import type {
@@ -20,9 +20,8 @@ export async function writeGroupMutation(
         await writeLifecyclePolicy(transaction, computed.persistence.lifecyclePolicyWrite);
     }
     await writeGroupEvent(transaction, computed.persistence.eventWrite);
-    const outbox = new PSqlResourceInboxEntryRepository(transaction);
-    for (const entry of computed.outboxEntries) {
-        await outbox.writeIfAbsentOrMatch(entry);
+    for (const outboxWrite of computed.outboxWrites) {
+        await writeAppOutboxInsert(transaction, outboxWrite);
     }
     return computed.receipt;
 }
@@ -50,11 +49,11 @@ async function writeLifecyclePolicy(
         insert into runtime_state_store (store_namespace, store_key, store_value,
                                          expire_at_ts, updated_ts, revision)
         values (${policy.namespace}, ${policy.key}, ${policy.value},
-                ${policy.expireAtIsoTimestamp}, now(), 0)
+                ${policy.expireAtIsoTimestamp}, ${policy.updatedAtIsoTimestamp}, 0)
         on conflict (store_namespace, store_key)
             do update set store_value = excluded.store_value,
                           expire_at_ts = excluded.expire_at_ts,
-                          updated_ts = now(),
+                          updated_ts = ${policy.updatedAtIsoTimestamp},
                           revision = runtime_state_store.revision + 1
     `;
 }

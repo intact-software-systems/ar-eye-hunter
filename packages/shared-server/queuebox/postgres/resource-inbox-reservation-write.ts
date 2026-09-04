@@ -21,7 +21,7 @@ export async function writeResourceInboxReservationFinish(
           and fk_ext_bank_id = ${computed.key.contextId}
           and ri_status = 'RESERVED'
           and ri_attempts = ${computed.expectedAttempts}
-          and expire_ts > (now() at time zone 'UTC')
+          and expire_ts > ${computed.completedAt}
         returning ri_row_id
     `;
 

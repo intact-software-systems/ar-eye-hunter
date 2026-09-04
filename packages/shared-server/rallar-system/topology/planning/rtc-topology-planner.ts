@@ -18,11 +18,17 @@ import type {
     RtcTopologyKindHysteresisWidths,
     RtcTopologyPlanningIntent
 } from '../runtime/rallar-rtc-topology-service.ts';
-import type { RtcTopologyMetrics } from '../runtime/rtc-topology-metrics.ts';
+import type {
+    RtcTopologyMetrics,
+    RtcTopologyPlanningObservation
+} from '../runtime/rtc-topology-metrics.ts';
 import { toCanonicalTopologySessionIds } from './canonical-topology-planning-input.ts';
 import { computeNoRttTopologyNextHops } from './compute-no-rtt-topology-next-hops.ts';
 import { createRtcRoomGraph, materializeSparseRtcRoomGraphFallback } from './create-rtc-room-graph.ts';
-import { computeEvolvedTopologyNextHops } from './evolve-planned-topology.ts';
+import {
+    computeEvolvedTopologyNextHops,
+    type EvolvePlannedTopologyFullRebuildReason
+} from './evolve-planned-topology.ts';
 import { planRallarRtcTopologySnapshot } from './plan-rallar-rtc-topology-snapshot.ts';
 import {
     DEFAULT_MESH_EXIT_WIDTH,
@@ -96,7 +102,7 @@ export namespace RtcTopologyPlanner {
         readonly relevantRttMeasurements: readonly RttMeasurementInfo[];
     }
 
-    export interface PreparedPlanInput extends ActivePlanningInput {
+    export interface CanonicalPlanInput extends ActivePlanningInput {
         readonly group: GroupSnapshot;
         readonly previous: RallarOverlayTopologySnapshot | undefined;
         readonly updateOptions: RallarRtcTopologyUpdateOptions;
@@ -113,31 +119,18 @@ export namespace RtcTopologyPlanner {
     }
 }
 
-const UNOBSERVED_PLANNING_DEPENDENCIES: RtcTopologyPlanner.Dependencies = {
-    metrics: {
-        recordHysteresisHold: () => {},
-        recordIncrementalFallback: () => {},
-        recordIncrementalPlan: () => {},
-        recordNoRttMeshPlan: () => {},
-        recordNoRttTreePlan: () => {},
-        recordStarPlan: () => {},
-        recordTopologyResult: () => {},
-        recordTopologyRttMeasurementCount: () => {},
-        recordWeightedPlanAttempt: () => {},
-        recordWeightedPlanDuration: () => {},
-        recordWeightedRoomGraphAttempt: () => {},
-        recordWeightedRoomGraphDuration: () => {},
-        recordWeightedRoomGraphSparseFallback: () => {}
-    },
-    durationNowMs: () => 0
-};
+export interface ComputedRtcTopologyPlan extends RallarRtcTopologyUpdateResult {
+    readonly planningObservation: RtcTopologyPlanningObservation;
+}
 
-/** Runs the canonical planner without reading mutable runtime state or emitting observations. */
+/** Computes both the plan and its deterministic observation without external side effects. */
 export function computeRtcTopologyPlan(
     serviceOptions: RallarRtcTopologyServiceOptions,
     input: RtcTopologyPlanner.PlanInput
-): RallarRtcTopologyUpdateResult {
-    return new RtcTopologyPlanner(serviceOptions, UNOBSERVED_PLANNING_DEPENDENCIES).plan(input);
+): ComputedRtcTopologyPlan {
+    const projection = createRtcTopologyPlanningProjection();
+    const result = new RtcTopologyPlanner(serviceOptions, projection.dependencies).plan(input);
+    return { ...result, planningObservation: projection.read() };
 }
 
 export class RtcTopologyPlanner {
@@ -156,7 +149,7 @@ export class RtcTopologyPlanner {
         input: RtcTopologyPlanner.PlanInput,
         publicDispatch: RtcTopologyPlanner.PublicDispatch = this
     ): RallarRtcTopologyUpdateResult {
-        return this.planPrepared(
+        return this.planCanonical(
             {
                 ...input,
                 ...this.createActivePlanningInput(input.group, input.rttMeasurements)
@@ -178,8 +171,8 @@ export class RtcTopologyPlanner {
         return { activeSessionIds, relevantRttMeasurements };
     }
 
-    planPrepared(
-        input: RtcTopologyPlanner.PreparedPlanInput,
+    planCanonical(
+        input: RtcTopologyPlanner.CanonicalPlanInput,
         publicDispatch: RtcTopologyPlanner.PublicDispatch = this
     ): RallarRtcTopologyUpdateResult {
         const topologyOptions = this.readTopologyOptions(input.updateOptions);
@@ -492,4 +485,71 @@ function isExplicitTopologyKind(
     topologyKind: GroupTopologyKindSetting | undefined
 ): topologyKind is RallarRtcTopologyKind {
     return topologyKind === 'star' || topologyKind === 'tree' || topologyKind === 'mesh';
+}
+
+interface RtcTopologyPlanningProjection {
+    readonly dependencies: RtcTopologyPlanner.Dependencies;
+    readonly read: () => RtcTopologyPlanningObservation;
+}
+
+function createRtcTopologyPlanningProjection(): RtcTopologyPlanningProjection {
+    const observation = {
+        relevantRttMeasurementCount: 0,
+        resultChanged: false,
+        starPlanCount: 0,
+        noRttTreePlanCount: 0,
+        noRttMeshPlanCount: 0,
+        weightedPlanCount: 0,
+        weightedRoomGraphBuildCount: 0,
+        weightedRoomGraphSparseFallbackCount: 0,
+        incrementalPlanCount: 0,
+        incrementalFallbackReasons: [] as EvolvePlannedTopologyFullRebuildReason[],
+        hysteresisHoldCount: 0
+    };
+    return {
+        dependencies: {
+            metrics: {
+                recordHysteresisHold: () => {
+                    observation.hysteresisHoldCount += 1;
+                },
+                recordIncrementalFallback: (reason) => {
+                    observation.incrementalFallbackReasons.push(reason);
+                },
+                recordIncrementalPlan: () => {
+                    observation.incrementalPlanCount += 1;
+                },
+                recordNoRttMeshPlan: () => {
+                    observation.noRttMeshPlanCount += 1;
+                },
+                recordNoRttTreePlan: () => {
+                    observation.noRttTreePlanCount += 1;
+                },
+                recordStarPlan: () => {
+                    observation.starPlanCount += 1;
+                },
+                recordTopologyResult: (changed) => {
+                    observation.resultChanged = changed;
+                },
+                recordTopologyRttMeasurementCount: (count) => {
+                    observation.relevantRttMeasurementCount = count;
+                },
+                recordWeightedPlanAttempt: () => {
+                    observation.weightedPlanCount += 1;
+                },
+                recordWeightedPlanDuration: () => {},
+                recordWeightedRoomGraphAttempt: () => {
+                    observation.weightedRoomGraphBuildCount += 1;
+                },
+                recordWeightedRoomGraphDuration: () => {},
+                recordWeightedRoomGraphSparseFallback: () => {
+                    observation.weightedRoomGraphSparseFallbackCount += 1;
+                }
+            },
+            durationNowMs: () => 0
+        },
+        read: () => ({
+            ...observation,
+            incrementalFallbackReasons: [...observation.incrementalFallbackReasons]
+        })
+    };
 }

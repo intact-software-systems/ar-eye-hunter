@@ -32,7 +32,7 @@ describe('RTC topology complete write computation', () => {
                 ...computed.write,
                 transaction: {
                     ...computed.write.transaction,
-                    promotionRequest: null
+                    promotionWrite: null
                 }
             }
         } as const;
@@ -46,14 +46,14 @@ describe('RTC topology complete write computation', () => {
     it('rejects a write whose precomputed promotion request was removed', () => {
         const input = createWriteInput();
         const computed = computeRtcTopologyWorkWrite(input);
-        if (computed.kind !== 'transaction' || computed.transaction.promotionRequest === null) {
+        if (computed.kind !== 'transaction' || computed.transaction.promotionWrite === null) {
             throw new Error('Expected a promotion transaction fixture');
         }
         const altered = {
             ...computed,
             transaction: {
                 ...computed.transaction,
-                promotionRequest: null
+                promotionWrite: null
             }
         } as const;
 
@@ -169,7 +169,8 @@ function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
         publication: null,
         inputFingerprint: `sha256:${'a'.repeat(64)}`,
         promotionRead: { group: group.group, policy: { status: 'absent' } },
-        criterionPetition: null
+        criterionPetition: null,
+        planningObservation: null
     };
     return {
         accepted,

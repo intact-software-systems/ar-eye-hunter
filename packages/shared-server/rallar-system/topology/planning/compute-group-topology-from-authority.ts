@@ -111,6 +111,7 @@ function computeRemovedTopology(
     ].sort(compareRtcTopologyIdentifiers);
     return {
         action: 'planned',
+        planningObservation: null,
         snapshot: {
             sourceGroupStateCausalRevision: group.causalRevision,
             state: 'removed',

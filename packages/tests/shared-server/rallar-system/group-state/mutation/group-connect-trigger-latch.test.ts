@@ -1,13 +1,16 @@
 import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    computeAppOutboxInsert,
+    writeAppOutboxInsert
+} from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeGroupConnectTriggerEntry } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
 import { decodeGroupConnectTriggerWork } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
 import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { MEMBERS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { createGroupConnectTriggerWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-group-connect-trigger-work-handler.ts';
 import {
-    computePublicationConnectTriggerRequests,
-    writeGroupConnectTriggerRequests
-} from '@shared-server/rallar-system/topology/replay/work/write-group-connect-trigger-requests.ts';
+    computePublicationConnectTriggerRequests
+} from '@shared-server/rallar-system/topology/replay/work/group-connect-trigger-requests.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { describe, expect, it } from 'vitest';
@@ -64,7 +67,9 @@ describe('automatic retry connect intent', () => {
             supersedesLayoutIdentity: null,
             state: 'awaiting-publication'
         });
-        expect(computed.outboxEntries.some((entry) => JSON.parse(entry.resource).payload.typeId === 'GROUP_CONNECT_TRIGGER')).toBe(true);
+        expect(computed.outboxWrites.some(
+            (write) => JSON.parse(write.entry.resource).payload.typeId === 'GROUP_CONNECT_TRIGGER'
+        )).toBe(true);
     });
 });
 
@@ -282,7 +287,7 @@ describe('retry handoff commit races and replay', () => {
 
     it('rolls back latch consumption and group transition after an immutable outbox collision', async () => {
         const { harness, computed, latches } = await connectWriteHarness();
-        const entry = computed.outboxEntries[0]!;
+        const entry = computed.outboxWrites[0]!.entry;
         await harness.database.begin((tx) => new PSqlResourceInboxEntryRepository(tx).writeIfAbsentOrMatch({ ...entry, resource: 'collision' }));
         const before = new Map(harness.runtimeRepository.data);
         await expect(harness.database.begin((tx) => writeGroupMutation(tx, computed))).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
@@ -323,6 +328,7 @@ describe('retry handoff commit races and replay', () => {
             expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
         });
         const requests = computePublicationConnectTriggerRequests({ automationEnabled: true, target: PLANNED, entry: source });
+        const writes = requests.map(computeAppOutboxInsert);
         expect(requests).toHaveLength(1);
         expect(decodeGroupConnectTriggerWork(requests[0]!.resource).kind).toBe('publication');
         await harness.runtimeRepository.upsert(
@@ -333,9 +339,9 @@ describe('retry handoff commit races and replay', () => {
         );
         await createGroupConnectTriggerWorkHandler(port).onMessage(JSON.parse(source.resource) as ALMessage, source);
         expect(commands).toEqual([]);
-        await harness.database.begin((tx) => writeGroupConnectTriggerRequests(tx, requests));
+        await harness.database.begin((tx) => writeAppOutboxInsert(tx, writes[0]!));
         visiblePlan = PLANNED;
-        await harness.database.begin((tx) => writeGroupConnectTriggerRequests(tx, requests));
+        await expect(harness.database.begin((tx) => writeAppOutboxInsert(tx, writes[0]!))).rejects.toThrow();
         expect(harness.database.outboxEntries.size).toBe(1);
         const durable = [...harness.database.outboxEntries.values()][0]!;
         await createGroupConnectTriggerWorkHandler(port).onMessage(JSON.parse(durable.resource) as ALMessage, durable);
@@ -359,13 +365,15 @@ describe('retry handoff commit races and replay', () => {
         });
         const first = computePublicationConnectTriggerRequests({ automationEnabled: true, target: PLANNED, entry: source });
         const next = computePublicationConnectTriggerRequests({ automationEnabled: true, target: { ...PLANNED, version: 2 }, entry: source });
+        const firstWrite = computeAppOutboxInsert(first[0]!);
+        const nextWrite = computeAppOutboxInsert(next[0]!);
         expect(first[0]!.key).not.toEqual(next[0]!.key);
         await expect(harness.database.begin(async (tx) => {
-            await writeGroupConnectTriggerRequests(tx, first);
+            await writeAppOutboxInsert(tx, firstWrite);
             throw new Error('publication rollback');
         })).rejects.toThrow('publication rollback');
         expect(harness.database.outboxEntries.size).toBe(0);
-        await harness.database.begin((tx) => writeGroupConnectTriggerRequests(tx, next));
+        await harness.database.begin((tx) => writeAppOutboxInsert(tx, nextWrite));
         expect(harness.database.outboxEntries.size).toBe(1);
     });
 

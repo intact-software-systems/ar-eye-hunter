@@ -5,6 +5,7 @@ import '../setup-browser-indexeddb.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
 import {
+    computeIndexedDbQueuePut,
     decodeStoredResourceEntry,
     encodeStoredResourceEntry,
     type StoredResourceEntry
@@ -48,24 +49,18 @@ describe('IndexedDbQueueBox computed writes', () => {
         );
         const initial = createEntry('initial');
         const keyString = toKeyAsString(initial.key);
-        await writeComputedIndexedDbQueueMutations(db, storeName, [{
-            keyString,
-            value: encodeStoredResourceEntry(initial, 0)
-        }]);
+        const initialWrite = computeIndexedDbQueuePut(undefined, initial);
+        await writeComputedIndexedDbQueueMutations(db, storeName, [initialWrite]);
 
         const first = createEntry('first');
         const second = createEntry('second');
         const outcomes = await Promise.all([
-            writeComputedIndexedDbQueueMutations(db, storeName, [{
-                keyString,
-                expectedRevision: 0,
-                value: encodeStoredResourceEntry(first, 1)
-            }]),
-            writeComputedIndexedDbQueueMutations(db, storeName, [{
-                keyString,
-                expectedRevision: 0,
-                value: encodeStoredResourceEntry(second, 1)
-            }])
+            writeComputedIndexedDbQueueMutations(db, storeName, [
+                computeIndexedDbQueuePut(initialWrite.value, first)
+            ]),
+            writeComputedIndexedDbQueueMutations(db, storeName, [
+                computeIndexedDbQueuePut(initialWrite.value, second)
+            ])
         ]);
 
         expect(outcomes.toSorted()).toEqual([false, true]);
@@ -84,27 +79,53 @@ describe('IndexedDbQueueBox computed writes', () => {
         const second = createEntry('second', 'second-row');
         const firstKey = toKeyAsString(first.key);
         const secondKey = toKeyAsString(second.key);
+        const firstInsert = computeIndexedDbQueuePut(undefined, first);
+        const secondInsert = computeIndexedDbQueuePut(undefined, second);
+        await writeComputedIndexedDbQueueMutations(db, storeName, [firstInsert, secondInsert]);
+
+        const firstUpdate = computeIndexedDbQueuePut(
+            firstInsert.value,
+            createEntry('changed-first', 'first-row')
+        );
+        const staleSecondUpdate = computeIndexedDbQueuePut(
+            secondInsert.value,
+            createEntry('changed-second', 'second-row')
+        );
+        const concurrentSecond = createEntry('concurrent-second', 'second-row');
         await writeComputedIndexedDbQueueMutations(db, storeName, [
-            { keyString: firstKey, value: encodeStoredResourceEntry(first, 0) },
-            { keyString: secondKey, value: encodeStoredResourceEntry(second, 0) }
+            computeIndexedDbQueuePut(
+                secondInsert.value,
+                concurrentSecond
+            )
         ]);
 
         const committed = await writeComputedIndexedDbQueueMutations(db, storeName, [
-            {
-                keyString: firstKey,
-                expectedRevision: 0,
-                value: encodeStoredResourceEntry(createEntry('changed-first', 'first-row'), 1)
-            },
-            {
-                keyString: secondKey,
-                expectedRevision: 99,
-                value: encodeStoredResourceEntry(createEntry('changed-second', 'second-row'), 100)
-            }
+            firstUpdate,
+            staleSecondUpdate
         ]);
 
         expect(committed).toBe(false);
         expect((await readStoredQueueEntry(db, storeName, firstKey))?.resource).toBe(first.resource);
-        expect((await readStoredQueueEntry(db, storeName, secondKey))?.resource).toBe(second.resource);
+        expect((await readStoredQueueEntry(db, storeName, secondKey))?.resource).toBe(
+            concurrentSecond.resource
+        );
+    });
+
+    it('rejects a fabricated mutation whose key differs from its stored value before opening a transaction', async () => {
+        const storeName = 'entries';
+        const db = await openIndexedDbWithStore(
+            `indexeddb-invalid-computed-write-${crypto.randomUUID()}`,
+            { name: storeName, keyPath: 'keyString' }
+        );
+        const computed = computeIndexedDbQueuePut(undefined, createEntry('value', 'stored-key'));
+        const transaction = vi.spyOn(db, 'transaction');
+
+        await expect(writeComputedIndexedDbQueueMutations(db, storeName, [{
+            ...computed,
+            keyString: toKeyAsString(createEntry('value', 'other-key').key)
+        }])).rejects.toThrow('mutation key differs');
+
+        expect(transaction).not.toHaveBeenCalled();
     });
 
     it('computes fairness ordering without reading the IndexedDB global', () => {

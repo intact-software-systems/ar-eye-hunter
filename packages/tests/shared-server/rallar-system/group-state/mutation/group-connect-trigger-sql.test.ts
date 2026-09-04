@@ -1,8 +1,15 @@
 import { PGlite } from '@electric-sql/pglite';
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    PSqlResourceInboxEntryRepository,
+    ResourceInboxInvariantCorruptionError
+} from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    computeAppOutboxInsert,
+    writeAppOutboxInsert
+} from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeGroupConnectTriggerEntry } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
@@ -13,7 +20,6 @@ import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/top
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { toAutomaticGroupConnectCommand } from '@shared-server/rallar-system/topology/replay/work/create-group-connect-trigger-work-handler.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
-import { writeGroupConnectTriggerRequests } from '@shared-server/rallar-system/topology/replay/work/write-group-connect-trigger-requests.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -37,10 +43,14 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
         await withConnectSql(backend, async (sql, applicationId) => {
             const { computed, runtime, identity } = await seedConnectWrite(sql, applicationId);
             const outbox = new PSqlResourceInboxEntryRepository(sql);
-            const entry = computed.outboxEntries[0]!;
+            const entry = computed.outboxWrites[0]!.entry;
             await outbox.writeIfAbsentOrMatch({ ...entry, resource: 'collision' });
             const latches = new GroupConnectTriggerLatchRepository(runtime);
-            await expect(sql.begin((tx) => writeGroupMutation(tx, computed))).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
+            const statements: string[] = [];
+            await expect(
+                sql.begin((tx) => writeGroupMutation(observeStatements(tx, statements), computed))
+            ).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
+            expect(statements.filter((statement) => statement.includes('from resource_inbox'))).toEqual([]);
             expect((await latches.read(identity))?.latch.state).toBe('awaiting-publication');
             const batch = computed.persistence.guardedBatch;
             expect(JSON.parse((await runtime.findEntry(batch.guard.namespace, batch.guard.key))!.value).lifecycleState).toBe('planned');
@@ -89,9 +99,10 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
                 expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
             });
             const key = groupStateGroupStorageKey(groupRef);
+            const workWrite = computeAppOutboxInsert(work);
             const writePublication = async (tx: PSqlSql) => {
                 await new PSqlRuntimeStateRepository(tx).insertIfAbsent('connect-test-publication', key, 'candidate-v1', NEVER_EXPIRE_AT_TIMESTAMP);
-                await writeGroupConnectTriggerRequests(tx, [work]);
+                await writeAppOutboxInsert(tx, workWrite);
             };
             await expect(sql.begin(async (tx) => {
                 await writePublication(tx);
@@ -101,11 +112,28 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
             expect(await runtime.findEntry('connect-test-publication', key)).toBeUndefined();
             expect(await sql`select ri_resource_id from resource_inbox where fk_ext_bank_id = ${work.key.contextId}`).toHaveLength(0);
             await sql.begin(writePublication);
-            await sql.begin((tx) => writeGroupConnectTriggerRequests(tx, [work]));
+            await expect(sql.begin((tx) => writeAppOutboxInsert(tx, workWrite))).rejects.toBeInstanceOf(
+                ResourceInboxInvariantCorruptionError
+            );
             expect(await sql`select ri_resource_id from resource_inbox where fk_ext_bank_id = ${work.key.contextId}`).toHaveLength(1);
         });
     }, 30_000);
 });
+
+function observeStatements(transaction: PSqlSql, statements: string[]): PSqlSql {
+    const observed = (<Result>(
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: readonly PSqlParameter[]
+    ): Promise<Result> | object => {
+        if ('raw' in stringsOrValues) {
+            statements.push(stringsOrValues.join(' ').toLowerCase());
+            return transaction<Result>(stringsOrValues, ...values);
+        }
+        return transaction(stringsOrValues);
+    }) as PSqlSql;
+    observed.begin = transaction.begin.bind(transaction);
+    return observed;
+}
 
 async function seedConnectWrite(sql: PSqlSql, applicationId: string) {
     const groupRef = { applicationId, workspaceId: 'ws', groupId: 'connect' };

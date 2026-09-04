@@ -110,7 +110,7 @@ function validateAppliedWriteResult(value: ClientValidationRecord): void {
             'snapshot',
             'idempotency',
             'stateSync',
-            'outboxEntries',
+            'outboxWrites',
             'persistence'
         ],
         'Client mutation computed'
@@ -146,8 +146,8 @@ function validateAppliedWriteResult(value: ClientValidationRecord): void {
     if (!Array.isArray(value.stateSync) || value.stateSync.length !== 2) {
         rejectClientMutation('Client mutation computed stateSync must contain snapshot and event');
     }
-    if (!Array.isArray(value.outboxEntries) || value.outboxEntries.length !== 2) {
-        rejectClientMutation('Client mutation computed outboxEntries must contain snapshot and event');
+    if (!Array.isArray(value.outboxWrites) || value.outboxWrites.length !== 2) {
+        rejectClientMutation('Client mutation computed outboxWrites must contain snapshot and event');
     }
     validateClientPersistenceShape(value.persistence);
 }

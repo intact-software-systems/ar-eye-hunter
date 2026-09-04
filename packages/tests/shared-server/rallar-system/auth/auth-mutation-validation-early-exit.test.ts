@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AuthMutationCommand, AuthMutationComputed, AuthMutationRead } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
+import { computeAuthMutation } from '@shared-server/rallar-system/auth/mutation/compute/compute-auth-mutation.ts';
 import { validateAuthMutation } from '@shared-server/rallar-system/auth/mutation/validate/validate-auth-mutation.ts';
 import type { PersistedAuthUser } from '@shared-server/rallar-system/auth/persistence/persisted-auth-user.ts';
 
@@ -20,7 +21,14 @@ describe('auth mutation validation early exits', () => {
             const accesses: string[] = [];
             const trackedRead = trackRead(read, accesses);
 
-            expect(() => validateAuthMutation(command, trackedRead, computed(command, trackedRead))).toThrow(message);
+            expect(() =>
+                validateAuthMutation({
+                    command,
+                    read: trackedRead,
+                    facts: authFacts(command),
+                    computed: computed(command, trackedRead)
+                })
+            ).toThrow(message);
             expect(accesses).toEqual(readAccesses);
         }
     );
@@ -49,10 +57,14 @@ describe('auth mutation validation early exits', () => {
             counts,
             'read'
         );
+        const facts = authFacts(command);
+        const canonical = computeAuthMutation({ command, read, facts });
+        counts.command = 0;
+        counts.read = 0;
 
-        validateAuthMutation(command, read, computed(command, read));
+        validateAuthMutation({ command, read, facts, computed: canonical });
 
-        expect(counts).toEqual({ command: 2, read: 1 });
+        expect(counts).toEqual({ command: 7, read: 4 });
     });
 });
 
@@ -193,6 +205,10 @@ function computed(command: AuthMutationCommand, read: AuthMutationRead): AuthMut
         outcome: 'write',
         persistence: { operations: [], logoutOutbox: null }
     };
+}
+
+function authFacts(command: AuthMutationCommand) {
+    return { kind: command.kind, serviceId: 'auth-service' } as const;
 }
 
 function runtimeEntry() {

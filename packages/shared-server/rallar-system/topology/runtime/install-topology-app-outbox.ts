@@ -15,10 +15,12 @@ import {
     createGroupConnectTriggerWorkHandler,
     type GroupFormationAutomationPort
 } from '../replay/work/create-group-connect-trigger-work-handler.ts';
-import { createRtcTopologyWorkHandler } from '../replay/work/create-rtc-topology-work-handler.ts';
+import {
+    createRtcTopologyWorkHandler,
+    type RtcTopologyDeliveryOptions
+} from '../replay/work/create-rtc-topology-work-handler.ts';
 import { createTopologyPromotionWorkHandler } from '../replay/work/create-topology-promotion-work-handler.ts';
 import type { FormationCriterionPort } from '../replay/work/formation-criterion-observer.ts';
-import type { RtcTopologyDeliveryOptions } from '../replay/work/write-rtc-topology-publication-transaction.ts';
 
 export interface InstallTopologyAppOutboxOptions {
     readonly database: PSqlSql;

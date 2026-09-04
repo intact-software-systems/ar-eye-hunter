@@ -35,10 +35,6 @@ describe('CRDT inbox completion candidate', () => {
             acceptedAt: new Date(read.command.capturedAtEpochMs)
         });
         expect(computed.mutation.outboxWrites.map(({ entry }) => entry)).toEqual(computed.mutation.outboxEntries);
-        expect(computed.mutation.conflict).toMatchObject({
-            name: 'CrdtMutationConflictError',
-            documentKey: read.command.documentKey
-        });
         expect(computed.completion.durableResult).toBe(computed.mutation.result);
         expect(computed.completion.reservationFinish.completedAt).toEqual(new Date(1_010));
         expect(validateCrdtInboxMutation(read, computed)).toEqual([]);
@@ -103,6 +99,69 @@ describe('CRDT inbox completion candidate', () => {
         expect.soft(callbackCalls).toBe(0);
         expect.soft(issues.length).toBeGreaterThan(0);
         expect(candidate.mutation.outboxWrites).toHaveLength(0);
+    });
+
+    it('rejects substituted Temporal outbox facts without invoking their callback', async () => {
+        const read = await createRead();
+        const computed = computeCrdtInboxMutation(read);
+        const firstEntry = computed.mutation.outboxEntries[0];
+        if (firstEntry === undefined) {
+            throw new Error('Expected a CRDT outbox entry');
+        }
+        let callbackCalls = 0;
+        const substitutedEntry = {
+            ...firstEntry,
+            audit: { ...firstEntry.audit }
+        };
+        Reflect.set(substitutedEntry.audit, 'createdTs', {
+            toJSON: () => {
+                callbackCalls += 1;
+                return '1970-01-01T00:00:01';
+            }
+        });
+        const candidate = {
+            ...computed,
+            mutation: {
+                ...computed.mutation,
+                outboxEntries: [substitutedEntry, ...computed.mutation.outboxEntries.slice(1)]
+            }
+        };
+
+        const issues = validateCrdtInboxMutation(read, candidate);
+
+        expect.soft(callbackCalls).toBe(0);
+        expect.soft(issues).toMatchObject([{ code: 'computed-mutation-differs' }]);
+    });
+
+    it('rejects computed accessors without invoking them during validation', async () => {
+        const read = await createRead();
+        const computed = computeCrdtInboxMutation(read);
+        const firstEntry = computed.mutation.outboxEntries[0];
+        if (firstEntry === undefined) {
+            throw new Error('Expected a CRDT outbox entry');
+        }
+        let accessorCalls = 0;
+        const substitutedAudit = { ...firstEntry.audit };
+        Object.defineProperty(substitutedAudit, 'createdBy', {
+            enumerable: true,
+            get: () => {
+                accessorCalls += 1;
+                return firstEntry.audit.createdBy;
+            }
+        });
+        const substitutedEntry = { ...firstEntry, audit: substitutedAudit };
+        const candidate = {
+            ...computed,
+            mutation: {
+                ...computed.mutation,
+                outboxEntries: [substitutedEntry, ...computed.mutation.outboxEntries.slice(1)]
+            }
+        };
+
+        const issues = validateCrdtInboxMutation(read, candidate);
+
+        expect.soft(accessorCalls).toBe(0);
+        expect.soft(issues).toMatchObject([{ code: 'computed-mutation-differs' }]);
     });
 
     it('binds computed persistence values without serializing after transaction entry', async () => {

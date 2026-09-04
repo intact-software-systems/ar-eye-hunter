@@ -189,7 +189,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
             dbName: BROWSER_AL_RUNTIME_DB_NAME,
             storeName: BROWSER_AL_RUNTIME_STORE_NAME,
             keyPrefixes: ['browser:'],
-            scanned: 8,
+            scanned: 3,
             deleted: 3
         });
         expect(await readBrowserALRuntimeEntryKeys(currentSentPrefix)).toEqual([
@@ -202,6 +202,27 @@ describe('Browser AL runtime IndexedDB stores', () => {
         expect(await readBrowserALRuntimeEntryKeys('custom:outside-browser-al-runtime')).toEqual([
             'custom:outside-browser-al-runtime:expired'
         ]);
+    });
+
+    it('reads periodic expiry candidates through the expiry index', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const runtimeName = `indexed-cleanup-${crypto.randomUUID()}`;
+        const admissionStore = createBrowserALOutboundRuntimeStores(runtimeName, {
+            retention: { sentMessageTtlMs: 20 }
+        }).admissionStore;
+        await persistSentMessage(admissionStore, 'expired');
+        await vi.advanceTimersByTimeAsync(21);
+        await persistSentMessage(admissionStore, 'fresh');
+        const storeScan = vi.spyOn(IDBObjectStore.prototype, 'getAll');
+        const indexScan = vi.spyOn(IDBIndex.prototype, 'getAll');
+
+        const result = await deleteExpiredBrowserALRuntimeEntries();
+
+        expect(result.deleted).toBe(1);
+        expect(indexScan).toHaveBeenCalledOnce();
+        expect(storeScan).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -361,6 +382,44 @@ describe('Browser AL runtime IndexedDB stores', () => {
         expect(await readBrowserALRuntimeEntryKeys(otherSentPrefix)).toEqual([
             `${otherSentPrefix}:other-ws`
         ]);
+    });
+
+    it('does not delete a generic persistence row refreshed after cleanup reads it', async () => {
+        const sessionId = `cleanup-race-${crypto.randomUUID()}`;
+        const keyPrefix = `${toBrowserALRuntimeEntryKeyPrefix(toBrowserRtcRxALRuntimeStoreId(sessionId))}inbound:admission`;
+        const key = `${keyPrefix}:refreshed`;
+        const provider = new IndexedDbStringPersistenceProvider<{ value: string; }>({
+            dbName: BROWSER_AL_RUNTIME_DB_NAME,
+            storeName: BROWSER_AL_RUNTIME_STORE_NAME,
+            keyPrefix
+        });
+        await provider.setItem('refreshed', { value: 'expired' }, { expireAtTimestamp: 1 });
+        const originalTransaction = IDBDatabase.prototype.transaction;
+        let injectedRefresh = false;
+        vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(function (
+            this: IDBDatabase,
+            storeNames: string | Iterable<string>,
+            mode?: IDBTransactionMode,
+            options?: IDBTransactionOptions
+        ) {
+            if (mode === 'readwrite' && !injectedRefresh) {
+                injectedRefresh = true;
+                originalTransaction.call(this, storeNames, 'readwrite', options)
+                    .objectStore(BROWSER_AL_RUNTIME_STORE_NAME)
+                    .put({
+                        key,
+                        value: { value: 'refreshed' },
+                        expireAtTimestamp: Date.now() + 60_000,
+                        writeToken: 'concurrent-refresh'
+                    });
+            }
+            return originalTransaction.call(this, storeNames, mode, options);
+        });
+
+        await expect(deleteExpiredBrowserALRuntimeEntriesForSession(sessionId, { nowMs: 100 }))
+            .rejects.toThrow('cleanup conflicted');
+
+        expect(await provider.getItem('refreshed')).toEqual({ value: 'refreshed' });
     });
 
     it('initialises repeated browser AL runtime expiry eviction', async () => {

@@ -220,7 +220,6 @@ export interface CrdtMutationComputedWrite extends CrdtMutationComputedBase {
     readonly documentWrite: CrdtDocumentWrite;
     readonly updateWrite: CrdtUpdateWrite | null;
     readonly snapshotWrite: CrdtSnapshotWrite | null;
-    readonly conflict: CrdtMutationConflictError;
 }
 
 export interface CrdtMutationComputedReplay extends CrdtMutationComputedBase {
@@ -237,6 +236,7 @@ export type CrdtMutationComputed =
     | CrdtMutationComputedRejected;
 
 export interface ValidateCrdtMutationInput extends CrdtMutationAttemptFacts {
+    readonly serviceId: string;
     readonly computed: CrdtMutationComputed;
 }
 
@@ -393,8 +393,6 @@ export type CrdtAdminEraseResult =
 
 export interface CrdtMutationRepository {
     readonly readMutation: (command: CrdtMutationCommand) => Promise<CrdtMutationRead>;
-    readonly writeMutation: (computed: CrdtMutationComputedWrite) => Promise<void>;
-    readonly writeOutbox: (writes: readonly AppOutboxInsert[]) => Promise<void>;
 }
 
 export class CrdtMutationConflictError extends Error {

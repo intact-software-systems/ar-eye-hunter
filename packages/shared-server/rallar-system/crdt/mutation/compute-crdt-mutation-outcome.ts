@@ -7,7 +7,6 @@ import type {
 
 import { computeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { appendRejectionReason, isAppendRejectionRetryable, toAppendRejectionCode } from './crdt-append-rejection.ts';
-import { CrdtMutationConflictError } from './crdt-mutation-contracts.ts';
 import type {
     CrdtAppendCommand,
     CrdtCanonicalSnapshotEnvelope,
@@ -268,7 +267,7 @@ export interface ComputeCrdtMutationWritesInput {
 
 export function computeCrdtMutationWrites(
     input: ComputeCrdtMutationWritesInput
-): Pick<CrdtMutationComputedWrite, 'documentWrite' | 'updateWrite' | 'snapshotWrite' | 'conflict'> {
+): Pick<CrdtMutationComputedWrite, 'documentWrite' | 'updateWrite' | 'snapshotWrite'> {
     const { read, document, update, append, snapshot } = input;
     const values = {
         documentKey: document.documentKey,
@@ -308,8 +307,7 @@ export function computeCrdtMutationWrites(
             : null,
         snapshotWrite: snapshot
             ? computeCrdtSnapshotWrite(document.documentKey, document.lastAppendSequence, snapshot)
-            : null,
-        conflict: new CrdtMutationConflictError(document.documentKey)
+            : null
     };
 }
 

@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     createPSqlResourceInboxRepository,
     type PSqlResourceInboxRepository
@@ -120,14 +120,15 @@ function createInbox(input: CreateInboxInput): AppCrdtInboxService {
 }
 
 function createUnusedDatabase(): PSqlSql {
-    const database: PSqlSql = Object.assign(
-        <T>(_stringsOrValues: TemplateStringsArray | readonly unknown[], ..._values: unknown[]): Promise<T> =>
-            Promise.reject(new Error('Unexpected SQL execution in audit registration test')),
-        {
-            begin: <T>(_run: (sql: PSqlSql) => Promise<T>): Promise<T> => Promise.reject(new Error('Unexpected transaction in audit registration test'))
-        }
-    );
-    return database;
+    function query<T>(_strings: TemplateStringsArray, ..._values: PSqlParameter[]): Promise<T>;
+    function query(_values: readonly PSqlParameter[]): ReturnType<PSqlSql>;
+    function query(): never {
+        throw new Error('Unexpected SQL execution in audit registration test');
+    }
+    return Object.assign(query, {
+        begin: <T>(): Promise<T> =>
+            Promise.reject(new Error('Unexpected transaction in audit registration test'))
+    });
 }
 
 function createMutationService(): CrdtMutationService {
@@ -136,8 +137,7 @@ function createMutationService(): CrdtMutationService {
         compute: () => {
             throw new Error('not computed');
         },
-        validate: () => [],
-        write: () => Promise.reject(new Error('not written'))
+        validate: () => []
     };
 }
 
@@ -164,7 +164,7 @@ class RecordingOutboxQueueReader extends OutboxQueueReader {
     }
 }
 
-function createAuditMessage(event: unknown): ALMessage {
+function createAuditMessage(event: object): ALMessage {
     return newALUntargetedMessage('server-1', newALRoute('crdt.audit', 'document-1', 'audit-1'), CRDT_AUDIT_APP_OUTBOX_TYPE, event);
 }
 

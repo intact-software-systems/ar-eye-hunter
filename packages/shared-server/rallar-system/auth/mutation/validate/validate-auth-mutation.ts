@@ -1,17 +1,26 @@
-import type { AuthMutationCommand, AuthMutationComputed, AuthMutationRead } from '../auth-mutation-contracts.ts';
+import type {
+    AuthMutationCommand,
+    AuthMutationComputed,
+    AuthMutationFacts,
+    AuthMutationRead
+} from '../auth-mutation-contracts.ts';
 import { AuthMutationRejectedError } from '../auth-mutation-rejected-error.ts';
-import { computeAuthPersistence } from '../compute/compute-auth-persistence.ts';
+import { computeAuthMutation } from '../compute/compute-auth-mutation.ts';
 import { equalAuthJson, requireMatchingAuthKind } from './auth-mutation-validation.ts';
 import { validateAuthAgentTicketMutation } from './validate-auth-agent-ticket-mutation.ts';
 import { validateAuthSessionMutation } from './validate-auth-session-mutation.ts';
 import { validateAuthTicketMutation } from './validate-auth-ticket-mutation.ts';
 import { validateAuthUserMutation } from './validate-auth-user-mutation.ts';
 
-export function validateAuthMutation(
-    command: AuthMutationCommand,
-    read: AuthMutationRead,
-    computed: AuthMutationComputed
-): void {
+export interface ValidateAuthMutationInput {
+    readonly command: AuthMutationCommand;
+    readonly read: AuthMutationRead;
+    readonly facts: AuthMutationFacts;
+    readonly computed: AuthMutationComputed;
+}
+
+export function validateAuthMutation(input: ValidateAuthMutationInput): void {
+    const { command, read, facts, computed } = input;
     requireMatchingAuthKind(command, read);
     if (computed.command !== command || computed.read !== read) {
         throw new AuthMutationRejectedError('Auth computed input identity differs');
@@ -40,8 +49,15 @@ export function validateAuthMutation(
             validateAuthAgentTicketMutation({ kind: commandKind, command, read, computed });
             break;
     }
-    const expectedPersistence = computeAuthPersistence(computed, commandKind);
-    if (!equalAuthJson(expectedPersistence, computed.persistence)) {
-        throw new AuthMutationRejectedError('Auth computed persistence differs');
+    const expected = computeAuthMutation({ command, read, facts });
+    if (!isExactAuthComputed(expected, computed)) {
+        throw new AuthMutationRejectedError('Auth computed value differs');
     }
+}
+
+function isExactAuthComputed(
+    expected: AuthMutationComputed,
+    computed: AuthMutationComputed
+): boolean {
+    return equalAuthJson(expected, computed);
 }

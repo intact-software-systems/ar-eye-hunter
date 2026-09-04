@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStatePresenceAdmissionStorageKey } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { ApplyingGuardedBatchRepository, OrderedGroupEventStore } from './group-mutation-test-runtime.ts';
 
@@ -22,7 +23,7 @@ describe('GroupStateService guarded batch convergence', () => {
             runtime,
             eventStore,
             nowEpochMs: BASE_EPOCH_MS,
-            sleep: () => Promise.resolve(),
+            attemptCount: 1,
             instanceId: 'seed'
         });
         const groupId = 'independent-group-convergence';
@@ -35,41 +36,49 @@ describe('GroupStateService guarded batch convergence', () => {
             requestId: 'independent-group-seed'
         });
         runtime.resetObservations();
-        const sleep = async () => {
-            expect(runtime.activeTransactionDepth).toBe(0);
-        };
-        const first = createService({
-            runtime,
-            eventStore,
-            nowEpochMs: BASE_EPOCH_MS + 1_000,
-            sleep,
-            instanceId: 'first'
-        });
-        const second = createService({
-            runtime,
-            eventStore,
-            nowEpochMs: BASE_EPOCH_MS + 1_001,
-            sleep,
-            instanceId: 'second'
-        });
+        const attempts = [
+            (attemptCount: number) =>
+                createService({
+                    runtime,
+                    eventStore,
+                    nowEpochMs: BASE_EPOCH_MS + 1_000,
+                    attemptCount,
+                    instanceId: 'first'
+                }).updateGroup(SCOPE, groupId, {
+                    displayName: 'Independent first',
+                    actorPrincipalId: 'alice',
+                    requestId: 'independent-group-first'
+                }),
+            (attemptCount: number) =>
+                createService({
+                    runtime,
+                    eventStore,
+                    nowEpochMs: BASE_EPOCH_MS + 1_001,
+                    attemptCount,
+                    instanceId: 'second'
+                }).updateGroup(SCOPE, groupId, {
+                    description: 'Independent second',
+                    actorPrincipalId: 'alice',
+                    requestId: 'independent-group-second'
+                })
+        ] as const;
         runtime.blockMatchingBatchReads(
             'group-state:groups',
             groupStateGroupStorageKey({ ...SCOPE, groupId }),
             2
         );
 
-        const results = await Promise.all([
-            first.updateGroup(SCOPE, groupId, {
-                displayName: 'Independent first',
-                actorPrincipalId: 'alice',
-                requestId: 'independent-group-first'
-            }),
-            second.updateGroup(SCOPE, groupId, {
-                description: 'Independent second',
-                actorPrincipalId: 'alice',
-                requestId: 'independent-group-second'
-            })
-        ]);
+        const firstAttempts = await Promise.allSettled(attempts.map((attempt) => attempt(1)));
+        const conflictIndex = firstAttempts.findIndex((result) => result.status === 'rejected');
+        expect(firstAttempts[conflictIndex]).toMatchObject({
+            status: 'rejected',
+            reason: expect.any(RuntimeStateWriteConflictError)
+        });
+        const retried = await attempts[conflictIndex]!(2);
+        const results = [
+            ...firstAttempts.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []),
+            retried
+        ];
 
         const repository = createTestGroupStateRepository(runtime, eventStore);
         const snapshot = await repository.readSnapshot({ ...SCOPE, groupId });
@@ -100,7 +109,7 @@ describe('GroupStateService guarded batch convergence', () => {
             runtime,
             eventStore,
             nowEpochMs: BASE_EPOCH_MS,
-            sleep: () => Promise.resolve(),
+            attemptCount: 1,
             instanceId: 'seed'
         });
         await seed.createGroup(SCOPE, {
@@ -113,25 +122,6 @@ describe('GroupStateService guarded batch convergence', () => {
             requestId: 'independent-presence-seed'
         });
         runtime.resetObservations();
-        const sleepDelays: number[] = [];
-        const sleep = async (delayMs: number) => {
-            expect(runtime.activeTransactionDepth).toBe(0);
-            sleepDelays.push(delayMs);
-        };
-        const first = createService({
-            runtime,
-            eventStore,
-            nowEpochMs: BASE_EPOCH_MS + 1_000,
-            sleep,
-            instanceId: 'first'
-        });
-        const second = createService({
-            runtime,
-            eventStore,
-            nowEpochMs: BASE_EPOCH_MS + 1_001,
-            sleep,
-            instanceId: 'second'
-        });
         const ref = { ...SCOPE, groupId };
         runtime.blockMatchingBatchReads(
             'group-state:presence-admissions',
@@ -142,20 +132,45 @@ describe('GroupStateService guarded batch convergence', () => {
             2
         );
 
-        const results = await Promise.allSettled([
-            first.connectPresenceSession(SCOPE, groupId, 'session-a', {
-                principalId: 'alice',
-                generationId: 'generation-a',
-                expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
-                requestId: 'independent-presence-a'
-            }),
-            second.connectPresenceSession(SCOPE, groupId, 'session-b', {
-                principalId: 'alice',
-                generationId: 'generation-b',
-                expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
-                requestId: 'independent-presence-b'
-            })
-        ]);
+        const attempts = [
+            (attemptCount: number) =>
+                createService({
+                    runtime,
+                    eventStore,
+                    nowEpochMs: BASE_EPOCH_MS + 1_000,
+                    attemptCount,
+                    instanceId: 'first'
+                }).connectPresenceSession(SCOPE, groupId, 'session-a', {
+                    principalId: 'alice',
+                    generationId: 'generation-a',
+                    expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+                    requestId: 'independent-presence-a'
+                }),
+            (attemptCount: number) =>
+                createService({
+                    runtime,
+                    eventStore,
+                    nowEpochMs: BASE_EPOCH_MS + 1_001,
+                    attemptCount,
+                    instanceId: 'second'
+                }).connectPresenceSession(SCOPE, groupId, 'session-b', {
+                    principalId: 'alice',
+                    generationId: 'generation-b',
+                    expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+                    requestId: 'independent-presence-b'
+                })
+        ] as const;
+        const firstAttempts = await Promise.allSettled(attempts.map((attempt) => attempt(1)));
+        const conflictIndex = firstAttempts.findIndex((result) => result.status === 'rejected');
+        expect(firstAttempts[conflictIndex]).toMatchObject({
+            status: 'rejected',
+            reason: expect.any(RuntimeStateWriteConflictError)
+        });
+        const retry = await Promise.allSettled([attempts[conflictIndex]!(2)]);
+        const results = [
+            ...firstAttempts.filter((result) => result.status === 'fulfilled'),
+            ...retry
+        ];
 
         const repository = createTestGroupStateRepository(runtime, eventStore);
         const admission = await repository.findPresenceAdmissionEntry({
@@ -168,7 +183,6 @@ describe('GroupStateService guarded batch convergence', () => {
         );
         expect(accepted).toHaveLength(1);
         expect(runtime.batches).toHaveLength(2);
-        expect(sleepDelays).toEqual([2]);
         expect(admission?.value.admittedSessions).toHaveLength(1);
         expect(sessions).toHaveLength(1);
         expect(eventStore.events).toHaveLength(2);
@@ -179,7 +193,7 @@ interface ConvergenceServiceInput {
     readonly runtime: ApplyingGuardedBatchRepository;
     readonly eventStore: OrderedGroupEventStore;
     readonly nowEpochMs: number;
-    readonly sleep: (delayMs: number) => Promise<void>;
+    readonly attemptCount: number;
     readonly instanceId: string;
 }
 
@@ -187,7 +201,7 @@ function createService({
     runtime,
     eventStore,
     nowEpochMs,
-    sleep,
+    attemptCount,
     instanceId
 }: ConvergenceServiceInput) {
     let generatedId = 0;
@@ -196,7 +210,7 @@ function createService({
         groupStateEventStoreFor: () => eventStore,
         now: () => nowEpochMs,
         randomId: () => `${instanceId}-id-${++generatedId}`,
-        sleep,
+        attemptCount,
         serviceId: `${instanceId}-group-service`
     });
 }

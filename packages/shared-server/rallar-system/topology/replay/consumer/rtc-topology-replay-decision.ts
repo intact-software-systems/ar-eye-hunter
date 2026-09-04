@@ -8,7 +8,10 @@ import { decodeRtcTopologySnapshot } from '../../persistence/decode-rtc-topology
 import { rtcTopologySemanticEqual } from '../../persistence/rtc-topology-semantic-equal.ts';
 import { compareTopologyTuple } from '../../persistence/rtc-topology-snapshot-contract.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
-import { computeRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
+import {
+    computeRtcTopologyPublicationOutbox,
+    validateRtcTopologyPublicationOutbox
+} from '../../publication/rtc-topology-ws-outbox-entry.ts';
 import { validateRtcTopologyPublication } from '../../publication/validate-rtc-topology-publication.ts';
 import type { RtcTopologyDeliveryLogEntry } from '../delivery/rtc-topology-delivery-contracts.ts';
 import {
@@ -64,12 +67,10 @@ export function decideRtcTopologyReplayEntry(
     ) {
         throw corruption(input.entry, 'the log identity differs from its publication outbox');
     }
-    if (
-        !isKeysEqual(outbox.key, expectedOutbox.key) ||
-        outbox.typeId !== expectedOutbox.typeId ||
-        outbox.resource !== expectedOutbox.resource ||
-        outbox.audit.expiryTs.epochMilliseconds !== expectedOutbox.audit.expiryTs.epochMilliseconds
-    ) {
+    try {
+        validateRtcTopologyPublicationOutbox(publication, outbox);
+    }
+    catch {
         throw corruption(input.entry, 'the durable outbox differs from its publication');
     }
 

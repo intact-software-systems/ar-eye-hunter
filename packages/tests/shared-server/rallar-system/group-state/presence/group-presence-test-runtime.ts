@@ -1,4 +1,5 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import type { GroupPresenceSummaryReservationRead } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -13,7 +14,7 @@ import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
 export function createService(
     runtimeRepository: GroupBarrierRepository,
     nowEpochMs: number | (() => number),
-    sleep: (delayMs: number) => Promise<void> = () => Promise.resolve(),
+    attemptCount = 1,
     injectedRandomId?: () => string,
     timing?: (event: RallarTimingEvent) => void
 ): GroupStateTestService {
@@ -23,7 +24,7 @@ export function createService(
         runtimeRepository,
         now: currentNow,
         randomId: injectedRandomId ?? (() => `id-${currentNow()}-${++id}`),
-        sleep,
+        attemptCount,
         serviceId: 'group-service',
         timing
     });
@@ -32,13 +33,13 @@ export function createService(
 export function createMaintenance(
     runtimeRepository: GroupBarrierRepository,
     nowEpochMs: number,
-    sleep: (delayMs: number) => Promise<void> = () => Promise.resolve()
+    attemptCount = 1
 ) {
     return createTestGroupStateRuntime({
         runtimeRepository,
         now: () => nowEpochMs,
         randomId: () => `maintenance-${nowEpochMs}`,
-        sleep,
+        attemptCount,
         serviceId: 'group-maintenance'
     }).maintenance;
 }
@@ -72,8 +73,8 @@ export async function convergeSummaryForTest({
         acceptedCausalRevision: event.causalRevision,
         event
     };
-    const read = await work.read(command);
-    const computed = work.compute(command, read, nowEpochMs);
+    const read = await work.read(command, summaryReservationRead(command.commandId), nowEpochMs);
+    const computed = work.compute(command, read);
     work.validate(command, read, computed);
     await runtime.begin(async (transaction) => {
         if (computed.summary.outcome === 'no-op') {
@@ -92,6 +93,17 @@ export async function convergeSummaryForTest({
                 )
         );
     });
+}
+
+export function summaryReservationRead(commandId: string): GroupPresenceSummaryReservationRead {
+    return {
+        key: {
+            topicId: 'test.group-presence-summary',
+            resourceId: commandId,
+            contextId: 'test.group-presence-summary'
+        },
+        expectedAttempts: 1
+    };
 }
 
 export async function seedOpenGroup(

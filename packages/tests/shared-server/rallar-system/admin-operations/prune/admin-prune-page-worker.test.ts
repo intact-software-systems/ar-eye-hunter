@@ -76,7 +76,10 @@ describe('AdminPrunePageWorker', () => {
         const computed = work.compute(command, read);
 
         work.validate(command, read, computed);
-        expect(read.rowIds).toEqual(['1', '2']);
+        expect(read.candidates).toEqual([
+            { rowId: '1', revisionToken: '1' },
+            { rowId: '2', revisionToken: '2' }
+        ]);
         expect(computed).toMatchObject({
             kind: 'page',
             category: 'runtime-state',
@@ -127,7 +130,14 @@ describe('AdminPrunePageWorker', () => {
         const alteredCandidates = [
             {
                 ...computed,
-                deletion: { ...computed.deletion, rowIds: ['different', '2'] }
+                deletion: {
+                    ...computed.deletion,
+                    candidates: [
+                        { rowId: '1', revisionToken: '9' },
+                        { rowId: '2', revisionToken: '2' }
+                    ],
+                    candidateRowsJson: '[{"revisionToken":"9","rowId":"1"},{"revisionToken":"2","rowId":"2"}]'
+                }
             },
             {
                 ...computed,
@@ -182,7 +192,7 @@ describe('AdminPrunePageWorker', () => {
         const read = await work.read(command);
 
         expect(repository.lastExcludedResourceKey).toEqual(entry.key);
-        expect(read.rowIds).toEqual(['10', '11', '12']);
+        expect(read.candidates.map((candidate) => candidate.rowId)).toEqual(['10', '11', '12']);
     });
 
     it('rolls deletion and successor back when reservation fencing fails', async () => {
@@ -516,20 +526,23 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
     rejectOutbox = false;
     rejectProgressOnce = false;
 
-    private readonly rowIds: readonly string[];
+    private readonly candidates: readonly Readonly<{ rowId: string; revisionToken: string; }>[];
 
     constructor(rowIds: readonly string[]) {
-        this.rowIds = rowIds;
+        this.candidates = rowIds.map((rowId, index) => ({
+            rowId,
+            revisionToken: String(index + 1)
+        }));
     }
 
     readPage(input: { pageSize: number; excludedResourceKey: ResourceEntry['key'] | null; }) {
         this.readPageCalls += 1;
         this.lastExcludedResourceKey = input.excludedResourceKey;
-        const selected = this.rowIds
+        const selected = this.candidates
             .slice(0, input.pageSize);
         return Promise.resolve({
-            rowIds: selected,
-            hasMore: this.rowIds.length > selected.length
+            candidates: selected,
+            hasMore: this.candidates.length > selected.length
         });
     }
 
@@ -556,8 +569,8 @@ class MemoryPruneRepository implements AdminPrunePageRepository {
 
     deletePage(_transaction: never, deletion: AdminPrunePageDelete) {
         this.calls.push('delete');
-        this.deleted.push(...deletion.rowIds);
-        return Promise.resolve(deletion.rowIds.length);
+        this.deleted.push(...deletion.candidates.map((candidate) => candidate.rowId));
+        return Promise.resolve(deletion.candidates.length);
     }
 
     writeOutbox(_transaction: never, computed: AppOutboxInsert) {

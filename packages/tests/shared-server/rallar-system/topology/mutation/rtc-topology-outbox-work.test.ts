@@ -624,6 +624,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             topologyPlanning: {
                 readTopologyPlanningAuthority,
                 observeCommittedTopology: vi.fn(),
+                recordTopologyPlanningObservation: vi.fn(),
                 recordTopologyPublication: vi.fn(),
                 recordTopologyPlanFrozen: vi.fn(),
                 recordTopologyRebuildSkippedFingerprint: vi.fn()
@@ -712,8 +713,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         }).planning;
         const authority = await planning.readTopologyPlanningAuthority({
             groupRef: group.group,
-            knownGroup: group,
-            snapshotSelection: 'prefer-current'
+            knownGroup: group
         });
         const submittedCommands: Array<
             Readonly<{
@@ -732,6 +732,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             topologyPlanning: {
                 readTopologyPlanningAuthority: async () => authority,
                 observeCommittedTopology: vi.fn(),
+                recordTopologyPlanningObservation: vi.fn(),
                 recordTopologyPublication: vi.fn(),
                 recordTopologyPlanFrozen: vi.fn(),
                 recordTopologyRebuildSkippedFingerprint: vi.fn()
@@ -806,6 +807,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             topologyPlanning: {
                 readTopologyPlanningAuthority,
                 observeCommittedTopology: vi.fn(),
+                recordTopologyPlanningObservation: vi.fn(),
                 recordTopologyPublication: vi.fn(),
                 recordTopologyPlanFrozen: vi.fn(),
                 recordTopologyRebuildSkippedFingerprint: vi.fn()

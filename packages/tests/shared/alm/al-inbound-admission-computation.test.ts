@@ -16,7 +16,7 @@ import {
     vi
 } from 'vitest';
 
-describe('inbound admission preparation boundary', () => {
+describe('inbound admission computation boundary', () => {
     afterEach(() => {
         vi.restoreAllMocks();
         vi.useRealTimers();
@@ -99,7 +99,7 @@ describe('inbound admission preparation boundary', () => {
         ]);
     });
 
-    it('discards a conflicted prepared candidate and sends only the committed envelope', async () => {
+    it('discards a conflicted computed candidate and sends only the committed envelope', async () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const committedBundles: ALInboundCommitBundle[] = [];
         const commitStatuses: ('committed' | 'conflict')[] = [];

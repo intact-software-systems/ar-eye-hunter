@@ -127,9 +127,7 @@ class CapturingInboxReader extends InboxQueueReader {
 function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
     const database = createUnusedDatabase();
     const repository = {
-        readMutation: () => Promise.reject(new Error('not processed')),
-        writeMutation: () => Promise.reject(new Error('not processed')),
-        writeOutbox: () => Promise.reject(new Error('not processed'))
+        readMutation: () => Promise.reject(new Error('not processed'))
     };
     return new AppCrdtInboxService(
         {
@@ -139,7 +137,6 @@ function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
             database,
             mutationService: createCrdtMutationService({
                 repository,
-                createWriter: () => repository,
                 serviceId: 'server-1'
             }),
             readCurrentSession: () => Promise.reject(new Error('not read')),

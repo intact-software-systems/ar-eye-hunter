@@ -16,6 +16,7 @@ import {
     RallarRtcTopologyService,
     type RallarRtcTopologyUpdateResult
 } from '../runtime/rallar-rtc-topology-service.ts';
+import type { RtcTopologyPlanningObservation } from '../runtime/rtc-topology-metrics.ts';
 import {
     computeGroupTopologyFromAuthority,
     requireFrozenTopology,
@@ -78,6 +79,10 @@ export class GroupTopologyPlanningService {
         this.dependencies.topologyService.recordTopologyPublishResult(published);
     }
 
+    recordTopologyPlanningObservation(observation: RtcTopologyPlanningObservation): void {
+        this.dependencies.topologyService.recordTopologyPlanningObservation(observation);
+    }
+
     recordTopologyRebuildSkippedFingerprint(): void {
         this.dependencies.topologyService.recordTopologyRebuildSkippedFingerprint();
     }
@@ -94,7 +99,7 @@ export class GroupTopologyPlanningService {
             input.knownGroup
         );
         const group = input.knownGroup
-            ? selectGroupTopologyPlanningSnapshot(input.knownGroup, currentGroup, input.snapshotSelection)
+            ? selectGroupTopologyPlanningSnapshot(input.knownGroup, currentGroup)
             : requireGroupTopologyPlanningSnapshot(input.groupRef, currentGroup);
         const [config, rttMeasurements, replanning] = await Promise.all([
             this.dependencies.queryService.readResolvedTopologyConfig(group.group, input.requestOptions),
@@ -129,8 +134,7 @@ export class GroupTopologyPlanningService {
     ): Promise<ReconcileGroupTopologyResult> {
         const authority = await this.readTopologyPlanningAuthority({
             groupRef: group.group,
-            knownGroup: group,
-            snapshotSelection: 'prefer-current'
+            knownGroup: group
         });
         // The machinery's own reconcile sweep: automatic by definition.
         const computed = this.computeTopologyFromAuthority(authority, previous, {
@@ -173,7 +177,7 @@ export class GroupTopologyPlanningService {
             ),
             { previous, topologyOptions: config.effective }
         );
-        validateComputedGroupTopology({ ...result, action: 'planned' });
+        validateComputedGroupTopology({ ...result, action: 'planned', planningObservation: null });
         const published = await this.publishIfRequested(
             group,
             result,
@@ -198,6 +202,9 @@ export class GroupTopologyPlanningService {
             return result;
         }
         this.observeCommittedTopology(group, result.snapshot);
+        if (result.planningObservation !== null) {
+            this.recordTopologyPlanningObservation(result.planningObservation);
+        }
         return result;
     }
 
@@ -237,7 +244,7 @@ export class GroupTopologyPlanningService {
         if (!result) {
             return undefined;
         }
-        validateComputedGroupTopology({ ...result, action: 'planned' });
+        validateComputedGroupTopology({ ...result, action: 'planned', planningObservation: null });
         const published = await this.publishIfRequested(
             group,
             result,

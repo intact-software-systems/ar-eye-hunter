@@ -194,7 +194,8 @@ async function computeAcceptedRtcTopologyWork(
             group: authority.group,
             inputFingerprint,
             promotionRead,
-            criterionPetition: { authority, planned: read.mutation.snapshot.value }
+            criterionPetition: { authority, planned: read.mutation.snapshot.value },
+            planningObservation: computedTopology.planningObservation
         };
     }
     return await computeAcceptedTopologyMutation({
@@ -275,7 +276,8 @@ async function computeAcceptedTopologyMutation(
         publication,
         inputFingerprint,
         promotionRead,
-        criterionPetition: { authority, planned: planned.snapshot }
+        criterionPetition: { authority, planned: planned.snapshot },
+        planningObservation: planned.planningObservation
     };
 }
 

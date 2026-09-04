@@ -278,6 +278,7 @@ export type AuthMutationRead =
 
 export type AuthMutationFacts = Readonly<{
     kind: AuthMutationCommand['kind'];
+    serviceId: string;
 }>;
 
 export type AuthComputedSession = Readonly<{

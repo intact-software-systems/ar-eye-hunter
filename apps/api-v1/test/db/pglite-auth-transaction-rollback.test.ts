@@ -41,12 +41,18 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
             }
         } as const;
         const registrationRead = await auth.read(registration);
-        const registrationComputed = auth.compute(
+        const registrationFacts = await captureAuthMutationFacts(
             registration,
-            registrationRead,
-            await captureAuthMutationFacts(registration, credentialIssuer)
+            credentialIssuer,
+            auth.serviceId
         );
-        auth.validate(registration, registrationRead, registrationComputed);
+        const registrationComputed = auth.compute(registration, registrationRead, registrationFacts);
+        auth.validate({
+            command: registration,
+            read: registrationRead,
+            facts: registrationFacts,
+            computed: registrationComputed
+        });
         await runtime.insertIfAbsent(
             'auth-users:by-client-id',
             'client=register-client',
@@ -106,12 +112,18 @@ Deno.test('PGlite auth and AL production writers roll back sibling conditional m
             tickets: agentFacts
         } as const;
         const agentRead = await auth.read(agentCommand);
-        const agentComputed = auth.compute(
+        const capturedAgentFacts = await captureAuthMutationFacts(
             agentCommand,
-            agentRead,
-            await captureAuthMutationFacts(agentCommand, credentialIssuer)
+            credentialIssuer,
+            auth.serviceId
         );
-        auth.validate(agentCommand, agentRead, agentComputed);
+        const agentComputed = auth.compute(agentCommand, agentRead, capturedAgentFacts);
+        auth.validate({
+            command: agentCommand,
+            read: agentRead,
+            facts: capturedAgentFacts,
+            computed: agentComputed
+        });
         await runtime.insertIfAbsent(
             'auth-sessions:by-session',
             'session=rollback-session-b',

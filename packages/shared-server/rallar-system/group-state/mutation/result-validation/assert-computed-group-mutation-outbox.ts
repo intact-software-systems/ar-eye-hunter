@@ -1,6 +1,6 @@
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { isExactAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import { computeGroupConnectTrigger } from '../aggregate/compute-group-connect-trigger.ts';
 import { resolveCreateGroupLifecyclePolicy } from '../aggregate/create-initial-group-mutation.ts';
 import { resolveGroupAuthorityPolicy } from '../aggregate/resolve-group-authority-policy.ts';
@@ -18,40 +18,46 @@ export function assertComputedGroupMutationOutbox(
     input: AssertComputedGroupMutationWriteInput
 ): void {
     const { command, read, facts, computed } = input;
-    if (!Array.isArray(computed.outboxEntries)) {
-        throw new TypeError('Group mutation computed outbox entries must be an array');
+    if (!Array.isArray(computed.outboxWrites)) {
+        throw new TypeError('Group mutation computed outbox writes must be an array');
     }
     const pureLeaseRenewal = command.operation === 'heartbeatPresence' &&
         isPureLeaseRenewalHeartbeat(command, read, facts);
     if (pureLeaseRenewal) {
-        if (computed.outboxEntries.length !== 0 || computed.receipt.outboxIds.length !== 0) {
+        if (computed.outboxWrites.length !== 0 || computed.receipt.outboxIds.length !== 0) {
             throw new TypeError('A pure lease renewal must not expand a presence summary');
         }
         return;
     }
-    const expectedFollowupEntries = computeExpectedFormationFollowupEntries(input);
-    if (computed.outboxEntries.length !== 1 + expectedFollowupEntries.length) {
+    const expectedEntries = [
+        computeGroupPresenceSummaryEntry(
+            {
+                effectKind: 'group-presence-summary',
+                aggregateRef: command.aggregateRef,
+                commandId: command.commandId,
+                createdAtEpochMs: facts.nowEpochMs,
+                expireAtEpochMs: facts.expireAtEpochMs,
+                acceptedCausalRevision: computed.receipt.causalRevision,
+                event: computed.event
+            },
+            facts.serviceId
+        ),
+        ...computeExpectedFormationFollowupEntries(input)
+    ];
+    if (computed.outboxWrites.length !== expectedEntries.length) {
         throw new TypeError('Group mutation must compute one presence-summary outbox entry');
     }
-    for (const [index, expectedFollowup] of expectedFollowupEntries.entries()) {
-        if (!jsonEquals(computed.outboxEntries[1 + index], expectedFollowup)) {
-            throw new TypeError('Group mutation formation follow-up outbox entry is not canonical');
+    for (const [index, expected] of expectedEntries.entries()) {
+        const write = computed.outboxWrites[index];
+        if (write === undefined || !isExactAppOutboxInsert(expected, write)) {
+            throw new TypeError('Group mutation outbox write is not canonical');
         }
     }
-    const expected = computeGroupPresenceSummaryEntry(
-        {
-            effectKind: 'group-presence-summary',
-            aggregateRef: command.aggregateRef,
-            commandId: command.commandId,
-            createdAtEpochMs: facts.nowEpochMs,
-            expireAtEpochMs: facts.expireAtEpochMs,
-            acceptedCausalRevision: computed.receipt.causalRevision,
-            event: computed.event
-        },
-        facts.serviceId
-    );
-    if (!jsonEquals(computed.outboxEntries[0], expected)) {
-        throw new TypeError('Group mutation presence-summary outbox entry is not canonical');
+    if (
+        computed.receipt.outboxIds.length !== expectedEntries.length ||
+        expectedEntries.some((entry, index) => computed.receipt.outboxIds[index] !== entry.key.resourceId)
+    ) {
+        throw new TypeError('Group mutation receipt outbox identities are not canonical');
     }
 }
 

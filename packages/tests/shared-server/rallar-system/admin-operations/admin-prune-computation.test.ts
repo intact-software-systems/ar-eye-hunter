@@ -8,6 +8,7 @@ import {
     validateAdminPruneMutation
 } from '@shared-server/rallar-system/admin-operations/inbox/compute-admin-prune-mutation.ts';
 import { writeAdminPruneAggregate } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-prune-repository.ts';
+import { computeAppInboxCompletion } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 describe('admin prune computation', () => {
@@ -57,6 +58,39 @@ describe('admin prune computation', () => {
         expect(changed.result.jobId).toBe('another-job');
     });
 
+    it('rejects altered canonical result fields when completion is rebuilt around them', async () => {
+        const read = await createRead();
+        const computed = computeAdminPruneMutation(read);
+        const firstResult = computed.result.results[0];
+        if (firstResult === undefined) {
+            throw new TypeError('Expected an admin prune category result');
+        }
+        const alteredResults = [
+            { ...computed.result, generatedAtEpochMs: 999 },
+            {
+                ...computed.result,
+                results: [{ ...firstResult, expiredRows: firstResult.expiredRows + 1 }]
+            }
+        ];
+
+        for (const result of alteredResults) {
+            const candidate = {
+                ...computed,
+                result,
+                completion: computeAppInboxCompletion({
+                    ...read.completionFacts,
+                    durableResult: result,
+                    status: EntityStatus.COMPLETED
+                })
+            };
+
+            expect(validateAdminPruneMutation(read, candidate)).toContainEqual(expect.objectContaining({
+                code: 'admin-prune-computed-identity-invalid',
+                status: 400
+            }));
+        }
+    });
+
     it('rejects prepared admin prune rows that differ from the computed mutation', async () => {
         const read = await createRead();
         const computed = computeAdminPruneMutation(read);
@@ -82,6 +116,13 @@ describe('admin prune computation', () => {
                     ...computed.aggregateWrite,
                     entry: { ...computed.aggregateWrite.entry, resource: '{"jobId":"tampered"}' }
                 }
+            },
+            {
+                ...computed,
+                aggregateWrite: {
+                    ...computed.aggregateWrite,
+                    replaceExpiredAt: '2000-01-01T00:00:00.000Z'
+                }
             }
         ];
 
@@ -93,14 +134,20 @@ describe('admin prune computation', () => {
         }
     });
 
-    it('writes the prepared aggregate without formatting timestamps in the transaction', async () => {
+    it('writes only prepared aggregate values in the transaction', async () => {
         const computed = computeAdminPruneMutation(await createRead());
         const aggregateWrite = computed.aggregateWrite;
         if (aggregateWrite === null) {
             throw new Error('Expected a durable admin prune aggregate');
         }
-        const transaction = ((parts: TemplateStringsArray) => {
+        let insertStatement = '';
+        let insertValues: readonly string[] = [];
+        const transaction = ((parts: TemplateStringsArray, ...values: readonly string[]) => {
             const statement = parts.join(' ');
+            if (statement.includes('insert into resource_inbox_results')) {
+                insertStatement = statement;
+                insertValues = values;
+            }
             return Promise.resolve(
                 statement.includes('insert into resource_inbox_results')
                     ? [{ ris_resource: aggregateWrite.entry.resource }]
@@ -116,6 +163,8 @@ describe('admin prune computation', () => {
         finally {
             Temporal.Instant.prototype.toString = originalToString;
         }
+        expect(insertStatement).not.toContain('now()');
+        expect(insertValues).toContain('1970-01-01T00:00:01.005Z');
     });
 });
 

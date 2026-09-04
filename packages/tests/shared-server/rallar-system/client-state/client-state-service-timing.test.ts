@@ -127,7 +127,7 @@ function createTimedClientStateServiceFixture(): TimedClientStateServiceFixture 
             expect(computed).toBe(TIMED_COMPUTED);
             throw writeFailure;
         },
-        listExpiredSessionCandidates: async () => [],
+        readExpiredSessionPage: async () => ({ candidates: [], nextAfterKey: null }),
         findSessionBySessionId: async () => undefined,
         readIssuedAuthSession: async () => undefined,
         observeSnapshot: async (snapshot) => snapshot
@@ -152,9 +152,9 @@ describe('client mutation service timing', () => {
         );
 
         expect(fixture.actions).toEqual([
+            'completion',
             'mutation.compute',
             'mutation.validate',
-            'completion',
             'write',
             'commit',
             'mutation.write',

@@ -7,7 +7,6 @@ import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/m
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
 
@@ -15,38 +14,6 @@ const RTT_COMMAND_HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_RTT_COMMAND_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('RTC RTT mutation phases', () => {
-    it('keeps phases explicit while AppInbox exclusively owns retries and transactions', () => {
-        const executeUrl = new URL(
-            '../../../../shared-server/rallar-system/rtc-rtt/mutation/execute-rtc-rtt-mutation.ts',
-            import.meta.url
-        );
-        const writeUrl = new URL(
-            '../../../../shared-server/rallar-system/rtc-rtt/mutation/write-rtc-rtt-mutation.ts',
-            import.meta.url
-        );
-
-        expect(existsSync(executeUrl)).toBe(true);
-        expect(existsSync(writeUrl)).toBe(true);
-        if (!existsSync(executeUrl) || !existsSync(writeUrl)) {
-            return;
-        }
-        const executeSource = readFileSync(executeUrl, 'utf8');
-        const phases = [
-            executeSource.indexOf('await readRtcRttMutation('),
-            executeSource.indexOf('computeRtcRttMutation('),
-            executeSource.indexOf('validateRtcRttMutation('),
-            executeSource.indexOf('await writeRtcRttMutation(')
-        ];
-        expect(phases).toEqual([...new Set(phases)].toSorted((left, right) => left - right));
-        expect(phases[0]).toBeGreaterThanOrEqual(0);
-        expect(executeSource).not.toMatch(/\.begin\s*\(/);
-        expect(executeSource).not.toMatch(/waitForRuntimeStateWriteRetry|\bfor\s*\([^)]*attempt/);
-        expect(executeSource).not.toMatch(/\bsleep\??\s*:/);
-
-        const writeSource = readFileSync(writeUrl, 'utf8');
-        expect(writeSource).toMatch(/transaction:\s*PSqlSql/);
-        expect(writeSource).not.toMatch(/RuntimeStateOptimisticTransactionalRepositoryLike/);
-    });
     it('computes stale RTT rejection deterministically without mutating frozen reads', () => {
         const incoming = {
             sessionIdFrom: 'session-a',

@@ -10,7 +10,10 @@ import {
     type PSqlResourceInboxRepository
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { computeAppOutboxInsert, writeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
-import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
+import {
+    CoalescedAppOutboxWorkService,
+    computeCoalescedAppOutboxWork
+} from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
 import {
     computeClientStateSyncEntries,
     computeGroupStateSyncEntries,
@@ -276,6 +279,7 @@ describe('direct resource outbox writes', () => {
 
         const entries = computeGroupStateSyncEntries(computed, 'server-1');
         const writes = entries.map(computeAppOutboxInsert);
+        expect(writes.every((write) => !('conflict' in write))).toBe(true);
         await runInPSqlTransaction(database.sql, async (transaction) => {
             for (const write of writes) {
                 await writeAppOutboxInsert(transaction, write);
@@ -585,11 +589,10 @@ describe('direct resource outbox writes', () => {
         const updated = await runInPSqlTransaction(
             database.sql,
             async (transaction) =>
-                await stagingService.write(transaction, {
-                    expectedEntry: first,
-                    entry: next,
-                    successorEntry: successor
-                })
+                await stagingService.write(
+                    transaction,
+                    computeCoalescedAppOutboxWork(first, next, successor)
+                )
         );
         expect(updated).toMatchObject({
             action: 'updated',
@@ -601,11 +604,10 @@ describe('direct resource outbox writes', () => {
         const result = await runInPSqlTransaction(
             database.sql,
             async (transaction) =>
-                await stagingService.write(transaction, {
-                    expectedEntry: next,
-                    entry: third,
-                    successorEntry: successor
-                })
+                await stagingService.write(
+                    transaction,
+                    computeCoalescedAppOutboxWork(next, third, successor)
+                )
         );
 
         expect(result).toMatchObject({

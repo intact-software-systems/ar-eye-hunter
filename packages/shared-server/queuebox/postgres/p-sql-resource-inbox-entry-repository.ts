@@ -439,6 +439,19 @@ export class PSqlResourceInboxEntryRepository {
         return rows.length === 0 ? null : toDomain(rows[0]);
     }
 
+    async findAnyByKeyForUpdate(key: Key): Promise<ResourceEntry | null> {
+        const rows = await this.sql<ResourceInboxRow[]>`
+            select *
+            from resource_inbox
+            where ri_topic_id = ${key.topicId}
+              and ri_resource_id = ${key.resourceId}
+              and fk_ext_bank_id = ${key.contextId}
+            for update
+        `;
+
+        return rows.length === 0 ? null : toDomain(rows[0]);
+    }
+
     async findAllByTopicAndResourceId(
         topicId: string,
         resourceId: string

@@ -26,6 +26,23 @@ afterEach(() => {
 });
 
 describe('PostgreSQL resource inbox persistence', () => {
+    it('binds the validated reservation completion as the expiry cutoff', async () => {
+        const capture = createResourceInboxQueryCapture();
+        const repo = repositoryModule.createPSqlResourceInboxRepository(capture.sql);
+        const completedAt = new Date('2026-01-01T00:01:00.000Z');
+
+        await repo.finalization.finishReserved(
+            createKey('captured-completion-cutoff'),
+            2,
+            EntityStatus.COMPLETED,
+            completedAt
+        );
+
+        expect(capture.queries).toHaveLength(1);
+        expect(capture.queries[0]?.query).not.toContain('now()');
+        expect(capture.queries[0]?.values.filter((value) => value === completedAt)).toHaveLength(2);
+    });
+
     it('claims ordinary retries only when due and never claims failed or expired rows', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:30.000Z'));
@@ -710,6 +727,34 @@ describe('PostgreSQL resource inbox persistence', () => {
             EntityStatus.FAILED,
             completedAt
         )).resolves.toBe(false);
+    });
+
+    it('finishes against the captured cutoff when the database clock has advanced', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:10:00.000Z'));
+
+        const harness = createResourceInboxSqlHarness();
+        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const completedAt = new Date('2026-01-01T00:01:00.000Z');
+        const entry = createEntry(createKey('captured-finish-cutoff'), {
+            text: 'reserved before database clock advanced',
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z')
+        });
+        await repo.entries.write(entry);
+        const stored = findStoredResourceInboxRow(harness.rows, entry.key);
+        if (!stored) {
+            throw new Error('Expected inserted resource inbox row');
+        }
+        stored.ri_status = EntityStatus.RESERVED;
+        stored.ri_attempts = 2n;
+
+        await expect(repo.finalization.finishReserved(
+            entry.key,
+            2,
+            EntityStatus.COMPLETED,
+            completedAt
+        )).resolves.toBe(true);
+        expect(stored.end_ts).toBe(completedAt.toISOString());
     });
 
     it('atomically releases only the current live reservation and returns persisted timestamps', async () => {

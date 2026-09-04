@@ -19,11 +19,11 @@ import type {
     GroupStateCausalRevision,
     GroupStatus
 } from '@shared/api/group-types.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type {
     RuntimeStateGuardedBatchEffect,
     RuntimeStateGuardedBatchWrite
 } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { AppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type { GroupConnectTriggerLatchRow } from '../persistence/group-connect-trigger-latch-repository.ts';
 import type {
     GroupAcceptedLayoutRow,
@@ -505,7 +505,7 @@ export type GroupMutationDomainWrite = Readonly<{
     event: GroupEvent;
     receipt: GroupMutationReceipt;
     idempotency: GroupMutationIdempotencyRecord | null;
-    outboxEntries: readonly ResourceEntry[];
+    outboxWrites: readonly AppOutboxInsert[];
     lifecyclePolicy: GroupLifecyclePolicy | null;
     /** Accepted layout committed atomically with the authoritative group row. */
     acceptedLayoutPromotion: Extract<PlannedLayoutPromotion, { outcome: 'apply'; }> | null;
@@ -523,6 +523,7 @@ export type GroupMutationPersistence = Readonly<{
             key: string;
             value: string;
             expireAtIsoTimestamp: string;
+            updatedAtIsoTimestamp: string;
         }>
         | null;
     eventWrite: Readonly<{

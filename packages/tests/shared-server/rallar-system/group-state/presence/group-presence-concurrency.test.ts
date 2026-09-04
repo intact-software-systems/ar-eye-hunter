@@ -1,6 +1,7 @@
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -52,16 +53,11 @@ describe('group presence concurrency', () => {
         );
     });
 
-    it('keeps independent service writes convergent without service-local sleep', async () => {
+    it('keeps independent service writes convergent without service-local retry', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'cross-service-lane-room');
-        const sleepDelays: number[] = [];
-        const sleep = (delayMs: number) => {
-            sleepDelays.push(delayMs);
-            return Promise.resolve();
-        };
-        const first = createService(runtime, 2_000, sleep);
-        const second = createService(runtime, 2_001, sleep);
+        const first = createService(runtime, 2_000);
+        const second = createService(runtime, 2_001);
         runtime.armGroupReadBarrier(2);
 
         await Promise.all([
@@ -77,7 +73,6 @@ describe('group presence concurrency', () => {
             })
         ]);
 
-        expect(sleepDelays).toEqual([]);
         expect((await requireSnapshot(runtime, 'cross-service-lane-room')).group.snapshotVersion).toBe(
             3
         );
@@ -280,8 +275,8 @@ describe('group presence concurrency', () => {
             });
 
             runtime.armAdmissionReadBarrier(2);
-            const connect = () =>
-                createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
+            const connect = (attemptCount: number) =>
+                createService(runtime, BASE_EPOCH_MS + 2_000, attemptCount).connectPresenceSession(
                     SCOPE,
                     `${operation}-${order}`,
                     'bob-session-old',
@@ -293,8 +288,8 @@ describe('group presence concurrency', () => {
                         requestId: `connect-old-${operation}-${order}`
                     }
                 );
-            const changeMembership = () => {
-                const service = createService(runtime, BASE_EPOCH_MS + 2_001);
+            const changeMembership = (attemptCount: number) => {
+                const service = createService(runtime, BASE_EPOCH_MS + 2_001, attemptCount);
                 const request = {
                     actorPrincipalId: 'alice',
                     requestId: `${operation}-bob-${order}`
@@ -305,10 +300,20 @@ describe('group presence concurrency', () => {
             };
 
             const results = order === 'connect-first'
-                ? await Promise.allSettled([changeMembership(), connect()])
-                : await Promise.allSettled([connect(), changeMembership()]);
-            const membershipResult = results[order === 'connect-first' ? 0 : 1];
-            const connectResult = results[order === 'connect-first' ? 1 : 0];
+                ? await Promise.allSettled([changeMembership(1), connect(1)])
+                : await Promise.allSettled([connect(1), changeMembership(1)]);
+            let membershipResult = results[order === 'connect-first' ? 0 : 1]!;
+            let connectResult = results[order === 'connect-first' ? 1 : 0]!;
+            if (membershipResult.status === 'rejected') {
+                expect(membershipResult.reason).toBeInstanceOf(RuntimeStateWriteConflictError);
+                [membershipResult] = await Promise.allSettled([changeMembership(2)]);
+            }
+            if (
+                connectResult.status === 'rejected' &&
+                connectResult.reason instanceof RuntimeStateWriteConflictError
+            ) {
+                [connectResult] = await Promise.allSettled([connect(2)]);
+            }
             expect(membershipResult).toMatchObject({ status: 'fulfilled' });
             if (connectResult?.status === 'rejected') {
                 expect(connectResult.reason).toMatchObject({

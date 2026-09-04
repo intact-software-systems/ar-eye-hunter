@@ -68,10 +68,11 @@ describe('GroupStateService guarded batch write boundary', () => {
             expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
         });
         expect(guardedBatch.effects.map(({ effectId }) => effectId)).toEqual(['receipt']);
-        expect(computed.outboxEntries).toHaveLength(1);
-        const outboxEntry = computed.outboxEntries[0];
+        expect(computed.outboxWrites).toHaveLength(1);
+        const outboxWrite = computed.outboxWrites[0];
+        const outboxEntry = outboxWrite?.entry;
         expect(outboxEntry?.typeId).toBe('APP_OUTBOX');
-        if (outboxEntry === undefined) {
+        if (outboxWrite === undefined || outboxEntry === undefined) {
             throw new TypeError('Expected a prepared group outbox entry');
         }
         const tampered = [
@@ -100,7 +101,14 @@ describe('GroupStateService guarded batch write boundary', () => {
             },
             {
                 ...computed,
-                outboxEntries: [{ ...outboxEntry, resource: '{"kind":"tampered"}' }]
+                outboxWrites: [{
+                    ...outboxWrite,
+                    entry: { ...outboxEntry, resource: '{"kind":"tampered"}' }
+                }]
+            },
+            {
+                ...computed,
+                outboxWrites: [{ ...outboxWrite, createdAt: '2000-01-01T00:00:00.000Z' }]
             }
         ];
         for (const candidate of tampered) {

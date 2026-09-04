@@ -1,8 +1,12 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import { ResourceInboxInvariantCorruptionError } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import {
+    PSqlResourceInboxEntryRepository,
+    ResourceInboxInvariantCorruptionError
+} from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    hasSameResourceEntryContent,
     toPgTimestamp,
     toSystemDate
 } from '../../queuebox/postgres/resource-inbox-row-codec.ts';
@@ -16,7 +20,6 @@ export interface AppOutboxInsert {
     readonly finishedAt: string | null;
     readonly nextAt: string | null;
     readonly attempts: number;
-    readonly conflict: ResourceInboxInvariantCorruptionError;
 }
 
 export function computeAppOutboxInsert(entry: ResourceEntry): AppOutboxInsert {
@@ -35,11 +38,7 @@ export function computeAppOutboxInsert(entry: ResourceEntry): AppOutboxInsert {
         startedAt: snapshot.dequeueAudit.startTs ? toPgTimestamp(snapshot.dequeueAudit.startTs) : null,
         finishedAt: snapshot.dequeueAudit.endTs ? toPgTimestamp(snapshot.dequeueAudit.endTs) : null,
         nextAt: snapshot.dequeueAudit.nextTs ? toPgTimestamp(snapshot.dequeueAudit.nextTs) : null,
-        attempts: snapshot.dequeueAudit.attempts,
-        conflict: new ResourceInboxInvariantCorruptionError(
-            snapshot.key,
-            'App outbox insert did not create exactly one row'
-        )
+        attempts: snapshot.dequeueAudit.attempts
     };
 }
 
@@ -66,8 +65,24 @@ export function isExactAppOutboxInsert(
 
 export async function writeAppOutboxInsert(transaction: PSqlSql, computed: AppOutboxInsert): Promise<void> {
     if (!await insertAppOutboxRow(transaction, computed)) {
-        throw computed.conflict;
+        throwAppOutboxInsertConflict(computed);
     }
+}
+
+/** Inserts an idempotent coalesced write, accepting only an exact persisted winner. */
+export async function writeAppOutboxInsertOrMatch(
+    transaction: PSqlSql,
+    computed: AppOutboxInsert
+): Promise<'inserted' | 'matched'> {
+    if (await insertAppOutboxRow(transaction, computed)) {
+        return 'inserted';
+    }
+    const existing = await new PSqlResourceInboxEntryRepository(transaction)
+        .findAnyByKey(computed.entry.key);
+    if (existing && hasSameResourceEntryContent(existing, computed.entry)) {
+        return 'matched';
+    }
+    throwAppOutboxInsertConflict(computed);
 }
 
 async function insertAppOutboxRow(transaction: PSqlSql, computed: AppOutboxInsert): Promise<boolean> {
@@ -105,7 +120,14 @@ async function insertAppOutboxRow(transaction: PSqlSql, computed: AppOutboxInser
         returning ri_row_id
     `;
     if (inserted.length > 1) {
-        throw computed.conflict;
+        throwAppOutboxInsertConflict(computed);
     }
     return inserted.length === 1;
+}
+
+function throwAppOutboxInsertConflict(computed: AppOutboxInsert): never {
+    throw new ResourceInboxInvariantCorruptionError(
+        computed.entry.key,
+        'App outbox insert did not create exactly one row'
+    );
 }

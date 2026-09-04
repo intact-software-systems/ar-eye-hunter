@@ -7,11 +7,9 @@ import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from '../rou
 
 const FIXTURES = 'packages/tests/repo/mutation-route-ownership/fixtures/mutation-boundary-capability-receivers';
 const GROUP_OWNER = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
-const GROUP_TYPES = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 const TOPOLOGY_OWNER = 'packages/shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 const AUTH_OWNER = 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 const CRDT_OWNER = 'packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
-const CRDT_TYPES = 'packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 const CLIENT_OWNER = 'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 
 describe('Mutation route owner registration collections contracts', () => {
@@ -42,12 +40,16 @@ describe('Mutation route owner registration collections contracts', () => {
         ).toEqual([]);
     });
 
-    it('rejects GROUP_CREATE removed from the imported live group registration collection', () => {
-        const source = readFileSync(GROUP_TYPES, 'utf8');
-        const mutated = source.replace('  AppInboxType.GROUP_CREATE,\n', '');
+    it('rejects a missing direct group registration', () => {
+        const source = readFileSync(GROUP_OWNER, 'utf8');
+        const mutated = replaceRegistrationType(
+            source,
+            'GROUP_CREATE',
+            'GROUP_UPDATE'
+        );
         expect(mutated).not.toBe(source);
 
-        expect(validateWithOverrides(new Map([[GROUP_TYPES, mutated]]))).toEqual(
+        expect(validateWithOverrides(new Map([[GROUP_OWNER, mutated]]))).toEqual(
             expect.arrayContaining([
                 expect.stringContaining('GROUP_CREATE owner dispatch is not connected')
             ])
@@ -66,28 +68,29 @@ describe('Mutation route owner registration collections contracts', () => {
         );
     });
 
-    it('rejects a CRDT type removed from its imported live registration collection', () => {
-        const source = readFileSync(CRDT_TYPES, 'utf8');
-        const mutated = source.replace('  AppInboxType.CRDT_UPDATE_APPEND,\n', '');
+    it('rejects a missing direct CRDT registration', () => {
+        const source = readFileSync(CRDT_OWNER, 'utf8');
+        const mutated = replaceRegistrationType(
+            source,
+            'CRDT_UPDATE_APPEND',
+            'CRDT_PROJECTION_REBUILD'
+        );
         expect(mutated).not.toBe(source);
 
-        expect(
-            validateWithOverrides(
-                new Map([
-                    [CRDT_OWNER, readFileSync(CRDT_OWNER, 'utf8')],
-                    [CRDT_TYPES, mutated]
-                ])
-            )
-        ).toEqual(
+        expect(validateWithOverrides(new Map([[CRDT_OWNER, mutated]]))).toEqual(
             expect.arrayContaining([
                 expect.stringContaining('CRDT_UPDATE_APPEND owner dispatch is not connected')
             ])
         );
     });
 
-    it('binds topology registrations to the topology owner types', () => {
+    it('rejects a missing direct topology registration', () => {
         const topology = readFileSync(TOPOLOGY_OWNER, 'utf8');
-        const withoutTopology = topology.replace('    AppInboxType.TOPOLOGY_CONFIG_PUT,\n', '');
+        const withoutTopology = replaceRegistrationType(
+            topology,
+            'TOPOLOGY_CONFIG_PUT',
+            'TOPOLOGY_CONFIG_OVERRIDE_PUT'
+        );
         expect(withoutTopology).not.toBe(topology);
 
         expect(validateWithOverrides(new Map([[TOPOLOGY_OWNER, withoutTopology]]))).toEqual(
@@ -116,4 +119,15 @@ function validateWithOverrides(overrides: ReadonlyMap<string, string>): readonly
     return validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
         sourceOverrides: overrides
     });
+}
+
+function replaceRegistrationType(
+    source: string,
+    type: string,
+    replacement: string
+): string {
+    return source.replace(
+        `type: AppInboxType.${type},`,
+        `type: AppInboxType.${replacement},`
+    );
 }

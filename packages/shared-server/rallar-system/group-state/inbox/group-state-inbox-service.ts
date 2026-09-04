@@ -195,13 +195,6 @@ export class GroupStateInboxService {
         enqueue: AuthenticatedGroupMutationEnqueue,
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>> {
-        return await this.processAuthenticatedGroupEntryUntilCompletionResult(enqueue, authority);
-    }
-
-    async processAuthenticatedGroupEntryUntilCompletionResult(
-        enqueue: AuthenticatedGroupMutationEnqueue,
-        authority: IssuedAuthSession
-    ): Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>> {
         const prepared = await this.prepareAuthenticatedGroupMutation(enqueue, authority);
         return await this.commandClient.enqueueAndWaitForResult<GroupStateInboxDurableResult>(
             prepared,

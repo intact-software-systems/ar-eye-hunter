@@ -1,4 +1,4 @@
-import type { ALMessage, ALRoute } from './al-contract.ts';
+import type { ALMessage } from './al-contract.ts';
 import type {
     ALAckPayload,
     ALAckStatus,
@@ -11,11 +11,25 @@ import {
     computeALUnicastMessage,
     type ALMessageConstructionFacts
 } from './al-message-computation.ts';
+import type { ALQosPolicyRequest } from './al-policy.ts';
 import type { ALOrderingObservation } from './al-runtime.ts';
 
 export const AL_CONTROL_ACK_TYPE_ID = 'al.control.ack.v1';
 export const AL_CONTROL_NACK_TYPE_ID = 'al.control.nack.v1';
 export const AL_CONTROL_REPAIR_TYPE_ID = 'al.control.repair.v1';
+
+const ACKNOWLEDGEMENT_QOS = {
+    delivery: { algo: 'best-effort' },
+    durability: { algo: 'volatile' },
+    ack: { algo: 'none', opts: { timeoutMs: 250 } }
+} satisfies ALQosPolicyRequest;
+
+const RETRIED_CONTROL_QOS = {
+    delivery: { algo: 'at-least-once' },
+    durability: { algo: 'local-outbox' },
+    retry: { algo: 'exp-backoff', opts: { maxAttempts: 3 } },
+    ack: { algo: 'none', opts: { timeoutMs: 250 } }
+} satisfies ALQosPolicyRequest;
 
 export interface ALControlMessageConstructionFacts extends ALMessageConstructionFacts {
     readonly observedAtEpochMs: number;
@@ -50,28 +64,7 @@ export type ALControlMessageComputationInput =
         facts: ALControlMessageConstructionFacts;
     }>;
 
-interface ALControlOrderingPayload {
-    readonly orderingKey: string | undefined;
-    readonly expectedSeq: number | undefined;
-    readonly missingSeqs: readonly number[] | undefined;
-}
-
 export function computeALControlMessage(input: ALControlMessageComputationInput): ALMessage {
-    const typeId = toALControlTypeId(input.kind);
-    return computeALUnicastMessage({
-        senderId: input.senderId,
-        route: toControlRoute(input, typeId),
-        toPeerId: input.toPeerId,
-        typeId,
-        resource: toALControlPayload(input),
-        facts: input.facts,
-        options: { qos: toALControlQos(input.kind) }
-    });
-}
-
-function toALControlPayload(
-    input: ALControlMessageComputationInput
-): ALAckPayload | ALNackPayload | ALRepairPayload {
     const common = {
         fromPeerId: input.senderId,
         toPeerId: input.toPeerId,
@@ -79,68 +72,56 @@ function toALControlPayload(
     };
     switch (input.kind) {
         case 'ack':
-            return { ...common, ackedMsgId: input.ackedMsgId, status: input.status };
+            return computeControlMessage(
+                input,
+                AL_CONTROL_ACK_TYPE_ID,
+                { ...common, ackedMsgId: input.ackedMsgId, status: input.status }
+            );
         case 'nack':
-            return {
+            return computeControlMessage(input, AL_CONTROL_NACK_TYPE_ID, {
                 ...common,
                 msgId: input.msgId,
                 reason: input.reason,
                 ...toOrderingPayload(input.ordering),
                 serverSnapshotVersion: input.serverSnapshotVersion
-            };
+            });
         case 'repair':
-            return {
+            return computeControlMessage(input, AL_CONTROL_REPAIR_TYPE_ID, {
                 ...common,
                 msgId: input.msgId,
                 reason: input.reason,
                 ...toOrderingPayload(input.ordering)
-            };
+            });
     }
 }
 
-function toOrderingPayload(ordering: ALOrderingObservation | undefined): ALControlOrderingPayload {
+function computeControlMessage(
+    input: ALControlMessageComputationInput,
+    typeId: string,
+    resource: ALAckPayload | ALNackPayload | ALRepairPayload
+): ALMessage {
+    const referencedMessageId = input.kind === 'ack' ? input.ackedMsgId : input.msgId;
+    return computeALUnicastMessage({
+        senderId: input.senderId,
+        route: {
+            topicId: 'al-control',
+            resourceId: `${referencedMessageId}:${typeId}`,
+            contextId: `${input.senderId}:${input.toPeerId}`
+        },
+        toPeerId: input.toPeerId,
+        typeId,
+        resource,
+        facts: input.facts,
+        options: {
+            qos: input.kind === 'ack' ? ACKNOWLEDGEMENT_QOS : RETRIED_CONTROL_QOS
+        }
+    });
+}
+
+function toOrderingPayload(ordering: ALOrderingObservation | undefined) {
     return {
         orderingKey: ordering?.trackKey,
         expectedSeq: ordering?.expectedSeq,
         missingSeqs: ordering?.missingSeqs
-    };
-}
-
-function toALControlTypeId(kind: ALControlMessageComputationInput['kind']): string {
-    switch (kind) {
-        case 'ack':
-            return AL_CONTROL_ACK_TYPE_ID;
-        case 'nack':
-            return AL_CONTROL_NACK_TYPE_ID;
-        case 'repair':
-            return AL_CONTROL_REPAIR_TYPE_ID;
-    }
-}
-
-function toALControlQos(kind: ALControlMessageComputationInput['kind']) {
-    const ack = { algo: 'none' as const, opts: { timeoutMs: 250 } };
-    return kind === 'ack'
-        ? {
-            delivery: { algo: 'best-effort' as const },
-            durability: { algo: 'volatile' as const },
-            ack
-        }
-        : {
-            delivery: { algo: 'at-least-once' as const },
-            durability: { algo: 'local-outbox' as const },
-            retry: { algo: 'exp-backoff' as const, opts: { maxAttempts: 3 } },
-            ack
-        };
-}
-
-function toControlRoute(
-    input: ALControlMessageComputationInput,
-    controlTypeId: string
-): ALRoute {
-    const msgId = input.kind === 'ack' ? input.ackedMsgId : input.msgId;
-    return {
-        topicId: 'al-control',
-        resourceId: `${msgId}:${controlTypeId}`,
-        contextId: `${input.senderId}:${input.toPeerId}`
     };
 }

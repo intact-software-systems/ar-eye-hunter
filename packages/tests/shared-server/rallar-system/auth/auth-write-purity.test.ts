@@ -36,20 +36,25 @@ describe('auth mutation write purity', () => {
             expiredByTokenEntry: null,
             expiredBySessionEntry: null
         };
+        const facts = { kind: 'issue-session', serviceId: 'auth-test' } as const;
         const computed = computeAuthMutation({
             command,
             read,
-            facts: { kind: 'issue-session' },
-            serviceId: 'auth-test'
+            facts
         });
-        validateAuthMutation(command, read, computed);
+        validateAuthMutation({ command, read, facts, computed });
         expect(computed.persistence.operations).toHaveLength(2);
         expect(() =>
-            validateAuthMutation(command, read, {
-                ...computed,
-                persistence: { operations: [], logoutOutbox: null }
+            validateAuthMutation({
+                command,
+                read,
+                facts,
+                computed: {
+                    ...computed,
+                    persistence: { operations: [], logoutOutbox: null }
+                }
             })
-        ).toThrow('computed persistence differs');
+        ).toThrow('Auth computed value differs');
 
         const originalStringify = JSON.stringify;
         JSON.stringify = () => {

@@ -5,8 +5,7 @@ import {
     type CrdtAppendCommand,
     type CrdtMutationCommand,
     type CrdtMutationComputed,
-    type CrdtMutationRead,
-    type CrdtMutationRepository
+    type CrdtMutationRead
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 import {
@@ -15,6 +14,7 @@ import {
     toRallarCrdtDocumentKey,
     type RallarCrdtDocumentMetadata,
     type RallarCrdtDocumentRef,
+    type RallarCrdtJsonValue,
     type RallarCrdtSnapshotEnvelope,
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
@@ -172,14 +172,9 @@ describe('CRDT command and outbox invariants', () => {
 });
 
 function compute(command: CrdtMutationCommand, state: CrdtMutationRead): CrdtMutationComputed {
-    const repository: CrdtMutationRepository = {
-        readMutation: () => Promise.resolve(state),
-        writeMutation: () => Promise.resolve(),
-        writeOutbox: () => Promise.resolve()
-    };
+    const repository = { readMutation: () => Promise.resolve(state) };
     const service = createCrdtMutationService({
         repository,
-        createWriter: () => repository,
         serviceId: 'server-1'
     });
     const computed = service.compute({ command, read: state });
@@ -284,7 +279,11 @@ function update(updateId: string): RallarCrdtUpdateEnvelope {
     };
 }
 
-function snapshotFor(document: RallarCrdtDocumentRef, snapshotId: string, value: unknown): RallarCrdtSnapshotEnvelope {
+function snapshotFor(
+    document: RallarCrdtDocumentRef,
+    snapshotId: string,
+    value: RallarCrdtJsonValue
+): RallarCrdtSnapshotEnvelope<RallarCrdtJsonValue> {
     return {
         protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
         document,

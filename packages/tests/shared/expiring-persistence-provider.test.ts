@@ -121,4 +121,82 @@ describe('Expiring persistence providers', () => {
             }
         }
     );
+
+    it.each(['getItem', 'getAllKeys', 'deleteExpired'] as const)(
+        '%s preserves a same-expiry replacement that follows its read',
+        async (operation) => {
+            const dbName = `same-expiry-conflict-${crypto.randomUUID()}`;
+            const storeName = 'entries';
+            const provider = new IndexedDbStringPersistenceProvider<{ value: number; }>({
+                dbName,
+                storeName,
+                keyPrefix: 'inbound'
+            });
+            const expireAtTimestamp = Date.now() - 1;
+            await provider.setItem('expired', { value: 1 }, { expireAtTimestamp });
+
+            const openTransaction = IDBDatabase.prototype.transaction;
+            let cleanupAttempts = 0;
+            const transactions = vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(function (
+                this: IDBDatabase,
+                storeNames,
+                mode,
+                options
+            ) {
+                if (this.name === dbName && mode === 'readwrite') {
+                    cleanupAttempts += 1;
+                    if (cleanupAttempts === 1) {
+                        const replacement = openTransaction.call(this, storeNames, mode, options);
+                        replacement.objectStore(storeName).put({
+                            key: 'inbound:expired',
+                            value: { value: 2 },
+                            expireAtTimestamp,
+                            writeToken: 'replacement'
+                        });
+                    }
+                }
+                return openTransaction.call(this, storeNames, mode, options);
+            });
+            try {
+                const cleanup = operation === 'getItem'
+                    ? provider.getItem('expired')
+                    : operation === 'getAllKeys'
+                    ? provider.getAllKeys()
+                    : provider.deleteExpired();
+
+                await expect(cleanup).rejects.toThrow('IndexedDB persistence cleanup conflicted');
+                expect(cleanupAttempts).toBe(1);
+                expect(await readRawValue(dbName, storeName, 'inbound:expired')).toMatchObject({
+                    value: { value: 2 },
+                    expireAtTimestamp,
+                    writeToken: 'replacement'
+                });
+            }
+            finally {
+                transactions.mockRestore();
+            }
+        }
+    );
 });
+
+async function readRawValue(
+    dbName: string,
+    storeName: string,
+    key: string
+): Promise<unknown> {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(dbName);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'));
+    });
+    try {
+        return await new Promise((resolve, reject) => {
+            const request = database.transaction(storeName).objectStore(storeName).get(key);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error ?? new Error('IndexedDB get failed'));
+        });
+    }
+    finally {
+        database.close();
+    }
+}

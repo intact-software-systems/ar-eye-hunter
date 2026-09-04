@@ -9,6 +9,7 @@ import {
     computeAppOutboxInsert,
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
+import { serializeCanonicalJson } from '../../protocol/canonical-json.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { requireAdminPrunePageSize, type AdminPruneAppData } from '../inbox/admin-prune-command-codec.ts';
 import {
@@ -23,23 +24,27 @@ import {
     type AdminPruneAggregate
 } from './admin-prune-progress.ts';
 
-export type AdminPruneCandidatePage = Readonly<{
-    rowIds: readonly string[];
-    hasMore: boolean;
-}>;
+export interface AdminPruneCandidate {
+    readonly rowId: string;
+    readonly revisionToken: string;
+}
 
-export type AdminPrunePageRead =
-    & AdminPruneCandidatePage
-    & Readonly<{
-        aggregate: AdminPruneAggregate;
-        expectedAggregate: string;
-        authority: Readonly<{ allowed: boolean; code: string; }>;
-        nowEpochMs: number;
-        serviceId: string;
-    }>;
+export interface AdminPruneCandidatePage {
+    readonly candidates: readonly AdminPruneCandidate[];
+    readonly hasMore: boolean;
+}
+
+export interface AdminPrunePageRead extends AdminPruneCandidatePage {
+    readonly aggregate: AdminPruneAggregate;
+    readonly expectedAggregate: string;
+    readonly authority: Readonly<{ allowed: boolean; code: string; }>;
+    readonly nowEpochMs: number;
+    readonly serviceId: string;
+}
 
 interface AdminPrunePageDeleteBase {
-    readonly rowIds: readonly string[];
+    readonly candidates: readonly AdminPruneCandidate[];
+    readonly candidateRowsJson: string;
     readonly capturedAt: Date;
 }
 
@@ -49,27 +54,25 @@ export type AdminPrunePageDelete =
     | Readonly<AdminPrunePageDeleteBase & { category: 'resource-inbox-results'; }>
     | Readonly<AdminPrunePageDeleteBase & { category: 'app-data'; appData: AdminPruneAppData; }>;
 
-export type AdminPruneProgressWrite = Readonly<{
-    expectedAggregate: string;
-    aggregateSuccessor: ResourceEntry;
-    aggregateSuccessorExpiryAtIsoTimestamp: string;
-}>;
+export interface AdminPruneProgressWrite {
+    readonly expectedAggregate: string;
+    readonly aggregateSuccessor: ResourceEntry;
+    readonly aggregateSuccessorExpiryAtIsoTimestamp: string;
+}
 
-export type AdminPrunePageComputed =
-    & AdminPruneProgressWrite
-    & Readonly<{
-        kind: 'page';
-        jobId: string;
-        category: AdminPruneExpiredCategory;
-        rowIds: readonly string[];
-        deletedRows: number;
-        deletion: AdminPrunePageDelete;
-        next: AdminPrunePageWork | null;
-        successorOutboxWrite: AppOutboxInsert | null;
-        reservationFinish: ResourceInboxReservationFinish;
-    }>;
+export interface AdminPrunePageComputed extends AdminPruneProgressWrite {
+    readonly kind: 'page';
+    readonly jobId: string;
+    readonly category: AdminPruneExpiredCategory;
+    readonly rowIds: readonly string[];
+    readonly deletedRows: number;
+    readonly deletion: AdminPrunePageDelete;
+    readonly next: AdminPrunePageWork | null;
+    readonly successorOutboxWrite: AppOutboxInsert | null;
+    readonly reservationFinish: ResourceInboxReservationFinish;
+}
 
-export type AdminPrunePageRepository = Readonly<{
+export interface AdminPrunePageRepository {
     readPage(
         input: Readonly<{
             category: AdminPruneExpiredCategory;
@@ -99,7 +102,7 @@ export type AdminPrunePageRepository = Readonly<{
         transaction: PSqlSql,
         completion: ResourceInboxReservationFinish
     ): Promise<boolean>;
-}>;
+}
 
 export interface AdminPrunePageWorkerOptions {
     readonly database: PSqlSql;
@@ -166,7 +169,7 @@ export class AdminPrunePageWorker {
         command: ReservedAdminPrunePageWork,
         read: AdminPrunePageRead
     ): AdminPrunePageComputed {
-        const cursor = read.rowIds.at(-1) ?? command.afterCursor;
+        const cursor = read.candidates.at(-1)?.rowId ?? command.afterCursor;
         const next = read.hasMore && cursor !== null
             ? {
                 kind: 'page' as const,
@@ -182,13 +185,14 @@ export class AdminPrunePageWorker {
                 appData: command.appData
             }
             : null;
-        const deletion = toAdminPrunePageDelete(command, read.rowIds);
+        const deletion = toAdminPrunePageDelete(command, read.candidates);
+        const rowIds = deletion.candidates.map((candidate) => candidate.rowId);
         const page = {
             kind: 'page',
             jobId: command.jobId,
             category: command.category,
-            rowIds: deletion.rowIds,
-            deletedRows: deletion.rowIds.length,
+            rowIds,
+            deletedRows: rowIds.length,
             deletion,
             next
         } as const;
@@ -235,7 +239,7 @@ export class AdminPrunePageWorker {
                 status: 403
             });
         }
-        if (read.rowIds.length > command.pageSize) {
+        if (read.candidates.length > command.pageSize) {
             throw new TypeError('Admin prune computed page exceeds its command');
         }
         const expected = this.compute(command, read);
@@ -282,7 +286,11 @@ function toAdminPrunePagePersistence(computed: AdminPrunePageComputed): JsonWire
         deletedRows: computed.deletedRows,
         deletion: {
             category: computed.deletion.category,
-            rowIds: computed.deletion.rowIds,
+            candidates: computed.deletion.candidates.map((candidate) => ({
+                rowId: candidate.rowId,
+                revisionToken: candidate.revisionToken
+            })),
+            candidateRowsJson: computed.deletion.candidateRowsJson,
             capturedAtEpochMs: computed.deletion.capturedAt.getTime(),
             appData: computed.deletion.category === 'app-data' ? computed.deletion.appData : null
         },
@@ -330,14 +338,7 @@ function toAppOutboxPersistence(computed: AppOutboxInsert): JsonWireValue {
         startedAt: computed.startedAt,
         finishedAt: computed.finishedAt,
         nextAt: computed.nextAt,
-        attempts: computed.attempts,
-        conflict: {
-            name: computed.conflict.name,
-            message: computed.conflict.message,
-            code: computed.conflict.code,
-            status: computed.conflict.status,
-            key: computed.conflict.key
-        }
+        attempts: computed.attempts
     };
 }
 
@@ -365,10 +366,12 @@ function toResourceEntryPersistence(entry: Readonly<ResourceEntry>): JsonWireVal
 
 export function toAdminPrunePageDelete(
     command: AdminPrunePageWork,
-    rowIds: readonly string[]
+    candidates: readonly AdminPruneCandidate[]
 ): AdminPrunePageDelete {
+    const observedCandidates = candidates.map((candidate) => ({ ...candidate }));
     const base = {
-        rowIds: [...rowIds],
+        candidates: observedCandidates,
+        candidateRowsJson: serializeCanonicalJson(observedCandidates),
         capturedAt: new Date(command.capturedAtEpochMs)
     };
     switch (command.category) {

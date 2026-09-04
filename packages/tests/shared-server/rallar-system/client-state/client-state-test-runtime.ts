@@ -39,7 +39,6 @@ import {
 
 const TEST_AUTH_ISSUED_AT_EPOCH_MS = 0;
 const TEST_AUTH_EXPIRES_AT_EPOCH_MS = 253_402_300_799_000;
-const MAX_TEST_MUTATION_ATTEMPTS = 8;
 
 type ClientMutationInput = Parameters<typeof toClientMutationCommand>[0];
 interface ClientStateTestExecutorInput {
@@ -111,37 +110,36 @@ export function createClientStateTestDriver(
 function createClientStateTestMutationExecutor(
     input: ClientStateTestExecutorInput
 ): ClientStateTestMutationExecutor {
+    const attemptsByCommandId = new Map<string, number>();
     return async (inputFactory) => {
-        for (let attempt = 1; attempt <= MAX_TEST_MUTATION_ATTEMPTS; attempt += 1) {
-            const computed = await computeClientStateTestMutation(input, inputFactory, attempt);
-            try {
-                if (requiresClientWrite(computed)) {
-                    await writeClientStateTestMutation(input, computed);
-                }
-                if (computed.outcome === 'idempotency-conflict') {
-                    throw new Error('Validated idempotency conflict is unreachable');
-                }
-                return toClientStateWritten(computed);
+        const commandInput = inputFactory();
+        const attempt = (attemptsByCommandId.get(commandInput.commandId) ?? 0) + 1;
+        attemptsByCommandId.set(commandInput.commandId, attempt);
+        try {
+            const computed = await computeClientStateTestMutation(input, commandInput, attempt);
+            if (requiresClientWrite(computed)) {
+                await writeClientStateTestMutation(input, computed);
             }
-            catch (error) {
-                if (
-                    !(error instanceof RuntimeStateWriteConflictError) ||
-                    attempt === MAX_TEST_MUTATION_ATTEMPTS
-                ) {
-                    throw error;
-                }
+            if (computed.outcome === 'idempotency-conflict') {
+                throw new Error('Validated idempotency conflict is unreachable');
             }
+            attemptsByCommandId.delete(commandInput.commandId);
+            return toClientStateWritten(computed);
         }
-        throw new Error('Client test driver retry loop exhausted');
+        catch (error) {
+            if (!(error instanceof RuntimeStateWriteConflictError)) {
+                attemptsByCommandId.delete(commandInput.commandId);
+            }
+            throw error;
+        }
     };
 }
 
 async function computeClientStateTestMutation(
     context: ClientStateTestExecutorInput,
-    inputFactory: () => ClientMutationInput,
+    input: ClientMutationInput,
     attempt: number
 ): Promise<ClientMutationComputed> {
-    const input = inputFactory();
     const authority = await toTestAuthority(context.authSessions, input, context.serviceId);
     const command = await toClientMutationCommand(
         input,

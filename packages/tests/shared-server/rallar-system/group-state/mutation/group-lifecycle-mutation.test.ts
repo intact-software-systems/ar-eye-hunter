@@ -86,7 +86,7 @@ describe('group lifecycle transition computation', () => {
         expect(computed.outcome).toBe('write');
         const written = writtenMutation(computed);
         expect((written.guard.value as Group).lifecycleState).toBe('reconfiguring');
-        const summaryMessage = JSON.parse(written.outboxEntries[0]!.resource);
+        const summaryMessage = JSON.parse(written.outboxWrites[0]!.entry.resource);
         expect(JSON.parse(summaryMessage.payload.resource)).toMatchObject({
             data: { event: { payload: { topologyReplanOrigin: 'commanded' } } }
         });
@@ -103,7 +103,7 @@ describe('group lifecycle transition computation', () => {
         const written = writtenMutation(computed);
         expect((written.guard.value as Group).lifecycleState).toBe('active');
         expect((written.guard.value as Group).formationEpoch).toBe(4);
-        expect(written.outboxEntries).toHaveLength(1);
+        expect(written.outboxWrites).toHaveLength(1);
     });
 
     it.each(
@@ -480,7 +480,9 @@ describe('group lifecycle transition computation', () => {
         }
         expect((computed.guard.value as Group).lifecycleState).toBe(row.landing);
         expect(
-            computed.outboxEntries.filter((entry) => entry.key.topicId === APP_OUTBOX_FORMATION_TIMER_TOPIC)
+            computed.outboxWrites.filter(
+                (write) => write.entry.key.topicId === APP_OUTBOX_FORMATION_TIMER_TOPIC
+            )
         ).toHaveLength(row.timers);
     });
 

@@ -12,6 +12,9 @@ import type { RtcTopologyMutationComputed, RtcTopologyMutationRead } from '../..
 import type { RtcTopologyWorkRuntime } from '../../mutation/rtc-topology-outbox-work.ts';
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyPlanningService } from '../../planning/group-topology-planning-service.ts';
+import { computeRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
+import type { RtcTopologyDeliveryAppendPort } from '../delivery/rtc-topology-delivery-append-port.ts';
+import type { RtcTopologyDeliveryPublicationReader } from '../delivery/rtc-topology-delivery-publication-reader.ts';
 import {
     computeRtcTopologyReplayWrite,
     computeRtcTopologyWorkWrite,
@@ -21,7 +24,8 @@ import {
     type AcceptedRtcTopologyWork,
     type AcceptedRtcTopologyWorkWrite,
     type CommittedCriterionPetition,
-    type ComputeRtcTopologyWorkWriteInput
+    type ComputeRtcTopologyWorkWriteInput,
+    type RtcTopologyReplayRead
 } from './compute-rtc-topology-work-write.ts';
 import {
     computeRtcTopologyWork,
@@ -45,7 +49,6 @@ import {
 } from './topology-promotion-request.ts';
 import {
     writeRtcTopologyPublicationTransaction,
-    type RtcTopologyDeliveryOptions,
     type RtcTopologyPublicationTransactionWrite
 } from './write-rtc-topology-publication-transaction.ts';
 
@@ -57,6 +60,12 @@ import {
     type FormationCriterionPort
 } from './formation-criterion-observer.ts';
 
+export interface RtcTopologyDeliveryOptions {
+    readonly publisherStreamId: string;
+    readonly reader: RtcTopologyDeliveryPublicationReader;
+    readonly append: RtcTopologyDeliveryAppendPort;
+}
+
 interface RtcTopologyWorkHandlerOptions {
     readonly runtime: RtcTopologyWorkRuntime;
     readonly database: PSqlSql;
@@ -64,6 +73,7 @@ interface RtcTopologyWorkHandlerOptions {
         GroupTopologyPlanningService,
         | 'readTopologyPlanningAuthority'
         | 'observeCommittedTopology'
+        | 'recordTopologyPlanningObservation'
         | 'recordTopologyPublication'
         | 'recordTopologyPlanFrozen'
         | 'recordTopologyRebuildSkippedFingerprint'
@@ -122,7 +132,8 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         workId
     );
     if (mutationRead.publicationClaim) {
-        await processLoadedRtcTopologyWork(options, mutationRead, reservationFinish);
+        const replayRead = await readLoadedRtcTopologyWork(options, mutationRead);
+        await processLoadedRtcTopologyWork(options, replayRead, reservationFinish);
         return;
     }
     const facts: RtcTopologyWorkFacts = {
@@ -179,7 +190,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
 
 async function processLoadedRtcTopologyWork(
     options: RtcTopologyWorkHandlerOptions,
-    read: RtcTopologyMutationRead,
+    read: RtcTopologyReplayRead,
     reservationFinish: ResourceInboxReservationFinish
 ): Promise<void> {
     const replayInput = {
@@ -192,11 +203,36 @@ async function processLoadedRtcTopologyWork(
     await writeRtcTopologyPublicationTransaction({
         database: options.database,
         executionRepository: options.executionRepository,
-        deliveryAppend: options.topologyDelivery?.append
+        deliveryAppend: undefined
     }, computed.transaction);
     options.topologyPlanning.recordTopologyPublication(true);
     options.wakeQueue?.();
     options.wakeReplay?.();
+}
+
+async function readLoadedRtcTopologyWork(
+    options: RtcTopologyWorkHandlerOptions,
+    mutation: RtcTopologyMutationRead
+): Promise<RtcTopologyReplayRead> {
+    const publication = mutation.publicationClaim?.publication;
+    if (!publication) {
+        throw new TypeError('RTC topology loaded replay requires its durable publication');
+    }
+    const outboxKey = computeRtcTopologyPublicationOutbox(publication).key;
+    const [outbox, delivery] = await Promise.all([
+        options.runtime.outboxQueueReader.outbox.getItem(outboxKey),
+        options.topologyDelivery
+            ? options.topologyDelivery.reader.findPublicationDelivery({
+                groupRef: publication.groupRef,
+                publicationId: publication.publicationId
+            })
+            : Promise.resolve(undefined)
+    ]);
+    return {
+        mutation,
+        outbox: outbox ?? null,
+        delivery: delivery ?? null
+    };
 }
 
 /**
@@ -237,13 +273,11 @@ async function readRtcTopologyWork(
     const { options, facts, mutationRead } = input;
     const { workEnvelope } = facts;
     const work = workEnvelope.data;
-    const membershipDeltaWork = work.kind === 'group-revision';
     const [authority, promotionRead, storedInputFingerprint] = await Promise.all([
         options.topologyPlanning.readTopologyPlanningAuthority({
             groupRef: work.groupSnapshot.group,
             requestOptions: fromCanonicalGroupTopologyConfigPatch(work.requestOptions),
-            knownGroup: work.groupSnapshot,
-            snapshotSelection: membershipDeltaWork ? 'preserve-known-revision' : 'prefer-current'
+            knownGroup: work.groupSnapshot
         }),
         readTopologyPromotion({
             publication: options.topologyPublication,
@@ -290,6 +324,7 @@ async function writeAcceptedRtcTopologyWork(
     const computed = accepted.computed;
     if (computed.outcome === 'superseded') {
         await writeCompletionOnly(options.database, computedWrite);
+        recordCommittedPlanningObservation(options, accepted);
         options.topologyPlanning.observeCommittedTopology(accepted.group, computed.current);
         // The winning cycle publishes, but it petitions from its own
         // revision: this one still carries presence evidence the winner may
@@ -305,6 +340,7 @@ async function writeAcceptedRtcTopologyWork(
         executionRepository: options.executionRepository,
         deliveryAppend: options.topologyDelivery?.append
     }, transaction);
+    recordCommittedPlanningObservation(options, accepted);
     await finishCommittedTopologyWork(options, accepted, computed);
 }
 
@@ -353,6 +389,7 @@ async function writeSkippedTopologyWork(
         options.topologyPlanning.recordTopologyPlanFrozen();
     }
     else {
+        recordCommittedPlanningObservation(options, accepted);
         options.topologyPlanning.recordTopologyPublication(false);
     }
     await petitionCommittedCriterion(options, accepted.criterionPetition);
@@ -382,6 +419,15 @@ async function finishCommittedTopologyWork(
         options.topologyPlanning.recordTopologyPublication(true);
         options.wakeQueue?.();
         options.wakeReplay?.();
+    }
+}
+
+function recordCommittedPlanningObservation(
+    options: RtcTopologyWorkHandlerOptions,
+    accepted: Extract<AcceptedRtcTopologyWork, { decision: 'accepted' | 'skipped-unchanged'; }>
+): void {
+    if (accepted.planningObservation !== null) {
+        options.topologyPlanning.recordTopologyPlanningObservation(accepted.planningObservation);
     }
 }
 

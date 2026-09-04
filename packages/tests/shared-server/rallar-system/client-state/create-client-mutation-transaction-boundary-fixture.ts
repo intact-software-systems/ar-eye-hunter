@@ -84,6 +84,7 @@ export async function createClientMutationTransactionBoundaryFixture(
         }),
         sessionGenerationLifecycle: durable.sessionGenerationLifecycle,
         expiryCandidates: durable,
+        expiryContinuationWriter: { write: async () => undefined },
         snapshotObserver: {
             observeSnapshot: async (snapshot) => {
                 actions.push('observe');

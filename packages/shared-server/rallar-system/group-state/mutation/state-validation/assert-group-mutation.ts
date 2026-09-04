@@ -22,7 +22,7 @@ export function assertGroupMutation(
     assertGroupMutationFacts(input.facts);
     assertGroupMutationAuthority(input.command, input.facts);
     requireJsonSafe(
-        input.computed.outcome === 'write' ? { ...input.computed, outboxEntries: [] } : input.computed,
+        input.computed.outcome === 'write' ? { ...input.computed, outboxWrites: [] } : input.computed,
         'Group mutation computed result'
     );
     assertComputedGroupMutation(input);
@@ -31,7 +31,13 @@ export function assertGroupMutation(
         read: input.read,
         facts: input.facts
     });
-    if (!jsonEquals(input.computed, canonical)) {
+    const receivedProjection = input.computed.outcome === 'write'
+        ? { ...input.computed, outboxWrites: [] }
+        : input.computed;
+    const canonicalProjection = canonical.outcome === 'write'
+        ? { ...canonical, outboxWrites: [] }
+        : canonical;
+    if (!jsonEquals(receivedProjection, canonicalProjection)) {
         throw new TypeError(
             `Group ${input.command.operation} mutation differs from its canonical ` +
                 'deterministic projection'

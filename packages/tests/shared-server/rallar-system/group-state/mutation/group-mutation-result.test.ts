@@ -1,3 +1,4 @@
+import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import type {
     GroupMutationCommand,
     GroupMutationFacts,
@@ -195,16 +196,19 @@ describe('group mutation receipt causal invariants', () => {
                 },
                 {
                     ...computed,
-                    outboxEntries: []
+                    outboxWrites: []
                 },
                 {
                     ...computed,
-                    outboxEntries: [
+                    outboxWrites: [
                         {
-                            ...computed.outboxEntries[0],
-                            key: {
-                                ...computed.outboxEntries[0].key,
-                                resourceId: 'non-canonical-summary-entry'
+                            ...computed.outboxWrites[0],
+                            entry: {
+                                ...computed.outboxWrites[0]!.entry,
+                                key: {
+                                    ...computed.outboxWrites[0]!.entry.key,
+                                    resourceId: 'non-canonical-summary-entry'
+                                }
                             }
                         }
                     ]
@@ -238,8 +242,8 @@ describe('group mutation receipt causal invariants', () => {
             const consistentlyWrongEvent = {
                 ...computed,
                 event: sessionEvent,
-                outboxEntries: [
-                    computeGroupPresenceSummaryEntry(
+                outboxWrites: [
+                    computeAppOutboxInsert(computeGroupPresenceSummaryEntry(
                         {
                             effectKind: 'group-presence-summary',
                             aggregateRef: command.aggregateRef,
@@ -250,7 +254,7 @@ describe('group mutation receipt causal invariants', () => {
                             event: sessionEvent
                         },
                         facts.serviceId
-                    )
+                    ))
                 ]
             };
             const injectedSummary: GroupPresenceSummary = {

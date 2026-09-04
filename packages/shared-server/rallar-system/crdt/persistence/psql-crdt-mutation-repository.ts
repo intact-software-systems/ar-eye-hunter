@@ -118,14 +118,6 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
             storedSnapshotBytes: Number(snapshots[0]?.snapshot_bytes ?? 0)
         };
     }
-
-    async writeMutation(computed: CrdtMutationComputedWrite): Promise<void> {
-        await writeCrdtMutationRows(this.sql, computed);
-    }
-
-    async writeOutbox(writes: readonly AppOutboxInsert[]): Promise<void> {
-        await writeCrdtOutbox(this.sql, writes);
-    }
 }
 
 export async function writePSqlCrdtMutation(
@@ -147,7 +139,7 @@ async function writeCrdtMutationRows(
         ? await insertDocument(sql, computed.documentWrite)
         : await updateDocument(sql, computed.documentWrite);
     if (!guarded) {
-        throw computed.conflict;
+        throw new CrdtMutationConflictError(computed.documentKey);
     }
     if (computed.updateWrite) {
         await insertUpdate(sql, computed.updateWrite);

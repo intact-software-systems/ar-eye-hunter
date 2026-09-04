@@ -14,6 +14,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import { computeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { GroupPolicyDeniedError } from '../policy/group-policy-result.ts';
 
 import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
@@ -146,7 +147,7 @@ export function computeGroupMutationWriteResult(
         event,
         receipt,
         idempotency: toGroupMutationIdempotency(command, facts, receipt),
-        outboxEntries,
+        outboxWrites: outboxEntries.map(computeAppOutboxInsert),
         lifecyclePolicy: command.operation === 'createGroup' ? (command.input.lifecyclePolicy ?? null) : null,
         acceptedLayoutPromotion,
         plannedLayoutFence,

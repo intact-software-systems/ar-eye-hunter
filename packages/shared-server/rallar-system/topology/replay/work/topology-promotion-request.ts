@@ -7,8 +7,6 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { computeTopologyPromotionEntry } from '@shared-server/rallar-system/group-state/topology-promotion-outbox-entry.ts';
-import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
-import { PSqlResourceInboxEntryRepository } from '../../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 
 /**
  * The route-less promotion producer's read surface (decision 27): present
@@ -100,18 +98,4 @@ export function computeTopologyPromotionRequest(
         createdAtEpochMs: input.entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
         expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS
     });
-}
-
-/**
- * The durable half, inside the publication transaction: the mint commits or
- * rolls back with the row it promotes (decision 27's atomicity).
- */
-export async function writeTopologyPromotionRequest(
-    transaction: PSqlSql,
-    requestEntry: ResourceEntry | null
-): Promise<void> {
-    if (requestEntry === null) {
-        return;
-    }
-    await new PSqlResourceInboxEntryRepository(transaction).writeIfAbsentOrMatch(requestEntry);
 }

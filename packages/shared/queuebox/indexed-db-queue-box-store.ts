@@ -1,10 +1,17 @@
-import type { StoredResourceEntry } from './indexed-db-queue-box-entry.ts';
+import {
+    readIndexedDbRequest,
+    waitForIndexedDbTransaction
+} from '../persistence/indexed-db-request.ts';
+import {
+    decodeStoredResourceEntryValue,
+    type StoredResourceEntry
+} from './indexed-db-queue-box-entry.ts';
 import { EntityStatus, type ResourceEntryKeyString } from './ResourceEntry.ts';
 
 export type ReadFairnessStoredQueueEntriesInput = Readonly<{
     db: IDBDatabase;
     indexName: string;
-    maxPerType: number;
+    maxToScan: number;
     overdueBeforeEpochMs: number;
     storeName: string;
     typeIds: readonly string[];
@@ -28,80 +35,108 @@ export async function readStoredQueueEntries(
         return new Map();
     }
 
-    return await new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readonly');
-        const store = tx.objectStore(storeName);
-        const entries = new Map<ResourceEntryKeyString, StoredResourceEntry>();
-
-        tx.oncomplete = () => resolve(entries);
-        tx.onabort = () => reject(tx.error ?? new Error('IndexedDB queue read aborted'));
-        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB queue read failed'));
-
-        for (const keyString of keyStrings) {
-            const request = store.get(keyString);
-            request.onerror = () => reject(request.error ?? new Error('IndexedDB queue get failed'));
-            request.onsuccess = () => {
-                const stored = request.result as StoredResourceEntry | undefined;
-                if (stored) {
-                    entries.set(keyString, stored);
-                }
-            };
+    const transaction = db.transaction(storeName, 'readonly');
+    const completed = waitForIndexedDbTransaction(transaction);
+    const store = transaction.objectStore(storeName);
+    const stored = await Promise.all(
+        keyStrings.map((key) => readIndexedDbRequest<unknown>(store.get(key)))
+    );
+    await completed;
+    const entries = new Map<ResourceEntryKeyString, StoredResourceEntry>();
+    for (const [index, value] of stored.entries()) {
+        if (value !== undefined) {
+            const entry = decodeStoredResourceEntryValue(value);
+            if (entry.keyString !== keyStrings[index]) {
+                throw new TypeError('IndexedDB queue lookup returned a row for another key');
+            }
+            entries.set(keyStrings[index], entry);
         }
-    });
+    }
+    return entries;
 }
 
 export async function readAllStoredQueueEntries(
     db: IDBDatabase,
     storeName: string
 ): Promise<readonly StoredResourceEntry[]> {
-    return await new Promise((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readonly');
-        const request = tx.objectStore(storeName).openCursor();
-        const entries: StoredResourceEntry[] = [];
-
-        tx.oncomplete = () => resolve(entries);
-        tx.onabort = () => reject(tx.error ?? new Error('IndexedDB queue scan aborted'));
-        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB queue scan failed'));
-        request.onerror = () => reject(request.error ?? new Error('IndexedDB queue cursor failed'));
-        request.onsuccess = () => {
-            const cursor = request.result;
-            if (!cursor) {
-                return;
-            }
-            entries.push(cursor.value as StoredResourceEntry);
-            cursor.continue();
-        };
-    });
+    const transaction = db.transaction(storeName, 'readonly');
+    const completed = waitForIndexedDbTransaction(transaction);
+    const entries = await readIndexedDbRequest<unknown[]>(
+        transaction.objectStore(storeName).getAll()
+    );
+    await completed;
+    return entries.map(decodeStoredResourceEntryValue);
 }
 
 export async function readFairnessStoredQueueEntries(
     input: ReadFairnessStoredQueueEntriesInput
 ): Promise<ReadonlyMap<string, readonly StoredResourceEntry[]>> {
-    return await new Promise((resolve, reject) => {
-        const tx = input.db.transaction(input.storeName, 'readonly');
-        const index = tx.objectStore(input.storeName).index(input.indexName);
-        const entriesByType = new Map<string, StoredResourceEntry[]>();
-
-        tx.oncomplete = () => resolve(entriesByType);
-        tx.onabort = () => reject(tx.error ?? new Error('IndexedDB fairness read aborted'));
-        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB fairness read failed'));
-
-        for (const typeId of input.typeIds) {
-            const entries: StoredResourceEntry[] = [];
-            entriesByType.set(typeId, entries);
-            const request = index.openCursor(IDBKeyRange.bound(
-                [typeId, EntityStatus.RETRY, Number.MIN_SAFE_INTEGER, ''],
-                [typeId, EntityStatus.RETRY, input.overdueBeforeEpochMs, '\uffff']
-            ));
-            request.onerror = () => reject(request.error ?? new Error('IndexedDB fairness cursor failed'));
-            request.onsuccess = () => {
-                const cursor = request.result;
-                if (!cursor || entries.length >= input.maxPerType) {
-                    return;
-                }
-                entries.push(cursor.value as StoredResourceEntry);
-                cursor.continue();
-            };
+    const transaction = input.db.transaction(input.storeName, 'readonly');
+    const completed = waitForIndexedDbTransaction(transaction);
+    const index = transaction.objectStore(input.storeName).index(input.indexName);
+    const states = await Promise.all(input.typeIds.map(async (typeId) => ({
+        typeId,
+        entries: await readNextFairnessStoredQueueEntries(
+            index,
+            typeId,
+            input.overdueBeforeEpochMs
+        )
+    })));
+    let scanned = input.typeIds.length;
+    const active = new Set(states.filter((state) => state.entries.length > 0));
+    while (scanned < input.maxToScan && active.size > 0) {
+        const selected = [...active].reduce(earlierFairnessReadState);
+        const next = await readNextFairnessStoredQueueEntries(
+            index,
+            selected.typeId,
+            input.overdueBeforeEpochMs,
+            selected.entries.at(-1)
+        );
+        scanned += 1;
+        if (next.length === 0) {
+            active.delete(selected);
+            continue;
         }
-    });
+        selected.entries.push(next[0]);
+    }
+    await completed;
+    return new Map(states.map((state) => [state.typeId, state.entries]));
+}
+
+interface FairnessReadState {
+    readonly typeId: string;
+    readonly entries: StoredResourceEntry[];
+}
+
+async function readNextFairnessStoredQueueEntries(
+    index: IDBIndex,
+    typeId: string,
+    overdueBeforeEpochMs: number,
+    after?: StoredResourceEntry
+): Promise<StoredResourceEntry[]> {
+    const lower = after === undefined
+        ? [typeId, EntityStatus.RETRY, Number.MIN_SAFE_INTEGER, '']
+        : [typeId, EntityStatus.RETRY, after.fairnessDueEpochMs!, after.keyString];
+    const values = await readIndexedDbRequest<unknown[]>(index.getAll(
+        IDBKeyRange.bound(
+            lower,
+            [typeId, EntityStatus.RETRY, overdueBeforeEpochMs, '\uffff'],
+            after !== undefined
+        ),
+        1
+    ));
+    return values.map(decodeStoredResourceEntryValue);
+}
+
+function earlierFairnessReadState(
+    left: FairnessReadState,
+    right: FairnessReadState
+): FairnessReadState {
+    const leftEntry = left.entries.at(-1)!;
+    const rightEntry = right.entries.at(-1)!;
+    const dueOrder = leftEntry.fairnessDueEpochMs! - rightEntry.fairnessDueEpochMs!;
+    if (dueOrder !== 0) {
+        return dueOrder < 0 ? left : right;
+    }
+    return indexedDB.cmp(leftEntry.keyString, rightEntry.keyString) <= 0 ? left : right;
 }

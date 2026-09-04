@@ -22,6 +22,40 @@ interface IndexedDbStoreSchema {
     readonly indexes: readonly IndexedDbIndexSchema[];
 }
 
+const indexedDbOpenTailByName = new Map<string, Promise<void>>();
+
+export class IndexedDbConnection {
+    private opening?: Promise<IDBDatabase>;
+    private readonly openDatabase: () => Promise<IDBDatabase>;
+
+    constructor(openDatabase: () => Promise<IDBDatabase>) {
+        this.openDatabase = openDatabase;
+    }
+
+    async get(): Promise<IDBDatabase> {
+        if (!this.opening) {
+            this.opening = this.openDatabase().then((db) => {
+                db.onversionchange = () => {
+                    db.close();
+                    this.opening = undefined;
+                };
+                return db;
+            });
+        }
+
+        const opening = this.opening;
+        try {
+            return await opening;
+        }
+        catch (error) {
+            if (this.opening === opening) {
+                this.opening = undefined;
+            }
+            throw error;
+        }
+    }
+}
+
 export async function openIndexedDbWithStore(
     dbName: string,
     store: IndexedDbStoreDefinition
@@ -30,6 +64,15 @@ export async function openIndexedDbWithStore(
 }
 
 export async function openIndexedDbWithStores(
+    dbName: string,
+    stores: readonly IndexedDbStoreDefinition[]
+): Promise<IDBDatabase> {
+    return await runSerializedIndexedDbOpen(dbName, async () => {
+        return await openIndexedDbWithStoresOnce(dbName, stores);
+    });
+}
+
+async function openIndexedDbWithStoresOnce(
     dbName: string,
     stores: readonly IndexedDbStoreDefinition[]
 ): Promise<IDBDatabase> {
@@ -49,6 +92,13 @@ export async function openIndexedDbWithStores(
         }))
     }));
     const initialDb = await openIndexedDb(dbName, schema);
+    try {
+        assertCompatibleStoreKeyPaths(initialDb, schema);
+    }
+    catch (error) {
+        initialDb.close();
+        throw error;
+    }
     if (!hasSchemaMismatch(initialDb, schema)) {
         initialDb.onversionchange = () => initialDb.close();
         return initialDb;
@@ -60,6 +110,7 @@ export async function openIndexedDbWithStores(
     const upgradedDb = await openIndexedDb(dbName, schema, nextVersion);
     upgradedDb.onversionchange = () => upgradedDb.close();
 
+    assertCompatibleStoreKeyPaths(upgradedDb, schema);
     for (const store of schema) {
         if (!upgradedDb.objectStoreNames.contains(store.name)) {
             upgradedDb.close();
@@ -75,6 +126,31 @@ export async function openIndexedDbWithStores(
     }
 
     return upgradedDb;
+}
+
+function assertCompatibleStoreKeyPaths(
+    db: IDBDatabase,
+    stores: readonly IndexedDbStoreSchema[]
+): void {
+    for (const store of stores) {
+        if (!db.objectStoreNames.contains(store.name)) {
+            continue;
+        }
+        const actual = db.transaction(store.name).objectStore(store.name).keyPath;
+        if (!isEqualKeyPath(actual, store.options.keyPath)) {
+            throw new Error(
+                `IndexedDB store "${store.name}" has key path "${formatKeyPath(actual)}"; ` +
+                    `expected "${store.options.keyPath}"`
+            );
+        }
+    }
+}
+
+function formatKeyPath(keyPath: string | string[] | null): string {
+    if (keyPath === null) {
+        return 'null';
+    }
+    return typeof keyPath === 'string' ? keyPath : keyPath.join(',');
 }
 
 async function openIndexedDb(
@@ -100,8 +176,28 @@ async function openIndexedDb(
         };
 
         request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'));
-        request.onblocked = () => reject(new Error('IndexedDB open blocked'));
     });
+}
+
+async function runSerializedIndexedDbOpen<Value>(
+    dbName: string,
+    open: () => Promise<Value>
+): Promise<Value> {
+    const previous = indexedDbOpenTailByName.get(dbName) ?? Promise.resolve();
+    const opening = previous.then(open);
+    const tail = opening.then(
+        () => undefined,
+        () => undefined
+    );
+    indexedDbOpenTailByName.set(dbName, tail);
+    try {
+        return await opening;
+    }
+    finally {
+        if (indexedDbOpenTailByName.get(dbName) === tail) {
+            indexedDbOpenTailByName.delete(dbName);
+        }
+    }
 }
 
 function writeIndexedDbSchema(
@@ -163,9 +259,12 @@ function isMatchingIndex(
 }
 
 function isEqualKeyPath(
-    actual: string | string[],
+    actual: string | string[] | null,
     expected: string | readonly string[]
 ): boolean {
+    if (actual === null) {
+        return false;
+    }
     if (typeof actual === 'string' || typeof expected === 'string') {
         return actual === expected;
     }

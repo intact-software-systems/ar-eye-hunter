@@ -41,7 +41,8 @@ describe('auth inbox mutation phase order', () => {
         const command = (
             await materializeAuthMutationIntent(intent, {
                 credentialIssuer: createCredentialIssuer([]),
-                nowEpochMs: () => 1_000
+                nowEpochMs: () => 1_000,
+                serviceId: 'auth-service'
             })
         ).command as Extract<AuthMutationCommand, { kind: 'issue-session'; }>;
         const read: AuthMutationRead = {
@@ -146,6 +147,7 @@ interface MutationServiceRecording {
 
 function createMutationService(input: MutationServiceRecording): AuthMutationService {
     return {
+        serviceId: 'auth-service',
         read: async () => {
             input.actions.push('read');
             return input.read;
@@ -171,6 +173,7 @@ function createUnreachableMutationService(actions: string[]): AuthMutationServic
         throw new Error('Mutation phase must not run');
     };
     return {
+        serviceId: 'auth-service',
         read: async () => unreachable(),
         compute: unreachable,
         validate: unreachable,

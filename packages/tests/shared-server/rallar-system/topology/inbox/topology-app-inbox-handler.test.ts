@@ -134,10 +134,10 @@ describe('TopologyAppInboxHandler', () => {
         await expect(handler.processMutation(context, owners)).resolves.toEqual(expected);
         expect(phases).toEqual([
             'verify-authority',
+            'completion',
             'read',
             'compute',
             'validate',
-            'completion',
             'transaction',
             'write',
             'commit',
@@ -177,7 +177,13 @@ describe('TopologyAppInboxHandler', () => {
             groupStateService: sessionReader(phases),
             nowEpochMs: () => NOW_EPOCH_MS,
             transactionWriter: {
-                readCompletionFacts: unreachableTransaction,
+                readCompletionFacts: (messageContext) => {
+                    phases.push('completion');
+                    return {
+                        entry: messageContext.entry,
+                        completedAtEpochMs: NOW_EPOCH_MS
+                    };
+                },
                 writeComputedMutation: async () => unreachableTransaction()
             },
             wakeQueue
@@ -186,7 +192,7 @@ describe('TopologyAppInboxHandler', () => {
         await expect(handler.processMutation(context, owners)).rejects.toMatchObject({
             code: 'group-topology-config-idempotency-conflict'
         });
-        expect(phases).toEqual(['verify-authority']);
+        expect(phases).toEqual(['verify-authority', 'completion']);
     });
 
     it('keeps reconfigure read-compute-validate-write ordered and wakes after commit', async () => {
@@ -237,10 +243,10 @@ describe('TopologyAppInboxHandler', () => {
         });
         expect(phases).toEqual([
             'verify-authority',
+            'completion',
             'read',
             'compute',
             'validate',
-            'completion',
             'transaction',
             'write',
             'commit',

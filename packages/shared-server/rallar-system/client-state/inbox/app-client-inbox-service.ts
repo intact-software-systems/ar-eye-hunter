@@ -15,8 +15,13 @@ import type { AppInboxQueueEntryWriter } from '../../app-inbox/client/app-inbox-
 import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
+import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
-import type { ClientStateService, ClientStateWritten } from '../client-state-service-contracts.ts';
+import type {
+    ClientExpiredSessionPageInput,
+    ClientStateService,
+    ClientStateWritten
+} from '../client-state-service-contracts.ts';
 import {
     toClientMutationIssuedSessionAuthority,
     toClientMutationSystemAuthority
@@ -30,7 +35,6 @@ import {
     CLIENT_STATE_INBOX_REGISTRATION_TYPES,
     type ClientAuthorisedWsSessionConnectAppInboxPayload,
     type ClientAuthorisedWsSessionDisconnectAppInboxPayload,
-    type ClientExpiredSessionsAppInboxPayload,
     type ClientInstanceUpsertAppInboxPayload,
     type ClientPrincipalUpsertAppInboxPayload,
     type ClientSessionConnectAppInboxPayload,
@@ -122,9 +126,13 @@ export class AppClientInboxService {
             mutationService: dependencies.clientStateService,
             sessionGenerationLifecycle: dependencies.clientStateService.sessionGenerationLifecycle,
             expiryCandidates: dependencies.clientStateService,
+            expiryContinuationWriter: {
+                write: writeAppOutboxInsert
+            },
             snapshotObserver: dependencies.clientStateService,
             transactionWriter: handlerRuntime.transactionWriter,
             mutationTiming: { sink: config.timing, serviceId: config.serviceId },
+            wakeQueue: config.wakeOwningQueue,
             serviceId: config.serviceId
         });
         this.registerClientStateMessages();
@@ -183,7 +191,7 @@ export class AppClientInboxService {
         atEpochMs: number = Date.now()
     ): Promise<Either<AppInboxFailure, readonly ClientStateWritten[]>> {
         return await this.commandClient.enqueueReplacingWhenAndWaitForResult(
-            this.toExpiredSessionsEnqueue(atEpochMs),
+            this.toExpiredSessionsEnqueue({ atEpochMs, afterKey: null }),
             (entry) => isCompletedOrFailed(entry.status),
             decodeExpiredClientSessionsResult
         );
@@ -191,7 +199,10 @@ export class AppClientInboxService {
 
     public async enqueueExpiredSessions(atEpochMs: number = Date.now()) {
         return await this.queueEntryWriter.enqueue(
-            this.toExpiredSessionsEnqueue(atEpochMs, `expire-client-sessions-${atEpochMs}`)
+            this.toExpiredSessionsEnqueue(
+                { atEpochMs, afterKey: null },
+                `expire-client-sessions-${atEpochMs}`
+            )
         );
     }
 
@@ -329,12 +340,12 @@ export class AppClientInboxService {
             type: AppInboxType.CLIENT_EXPIRED_SESSIONS,
             decodeCommand: decodeClientExpiredSessionsAppInboxPayload,
             encodeResult: (result) => encodeAppInboxResult(result, 'Client expiry AppInbox result'),
-            handle: async (input, context) => await this.handler.processExpiredSessionCommands(context, input.atEpochMs)
+            handle: async (input, context) => await this.handler.processExpiredSessionCommands(context, input)
         });
     }
 
     private toExpiredSessionsEnqueue(
-        atEpochMs: number,
+        input: ClientExpiredSessionPageInput,
         resourceId: string = 'expire-client-sessions'
     ): AppInboxEnqueueInput {
         return {
@@ -345,7 +356,7 @@ export class AppClientInboxService {
             senderId: this.serviceId,
             authority: toClientMutationSystemAuthority(this.serviceId),
             data: encodeAppInboxCommand(
-                { atEpochMs } satisfies ClientExpiredSessionsAppInboxPayload,
+                input,
                 'Expired client sessions AppInbox command'
             )
         };

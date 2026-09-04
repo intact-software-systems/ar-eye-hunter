@@ -214,11 +214,36 @@ describe('transaction write check', () => {
         }]);
     });
 
+    it('reports a transaction beneath a loop without relying on retry vocabulary', () => {
+        const findings = analyzeFixture(`
+            interface Sql {
+                begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
+            }
+            declare const database: Sql;
+            export async function repeatUntilAccepted(): Promise<void> {
+                while (true) {
+                    await database.begin(async () => undefined);
+                }
+            }
+        `);
+
+        expect(findings).toMatchObject([{
+            rule: 'transaction.inner-retry',
+            operation: 'database.begin'
+        }]);
+    });
+
     it('exempts exact PostgreSQL ResourceInbox owners but not browser QueueBox writes', () => {
         const project = new Project({ useInMemoryFileSystem: true });
         const specialized = project.createSourceFile(
             '/packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts',
-            transactionSource('Date.now()')
+            `interface Sql { begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>; }
+             export class PSqlResourceInboxEntryRepository {
+                 constructor(private readonly sql: Sql) {}
+                 async writeMaterializedIfAbsentOrReplaceExpired(): Promise<void> {
+                     await this.sql.begin(async () => { Date.now(); });
+                 }
+             }`
         );
         const browser = project.createSourceFile(
             '/packages/shared/queuebox/write-computed-indexed-db-queue-mutations.ts',
@@ -236,6 +261,29 @@ describe('transaction write check', () => {
             path: 'packages/shared/queuebox/write-computed-indexed-db-queue-mutations.ts',
             operation: 'JSON.stringify'
         });
+    });
+
+    it('fails closed for arbitrary callbacks in specialized ResourceInbox transactions', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        const source = project.createSourceFile(
+            '/packages/shared-server/queuebox/postgres/p-sql-queue-box.ts',
+            `interface Repository {
+                 transaction<T>(write: (transaction: Repository) => Promise<T>): Promise<T>;
+             }
+             export class PSqlQueueBox {
+                 constructor(private readonly repository: Repository) {}
+                 async enqueueIf(decide: (current: string) => boolean): Promise<void> {
+                     await this.repository.transaction(async () => {
+                         decide('current');
+                     });
+                 }
+             }`
+        );
+
+        expect(analyzeTransactionWrites(project, [source])).toMatchObject([{
+            rule: 'transaction.unresolved-provenance',
+            operation: 'decide'
+        }]);
     });
 
     it('does not exempt new files merely because they are in the ResourceInbox directory', () => {

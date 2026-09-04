@@ -217,8 +217,7 @@ class DeferredFormationCriterionPetitioner implements DeferredCriterionPetitione
         const authority = await this.dependencies.topologyPlanning.readTopologyPlanningAuthority({
             groupRef: work.groupSnapshot.group,
             requestOptions: fromCanonicalGroupTopologyConfigPatch(work.requestOptions),
-            knownGroup: work.groupSnapshot,
-            snapshotSelection: 'prefer-current'
+            knownGroup: work.groupSnapshot
         });
         await petitionFormationCriterion(this.dependencies, authority, planned);
     }

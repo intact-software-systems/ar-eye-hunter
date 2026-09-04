@@ -18,6 +18,12 @@ import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryRepository } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { replaceFinishedResourceEntryIfMatch } from '../../queuebox/postgres/resource-inbox-finished-replacement.ts';
+import {
+    computeAppOutboxInsert,
+    isExactAppOutboxInsert,
+    writeAppOutboxInsertOrMatch,
+    type AppOutboxInsert
+} from './app-outbox-insert.ts';
 
 export {
     COALESCED_APP_OUTBOX_WORK_FIELD,
@@ -58,8 +64,9 @@ export interface CoalescedAppOutboxWorkEnqueueResult<T extends object> {
 
 export interface ComputedCoalescedAppOutboxWork {
     readonly expectedEntry: ResourceEntry | null;
-    readonly entry: ResourceEntry;
-    readonly successorEntry: ResourceEntry;
+    readonly expectedGeneration: number | null;
+    readonly entryWrite: AppOutboxInsert;
+    readonly successorWrite: AppOutboxInsert;
 }
 
 export interface CoalescedAppOutboxWorkWriteResult {
@@ -67,6 +74,45 @@ export interface CoalescedAppOutboxWorkWriteResult {
     readonly entry: ResourceEntry;
     readonly previous: ResourceEntry | null;
     readonly blockedByReserved: boolean;
+}
+
+export function computeCoalescedAppOutboxWork(
+    expectedEntry: ResourceEntry | null,
+    entry: ResourceEntry,
+    successorEntry: ResourceEntry
+): ComputedCoalescedAppOutboxWork {
+    const expectedGeneration = expectedEntry === null ? null : readCoalescedGeneration(expectedEntry);
+    const nextGeneration = readCoalescedGeneration(entry);
+    if (nextGeneration !== (expectedGeneration ?? 0) + 1) {
+        throw new TypeError('Coalesced APP_OUTBOX write must advance exactly one generation');
+    }
+    if (sameKey(successorEntry.key, entry.key)) {
+        throw new TypeError('Coalesced APP_OUTBOX successor must have a distinct queue identity');
+    }
+    return {
+        expectedEntry,
+        expectedGeneration,
+        entryWrite: computeAppOutboxInsert(entry),
+        successorWrite: computeAppOutboxInsert(successorEntry)
+    };
+}
+
+export function isExactComputedCoalescedAppOutboxWork(
+    expected: ComputedCoalescedAppOutboxWork,
+    candidate: ComputedCoalescedAppOutboxWork
+): boolean {
+    return candidate.expectedEntry === expected.expectedEntry &&
+        candidate.expectedGeneration === expected.expectedGeneration &&
+        isExactAppOutboxInsert(expected.entryWrite.entry, candidate.entryWrite) &&
+        isExactAppOutboxInsert(expected.successorWrite.entry, candidate.successorWrite);
+}
+
+function readCoalescedGeneration(entry: ResourceEntry): number {
+    const envelope = tryReadCoalescedAppOutboxWorkEnvelope(entry);
+    if (!envelope) {
+        throw new Error(`Resource entry is not a coalesced app outbox work item: ${JSON.stringify(entry.key)}`);
+    }
+    return envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation;
 }
 
 export class CoalescedAppOutboxWorkService {
@@ -91,26 +137,21 @@ export class CoalescedAppOutboxWorkService {
         const repository = new PSqlResourceInboxEntryRepository(transaction);
         const expected = computed.expectedEntry;
         if (expected === null) {
-            const action = await repository.writeIfAbsentOrMatch(computed.entry);
+            const action = await writeAppOutboxInsertOrMatch(transaction, computed.entryWrite);
             return {
                 action,
-                entry: computed.entry,
+                entry: computed.entryWrite.entry,
                 previous: null,
                 blockedByReserved: false
             };
         }
 
-        const expectedGeneration = this.readGeneration(expected);
-        const nextGeneration = this.readGeneration(computed.entry);
-        if (nextGeneration !== expectedGeneration + 1) {
-            throw new TypeError(
-                'Coalesced APP_OUTBOX write must advance exactly one generation'
-            );
-        }
+        const expectedGeneration = computed.expectedGeneration!;
+        const next = computed.entryWrite.entry;
         if (isTerminalCoalescedStatus(expected.status)) {
             const revived = await replaceFinishedResourceEntryIfMatch(transaction, {
                 expected,
-                next: computed.entry,
+                next,
                 expectedGeneration
             });
             if (revived !== null) {
@@ -121,14 +162,14 @@ export class CoalescedAppOutboxWorkService {
                     blockedByReserved: false
                 };
             }
-            return await this.writeSuccessor(repository, computed, expected);
+            return await this.writeSuccessor(transaction, computed, expected);
         }
         if (!isMutableCoalescedStatus(expected.status)) {
-            return await this.writeSuccessor(repository, computed, expected);
+            return await this.writeSuccessor(transaction, computed, expected);
         }
         const updated = await repository.replacePendingIfMatch(
             expected,
-            computed.entry,
+            next,
             expectedGeneration
         );
         if (updated !== null) {
@@ -140,23 +181,18 @@ export class CoalescedAppOutboxWorkService {
             };
         }
 
-        return await this.writeSuccessor(repository, computed, expected);
+        return await this.writeSuccessor(transaction, computed, expected);
     }
 
     private async writeSuccessor(
-        repository: PSqlResourceInboxEntryRepository,
+        transaction: PSqlSql,
         computed: ComputedCoalescedAppOutboxWork,
         expected: ResourceEntry
     ): Promise<CoalescedAppOutboxWorkWriteResult> {
-        if (sameKey(computed.successorEntry.key, computed.entry.key)) {
-            throw new TypeError(
-                'Coalesced APP_OUTBOX successor must have a distinct queue identity'
-            );
-        }
-        await repository.writeIfAbsentOrMatch(computed.successorEntry);
+        await writeAppOutboxInsertOrMatch(transaction, computed.successorWrite);
         return {
             action: 'successor',
-            entry: computed.successorEntry,
+            entry: computed.successorWrite.entry,
             previous: expected,
             blockedByReserved: true
         };

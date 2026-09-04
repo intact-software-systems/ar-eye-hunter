@@ -218,8 +218,15 @@ async function convergePresenceSummaryForCacheTest(
         now: () => 2_001,
         serviceId: 'cache-convergence-test'
     });
-    const read = await work.read(command);
-    const computed = work.compute(command, read, 2_001);
+    const read = await work.read(command, {
+        key: {
+            topicId: 'test.group-presence-summary',
+            resourceId: command.commandId,
+            contextId: 'test.group-presence-summary'
+        },
+        expectedAttempts: 1
+    }, 2_001);
+    const computed = work.compute(command, read);
     work.validate(command, read, computed);
     await runtime.begin(async (transaction) => {
         if (computed.summary.outcome === 'no-op') {

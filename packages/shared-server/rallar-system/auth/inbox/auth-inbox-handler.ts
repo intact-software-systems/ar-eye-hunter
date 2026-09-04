@@ -46,12 +46,18 @@ export class AuthInboxHandler {
         }
         const materialized = await materializeAuthMutationIntent(intent, {
             credentialIssuer: this.dependencies.credentialIssuer,
-            nowEpochMs: this.dependencies.nowEpochMs
+            nowEpochMs: this.dependencies.nowEpochMs,
+            serviceId: this.dependencies.mutationService.serviceId
         });
         const command = materialized.command;
         const read = await this.dependencies.mutationService.read(command);
         const computed = this.dependencies.mutationService.compute(command, read, materialized.facts);
-        this.dependencies.mutationService.validate(command, read, computed);
+        this.dependencies.mutationService.validate({
+            command,
+            read,
+            facts: materialized.facts,
+            computed
+        });
         const completionInput = {
             ...this.dependencies.transactionWriter.readCompletionFacts(context),
             durableResult: computed.result,

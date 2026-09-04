@@ -106,7 +106,7 @@ function assertWriteOutcomeKeys(computed: Extract<GroupMutationComputed, { outco
         'event',
         'receipt',
         'idempotency',
-        'outboxEntries',
+        'outboxWrites',
         'lifecyclePolicy',
         'acceptedLayoutPromotion',
         'plannedLayoutFence',

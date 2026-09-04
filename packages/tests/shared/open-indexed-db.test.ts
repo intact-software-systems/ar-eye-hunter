@@ -8,7 +8,11 @@ import {
     vi
 } from 'vitest';
 
-import { openIndexedDbWithStore, openIndexedDbWithStores } from '@shared/persistence/openIndexedDb.ts';
+import {
+    IndexedDbConnection,
+    openIndexedDbWithStore,
+    openIndexedDbWithStores
+} from '@shared/persistence/openIndexedDb.ts';
 
 interface SchemaWriteObservation {
     readonly kind: 'store' | 'index';
@@ -96,6 +100,28 @@ describe('IndexedDB schema upgrades', () => {
         unchanged.close();
     });
 
+    it('rejects an existing store whose key path belongs to another schema', async () => {
+        vi.stubGlobal('indexedDB', new FakeIndexedDb.IDBFactory());
+        const initial = await openIndexedDbWithStore('schema-key-path', {
+            name: 'items',
+            keyPath: 'legacyId'
+        });
+        const initialVersion = initial.version;
+        initial.close();
+
+        await expect(openIndexedDbWithStore('schema-key-path', {
+            name: 'items',
+            keyPath: 'id'
+        })).rejects.toThrow('IndexedDB store "items" has key path "legacyId"; expected "id"');
+
+        const unchanged = await openIndexedDbWithStore('schema-key-path', {
+            name: 'items',
+            keyPath: 'legacyId'
+        });
+        expect(unchanged.version).toBe(initialVersion);
+        unchanged.close();
+    });
+
     it('rolls back a rejected unique-index upgrade, including a preceding store creation', async () => {
         vi.stubGlobal('indexedDB', new FakeIndexedDb.IDBFactory());
         const initial = await openIndexedDbWithStore('schema-rollback', { name: 'items', keyPath: 'id' });
@@ -126,7 +152,95 @@ describe('IndexedDB schema upgrades', () => {
             unchanged.close();
         }
     });
+
+    it('serializes concurrent upgrades for distinct stores in one database', async () => {
+        vi.stubGlobal('indexedDB', new FakeIndexedDb.IDBFactory());
+        const seed = await openIndexedDbWithStore('concurrent-schema', {
+            name: 'seed',
+            keyPath: 'id'
+        });
+        seed.close();
+
+        const [first, second] = await Promise.all([
+            openIndexedDbWithStore('concurrent-schema', { name: 'first', keyPath: 'id' }),
+            openIndexedDbWithStore('concurrent-schema', { name: 'second', keyPath: 'id' })
+        ]);
+        first.close();
+        second.close();
+
+        const database = await openIndexedDbWithStores('concurrent-schema', [
+            { name: 'seed', keyPath: 'id' },
+            { name: 'first', keyPath: 'id' },
+            { name: 'second', keyPath: 'id' }
+        ]);
+        expect([...database.objectStoreNames]).toEqual(['first', 'second', 'seed']);
+        database.close();
+    });
+
+    it('keeps a blocked upgrade pending and closes cleanly after the blocker releases', async () => {
+        const factory = new FakeIndexedDb.IDBFactory();
+        vi.stubGlobal('indexedDB', factory);
+        const blocker = await openUncooperativeDatabase(factory, 'blocked-schema');
+        let settled = false;
+        const opening = openIndexedDbWithStore('blocked-schema', {
+            name: 'replacement',
+            keyPath: 'id'
+        }).finally(() => {
+            settled = true;
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(settled).toBe(false);
+        blocker.close();
+        const upgraded = await opening;
+        upgraded.close();
+
+        await expect(deleteDatabase(factory, 'blocked-schema')).resolves.toBeUndefined();
+    });
+
+    it('shares one open attempt and permits a fresh attempt after failure', async () => {
+        vi.stubGlobal('indexedDB', new FakeIndexedDb.IDBFactory());
+        let attempts = 0;
+        const connection = new IndexedDbConnection(async () => {
+            attempts += 1;
+            if (attempts === 1) {
+                throw new Error('opening failed');
+            }
+            return await openIndexedDbWithStore('connection-retry', {
+                name: 'items',
+                keyPath: 'id'
+            });
+        });
+
+        await expect(connection.get()).rejects.toThrow('opening failed');
+        const [first, second] = await Promise.all([
+            connection.get(),
+            connection.get()
+        ]);
+
+        expect(first).toBe(second);
+        expect(attempts).toBe(2);
+        first.close();
+    });
 });
+
+async function openUncooperativeDatabase(
+    factory: IDBFactory,
+    name: string
+): Promise<IDBDatabase> {
+    const request = factory.open(name, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('seed', { keyPath: 'id' });
+    return await readRequest(request);
+}
+
+async function deleteDatabase(factory: IDBFactory, name: string): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+        const request = factory.deleteDatabase(name);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error ?? new Error('IndexedDB deletion failed'));
+        request.onblocked = () => reject(new Error('IndexedDB deletion remained blocked'));
+    });
+}
 
 function observeSchemaWrites(): SchemaWriteObservation[] {
     const writes: SchemaWriteObservation[] = [];

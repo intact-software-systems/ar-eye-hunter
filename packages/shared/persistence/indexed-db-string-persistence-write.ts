@@ -1,12 +1,16 @@
+import { waitForIndexedDbTransaction } from './indexed-db-request.ts';
+
 export type StoredIndexedDbValue<Value> = Readonly<{
     key: string;
     value: Value;
     expireAtTimestamp: number;
+    writeToken: string;
 }>;
 
 export type ComputedIndexedDbStringDeletion = Readonly<{
     key: string;
     expectedExpireAtTimestamp: number;
+    expectedWriteToken: string;
 }>;
 
 export async function writeComputedIndexedDbStringValue<Value>(
@@ -14,14 +18,10 @@ export async function writeComputedIndexedDbStringValue<Value>(
     storeName: string,
     stored: StoredIndexedDbValue<Value>
 ): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readwrite');
-        const request = tx.objectStore(storeName).put(stored);
-        tx.oncomplete = () => resolve();
-        tx.onabort = () => reject(tx.error ?? new Error('IndexedDB setItem aborted'));
-        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB setItem failed'));
-        request.onerror = () => reject(request.error ?? new Error('IndexedDB put failed'));
-    });
+    const transaction = db.transaction(storeName, 'readwrite');
+    const completed = waitForIndexedDbTransaction(transaction);
+    transaction.objectStore(storeName).put(stored);
+    await completed;
 }
 
 export async function removeComputedIndexedDbStringValue(
@@ -29,14 +29,10 @@ export async function removeComputedIndexedDbStringValue(
     storeName: string,
     key: string
 ): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(storeName, 'readwrite');
-        const request = tx.objectStore(storeName).delete(key);
-        tx.oncomplete = () => resolve();
-        tx.onabort = () => reject(tx.error ?? new Error('IndexedDB removeItem aborted'));
-        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB removeItem failed'));
-        request.onerror = () => reject(request.error ?? new Error('IndexedDB delete failed'));
-    });
+    const transaction = db.transaction(storeName, 'readwrite');
+    const completed = waitForIndexedDbTransaction(transaction);
+    transaction.objectStore(storeName).delete(key);
+    await completed;
 }
 
 export async function deleteComputedIndexedDbStringValues(
@@ -60,19 +56,8 @@ export async function deleteComputedIndexedDbStringValues(
             }
             reject(tx.error ?? new Error('IndexedDB computed delete aborted'));
         };
-        tx.onerror = () => {
-            if (!conflict) {
-                reject(tx.error ?? new Error('IndexedDB computed delete failed'));
-            }
-        };
-
         for (const deletion of deletions) {
             const getRequest = store.get(deletion.key);
-            getRequest.onerror = () => {
-                if (!conflict) {
-                    reject(getRequest.error ?? new Error('IndexedDB computed delete compare failed'));
-                }
-            };
             getRequest.onsuccess = () => {
                 if (conflict) {
                     return;
@@ -80,19 +65,18 @@ export async function deleteComputedIndexedDbStringValues(
                 const current = getRequest.result as
                     | Readonly<{
                         expireAtTimestamp: number;
+                        writeToken?: string;
                     }>
                     | undefined;
-                if (current?.expireAtTimestamp !== deletion.expectedExpireAtTimestamp) {
+                if (
+                    current?.expireAtTimestamp !== deletion.expectedExpireAtTimestamp ||
+                    current.writeToken !== deletion.expectedWriteToken
+                ) {
                     conflict = true;
                     tx.abort();
                     return;
                 }
-                const deleteRequest = store.delete(deletion.key);
-                deleteRequest.onerror = () => {
-                    if (!conflict) {
-                        reject(deleteRequest.error ?? new Error('IndexedDB computed delete failed'));
-                    }
-                };
+                store.delete(deletion.key);
             };
         }
     });

@@ -4,6 +4,7 @@ import { ResourceInboxResultsRepository } from '../../../queuebox/postgres/resou
 import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type { AdminPruneAggregateWrite } from '../inbox/compute-admin-prune-mutation.ts';
 import type {
+    AdminPruneCandidate,
     AdminPruneCandidatePage,
     AdminPrunePageDelete,
     AdminPrunePageRepository,
@@ -11,10 +12,27 @@ import type {
 } from '../prune/admin-prune-page-worker.ts';
 import { decodeAdminPruneAggregate, toAdminPruneAggregateKey } from '../prune/admin-prune-progress.ts';
 
-type RuntimeRow = Readonly<{ store_namespace: string; store_key: string; }>;
-type ResourceRow = Readonly<{ ri_row_id: number | string; }>;
-type ResultsRow = Readonly<{ ris_row_id: number | string; }>;
-type AppDataRow = Readonly<{ store_name: string; data_key: string; }>;
+interface RuntimeRow {
+    readonly store_namespace: string;
+    readonly store_key: string;
+    readonly revision_token: number | string;
+}
+
+interface ResourceRow {
+    readonly ri_row_id: number | string;
+    readonly revision_token: number | string;
+}
+
+interface ResultsRow {
+    readonly ris_row_id: number | string;
+    readonly revision_token: number | string;
+}
+
+interface AppDataRow {
+    readonly store_name: string;
+    readonly data_key: string;
+    readonly revision_token: number | string;
+}
 
 class AdminPruneProgressConflictError extends Error {
     readonly code = 'admin-prune-progress-conflict';
@@ -48,7 +66,7 @@ export class PSqlAdminPruneRepository implements AdminPrunePageRepository {
         transaction: PSqlSql,
         deletion: AdminPrunePageDelete
     ): Promise<number> {
-        if (deletion.rowIds.length === 0) {
+        if (deletion.candidates.length === 0) {
             return 0;
         }
         return await deletePageRows(transaction, deletion);
@@ -138,7 +156,7 @@ export async function writeAdminPruneAggregate(
                           created_by   = excluded.created_by,
                           created_ts   = excluded.created_ts,
                           expire_ts    = excluded.expire_ts
-        where resource_inbox_results.expire_ts <= (now() at time zone 'UTC')
+        where resource_inbox_results.expire_ts <= ${computed.replaceExpiredAt}
         returning ris_resource
     `;
     if (rows.length > 1) {
@@ -166,14 +184,22 @@ async function readRuntimePage(
 ): Promise<AdminPruneCandidatePage> {
     const [namespace, key] = decodeTuple(input.afterCursor, 2);
     const rows = await sql<RuntimeRow[]>`
-        select store_namespace, store_key
+        select store_namespace, store_key, revision::text as revision_token
         from runtime_state_store
         where expire_at_ts <= ${new Date(input.expireAtEpochMs)}
           and (${input.afterCursor === null} or (store_namespace, store_key) > (${namespace}, ${key}))
         order by store_namespace, store_key
         limit ${input.pageSize + 1}
     `;
-    return page(rows.map((row) => JSON.stringify([row.store_namespace, row.store_key])), input.pageSize);
+    return page(
+        rows.map((row) =>
+            toAdminPruneCandidate(
+                JSON.stringify([row.store_namespace, row.store_key]),
+                row.revision_token
+            )
+        ),
+        input.pageSize
+    );
 }
 
 async function readResourcePage(
@@ -183,7 +209,7 @@ async function readResourcePage(
     const after = input.afterCursor === null ? 0 : requireInteger(input.afterCursor);
     const excluded = input.excludedResourceKey;
     const rows = await sql<ResourceRow[]>`
-        select ri_row_id
+        select ri_row_id, xmin::text as revision_token
         from resource_inbox
         where expire_ts <= ${new Date(input.expireAtEpochMs)}
           and ri_row_id > ${after}
@@ -195,7 +221,7 @@ async function readResourcePage(
         order by ri_row_id
         limit ${input.pageSize + 1}
     `;
-    return page(rows.map((row) => String(row.ri_row_id)), input.pageSize);
+    return page(rows.map((row) => toAdminPruneCandidate(String(row.ri_row_id), row.revision_token)), input.pageSize);
 }
 
 async function readResultsPage(
@@ -204,13 +230,13 @@ async function readResultsPage(
 ): Promise<AdminPruneCandidatePage> {
     const after = input.afterCursor === null ? 0 : requireInteger(input.afterCursor);
     const rows = await sql<ResultsRow[]>`
-        select ris_row_id
+        select ris_row_id, xmin::text as revision_token
         from resource_inbox_results
         where expire_ts <= ${new Date(input.expireAtEpochMs)} and ris_row_id > ${after}
         order by ris_row_id
         limit ${input.pageSize + 1}
     `;
-    return page(rows.map((row) => String(row.ris_row_id)), input.pageSize);
+    return page(rows.map((row) => toAdminPruneCandidate(String(row.ris_row_id), row.revision_token)), input.pageSize);
 }
 
 async function readAppDataPage(
@@ -223,21 +249,29 @@ async function readAppDataPage(
     const [storeName, dataKey] = decodeTuple(input.afterCursor, 2);
     const rows = input.appData.storeName === null
         ? await sql<AppDataRow[]>`
-            select store_name, data_key from app_data_store
+            select store_name, data_key, revision::text as revision_token from app_data_store
             where app_namespace = ${input.appData.namespace}
               and expire_at_ts <= ${new Date(input.expireAtEpochMs)}
               and (${input.afterCursor === null} or (store_name, data_key) > (${storeName}, ${dataKey}))
             order by store_name, data_key limit ${input.pageSize + 1}
         `
         : await sql<AppDataRow[]>`
-            select store_name, data_key from app_data_store
+            select store_name, data_key, revision::text as revision_token from app_data_store
             where app_namespace = ${input.appData.namespace}
               and store_name = ${input.appData.storeName}
               and expire_at_ts <= ${new Date(input.expireAtEpochMs)}
               and (${input.afterCursor === null} or data_key > ${dataKey})
             order by data_key limit ${input.pageSize + 1}
         `;
-    return page(rows.map((row) => JSON.stringify([row.store_name, row.data_key])), input.pageSize);
+    return page(
+        rows.map((row) =>
+            toAdminPruneCandidate(
+                JSON.stringify([row.store_name, row.data_key]),
+                row.revision_token
+            )
+        ),
+        input.pageSize
+    );
 }
 
 async function deletePageRows(
@@ -246,52 +280,60 @@ async function deletePageRows(
 ): Promise<number> {
     switch (deletion.category) {
         case 'runtime-state': {
-            return (await sql<RuntimeRow[]>`
+            return (await sql<readonly object[]>`
                 with expired as (
-                    select value::jsonb ->> 0 as store_namespace,
-                           value::jsonb ->> 1 as store_key
-                    from jsonb_array_elements_text(${deletion.rowIds}::jsonb)
+                    select (value ->> 'rowId')::jsonb ->> 0 as store_namespace,
+                           (value ->> 'rowId')::jsonb ->> 1 as store_key,
+                           value ->> 'revisionToken' as revision_token
+                    from jsonb_array_elements(${deletion.candidateRowsJson}::jsonb)
                 )
                 delete from runtime_state_store target using expired
                 where target.store_namespace = expired.store_namespace
                   and target.store_key = expired.store_key
+                  and target.revision::text = expired.revision_token
                   and expire_at_ts <= ${deletion.capturedAt}
                 returning target.store_namespace, target.store_key
             `).length;
         }
         case 'resource-inbox':
-            return (await sql<ResourceRow[]>`
+            return (await sql<readonly object[]>`
                 with expired as (
-                    select value::bigint as ri_row_id
-                    from jsonb_array_elements_text(${deletion.rowIds}::jsonb)
+                    select (value ->> 'rowId')::bigint as ri_row_id,
+                           value ->> 'revisionToken' as revision_token
+                    from jsonb_array_elements(${deletion.candidateRowsJson}::jsonb)
                 )
                 delete from resource_inbox target using expired
                 where target.ri_row_id = expired.ri_row_id
+                  and target.xmin::text = expired.revision_token
                   and expire_ts <= ${deletion.capturedAt}
                 returning target.ri_row_id
             `).length;
         case 'resource-inbox-results':
-            return (await sql<ResultsRow[]>`
+            return (await sql<readonly object[]>`
                 with expired as (
-                    select value::bigint as ris_row_id
-                    from jsonb_array_elements_text(${deletion.rowIds}::jsonb)
+                    select (value ->> 'rowId')::bigint as ris_row_id,
+                           value ->> 'revisionToken' as revision_token
+                    from jsonb_array_elements(${deletion.candidateRowsJson}::jsonb)
                 )
                 delete from resource_inbox_results target using expired
                 where target.ris_row_id = expired.ris_row_id
+                  and target.xmin::text = expired.revision_token
                   and expire_ts <= ${deletion.capturedAt}
                 returning target.ris_row_id
             `).length;
         case 'app-data': {
-            return (await sql<AppDataRow[]>`
+            return (await sql<readonly object[]>`
                 with expired as (
-                    select value::jsonb ->> 0 as store_name,
-                           value::jsonb ->> 1 as data_key
-                    from jsonb_array_elements_text(${deletion.rowIds}::jsonb)
+                    select (value ->> 'rowId')::jsonb ->> 0 as store_name,
+                           (value ->> 'rowId')::jsonb ->> 1 as data_key,
+                           value ->> 'revisionToken' as revision_token
+                    from jsonb_array_elements(${deletion.candidateRowsJson}::jsonb)
                 )
                 delete from app_data_store target using expired
                 where target.app_namespace = ${deletion.appData.namespace}
                   and target.store_name = expired.store_name
                   and target.data_key = expired.data_key
+                  and target.revision::text = expired.revision_token
                   and expire_at_ts <= ${deletion.capturedAt}
                 returning target.store_name, target.data_key
             `).length;
@@ -299,8 +341,19 @@ async function deletePageRows(
     }
 }
 
-function page(rowIds: readonly string[], size: number): AdminPruneCandidatePage {
-    return { rowIds: rowIds.slice(0, size), hasMore: rowIds.length > size };
+function page(candidates: readonly AdminPruneCandidate[], size: number): AdminPruneCandidatePage {
+    return { candidates: candidates.slice(0, size), hasMore: candidates.length > size };
+}
+
+function toAdminPruneCandidate(
+    rowId: string,
+    revisionToken: number | string
+): AdminPruneCandidate {
+    const normalizedRevisionToken = String(revisionToken);
+    if (!/^(0|[1-9]\d*)$/.test(normalizedRevisionToken)) {
+        throw new TypeError('Admin prune candidate revision token is invalid');
+    }
+    return { rowId, revisionToken: normalizedRevisionToken };
 }
 
 function decodeTuple(value: string | null, length: number): readonly string[] {

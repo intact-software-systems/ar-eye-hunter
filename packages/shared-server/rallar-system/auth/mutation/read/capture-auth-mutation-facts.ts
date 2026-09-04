@@ -5,7 +5,8 @@ import { AuthMutationRejectedError } from '../auth-mutation-rejected-error.ts';
 
 export async function captureAuthMutationFacts(
     command: AuthMutationCommand,
-    credentialIssuer: AuthCredentialIssuer
+    credentialIssuer: AuthCredentialIssuer,
+    serviceId: string
 ): Promise<AuthMutationFacts> {
     switch (command.kind) {
         case 'issue-session': {
@@ -55,7 +56,7 @@ export async function captureAuthMutationFacts(
         case 'consume-agent-ticket':
             break;
     }
-    return { kind: command.kind };
+    return { kind: command.kind, serviceId };
 }
 
 async function requireMatchingCredentialDigest(

@@ -17,12 +17,45 @@ const TRANSACTION_TYPE = /(?:PSqlSql|IDBTransaction)/u;
 const DATABASE_RECEIVER_TYPE = /(?:Sql|Database|Repository|Runtime|PGlite)/u;
 const APP_INBOX_TRANSACTION_WRITER_TYPE = /AppInbox(?:Mutation)?TransactionWriter/u;
 const APP_INBOX_WRITE_METHOD = 'writeComputedMutation';
-const SPECIALIZED_RESOURCE_INBOX_FILES = new Set([
-    'packages/shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts',
-    'packages/shared-server/queuebox/postgres/p-sql-queue-box.ts',
-    'packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts',
-    'packages/shared-server/queuebox/postgres/p-sql-results-queue-box.ts',
-    'packages/shared-server/queuebox/postgres/resource-inbox-results-repository.ts'
+const SPECIALIZED_TRANSACTION_OWNERS = new Map([
+    [
+        'packages/shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts',
+        new Set(['transaction'])
+    ],
+    [
+        'packages/shared-server/queuebox/postgres/p-sql-queue-box.ts',
+        new Set([
+            'reserveEntries',
+            'reserveTimeoutEntries',
+            'reserveOverdueRetryEntries',
+            'reserveRetryExhaustionFinalizations',
+            'releaseEntries',
+            'enqueue',
+            'enqueueIfAbsent'
+        ])
+    ],
+    [
+        'packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts',
+        new Set(['writeMaterializedIfAbsentOrReplaceExpired'])
+    ],
+    [
+        'packages/shared-server/queuebox/postgres/resource-inbox-results-repository.ts',
+        new Set(['begin'])
+    ]
+]);
+const TRANSACTION_FORWARDING_CALLBACKS = new Map([
+    [
+        'apps/api-v1/src/db/pglite-sql-adapter.ts',
+        new Map([['attachPGliteBegin', new Set(['fn'])]])
+    ],
+    [
+        'packages/shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts',
+        new Map([['inTransaction', new Set(['write'])]])
+    ],
+    [
+        'packages/shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts',
+        new Map([['begin', new Set(['fn'])]])
+    ]
 ]);
 
 export function analyzeTransactionWrites(project, sourceFiles = project.getSourceFiles()) {
@@ -34,14 +67,13 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
         if (!isAnalyzedSource(path)) {
             continue;
         }
-        const specialized = SPECIALIZED_RESOURCE_INBOX_FILES.has(path);
         for (const declaration of sourceFile.getDescendants().filter(isFunctionDeclaration)) {
-            if (!specialized && isTransactionWriteDeclaration(declaration)) {
+            if (isTransactionWriteDeclaration(declaration)) {
                 roots.push(analysisRoot(declaration));
             }
         }
         for (const assignment of sourceFile.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
-            if (!specialized && isUpgradeCallbackAssignment(assignment)) {
+            if (isUpgradeCallbackAssignment(assignment)) {
                 const callback = assignment.getRight();
                 if (Node.isArrowFunction(callback) || Node.isFunctionExpression(callback)) {
                     roots.push(analysisRoot(callback));
@@ -50,7 +82,7 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
         }
         for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
             const appInboxWrite = appInboxWriteBoundary(call);
-            if (!specialized && appInboxWrite) {
+            if (appInboxWrite) {
                 for (const callback of resolveCallbackBodies(appInboxWrite, project)) {
                     roots.push(analysisRoot(callback));
                 }
@@ -59,10 +91,8 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
             if (!boundary) {
                 continue;
             }
-            if (!specialized) {
-                reportTransactionLoop(call, findings);
-            }
-            if (specialized || boundary.kind === 'readonly') {
+            reportTransactionLoop(call, findings);
+            if (boundary.kind === 'readonly' || isSpecializedTransactionBoundary(call)) {
                 continue;
             }
             if (boundary.kind === 'indexed-db') {
@@ -130,6 +160,16 @@ function analyzeBody(input) {
                 node: call,
                 rule: 'transaction.precomputable-work',
                 operation: precomputable,
+                boundary
+            });
+            continue;
+        }
+        if (isUnresolvedCallableParameterInvocation(call)) {
+            addFinding({
+                findings,
+                node: call,
+                rule: 'transaction.unresolved-provenance',
+                operation,
                 boundary
             });
         }
@@ -221,12 +261,10 @@ function looksLikeDatabaseReceiver(receiver) {
 function reportTransactionLoop(call, findings) {
     const loop = call.getFirstAncestor((ancestor) =>
         Node.isForStatement(ancestor) ||
-        Node.isForInStatement(ancestor) ||
-        Node.isForOfStatement(ancestor) ||
         Node.isWhileStatement(ancestor) ||
         Node.isDoStatement(ancestor)
     );
-    if (loop && isRetryLoop(loop)) {
+    if (loop) {
         addFinding({
             findings,
             node: call,
@@ -259,10 +297,56 @@ function isCallbackReference(node) {
     );
 }
 
-function isRetryLoop(loop) {
-    const owner = loop.getFirstAncestor(isFunctionDeclaration);
-    return /(?:retry|attempt)/iu.test(loop.getText()) ||
-        (owner !== undefined && /(?:retry|attempt)/iu.test(declarationName(owner)));
+function isSpecializedTransactionBoundary(call) {
+    const allowedOwners = SPECIALIZED_TRANSACTION_OWNERS.get(sourcePath(call.getSourceFile()));
+    if (!allowedOwners) {
+        return false;
+    }
+    const owner = namedContainingFunction(call);
+    return owner !== undefined && allowedOwners.has(declarationName(owner));
+}
+
+function isUnresolvedCallableParameterInvocation(call) {
+    const expression = call.getExpression();
+    if (!Node.isIdentifier(expression)) {
+        return false;
+    }
+    const symbol = expression.getSymbol();
+    const resolved = symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
+    return (resolved?.getDeclarations() ?? []).some((declaration) => {
+        if (
+            !Node.isParameterDeclaration(declaration) ||
+            declaration.getType().getCallSignatures().length === 0
+        ) {
+            return false;
+        }
+        return !isPromiseSettlementParameter(declaration) &&
+            !isReviewedTransactionForwardingCallback(call, declaration.getName());
+    });
+}
+
+function isPromiseSettlementParameter(parameter) {
+    const owner = parameter.getFirstAncestor(isFunctionDeclaration);
+    if (!owner) {
+        return false;
+    }
+    const creation = owner.getParent();
+    return Node.isNewExpression(creation) && creation.getExpression().getText() === 'Promise';
+}
+
+function isReviewedTransactionForwardingCallback(call, parameterName) {
+    const owners = TRANSACTION_FORWARDING_CALLBACKS.get(sourcePath(call.getSourceFile()));
+    const owner = namedContainingFunction(call);
+    if (!owners || !owner) {
+        return false;
+    }
+    return owners.get(declarationName(owner))?.has(parameterName) ?? false;
+}
+
+function namedContainingFunction(node) {
+    return node.getAncestors().find((ancestor) =>
+        isFunctionDeclaration(ancestor) && declarationName(ancestor).length > 0
+    );
 }
 
 function isUpgradeCallbackAssignment(assignment) {

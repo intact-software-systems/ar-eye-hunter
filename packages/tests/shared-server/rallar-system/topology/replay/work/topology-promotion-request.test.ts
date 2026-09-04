@@ -7,9 +7,12 @@ import {
     ResourceInboxInvariantCorruptionError
 } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import {
+    computeAppOutboxInsert,
+    writeAppOutboxInsert
+} from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import {
     computeTopologyPromotionRequest,
-    readTopologyPromotion,
-    writeTopologyPromotionRequest
+    readTopologyPromotion
 } from '@shared-server/rallar-system/topology/replay/work/topology-promotion-request.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
@@ -64,9 +67,10 @@ describe('topology promotion request write', () => {
 
     it('rejects an immutable ResourceInbox collision', async () => {
         const entry = promotionEntry();
+        const computed = computeAppOutboxInsert(entry);
 
         await expect(
-            writeTopologyPromotionRequest(createConflictingTransaction(), entry)
+            writeAppOutboxInsert(createConflictingTransaction(), computed)
         ).rejects.toBeInstanceOf(ResourceInboxInvariantCorruptionError);
     });
 });

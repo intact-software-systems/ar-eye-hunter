@@ -9,8 +9,9 @@ The checker reports:
 - `transaction.precomputable-work` for clocks, randomness, serialization,
   hashing, sorting/canonicalization, and named compute/prepare builders reached
   from a resolved transaction callback or transaction-write function;
-- `transaction.inner-retry` when a write transaction is opened from a
-  retry/attempt loop.
+- `transaction.inner-retry` when a write transaction is opened from any loop;
+- `transaction.unresolved-provenance` when transaction work invokes a
+  caller-supplied function whose behavior cannot be proven locally.
 
 It recognizes PostgreSQL/PGlite `begin` and `transaction` callbacks, the
 `runInPSqlTransaction` wrapper, IndexedDB `readwrite` transactions, IndexedDB
@@ -21,14 +22,15 @@ graphs; suspiciously named compute/prepare/serialize/hash helpers still fail at
 their call site. Readonly IndexedDB transactions, tests, fixtures,
 generated/vendor code, `packages/shared-test/**`, and
 `packages/shared-rtc-bench/**` are excluded.
-The explicitly inventoried PostgreSQL ResourceInbox owners in the analyzer are
-governed by their specialized SQL review and semantic tests instead. Directory
-placement alone grants no specialization: a new file is analyzed by default
-until its exact ownership is reviewed and added to that inventory.
+Exact PostgreSQL ResourceInbox owner methods in the analyzer are governed by
+their specialized SQL review and semantic tests. Whole files and directories
+are not exempt. Arbitrary callback-bearing methods such as `enqueueIf` and
+`enqueueOrUpdate` remain fail-closed; a new method is analyzed until its bounded
+SQL policy is reviewed and encoded explicitly.
 
 This is intentionally a narrow check. It does not attempt whole-program
-provenance, arbitrary helper-body expansion, SQL semantic proof, dynamic
-callback resolution, or an exception/fingerprint registry. Human review remains
+provenance, arbitrary helper-body expansion, SQL semantic proof, general
+dynamic callback resolution, or an exception/fingerprint registry. Human review remains
 responsible for ambiguous helpers and database-result refinements. Extend the
 checker only with a focused failing fixture and a demonstrated production class
 of error.

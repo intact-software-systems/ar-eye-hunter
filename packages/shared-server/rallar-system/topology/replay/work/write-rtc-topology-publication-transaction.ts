@@ -1,9 +1,11 @@
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../../postgres/run-in-p-sql-transaction.ts';
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
-import type { AppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
+import {
+    writeAppOutboxInsert,
+    type AppOutboxInsert
+} from '../../../app-outbox/app-outbox-insert.ts';
 import type { RtcTopologyMutationComputed } from '../../mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
@@ -22,18 +24,11 @@ import type { RtcTopologyInputFingerprintWrite } from './rtc-topology-input-fing
 import {
     finishRtcTopologyReservation
 } from './rtc-topology-work-completion.ts';
-import { writeTopologyPromotionRequest } from './topology-promotion-request.ts';
-import { writeGroupConnectTriggerRequests } from './write-group-connect-trigger-requests.ts';
-
-export interface RtcTopologyDeliveryOptions {
-    readonly publisherStreamId: string;
-    readonly append: RtcTopologyDeliveryAppendPort;
-}
 
 export interface RtcTopologyPublicationTransactionWrite {
     readonly mutation: Extract<RtcTopologyMutationComputed, { outcome: 'write' | 'publish-superseded'; }> | null;
-    readonly promotionRequest: ResourceEntry | null;
-    readonly connectRequests: readonly ResourceEntry[];
+    readonly promotionWrite: AppOutboxInsert | null;
+    readonly connectWrites: readonly AppOutboxInsert[];
     readonly fingerprint: RtcTopologyInputFingerprintWrite | null;
     readonly delivery: RtcTopologyPublicationDeliveryWrite | null;
     readonly reservationFinish: ResourceInboxReservationFinish;
@@ -56,8 +51,12 @@ export async function writeRtcTopologyPublicationTransaction(
                     computed.mutation
                 );
             }
-            await writeTopologyPromotionRequest(transaction, computed.promotionRequest);
-            await writeGroupConnectTriggerRequests(transaction, computed.connectRequests);
+            if (computed.promotionWrite) {
+                await writeAppOutboxInsert(transaction, computed.promotionWrite);
+            }
+            for (const connectWrite of computed.connectWrites) {
+                await writeAppOutboxInsert(transaction, connectWrite);
+            }
             if (computed.fingerprint) {
                 await options.executionRepository.writeTopologyInputFingerprint(
                     transaction,

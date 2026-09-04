@@ -5,6 +5,7 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
+import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import {
     computeTopologyMutation,
     validateTopologyMutation,
@@ -13,11 +14,18 @@ import {
 } from '../../mutation/rtc-topology-mutations.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
+import { validateRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
+import type { RtcTopologyPlanningObservation } from '../../runtime/rtc-topology-metrics.ts';
+import type { RtcTopologyDeliveryLogEntry } from '../delivery/rtc-topology-delivery-contracts.ts';
+import {
+    RtcTopologyDeliveryCorruptionError,
+    validateRtcTopologyDeliveryLogEntry
+} from '../delivery/rtc-topology-delivery-validation.ts';
+import { computePublicationConnectTriggerRequests } from './group-connect-trigger-requests.ts';
 import { computeRtcTopologyInputFingerprintWrite } from './rtc-topology-input-fingerprint.ts';
 import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
 import { computeTopologyPromotionRequest } from './topology-promotion-request.ts';
 import type { TopologyPromotionRead } from './topology-promotion-request.ts';
-import { computePublicationConnectTriggerRequests } from './write-group-connect-trigger-requests.ts';
 import {
     computeRtcTopologyPublicationDeliveryWrite,
     type RtcTopologyPublicationTransactionWrite
@@ -45,6 +53,7 @@ export type AcceptedRtcTopologyWork =
         inputFingerprint: string;
         promotionRead: TopologyPromotionRead | null;
         criterionPetition: CommittedCriterionPetition | null;
+        planningObservation: RtcTopologyPlanningObservation | null;
     }>
     | Readonly<{
         decision: 'skipped-fingerprint';
@@ -60,6 +69,7 @@ export type AcceptedRtcTopologyWork =
         inputFingerprint: string;
         promotionRead: TopologyPromotionRead | null;
         criterionPetition: CommittedCriterionPetition | null;
+        planningObservation: RtcTopologyPlanningObservation | null;
     }>
     | Readonly<{
         decision: 'skipped-frozen';
@@ -84,8 +94,14 @@ export type AcceptedRtcTopologyWorkWrite =
         transaction: RtcTopologyPublicationTransactionWrite;
     }>;
 
+export interface RtcTopologyReplayRead {
+    readonly mutation: RtcTopologyMutationInput['read'];
+    readonly outbox: ResourceEntry | null;
+    readonly delivery: RtcTopologyDeliveryLogEntry | null;
+}
+
 export interface ComputeRtcTopologyReplayWriteInput {
-    readonly read: RtcTopologyMutationInput['read'];
+    readonly read: RtcTopologyReplayRead;
     readonly reservationFinish: ResourceInboxReservationFinish;
     readonly publisherStreamId: string | undefined;
 }
@@ -128,17 +144,17 @@ export function computeRtcTopologyWorkWrite(
         kind: 'transaction',
         transaction: {
             mutation,
-            promotionRequest: computeTopologyPromotionRequest({
+            promotionWrite: toOptionalAppOutboxWrite(computeTopologyPromotionRequest({
                 read: accepted.promotionRead,
                 serviceId: input.serviceId,
                 entry,
                 target
-            }),
-            connectRequests: computePublicationConnectTriggerRequests({
+            })),
+            connectWrites: computePublicationConnectTriggerRequests({
                 automationEnabled: input.formationAutomationEnabled,
                 target,
                 entry
-            }),
+            }).map(computeAppOutboxInsert),
             fingerprint: computeFingerprintWrite(accepted),
             delivery: accepted.decision === 'accepted' && accepted.publication
                 ? computeRtcTopologyPublicationDeliveryWrite(
@@ -170,22 +186,45 @@ export function validateRtcTopologyWorkWrite(
 export function computeRtcTopologyReplayWrite(
     input: ComputeRtcTopologyReplayWriteInput
 ): ComputedRtcTopologyReplayWrite {
-    const mutationInput = toReplayMutationInput(input.read);
+    const mutationInput = toReplayMutationInput(input.read.mutation);
     const computed = computeTopologyMutation(mutationInput);
     if (computed.outcome !== 'loaded') {
         throw new RuntimeStateWriteConflictError();
+    }
+    const outbox = input.read.outbox;
+    if (outbox === null) {
+        throw new RtcTopologyDeliveryCorruptionError(
+            `RTC topology publication ${computed.publication.publicationId} has no durable outbox`
+        );
+    }
+    try {
+        validateRtcTopologyPublicationOutbox(computed.publication, outbox);
+    }
+    catch {
+        throw new RtcTopologyDeliveryCorruptionError(
+            `RTC topology publication ${computed.publication.publicationId} has a conflicting durable outbox`
+        );
+    }
+    const expectedDelivery = computeRtcTopologyPublicationDeliveryWrite(
+        computed.publication,
+        input.publisherStreamId
+    ).deliveryAppend;
+    if (expectedDelivery !== null) {
+        if (input.read.delivery === null) {
+            throw new RtcTopologyDeliveryCorruptionError(
+                `RTC topology publication ${computed.publication.publicationId} has no durable delivery`
+            );
+        }
+        validateRtcTopologyDeliveryLogEntry(input.read.delivery, expectedDelivery);
     }
     return {
         loaded: computed,
         transaction: {
             mutation: null,
-            promotionRequest: null,
-            connectRequests: [],
+            promotionWrite: null,
+            connectWrites: [],
             fingerprint: null,
-            delivery: computeRtcTopologyPublicationDeliveryWrite(
-                computed.publication,
-                input.publisherStreamId
-            ),
+            delivery: null,
             reservationFinish: input.reservationFinish
         }
     };
@@ -196,7 +235,7 @@ export function validateRtcTopologyReplayWrite(
     computed: ComputedRtcTopologyReplayWrite
 ): void {
     validateTopologyMutation({
-        ...toReplayMutationInput(input.read),
+        ...toReplayMutationInput(input.read.mutation),
         computed: computed.loaded
     });
     const expected = computeRtcTopologyReplayWrite(input);
@@ -250,8 +289,16 @@ function toValidationProjection(computed: AcceptedRtcTopologyWorkWrite): object 
 function toTransactionProjection(transaction: RtcTopologyPublicationTransactionWrite): object {
     return {
         mutation: transaction.mutation,
-        promotionRequest: toResourceEntryProjection(transaction.promotionRequest),
-        connectRequests: transaction.connectRequests.map(toRequiredResourceEntryProjection),
+        promotionWrite: transaction.promotionWrite === null
+            ? null
+            : {
+                ...transaction.promotionWrite,
+                entry: toRequiredResourceEntryProjection(transaction.promotionWrite.entry)
+            },
+        connectWrites: transaction.connectWrites.map((write) => ({
+            ...write,
+            entry: toRequiredResourceEntryProjection(write.entry)
+        })),
         fingerprint: transaction.fingerprint,
         delivery: transaction.delivery === null
             ? null
@@ -260,19 +307,16 @@ function toTransactionProjection(transaction: RtcTopologyPublicationTransactionW
                     ...transaction.delivery.outboxWrite,
                     entry: toRequiredResourceEntryProjection(
                         transaction.delivery.outboxWrite.entry
-                    ),
-                    conflict: {
-                        name: transaction.delivery.outboxWrite.conflict.name,
-                        message: transaction.delivery.outboxWrite.conflict.message,
-                        code: transaction.delivery.outboxWrite.conflict.code,
-                        status: transaction.delivery.outboxWrite.conflict.status,
-                        key: transaction.delivery.outboxWrite.conflict.key
-                    }
+                    )
                 },
                 deliveryAppend: transaction.delivery.deliveryAppend
             },
         reservationFinish: toReservationFinishProjection(transaction.reservationFinish)
     };
+}
+
+function toOptionalAppOutboxWrite(entry: ResourceEntry | null) {
+    return entry === null ? null : computeAppOutboxInsert(entry);
 }
 
 function toReservationFinishProjection(computed: ResourceInboxReservationFinish): object {
@@ -282,10 +326,6 @@ function toReservationFinishProjection(computed: ResourceInboxReservationFinish)
         status: computed.status,
         completedAt: computed.completedAt.toISOString()
     };
-}
-
-function toResourceEntryProjection(entry: ResourceEntry | null): object | null {
-    return entry === null ? null : toRequiredResourceEntryProjection(entry);
 }
 
 function toRequiredResourceEntryProjection(entry: Readonly<ResourceEntry>): object {
