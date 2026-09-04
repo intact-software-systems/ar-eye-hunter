@@ -10,6 +10,7 @@ import {
 } from '@shared/alm/al-admission-backend.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import {
+    AL_ADMISSION_REVISION_KEY,
     computeIndexedDbAdmissionRevisionWrite,
     readIndexedDbAdmissionSnapshot,
     writeIndexedDbAdmissionMutations
@@ -380,6 +381,35 @@ describe('admission storage envelopes', () => {
                 }],
                 revisionWrite: computeIndexedDbAdmissionRevisionWrite(0)
             })).rejects.toMatchObject({ name: 'ALAdmissionCorruptionError', key: 'version:bad' });
+        }
+        finally {
+            database.close();
+        }
+    });
+
+    it('reads only the revision scalar needed for the write compare-and-set', async () => {
+        const databaseName = `admission-revision-scalar-${crypto.randomUUID()}`;
+        const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
+        try {
+            await putIndexedDbRows(database, 'entries', [{
+                key: AL_ADMISSION_REVISION_KEY,
+                value: 0,
+                expireAtTimestamp: 'irrelevant-to-the-write-cas',
+                writeToken: 7
+            }]);
+
+            await expect(writeIndexedDbAdmissionMutations({
+                db: database,
+                storeName: 'entries',
+                expectedRevision: 0,
+                mutations: [],
+                revisionWrite: computeIndexedDbAdmissionRevisionWrite(0)
+            })).resolves.toBe(true);
+            await expect(readIndexedDbAdmissionSnapshot(
+                database,
+                'entries',
+                { kind: 'revision' }
+            )).resolves.toMatchObject({ revision: 1 });
         }
         finally {
             database.close();

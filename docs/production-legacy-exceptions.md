@@ -23,7 +23,7 @@ When retention is necessary, add one section headed `path#symbol` with these mai
 - Named owner
 - Review or removal condition
 
-### `packages/shared/queuebox/migrate-legacy-indexed-db-queue-entries.ts#migrateLegacyIndexedDbQueueEntries`
+### `packages/shared/queuebox/migrate-legacy-indexed-db-queue-entries.ts`#`migrateLegacyIndexedDbQueueEntries`
 
 - Path: `packages/shared/queuebox/migrate-legacy-indexed-db-queue-entries.ts`
 - Symbol: `migrateLegacyIndexedDbQueueEntries`
@@ -36,7 +36,7 @@ When retention is necessary, add one section headed `path#symbol` with these mai
 - Named owner: Rallar browser-persistence maintainers.
 - Review or removal condition: Remove after the supported browser-data retention window proves that no deployed client or retained database can contain revisionless QueueBox rows.
 
-### `packages/shared/alm/migrate-indexed-db-admission-write-tokens.ts#migrateIndexedDbAdmissionWriteTokens`
+### `packages/shared/alm/migrate-indexed-db-admission-write-tokens.ts`#`migrateIndexedDbAdmissionWriteTokens`
 
 - Path: `packages/shared/alm/migrate-indexed-db-admission-write-tokens.ts`
 - Symbol: `migrateIndexedDbAdmissionWriteTokens`
@@ -49,7 +49,7 @@ When retention is necessary, add one section headed `path#symbol` with these mai
 - Named owner: Rallar browser-persistence maintainers.
 - Review or removal condition: Remove after the supported browser-data and mixed-client window proves that tokenless admission rows can no longer exist.
 
-### `packages/shared/persistence/IndexedDbStringPersistenceProvider.ts#IndexedDbStringPersistenceProvider`
+### `packages/shared/persistence/IndexedDbStringPersistenceProvider.ts`#`IndexedDbStringPersistenceProvider`
 
 - Path: `packages/shared/persistence/IndexedDbStringPersistenceProvider.ts`
 - Symbol: `IndexedDbStringPersistenceProvider`
