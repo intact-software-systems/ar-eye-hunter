@@ -33,7 +33,7 @@
       "default": "ws://127.0.0.1:18080"
     },
     "statusGroupId": "status-room-{runId}",
-    "carolUsername": "carol-cr-{runId}",
+    "carolUsername": "carol-sl-{runId}",
     "carolPassword": {
       "env": "RALLAR_CAROL_PASSWORD",
       "default": "secret",
@@ -60,10 +60,6 @@
       "timeoutMs": 10000
     },
     "wsBob": {
-      "type": "ws",
-      "timeoutMs": 10000
-    },
-    "wsCarol": {
       "type": "ws",
       "timeoutMs": 10000
     }
@@ -160,7 +156,7 @@
         },
         "body": {
           "username": "{aliceUsername}",
-          "displayName": "Criterion manager {runId}",
+          "displayName": "Status lifecycle manager {runId}",
           "status": "active",
           "roles": []
         }
@@ -193,7 +189,7 @@
               "successRate": 0.95,
               "minimumViableRate": 0.5,
               "deadlineMs": 60000,
-              "maxFormationAttempts": 1
+              "maxFormationAttempts": 3
             },
             "admission": {
               "mode": "open"
@@ -309,10 +305,7 @@
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "body": {},
-        "outputs": {
-          "startStatusPlanEpoch": "body.group.formationEpoch"
-        }
+        "body": {}
       },
       "expect": {
         "status": 200,
@@ -340,12 +333,6 @@
           "maxDurationMs": 15000,
           "backoffMs": 100,
           "backoffMultiplier": 2
-        },
-        "outputs": {
-          "startStatusPlanLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
-          "startStatusPlanLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
-          "startStatusPlanLayoutVersion": "body.snapshot.version",
-          "startStatusPlanLayoutState": "body.snapshot.state"
         }
       },
       "expect": {
@@ -639,6 +626,36 @@
       }
     },
     {
+      "name": "theWriterStoredTheActiveStatusOnTheRow",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{statusGroupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activationStatus": {
+              "condition": "active",
+              "coverageRate": 1
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "registerCarol",
       "type": "http",
       "connection": "primary",
@@ -648,7 +665,7 @@
         "body": {
           "username": "{carolUsername}",
           "password": "{carolPassword}",
-          "displayName": "Commanded replanning carol {runId}"
+          "displayName": "Status lifecycle carol {runId}"
         }
       },
       "expect": {
@@ -743,61 +760,6 @@
       }
     },
     {
-      "name": "createCarolWsTicket",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "POST",
-        "path": "/api/auth/ws-ticket/requests/bb-status-lifecycle-7c6ec360-{runId}",
-        "headers": {
-          "Authorization": "{carolAuthHeader}",
-          "x-client-id": "{carolClientId}"
-        },
-        "outputs": {
-          "carolWsTicket": {
-            "path": "body.ticket",
-            "secret": true
-          }
-        }
-      },
-      "expect": {
-        "status": 200
-      }
-    },
-    {
-      "name": "deriveCarolWsUrl",
-      "type": "set",
-      "output": "carolWsUrl",
-      "secret": true,
-      "redactAs": "carolWsUrl",
-      "transform": {
-        "concat": [
-          {
-            "path": "variables.rallarWsBaseUrl"
-          },
-          "/api/ws/",
-          {
-            "path": "outputs.carolSessionId"
-          },
-          "?ticket=",
-          {
-            "urlEncode": {
-              "path": "outputs.carolWsTicket"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "openCarolWs",
-      "type": "ws.open",
-      "connection": "wsCarol",
-      "request": {
-        "url": "{carolWsUrl}",
-        "timeoutMs": 10000
-      }
-    },
-    {
       "name": "theWidenedLayoutFallsBelowTheViableFloor",
       "type": "http",
       "connection": "primary",
@@ -822,6 +784,37 @@
           "readiness": {
             "plannedEdgeCount": 3,
             "observedEdgeCount": 1
+          },
+          "lifecycleState": "active",
+          "remediation": "none"
+        }
+      }
+    },
+    {
+      "name": "theClockStoredTheFailedStatusOnTheRow",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{statusGroupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activationStatus": {
+              "condition": "failed"
+            }
           }
         }
       }
@@ -843,16 +836,7 @@
         "code": 1000,
         "reason": "formation criterion ws checks done"
       }
-    },
-    {
-      "name": "closeCarolWs",
-      "type": "ws.close",
-      "connection": "wsCarol",
-      "request": {
-        "code": 1000,
-        "reason": "formation criterion ws checks done"
-      }
     }
   ],
-  "description": "The observed activation condition walked across a formation: a group with no layout carrying traffic reports `inactive` and names no coverage basis, a group dialing its frozen planned candidate reports `initialising` because the basis exists but no edge is observed, and the one planned edge being reported takes coverage to 1 so the group activates and publishes `active`. The condition is read from the group row the status writer wrote, not derived at read (product decision 3), so this also pins that the writer ran. Admitting a third session then widens the planned edge set from one to three while only the original edge is observed, so coverage falls to a third and the condition lands on `failed` -- below the viable floor, and reported by the durable dwell clock, because a decay that is the absence of evidence is one no evidence arrival could ever report. The `degraded` band and the recovery above it need a further clock cycle to set `dwellSatisfied`, so they are left to the follow-up rather than pinned on a poll window that would make this recipe flaky."
+  "description": "The observed activation condition walked across a formation. Three of the four condition reads are satisfied by the formation view whether or not the writer ran, because that read falls back to computing the condition when no status is stored -- so the two group reads are what actually prove the writer: they assert `activationStatus` on the group row itself, which only the writer can put there. The walk is `inactive` with no coverage basis while forming, `initialising` while dialing the frozen planned candidate, `active` once the one planned edge is observed, and `failed` once a third session widens the planned edge set to three with one edge observed -- a third, below the viable floor. That last transition is the durable dwell clock reporting a decay no evidence arrival could report, and it pins `lifecycleState: active` so the exhausted-in-dormant route to the same value is excluded. The `failed` poll must stay well under the 60s evidence freshness window, or the single sample ages out and the failure presents as a readiness bug rather than a timeout. `degraded` and the recovery above it need a further clock cycle to set `dwellSatisfied` and are left to a recipe that can observe the clock rather than race it."
 }

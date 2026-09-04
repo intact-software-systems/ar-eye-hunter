@@ -24,6 +24,12 @@ const CASES = [
         connections: ['wsAlice', 'wsBob']
     },
     {
+        recipe: 'api-v1-group-status-lifecycle.json',
+        steps: ['deriveRttCreatedAt', 'deriveRttReporter', 'deriveRttResource', 'reportTheObservedEdge'],
+        sessions: ['aliceSessionId', 'bobSessionId'],
+        connections: ['wsAlice', 'wsBob']
+    },
+    {
         recipe: 'api-v1-match-preset.json',
         steps: ['captureArenaRttReportedAt', 'deriveArenaRttReporter', 'deriveArenaRttResource', 'reportTheArenaEdge'],
         sessions: ['carolSessionId', 'danSessionId'],
