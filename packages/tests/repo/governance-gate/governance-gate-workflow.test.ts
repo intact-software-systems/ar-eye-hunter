@@ -39,7 +39,7 @@ describe('governance gate workflow', () => {
                 'governance-gate': {
                     name: 'Governance Gate',
                     'runs-on': 'ubuntu-latest',
-                    'timeout-minutes': 2,
+                    'timeout-minutes': 10,
                     steps: [
                         {
                             uses: 'actions/checkout@v7',
