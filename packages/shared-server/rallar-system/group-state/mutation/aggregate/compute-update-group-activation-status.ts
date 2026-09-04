@@ -142,7 +142,7 @@ export function computeUpdateGroupActivationStatus(
         coverageBasisLayoutIdentity: basis,
         formationEpoch: group.formationEpoch,
         evidenceWatermark: command.input.evidenceWatermark,
-        confirmedAtEpochMs: facts.nowEpochMs
+        publishedAtEpochMs: facts.nowEpochMs
     };
     if (isSamePublishedStatus(next, group.activationStatus)) {
         return noOp(command, read, facts);

@@ -4832,7 +4832,7 @@ components:
         - coverageBasisLayoutIdentity
         - formationEpoch
         - evidenceWatermark
-        - confirmedAtEpochMs
+        - publishedAtEpochMs
       properties:
         condition:
           type: string
@@ -4861,11 +4861,13 @@ components:
             createdAtEpochMs:
               type: integer
               minimum: 0
-        confirmedAtEpochMs:
+        publishedAtEpochMs:
           type: integer
           minimum: 0
           description: >-
-            When this status was last confirmed, not when it last changed.
+            When this band was published. A reading that re-observes the band
+            already stored writes nothing, so this is the instant of the last
+            change, not of the last observation.
 
     GroupMemberPolicy:
       type: object

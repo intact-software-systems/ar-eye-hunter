@@ -873,7 +873,7 @@ function withActivationStatus(
                 coverageBasisLayoutIdentity: status.coverageBasisLayoutIdentity,
                 formationEpoch: snapshot.group.formationEpoch,
                 evidenceWatermark: { version: 3, createdAtEpochMs: 1_000 },
-                confirmedAtEpochMs: 1_000
+                publishedAtEpochMs: 1_000
             }
         }
     };

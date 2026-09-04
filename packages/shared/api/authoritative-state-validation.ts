@@ -1075,7 +1075,7 @@ export function validateGroupActivationStatusPayload(
         fail(`${label}.coverageRate must be a rate between 0 and 1`);
     }
     nonNegativeInteger(status.formationEpoch, `${label}.formationEpoch`);
-    nonNegativeInteger(status.confirmedAtEpochMs, `${label}.confirmedAtEpochMs`);
+    nonNegativeInteger(status.publishedAtEpochMs, `${label}.publishedAtEpochMs`);
     validateGroupSnapshotLayoutIdentity(
         record(status.coverageBasisLayoutIdentity, `${label}.coverageBasisLayoutIdentity`),
         `${label}.coverageBasisLayoutIdentity`
