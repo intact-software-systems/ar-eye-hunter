@@ -54,28 +54,33 @@ export class AuthInboxHandler {
         });
         const command = materialized.command;
         const read = await this.dependencies.mutationService.read(command);
-        const computed = this.dependencies.mutationService.compute(command, read, materialized.facts);
+        const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
+        const computedMutation = this.dependencies.mutationService.compute(
+            command,
+            read,
+            materialized.facts
+        );
+        const completionInput = {
+            ...completionFacts,
+            durableResult: computedMutation.result,
+            status: EntityStatus.COMPLETED
+        } as const;
+        const computedCompletion = computeAppInboxCompletion(completionInput);
         this.dependencies.mutationService.validate({
             command,
             read,
             facts: materialized.facts,
-            computed
+            computed: computedMutation
         });
-        const completionInput = {
-            ...this.dependencies.transactionWriter.readCompletionFacts(context),
-            durableResult: computed.result,
-            status: EntityStatus.COMPLETED
-        } as const;
-        const completion = computeAppInboxCompletion(completionInput);
-        const completionIssues = validateAppInboxCompletion(completionInput, completion);
+        const completionIssues = validateAppInboxCompletion(completionInput, computedCompletion);
         if (completionIssues[0] !== undefined) {
             throw completionIssues[0].cause;
         }
         return await this.dependencies.transactionWriter.writeComputedMutation(
             context,
-            completion,
+            computedCompletion,
             async (transaction) => {
-                await this.dependencies.mutationService.write(transaction, computed);
+                await this.dependencies.mutationService.write(transaction, computedMutation);
             }
         );
     }
