@@ -336,7 +336,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         const collectionMutationSteps = createRallarServerRestCollectionTemplates(
             defaultRallarServerWorkbenchVariables({})
         ).flatMap((collection) => collection.steps.filter((step) => step.request.method !== 'GET'));
-        expect(collectionMutationSteps).toHaveLength(9);
+        expect(collectionMutationSteps).toHaveLength(14);
         for (const step of collectionMutationSteps) {
             expect(step.request.path, step.stepId).toMatch(/\/requests\/\{\{requestId\}\}$/u);
             expect(step.request.body).not.toMatchObject({ requestId: expect.anything() });
@@ -526,5 +526,43 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         });
         expect(recipe.commands[0].metadata?.restCollection?.attachAuth).toBe(true);
         expect(recipe.commands[2].metadata?.restCollection?.expect).toBeDefined();
+    });
+    // Slice 13: the cheapest way to drive the stage machine by hand before the
+    // live-RTC specs exist.
+    it('drives every lifecycle boundary manually in the stage collection', () => {
+        const collection = createRallarServerRestCollectionTemplates(
+            defaultRallarServerWorkbenchVariables({})
+        ).find((entry) => entry.collectionId === 'group-lifecycle-stages');
+
+        expect(collection).toBeDefined();
+        expect(collection!.steps.map((step) => step.stepId)).toEqual([
+            'create-phased-group',
+            'plan-layout',
+            'connect-layout',
+            'read-formation',
+            'pause-transport',
+            'resume-transport'
+        ]);
+
+        // Nothing may auto-advance between the steps, or the operator is
+        // reading a stage the server reached on its own (product decision 8).
+        expect(collection!.steps[0]!.request.body).toMatchObject({
+            lifecyclePolicy: {
+                establishment: {
+                    planTrigger: { kind: 'manual' },
+                    connectTrigger: { kind: 'manual' }
+                },
+                activation: { mode: 'manual' }
+            }
+        });
+
+        // The valve is orthogonal to the stage (product decision 25): the
+        // pause and resume steps assert the transport moved and say nothing
+        // about the lifecycle state.
+        const valveSteps = collection!.steps.filter((step) => step.stepId.endsWith('-transport'));
+        expect(valveSteps.flatMap((step) => step.expect?.body ?? [])).toEqual([
+            { path: '$.group.transportState', equals: 'halted' },
+            { path: '$.group.transportState', equals: 'flowing' }
+        ]);
     });
 });

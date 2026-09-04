@@ -95,6 +95,149 @@ export function createRallarServerRestCollectionTemplates(
             ]
         },
         {
+            collectionId: 'group-lifecycle-stages',
+            name: 'Group lifecycle stages',
+            description: 'Drive a phased group through plan, connect and activate by hand, then pause and ' +
+                'resume its transport, reading the stage and observed condition at each step.',
+            variables: baseVariables,
+            steps: [
+                {
+                    stepId: 'create-phased-group',
+                    label: 'Create phased group',
+                    request: {
+                        method: 'POST',
+                        path: stateCollectionPath('/groups/requests/{{requestId}}'),
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                        body: {
+                            groupId: '{{groupId}}',
+                            displayName: '{{groupId}}',
+                            description: 'Created by rallar-black-box lifecycle collection',
+                            kind: 'room',
+                            joinMode: 'open',
+                            createdByPrincipalId: '{{principalId}}',
+                            // `manual` triggers throughout: the point of this
+                            // collection is that an operator drives each
+                            // boundary by hand, so nothing may auto-advance
+                            // between the steps (product decision 8).
+                            lifecyclePolicy: {
+                                preset: 'managed',
+                                establishment: {
+                                    planTrigger: { kind: 'manual' },
+                                    connectTrigger: { kind: 'manual' }
+                                },
+                                activation: { mode: 'manual' },
+                                admission: { mode: 'open' }
+                            }
+                        }
+                    },
+                    expect: {
+                        status: [200, 201, 409],
+                        body: [
+                            {
+                                path: '$.group.lifecycleState',
+                                equals: 'forming'
+                            }
+                        ]
+                    }
+                },
+                {
+                    stepId: 'plan-layout',
+                    label: 'Plan layout',
+                    request: {
+                        method: 'POST',
+                        path: stateCollectionPath('/groups/{{groupId}}/plan/requests/{{requestId}}'),
+                        attachAuth: true,
+                        responseBodyMode: 'json'
+                    },
+                    expect: {
+                        status: [200, 201]
+                    }
+                },
+                {
+                    stepId: 'connect-layout',
+                    label: 'Connect the planned layout',
+                    request: {
+                        method: 'POST',
+                        path: stateCollectionPath('/groups/{{groupId}}/connect/requests/{{requestId}}'),
+                        attachAuth: true,
+                        responseBodyMode: 'json'
+                    },
+                    expect: {
+                        status: [200, 201]
+                    }
+                },
+                {
+                    stepId: 'read-formation',
+                    label: 'Read formation view',
+                    request: {
+                        method: 'GET',
+                        path: stateCollectionPath('/groups/{{groupId}}/formation'),
+                        attachAuth: true,
+                        responseBodyMode: 'json'
+                    },
+                    expect: {
+                        status: 200
+                    },
+                    extract: [
+                        {
+                            name: 'observedLifecycleState',
+                            path: '$.lifecycleState'
+                        },
+                        {
+                            name: 'observedCondition',
+                            path: '$.condition'
+                        },
+                        {
+                            name: 'observedFormationEpoch',
+                            path: '$.formationEpoch'
+                        }
+                    ]
+                },
+                {
+                    stepId: 'pause-transport',
+                    label: 'Pause transport',
+                    request: {
+                        method: 'POST',
+                        path: stateCollectionPath('/groups/{{groupId}}/transport/pause/requests/{{requestId}}'),
+                        attachAuth: true,
+                        responseBodyMode: 'json'
+                    },
+                    expect: {
+                        status: [200, 201],
+                        body: [
+                            {
+                                // The valve is orthogonal to the stage
+                                // (product decision 25): pausing must not move
+                                // the group off the stage it reached.
+                                path: '$.group.transportState',
+                                equals: 'halted'
+                            }
+                        ]
+                    }
+                },
+                {
+                    stepId: 'resume-transport',
+                    label: 'Resume transport',
+                    request: {
+                        method: 'POST',
+                        path: stateCollectionPath('/groups/{{groupId}}/transport/resume/requests/{{requestId}}'),
+                        attachAuth: true,
+                        responseBodyMode: 'json'
+                    },
+                    expect: {
+                        status: [200, 201],
+                        body: [
+                            {
+                                path: '$.group.transportState',
+                                equals: 'flowing'
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
             collectionId: 'client-presence-lifecycle',
             name: 'Client presence lifecycle',
             description: 'Upsert client state, connect presence, and list client/group events.',
