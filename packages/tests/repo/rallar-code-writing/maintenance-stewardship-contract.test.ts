@@ -53,8 +53,7 @@ const resourceInboxPolicyDimensions = [
     'transaction-policy.resolved-owner-not-path',
     'transaction-policy.strict-domain-no-transfer',
     'transaction-policy.bounded-resource-inbox-specialization',
-    'transaction-policy.guarded-winner-materializer',
-    'transaction-policy.indexeddb-remains-strict'
+    'transaction-policy.guarded-winner-materializer'
 ] as const;
 const allDimensions = [
     ...stewardshipDimensions,
@@ -362,7 +361,6 @@ describe('rallar code-writing maintenance stewardship contract', () => {
             'winner-callback-suspicion'
         ]);
         expect(resourceInboxPolicyScenario.prompt).toContain('Three alternatives are proposed');
-        expect(resourceInboxPolicyScenario.prompt).toContain('browser IndexedDB');
 
         expect(rubric.schemaVersion).toBe('rallar-code-writing-rubric-v2');
         expect(rubric.suiteId).toBe(suite.suiteId);

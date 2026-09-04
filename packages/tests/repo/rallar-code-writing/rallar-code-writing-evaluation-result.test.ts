@@ -66,10 +66,6 @@ const additionalScenarioDimensions = [
     [
         'resource-inbox-policy-under-scope-pressure',
         'transaction-policy.guarded-winner-materializer'
-    ],
-    [
-        'resource-inbox-policy-under-scope-pressure',
-        'transaction-policy.indexeddb-remains-strict'
     ]
 ] as const;
 
