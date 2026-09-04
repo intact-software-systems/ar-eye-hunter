@@ -6,7 +6,10 @@ import {
 } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import { resolveNewerEvidenceWatermark } from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
 import { resolveGroupActivationCoverageWithHysteresis } from '@shared/api/group-lifecycle/activation-status/group-activation-coverage-hysteresis.ts';
-import type { GroupActivationStatus } from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
+import {
+    isSameGroupActivationSeries,
+    type GroupActivationStatus
+} from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
 import { isSameGroupLayoutIdentity, toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { isFormationAttemptBudgetExhausted } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import type { Group } from '@shared/api/group-types.ts';
@@ -43,8 +46,10 @@ function isSupersededByStoredEvidence(
         return false;
     }
     if (
-        stored.formationEpoch !== command.input.expectedFormationEpoch ||
-        !isSameGroupLayoutIdentity(stored.coverageBasisLayoutIdentity, command.input.expectedLayout)
+        !isSameGroupActivationSeries(stored, {
+            formationEpoch: command.input.expectedFormationEpoch,
+            coverageBasisLayoutIdentity: command.input.expectedLayout
+        })
     ) {
         return false;
     }
@@ -55,8 +60,7 @@ function isSupersededByStoredEvidence(
 function isSamePublishedStatus(next: GroupActivationStatus, stored: GroupActivationStatus | null): boolean {
     return stored !== null &&
         stored.condition === next.condition &&
-        isSameGroupLayoutIdentity(stored.coverageBasisLayoutIdentity, next.coverageBasisLayoutIdentity) &&
-        stored.formationEpoch === next.formationEpoch;
+        isSameGroupActivationSeries(stored, next);
 }
 
 /**
