@@ -77,14 +77,6 @@ Deno.test(
             });
             assert.equal(command.operation, 'compact');
             assert.equal(command.snapshot?.metadata.reason, REASON);
-            const read = await service.mutationService.read(command);
-            const computed = service.mutationService.compute({ command, read });
-
-            assert.equal(computed.snapshot?.metadata.reason, REASON);
-            assert.equal(computed.result.operation, 'compact');
-            assert.equal(computed.result.snapshot?.metadata.reason, REASON);
-            assert.deepEqual(service.mutationService.validate({ command, read, computed }), []);
-            assert.deepEqual(decodeCrdtMutationResult(computed.result), computed.result);
 
             service.writeCrdtCommandNoWaiting(command);
             await drain(service, sql);

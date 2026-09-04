@@ -50,7 +50,8 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promis
         authSessionRepository: authSessions,
         serviceId: 'pglite-close-test'
     });
-    const consumers = { sql, resourceInbox, resourceResults, clientState, groupState, options };
+    const groups = new GroupStateRepository(runtime, groupEvents);
+    const consumers = { sql, resourceInbox, resourceResults, clientState, groupState, groups, options };
     const { client, group } = createPGliteStateInboxConsumers({ ...consumers, reader });
     createPGliteStateInboxConsumers({ ...consumers, reader: secondReader });
     return {
@@ -64,7 +65,7 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql): Promis
         clientState,
         groupState,
         clients: new ClientStateRepository(runtime, new PSqlClientStateEventRepository(sql)),
-        groups: new GroupStateRepository(runtime, groupEvents)
+        groups
     };
 }
 
@@ -141,6 +142,7 @@ interface PGliteStateInboxConsumerInput {
     readonly resourceResults: ResourceInboxResultsRepository;
     readonly clientState: ClientStateService;
     readonly groupState: GroupStateService;
+    readonly groups: GroupStateRepository;
     readonly options: {
         readonly waitMaxElapsedMsecs: number;
         readonly waitRetryIntervalMsecs: number;
@@ -173,7 +175,8 @@ function createPGliteStateInboxConsumers(input: PGliteStateInboxConsumerInput): 
             resourceInboxRepository: input.resourceInbox.entries,
             resourceInboxResultsRepository: input.resourceResults,
             database: input.sql,
-            groupStateService: input.groupState
+            groupStateService: input.groupState,
+            resultReader: input.groups
         },
         {
             serviceId: 'pglite-close-test',

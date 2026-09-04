@@ -472,13 +472,13 @@ Deno.test(
             if (computed.outcome !== 'write') {
                 throw new TypeError('Expected summary collision write');
             }
-            const [summaryEntry] = computed.outboxEntries;
-            assert.ok(summaryEntry);
+            const [summaryWrite] = computed.outboxWrites;
+            assert.ok(summaryWrite);
             const divergentResource = JSON.stringify({
                 collision: 'preexisting-divergent-summary-work'
             });
             await createPSqlResourceInboxRepository(sql).entries.write({
-                ...summaryEntry,
+                ...summaryWrite.entry,
                 resource: divergentResource
             });
 
@@ -503,7 +503,7 @@ Deno.test(
     `;
             assert.equal(Number(eventRows?.count ?? 0), 0);
             const storedCollision = await createPSqlResourceInboxRepository(sql).entries.findAnyByKey(
-                summaryEntry.key
+                summaryWrite.entry.key
             );
             assert.equal(storedCollision?.resource, divergentResource);
         });
