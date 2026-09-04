@@ -50,7 +50,11 @@ export function createActivationStatusClockWorkHandler(
                 { activationStatus: options.activationStatus },
                 authority,
                 planned,
-                { satisfied: true, dueAtEpochMs: work.dueAtEpochMs }
+                // Only the dwell leg confirms a band. The expiry heartbeat just
+                // asks the group to look again, so it reads as an ordinary
+                // evidence petition -- which is what lets a decayed group arm
+                // its dwell instead of publishing an unconfirmed band.
+                work.kind === 'dwell' ? { satisfied: true, dueAtEpochMs: work.dueAtEpochMs } : null
             );
         }
     };
