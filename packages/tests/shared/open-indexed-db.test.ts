@@ -10,8 +10,7 @@ import {
 
 import {
     IndexedDbConnection,
-    openIndexedDbWithStore,
-    openIndexedDbWithStores
+    openIndexedDbWithStore
 } from '@shared/persistence/openIndexedDb.ts';
 
 interface SchemaWriteObservation {
@@ -35,14 +34,14 @@ describe('IndexedDB schema upgrades', () => {
         }
         const writes = observeSchemaWrites();
 
-        const database = await openIndexedDbWithStores('schema-options', [{
+        const database = await openIndexedDbWithStore('schema-options', {
             name: 'items',
             keyPath: 'id',
             indexes: [
                 { name: 'by-group', keyPath: ['groupId', 'position'] },
                 { name: 'by-reference', keyPath: 'reference', unique: true }
             ]
-        }]);
+        });
         try {
             expect(writes).toEqual(expect.arrayContaining([
                 { kind: 'store', name: 'items', transactionMode: 'versionchange' },
@@ -74,12 +73,12 @@ describe('IndexedDB schema upgrades', () => {
         const initialVersion = initial.version;
         initial.close();
 
-        const stores = [{
+        const store = {
             name: 'items',
             keyPath: 'id',
             indexes: [{ name: 'by-group', keyPath: ['groupId', 'position'], unique: true }]
-        }];
-        const upgraded = await openIndexedDbWithStores('schema-replacement', stores);
+        };
+        const upgraded = await openIndexedDbWithStore('schema-replacement', store);
         try {
             expect(upgraded.version).toBe(initialVersion + 1);
             const index = upgraded.transaction('items').objectStore('items').index('by-group');
@@ -95,7 +94,7 @@ describe('IndexedDB schema upgrades', () => {
         finally {
             upgraded.close();
         }
-        const unchanged = await openIndexedDbWithStores('schema-replacement', stores);
+        const unchanged = await openIndexedDbWithStore('schema-replacement', store);
         expect(unchanged.version).toBe(initialVersion + 1);
         unchanged.close();
     });
@@ -122,7 +121,7 @@ describe('IndexedDB schema upgrades', () => {
         unchanged.close();
     });
 
-    it('rolls back a rejected unique-index upgrade, including a preceding store creation', async () => {
+    it('rolls back a rejected unique-index upgrade', async () => {
         vi.stubGlobal('indexedDB', new FakeIndexedDb.IDBFactory());
         const initial = await openIndexedDbWithStore('schema-rollback', { name: 'items', keyPath: 'id' });
         const seed = initial.transaction('items', 'readwrite');
@@ -132,10 +131,11 @@ describe('IndexedDB schema upgrades', () => {
         const initialVersion = initial.version;
         initial.close();
 
-        await expect(openIndexedDbWithStores('schema-rollback', [
-            { name: 'audit', keyPath: 'id' },
-            { name: 'items', keyPath: 'id', indexes: [{ name: 'by-reference', keyPath: 'reference', unique: true }] }
-        ])).rejects.toMatchObject({ name: 'AbortError' });
+        await expect(openIndexedDbWithStore('schema-rollback', {
+            name: 'items',
+            keyPath: 'id',
+            indexes: [{ name: 'by-reference', keyPath: 'reference', unique: true }]
+        })).rejects.toMatchObject({ name: 'AbortError' });
 
         const unchanged = await openIndexedDbWithStore('schema-rollback', { name: 'items', keyPath: 'id' });
         try {
@@ -154,7 +154,8 @@ describe('IndexedDB schema upgrades', () => {
     });
 
     it('serializes concurrent upgrades for distinct stores in one database', async () => {
-        vi.stubGlobal('indexedDB', new FakeIndexedDb.IDBFactory());
+        const factory = new FakeIndexedDb.IDBFactory();
+        vi.stubGlobal('indexedDB', factory);
         const seed = await openIndexedDbWithStore('concurrent-schema', {
             name: 'seed',
             keyPath: 'id'
@@ -168,11 +169,7 @@ describe('IndexedDB schema upgrades', () => {
         first.close();
         second.close();
 
-        const database = await openIndexedDbWithStores('concurrent-schema', [
-            { name: 'seed', keyPath: 'id' },
-            { name: 'first', keyPath: 'id' },
-            { name: 'second', keyPath: 'id' }
-        ]);
+        const database = await readRequest(factory.open('concurrent-schema'));
         expect([...database.objectStoreNames]).toEqual(['first', 'second', 'seed']);
         database.close();
     });
