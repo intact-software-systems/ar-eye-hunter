@@ -1,15 +1,12 @@
 import { toScopedOverlayId } from './api-type-utils.ts';
 import type { ClientEvent, ClientSnapshot } from './client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from './group-client-views.ts';
+import { GROUP_ACTIVATION_CONDITIONS } from './group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import {
     GROUP_ACTIVATION_STATUS_KEYS,
     GROUP_EVIDENCE_WATERMARK_KEYS
 } from './group-lifecycle/activation-status/group-activation-status.ts';
-import {
-    validateGroupActivationStatusPayload,
-    validateGroupLayoutIdentityPayload
-} from './group-lifecycle/activation-status/validate-group-activation-status-payload.ts';
-import { GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
+import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
 import {
     GROUP_ESTABLISHMENT_TRANSPORTS,
     GROUP_LIFECYCLE_STATES,
@@ -514,7 +511,7 @@ export function validateAuthoritativeGroupSnapshot(
         }
     }
     if (group.acceptedLayoutIdentity !== null) {
-        validateGroupLayoutIdentityPayload(
+        validateGroupSnapshotLayoutIdentity(
             record(group.acceptedLayoutIdentity, 'GroupSnapshot.group.acceptedLayoutIdentity'),
             'GroupSnapshot.group.acceptedLayoutIdentity'
         );
@@ -1053,6 +1050,43 @@ function causalRevision(
         groupRevision: causal.groupRevision,
         presenceRevision: causal.presenceRevision
     };
+}
+
+function validateGroupSnapshotLayoutIdentity(identity: Record<string, unknown>, label: string): void {
+    exact(identity, GROUP_LAYOUT_IDENTITY_KEYS, label);
+    for (const key of ['groupRevision', 'presenceRevision', 'version'] as const) {
+        nonNegativeInteger(identity[key], `${label}.${key}`);
+    }
+    enumValue(identity.state, GROUP_LAYOUT_IDENTITY_STATES, `${label}.state`);
+}
+
+/**
+ * Shared with the delta validator: both wire surfaces carry the same nested
+ * status and both fail the same way, so one check serves them.
+ */
+export function validateGroupActivationStatusPayload(
+    status: Record<string, unknown>,
+    label: string
+): void {
+    exact(status, GROUP_ACTIVATION_STATUS_KEYS, label);
+    enumValue(status.condition, GROUP_ACTIVATION_CONDITIONS, `${label}.condition`);
+    const rate = status.coverageRate;
+    if (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0 || rate > 1) {
+        fail(`${label}.coverageRate must be a rate between 0 and 1`);
+    }
+    nonNegativeInteger(status.formationEpoch, `${label}.formationEpoch`);
+    nonNegativeInteger(status.confirmedAtEpochMs, `${label}.confirmedAtEpochMs`);
+    validateGroupSnapshotLayoutIdentity(
+        record(status.coverageBasisLayoutIdentity, `${label}.coverageBasisLayoutIdentity`),
+        `${label}.coverageBasisLayoutIdentity`
+    );
+    if (status.evidenceWatermark !== null) {
+        const watermark = record(status.evidenceWatermark, `${label}.evidenceWatermark`);
+        exact(watermark, GROUP_EVIDENCE_WATERMARK_KEYS, `${label}.evidenceWatermark`);
+        for (const key of GROUP_EVIDENCE_WATERMARK_KEYS) {
+            nonNegativeInteger(watermark[key], `${label}.evidenceWatermark.${key}`);
+        }
+    }
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
