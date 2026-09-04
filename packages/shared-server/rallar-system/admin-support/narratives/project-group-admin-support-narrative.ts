@@ -10,6 +10,7 @@ import type { GroupTopologyManagementView } from '@shared/api/graph-topology-man
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupEvent, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { adminSupportNarrativeBase, type AdminSupportNarrativeBase } from './admin-support-narrative-base.ts';
+import { groupLifecycleFacts } from './group-lifecycle-facts.ts';
 
 interface ProjectGroupAdminSupportInput extends AdminSupportNarrativeBase {
     readonly request: AdminSupportExplainGroupRequest;
@@ -123,66 +124,9 @@ function groupFacts(input: GroupFactsInput): readonly AdminSupportFact[] {
                 source: 'group-state',
                 value: input.snapshot.activeSessions.length,
                 certainty: 'exact'
-            },
-            // The lifecycle plane an operator actually asks about: which stage
-            // the group is in, which series it is on, which layout carries
-            // traffic, and whether application data is flowing (product
-            // decision 25 keeps the valve off the routing plane).
-            {
-                label: 'group.lifecycleState',
-                source: 'group-state',
-                value: input.snapshot.group.lifecycleState,
-                certainty: 'exact'
-            },
-            {
-                label: 'group.formationEpoch',
-                source: 'group-state',
-                value: input.snapshot.group.formationEpoch,
-                certainty: 'exact'
-            },
-            {
-                label: 'group.formationAttemptCount',
-                source: 'group-state',
-                value: input.snapshot.group.formationAttemptCount,
-                certainty: 'exact'
-            },
-            {
-                label: 'group.transportState',
-                source: 'group-state',
-                value: input.snapshot.group.transportState,
-                certainty: 'exact'
-            },
-            {
-                label: 'group.acceptedLayoutIdentity',
-                source: 'group-state',
-                value: summarizeLayoutIdentity(input.snapshot.group.acceptedLayoutIdentity),
-                certainty: input.snapshot.group.acceptedLayoutIdentity === null ? 'unavailable' : 'exact'
-            },
-            // Derived, non-authoritative, and read by no policy or gate
-            // (product decision 3) -- reported so an operator can see what the
-            // group is telling its members, and `unavailable` until the writer
-            // has confirmed one rather than invented a band no clock observed.
-            {
-                label: 'group.activationCondition',
-                source: 'group-state',
-                value: input.snapshot.group.activationStatus?.condition ?? 'unconfirmed',
-                certainty: input.snapshot.group.activationStatus === null ? 'unavailable' : 'exact'
-            },
-            {
-                label: 'group.activationCoverageRate',
-                source: 'group-state',
-                value: input.snapshot.group.activationStatus?.coverageRate ?? 'unconfirmed',
-                certainty: input.snapshot.group.activationStatus === null ? 'unavailable' : 'exact'
-            },
-            {
-                label: 'group.activationCoverageBasis',
-                source: 'group-state',
-                value: summarizeLayoutIdentity(
-                    input.snapshot.group.activationStatus?.coverageBasisLayoutIdentity ?? null
-                ),
-                certainty: input.snapshot.group.activationStatus === null ? 'unavailable' : 'exact'
             }
         );
+        facts.push(...groupLifecycleFacts(input.snapshot.group));
         if (input.principalId) {
             const member = input.snapshot.members.find(
                 (candidate) => candidate.principalId === input.principalId
@@ -237,11 +181,6 @@ function groupTimeline(events: readonly GroupEvent[]): readonly AdminSupportTime
  * A layout identity is the tuple, never a bare version (product decision 29),
  * so an operator comparing two of them can tell a re-plan from a re-publish.
  */
-function summarizeLayoutIdentity(identity: GroupLayoutIdentity | null): string {
-    return identity === null
-        ? 'none'
-        : `${identity.state} r${identity.groupRevision}/${identity.presenceRevision} v${identity.version}`;
-}
 
 function groupWarnings(input: GroupWarningsInput): readonly AdminSupportWarning[] {
     const warnings: AdminSupportWarning[] = [];
