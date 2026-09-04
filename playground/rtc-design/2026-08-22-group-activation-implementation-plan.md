@@ -3304,6 +3304,56 @@ running deployment requires compatibility, and specify the ordering — stop, dr
 drop, deploy both servers (api-v1 and relic-hunter-server-v1), then browsers — together with the
 rollback path if a decode fails after the fact. Two servers read these rows; the runbook covers both.
 
+### Slice 14 delivery checkpoint — documentation, runbook and denominator (2026-09-04/05)
+
+Delivered across two PRs. The reason-code catch-up carried from PR 9 landed first (#487: the six
+missing OpenAPI enum entries plus the coupling test whose absence had already lost that edit twice);
+the rest is one PR (#488).
+
+**What the slice actually found.** Three of the four items were staler than the plan recorded, and
+one was a live defect:
+
+- The architecture document still listed **the stored activation status projection under "Not In
+  V1"** — delivered in slice 12b — and cited the readiness module at the path that slice renamed.
+- `docs/rallar-api-reference.md` published **15 of the 22** reason codes, the same seven-code gap the
+  OpenAPI enum had, from the same absence of coupling. Both lists are now checked against
+  `GROUP_POLICY_REASON_CODES` in both directions.
+- The **26 acceptance scenarios had no traceable answer**: only `commanded-replanning` and
+  `debounced-replanning` existed as names anywhere in the repository. The architecture document now
+  carries a row per scenario including the unpinned ones, checked against the product plan's list as
+  a set. **7 are unpinned and 1 is in review**; five of the seven need infrastructure this workstream
+  does not own (two live-RTC lifecycle manifests, one headless pacing sweep, two browser-side
+  derivations) and two are server-side gaps a recipe could close.
+- **`start-establishment` and `reopen-establishment` are gone** from every `.ts`, `.mts`, `.json`,
+  `.yaml` and `.md` outside `playground/` — verified, nothing to remove.
+- `RtcTopologySnapshotRepository.findEntryRevision` **still has its caller** and was left alone, as
+  this section instructs; 6c owns it.
+
+**A correctness fix the slice's own review produced.** `resolveStoredCondition` on the formation view
+stated half the rule its comment describes: it compared the coverage basis but was never given the
+epoch. A hold-landing `reconfigure` from `active` advances `formationEpoch` while retaining
+`acceptedLayoutIdentity`, and nothing clears `activationStatus`, so a group that published `degraded`
+under epoch N kept serving that band under epoch N+1. The same predicate was stated three times, so
+it moved to `isSameGroupActivationSeries`; the epoch can no longer be dropped from one of them.
+
+`confirmedAtEpochMs` was renamed `publishedAtEpochMs` in the same pass. The compute no-ops an
+unchanged band, so a re-confirmation writes nothing and the instant only ever moved on a change — the
+field named a capability the write path suppresses. The suppression is right; the name was wrong, and
+a hard cutover is the only time that rename is free.
+
+**Two process facts worth carrying.** `deno task check` in the Deno apps is `deno check src/main.ts`
+and never reaches `apps/<app>/test/**`; two PRs in this series shipped red because of it, and the
+task now checks the test tree too (#489). And the group documents are now machine-checked: every
+backticked file and directory citation resolves against `git ls-files`, which makes the comparison
+case-exact — a wrong-case path passes on macOS and fails on Linux CI.
+
+**Still open in this slice**: the `examples/**` READMEs need nothing (nothing under `examples/` or
+the skill tree names lifecycle vocabulary at all), but the `rallar-realtime` skill did, and now
+carries the three rules an agent can get wrong. The hard-cutover runbook is written
+(`docs/rallar-group-lifecycle-cutover-runbook.md`); what it cannot do from here is record a
+verification that no running deployment requires compatibility, because that is an operator
+observation, so it specifies the check rather than asserting its result.
+
 **Gates:** the plan-completion set — `test:unit`, `test:ci`, `build`, the **Branch Release Gate** on the
 final feature-branch commit, and **Run Hetzner Supported Distributed Manifests** on the resulting
 default-branch commit.
