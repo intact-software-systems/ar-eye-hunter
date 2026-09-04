@@ -142,11 +142,8 @@ describe('group-state AppInbox transaction result boundary', () => {
             }
         };
         const handler = new GroupStateInboxHandler({
-            prepareMutation: async () => {
-                throw new Error('Inactive presence fixture must already be prepared.');
-            },
-            persistPreparation: async () => {
-                throw new Error('Inactive presence fixture must not persist preparation.');
+            readAuthenticatedMutation: async () => {
+                throw new Error('Inactive presence fixture must already be internal.');
             },
             mutationService: {
                 read: async () => {

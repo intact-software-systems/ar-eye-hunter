@@ -45,14 +45,10 @@ export interface GroupStateInboxHandlerDependencies {
     readonly transactionWriter: AppInboxMutationTransactionWriter;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
-    readonly prepareMutation: (
+    readonly readAuthenticatedMutation: (
         descriptor: AuthorizedGroupMutation['descriptor'],
         authority: GroupMutationAuthority
     ) => Promise<GroupMutationPreparation>;
-    readonly persistPreparation: (
-        context: AppInboxMessageContext<GroupStateInboxDurableResult>,
-        preparation: GroupMutationPreparation
-    ) => Promise<void>;
 }
 
 interface CommitGroupStateMutationInput {
@@ -80,7 +76,7 @@ export class GroupStateInboxHandler {
     async processGroupStateMutation(
         context: AppInboxMessageContext<GroupStateInboxDurableResult>
     ): Promise<GroupStateInboxDurableResult | InactiveGroupPresenceResult> {
-        const prepared = await this.readOrPrepareGroupMutation(context);
+        const prepared = await this.readGroupMutationCommand(context);
         const command: GroupStateMutationCommand = {
             authorityProof: prepared.authorityProof,
             descriptor: prepared.descriptor,
@@ -175,19 +171,17 @@ export class GroupStateInboxHandler {
         return { mutationRead, currentSnapshot, recordedEvent };
     }
 
-    private async readOrPrepareGroupMutation(
+    private async readGroupMutationCommand(
         context: AppInboxMessageContext<GroupStateInboxDurableResult>
     ): Promise<GroupMutationPreparation> {
         const authority = decodeGroupStateInboxAuthority(context.enqueue.authority);
         if (authority.kind === 'prepared') {
             return authority.mutation;
         }
-        const materialized = await this.dependencies.prepareMutation(
+        return await this.dependencies.readAuthenticatedMutation(
             authority.mutation.descriptor,
             authority.mutation.authorityProof
         );
-        await this.dependencies.persistPreparation(context, materialized);
-        return materialized;
     }
 
     private async commitMutation(

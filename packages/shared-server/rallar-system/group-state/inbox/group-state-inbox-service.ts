@@ -14,7 +14,6 @@ import { encodeAppInboxCommand, encodeAppInboxResult } from '../../app-inbox/app
 import { GROUP_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-topics.ts';
 import type { AppInboxCommandClient } from '../../app-inbox/client/app-inbox-command-client.ts';
 import type { AppInboxQueueEntryWriter } from '../../app-inbox/client/app-inbox-queue-entry-writer.ts';
-import type { AppInboxReservationClient } from '../../app-inbox/client/app-inbox-reservation-client.ts';
 import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
@@ -73,7 +72,6 @@ export namespace GroupStateInboxService {
 export class GroupStateInboxService {
     private readonly commandClient: AppInboxCommandClient;
     private readonly queueEntryWriter: AppInboxQueueEntryWriter;
-    private readonly reservationClient: AppInboxReservationClient;
     private readonly handlers: AppInboxHandlerRegistry;
     private readonly transactionWriter: AppInboxTransactionWriter;
     private readonly groupStateInboxHandler: GroupStateInboxHandler;
@@ -98,7 +96,6 @@ export class GroupStateInboxService {
         });
         this.commandClient = clientRuntime.commandClient;
         this.queueEntryWriter = clientRuntime.queueEntryWriter;
-        this.reservationClient = clientRuntime.reservationClient;
         const handlerRuntime = createAppInboxHandlerRuntime({
             inboxQueueReader: dependencies.inboxQueueReader,
             resultRepository: dependencies.resourceInboxResultsRepository,
@@ -119,13 +116,8 @@ export class GroupStateInboxService {
             transactionWriter: this.transactionWriter,
             wakeQueue: this.wakeQueue,
             formationMetrics: config.formationMetrics,
-            prepareMutation: (descriptor, authority) =>
-                this.groupStateService.prepareAppInboxMutation(descriptor, authority),
-            persistPreparation: (context, preparation) =>
-                this.reservationClient.persistAuthority(
-                    context,
-                    encodeAppInboxCommand(preparation, 'Group mutation AppInbox authority')
-                )
+            readAuthenticatedMutation: (descriptor, authority) =>
+                this.groupStateService.prepareAppInboxMutation(descriptor, authority)
         });
         this.registerMessageHandlers();
         this.handlers.assertRegistrationComplete(GROUP_MUTATION_INBOX_TYPES);

@@ -44,6 +44,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             const results = new TestResourceInboxResults();
             const attempts: RetryAttempt[] = [];
             let authorized = true;
+            let authenticatedReadCount = 0;
             const authorizedMutation = {
                 authorityProof: {
                     version: 1 as const,
@@ -72,42 +73,45 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             };
             const phaseService = {
                 authorizeMutation: async () => authorizedMutation,
-                prepareAppInboxMutation: async () => ({
-                    ...authorizedMutation,
-                    command: {
-                        operation: 'heartbeatPresence',
-                        aggregateRef: { ...SCOPE, groupId: 'outer-retry-room' },
-                        commandId: 'outer-retry-authority-change',
-                        requestId: 'outer-retry-authority-change',
-                        sessionId: 'owner-session',
-                        input: {
-                            actorPrincipalId: 'owner',
-                            actorSessionId: 'owner-session',
-                            reason: null,
-                            traceId: null,
-                            principalId: 'owner',
-                            generationId: 'owner-generation',
-                            lastHeartbeatAtEpochMs: nowEpochMs,
-                            expiresAtEpochMs: nowEpochMs + 60_000
-                        }
-                    },
-                    facts: {
-                        nowEpochMs,
-                        expireAtEpochMs: nowEpochMs + 60_000,
-                        serviceId: 'server-12345678',
-                        eventId: 'outer-retry-event',
-                        commandHash: `sha256:${'a'.repeat(64)}`,
-                        resolvedJoinCode: null,
-                        joinCodeVerifier: null,
-                        internalAuthority: 'none',
-                        authenticatedAuthority: {
-                            principalId: 'owner',
-                            sessionId: 'owner-session'
-                        }
-                    },
-                    causalToken: 'causal-token',
-                    queueResourceId: 'outer-retry-authority-change'
-                }),
+                prepareAppInboxMutation: async () => {
+                    authenticatedReadCount += 1;
+                    return {
+                        ...authorizedMutation,
+                        command: {
+                            operation: 'heartbeatPresence',
+                            aggregateRef: { ...SCOPE, groupId: 'outer-retry-room' },
+                            commandId: 'outer-retry-authority-change',
+                            requestId: 'outer-retry-authority-change',
+                            sessionId: 'owner-session',
+                            input: {
+                                actorPrincipalId: 'owner',
+                                actorSessionId: 'owner-session',
+                                reason: null,
+                                traceId: null,
+                                principalId: 'owner',
+                                generationId: 'owner-generation',
+                                lastHeartbeatAtEpochMs: nowEpochMs,
+                                expiresAtEpochMs: nowEpochMs + 60_000
+                            }
+                        },
+                        facts: {
+                            nowEpochMs: nowEpochMs + authenticatedReadCount,
+                            expireAtEpochMs: nowEpochMs + 60_000,
+                            serviceId: 'server-12345678',
+                            eventId: 'outer-retry-event',
+                            commandHash: `sha256:${'a'.repeat(64)}`,
+                            resolvedJoinCode: null,
+                            joinCodeVerifier: null,
+                            internalAuthority: 'none',
+                            authenticatedAuthority: {
+                                principalId: 'owner',
+                                sessionId: 'owner-session'
+                            }
+                        },
+                        causalToken: 'causal-token',
+                        queueResourceId: 'outer-retry-authority-change'
+                    };
+                },
                 read: async (command: Readonly<{ facts: { attemptCount: number; }; }>) => ({
                     authorized,
                     command
@@ -215,6 +219,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
                 { attempt: 1, outcome: 'conflict', authorized: true },
                 { attempt: 2, outcome: 'denied', authorized: false }
             ]);
+            expect(authenticatedReadCount).toBe(2);
         }
     );
 
