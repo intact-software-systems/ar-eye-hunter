@@ -16,20 +16,20 @@ export type IndexedDbQueueExpectedState =
     | Readonly<{ kind: 'missing'; }>
     | Readonly<{ kind: 'revision'; revision: number; }>;
 
-export interface ComputedIndexedDbQueuePut {
+interface ComputedIndexedDbQueuePut {
     readonly kind: 'put';
     readonly keyString: ResourceEntryKeyString;
     readonly expected: IndexedDbQueueExpectedState;
     readonly value: StoredResourceEntry;
 }
 
-export interface ComputedIndexedDbQueueDelete {
+interface ComputedIndexedDbQueueDelete {
     readonly kind: 'delete';
     readonly keyString: ResourceEntryKeyString;
     readonly expected: IndexedDbQueueExpectedState;
 }
 
-export interface ComputedIndexedDbQueueUnconditionalDelete {
+interface ComputedIndexedDbQueueUnconditionalDelete {
     readonly kind: 'delete-unconditionally';
     readonly keyString: ResourceEntryKeyString;
 }

@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 describe('IndexedDbQueueBox', () => {
-    it('migrates a revisionless persisted row before replaying it', async () => {
+    it('rejects a persisted row without the required revision', async () => {
         const dbName = `indexeddb-revisionless-row-${crypto.randomUUID()}`;
         const now = Temporal.Now.instant();
         const original = createEntry('current.type', 'revisionless-row', {
@@ -31,154 +31,9 @@ describe('IndexedDbQueueBox', () => {
         finally {
             database.close();
         }
-        const queue = new IndexedDbQueueBox({ dbName });
-
-        await expect(queue.getItem(original.key)).resolves.toMatchObject({
-            key: original.key,
-            resource: original.resource,
-            status: EntityStatus.RETRY
-        });
-        const migratedDatabase = await openQueueDatabase(dbName);
-        try {
-            await expect(readRawQueueEntry(migratedDatabase, toKeyAsString(original.key)))
-                .resolves.toMatchObject({ revision: 0 });
-        }
-        finally {
-            migratedDatabase.close();
-        }
-
-        const reserved = await queue.reserveOverdueRetryEntries(
-            new Set([original.typeId]),
-            Number(now.epochMilliseconds),
-            1
+        await expect(new IndexedDbQueueBox({ dbName }).getItem(original.key)).rejects.toThrow(
+            'IndexedDB queue row fields are invalid'
         );
-        expect(firstValue(reserved).entry.key).toEqual(original.key);
-    });
-
-    it('preserves the legacy never-expire meaning while adding a row revision', async () => {
-        const dbName = `indexeddb-revisionless-no-expiry-${crypto.randomUUID()}`;
-        const original = createEntry('legacy.type', 'revisionless-no-expiry');
-        const stored = withoutRevision(encodeStoredResourceEntry(original, 0));
-        const { expiryTs: _expiryTs, ...legacyAudit } = stored.audit;
-        const database = await openIndexedDbWithStore(dbName, queueStoreDefinition());
-        try {
-            await writeRawQueueEntry(database, {
-                ...stored,
-                audit: legacyAudit
-            });
-        }
-        finally {
-            database.close();
-        }
-
-        const queue = new IndexedDbQueueBox({ dbName });
-        const restored = await queue.getItem(original.key);
-
-        expect(restored?.audit.expiryTs.equals(NEVER_EXPIRE_TS)).toBe(true);
-        const migratedDatabase = await openQueueDatabase(dbName);
-        try {
-            await expect(readRawQueueEntry(migratedDatabase, toKeyAsString(original.key)))
-                .resolves.toMatchObject({
-                    revision: 0,
-                    audit: { expiryTs: NEVER_EXPIRE_TS.toString() }
-                });
-        }
-        finally {
-            migratedDatabase.close();
-        }
-    });
-
-    it('lets concurrent openers converge on one legacy-row migration', async () => {
-        const dbName = `indexeddb-concurrent-migration-${crypto.randomUUID()}`;
-        const original = createEntry('legacy.type', 'concurrent-migration');
-        const database = await openIndexedDbWithStore(dbName, queueStoreDefinition());
-        try {
-            await writeRawQueueEntry(database, withoutRevision(encodeStoredResourceEntry(original, 0)));
-        }
-        finally {
-            database.close();
-        }
-        const firstQueue = new IndexedDbQueueBox({ dbName });
-        const secondQueue = new IndexedDbQueueBox({ dbName });
-
-        const restored = await Promise.all([
-            firstQueue.getItem(original.key),
-            secondQueue.getItem(original.key)
-        ]);
-
-        expect(restored.map((entry) => entry?.resource)).toEqual([
-            original.resource,
-            original.resource
-        ]);
-    });
-
-    it('accepts a migration winner that advances the row before a stale opener writes', async () => {
-        const dbName = `indexeddb-stale-migration-${crypto.randomUUID()}`;
-        const original = createEntry('legacy.type', 'stale-migration', {
-            resource: JSON.stringify({ version: 1 })
-        });
-        const winner = createEntry('legacy.type', 'stale-migration', {
-            resource: JSON.stringify({ version: 2 })
-        });
-        const database = await openIndexedDbWithStore(dbName, queueStoreDefinition());
-        try {
-            await writeRawQueueEntry(database, withoutRevision(encodeStoredResourceEntry(original, 0)));
-        }
-        finally {
-            database.close();
-        }
-        const transactionImplementation = IDBDatabase.prototype.transaction;
-        let winnerWritten = false;
-        vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(function (
-            this: IDBDatabase,
-            ...args: Parameters<IDBDatabase['transaction']>
-        ) {
-            if (args[1] === 'readwrite' && !winnerWritten) {
-                winnerWritten = true;
-                const winnerTransaction = Reflect.apply(transactionImplementation, this, args);
-                winnerTransaction.objectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME).put(
-                    encodeStoredResourceEntry(winner, 1)
-                );
-            }
-            return Reflect.apply(transactionImplementation, this, args);
-        });
-
-        const restored = await new IndexedDbQueueBox({ dbName }).getItem(original.key);
-
-        expect(winnerWritten).toBe(true);
-        expect(restored?.resource).toBe(winner.resource);
-    });
-
-    it('accepts a migration winner that deletes the row before a stale opener writes', async () => {
-        const dbName = `indexeddb-deleted-migration-${crypto.randomUUID()}`;
-        const original = createEntry('legacy.type', 'deleted-migration');
-        const database = await openIndexedDbWithStore(dbName, queueStoreDefinition());
-        try {
-            await writeRawQueueEntry(database, withoutRevision(encodeStoredResourceEntry(original, 0)));
-        }
-        finally {
-            database.close();
-        }
-        const transactionImplementation = IDBDatabase.prototype.transaction;
-        let winnerDeleted = false;
-        vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(function (
-            this: IDBDatabase,
-            ...args: Parameters<IDBDatabase['transaction']>
-        ) {
-            if (args[1] === 'readwrite' && !winnerDeleted) {
-                winnerDeleted = true;
-                const winnerTransaction = Reflect.apply(transactionImplementation, this, args);
-                winnerTransaction.objectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME).delete(
-                    toKeyAsString(original.key)
-                );
-            }
-            return Reflect.apply(transactionImplementation, this, args);
-        });
-
-        const restored = await new IndexedDbQueueBox({ dbName }).getItem(original.key);
-
-        expect(winnerDeleted).toBe(true);
-        expect(restored).toBeUndefined();
     });
 
     it('rejects a persisted row with no expiry instead of inventing one', async () => {

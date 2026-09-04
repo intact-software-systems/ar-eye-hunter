@@ -3,6 +3,7 @@ import {
     waitForIndexedDbTransaction
 } from './indexed-db-request.ts';
 import {
+    decodeStoredIndexedDbValue,
     deleteComputedIndexedDbStringValues,
     removeComputedIndexedDbStringValue,
     StoredIndexedDbValue,
@@ -51,9 +52,6 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
         }
         if (!isIndexedDbValueExpired(result.expireAtTimestamp, Date.now())) {
             return result.value;
-        }
-        if (result.writeToken === undefined) {
-            return undefined;
         }
         requireIndexedDbCleanupCommit(
             await deleteComputedIndexedDbStringValues(
@@ -136,11 +134,13 @@ async function readStoredIndexedDbValue<Value>(
 ): Promise<StoredIndexedDbValue<Value> | undefined> {
     const transaction = db.transaction(storeName, 'readonly');
     const completed = waitForIndexedDbTransaction(transaction);
-    const stored = await readIndexedDbRequest<StoredIndexedDbValue<Value> | undefined>(
+    const stored = await readIndexedDbRequest<unknown>(
         transaction.objectStore(storeName).get(storedKey)
     );
     await completed;
-    return stored;
+    return stored === undefined
+        ? undefined
+        : decodeStoredIndexedDbValue<Value>(stored, storedKey);
 }
 
 async function readAllStoredIndexedDbValues<Value>(
@@ -149,11 +149,11 @@ async function readAllStoredIndexedDbValues<Value>(
 ): Promise<readonly StoredIndexedDbValue<Value>[]> {
     const transaction = db.transaction(storeName, 'readonly');
     const completed = waitForIndexedDbTransaction(transaction);
-    const stored = await readIndexedDbRequest<StoredIndexedDbValue<Value>[]>(
+    const stored = await readIndexedDbRequest<unknown[]>(
         transaction.objectStore(storeName).getAll()
     );
     await completed;
-    return stored;
+    return stored.map((value) => decodeStoredIndexedDbValue<Value>(value));
 }
 
 function requireIndexedDbCleanupCommit(committed: boolean): void {
@@ -189,9 +189,6 @@ function computeIndexedDbStringExpiry<Value>(
             continue;
         }
         if (isIndexedDbValueExpired(stored.expireAtTimestamp, now)) {
-            if (stored.writeToken === undefined) {
-                continue;
-            }
             deletions.push({
                 key: stored.key,
                 expectedExpireAtTimestamp: stored.expireAtTimestamp,

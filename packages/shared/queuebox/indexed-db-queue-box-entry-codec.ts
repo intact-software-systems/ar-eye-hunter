@@ -2,7 +2,6 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import {
     EntityStatus,
-    NEVER_EXPIRE_TS,
     toKeyAsString,
     type Key,
     type ResourceEntry,
@@ -30,16 +29,6 @@ export type StoredResourceEntry = Readonly<{
         attempts: number;
     }>;
 }>;
-
-export type LegacyStoredResourceEntry =
-    & Omit<StoredResourceEntry, 'revision' | 'audit'>
-    & Readonly<{
-        audit:
-            & Omit<StoredResourceEntry['audit'], 'expiryTs'>
-            & Readonly<{
-                expiryTs?: string;
-            }>;
-    }>;
 
 type IndexedDbQueueDataValue =
     | string
@@ -175,35 +164,6 @@ export function decodeStoredResourceEntryValue<Value>(value: Value): StoredResou
     } satisfies StoredResourceEntry;
     validateStoredResourceEntry(canonical);
     return canonical;
-}
-
-export function decodeLegacyStoredResourceEntryValue<Value>(
-    value: Value
-): LegacyStoredResourceEntry {
-    const stored = requireDataRecord(value, 'Legacy IndexedDB queue row', {
-        required: ['keyString', 'key', 'resource', 'typeId', 'audit', 'status', 'dequeueAudit'],
-        optional: ['fairnessDueEpochMs']
-    });
-    const audit = requireDataRecord(stored.audit, 'Legacy IndexedDB queue audit', {
-        required: ['date', 'createdBy', 'createdTs'],
-        optional: ['expiryTs']
-    });
-    const canonical = decodeStoredResourceEntryValue({
-        ...stored,
-        audit: {
-            ...audit,
-            expiryTs: audit.expiryTs === undefined
-                ? NEVER_EXPIRE_TS.toString()
-                : requireString(audit.expiryTs, 'Legacy IndexedDB queue expiry timestamp')
-        },
-        revision: 0
-    });
-    const { revision: _revision, ...legacy } = canonical;
-    if (audit.expiryTs !== undefined) {
-        return legacy;
-    }
-    const { expiryTs: _expiryTs, ...legacyAudit } = legacy.audit;
-    return { ...legacy, audit: legacyAudit };
 }
 
 function validateStoredResourceEntry(stored: StoredResourceEntry): void {

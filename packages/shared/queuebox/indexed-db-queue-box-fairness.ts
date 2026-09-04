@@ -12,7 +12,7 @@ import {
 import type { ResourceInboxFairnessSelection } from './queue-box-types.ts';
 import type { Key } from './ResourceEntry.ts';
 
-export type ComputeIndexedDbFairnessReservationInput = Readonly<{
+type ComputeIndexedDbFairnessReservationInput = Readonly<{
     entriesByType: ReadonlyMap<string, readonly StoredResourceEntry[]>;
     maxAttempts: number;
     maxToReserve: number;
@@ -21,7 +21,7 @@ export type ComputeIndexedDbFairnessReservationInput = Readonly<{
     requestedTypes: readonly string[];
 }>;
 
-export type ComputedIndexedDbFairnessReservation = Readonly<{
+type ComputedIndexedDbFairnessReservation = Readonly<{
     mutations: readonly ComputedIndexedDbQueueMutation[];
     result: Map<Key, ResourceInboxFairnessSelection>;
 }>;

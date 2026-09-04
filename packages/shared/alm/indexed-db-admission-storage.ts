@@ -5,7 +5,10 @@ import {
 import { openIndexedDbWithStore } from '../persistence/openIndexedDb.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 import { toError } from '../resilience/to-error.ts';
-import type { ALAdmissionStoredValue } from './al-admission-backend.ts';
+import {
+    decodeALAdmissionStoredValue,
+    type ALAdmissionStoredValue
+} from './al-admission-backend.ts';
 import { ALAdmissionCorruptionError, decodeALAdmissionValue } from './al-admission-decoder.ts';
 import { decodeALAdmissionNumber } from './al-admission-value-validation.ts';
 import {
@@ -13,7 +16,6 @@ import {
     toALAdmissionStoredValue,
     type IndexedDbAdmissionStoredRow
 } from './indexed-db-admission-row.ts';
-import { migrateIndexedDbAdmissionWriteTokens } from './migrate-indexed-db-admission-write-tokens.ts';
 
 export {
     type IndexedDbAdmissionStoredRow,
@@ -34,24 +36,24 @@ export type IndexedDbAdmissionMutation =
 
 type IndexedDbAdmissionGuardedRemoval = Extract<IndexedDbAdmissionMutation, { kind: 'remove-if-write-token'; }>;
 
-export interface IndexedDbAdmissionSnapshot {
+interface IndexedDbAdmissionSnapshot {
     readonly revision: number;
     readonly stored: readonly IndexedDbAdmissionStoredRow[];
 }
 
-export type IndexedDbAdmissionSelection =
+type IndexedDbAdmissionSelection =
     | Readonly<{ kind: 'key'; key: string; }>
     | Readonly<{ kind: 'prefixes'; prefixes: readonly string[]; }>
     | Readonly<{ kind: 'expired'; maximumExpireAtTimestamp: number; }>
     | Readonly<{ kind: 'revision'; }>;
 
-export interface IndexedDbAdmissionRevisionWrite {
+interface IndexedDbAdmissionRevisionWrite {
     readonly key: typeof AL_ADMISSION_REVISION_KEY;
     readonly value: number;
     readonly expireAtTimestamp: number;
 }
 
-export interface WriteIndexedDbAdmissionMutationsInput {
+interface WriteIndexedDbAdmissionMutationsInput {
     readonly db: IDBDatabase;
     readonly expectedRevision: number;
     readonly mutations: readonly IndexedDbAdmissionMutation[];
@@ -82,23 +84,14 @@ export async function openIndexedDbAdmissionDatabase(
     dbName: string,
     storeName: string
 ): Promise<IDBDatabase> {
-    return await openIndexedDbWithStore(
-        dbName,
-        {
-            name: storeName,
-            keyPath: 'key',
-            indexes: [{
-                name: AL_ADMISSION_EXPIRY_INDEX_NAME,
-                keyPath: 'expireAtTimestamp'
-            }]
-        },
-        (database) =>
-            migrateIndexedDbAdmissionWriteTokens(
-                database,
-                storeName,
-                AL_ADMISSION_REVISION_KEY
-            )
-    );
+    return await openIndexedDbWithStore(dbName, {
+        name: storeName,
+        keyPath: 'key',
+        indexes: [{
+            name: AL_ADMISSION_EXPIRY_INDEX_NAME,
+            keyPath: 'expireAtTimestamp'
+        }]
+    });
 }
 
 export async function readIndexedDbAdmissionSnapshot(
@@ -233,10 +226,7 @@ function readIndexedDbAdmissionWriteToken(
         throw new TypeError('IndexedDB admission row key differs from the requested key');
     }
     const writeToken = Object.getOwnPropertyDescriptor(value, 'writeToken');
-    if (writeToken === undefined) {
-        return undefined;
-    }
-    if (!Object.hasOwn(writeToken, 'value') || typeof writeToken.value !== 'string') {
+    if (!writeToken || !Object.hasOwn(writeToken, 'value') || typeof writeToken.value !== 'string') {
         throw new TypeError('IndexedDB admission write token must be a string data field');
     }
     return writeToken.value;
@@ -258,8 +248,10 @@ function decodeIndexedDbAdmissionRevision(value: IDBRequest['result']): number {
     if (value === undefined) {
         return 0;
     }
-    const stored = toALAdmissionStoredValue(
-        decodeIndexedDbAdmissionStoredRow(value, AL_ADMISSION_REVISION_KEY)
+    const stored = decodeALAdmissionValue(
+        value,
+        AL_ADMISSION_REVISION_KEY,
+        decodeALAdmissionStoredValue
     );
     return decodeALAdmissionValue(stored.value, AL_ADMISSION_REVISION_KEY, decodeALAdmissionNumber);
 }
@@ -338,10 +330,14 @@ async function readIndexedDbAdmissionRange(
         readIndexedDbRequest(source.getAll(range)),
         readIndexedDbRequest(source.getAllKeys(range))
     ]);
-    return values.map((value, index) => {
+    const rows: IndexedDbAdmissionStoredRow[] = [];
+    values.forEach((value, index) => {
         const key = requireStringKey(keys[index]);
-        return decodeIndexedDbAdmissionStoredRow(value, key);
+        if (key !== AL_ADMISSION_REVISION_KEY) {
+            rows.push(decodeIndexedDbAdmissionStoredRow(value, key));
+        }
     });
+    return rows;
 }
 
 function toIndexedDbPrefixRange(prefix: string): IDBKeyRange | undefined {

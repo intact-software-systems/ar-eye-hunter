@@ -12,7 +12,7 @@ export interface IndexedDbAdmissionStoredRow {
     readonly key: string;
     readonly value: ALAdmissionStoredValue['value'];
     readonly expireAtTimestamp: number;
-    readonly writeToken?: string;
+    readonly writeToken: string;
 }
 
 export function decodeIndexedDbAdmissionStoredRow(
@@ -22,25 +22,19 @@ export function decodeIndexedDbAdmissionStoredRow(
     return decodeALAdmissionValue(value, key, (candidate) => {
         const record = decodeALAdmissionRecord(
             candidate,
-            ['key', 'value', 'expireAtTimestamp'],
-            ['writeToken']
+            ['key', 'value', 'expireAtTimestamp', 'writeToken']
         );
         const canonical = decodeALAdmissionStoredValue({
             key: record.key,
             value: record.value,
             expireAtTimestamp: record.expireAtTimestamp
         }, key);
-        const common = {
+        return {
             key: canonical.key,
             value: record.value,
-            expireAtTimestamp: canonical.expireAtTimestamp
+            expireAtTimestamp: canonical.expireAtTimestamp,
+            writeToken: decodeALAdmissionString(record.writeToken)
         };
-        return Object.prototype.hasOwnProperty.call(record, 'writeToken')
-            ? {
-                ...common,
-                writeToken: decodeALAdmissionString(record.writeToken)
-            }
-            : common;
     });
 }
 

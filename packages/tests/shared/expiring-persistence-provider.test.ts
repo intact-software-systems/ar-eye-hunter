@@ -70,8 +70,8 @@ describe('Expiring persistence providers', () => {
         expect(await outbound.getAllKeys()).toEqual([]);
     });
 
-    it('leaves expired tokenless rows written by an older browser runtime', async () => {
-        const dbName = `tokenless-expiry-${crypto.randomUUID()}`;
+    it('rejects a persisted row without the required write token', async () => {
+        const dbName = `missing-write-token-${crypto.randomUUID()}`;
         const storeName = 'entries';
         const database = await openIndexedDbWithStore(dbName, { name: storeName, keyPath: 'key' });
         const transaction = database.transaction(storeName, 'readwrite');
@@ -91,11 +91,9 @@ describe('Expiring persistence providers', () => {
             storeName,
             keyPrefix: 'inbound'
         });
-        expect(await provider.getItem('expired')).toBeUndefined();
-        expect(await provider.deleteExpired()).toBe(0);
-        expect(await readRawValue(dbName, storeName, 'inbound:expired')).toMatchObject({
-            value: { value: 1 }
-        });
+        await expect(provider.getItem('expired')).rejects.toThrow(
+            'IndexedDB persistence row fields are invalid'
+        );
     });
 
     it.each(['getItem', 'getAllKeys', 'deleteExpired'] as const)(
@@ -127,7 +125,8 @@ describe('Expiring persistence providers', () => {
                         refresh.objectStore(storeName).put({
                             key: 'inbound:expired',
                             value: { value: 2 },
-                            expireAtTimestamp: now + 60_000
+                            expireAtTimestamp: now + 60_000,
+                            writeToken: 'replacement'
                         });
                     }
                 }
