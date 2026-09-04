@@ -12,8 +12,7 @@ import type { RtcTopologyWorkRuntime } from '../../mutation/rtc-topology-outbox-
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyPlanningService } from '../../planning/group-topology-planning-service.ts';
 import { computeRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
-import type { RtcTopologyDeliveryAppendPort } from '../delivery/rtc-topology-delivery-append-port.ts';
-import type { RtcTopologyDeliveryPublicationReader } from '../delivery/rtc-topology-delivery-publication-reader.ts';
+import type { RtcTopologyDeliveryRuntime } from '../delivery/rtc-topology-delivery-runtime.ts';
 import {
     computeRtcTopologyReplayWrite,
     computeRtcTopologyWorkWrite,
@@ -59,12 +58,6 @@ import {
     type FormationCriterionPort
 } from './formation-criterion-observer.ts';
 
-export interface RtcTopologyDeliveryOptions {
-    readonly publisherStreamId: string;
-    readonly reader: RtcTopologyDeliveryPublicationReader;
-    readonly append: RtcTopologyDeliveryAppendPort;
-}
-
 interface RtcTopologyWorkHandlerOptions {
     readonly runtime: RtcTopologyWorkRuntime;
     readonly database: PSqlSql;
@@ -86,7 +79,7 @@ interface RtcTopologyWorkHandlerOptions {
     readonly formationCriterion?: FormationCriterionPort;
     readonly formationAutomation?: GroupFormationAutomationPort;
     readonly topologyPublication?: TopologyPromotionPublicationPort;
-    readonly topologyDelivery?: RtcTopologyDeliveryOptions;
+    readonly topologyDelivery?: RtcTopologyDeliveryRuntime;
     readonly onInactiveOverlay?: (overlayId: string) => void;
     readonly wakeQueue?: () => void;
     readonly wakeReplay?: () => void;
