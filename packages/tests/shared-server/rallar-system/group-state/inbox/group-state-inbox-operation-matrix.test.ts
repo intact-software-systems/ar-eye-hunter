@@ -22,7 +22,10 @@ import {
     type GroupTransportCommandAppInboxPayload,
     type GroupUpdateAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import {
+    RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
+    RtcTopologySnapshotRepository
+} from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -43,9 +46,12 @@ import { createAuthorityHarness, processAuthenticated, SCOPE } from './group-sta
  * cannot stop an operation from being advertised and then silently going
  * unrun, which is what this list existing at all makes visible.
  *
- * `GROUP_CONNECT` runs after the matrix, against a stored plan and against a
- * missing one, so it is exercised by this file rather than by the array. The
- * other two predate this list and are covered elsewhere.
+ * Both entries reach their source stages only against a stored planned row,
+ * which the matrix harness does not have, so both run the real phases in this
+ * file's second test instead; `connect` also lands its denial against a
+ * missing row after the matrix. Nothing else is advertised and unrun: 8d
+ * retired the two legacy establishment commands and 6c gave `start` and
+ * `reset` their own cases.
  */
 const INBOX_TYPES_OUTSIDE_THE_CASE_ARRAY: readonly AppInboxType[] = [
     AppInboxType.GROUP_CONNECT,
@@ -761,8 +767,15 @@ describe('GroupStateInboxService authenticated authority', () => {
     );
 
     it(
-        'connects against a stored planned layout and commits its revision guard',
+        'connects against a stored planned layout, then activates the layout it dialed',
         async () => {
+            // `connect` and `activate` both succeed only against a stored planned
+            // row, so this runs its own harness with that row present. `connect`
+            // must land the stage, stamp the establishment clock, and commit the
+            // planned row's revision guard (the batch's fence against a replan
+            // landing between read and commit); `activate` is then the only
+            // command that promotes what `connect` dialed, and `connecting` is
+            // reachable no other way, which is why the two share a run.
             const groupId = 'connect-success-room';
             const plannedIdentity = {
                 groupRevision: 1,
@@ -870,15 +883,51 @@ describe('GroupStateInboxService authenticated authority', () => {
             const plannedAfter = await plannedSnapshots.findSnapshotEntry({ ...SCOPE, groupId });
             expect(plannedAfter?.entry.revision).toBe(plannedBefore + 1);
             expect(plannedAfter?.value).toEqual(connectPlannedSnapshot(groupId, plannedIdentity));
+
+            // Dialing left the accepted slot empty, so what activation adds is
+            // visible: the promotion writes it in the stage's own transaction
+            // (decisions 24/42).
+            const acceptedSnapshots = new RtcTopologySnapshotRepository(
+                runtimeRepository,
+                RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
+            );
+            expect(await acceptedSnapshots.findSnapshotEntry({ ...SCOPE, groupId })).toBeUndefined();
+
+            const activated = await processAuthenticated({
+                service: harness.service,
+                reader: harness.reader,
+                authority: harness.sessions.owner,
+                input: {
+                    type: AppInboxType.GROUP_ACTIVATE,
+                    resourceId: 'connect-activate',
+                    contextId,
+                    senderId: harness.sessions.owner.clientId,
+                    data: {
+                        scope: SCOPE,
+                        groupId,
+                        request: { ...ownerActor, requestId: 'connect-activate' }
+                    } satisfies GroupLifecycleTransitionAppInboxPayload
+                }
+            });
+
+            expect(activated.left).toBeUndefined();
+            const activeGroup = (await harness.repository.readSnapshot({ ...SCOPE, groupId }))?.group;
+            expect(activeGroup?.lifecycleState).toBe('active');
+            expect(activeGroup?.formationEpoch).toBe((group?.formationEpoch ?? 0) + 1);
+            // The group row names the accepted identity and the accepted slot
+            // holds the snapshot behind it: one promotion, not two sources of
+            // truth.
+            expect(activeGroup?.acceptedLayoutIdentity).toEqual(plannedIdentity);
+            const accepted = await acceptedSnapshots.findSnapshotEntry({ ...SCOPE, groupId });
+            expect(accepted?.value).toEqual(connectPlannedSnapshot(groupId, plannedIdentity));
+            // The promotion re-asserts the planned row too, so its guard
+            // advanced a second time in activation's batch.
+            const plannedAfterActivation = await plannedSnapshots.findSnapshotEntry({ ...SCOPE, groupId });
+            expect(plannedAfterActivation?.entry.revision).toBe(plannedBefore + 2);
         },
         30_000
     );
 });
-
-// `connect` succeeds only against a stored planned row, so this runs its own
-// harness with that row present: the executed request must land the stage,
-// stamp the establishment clock, and commit the planned row's revision guard
-// (the batch's fence against a replan landing between read and commit).
 
 function connectPlannedSnapshot(
     groupId: string,
