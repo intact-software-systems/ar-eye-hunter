@@ -1,11 +1,11 @@
 import { toScopedOverlayId } from './api-type-utils.ts';
 import type { ClientEvent, ClientSnapshot } from './client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from './group-client-views.ts';
-import { GROUP_ACTIVATION_CONDITIONS } from './group-lifecycle/compute-group-activation-condition.ts';
+import { GROUP_ACTIVATION_CONDITIONS } from './group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import {
     GROUP_ACTIVATION_STATUS_KEYS,
     GROUP_EVIDENCE_WATERMARK_KEYS
-} from './group-lifecycle/group-activation-status.ts';
+} from './group-lifecycle/activation-status/group-activation-status.ts';
 import { GROUP_LAYOUT_IDENTITY_KEYS, GROUP_LAYOUT_IDENTITY_STATES } from './group-lifecycle/group-layout-identity.ts';
 import {
     GROUP_ESTABLISHMENT_TRANSPORTS,

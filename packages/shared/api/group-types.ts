@@ -1,5 +1,5 @@
 import type { ApiJsonObject } from './api-json-value.ts';
-import type { GroupActivationStatus } from './group-lifecycle/group-activation-status.ts';
+import type { GroupActivationStatus } from './group-lifecycle/activation-status/group-activation-status.ts';
 import type { GroupLayoutIdentity } from './group-lifecycle/group-layout-identity.ts';
 import type {
     GroupFormationOutcome,

@@ -1,6 +1,6 @@
+import type { GroupLayoutIdentity } from '../group-layout-identity.ts';
 import type { GroupActivationCondition } from './compute-group-activation-condition.ts';
 import type { GroupEvidenceWatermark } from './compute-group-formation-reading.ts';
-import type { GroupLayoutIdentity } from './group-layout-identity.ts';
 
 /**
  * One confirmed observation of a group's connectivity, written by internal

@@ -1,16 +1,16 @@
 import {
     GROUP_ACTIVATION_EVIDENCE_EXPIRY_MS,
     resolveGroupBusinessLiveness
-} from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
-import { resolveCoverageBasisLayoutIdentity } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
-import { computeGroupFormationReading } from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
+} from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
+import { resolveCoverageBasisLayoutIdentity } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
+import { computeGroupFormationReading } from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
+import { resolveGroupActivationStatusAction } from '@shared/api/group-lifecycle/activation-status/resolve-group-activation-status-action.ts';
 import {
     isSameGroupLayoutIdentity,
     toGroupLayoutIdentity,
     type GroupLayoutIdentity
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { isFormationAttemptBudgetExhausted } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
-import { resolveGroupActivationStatusAction } from '@shared/api/group-lifecycle/resolve-group-activation-status-action.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { GroupActivationStatusClockWork } from '../../../group-state/activation-status-clock-outbox-entry.ts';

@@ -1,7 +1,7 @@
-import type { Group } from '../group-types.ts';
-import { isSameGroupLayoutIdentity, type GroupLayoutIdentity } from './group-layout-identity.ts';
-import type { GroupLifecycleState, GroupTopologyReplanningMode } from './group-lifecycle-policy.ts';
-import { resolveDialLayoutRoles } from './resolve-dial-layout-roles.ts';
+import type { Group } from '../../group-types.ts';
+import { isSameGroupLayoutIdentity, type GroupLayoutIdentity } from '../group-layout-identity.ts';
+import type { GroupLifecycleState, GroupTopologyReplanningMode } from '../group-lifecycle-policy.ts';
+import { resolveDialLayoutRoles } from '../resolve-dial-layout-roles.ts';
 
 /**
  * Server defaults settled once so no later slice invents values under

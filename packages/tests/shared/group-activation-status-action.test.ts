@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GroupActivationCondition } from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
+import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import {
     resolveGroupActivationStatusAction,
     type ResolveGroupActivationStatusActionInput
-} from '@shared/api/group-lifecycle/resolve-group-activation-status-action.ts';
+} from '@shared/api/group-lifecycle/activation-status/resolve-group-activation-status-action.ts';
 
 const NOW = 1_000_000;
 

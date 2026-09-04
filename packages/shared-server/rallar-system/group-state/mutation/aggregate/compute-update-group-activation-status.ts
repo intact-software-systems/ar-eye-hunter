@@ -3,10 +3,10 @@ import {
     GROUP_ACTIVATION_HYSTERESIS_WIDTH,
     resolveCoverageBasisLayoutIdentity,
     resolveGroupBusinessLiveness
-} from '@shared/api/group-lifecycle/compute-group-activation-condition.ts';
-import { resolveNewerEvidenceWatermark } from '@shared/api/group-lifecycle/compute-group-formation-reading.ts';
-import { resolveGroupActivationCoverageWithHysteresis } from '@shared/api/group-lifecycle/group-activation-coverage-hysteresis.ts';
-import type { GroupActivationStatus } from '@shared/api/group-lifecycle/group-activation-status.ts';
+} from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
+import { resolveNewerEvidenceWatermark } from '@shared/api/group-lifecycle/activation-status/compute-group-formation-reading.ts';
+import { resolveGroupActivationCoverageWithHysteresis } from '@shared/api/group-lifecycle/activation-status/group-activation-coverage-hysteresis.ts';
+import type { GroupActivationStatus } from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
 import { isSameGroupLayoutIdentity, toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { isFormationAttemptBudgetExhausted } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import type { Group } from '@shared/api/group-types.ts';
