@@ -3070,6 +3070,33 @@ cost a registered `member-policy-row-width` reason on every group write, and thi
 maintainer's call is to free the port and measure, so the A-B-B-A comparison runs on the head that
 adds the fields and its result is reported with the slice rather than deferred again.
 
+**The measurement is in, and the row width costs nothing measurable (2026-09-04).** The pooled
+order-balanced protocol ran in full — four positions of nine measured runs each, every position
+against a freshly recreated pinned container on 5433, with the preflight/postflight bracket proving
+no autovacuum ran inside any position. Base `fced7794e`, candidate `2884908aa`.
+
+The first protocol **failed**: `hot` throughput 47.11 → 38.90 (−17.4%) and its median transaction
+duration +8.7%. It was not accepted as a verdict, for three reasons that the follow-up runs then
+confirmed. An identical-runtime control — a commit whose diff against base across `packages`, `apps`
+and `scripts` is empty, which is how the pooler's refusal to compare equal commits is satisfied —
+**passed**. A second, independent protocol on the _same_ candidate commit **passed**, with the
+candidate faster than base on all three workloads (`uncontended` +1.9%, `shared` +1.7% throughput;
+`hot` transaction duration −2.1%). And the deciding fact: the `hot` throughput **baseline itself**
+measured 47.11 in one protocol and 42.99 in another — a ~10% spread on the unchanged side, twice the
+comparator's own ±5% threshold, so that metric cannot discriminate a 5% effect from one protocol run.
+
+`sql.serializedResultBytes` is the counter a wider row moves first, and it moved **+1.0% on the
+identical-code control** — the noise floor sits above the ~24 bytes `,"activationStatus":null` adds
+to a group document, so the stored field is below the measurement floor entirely. No regression
+reason is registered, and none would have been admissible anyway: a reason waives unreasoned median
+SQL/row/byte/transaction increases, never a throughput regression.
+
+**What this costs to re-run:** ~20 minutes per protocol and, on this host, a second protocol or a
+control before any `hot` verdict is trustworthy — roughly 40-60 minutes for a defensible answer.
+That, not the container, is why the gate kept being deferred. I36's concern is discharged: the
+nested field is free at this tier, and a future slice that adds a _written_ status must re-measure,
+because this bench issues no lifecycle operations and never exercises the writer.
+
 **The split this checkpoint opened with was wrong, and the census killed it (I38).** The first PR was to
 be the writer's pure core and stored shape, with the durable clocks and recipes second. But
 `computeGroupActivationCondition` gates both `degraded` and the below-floor `failed` on
