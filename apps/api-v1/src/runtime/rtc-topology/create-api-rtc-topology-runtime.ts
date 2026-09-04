@@ -16,6 +16,9 @@ import {
 import {
     RtcTopologyReplayEntryHandlerService
 } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.ts';
+import type {
+    RtcTopologyDeliveryRuntime
+} from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-runtime.ts';
 import type { RtcTopologyHydrationIdentity } from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydration.ts';
 import {
     RtcTopologyReconnectHydrator
@@ -57,10 +60,7 @@ export interface CreateApiRtcTopologyRuntimeInput {
 export interface ApiRtcTopologyRuntime {
     readonly publicationRepository: RtcTopologyPublicationRepository;
     readonly executionRepository: RtcTopologyExecutionRepository;
-    readonly topologyDelivery: Readonly<{
-        publisherStreamId: string;
-        append: PSqlRtcTopologyDeliveryRepository;
-    }>;
+    readonly topologyDelivery: RtcTopologyDeliveryRuntime;
     readonly readiness: Promise<void>;
     readonly healthFailure: Promise<never>;
     readonly topologyReplay: Readonly<{
@@ -80,9 +80,7 @@ export function createApiRtcTopologyRuntime(
     input: CreateApiRtcTopologyRuntimeInput
 ): ApiRtcTopologyRuntime {
     const publicationRepository = new RtcTopologyPublicationRepository(
-        input.runtimeStateRepository,
-        input.delivery.publicationRetentionMs,
-        input.nowEpochMs
+        input.runtimeStateRepository
     );
     const executionRepository = new RtcTopologyExecutionRepository(
         input.runtimeStateRepository,
@@ -135,6 +133,7 @@ export function createApiRtcTopologyRuntime(
         executionRepository,
         topologyDelivery: {
             publisherStreamId: input.publisherStreamId,
+            reader: deliveryRepository,
             append: deliveryRepository
         },
         readiness: Promise.all([

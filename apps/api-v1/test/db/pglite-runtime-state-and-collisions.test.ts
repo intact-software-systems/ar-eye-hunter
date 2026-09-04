@@ -18,6 +18,7 @@ import { createGroupTopologyMutationOwners } from '@shared-server/rallar-system/
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { computeRuntimeStateGuardedBatchWrite } from '@shared-server/runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import { type RuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -236,8 +237,9 @@ Deno.test(
                 }]
             };
 
+            const insertWrite = computeRuntimeStateGuardedBatchWrite(insertBatch);
             const insertResult = await repository.begin(async (transactionRepository) => {
-                return await transactionRepository.executeGuardedBatch(insertBatch);
+                return await transactionRepository.writeGuardedBatch(insertWrite);
             });
 
             assert.deepEqual(insertResult, {
@@ -308,9 +310,10 @@ Deno.test(
                     expireAtTimestamp: FUTURE_MS
                 }]
             };
+            const updateWrite = computeRuntimeStateGuardedBatchWrite(updateBatch);
             assert.deepEqual(
                 await repository.begin(async (transactionRepository) => {
-                    return await transactionRepository.executeGuardedBatch(updateBatch);
+                    return await transactionRepository.writeGuardedBatch(updateWrite);
                 }),
                 {
                     guard: {
@@ -347,9 +350,10 @@ Deno.test(
                     expireAtTimestamp: FUTURE_MS
                 }]
             };
+            const deleteWrite = computeRuntimeStateGuardedBatchWrite(deleteBatch);
             assert.deepEqual(
                 await repository.begin(async (transactionRepository) => {
-                    return await transactionRepository.executeGuardedBatch(deleteBatch);
+                    return await transactionRepository.writeGuardedBatch(deleteWrite);
                 }),
                 {
                     guard: {
@@ -406,8 +410,9 @@ Deno.test(
                 }]
             };
 
+            const computed = computeRuntimeStateGuardedBatchWrite(batch);
             const result = await repository.begin(async (transactionRepository) => {
-                return await transactionRepository.executeGuardedBatch(batch);
+                return await transactionRepository.writeGuardedBatch(computed);
             });
 
             assert.deepEqual(result, {
@@ -461,24 +466,25 @@ Deno.test(
                 fractionalEpochMs
             );
 
+            const computed = computeRuntimeStateGuardedBatchWrite({
+                guard: {
+                    operation: 'insert',
+                    namespace: 'guarded-expiry',
+                    key: 'guarded-future',
+                    value: 'future',
+                    expireAtTimestamp: FUTURE_MS
+                },
+                effects: [{
+                    effectId: 'fractional',
+                    operation: 'insert',
+                    namespace: 'guarded-expiry',
+                    key: 'guarded-fractional',
+                    value: 'fractional',
+                    expireAtTimestamp: fractionalEpochMs
+                }]
+            });
             await repository.begin(async (transactionRepository) => {
-                await transactionRepository.executeGuardedBatch({
-                    guard: {
-                        operation: 'insert',
-                        namespace: 'guarded-expiry',
-                        key: 'guarded-future',
-                        value: 'future',
-                        expireAtTimestamp: FUTURE_MS
-                    },
-                    effects: [{
-                        effectId: 'fractional',
-                        operation: 'insert',
-                        namespace: 'guarded-expiry',
-                        key: 'guarded-fractional',
-                        value: 'fractional',
-                        expireAtTimestamp: fractionalEpochMs
-                    }]
-                });
+                await transactionRepository.writeGuardedBatch(computed);
             });
 
             const rows = await sql<RuntimeStateExpiryRow[]>`
@@ -508,36 +514,37 @@ Deno.test(
         await withPGliteSql(async (sql) => {
             const repository = new PSqlRuntimeStateRepository(sql);
             await repository.insertIfAbsent('guarded-rollback', 'root', 'before', FUTURE_MS);
+            const computed = computeRuntimeStateGuardedBatchWrite({
+                guard: {
+                    operation: 'update',
+                    namespace: 'guarded-rollback',
+                    key: 'root',
+                    expectedRevision: 0,
+                    value: 'after',
+                    expireAtTimestamp: FUTURE_MS
+                },
+                effects: [{
+                    effectId: 'sibling',
+                    operation: 'insert',
+                    namespace: 'guarded-rollback',
+                    key: 'sibling',
+                    value: 'inserted',
+                    expireAtTimestamp: FUTURE_MS
+                }, {
+                    effectId: 'conflict',
+                    operation: 'update',
+                    namespace: 'guarded-rollback',
+                    key: 'missing',
+                    expectedRevision: 0,
+                    value: 'never',
+                    expireAtTimestamp: FUTURE_MS
+                }]
+            });
 
             await assert.rejects(
                 async () => {
                     await repository.begin(async (transactionRepository) => {
-                        const observedResult = await transactionRepository.executeGuardedBatch({
-                            guard: {
-                                operation: 'update',
-                                namespace: 'guarded-rollback',
-                                key: 'root',
-                                expectedRevision: 0,
-                                value: 'after',
-                                expireAtTimestamp: FUTURE_MS
-                            },
-                            effects: [{
-                                effectId: 'sibling',
-                                operation: 'insert',
-                                namespace: 'guarded-rollback',
-                                key: 'sibling',
-                                value: 'inserted',
-                                expireAtTimestamp: FUTURE_MS
-                            }, {
-                                effectId: 'conflict',
-                                operation: 'update',
-                                namespace: 'guarded-rollback',
-                                key: 'missing',
-                                expectedRevision: 0,
-                                value: 'never',
-                                expireAtTimestamp: FUTURE_MS
-                            }]
-                        });
+                        const observedResult = await transactionRepository.writeGuardedBatch(computed);
                         assert.deepEqual(observedResult, {
                             guard: {
                                 status: 'applied',

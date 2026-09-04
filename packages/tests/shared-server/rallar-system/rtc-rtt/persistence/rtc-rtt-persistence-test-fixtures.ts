@@ -22,7 +22,7 @@ export type TestExecuteRtcRttMutationInput = Readonly<{
     command: RtcRttMutationCommand;
     readFacts: () => TestRtcRttLifecycleFacts | Promise<TestRtcRttLifecycleFacts>;
     readCommand?: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;
-    sleep?: (delayMs: number) => Promise<void>;
+    attemptCount: number;
 }>;
 
 export interface TestExecuteRtcRttMutationResult {
@@ -40,69 +40,57 @@ export async function executeRtcRttMutation(
     const commandHash = await hashMutationCommand(
         encodeJsonWireValue(request, 'test RTC RTT stable request')
     );
-    for (let attemptCount = 1; attemptCount <= 20; attemptCount += 1) {
-        try {
-            const read = await readRtcRttMutation(input.repository, request);
-            const command = read.receipt
-                ? {
-                    ...request,
-                    candidateGroups: null,
-                    overlaySnapshotsByGroupKey: null,
-                    degreeLimit: null
-                }
-                : await (input.readCommand?.() ?? input.command);
-            const lifecycle = read.receipt ? null : await input.readFacts();
-            const facts = read.receipt
-                ? ({
-                    commandHash,
-                    attemptCount,
-                    requestedAtEpochMs: null,
-                    purgeAfterEpochMs: null
-                } as const)
-                : {
-                    ...lifecycle!,
-                    commandHash,
-                    attemptCount
-                };
-            const computed = computeRtcRttMutation({ command, read, facts });
-            validateRtcRttMutation({ command, read, facts, computed });
-            if (computed.outcome === 'write') {
-                await input.runtime.begin(async () => {
-                    for (const guard of computed.endpointGuards) {
-                        requireTestRttWrite(
-                            await input.repository.commitEndpointAdmission(
-                                guard.value,
-                                guard.expectedRevision,
-                                guard.expireAtTimestamp
-                            )
-                        );
-                    }
-                    requireTestRttWrite(
-                        await input.repository.commitMeasurement(
-                            computed.measurementGuard.value,
-                            computed.measurementGuard.expectedRevision,
-                            computed.measurementGuard.purgeAfterEpochMs
-                        )
-                    );
-                    requireTestRttWrite(
-                        await input.repository.insertMutationReceipt(
-                            computed.receipt,
-                            computed.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS
-                        )
-                    );
-                });
-            }
-            return { computed, updated: computed.outcome === 'write' };
+    const read = await readRtcRttMutation(input.repository, request);
+    const command = read.receipt
+        ? {
+            ...request,
+            candidateGroups: null,
+            overlaySnapshotsByGroupKey: null,
+            degreeLimit: null
         }
-        catch (error) {
-            if (error instanceof RuntimeStateWriteConflictError && attemptCount < 20) {
-                await input.sleep?.(0);
-                continue;
+        : await (input.readCommand?.() ?? input.command);
+    const lifecycle = read.receipt ? null : await input.readFacts();
+    const facts = read.receipt
+        ? ({
+            commandHash,
+            attemptCount: input.attemptCount,
+            requestedAtEpochMs: null,
+            purgeAfterEpochMs: null
+        } as const)
+        : {
+            ...lifecycle!,
+            commandHash,
+            attemptCount: input.attemptCount
+        };
+    const computed = computeRtcRttMutation({ command, read, facts });
+    validateRtcRttMutation({ command, read, facts, computed });
+    if (computed.outcome === 'write') {
+        await input.runtime.begin(async () => {
+            for (const guard of computed.endpointGuards) {
+                requireTestRttWrite(
+                    await input.repository.commitEndpointAdmission(
+                        guard.value,
+                        guard.expectedRevision,
+                        guard.expireAtTimestamp
+                    )
+                );
             }
-            throw error;
-        }
+            requireTestRttWrite(
+                await input.repository.commitMeasurement(
+                    computed.measurementGuard.value,
+                    computed.measurementGuard.expectedRevision,
+                    computed.measurementGuard.purgeAfterEpochMs
+                )
+            );
+            requireTestRttWrite(
+                await input.repository.insertMutationReceipt(
+                    computed.receipt,
+                    computed.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS
+                )
+            );
+        });
     }
-    throw new RuntimeStateWriteConflictError();
+    return { computed, updated: computed.outcome === 'write' };
 }
 
 export function requireTestRttWrite(result: Readonly<{ status: 'accepted' | 'conflict'; }>): void {

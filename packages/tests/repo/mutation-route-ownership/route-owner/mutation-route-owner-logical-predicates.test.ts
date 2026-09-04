@@ -5,8 +5,8 @@ import { findMutationBoundaryViolationsFromRoots } from '../boundary/mutation-bo
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from '../routing/mutation-routing-inventory.ts';
 
 const FIXTURES = 'packages/tests/repo/mutation-route-ownership/fixtures/mutation-boundary-capability-receivers';
-const GROUP_OWNER = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
-const PRODUCTION_FILTER = '(candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP';
+const AUTH_OWNER = 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
+const PRODUCTION_COLLECTION = 'AUTH_TYPES';
 
 describe('Mutation route owner logical predicates contracts', () => {
     it.each([
@@ -34,62 +34,62 @@ describe('Mutation route owner logical predicates contracts', () => {
     });
 
     it('fails closed when negated includes reads an unknown function collection', () => {
-        const issues = validateWithGroupFilter(
+        const issues = validateWithAuthFilter(
             '(candidate) => !disabledTypes().includes(candidate)',
             'function disabledTypes(): readonly AppInboxType[] { return []; }'
         );
         expect(issues).toEqual(
             expect.arrayContaining([
-                expect.stringContaining('GROUP_CREATE owner dispatch is not connected')
+                expect.stringContaining('AUTH_USER_REGISTER owner dispatch is not connected')
             ])
         );
     });
 
     it('proves negated includes over a known empty collection', () => {
-        expect(validateWithGroupFilter('(candidate) => ![].includes(candidate)'))
+        expect(validateWithAuthFilter('(candidate) => ![].includes(candidate)'))
             .toEqual([]);
     });
 
     it('narrows negated includes over a known nonempty collection exactly', () => {
-        const issues = validateWithGroupFilter(
-            '(candidate) => ![AppInboxType.GROUP_CREATE].includes(candidate)'
+        const issues = validateWithAuthFilter(
+            '(candidate) => ![AppInboxType.AUTH_USER_REGISTER].includes(candidate)'
         );
         expect(issues).toEqual(
             expect.arrayContaining([
-                expect.stringContaining('GROUP_CREATE owner dispatch is not connected')
+                expect.stringContaining('AUTH_USER_REGISTER owner dispatch is not connected')
             ])
         );
         expect(issues).not.toEqual(
             expect.arrayContaining([
-                expect.stringContaining('GROUP_UPDATE owner dispatch is not connected')
+                expect.stringContaining('AUTH_SESSION_ISSUE owner dispatch is not connected')
             ])
         );
     });
 
     it('propagates unknown through logical predicates without losing proven true branches', () => {
-        const issues = validateWithGroupFilter(
-            '(candidate) => candidate === AppInboxType.GROUP_CREATE || !disabledTypes().includes(candidate)',
+        const issues = validateWithAuthFilter(
+            '(candidate) => candidate === AppInboxType.AUTH_USER_REGISTER || !disabledTypes().includes(candidate)',
             'function disabledTypes(): readonly AppInboxType[] { return []; }'
         );
         expect(issues).toEqual(
             expect.arrayContaining([
-                expect.stringContaining('GROUP_UPDATE owner dispatch is not connected')
+                expect.stringContaining('AUTH_SESSION_ISSUE owner dispatch is not connected')
             ])
         );
         expect(issues).not.toEqual(
             expect.arrayContaining([
-                expect.stringContaining('GROUP_CREATE owner dispatch is not connected')
+                expect.stringContaining('AUTH_USER_REGISTER owner dispatch is not connected')
             ])
         );
     });
 
     it.each([
-        'GROUP_MUTATION_INBOX_TYPES.filter(isEnabled)',
-        'GROUP_MUTATION_INBOX_TYPES.map(normalizeType)'
+        'AUTH_TYPES.filter(isEnabled)',
+        'AUTH_TYPES.map(normalizeType)'
     ])(
         'keeps an unknown %s chain unknown under negated includes',
         (collection) => {
-            const issues = validateWithGroupFilter(
+            const issues = validateWithAuthFilter(
                 `(candidate) => !${collection}.includes(candidate)`,
                 [
                     'function isEnabled(_type: AppInboxType): boolean { return true; }',
@@ -99,7 +99,7 @@ describe('Mutation route owner logical predicates contracts', () => {
             expect(issues).toEqual(
                 expect.arrayContaining([
                     expect.stringContaining(
-                        'GROUP_CREATE owner dispatch is not connected'
+                        'AUTH_USER_REGISTER owner dispatch is not connected'
                     )
                 ])
             );
@@ -107,17 +107,18 @@ describe('Mutation route owner logical predicates contracts', () => {
     );
 });
 
-function validateWithGroupFilter(
+function validateWithAuthFilter(
     filter: string,
     appendedSource = ''
 ): readonly string[] {
-    const source = readFileSync(GROUP_OWNER, 'utf8');
-    // Anchored on production source text, so a formatter change to that line must fail here
-    // rather than silently validate the unmodified owner and report no issues.
-    expect(source, GROUP_OWNER).toContain(PRODUCTION_FILTER);
-    const mutated = source.replace(PRODUCTION_FILTER, filter) +
+    const source = readFileSync(AUTH_OWNER, 'utf8');
+    expect(source, AUTH_OWNER).toContain(PRODUCTION_COLLECTION);
+    const mutated = source.replace(
+        `for (const type of ${PRODUCTION_COLLECTION})`,
+        `for (const type of ${PRODUCTION_COLLECTION}.filter(${filter}))`
+    ) +
         `\n${appendedSource}\n`;
     return validateMutationRouteInventory(MUTATION_ROUTE_INVENTORY, {
-        sourceOverrides: new Map([[GROUP_OWNER, mutated]])
+        sourceOverrides: new Map([[AUTH_OWNER, mutated]])
     });
 }

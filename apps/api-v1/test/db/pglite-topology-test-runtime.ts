@@ -179,6 +179,7 @@ interface PGliteTopologyWorkDelivery {
     readonly handler: OnMessageCallback;
     readonly publisherStreamId: string;
     readAppendCount(): number;
+    readDeliveryState(): Promise<RtcTopologyDeliveryState>;
     readReplayWakeCount(): number;
 }
 
@@ -285,8 +286,7 @@ async function planTopologyWorkPublication(
     const authority = await topologyManagement.planning.readTopologyPlanningAuthority({
         groupRef,
         requestOptions: {},
-        knownGroup: groupSnapshot,
-        snapshotSelection: 'prefer-current'
+        knownGroup: groupSnapshot
     });
     const topology = requirePlannedTopology(
         topologyManagement.planning.computeTopologyFromAuthority(authority, undefined, {
@@ -344,6 +344,7 @@ async function registerTopologyWorkDelivery(setup: PGliteTopologyWorkSetup): Pro
         executionRepository,
         topologyDelivery: {
             publisherStreamId,
+            reader: topologyDelivery,
             append: {
                 appendOrValidate: async (transaction, input) => {
                     appendCount += 1;
@@ -359,11 +360,12 @@ async function registerTopologyWorkDelivery(setup: PGliteTopologyWorkSetup): Pro
         handler,
         publisherStreamId,
         readAppendCount: () => appendCount,
+        readDeliveryState: () => readRtcTopologyDeliveryState(sql, publisherStreamId),
         readReplayWakeCount: () => replayWakeCount
     };
 }
 
-export async function readRtcTopologyDeliveryState(
+async function readRtcTopologyDeliveryState(
     sql: PGliteSql,
     publisherStreamId: string
 ): Promise<RtcTopologyDeliveryState> {
@@ -603,8 +605,7 @@ export async function createPGliteRemovalPlanningScenario(
     const authority = await service.planning.readTopologyPlanningAuthority({
         groupRef,
         requestOptions: {},
-        knownGroup: staleTerminal,
-        snapshotSelection: 'prefer-current'
+        knownGroup: staleTerminal
     });
     assert.deepEqual(authority.group, durable);
     return { authority, previous, service };

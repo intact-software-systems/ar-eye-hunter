@@ -5,11 +5,6 @@ import {
     groupStateGroupStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
-import {
-    isRuntimeStateOptimisticTransactionalRepositoryLike,
-    type RuntimeStateOptimisticTransactionalRepositoryLike,
-    type RuntimeStateRepositoryLike
-} from '../../../runtime-state/runtime-state-repository.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../persistence/rtc-topology-errors.ts';
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import type { RtcTopologyPublicationWorkClaim } from './rtc-topology-publication-repository-contracts.ts';
@@ -145,15 +140,6 @@ export function parseValue(entry: RuntimeStateEntry): PersistedBoundaryValue {
             error instanceof Error ? error.message : 'RTC topology JSON is invalid'
         );
     }
-}
-
-export function requireOptimisticRuntime(
-    runtime: RuntimeStateRepositoryLike
-): RuntimeStateOptimisticTransactionalRepositoryLike {
-    if (!isRuntimeStateOptimisticTransactionalRepositoryLike(runtime)) {
-        throw new Error('RTC topology publication requires optimistic transactions');
-    }
-    return runtime;
 }
 
 export function assertExactKeys(

@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import type { VivaldiNodeData } from '@shared-graph/graph/vivaldi.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
@@ -25,9 +26,9 @@ import type { AuditStamp, GroupPresenceSummary, GroupRef, GroupSnapshot, GroupSt
 import { EntityStatus, InMemoryQueueBox, type ALMessage } from '@shared/mod.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
-import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';
+import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../../app-inbox/test-support/app-inbox-test-database.ts';
 
 interface StoredRtcTopologyEnvelope {
@@ -41,35 +42,8 @@ interface EnqueueAndReserveRttInput {
     readonly group: GroupSnapshot;
     readonly version: number;
 }
-import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 describe('RTC topology APP_OUTBOX work', () => {
-    it('lets ResourceInbox retry the handler-owned write and reservation-fenced completion transaction', () => {
-        const handler = readSource('create-rtc-topology-work-handler.ts');
-        const transaction = readSource('write-rtc-topology-publication-transaction.ts');
-        const completion = readSource('finish-rtc-topology-work.ts');
-
-        const acceptedWrite = handler.slice(handler.indexOf('async function writeAcceptedRtcTopologyWork'));
-        expect(acceptedWrite).not.toMatch(/waitForRuntimeStateWriteRetry/);
-        expect(acceptedWrite).not.toMatch(/\bfor\s*\([^)]*attempt/);
-        expect(acceptedWrite).toMatch(/writeTopologyMutation\(\s*transaction/);
-        expect(acceptedWrite.indexOf('writeTopologyMutation')).toBeLessThan(
-            acceptedWrite.indexOf('writePublicationDelivery')
-        );
-        expect(transaction).toMatch(/runInPSqlTransaction/);
-        expect(transaction).toMatch(/appendOrValidate\(/);
-        expect(transaction.indexOf('await write(transaction)')).toBeGreaterThanOrEqual(0);
-        expect(transaction.indexOf('await write(transaction)')).toBeLessThan(
-            transaction.indexOf('finishRtcTopologyReservation(transaction, entry)')
-        );
-        expect(completion).not.toMatch(/waitForRuntimeStateWriteRetry/);
-        expect(completion).not.toMatch(/\bfor\s*\([^)]*attempt/);
-        expect(completion).toMatch(
-            /new PSqlResourceInboxFinalizationRepository\(\s*transaction\s*,?\s*\)\.finishReserved\(/
-        );
-        expect(completion).toMatch(/throw new RuntimeStateWriteConflictError\(\)/);
-    });
-
     it('keeps each committed group revision as an immutable queue entry', async () => {
         const queue = new InMemoryQueueBox();
         const runtime = createRtcTopologyOutboxPublisher({
@@ -650,8 +624,8 @@ describe('RTC topology APP_OUTBOX work', () => {
             }),
             topologyPlanning: {
                 readTopologyPlanningAuthority,
-                computeTopologyFromAuthority: vi.fn(),
                 observeCommittedTopology: vi.fn(),
+                recordTopologyPlanningObservation: vi.fn(),
                 recordTopologyPublication: vi.fn(),
                 recordTopologyPlanFrozen: vi.fn(),
                 recordTopologyRebuildSkippedFingerprint: vi.fn()
@@ -684,8 +658,10 @@ describe('RTC topology APP_OUTBOX work', () => {
     // deferred RTT work for a connecting group still petitions the
     // criterion, so the measurement that crosses the threshold activates the
     // group instead of waiting for the deadline evaluation.
-    it('petitions the criterion for a connecting group when the gate defers the replan', async () => {
+    it('petitions the criterion only after the deferred RTT reservation commits', async () => {
         const queue = new InMemoryQueueBox();
+        let failCommit = true;
+        const effects: string[] = [];
         const runtime = createRtcTopologyOutboxPublisher({
             outboxQueueReader: new OutboxQueueReader(queue),
             now: () => 1_000
@@ -740,8 +716,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         }).planning;
         const authority = await planning.readTopologyPlanningAuthority({
             groupRef: group.group,
-            knownGroup: group,
-            snapshotSelection: 'prefer-current'
+            knownGroup: group
         });
         const submittedCommands: Array<
             Readonly<{
@@ -749,18 +724,28 @@ describe('RTC topology APP_OUTBOX work', () => {
                 atEpochMs: number;
             }>
         > = [];
+        const reservationStatusesAtSubmission: Array<EntityStatus | undefined> = [];
         const submitCommand = async (command: GroupMutationCommand, atEpochMs: number) => {
+            effects.push('criterion-submission');
+            reservationStatusesAtSubmission.push((await entriesIn(queue))[0]?.status);
             submittedCommands.push({ command, atEpochMs });
         };
         const handler = createRtcTopologyWorkHandler({
             runtime,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
+            }, {
+                onStage: (stage) => {
+                    effects.push(stage);
+                    if (stage === 'transaction-commit-return' && failCommit) {
+                        throw new Error('Injected commit failure');
+                    }
+                }
             }),
             topologyPlanning: {
                 readTopologyPlanningAuthority: async () => authority,
-                computeTopologyFromAuthority: vi.fn(),
                 observeCommittedTopology: vi.fn(),
+                recordTopologyPlanningObservation: vi.fn(),
                 recordTopologyPublication: vi.fn(),
                 recordTopologyPlanFrozen: vi.fn(),
                 recordTopologyRebuildSkippedFingerprint: vi.fn()
@@ -799,11 +784,38 @@ describe('RTC topology APP_OUTBOX work', () => {
             group,
             version: 1
         });
-        await expect(handler.onMessage(JSON.parse(entry.resource), entry)).resolves.toBeUndefined();
+        await expect(handler.onMessage(JSON.parse(entry.resource), entry)).rejects.toThrow(
+            'Injected commit failure'
+        );
 
+        expect(submittedCommands).toEqual([]);
+        expect((await queue.getItem(entry.key))?.status).toBe(EntityStatus.RESERVED);
+
+        const redelivered = [...(await queue.reserveTimeoutEntries(
+            OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+            { maxToReserve: 1, maxAttempts: 2 },
+            Temporal.Duration.from({ milliseconds: 0 })
+        )).values()][0];
+        if (!redelivered) {
+            throw new Error('Expected the outer queue to redeliver RTC RTT work');
+        }
+        expect(redelivered.dequeueAudit.attempts).toBe(2);
+
+        failCommit = false;
+        effects.length = 0;
+        await expect(
+            handler.onMessage(JSON.parse(redelivered.resource), redelivered)
+        ).resolves.toBeUndefined();
+
+        expect(effects).toEqual([
+            'reservation-finish',
+            'transaction-commit-return',
+            'criterion-submission'
+        ]);
         expect(submittedCommands).toEqual([
             expect.objectContaining({ atEpochMs: 1_000 })
         ]);
+        expect(reservationStatusesAtSubmission).toEqual([EntityStatus.COMPLETED]);
     });
 
     it('claims zero-knob RTT work and reuses its canonical observation on retry', async () => {
@@ -834,8 +846,8 @@ describe('RTC topology APP_OUTBOX work', () => {
             }),
             topologyPlanning: {
                 readTopologyPlanningAuthority,
-                computeTopologyFromAuthority: vi.fn(),
                 observeCommittedTopology: vi.fn(),
+                recordTopologyPlanningObservation: vi.fn(),
                 recordTopologyPublication: vi.fn(),
                 recordTopologyPlanFrozen: vi.fn(),
                 recordTopologyRebuildSkippedFingerprint: vi.fn()
@@ -858,16 +870,6 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(observedRttVersions).toEqual([1]);
     });
 });
-
-function readSource(fileName: string): string {
-    return readFileSync(
-        new URL(
-            `../../../../../shared-server/rallar-system/topology/replay/work/${fileName}`,
-            import.meta.url
-        ),
-        'utf8'
-    );
-}
 
 async function entriesIn(queue: InMemoryQueueBox) {
     return await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key))).then(

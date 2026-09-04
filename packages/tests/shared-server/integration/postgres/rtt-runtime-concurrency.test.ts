@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { executeRtcRttMutation as executeRtcRttMutationService } from '@shared-server/rallar-system/rtc-rtt/mutation/execute-rtc-rtt-mutation.ts';
 import type { RtcRttMutationCommand } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { RTC_RTT_LATEST_NAMESPACE } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
@@ -15,6 +14,7 @@ import {
     topologyGroupSnapshot,
     type PostgresSql
 } from '../../rallar-system/topology/concurrency/postgres-topology-concurrency-fixtures.ts';
+import { executeRtcRttMutation as executeRtcRttMutationService } from './test-support/execute-rtc-rtt-mutation.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
@@ -34,7 +34,10 @@ describe('Postgres RTT runtime concurrency', () => {
             const a = `${applicationId}-a`;
             const b = `${applicationId}-b`;
             const c = `${applicationId}-c`;
-            const clients = [await createSql(databaseUrl, 2), await createSql(databaseUrl, 2)];
+            const clients = [
+                await createPostgresSql(databaseUrl),
+                await createPostgresSql(databaseUrl)
+            ];
             try {
                 const barrier = createReadBarrier(2);
                 const firstRuntime = new BarrierRuntimeStateRepository(
@@ -215,14 +218,6 @@ async function cleanupApplicationRows(
     finally {
         await Promise.allSettled(clients.map(async (client) => await client.end()));
     }
-}
-
-async function createSql(databaseUrl: string, maxConnections: number): Promise<PostgresSql> {
-    const postgres = await import('postgres');
-    return postgres.default(databaseUrl, {
-        max: maxConnections,
-        idle_timeout: 1
-    }) as unknown as PostgresSql;
 }
 
 function requireDatabaseUrl(): string {

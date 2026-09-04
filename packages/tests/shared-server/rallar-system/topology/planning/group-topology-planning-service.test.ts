@@ -21,17 +21,83 @@ describe('GroupTopologyPlanningService', () => {
         await expect(
             service.readTopologyPlanningAuthority({
                 groupRef: group.group,
-                requestOptions: { degreeLimit: 7 },
-                snapshotSelection: 'prefer-current'
+                requestOptions: { degreeLimit: 7 }
             })
         ).resolves.toEqual({
             group,
             config,
             kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+            rttReportingDegreeLimit: 7,
             rttMeasurements: [],
             replanning: 'auto',
             nowEpochMs: 2_000
         });
+    });
+
+    it('uses newer durable group authority instead of a queued group revision', async () => {
+        const queued = createTopologyTestGroupSnapshot();
+        const current = {
+            ...queued,
+            causalRevision: {
+                groupRevision: queued.causalRevision.groupRevision + 1,
+                presenceRevision: queued.causalRevision.presenceRevision
+            },
+            group: createTestGroup({
+                ...queued.group,
+                snapshotVersion: queued.group.snapshotVersion + 1,
+                status: 'archived',
+                archived: {
+                    atEpochMs: 1_500,
+                    actor: { kind: 'principal', principalId: 'owner' },
+                    reason: null,
+                    traceId: null,
+                    requestId: null
+                },
+                deleted: null
+            })
+        };
+        const service = createPlanningService({ group: current });
+
+        const authority = await service.readTopologyPlanningAuthority({
+            groupRef: queued.group,
+            knownGroup: queued
+        });
+
+        expect(authority.group).toBe(current);
+    });
+
+    it('uses a newer durable roster instead of a queued group revision', async () => {
+        const queued = createTopologyTestGroupSnapshot();
+        const current = {
+            ...queued,
+            causalRevision: {
+                groupRevision: queued.causalRevision.groupRevision + 1,
+                presenceRevision: queued.causalRevision.presenceRevision
+            },
+            group: createTestGroup({
+                ...queued.group,
+                snapshotVersion: queued.group.snapshotVersion + 1,
+                rosterVersion: queued.group.rosterVersion + 1,
+                activeMemberCount: 2
+            }),
+            members: [
+                ...queued.members,
+                {
+                    ...queued.members[0],
+                    principalId: 'new-member',
+                    role: 'member' as const
+                }
+            ],
+            memberCount: 2
+        };
+        const service = createPlanningService({ group: current });
+
+        const authority = await service.readTopologyPlanningAuthority({
+            groupRef: queued.group,
+            knownGroup: queued
+        });
+
+        expect(authority.group).toBe(current);
     });
 
     it('materializes an inactive group as a complete removed topology snapshot', () => {
@@ -58,6 +124,7 @@ describe('GroupTopologyPlanningService', () => {
                 group: inactive,
                 config: resolveGroupTopologyConfig({}),
                 kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+                rttReportingDegreeLimit: 5,
                 rttMeasurements: [],
                 replanning: 'debounced',
                 nowEpochMs: 2_000
@@ -75,6 +142,53 @@ describe('GroupTopologyPlanningService', () => {
                 activeSessionIds: [],
                 nextHopsBySessionId: {}
             }
+        });
+    });
+
+    it('computes deterministic planning observation without mutating metrics or hidden snapshot state', () => {
+        const group = groupWithSessionsIn('active');
+        const authority = planningAuthority(group);
+        const cleanTopology = new RallarRtcTopologyService({ now: () => 2_000 });
+        const cleanPlanning = createPlanningService({ group, topologyService: cleanTopology });
+        const expected = cleanPlanning.computeTopologyFromAuthority(
+            authority,
+            undefined,
+            { intent: 'full-rebuild', origin: 'automatic' }
+        );
+        const statefulTopology = new RallarRtcTopologyService({ now: () => 2_000 });
+        statefulTopology.observeCommittedTopologySnapshot(requirePlannedTopology(expected).snapshot);
+        const statefulPlanning = createPlanningService({ group, topologyService: statefulTopology });
+
+        expect(statefulPlanning.computeTopologyFromAuthority(
+            authority,
+            undefined,
+            { intent: 'full-rebuild', origin: 'automatic' }
+        )).toEqual(expected);
+        expect(requirePlannedTopology(expected).planningObservation).toEqual({
+            relevantRttMeasurementCount: 0,
+            resultChanged: true,
+            starPlanCount: 1,
+            noRttTreePlanCount: 0,
+            noRttMeshPlanCount: 0,
+            weightedPlanCount: 0,
+            weightedRoomGraphBuildCount: 0,
+            weightedRoomGraphSparseFallbackCount: 0,
+            incrementalPlanCount: 0,
+            incrementalFallbackReasons: [],
+            hysteresisHoldCount: 0
+        });
+        expect(cleanTopology.readMetrics().topologyUpdateCount).toBe(0);
+        expect(statefulTopology.readMetrics().topologyUpdateCount).toBe(0);
+
+        cleanPlanning.recordTopologyPlanningObservation(
+            requirePlannedTopology(expected).planningObservation!
+        );
+
+        expect(cleanTopology.readMetrics()).toMatchObject({
+            topologyUpdateCount: 1,
+            updatesWithoutRttMeasurementCount: 1,
+            starPlanCount: 1,
+            topologyChangedCount: 1
         });
     });
 
@@ -292,6 +406,7 @@ function planningAuthority(
         group,
         config: resolveGroupTopologyConfig({}),
         kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+        rttReportingDegreeLimit: 5,
         rttMeasurements: [],
         replanning,
         nowEpochMs: 2_000

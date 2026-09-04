@@ -542,8 +542,14 @@ Deno.test(
             assert.equal((await repository.entries.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
             assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
 
-            const replay = await sql.begin(async (transaction) => await service.write(transaction, blockedWrite));
-            assert.equal(replay.action, 'successor');
+            await assert.rejects(
+                async () => {
+                    await sql.begin(async (transaction) => await service.write(transaction, blockedWrite));
+                },
+                (error) =>
+                    error instanceof ResourceInboxInvariantCorruptionError &&
+                    error.code === 'resource-inbox-invariant-corruption'
+            );
             assert.equal((await repository.entries.findAnyByKey(first.key))?.resource, second.resource);
             assert.equal((await repository.entries.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
             assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);

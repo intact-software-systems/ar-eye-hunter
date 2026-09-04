@@ -80,9 +80,13 @@ describe('Mutation route owner registration collections contracts', () => {
         );
     });
 
-    it('binds topology registrations to the topology owner types', () => {
+    it('rejects a missing direct topology registration', () => {
         const topology = readFileSync(TOPOLOGY_OWNER, 'utf8');
-        const withoutTopology = topology.replace('    AppInboxType.TOPOLOGY_CONFIG_PUT,\n', '');
+        const withoutTopology = replaceRegistrationType(
+            topology,
+            'TOPOLOGY_CONFIG_PUT',
+            'TOPOLOGY_CONFIG_OVERRIDE_PUT'
+        );
         expect(withoutTopology).not.toBe(topology);
 
         expect(validateWithOverrides(new Map([[TOPOLOGY_OWNER, withoutTopology]]))).toEqual(

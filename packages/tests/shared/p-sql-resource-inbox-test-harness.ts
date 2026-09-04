@@ -268,12 +268,14 @@ function executeCompletionUpdate(input: ResourceInboxQueryExecution): PSqlRows {
     const resourceId = requireStringParameter(input.values[3], 'resource inbox resource id');
     const contextId = requireStringParameter(input.values[4], 'resource inbox context id');
     const expectedAttempts = requireIntegerParameter(input.values[5], 'resource inbox attempts');
+    const expireAfter = input.values[6];
     const row = input.state.rows.get(`${contextId}::${topicId}::${resourceId}`);
     if (
         !row ||
         row.ri_status !== 'RESERVED' ||
         row.ri_attempts !== BigInt(expectedAttempts) ||
-        isExpired(row.expire_ts)
+        !(expireAfter instanceof Date) ||
+        toStoredTimestampEpochMs(row.expire_ts) <= expireAfter.getTime()
     ) {
         return [];
     }

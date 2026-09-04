@@ -10,15 +10,17 @@ import { createRtcTopologyOutboxPublisher } from '../mutation/rtc-topology-outbo
 import type { RtcTopologyExecutionRepository } from '../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyGroupSnapshotReader } from '../planning/group-topology-planning-contracts.ts';
 import type { GroupTopologyPlanningService } from '../planning/group-topology-planning-service.ts';
+import type { RtcTopologyDeliveryRuntime } from '../replay/delivery/rtc-topology-delivery-runtime.ts';
 import { createFormationTimerWorkHandler } from '../replay/work/create-formation-timer-work-handler.ts';
 import {
     createGroupConnectTriggerWorkHandler,
     type GroupFormationAutomationPort
 } from '../replay/work/create-group-connect-trigger-work-handler.ts';
-import { createRtcTopologyWorkHandler } from '../replay/work/create-rtc-topology-work-handler.ts';
+import {
+    createRtcTopologyWorkHandler
+} from '../replay/work/create-rtc-topology-work-handler.ts';
 import { createTopologyPromotionWorkHandler } from '../replay/work/create-topology-promotion-work-handler.ts';
 import type { FormationCriterionPort } from '../replay/work/formation-criterion-observer.ts';
-import type { RtcTopologyDeliveryOptions } from '../replay/work/write-rtc-topology-publication-transaction.ts';
 
 export interface InstallTopologyAppOutboxOptions {
     readonly database: PSqlSql;
@@ -35,7 +37,7 @@ export interface InstallTopologyAppOutboxOptions {
     ) => Promise<RallarOverlayTopologySnapshot | undefined>;
     readonly topologyPlanning: GroupTopologyPlanningService;
     readonly rttRefinementService?: RtcRttRefinementService;
-    readonly topologyDelivery?: RtcTopologyDeliveryOptions;
+    readonly topologyDelivery?: RtcTopologyDeliveryRuntime;
     readonly nowEpochMs: () => number;
     readonly formationAutomation: GroupFormationAutomationPort;
     readonly formationCriterion?: FormationCriterionPort;

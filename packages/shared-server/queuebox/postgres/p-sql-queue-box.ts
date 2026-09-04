@@ -21,7 +21,6 @@ import {
 } from '@shared/queuebox/queue-box-types.ts';
 import {
     EntityStatus,
-    isExpiredResourceEntry,
     Key,
     NEW_AND_RETRY_STATUSES,
     ResourceEntry,
@@ -33,6 +32,10 @@ import { toError } from '@shared/resilience/to-error.ts';
 
 import { isAdminPruneHandlerFinalizedRelease } from '../../rallar-system/admin-operations/prune/is-admin-prune-handler-finalized-release.ts';
 import type { PSqlResourceInboxRepository } from './create-p-sql-resource-inbox-repository.ts';
+import {
+    enqueueOrUpdateResourceInbox,
+    enqueueResourceInboxIf
+} from './resource-inbox-conditional-enqueue.ts';
 
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     public readonly resourceInbox: PSqlResourceInboxRepository;
@@ -300,55 +303,17 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         resourceEntry: ResourceEntry,
         enqueueIt: (existing: ResourceEntry) => boolean
     ): Promise<ResourceEntry | undefined> {
-        return await this.resourceInbox.transaction(
-            async (txRepo: PSqlResourceInboxRepository) => {
-                const previous = await txRepo.entries.findAnyByKey(resourceEntry.key);
-                if (!previous || isExpiredResourceEntry(previous)) {
-                    await txRepo.entries.replace(resourceEntry);
-                    return undefined;
-                }
-
-                if (enqueueIt(previous)) {
-                    await txRepo.entries.replace(resourceEntry);
-                }
-
-                return previous;
-            }
-        );
+        return await enqueueResourceInboxIf(this.resourceInbox, resourceEntry, enqueueIt);
     }
 
     async enqueueOrUpdate(
         resourceEntry: ResourceEntry,
         updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined
     ): Promise<EnqueueOrUpdateResult> {
-        return await this.resourceInbox.transaction(
-            async (txRepo: PSqlResourceInboxRepository) => {
-                const previous = await txRepo.entries.findAnyByKey(resourceEntry.key);
-                if (!previous || isExpiredResourceEntry(previous)) {
-                    await txRepo.entries.replace(resourceEntry);
-                    return {
-                        action: 'inserted',
-                        entry: resourceEntry,
-                        previous: undefined
-                    };
-                }
-
-                const updated = updateExisting(previous);
-                if (!updated) {
-                    return {
-                        action: 'unchanged',
-                        entry: previous,
-                        previous
-                    };
-                }
-
-                await txRepo.entries.replace(updated);
-                return {
-                    action: 'updated',
-                    entry: updated,
-                    previous
-                };
-            }
+        return await enqueueOrUpdateResourceInbox(
+            this.resourceInbox,
+            resourceEntry,
+            updateExisting
         );
     }
 

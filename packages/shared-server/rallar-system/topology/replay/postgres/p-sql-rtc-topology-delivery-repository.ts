@@ -6,16 +6,20 @@ import type {
     RtcTopologyDeliveryCompactionInput,
     RtcTopologyDeliveryCompactionResult,
     RtcTopologyDeliveryLogEntry,
+    RtcTopologyDeliveryPublicationReadInput,
     RtcTopologyDeliveryStream,
     RtcTopologyDeliveryStreamLeaseRenewalInput,
     RtcTopologyDeliveryStreamLeaseRenewalResult,
     RtcTopologyDeliveryStreamRegistrationInput,
     RtcTopologyDeliveryStreamRegistrationResult
 } from '../delivery/rtc-topology-delivery-contracts.ts';
+import type { RtcTopologyDeliveryPublicationReader } from '../delivery/rtc-topology-delivery-publication-reader.ts';
 import {
     readRtcTopologyDeliverySafeInteger,
     RtcTopologyDeliveryCorruptionError,
     validateRtcTopologyDeliveryAppendInput,
+    validateRtcTopologyDeliveryLogEntry,
+    validateRtcTopologyDeliveryPublicationReadInput,
     validateRtcTopologyDeliveryStreamId,
     type RtcTopologyDeliveryBoundaryNumber
 } from '../delivery/rtc-topology-delivery-validation.ts';
@@ -50,7 +54,8 @@ interface AppendQueryRow extends DeliveryLogRow {
     readonly result_kind: 'appended' | 'existing';
 }
 
-export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryAppendPort {
+export class PSqlRtcTopologyDeliveryRepository
+    implements RtcTopologyDeliveryAppendPort, RtcTopologyDeliveryPublicationReader {
     private readonly sql: PSqlSql;
 
     constructor(sql: PSqlSql) {
@@ -98,7 +103,7 @@ export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryApp
         const result = await appendOrReadExistingEntry(transaction, input);
         if (result) {
             const entry = toLogEntry(result);
-            validateExistingEntry(entry, input);
+            validateRtcTopologyDeliveryLogEntry(entry, input);
             return { status: result.result_kind, entry };
         }
 
@@ -117,6 +122,39 @@ export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryApp
         }
 
         return { status: 'conflict' };
+    }
+
+    async findPublicationDelivery(
+        input: RtcTopologyDeliveryPublicationReadInput
+    ): Promise<RtcTopologyDeliveryLogEntry | undefined> {
+        validateRtcTopologyDeliveryPublicationReadInput(input);
+        const rows = await this.sql<DeliveryLogRow[]>`
+      select
+        publisher_stream_id::text,
+        sequence::double precision as sequence,
+        application_id,
+        workspace_id,
+        group_id,
+        publication_id,
+        outbox_topic_id,
+        outbox_resource_id,
+        outbox_context_id,
+        (extract(epoch from retain_until) * 1000)::double precision
+          as retain_until_epoch_ms,
+        (extract(epoch from inserted_at) * 1000)::double precision
+          as inserted_at_epoch_ms
+      from rtc_topology_delivery_log
+      where application_id = ${input.groupRef.applicationId}
+        and workspace_id = ${input.groupRef.workspaceId}
+        and group_id = ${input.groupRef.groupId}
+        and publication_id = ${input.publicationId}
+    `;
+        if (rows.length > 1) {
+            throw new RtcTopologyDeliveryCorruptionError(
+                `RTC topology delivery publication ${input.publicationId} is not unique`
+            );
+        }
+        return rows[0] ? toLogEntry(rows[0]) : undefined;
     }
 
     async renewStreamLease(
@@ -330,26 +368,6 @@ function toLogEntry(row: DeliveryLogRow): RtcTopologyDeliveryLogEntry {
             'RTC topology delivery insertion timestamp'
         )
     };
-}
-
-function validateExistingEntry(
-    entry: RtcTopologyDeliveryLogEntry,
-    input: RtcTopologyDeliveryAppendInput
-): void {
-    if (
-        entry.groupRef.applicationId !== input.groupRef.applicationId ||
-        entry.groupRef.workspaceId !== input.groupRef.workspaceId ||
-        entry.groupRef.groupId !== input.groupRef.groupId ||
-        entry.publicationId !== input.publicationId ||
-        entry.outboxKey.topicId !== input.outboxKey.topicId ||
-        entry.outboxKey.resourceId !== input.outboxKey.resourceId ||
-        entry.outboxKey.contextId !== input.outboxKey.contextId ||
-        entry.retainUntilEpochMs !== input.retainUntilEpochMs
-    ) {
-        throw new RtcTopologyDeliveryCorruptionError(
-            `RTC topology delivery publication ${input.publicationId} has conflicting durable identity`
-        );
-    }
 }
 
 function validatePositiveDuration(durationMs: number): void {

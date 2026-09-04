@@ -12,7 +12,8 @@ const fixtureRoots: string[] = [];
 const requiredPhaseCommands = {
     'check:repo-structure': ['repo-structure', 0],
     'check:repo-style': ['repo-style', 0],
-    'check:retained-legacy': ['retained-legacy', 0]
+    'check:retained-legacy': ['retained-legacy', 0],
+    'check:transaction-writes': ['transaction-writes', 0]
 } as const;
 
 afterEach(() => {
@@ -33,12 +34,14 @@ describe('governance gate command', () => {
             'PASS: governance gate repo-style',
             'retained-legacy fixture success',
             'PASS: governance gate retained-legacy',
-            'PASS: governance gate (3 phases)'
+            'PASS: governance gate transaction-writes',
+            'PASS: governance gate (4 phases)'
         ]);
         expect(readExecutedPhases(fixtureRoot).sort()).toEqual([
             'repo-structure',
             'repo-style',
-            'retained-legacy'
+            'retained-legacy',
+            'transaction-writes'
         ]);
     });
 
@@ -80,7 +83,8 @@ describe('governance gate command', () => {
         [
             ['repo-structure', 'check:repo-structure'],
             ['repo-style', 'check:repo-style'],
-            ['retained-legacy', 'check:retained-legacy']
+            ['retained-legacy', 'check:retained-legacy'],
+            ['transaction-writes', 'check:transaction-writes']
         ] as const
     )('attributes a non-zero %s result to its canonical command', (phase, command) => {
         const commands = { ...requiredPhaseCommands, [command]: [phase, 7] as const };

@@ -52,10 +52,7 @@ export interface ClientStateInboxHandlerDependencies {
     readonly expiryCandidates: Pick<ClientStateService, 'readExpiredSessionPage'>;
     readonly expiryContinuationWriter: ClientExpiryContinuationWriter;
     readonly snapshotObserver: Pick<ClientStateService, 'observeSnapshot'>;
-    readonly transactionWriter: Pick<
-        AppInboxMutationTransactionWriter,
-        'readCompletionFacts' | 'writeComputedMutation'
-    >;
+    readonly transactionWriter: AppInboxMutationTransactionWriter;
     readonly mutationTiming: ClientStateMutationTiming;
     readonly wakeQueue?: () => void;
     readonly serviceId: string;

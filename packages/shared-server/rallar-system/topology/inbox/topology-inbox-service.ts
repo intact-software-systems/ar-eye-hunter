@@ -6,7 +6,8 @@ import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import {
     AppInboxIdempotencyConflictError,
     AppInboxType,
-    type AppInboxEnqueueInput
+    type AppInboxEnqueueInput,
+    type AppInboxMessageContext
 } from '../../app-inbox/app-inbox-contracts.ts';
 import { type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
@@ -108,15 +109,42 @@ export class TopologyInboxService {
             nowEpochMs: config.options?.nowEpochMs ?? Date.now,
             wakeQueue: config.wakeOwningQueue
         });
-        for (const type of TOPOLOGY_CONFIG_INBOX_TYPES) {
-            handlers.registerHandler({
-                type,
-                decodeCommand: readDurableTopologyAppInboxCommand,
-                encodeResult: (result) => encodeAppInboxResult(result, 'Topology AppInbox result'),
-                handle: async (_command, context) =>
-                    await this.handler.processMutation(context, dependencies.mutationOwners)
-            });
-        }
+        const encodeTopologyResult = (result: TopologyAppInboxResult) =>
+            encodeAppInboxResult(result, 'Topology AppInbox result');
+        const processTopologyMutation = async (
+            _command: TopologyAppInboxCommand,
+            context: AppInboxMessageContext<TopologyAppInboxResult>
+        ) => await this.handler.processMutation(context, dependencies.mutationOwners);
+        handlers.registerHandler({
+            type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+            decodeCommand: readDurableTopologyAppInboxCommand,
+            encodeResult: encodeTopologyResult,
+            handle: processTopologyMutation
+        });
+        handlers.registerHandler({
+            type: AppInboxType.TOPOLOGY_CONFIG_DELETE,
+            decodeCommand: readDurableTopologyAppInboxCommand,
+            encodeResult: encodeTopologyResult,
+            handle: processTopologyMutation
+        });
+        handlers.registerHandler({
+            type: AppInboxType.TOPOLOGY_OVERRIDE_PUT,
+            decodeCommand: readDurableTopologyAppInboxCommand,
+            encodeResult: encodeTopologyResult,
+            handle: processTopologyMutation
+        });
+        handlers.registerHandler({
+            type: AppInboxType.TOPOLOGY_OVERRIDE_DELETE,
+            decodeCommand: readDurableTopologyAppInboxCommand,
+            encodeResult: encodeTopologyResult,
+            handle: processTopologyMutation
+        });
+        handlers.registerHandler({
+            type: AppInboxType.TOPOLOGY_RECONFIGURE,
+            decodeCommand: readDurableTopologyAppInboxCommand,
+            encodeResult: encodeTopologyResult,
+            handle: processTopologyMutation
+        });
         handlers.assertRegistrationComplete(TOPOLOGY_CONFIG_INBOX_TYPES);
     }
 
@@ -144,7 +172,7 @@ export class TopologyInboxService {
         reservation: TopologyInboxService.HttpCommandReservation,
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, TopologyAppInboxResult>> {
-        const currentSession = await this.handler.validateCurrentSession(
+        const currentSession = await this.handler.readAndValidateCurrentSession(
             reservation.callerId,
             authority
         );
