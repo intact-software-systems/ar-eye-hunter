@@ -252,7 +252,7 @@ async function connectGroupLifecycle(
         expectedLayout: plannedLayout.identity
     });
     await refreshAgentRooms(input.run.agents);
-    const readinessDurations = await waitForFormationReadiness({
+    await waitForFormationReadiness({
         run: input.run,
         sessions: input.sessions,
         suffix: input.lifecycleSuffix,
@@ -262,6 +262,12 @@ async function connectGroupLifecycle(
         ...input.run,
         owner,
         agents: input.run.agents
+    });
+    const readinessDurations = await waitForFormationReadiness({
+        run: input.run,
+        sessions: input.sessions,
+        suffix: `${input.lifecycleSuffix}-activated`,
+        startedAtMs: input.readinessStartedAtMs
     });
 
     return {
@@ -357,6 +363,15 @@ async function connectInitialPair(
         agents,
         transport: input.transport
     });
+    await Promise.all(agents.map(async (agent, index) =>
+        await input.control.waitForPeerReadiness({
+            runId: input.runId,
+            agent,
+            expectedPeerIds: [connections[index === 0 ? 1 : 0].sessionId],
+            suffix: `${suffix}-activated`,
+            startedAtMs
+        })
+    ));
     return [
         topologyCommandId,
         ...stageReceipt.commandIds,
