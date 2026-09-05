@@ -71,15 +71,15 @@ focused corrections in PRs #499 and #510, and the Branch Release quiescence
 correction in PR #517 are merged. Run 33991439486 produced the sixth archive in
 PR #519; its first default warmup exposed a distinct publication-wake identity
 collision between coalesced topology generations that share a queue key and
-layout. There is not yet a valid B06 E3 result. B07 remains held, and evidence
-ranking cannot start until a valid B06 primary and any required repeat are
-archived.
+layout. PR #520 contains the focused correction. There is not yet a valid B06
+E3 result. B07 remains held, and evidence ranking cannot start until a valid
+B06 primary and any required repeat are archived.
 
 ### Current execution horizon
 
 | Order | Slice                                          | Completion evidence                                                                                                                                                                                                                              |
 | ----- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1     | Correct coalesced publication-wake identity    | The focused change keys each wake by the existing canonical topology execution ID, including coalescing generation, while retaining strict final-outbox collision handling; focused and relevant full-stack gates pass and the PR merges.        |
+| 1     | Correct coalesced publication-wake identity    | PR #520 keys each wake by the existing canonical topology execution ID, including coalescing generation, while retaining strict final-outbox collision handling; focused and relevant full-stack gates pass and the PR merges.                   |
 | 2     | Capture B06 E3-memory again from moving `main` | Manually dispatch `RTC-B06 Performance Observation` after the correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived. |
 
 After these two slices, Task 12 will choose the B05 observation window,
@@ -3901,7 +3901,7 @@ reported a final-outbox collision for one
 one queue key across generations, but publication wake identity used only that
 key and the selected layout. Two generations that legitimately selected the
 same layout therefore attempted the same final outbox identity. The focused
-correction passes the already-canonical topology execution ID, which includes
+correction in PR #520 passes the already-canonical topology execution ID, which includes
 coalescing generation, into publication wake identity; it does not weaken the
 strict final-outbox collision invariant or retain an alternate identity path.
 
@@ -3920,8 +3920,8 @@ strict final-outbox collision invariant or retain an alternate identity path.
       PR #517, then dispatch run 33991439486 from moving `main`.
 - [x] Verify and archive run 33991439486's failed primary through observation
       PR #519; do not accept its metrics or run a repeat.
-- [ ] Merge the focused coalesced publication-wake identity correction after
-      relevant unit, type, full-stack, and branch validation.
+- [ ] Merge the focused coalesced publication-wake identity correction in PR
+      #520 after relevant unit, type, full-stack, and branch validation.
 - [ ] Manually dispatch `RTC-B06 Performance Observation` from the then-current
       `main` after that correction merges.
 - [ ] Verify that its observation-only pull request passes RTC observation
@@ -4393,12 +4393,12 @@ metrics. PRs #499 and #510 corrected the fourth and fifth failures, while PR
 #517 corrected their Branch Release regression recipe's quiescence race. Run
 33991439486 and archive PR #519 exposed the sixth failure: publication-wake
 identity omitted the generation of its mutable coalesced topology source. The
-current focused slice threads the existing canonical execution ID into that
-wake identity without weakening final-outbox collision handling. After it
+focused correction in PR #520 threads the existing canonical execution ID into
+that wake identity without weakening final-outbox collision handling. After it
 merges, the next performance action is another manual Task 10 dispatch from
-moving `main`, followed by integrity-gated archive publication or
-evidence-led diagnosis of its first failed attempt. B07 remains held; Task 12
-remains blocked on valid B06 evidence.
+moving `main`, followed by integrity-gated archive publication or evidence-led
+diagnosis of its first failed attempt. B07 remains held; Task 12 remains blocked
+on valid B06 evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
