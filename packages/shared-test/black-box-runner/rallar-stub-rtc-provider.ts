@@ -12,6 +12,7 @@ import {
     waitForRtcClose,
     waitForRtcMessage,
     waitForRtcMessageAbsence,
+    waitForRtcMessageCount,
     waitForRtcMessages,
     type RtcProvider
 } from './rtc-provider.ts';
@@ -112,6 +113,16 @@ export function createRallarStubRtcProvider(): RtcProvider {
 
             if (interaction.response?.absent !== undefined) {
                 return waitForRtcMessageAbsence({
+                    interaction,
+                    config,
+                    context,
+                    details: { stub: true }
+                });
+            }
+
+            // Before `message`, which resolves on its first match.
+            if (interaction.response?.count !== undefined) {
+                return waitForRtcMessageCount({
                     interaction,
                     config,
                     context,

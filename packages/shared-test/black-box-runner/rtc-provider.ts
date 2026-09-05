@@ -15,6 +15,7 @@ import {
     waitForRtcHealth,
     waitForRtcMessage,
     waitForRtcMessageAbsence,
+    waitForRtcMessageCount,
     waitForRtcMessages
 } from './rtc/rtc-wait-expectations.ts';
 
@@ -324,6 +325,11 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
 
             if (interaction.response?.absent !== undefined) {
                 return waitForRtcMessageAbsence({ interaction, config, context });
+            }
+
+            // Before `message`, which resolves on its first match.
+            if (interaction.response?.count !== undefined) {
+                return waitForRtcMessageCount({ interaction, config, context });
             }
 
             if (interaction.response?.diagnostics) {
