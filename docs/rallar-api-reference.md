@@ -227,6 +227,22 @@ classifies it as `{ kind: 'policy', code }` for a stage or initiator denial or
 `{ kind: 'layout', code }` for `group-connect-no-planned-layout` and
 `group-connect-planned-layout-superseded`, the two typed `409` conflicts of `connect`.
 
+`formation.waitForLayout(options?)` is the explicit wait for a published layout: it observes the
+browser's planned and accepted layout slots and resolves `ready` with the layout, or `timeout`,
+`aborted` or `not-found`. `role` selects the slot (`planned` by default). `after` is a causal
+revision fence, typically a receipt's `causalRevision`: only a layout published at or after it
+satisfies the wait, and an incomparable one never does. After `plan` the unfenced form is right;
+after `reconfigure` pass the receipt's revision, because the planned slot may still hold the
+candidate the reconfigure superseded. `formation.waitForStage(stage | stages, options?)` and
+`formation.waitForCondition(condition | conditions, options?)` resolve from the pushed group
+snapshot. `formation.onChange(listener, options?)` emits the status on every observable change of
+the snapshot or either layout slot; `formation.onLayout(listener)` emits `layoutPlanned`,
+`layoutAccepted` and `layoutRemoved` events for the bound room. `formation.readView(options?)`
+fetches the server's `GroupFormationView` (readiness, managers, `layoutStale`, `pending`, the
+attempt budget, both status axes and the coverage basis) and validates it against the bound room.
+Readiness for application traffic stays `rtc.waitForRoom(...)` and `realtime.room().wait()`, which
+follow the accepted layout only.
+
 `rooms.leave(input?)` leaves a room. It can use explicit `roomId`, `roomRef`, the default room, or the current room.
 
 `rooms.update(input)` updates owner/admin-controlled room fields, including

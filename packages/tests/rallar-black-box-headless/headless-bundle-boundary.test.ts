@@ -60,9 +60,11 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // member-policy validators itself. Persistence-ready IndexedDB writes
         // measure 219.14453125 KiB in the release runner. The room formation
         // handle with its eight lifecycle commands, layout slots and denial
-        // reader measures 220.846 KiB. The maintainer approved the smallest
-        // whole-KiB strict limit containing the current behavior.
-        expect(result.brotliKiB).toBeLessThan(221);
+        // reader measures 220.846 KiB; its fenced layout wait, stage and
+        // condition waits, subscriptions and validated formation view read
+        // measure 221.949 KiB. The maintainer approved the smallest whole-KiB
+        // strict limit containing the current behavior.
+        expect(result.brotliKiB).toBeLessThan(222);
     });
 });
 
