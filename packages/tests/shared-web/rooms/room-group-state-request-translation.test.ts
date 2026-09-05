@@ -12,6 +12,7 @@ import {
     toJoinGroupStateRequest,
     toLeaveRoomMemberGroupStateRequest,
     toRemoveRoomMemberGroupStateRequest,
+    toRoomFormationGroupStateRequest,
     toRoomLifecycleGroupStateRequest,
     toRoomMetadataGroupStateRequest,
     toSetRoomMemberRoleGroupStateRequest,
@@ -420,6 +421,34 @@ describe('room request translation', () => {
         expect(
             'lifecyclePolicy' in toCreateGroupStateRequest({ groupId: 'room-4', room: { displayName: 'Lobby' }, ...actor })
         ).toBe(false);
+    });
+
+    it('translates each formation command into its lifecycle request body', () => {
+        expect(toRoomFormationGroupStateRequest({ command: { command: 'plan' }, reason: undefined, ...actor })).toEqual(actor);
+        expect(
+            toRoomFormationGroupStateRequest({ command: { command: 'pause' }, reason: 'half-time', ...actor })
+        ).toEqual({ ...actor, reason: 'half-time' });
+        expect(
+            toRoomFormationGroupStateRequest({
+                command: {
+                    command: 'connect',
+                    expectedFormationEpoch: 2,
+                    expectedLayout: { groupRevision: 5, presenceRevision: 3, version: 9, state: 'active' }
+                },
+                reason: undefined,
+                ...actor
+            })
+        ).toEqual({
+            ...actor,
+            expectedFormationEpoch: 2,
+            expectedLayout: { groupRevision: 5, presenceRevision: 3, version: 9, state: 'active' }
+        });
+        expect(
+            toRoomFormationGroupStateRequest({ command: { command: 'reconfigure', landing: 'hold' }, reason: undefined, ...actor })
+        ).toEqual({ ...actor, landing: 'hold' });
+        expect(
+            toRoomFormationGroupStateRequest({ command: { command: 'reconfigure', landing: undefined }, reason: undefined, ...actor })
+        ).toEqual(actor);
     });
 
     it('retains facade inputs and authoritative request result types', () => {

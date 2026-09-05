@@ -4,8 +4,12 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { isGroupActive, isSessionInGroup, readGroupDisplayName, readGroupId } from '@shared/api/group-client-views.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
-import type { GroupTransportState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type {
+    GroupTopologyReconfigureLanding,
+    GroupTransportState
+} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupConnectRequest, GroupReconfigureRequest, MutationActorInput } from '@shared/api/state-types.ts';
 import { isOverlayIdentity } from '@shared/repository/overlays-repository.ts';
 import type {
     AcceptStateGroupInviteBody,
@@ -155,6 +159,24 @@ export interface ToConnectRoomPresenceGroupStateRequestInput extends RoomGroupSt
 export interface ToDisconnectRoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
     readonly principalId: string;
     readonly generationId: string;
+}
+
+export type RoomFormationCommand =
+    | Readonly<{ command: 'plan' | 'activate' | 'pause' | 'resume' | 'reset' | 'start'; }>
+    | Readonly<{
+        command: 'connect';
+        expectedFormationEpoch: number;
+        expectedLayout: GroupLayoutIdentity;
+    }>
+    | Readonly<{ command: 'reconfigure'; landing: GroupTopologyReconfigureLanding | undefined; }>;
+
+export type RoomFormationCommandName = RoomFormationCommand['command'];
+
+export type RoomFormationGroupStateRequest = MutationActorInput | GroupConnectRequest | GroupReconfigureRequest;
+
+export interface ToRoomFormationGroupStateRequestInput extends RoomGroupStateMutationActorInput {
+    readonly command: RoomFormationCommand;
+    readonly reason: string | undefined;
 }
 
 export interface ToRallarRoomSummaryInput {
@@ -350,6 +372,32 @@ export function toLeaveRoomMemberGroupStateRequest(
         actorSessionId: input.actorSessionId,
         reason: 'left-group'
     };
+}
+
+export function toRoomFormationGroupStateRequest(
+    input: ToRoomFormationGroupStateRequestInput
+): RoomFormationGroupStateRequest {
+    const actor = {
+        ...toActorRequest(input),
+        ...(input.reason === undefined ? {} : { reason: input.reason })
+    };
+    switch (input.command.command) {
+        case 'connect':
+            return {
+                ...actor,
+                expectedFormationEpoch: input.command.expectedFormationEpoch,
+                expectedLayout: input.command.expectedLayout
+            };
+        case 'reconfigure':
+            return input.command.landing === undefined ? actor : { ...actor, landing: input.command.landing };
+        case 'plan':
+        case 'activate':
+        case 'pause':
+        case 'resume':
+        case 'reset':
+        case 'start':
+            return actor;
+    }
 }
 
 export function toRallarRoomSummary(input: ToRallarRoomSummaryInput): RallarRoomSummary {
