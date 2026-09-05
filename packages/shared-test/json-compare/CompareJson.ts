@@ -13,6 +13,8 @@ export interface CompareConfig {
     compareValues: boolean;
     compareExact: boolean;
     compareArraysComplete: boolean;
+    /** Compare array elements positionally; no other mode checks order. */
+    compareArrayOrder: boolean;
     ignoreJsonKeys: string[];
     ignoreJsonPaths: string[];
 }
@@ -215,6 +217,36 @@ function isCompatibleObjects(
     return toCompatible();
 }
 
+function isOrderedArrayEqual(
+    expected: JsonArray,
+    actual: JsonArray,
+    config: CompareConfig,
+    currPath: string
+): ComparisonResult {
+    if (expected.length !== actual.length) {
+        return toNotCompatible(expected, actual, 'Json array length differs under exact-ordered');
+    }
+
+    for (let index = 0; index < expected.length; index++) {
+        const elementPath = currPath + '[' + index + ']';
+        const expectedElement = expected[index];
+        const actualElement = actual[index];
+        const result = Array.isArray(expectedElement)
+            ? isCompatibleArrays(expectedElement, actualElement, config, elementPath)
+            : isRecord(expectedElement)
+            ? isCompatibleObjects(expectedElement, actualElement, config, elementPath)
+            : isValueEqual(expectedElement, actualElement, config.compareExact)
+            ? toCompatible()
+            : toNotCompatible(expectedElement, actualElement, 'Json array element value differs');
+
+        if (!result.isEqual) {
+            return toNotCompatible(expected, actual, 'Json array element ' + index + ' differs', result);
+        }
+    }
+
+    return toCompatible();
+}
+
 function isCompatibleArrays(
     expected: JsonArray,
     actual: JsonValue | undefined,
@@ -223,6 +255,10 @@ function isCompatibleArrays(
 ): ComparisonResult {
     if (!Array.isArray(actual)) {
         return toNotCompatible(expected, actual, 'expected array was object');
+    }
+
+    if (config.compareArrayOrder) {
+        return isOrderedArrayEqual(expected, actual, config, currPath);
     }
 
     const expectedFound: JsonValue[] = [];
@@ -325,39 +361,51 @@ export const COMPARISON = {
     COMPATIBLE: 'compatible',
     COMPATIBLE_COMPLETE: 'compatible-complete',
     EXACT_STRUCTURE: 'exact-structure',
-    EXACT: 'exact'
+    EXACT: 'exact',
+    EXACT_ORDERED: 'exact-ordered'
 } as const;
 
 export type Comparison = typeof COMPARISON[keyof typeof COMPARISON];
 
 const COMPARE_FLAGS_BY_COMPARISON: Record<
     Comparison,
-    Pick<CompareConfig, 'compareValues' | 'compareExact' | 'compareArraysComplete'>
+    Pick<CompareConfig, 'compareValues' | 'compareExact' | 'compareArraysComplete' | 'compareArrayOrder'>
 > = {
     [COMPARISON.COMPATIBLE_STRUCTURE]: {
         compareValues: false,
         compareExact: false,
-        compareArraysComplete: false
+        compareArraysComplete: false,
+        compareArrayOrder: false
     },
     [COMPARISON.COMPATIBLE]: {
         compareValues: true,
         compareExact: false,
-        compareArraysComplete: false
+        compareArraysComplete: false,
+        compareArrayOrder: false
     },
     [COMPARISON.COMPATIBLE_COMPLETE]: {
         compareValues: true,
         compareExact: false,
-        compareArraysComplete: true
+        compareArraysComplete: true,
+        compareArrayOrder: false
     },
     [COMPARISON.EXACT_STRUCTURE]: {
         compareValues: false,
         compareExact: true,
-        compareArraysComplete: false
+        compareArraysComplete: false,
+        compareArrayOrder: false
     },
     [COMPARISON.EXACT]: {
         compareValues: true,
         compareExact: true,
-        compareArraysComplete: false
+        compareArraysComplete: false,
+        compareArrayOrder: false
+    },
+    [COMPARISON.EXACT_ORDERED]: {
+        compareValues: true,
+        compareExact: true,
+        compareArraysComplete: true,
+        compareArrayOrder: true
     }
 };
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CompareJson } from '../../shared-test/json-compare/json-compare.ts';
+import { compareJson, COMPARISON, toConfig } from '../../shared-test/json-compare/CompareJson.ts';
 
 describe('CompareJson facade', () => {
     it('compatible should allow extra actual fields', () => {
@@ -390,5 +391,50 @@ describe('CompareJson compatible-complete', () => {
         };
 
         expect(CompareJson.compatibleComplete(expected, actual).isEqual).toBe(true);
+    });
+});
+
+describe('exact-ordered comparison', () => {
+    function compare(expected: unknown, actual: unknown): boolean {
+        return compareJson(
+            expected as never,
+            actual as never,
+            toConfig(COMPARISON.EXACT_ORDERED, [], [])
+        ).isEqual;
+    }
+
+    // Every other mode, including `exact`, matches a reordered array. Asserting
+    // a sequence — a delta chain, a stage walk — had no mode that could.
+    it('rejects a reordered array that every other mode accepts', () => {
+        expect(compare(['a', 'b', 'c'], ['c', 'b', 'a'])).toBe(false);
+        expect(
+            compareJson(['a', 'b', 'c'] as never, ['c', 'b', 'a'] as never, toConfig(COMPARISON.EXACT, [], []))
+                .isEqual
+        ).toBe(true);
+    });
+
+    it('accepts an array in the expected order', () => {
+        expect(compare(['a', 'b', 'c'], ['a', 'b', 'c'])).toBe(true);
+    });
+
+    it('rejects an array with extra elements', () => {
+        expect(compare(['a', 'b'], ['a', 'b', 'c'])).toBe(false);
+    });
+
+    it('rejects an array missing elements', () => {
+        expect(compare(['a', 'b', 'c'], ['a', 'b'])).toBe(false);
+    });
+
+    it('compares nested arrays positionally', () => {
+        expect(compare({ events: [{ type: 'planned' }, { type: 'active' }] }, {
+            events: [{ type: 'planned' }, { type: 'active' }]
+        })).toBe(true);
+        expect(compare({ events: [{ type: 'planned' }, { type: 'active' }] }, {
+            events: [{ type: 'active' }, { type: 'planned' }]
+        })).toBe(false);
+    });
+
+    it('still requires exact object equality', () => {
+        expect(compare({ a: 1 }, { a: 1, b: 2 })).toBe(false);
     });
 });

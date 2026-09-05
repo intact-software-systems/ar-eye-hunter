@@ -26,6 +26,7 @@ import {
     executeWsInteraction,
     rememberWsCloseEvent
 } from './execution/execute-ws-interaction.ts';
+import { createParallelRendezvous } from './execution/parallel-rendezvous.ts';
 import { isRallarRemoteBrowserRequest } from './execution/remote-browser-execution.ts';
 import { withPollUntil } from './execution/with-poll-until.ts';
 import { validateAssertValueComparators } from './expectations/assert-value-comparators.ts';
@@ -1042,15 +1043,20 @@ async function executeParallelInteraction(interaction: any, config: any, context
         return toParallelFailureStatus(config, interaction, 'Parallel step requires at least one group with steps.');
     }
 
-    const maxConcurrency = Math.max(
+    // A barrier needs every group in flight at once, so it overrides any
+    // narrower concurrency rather than deadlocking against it.
+    const barrier = interaction.request.barrier === true;
+    const maxConcurrency = barrier ? groups.length : Math.max(
         1,
         Number.parseInt(String(interaction.request.maxConcurrency || groups.length), 10) || groups.length
     );
+    const rendezvous = createParallelRendezvous(barrier ? groups.length : 1);
     const timeoutMs = Number.parseInt(String(interaction.request.timeoutMs || 0), 10);
     const groupFailFast = interaction.request.failFast !== false;
     const startedAtEpochMs = Date.now();
 
     const groupResults = await runBoundedParallel(groups, maxConcurrency, async (group: any, groupIndex: number) => {
+        await rendezvous.arrive();
         const groupStartedAtEpochMs = Date.now();
         const steps = Array.isArray(group.steps)
             ? group.steps
@@ -1100,6 +1106,7 @@ async function executeParallelInteraction(interaction: any, config: any, context
         groups: groupResults,
         groupCount: groupResults.length,
         maxConcurrency,
+        barrier,
         timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : undefined,
         timedOut,
         durationMs,

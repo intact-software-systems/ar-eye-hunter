@@ -799,6 +799,39 @@ A run whose condition held at the last attempt but never for the full window is
 reported as a **failure**, not a pass: treating it as success would be exactly
 the silent weakening the window exists to prevent.
 
+## Asserting A Refused WebSocket Upgrade
+
+`ws.open` normally treats a refusal as a step failure, which makes an upgrade's
+negative paths — a reused, expired, foreign or missing ticket — impossible to
+assert. `expect.rejected` inverts that: the refusal becomes the assertion, and a
+successful open becomes the failure.
+
+```json
+{
+  "name": "aConsumedTicketCannotUpgrade",
+  "type": "ws.open",
+  "connection": "wsAlice",
+  "request": { "url": "{aliceWsUrl}" },
+  "expect": { "rejected": true, "close": { "code": 1008 } }
+}
+```
+
+`expect.close.code` is optional; without it any refusal satisfies the assertion.
+With it, a refusal that closed for a different reason fails and reports the code
+it actually saw, so "rejected" cannot quietly mean "rejected for the wrong
+reason".
+
+## Racing Parallel Groups With `barrier`
+
+`parallel` starts its groups as concurrency slots free, so the first group can
+finish before the last one starts. For a recipe that claims to test contention
+that is a timing coincidence, not a race.
+
+`"barrier": true` makes every group arrive before any is released. It overrides
+a narrower `maxConcurrency` rather than deadlocking against it, and the
+aggregate reports `barrier` so an assertion can confirm the race really ran that
+way.
+
 ## Counting Frames With `expect.count`
 
 `expect.message` resolves on its **first** match, so it cannot tell "exactly
@@ -841,13 +874,20 @@ Measured against `CompareJson` directly:
 | `compatible-complete`  | matches                            | rejected                                    |
 | `exact-structure`      | matches                            | rejected                                    |
 | `exact`                | matches                            | rejected                                    |
+| `exact-ordered`        | **rejected**                       | rejected                                    |
+
+`exact-ordered` is the one mode that compares arrays positionally, and the only
+way to assert a sequence — a delta chain, a stage walk, an event order. It is
+`exact` plus position, so it also requires equal lengths and rejects extra
+elements.
 
 Two consequences worth internalising before writing an assertion.
 
-**Order is never checked, including under `exact`.** To assert a sequence, read
+**Order is never checked except under `exact-ordered`.** In every other mode an
+expected array proves only that each element appears _somewhere_ in the actual
+array. To assert a sequence, either set `comparison: "exact-ordered"` or read
 positions explicitly — `body.0.eventType`, `body.1.eventType` — because both
-`[n]` and `.n` resolve in output paths. An expected array proves only that each
-element appears _somewhere_ in the actual array.
+`[n]` and `.n` resolve in output paths.
 
 **Because matching is unordered, enumerating permutations under `expect.anyOf`
 is dead code.** A race whose two outcomes are `[200, 409]` in either order needs

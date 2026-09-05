@@ -1,4 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
+import { resolveWsOpenExpectation } from '../ws/ws-open-expectation.ts';
 import {
     toWsConnectionName,
     toWsFailureStatus,
@@ -86,6 +87,8 @@ export function openWs(interaction: any, config: any, context: any): Promise<any
         const timeoutMs = Number.parseInt(request.timeoutMs || 5000);
         let settled = false;
 
+        const expectation = interaction.response ?? {};
+
         const resolveOnce = (result: any): void => {
             if (settled) {
                 return;
@@ -96,12 +99,38 @@ export function openWs(interaction: any, config: any, context: any): Promise<any
             resolve(result);
         };
 
+        // Every open outcome routes through here, so `expect.rejected` cannot
+        // be honoured on one path and silently dropped on another.
+        const resolveOpen = (input: {
+            opened: boolean;
+            details: any;
+            failureResult: string;
+            close?: { code?: number; reason?: string; };
+        }): void => {
+            const verdict = resolveWsOpenExpectation({
+                expectation,
+                opened: input.opened,
+                close: input.close
+            });
+
+            resolveOnce(
+                verdict.satisfied
+                    ? toWsSuccessStatus(config, interaction, input.details)
+                    : toWsFailureStatus(
+                        config,
+                        interaction,
+                        verdict.message ?? input.failureResult,
+                        input.details
+                    )
+            );
+        };
+
         const timeout = setTimeout(() => {
-            resolveOnce(toWsFailureStatus(config, interaction, 'WebSocket connect timed out', {
-                connection: connectionName,
-                url,
-                timeoutMs
-            }));
+            resolveOpen({
+                opened: false,
+                failureResult: 'WebSocket connect timed out',
+                details: { connection: connectionName, url, timeoutMs }
+            });
 
             try {
                 ws.close();
@@ -116,11 +145,11 @@ export function openWs(interaction: any, config: any, context: any): Promise<any
             context.wsMessages[connectionName] = context.wsMessages[connectionName] || [];
             context.wsCloseEvents[connectionName] = context.wsCloseEvents[connectionName] || [];
 
-            resolveOnce(toWsSuccessStatus(config, interaction, {
-                connection: connectionName,
-                url,
-                readyState: ws.readyState
-            }));
+            resolveOpen({
+                opened: true,
+                failureResult: 'WebSocket opened',
+                details: { connection: connectionName, url, readyState: ws.readyState }
+            });
         };
 
         ws.onmessage = (event) => {
@@ -143,23 +172,32 @@ export function openWs(interaction: any, config: any, context: any): Promise<any
             }
 
             if (!settled) {
-                resolveOnce(toWsFailureStatus(config, interaction, 'WebSocket closed before opening', {
-                    connection: connectionName,
-                    url,
-                    code: event.code,
-                    reason: event.reason,
-                    wasClean: event.wasClean
-                }));
+                resolveOpen({
+                    opened: false,
+                    failureResult: 'WebSocket closed before opening',
+                    close: { code: event.code, reason: event.reason },
+                    details: {
+                        connection: connectionName,
+                        url,
+                        code: event.code,
+                        reason: event.reason,
+                        wasClean: event.wasClean
+                    }
+                });
             }
         };
 
         ws.onerror = (event) => {
-            resolveOnce(toWsFailureStatus(config, interaction, 'WebSocket connection failed', {
-                connection: connectionName,
-                url,
-                eventType: event?.type,
-                readyState: ws.readyState
-            }));
+            resolveOpen({
+                opened: false,
+                failureResult: 'WebSocket connection failed',
+                details: {
+                    connection: connectionName,
+                    url,
+                    eventType: event?.type,
+                    readyState: ws.readyState
+                }
+            });
         };
     });
 }
