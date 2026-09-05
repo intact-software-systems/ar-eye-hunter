@@ -47,7 +47,7 @@ describe('the group narrative reports the lifecycle plane', () => {
                 'group.activationCondition',
                 'group.activationCoverageRate',
                 'group.activationStatusEpoch',
-                'group.activationConfirmedAtEpochMs'
+                'group.activationPublishedAtEpochMs'
             ]
         ) {
             expect(byLabel[label]?.value).toBe('unconfirmed');
@@ -78,7 +78,7 @@ describe('the group narrative reports the lifecycle plane', () => {
                 },
                 formationEpoch: 4,
                 evidenceWatermark: null,
-                confirmedAtEpochMs: NOW - 900
+                publishedAtEpochMs: NOW - 900
             }
         });
         const condition = narrative.facts.find((f) => f.label === 'group.activationCondition');
@@ -102,7 +102,7 @@ describe('the group narrative reports the lifecycle plane', () => {
                 },
                 formationEpoch: 4,
                 evidenceWatermark: { version: 11, createdAtEpochMs: NOW - 500 },
-                confirmedAtEpochMs: NOW - 100
+                publishedAtEpochMs: NOW - 100
             }
         });
         const byLabel = Object.fromEntries(narrative.facts.map((f) => [f.label, f]));
