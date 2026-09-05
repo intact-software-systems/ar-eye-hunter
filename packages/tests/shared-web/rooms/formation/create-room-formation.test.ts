@@ -19,7 +19,9 @@ const roomWorkflowMocks = readRoomWorkflowMocks();
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 
 function stubReceipt(receipt: GroupSnapshot) {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify(receipt), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify(receipt), { status: 200, headers: { 'content-type': 'application/json' } })
+    );
     vi.stubGlobal('fetch', fetchMock);
     return fetchMock;
 }

@@ -16,7 +16,9 @@ describe('room formation HTTP API', () => {
     it('posts a lifecycle command under the request-id path and returns the receipt snapshot', async () => {
         const { roomFormationHttpApi } = await import('@shared-web/browser/rooms/formation/room-formation-http-api.ts');
         const receipt = createRoomSnapshot('room-1', ['session-1']);
-        const fetchMock = vi.fn(async () => new Response(JSON.stringify(receipt), { status: 200, headers: { 'content-type': 'application/json' } }));
+        const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+            new Response(JSON.stringify(receipt), { status: 200, headers: { 'content-type': 'application/json' } })
+        );
         vi.stubGlobal('fetch', fetchMock);
 
         const snapshot = await roomFormationHttpApi.command({
