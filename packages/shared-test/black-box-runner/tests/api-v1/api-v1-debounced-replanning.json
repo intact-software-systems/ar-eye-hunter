@@ -1,5 +1,5 @@
 {
-  "description": "The debounced-replanning scenario (product decision 31, plan slice 10b): a managed group active on an accepted layout takes four replacing sessions about half a second apart under a 4 000 ms window with a 4 500 ms maximum wait; each read of the queued replan sees its own change (generation up by one), the due time extends with the second change, stops extending at the maximum wait, the one replan the burst yields carries its last presence revision, and nothing pends afterwards.",
+  "description": "The debounced-replanning scenario (product decision 31, plan slice 10b): a managed group reaches a quiescent active layout after its durable activation status and resulting topology work settle, then takes four replacing sessions about half a second apart under a 4 000 ms window with a 4 500 ms maximum wait; each read of the queued replan sees its own change (generation up by one), the due time extends with the second change, stops extending at the maximum wait, the one replan the burst yields carries its last presence revision, and nothing pends afterwards.",
   "variables": {
     "apiPrimary": {
       "env": "RALLAR_API_BASE_URL",
@@ -426,6 +426,35 @@
         "body": {
           "acceptedSnapshot": {
             "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "activationDwellWritesItsStatus",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activationStatus": {
+              "condition": "failed"
+            }
           }
         }
       }

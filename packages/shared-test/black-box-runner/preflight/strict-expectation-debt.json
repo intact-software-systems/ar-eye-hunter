@@ -4,7 +4,6 @@
     "api-v1-admin-operations": 4,
     "api-v1-admin-support": 4,
     "api-v1-black-box-control-auth": 4,
-    "api-v1-crdt-append-history": 1,
     "api-v1-cross-application-ws-isolation": 2,
     "api-v1-cross-principal-client-state-isolation": 2,
     "api-v1-drop-in-social-preset": 1,

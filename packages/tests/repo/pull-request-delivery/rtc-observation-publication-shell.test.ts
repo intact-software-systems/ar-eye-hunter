@@ -115,6 +115,36 @@ describe('RTC observation Git publication shell', () => {
         ).toBe(`${otherIndexLine}\n${fixture.indexLine}\n`);
         expect(runGit(fixture.repository, ['rev-parse', 'origin/main']).trim()).toBe(currentMain);
     });
+
+    it('rejects a publication branch that batches another observation', () => {
+        const fixture = gitPublicationFixture();
+        const shell = new RtcObservationPublicationShell({ repoRoot: fixture.repository });
+        const observation = shell.loadObservation(fixture.input);
+        const secondArchivePath = fixture.archiveRepositoryPath.replace(
+            '20260827T031500Z',
+            '20260827T031501Z'
+        );
+        const secondIndexLine = JSON.stringify({ archive: { path: secondArchivePath } });
+        runGit(fixture.repository, ['checkout', '--quiet', '-b', fixture.branchName]);
+        writeRepositoryFile(fixture.repository, fixture.archiveRepositoryPath, 'deterministic-zip-fixture');
+        writeRepositoryFile(fixture.repository, secondArchivePath, 'second-observation');
+        writeRepositoryFile(
+            fixture.repository,
+            fixture.indexRepositoryPath,
+            `${fixture.indexLine}\n${secondIndexLine}\n`
+        );
+        runGit(fixture.repository, ['add', 'performance-observations']);
+        runGit(fixture.repository, ['commit', '--quiet', '-m', 'batch observations']);
+        runGit(fixture.repository, ['push', '--quiet', 'origin', fixture.branchName]);
+        runGit(fixture.repository, ['checkout', '--quiet', 'main']);
+
+        expect(shell.inspectBranch({
+            baseCommit: fixture.mainCommit,
+            branchName: fixture.branchName,
+            observation,
+            sourceArchivePath: fixture.input.archivePath
+        })).toBe('conflict');
+    });
 });
 
 function openPullRequest(branchName: string) {

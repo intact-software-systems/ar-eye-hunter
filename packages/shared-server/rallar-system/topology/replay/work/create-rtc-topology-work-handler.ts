@@ -145,9 +145,9 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         facts,
         mutationRead
     };
-    const rttRefinementSkip = claimRttRefinementSkip(attempt);
-    if (rttRefinementSkip !== null) {
-        await writeSkippedRttRefinement({ options, entry, reservationFinish, accepted: rttRefinementSkip });
+    const accepted = claimRttRefinementSkip(attempt);
+    if (accepted !== null) {
+        await writeSkippedRttRefinement({ options, entry, sourceWorkId: workId, reservationFinish, accepted });
         await deferredCriterionPetitioner?.request(workEnvelope.data, mutationRead);
         return;
     }
@@ -179,16 +179,18 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
 
 interface WriteSkippedRttRefinementInput {
     readonly options: RtcTopologyWorkHandlerOptions;
+    readonly sourceWorkId: string;
     readonly entry: ResourceEntry;
     readonly reservationFinish: ResourceInboxReservationFinish;
     readonly accepted: AcceptedRtcTopologyWork;
 }
 
 async function writeSkippedRttRefinement(input: WriteSkippedRttRefinementInput): Promise<void> {
-    const { options, entry, reservationFinish, accepted } = input;
+    const { options, entry, sourceWorkId, reservationFinish, accepted } = input;
     const writeInput: ComputeRtcTopologyWorkWriteInput = {
-        accepted: accepted,
+        accepted,
         entry,
+        sourceWorkId,
         reservationFinish,
         formationAutomationEnabled: options.formationAutomation !== undefined,
         serviceId: options.serviceId,
@@ -201,7 +203,7 @@ async function writeSkippedRttRefinement(input: WriteSkippedRttRefinementInput):
     }
     await writeAcceptedRtcTopologyWork({
         options,
-        accepted: accepted,
+        accepted,
         computedWrite,
         computeDurationMs: 0
     });

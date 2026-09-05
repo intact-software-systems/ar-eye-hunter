@@ -29,8 +29,7 @@ export async function publishRtcObservationPullRequest(input, dependencies) {
         throw new Error('RTC observation archive identity is already used on main');
     }
 
-    const branchName =
-        `automation/${observation.stream}-observation-gh${input.runId}-a${input.runAttempt}`;
+    const branchName = `automation/${observation.stream}-observation-gh${input.runId}-a${input.runAttempt}`;
     const branchInput = {
         baseCommit,
         branchName,
@@ -359,7 +358,11 @@ export class RtcObservationPublicationShell {
             base: parentCommit,
             head: input.publicationCommit
         });
-        if (!inspection.observationOnly || inspection.archivePath !== input.observation.archivePath) {
+        if (
+            !inspection.observationOnly ||
+            inspection.archivePaths.length !== 1 ||
+            inspection.archivePaths[0] !== input.observation.archivePath
+        ) {
             return false;
         }
         const parentIndex = this.#readRevisionFile(
