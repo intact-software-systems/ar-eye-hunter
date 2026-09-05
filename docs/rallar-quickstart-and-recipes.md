@@ -169,6 +169,57 @@ else {
 }
 ```
 
+## Held-Layout Match Room
+
+A `match` preset holds the layout until the application says go and blocks application data until
+the layout is accepted. The creator is the manager at formation epoch 0, so it can drive every
+command.
+
+```ts
+const created = await rallar.rooms.createAndSwitch({
+    displayName: 'Ranked match',
+    lifecyclePolicy: { preset: 'match', establishment: { maxConcurrentEdgeSetups: 2 } }
+});
+const room = rallar.rooms.session(created.group);
+const formation = room.formation;
+
+formation.onChange((status) => ui.render(status.stage, status.condition, status.transportState));
+
+const planned = await formation.plan();
+const layout = await formation.waitForLayout({ timeoutMs: 10_000 });
+if (layout.status !== 'ready') {
+    throw new Error(`No layout was published: ${layout.status}`);
+}
+
+try {
+    await formation.connect({ layout: layout.layout.identity });
+}
+catch (error) {
+    const denial = toRoomFormationDenial(error);
+    if (denial?.kind === 'layout') {
+        // The plan moved while we waited; wait again and connect the current candidate.
+        const current = await formation.waitForLayout({
+            after: planned.causalRevision,
+            timeoutMs: 10_000
+        });
+        await formation.connect({ layout: current.layout?.identity });
+    }
+    else {
+        throw error;
+    }
+}
+
+await formation.waitForCondition('active', { timeoutMs: 30_000 });
+await formation.activate();
+await formation.waitForStage('active');
+const ready = await rallar.rtc.waitForRoom(created.group);
+```
+
+`pause()` and `resume()` halt and restore application data without dropping a connection;
+`reconfigure({ landing: 'hold' })` publishes a new layout beside the live one, and
+`waitForLayout({ after: receipt.causalRevision })` followed by `connect()` and `activate()` promotes
+it. `reset()` returns the room to `dormant` and `start()` begins a new series.
+
 ## Room Event Replay
 
 Use replay when the browser may have missed state-sync events while offline or disconnected.
