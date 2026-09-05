@@ -15,18 +15,36 @@ const streamConfiguration = {
 };
 
 export function inspectRtcObservationChange({ repoRoot, base, head }) {
-    const changes = readNameStatus(repoRoot, base, head);
+    const comparisonBase = readMergeBase(repoRoot, base, head);
+    if (comparisonBase === null) {
+        return rejected('rtc-observation-merge-base-failed', true);
+    }
+    const changes = readNameStatus(repoRoot, comparisonBase, head);
     if (!changes.ok) {
         return rejected(changes.reason, true);
     }
     const observationTouched = changes.value.some(({ path }) => path.startsWith(observationRoot));
     return inspectChangedObservationFiles({
         repoRoot,
-        base,
+        base: comparisonBase,
         head,
         changes: changes.value,
         observationTouched
     });
+}
+
+function readMergeBase(repoRoot, base, head) {
+    try {
+        const mergeBase = execFileSync('git', ['merge-base', base, head], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore']
+        }).trim();
+        return /^[0-9a-f]{40}$/u.test(mergeBase) ? mergeBase : null;
+    }
+    catch {
+        return null;
+    }
 }
 
 function inspectChangedObservationFiles(input) {

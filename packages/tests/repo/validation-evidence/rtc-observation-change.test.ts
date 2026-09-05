@@ -74,6 +74,30 @@ describe('RTC observation-only change', () => {
         });
     });
 
+    it('accepts the artifact delta when the base branch advances independently', () => {
+        const fixture = createFixture(true);
+        const observationHead = commit(fixture.root, 'observation', {
+            [archivePath]: 'zip-bytes',
+            [indexPath]: `${fixture.oldIndex}${indexLine(archivePath)}\n`
+        });
+        runGit(fixture.root, ['checkout', '--quiet', '-b', 'moving-main', fixture.base]);
+        const movingBase = commit(fixture.root, 'unrelated main change', {
+            'docs/unrelated.md': 'changed\n'
+        });
+
+        expect(inspectRtcObservationChange({
+            repoRoot: fixture.root,
+            base: movingBase,
+            head: observationHead
+        })).toMatchObject({
+            observationOnly: true,
+            observationTouched: true,
+            reason: 'rtc-observation-only',
+            archivePaths: [archivePath],
+            indexPath
+        });
+    });
+
     it('accepts one canonical RTC-B06 archive and its dedicated append-only index', () => {
         const fixture = createFixture(false);
         const b06ObservationId = '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3';
