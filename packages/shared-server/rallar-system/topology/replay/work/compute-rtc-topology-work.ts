@@ -175,6 +175,7 @@ function toRtcTopologyWorkWriteInput(
     return {
         accepted,
         entry: input.entry,
+        sourceWorkId: input.facts.workId,
         reservationFinish: input.reservationFinish,
         formationAutomationEnabled: input.formationAutomationEnabled,
         serviceId: input.serviceId,
