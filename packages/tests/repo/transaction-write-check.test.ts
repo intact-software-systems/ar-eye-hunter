@@ -834,6 +834,37 @@ describe('transaction write check', () => {
         }]);
     });
 
+    it('does not treat an unrelated parameter named transaction as a database transaction', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql { query(value: string): Promise<void>; }
+            interface Worker { materialize(): void; }
+            function inspect(transaction: Worker): void {
+                transaction.materialize();
+            }
+            export async function writeMutation(transaction: PSqlSql, worker: Worker): Promise<void> {
+                inspect(worker);
+                await transaction.query('written');
+            }
+        `);
+
+        expect(findings).toMatchObject([{
+            rule: 'transaction.unresolved-provenance',
+            operation: 'transaction.materialize'
+        }]);
+    });
+
+    it('recognizes an aliased PostgreSQL transaction type', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql { query(value: string): Promise<void>; }
+            type TransactionSql = PSqlSql;
+            export async function writeMutation(transaction: TransactionSql): Promise<void> {
+                await transaction.query(JSON.stringify({ value: 1 }));
+            }
+        `);
+
+        expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+    });
+
     it('follows an immediately invoked inline callable', () => {
         const findings = analyzeFixture(`
             interface PSqlSql { query(value: string): Promise<void>; }

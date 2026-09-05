@@ -24,7 +24,7 @@ const IMMEDIATE_CALLBACK_METHODS = new Set([
     'reduceRight',
     'some'
 ]);
-const TRANSACTION_TYPE = /^(?:import\("[^"]+"\)\.)?(?:PSqlSql|IDBTransaction)$/u;
+const TRANSACTION_TYPE_NAMES = ['PSqlSql', 'IDBTransaction'];
 const DATABASE_RECEIVER_TYPE = /(?:Sql|Database|Repository|Runtime|PGlite)/u;
 const INDEXED_DB_WRITE_METHODS = new Set(['add', 'clear', 'delete', 'put']);
 const TRANSACTION_CONTROL_METHODS = new Set(['begin', 'savepoint', 'transaction']);
@@ -541,9 +541,32 @@ function expressionIdentifiers(expression) {
 }
 
 function isTransactionParameter(parameter) {
-    const typeNode = parameter.getTypeNode();
-    const typeText = typeNode?.getText() ?? parameter.getType().getText(parameter);
-    return /^(?:transaction|tx|sql)$/iu.test(parameter.getName()) || TRANSACTION_TYPE.test(typeText);
+    if (isKnownTransactionType(parameter)) {
+        return true;
+    }
+    if (
+        /^(?:transaction|tx|sql)$/iu.test(parameter.getName()) &&
+        hasDatabaseReceiverType(parameter)
+    ) {
+        return true;
+    }
+    const owner = parameter.getFirstAncestor(isFunctionDeclaration);
+    if (!owner || owner.getParameters()[0] !== parameter) {
+        return false;
+    }
+    const parent = owner.getParent();
+    if (!Node.isCallExpression(parent)) {
+        return false;
+    }
+    const boundary = transactionBoundary(parent);
+    return boundary?.kind === 'callback' && unwrapExpression(boundary.callback) === owner;
+}
+
+function hasDatabaseReceiverType(node) {
+    const type = node.getType();
+    const candidate = type.getAliasSymbol() ?? type.getSymbol();
+    const symbol = candidate?.isAlias() ? candidate.getAliasedSymbol() : candidate;
+    return symbol !== undefined && DATABASE_RECEIVER_TYPE.test(symbol.getName());
 }
 
 function analysisRoot(node, start = node.getStart(), boundary = node) {
@@ -671,10 +694,9 @@ function isTransactionWriteDeclaration(declaration) {
     }
     return declaration.getParameters().some((parameter) => {
         const typeNode = parameter.getTypeNode();
-        const typeText = typeNode?.getText() ?? parameter.getType().getText(parameter);
         return /^(?:transaction|tx|sql)$/iu.test(parameter.getName()) &&
             (typeNode === undefined || !Node.isFunctionTypeNode(typeNode)) &&
-            TRANSACTION_TYPE.test(typeText);
+            isKnownTransactionType(parameter);
     });
 }
 
@@ -798,7 +820,7 @@ function isDirectTransactionOperation(call) {
         return false;
     }
     const receiver = expression.getExpression();
-    if (TRANSACTION_TYPE.test(receiver.getType().getText(receiver))) {
+    if (isKnownTransactionType(receiver)) {
         return true;
     }
     return Node.isIdentifier(receiver) && resolvedDeclarations(receiver).some(
@@ -829,18 +851,37 @@ function isPersistedWriteOperation(call) {
         isExactType(expression.getExpression(), 'IDBObjectStore');
 }
 
-function isExactType(node, expectedName) {
+function isKnownTransactionType(node) {
+    return TRANSACTION_TYPE_NAMES.some((name) => isExactType(node, name));
+}
+
+function isExactType(node, expectedName, visited = new Set()) {
     const type = node.getType();
-    const symbol = type.getAliasSymbol() ?? type.getSymbol();
-    if (symbol?.getName() === expectedName) {
-        return true;
+    for (const candidate of [type.getAliasSymbol(), type.getSymbol()]) {
+        const symbol = candidate?.isAlias() ? candidate.getAliasedSymbol() : candidate;
+        if (!symbol || visited.has(symbol)) {
+            continue;
+        }
+        if (symbol.getName() === expectedName) {
+            return true;
+        }
+        visited.add(symbol);
+        for (const declaration of symbol.getDeclarations()) {
+            if (
+                Node.isTypeAliasDeclaration(declaration) &&
+                declaration.getTypeNode() &&
+                isExactType(declaration.getTypeNode(), expectedName, visited)
+            ) {
+                return true;
+            }
+        }
     }
     const typeText = type.getText(node);
     return new RegExp(`^(?:import\\("[^"]+"\\)\\.)?${expectedName}$`, 'u').test(typeText);
 }
 
 function isTransactionArgument(argument) {
-    if (TRANSACTION_TYPE.test(argument.getType().getText(argument))) {
+    if (isKnownTransactionType(argument)) {
         return true;
     }
     return Node.isIdentifier(argument) && resolvedDeclarations(argument).some(
