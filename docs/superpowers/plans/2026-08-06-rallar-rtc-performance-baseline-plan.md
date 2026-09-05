@@ -72,7 +72,7 @@ correction in PR #517 are merged. Run 33991439486 produced the sixth archive in
 PR #519; its focused publication-wake identity correction merged in PR #520.
 Run 33997173287 then produced the seventh failed archive in PR #522. Its first
 default warmup exposed the same missing source-generation dimension in the
-separate topology-promotion outbox identity. The current focused slice keys
+separate topology-promotion outbox identity. PR #523 keys
 each promotion request by the existing canonical topology execution ID while
 leaving the fenced promotion command unchanged. There is not yet a valid B06 E3
 result. B07 remains held, and evidence ranking cannot start until a valid B06
@@ -82,7 +82,7 @@ primary and any required repeat are archived.
 
 | Order | Slice                                          | Completion evidence                                                                                                                                                                                                                              |
 | ----- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1     | Correct topology-promotion request identity    | The focused PR keys each promotion outbox event by the existing canonical topology execution ID, including coalescing generation, without changing the convergent fenced command; focused and relevant full-stack gates pass and the PR merges.  |
+| 1     | Correct topology-promotion request identity    | PR #523 keys each promotion outbox event by the existing canonical topology execution ID, including coalescing generation, without changing the convergent fenced command; focused and relevant full-stack gates pass and the PR merges.         |
 | 2     | Capture B06 E3-memory again from moving `main` | Manually dispatch `RTC-B06 Performance Observation` after the correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived. |
 
 After these two slices, Task 12 will choose the B05 observation window,
@@ -3914,8 +3914,8 @@ primary. The first default warmup again timed out before agent A observed both
 ready peers, but the causal server error moved to
 `app-outbox.topology-promotion`: two distinct topology source generations that
 selected the same formation epoch and layout attempted one immutable promotion
-outbox key. The focused follow-up includes the canonical topology execution ID
-in the outbox event identity. It intentionally leaves the decoded
+outbox key. The focused follow-up in PR #523 includes the canonical topology
+execution ID in the outbox event identity. It intentionally leaves the decoded
 `applyPlannedLayout` work unchanged so multiple source events converge on the
 same fenced command, and it retains no old identity overload or fallback.
 
@@ -3940,8 +3940,8 @@ same fenced command, and it retains no old identity overload or fallback.
       merges.
 - [x] Verify and archive run 33997173287's failed primary through observation
       PR #522; do not accept its metrics or run a repeat.
-- [ ] Merge the focused topology-promotion request identity correction after
-      relevant unit, type, full-stack, and branch validation.
+- [ ] Merge the focused topology-promotion request identity correction in PR
+      #523 after relevant unit, type, full-stack, and branch validation.
 - [ ] Manually dispatch `RTC-B06 Performance Observation` from the then-current
       `main` after that correction merges.
 - [ ] Verify that its observation-only pull request passes RTC observation
@@ -4415,7 +4415,7 @@ metrics. PRs #499 and #510 corrected the fourth and fifth failures, while PR
 identity omitted the generation of its mutable coalesced topology source. The
 focused correction merged in PR #520. Run 33997173287 and archive PR #522 then
 exposed the same omitted generation in the separate topology-promotion outbox
-identity. The current focused slice threads the existing canonical execution ID
+identity. PR #523 threads the existing canonical execution ID
 into that event identity while preserving the unchanged convergent command and
 strict collision handling. After it merges, the next performance action is
 another manual Task 10 dispatch from moving `main`, followed by
