@@ -61,16 +61,16 @@ export class AuthInboxHandler {
             facts: read.facts,
             computed: computedMutation
         };
-        const mutationIssues = this.dependencies.mutationService.validate(validationInput);
-        if (mutationIssues[0] !== undefined) {
-            throw mutationIssues[0].cause;
-        }
         const completionInput = {
             ...completionFacts,
             durableResult: computedMutation.result,
             status: EntityStatus.COMPLETED
         } as const;
         const computedCompletion = computeAppInboxCompletion(completionInput);
+        const mutationIssues = this.dependencies.mutationService.validate(validationInput);
+        if (mutationIssues[0] !== undefined) {
+            throw mutationIssues[0].cause;
+        }
         const completionIssues = validateAppInboxCompletion(completionInput, computedCompletion);
         if (completionIssues[0] !== undefined) {
             throw completionIssues[0].cause;

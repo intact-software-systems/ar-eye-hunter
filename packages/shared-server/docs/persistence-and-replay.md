@@ -1,7 +1,7 @@
 # Shared-server persistence and replay
 
-This document describes current durable shapes and owners. Prisma migration
-history creates today’s schema; it is not a runtime compatibility mechanism.
+This document describes current durable shapes and owners. The current schema
+bootstrap creates today’s database shape; runtime code does not translate older shapes.
 Current readers decode the shape written by current writers and fail at a named
 corruption boundary when that shape is invalid.
 
@@ -44,9 +44,9 @@ decisions.
 - CRDT, topology, RTC-RTT, auth, client, and group readers use their owning
   feature codec or validation module.
 
-There is no runtime migration callback, predecessor key scan, dual read,
-fallback decoder, or write-back conversion. Development and test databases can
-be recreated from Prisma migration history.
+There is no runtime translation callback, predecessor key scan, dual read,
+fallback decoder, or write-back conversion. Development and test databases are
+recreated from the current schema bootstrap.
 
 ## Conditional state writes
 

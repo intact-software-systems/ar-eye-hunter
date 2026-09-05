@@ -127,33 +127,33 @@ export async function readScopedGroupCommandIdentity(
     ) {
         return undefined;
     }
-    const prepared = decodeScopedGroupPreparation(row.ri_resource, expectation);
-    return prepared ? await resolveScopedGroupCommandIdentity(prepared, expectation) : undefined;
+    const ingress = decodeScopedGroupIngress(row.ri_resource, expectation);
+    return ingress ? await resolveScopedGroupCommandIdentity(ingress, expectation) : undefined;
 }
 
-interface ScopedGroupPreparation {
+interface ScopedGroupIngress {
     readonly command: GroupMutationCommand;
     readonly descriptor: GroupMutationDescriptor;
     readonly commandHash: string;
 }
 
-function decodeScopedGroupPreparation(
+function decodeScopedGroupIngress(
     resource: string,
     expectation: ScopedGroupCommandExpectation
-): ScopedGroupPreparation | undefined {
+): ScopedGroupIngress | undefined {
     const envelope = readJsonWireObject(resource);
     const payload = asJsonWireObject(envelope?.payload);
     const enqueueResource = typeof payload?.resource === 'string'
         ? readJsonWireObject(payload.resource)
         : undefined;
-    const preparation = asJsonWireObject(enqueueResource?.authority);
+    const ingress = asJsonWireObject(enqueueResource?.authority);
     if (
         payload?.typeId !== expectation.topicId ||
         enqueueResource?.type !== expectation.topicId ||
         enqueueResource?.topicId !== expectation.topicId ||
         enqueueResource?.resourceId !== expectation.requestId ||
         enqueueResource?.contextId !== expectation.logicalContextId ||
-        !hasExactKeys(preparation, [
+        !hasExactKeys(ingress, [
             'authorityProof',
             'descriptor',
             'command',
@@ -164,9 +164,9 @@ function decodeScopedGroupPreparation(
     ) {
         return undefined;
     }
-    const authorityProof = asJsonWireObject(preparation.authorityProof);
-    const facts = asJsonWireObject(preparation.facts);
-    const descriptor = asJsonWireObject(preparation.descriptor);
+    const authorityProof = asJsonWireObject(ingress.authorityProof);
+    const facts = asJsonWireObject(ingress.facts);
+    const descriptor = asJsonWireObject(ingress.descriptor);
     const descriptorScope = asJsonWireObject(descriptor?.scope);
     const descriptorRequest = asJsonWireObject(descriptor?.request);
     if (
@@ -178,9 +178,9 @@ function decodeScopedGroupPreparation(
         return undefined;
     }
     try {
-        assertGroupMutationCommand(preparation.command);
+        assertGroupMutationCommand(ingress.command);
         return {
-            command: preparation.command,
+            command: ingress.command,
             descriptor: decodeGroupMutationDescriptor(descriptor),
             commandHash: facts.commandHash
         };
@@ -191,10 +191,10 @@ function decodeScopedGroupPreparation(
 }
 
 async function resolveScopedGroupCommandIdentity(
-    prepared: ScopedGroupPreparation,
+    ingress: ScopedGroupIngress,
     expectation: ScopedGroupCommandExpectation
 ): Promise<ScopedGroupCommandIdentity | undefined> {
-    const { command, descriptor } = prepared;
+    const { command, descriptor } = ingress;
     let semanticCommand: GroupMutationCommand;
     let commandHash: string;
     try {
@@ -230,7 +230,7 @@ async function resolveScopedGroupCommandIdentity(
                 ...semanticCommand,
                 commandId: command.commandId
             })) ||
-        prepared.commandHash !== commandHash ||
+        ingress.commandHash !== commandHash ||
         command.requestId !== expectation.requestId ||
         command.aggregateRef.applicationId !== expectation.groupRef.applicationId ||
         command.aggregateRef.workspaceId !== expectation.groupRef.workspaceId ||

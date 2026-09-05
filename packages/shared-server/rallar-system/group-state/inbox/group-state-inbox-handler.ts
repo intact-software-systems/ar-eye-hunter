@@ -158,7 +158,6 @@ export class GroupStateInboxHandler {
             recordedEvent: resultRead.recordedEvent
         } as const;
         const result = computeGroupStateInboxResult(resultInput);
-        this.validateInboxResult(resultInput, result);
         const computedResult = result.fold(
             (conflict) => {
                 throw new GroupStateInboxResultReadConflictError(conflict);
@@ -169,6 +168,7 @@ export class GroupStateInboxHandler {
         const completionInput = this.readCompletionInput(context, durableResult);
         const completion = computeAppInboxCompletion(completionInput);
         this.validateMutation(command, resultRead.mutationRead, computed);
+        this.validateInboxResult(resultInput, result);
         this.validateCompletion(completionInput, completion);
         return await this.commitMutation({ context, command, computed, durableResult, completion });
     }
