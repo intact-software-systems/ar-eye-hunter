@@ -36,7 +36,9 @@ describe('room formation view read', () => {
             remediation: 'none',
             coverageBasisLayoutIdentity: null
         };
-        const fetchMock = vi.fn(async () => new Response(JSON.stringify(view), { status: 200, headers: { 'content-type': 'application/json' } }));
+        const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+            new Response(JSON.stringify(view), { status: 200, headers: { 'content-type': 'application/json' } })
+        );
         vi.stubGlobal('fetch', fetchMock);
 
         await expect(createRallarFacade().rooms.formation(planned.group).readView()).resolves.toEqual(view);
