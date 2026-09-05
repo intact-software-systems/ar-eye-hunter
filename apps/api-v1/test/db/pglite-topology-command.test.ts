@@ -250,7 +250,8 @@ Deno.test(
                 }
             });
             const authority = await service.planning.readTopologyPlanningAuthority({
-                groupRef
+                groupRef,
+                snapshotSelection: 'prefer-current'
             });
             assert.deepEqual(authority.rttMeasurements, [storedRtt]);
 

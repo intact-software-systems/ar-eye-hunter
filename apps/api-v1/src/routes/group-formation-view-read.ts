@@ -52,7 +52,8 @@ export async function readGroupFormationView(
     const [authority, view] = await Promise.all([
         deps.topologyPlanning.readTopologyPlanningAuthority({
             groupRef,
-            knownGroup: snapshot
+            knownGroup: snapshot,
+            snapshotSelection: 'prefer-current'
         }),
         deps.topologyQuery.readTopologyView(groupRef)
     ]);

@@ -265,11 +265,13 @@ async function readRtcTopologyWork(
     const { options, facts, mutationRead } = input;
     const { workEnvelope } = facts;
     const work = workEnvelope.data;
+    const membershipDeltaWork = work.kind === 'group-revision';
     const [authority, promotionRead, storedInputFingerprint] = await Promise.all([
         options.topologyPlanning.readTopologyPlanningAuthority({
             groupRef: work.groupSnapshot.group,
             requestOptions: fromCanonicalGroupTopologyConfigPatch(work.requestOptions),
-            knownGroup: work.groupSnapshot
+            knownGroup: work.groupSnapshot,
+            snapshotSelection: membershipDeltaWork ? 'preserve-known-revision' : 'prefer-current'
         }),
         readTopologyPromotion({
             publication: options.topologyPublication,

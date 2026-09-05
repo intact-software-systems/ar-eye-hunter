@@ -716,7 +716,8 @@ describe('RTC topology APP_OUTBOX work', () => {
         }).planning;
         const authority = await planning.readTopologyPlanningAuthority({
             groupRef: group.group,
-            knownGroup: group
+            knownGroup: group,
+            snapshotSelection: 'prefer-current'
         });
         const submittedCommands: Array<
             Readonly<{

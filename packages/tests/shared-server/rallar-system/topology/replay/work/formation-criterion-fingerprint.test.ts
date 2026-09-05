@@ -174,6 +174,8 @@ describe('formation criterion after unchanged topology inputs', () => {
             group: lifecycleSnapshot('connecting', 2),
             origin: 'automatic'
         });
+        expect(fixture.submitted).toHaveLength(1);
+        fixture.submitted.length = 0;
         fixture.current = lifecycleSnapshot('reconfiguring', 3);
         await fixture.handler.onMessage(decodePersistedALMessage(delayed.resource), delayed);
         expect(fixture.topologyService.readMetrics().topologyRebuildSkippedFingerprintCount).toBe(2);

@@ -47,7 +47,7 @@ describe('the group narrative reports the lifecycle plane', () => {
                 'group.activationCondition',
                 'group.activationCoverageRate',
                 'group.activationStatusEpoch',
-                'group.activationConfirmedAtEpochMs'
+                'group.activationPublishedAtEpochMs'
             ]
         ) {
             expect(byLabel[label]?.value).toBe('unconfirmed');
@@ -78,7 +78,7 @@ describe('the group narrative reports the lifecycle plane', () => {
                 },
                 formationEpoch: 4,
                 evidenceWatermark: null,
-                confirmedAtEpochMs: NOW - 900
+                publishedAtEpochMs: NOW - 900
             }
         });
         const condition = narrative.facts.find((f) => f.label === 'group.activationCondition');
@@ -87,7 +87,7 @@ describe('the group narrative reports the lifecycle plane', () => {
         expect(condition?.certainty).toBe('inferred');
     });
 
-    it('reports the confirmed status the writer stored', () => {
+    it('reports the published status the writer stored', () => {
         const narrative = narrativeFor({
             // Same series as the status, so it is current rather than stale.
             formationEpoch: 4,
@@ -102,7 +102,7 @@ describe('the group narrative reports the lifecycle plane', () => {
                 },
                 formationEpoch: 4,
                 evidenceWatermark: { version: 11, createdAtEpochMs: NOW - 500 },
-                confirmedAtEpochMs: NOW - 100
+                publishedAtEpochMs: NOW - 100
             }
         });
         const byLabel = Object.fromEntries(narrative.facts.map((f) => [f.label, f]));
@@ -111,6 +111,7 @@ describe('the group narrative reports the lifecycle plane', () => {
         expect(byLabel['group.activationCondition']?.certainty).toBe('exact');
         expect(byLabel['group.activationCoverageRate']?.value).toBe(0.6);
         expect(byLabel['group.activationCoverageBasis']?.value).toBe('active r9/2 v3');
+        expect(byLabel['group.activationPublishedAtEpochMs']?.value).toBe(NOW - 100);
     });
 
     // The valve is only half the gate: under `blocked-until-active` the

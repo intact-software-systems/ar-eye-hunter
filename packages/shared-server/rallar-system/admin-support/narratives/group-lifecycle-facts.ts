@@ -131,9 +131,9 @@ export function groupLifecycleFacts(input: GroupLifecycleFactsInput): readonly A
             certainty: statusCertainty
         },
         {
-            label: 'group.activationConfirmedAtEpochMs',
+            label: 'group.activationPublishedAtEpochMs',
             source: 'group-state',
-            value: status?.confirmedAtEpochMs ?? 'unconfirmed',
+            value: status?.publishedAtEpochMs ?? 'unconfirmed',
             certainty: statusCertainty
         }
     ];

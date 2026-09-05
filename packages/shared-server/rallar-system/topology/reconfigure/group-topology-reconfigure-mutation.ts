@@ -52,7 +52,8 @@ export class GroupTopologyReconfigureMutation {
         const authority = await this.dependencies.readPlanningAuthority({
             groupRef: command.groupRef,
             requestOptions: command.requestOptions,
-            knownGroup: guarded.snapshot
+            knownGroup: guarded.snapshot,
+            snapshotSelection: 'prefer-current'
         });
         if (
             compareGroupCausalRevision(
