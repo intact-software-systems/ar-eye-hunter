@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import {
     configureOverlayRepositories,
@@ -17,7 +18,7 @@ import { createFormationSnapshot, createLayoutOverlay } from './room-formation-t
 const roomWorkflowMocks = readRoomWorkflowMocks();
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 
-function stubReceipt(receipt: unknown) {
+function stubReceipt(receipt: GroupSnapshot) {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify(receipt), { status: 200, headers: { 'content-type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
     return fetchMock;

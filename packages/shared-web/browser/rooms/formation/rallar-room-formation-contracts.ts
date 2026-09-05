@@ -12,7 +12,8 @@ import type {
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupDialLayoutRoles } from '@shared/api/group-lifecycle/resolve-dial-layout-roles.ts';
 import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+
+import type { GroupRef, GroupSnapshot } from '../room-group-state-translation.ts';
 
 export type RallarRoomLayoutRole = 'planned' | 'accepted';
 

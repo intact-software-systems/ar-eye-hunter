@@ -4,7 +4,7 @@ import { isGroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 
 import type { RallarRoomFormationDenial } from './rallar-room-formation-contracts.ts';
 
-export function toRoomFormationDenial(error: unknown): RallarRoomFormationDenial | undefined {
+export function toRoomFormationDenial<T>(error: T): RallarRoomFormationDenial | undefined {
     if (!(error instanceof ApiHttpError) || error.mutationFailure === undefined) {
         return undefined;
     }

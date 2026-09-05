@@ -9,7 +9,6 @@ import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layo
 import { Command } from '@shared/cache/Command.ts';
 
 import {
-    toRallarRoomLayout,
     toRoomFormationGroupStateRequest,
     type GroupRef,
     type GroupSnapshot,
@@ -18,6 +17,7 @@ import {
 import type { RallarRoomStateStorePort } from '../room-state-store.ts';
 import type { RallarRoomConnectOptions, RallarRoomFormationCommandOptions } from './rallar-room-formation-contracts.ts';
 import { roomFormationHttpApi } from './room-formation-http-api.ts';
+import { toRallarRoomLayout } from './room-formation-observation.ts';
 import type { RallarRoomLayoutSlotsPort } from './room-layout-slots.ts';
 
 export interface RoomFormationCommandPorts {
