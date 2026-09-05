@@ -11,7 +11,7 @@ import {
 import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { assertClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/assert-client-mutation-command.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { assertClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { clientStateInstanceStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-instance-storage-key.ts';
 import { ClientStateRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
 import {
@@ -350,7 +350,7 @@ describe('client mutation persisted-state validation', () => {
             receipt: { ...computed.receipt, snapshotVersion: -1 }
         };
         expect(() =>
-            assertClientMutationComputed({
+            validateClientMutation({
                 command,
                 read,
                 computed: invalidComputed

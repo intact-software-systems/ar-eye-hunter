@@ -25,8 +25,8 @@ import {
     toAuthorisedWsClientDisconnectEnqueue
 } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import {
-    assertClientMutationOperationComputed,
-    computeClientMutationOperation
+    computeClientMutationOperation,
+    validateClientMutationOperation
 } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-computation.ts';
 import { ClientStateInboxHandler } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
 import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
@@ -149,7 +149,7 @@ describe('ClientStateInboxHandler phases', () => {
         }
 
         expect(() =>
-            assertClientMutationOperationComputed({
+            validateClientMutationOperation({
                 command,
                 read,
                 completionFacts,

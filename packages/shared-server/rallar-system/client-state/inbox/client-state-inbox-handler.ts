@@ -37,18 +37,14 @@ import type {
 } from './app-client-inbox-contracts.ts';
 import { readClientMutationAuthority } from './authenticated-client-mutation-ingress.ts';
 import {
-    assertAuthorisedWsConnectComputed,
-    assertClientMutationOperationComputed,
-    assertExpiredSessionsOperation,
-    assertMissingSessionDisconnectComputed,
     computeAuthorisedWsConnectOperation,
     computeClientMutationOperation,
     computeExpiredSessionsOperation,
     computeMissingSessionDisconnect,
-    validateAuthorisedWsConnectPolicy,
+    validateAuthorisedWsConnectOperation,
     validateClientMutationOperation,
-    validateExpiredSessionsPolicy,
-    validateMissingSessionDisconnectPolicy,
+    validateExpiredSessionsOperation,
+    validateMissingSessionDisconnect,
     type ClientExpiredSessionMutationRead
 } from './client-state-inbox-computation.ts';
 import type { AuthorisedWsClientMutationResult } from './client-state-inbox-result-codec.ts';
@@ -103,7 +99,6 @@ export class ClientStateInboxHandler {
                     lifecycle: undefined,
                     computed
                 } as const;
-                assertClientMutationOperationComputed(validationInput);
                 throwFirstClientMutationValidationIssue(
                     validateClientMutationOperation(validationInput)
                 );
@@ -162,9 +157,8 @@ export class ClientStateInboxHandler {
                     completionFacts,
                     computed
                 } as const;
-                assertAuthorisedWsConnectComputed(validationInput);
                 throwFirstClientMutationValidationIssue(
-                    validateAuthorisedWsConnectPolicy(validationInput)
+                    validateAuthorisedWsConnectOperation(validationInput)
                 );
             }
         );
@@ -233,9 +227,8 @@ export class ClientStateInboxHandler {
                         completionFacts,
                         computed
                     } as const;
-                    assertMissingSessionDisconnectComputed(validationInput);
                     throwFirstClientMutationValidationIssue(
-                        validateMissingSessionDisconnectPolicy(validationInput)
+                        validateMissingSessionDisconnect(validationInput)
                     );
                 }
             );
@@ -275,7 +268,6 @@ export class ClientStateInboxHandler {
                     lifecycle: lifecycleInput,
                     computed
                 } as const;
-                assertClientMutationOperationComputed(validationInput);
                 throwFirstClientMutationValidationIssue(
                     validateClientMutationOperation(validationInput)
                 );
@@ -355,17 +347,15 @@ export class ClientStateInboxHandler {
                     operation: 'mutation.validate'
                 },
                 () => {
-                    assertExpiredSessionsOperation(validateInput);
                     throwFirstClientMutationValidationIssue(
-                        validateExpiredSessionsPolicy(validateInput)
+                        validateExpiredSessionsOperation(validateInput)
                     );
                 }
             );
         }
         else {
-            assertExpiredSessionsOperation(validateInput);
             throwFirstClientMutationValidationIssue(
-                validateExpiredSessionsPolicy(validateInput)
+                validateExpiredSessionsOperation(validateInput)
             );
         }
         if (computed.outcome === 'idempotency-conflict') {

@@ -3,10 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { assertClientMutationResult } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation-result.ts';
-import {
-    assertClientMutationComputed,
-    validateClientMutation
-} from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 
@@ -18,8 +15,7 @@ describe('client mutation result validation', () => {
         const read = emptyRead(command);
         const computed = requireWrite(computeClientMutation({ command, read }));
 
-        expect(validateClientMutation({ command, read })).toEqual([]);
-        expect(() => assertClientMutationComputed({ command, read, computed })).not.toThrow();
+        expect(validateClientMutation({ command, read, computed })).toEqual([]);
     });
 
     it('rejects an accessor-backed computed result without invoking the accessor', async () => {
@@ -34,7 +30,7 @@ describe('client mutation result validation', () => {
             }
         });
 
-        expect(() => assertClientMutationComputed({ command, read, computed: accessorBacked })).toThrow(
+        expect(() => validateClientMutation({ command, read, computed: accessorBacked })).toThrow(
             'Client mutation computed.snapshot must be a data property'
         );
         expect(accessorRead).toBe(false);
@@ -76,8 +72,7 @@ describe('client mutation result validation', () => {
         };
         const computed = computeClientMutation({ command: conflicting, read });
 
-        expect(validateClientMutation({ command: conflicting, read })).toEqual([]);
-        expect(() => assertClientMutationComputed({ command: conflicting, read, computed })).not.toThrow();
+        expect(validateClientMutation({ command: conflicting, read, computed })).toEqual([]);
     });
 
     it('rejects self-consistent state sync and outbox values that differ from canonical computation', async () => {
@@ -97,7 +92,7 @@ describe('client mutation result validation', () => {
         };
 
         expect(() =>
-            assertClientMutationComputed({
+            validateClientMutation({
                 command,
                 read,
                 computed: selfConsistentButNoncanonical

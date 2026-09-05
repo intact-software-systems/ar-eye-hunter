@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { assertClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { writeClientMutation } from '@shared-server/rallar-system/client-state/mutation/write-client-mutation.ts';
 
 import { emptyRead, principalCommand } from './client-mutation-compute-test-fixtures.ts';
@@ -49,7 +49,7 @@ describe('client mutation write purity', () => {
             }
         };
 
-        expect(() => assertClientMutationComputed({ command, read, computed: tampered })).toThrow(
+        expect(() => validateClientMutation({ command, read, computed: tampered })).toThrow(
             'Client mutation computed.persistence.runtimeWrites.0.key differs from the computed value'
         );
     });

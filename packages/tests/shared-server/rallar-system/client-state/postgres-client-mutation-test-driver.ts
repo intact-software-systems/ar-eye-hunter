@@ -17,7 +17,6 @@ import { toConnectClientSessionMutationInput } from '@shared-server/rallar-syste
 import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import {
-    assertClientMutationComputed,
     ClientMutationIdempotencyConflictError,
     validateClientMutation
 } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
@@ -129,8 +128,7 @@ function createPostgresClientMutationExecutor(
             );
             const read = await service.read(command);
             const computed = computeClientMutation({ command, read });
-            assertClientMutationComputed({ command, read, computed });
-            const issue = validateClientMutation({ command, read })[0];
+            const issue = validateClientMutation({ command, read, computed })[0];
             if (issue !== undefined) {
                 throw issue.cause;
             }

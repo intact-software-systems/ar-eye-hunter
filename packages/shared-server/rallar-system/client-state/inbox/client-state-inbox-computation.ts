@@ -43,10 +43,7 @@ import type {
 } from '../mutation/client-mutation-contracts.ts';
 import { computeClientMutation } from '../mutation/compute/compute-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '../mutation/result-validation/validate-client-mutation-authority-policy.ts';
-import {
-    assertClientMutationComputed,
-    validateClientMutation
-} from '../mutation/result-validation/validate-client-mutation.ts';
+import { validateClientMutation } from '../mutation/result-validation/validate-client-mutation.ts';
 import type { ClientMutationValidationIssue } from '../validation/client-mutation-rejection.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
@@ -218,21 +215,12 @@ export function computeClientMutationOperation(
 export function validateClientMutationOperation(
     input: ValidateClientMutationOperationInput
 ): readonly ClientMutationValidationIssue[] {
-    return validateClientMutation({
-        command: input.command,
-        read: input.read
-    });
-}
-
-export function assertClientMutationOperationComputed(
-    input: ValidateClientMutationOperationInput
-): void {
     assertExactOperationComputed(
         computeClientMutationOperation(input),
         input.computed,
         'Client mutation operation computed'
     );
-    assertClientMutationComputed({
+    return validateClientMutation({
         command: input.command,
         read: input.read,
         computed: input.computed.mutation
@@ -278,24 +266,18 @@ export function computeAuthorisedWsConnectOperation(
     };
 }
 
-export function validateAuthorisedWsConnectPolicy(
+export function validateAuthorisedWsConnectOperation(
     input: ValidateAuthorisedWsConnectOperationInput
 ): readonly ClientMutationValidationIssue[] {
-    return validateClientMutationAuthorityPolicy(input.command, input.read);
-}
-
-export function assertAuthorisedWsConnectComputed(
-    input: ValidateAuthorisedWsConnectOperationInput
-): void {
     assertExactOperationComputed(
         computeAuthorisedWsConnectOperation(input),
         input.computed,
         'Authorised WebSocket client operation computed'
     );
     if (input.computed.outcome === 'inactive') {
-        return;
+        return validateClientMutationAuthorityPolicy(input.command, input.read);
     }
-    assertClientMutationComputed({
+    return validateClientMutation({
         command: input.command,
         read: input.read,
         computed: input.computed.mutation
@@ -321,20 +303,15 @@ export function computeMissingSessionDisconnect(
     };
 }
 
-export function validateMissingSessionDisconnectPolicy(
+export function validateMissingSessionDisconnect(
     input: ValidateMissingSessionDisconnectInput
 ): readonly ClientMutationValidationIssue[] {
-    return validateClientMutationAuthorityPolicy(input.command, input.read);
-}
-
-export function assertMissingSessionDisconnectComputed(
-    input: ValidateMissingSessionDisconnectInput
-): void {
     assertExactOperationComputed(
         computeMissingSessionDisconnect(input),
         input.computed,
         'Missing-session WebSocket disconnect computed'
     );
+    return validateClientMutationAuthorityPolicy(input.command, input.read);
 }
 
 export function computeExpiredSessionsOperation(
@@ -361,27 +338,21 @@ export function computeExpiredSessionsOperation(
     };
 }
 
-export function validateExpiredSessionsPolicy(
+export function validateExpiredSessionsOperation(
     input: ValidateExpiredSessionsOperationInput
 ): readonly ClientMutationValidationIssue[] {
-    return input.reads.flatMap(({ command, read }) => validateClientMutationAuthorityPolicy(command, read));
-}
-
-export function assertExpiredSessionsOperation(
-    input: ValidateExpiredSessionsOperationInput
-): void {
     assertExactOperationComputed(
         computeExpiredSessionsOperation(input),
         input.computed,
         'Expired client sessions operation computed'
     );
-    for (const [index, { command, read }] of input.reads.entries()) {
-        assertClientMutationComputed({
+    return input.reads.flatMap(({ command, read }, index) =>
+        validateClientMutation({
             command,
             read,
             computed: input.computed.mutations[index]!
-        });
-    }
+        })
+    );
 }
 
 function computeExpiredSessionSuccessorWrite(

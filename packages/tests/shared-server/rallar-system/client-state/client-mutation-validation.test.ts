@@ -9,10 +9,7 @@ import { assertClientMutationCommand } from '@shared-server/rallar-system/client
 import { validateClientMutationRequest } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
-import {
-    assertClientMutationComputed,
-    validateClientMutation
-} from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 
 import { deepFreeze } from './client-mutation-concurrency-test-runtime.ts';
@@ -204,10 +201,8 @@ describe('client mutation computation determinism', () => {
         });
         const first = computeClientMutation({ command, read });
         const second = computeClientMutation({ command, read });
-        assertClientMutationComputed({ command, read, computed: first });
-        assertClientMutationComputed({ command, read, computed: second });
-        expect(validateClientMutation({ command, read })).toEqual([]);
-        expect(validateClientMutation({ command, read })).toEqual([]);
+        expect(validateClientMutation({ command, read, computed: first })).toEqual([]);
+        expect(validateClientMutation({ command, read, computed: second })).toEqual([]);
         expect(second).toEqual(first);
         expect(command).toEqual(deepFreeze(structuredClone(command)));
         expect(read).toEqual(deepFreeze(structuredClone(read)));

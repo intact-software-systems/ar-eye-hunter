@@ -20,7 +20,6 @@ import { toClientMutationCommand } from '@shared-server/rallar-system/client-sta
 import type { ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import {
-    assertClientMutationComputed,
     ClientMutationIdempotencyConflictError,
     validateClientMutation
 } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
@@ -170,8 +169,7 @@ async function computeClientStateTestMutation(
     timeClientStateMutationPhase(
         { timing: context.mutationTiming, command, operation: 'mutation.validate' },
         () => {
-            assertClientMutationComputed({ command, read, computed });
-            const issue = validateClientMutation({ command, read })[0];
+            const issue = validateClientMutation({ command, read, computed })[0];
             if (issue !== undefined) {
                 throw issue.cause;
             }

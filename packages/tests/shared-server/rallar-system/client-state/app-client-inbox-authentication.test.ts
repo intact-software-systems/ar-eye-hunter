@@ -283,7 +283,7 @@ describe('AppClientInbox authentication', () => {
         const computed = computeClientMutation({ command, read });
 
         expect(
-            validateClientMutation({ command, read }).map(({ path }) => path)
+            validateClientMutation({ command, read, computed }).map(({ path }) => path)
         ).toContain('command.authority.principalId');
     });
 

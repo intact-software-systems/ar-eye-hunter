@@ -47,19 +47,12 @@ export class ClientMutationIdempotencyConflictError extends Error {
 export interface ClientMutationValidationInput {
     readonly command: ClientMutationCommand;
     readonly read: ClientMutationRead;
-}
-
-export interface ClientMutationComputedAssertionInput extends ClientMutationValidationInput {
     readonly computed: ClientMutationComputed;
 }
 
 export function validateClientMutation(
     input: ClientMutationValidationInput
 ): readonly ClientMutationValidationIssue[] {
-    return validateClientMutationAuthorityPolicy(input.command, input.read);
-}
-
-export function assertClientMutationComputed(input: ClientMutationComputedAssertionInput): void {
     const { command, read, computed } = input;
     assertClientMutationCommand(command);
     assertClientMutationFacts(command.facts);
@@ -68,15 +61,14 @@ export function assertClientMutationComputed(input: ClientMutationComputedAssert
     assertClientMutationIdentity(command);
     assertClientMutationRead(command, read);
     assertClientSessionIdentity(command);
-    if (computed.outcome === 'idempotency-conflict') {
-        return;
+    if (computed.outcome !== 'idempotency-conflict') {
+        assertClientMutationReceiptIdentity(command, computed);
+        assertExactClientPersistence(computed);
+        if (computed.outcome === 'write') {
+            assertEffectfulClientMutation(command, read, computed);
+        }
     }
-    assertClientMutationReceiptIdentity(command, computed);
-    assertExactClientPersistence(computed);
-    if (computed.outcome !== 'write') {
-        return;
-    }
-    assertEffectfulClientMutation(command, read, computed);
+    return validateClientMutationAuthorityPolicy(command, read);
 }
 
 function assertExactClientMutationComputation(
