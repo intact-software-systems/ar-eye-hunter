@@ -102,6 +102,6 @@ describe('Branch Release Gate result', () => {
                 publicationResult: 'skipped',
                 rtcObservationResult: 'skipped'
             })
-        ).toEqual(['RTC observation store change is not one exact verified append']);
+        ).toEqual(['RTC observation store change is not an exact verified append']);
     });
 });

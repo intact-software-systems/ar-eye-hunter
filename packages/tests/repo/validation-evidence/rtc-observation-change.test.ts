@@ -37,9 +37,64 @@ describe('RTC observation-only change', () => {
             observationOnly: true,
             observationTouched: true,
             reason: 'rtc-observation-only',
-            archivePath,
+            archivePaths: [archivePath],
             indexPath,
-            indexEntry: JSON.parse(indexLine(archivePath))
+            indexEntries: [JSON.parse(indexLine(archivePath))]
+        });
+    });
+
+    it('accepts several create-new ZIPs with one matching canonical row each', () => {
+        const fixture = createFixture(true);
+        const secondObservationId = '20260828T031500Z-eaf526518c71-e2-browser-gh123456790-a1';
+        const secondArchivePath = 'performance-observations/rtc-b05/2026/08/28/' + secondObservationId + '.zip';
+        const head = commit(fixture.root, 'observation batch', {
+            [archivePath]: 'first-zip-bytes',
+            [secondArchivePath]: 'second-zip-bytes',
+            [indexPath]: fixture.oldIndex +
+                indexLine(archivePath) +
+                '\n' +
+                indexLine(secondArchivePath) +
+                '\n'
+        });
+
+        expect(inspectRtcObservationChange({
+            repoRoot: fixture.root,
+            base: fixture.base,
+            head
+        })).toEqual({
+            observationOnly: true,
+            observationTouched: true,
+            reason: 'rtc-observation-only',
+            archivePaths: [archivePath, secondArchivePath],
+            indexPath,
+            indexEntries: [
+                JSON.parse(indexLine(archivePath)),
+                JSON.parse(indexLine(secondArchivePath))
+            ]
+        });
+    });
+
+    it('accepts the artifact delta when the base branch advances independently', () => {
+        const fixture = createFixture(true);
+        const observationHead = commit(fixture.root, 'observation', {
+            [archivePath]: 'zip-bytes',
+            [indexPath]: `${fixture.oldIndex}${indexLine(archivePath)}\n`
+        });
+        runGit(fixture.root, ['checkout', '--quiet', '-b', 'moving-main', fixture.base]);
+        const movingBase = commit(fixture.root, 'unrelated main change', {
+            'docs/unrelated.md': 'changed\n'
+        });
+
+        expect(inspectRtcObservationChange({
+            repoRoot: fixture.root,
+            base: movingBase,
+            head: observationHead
+        })).toMatchObject({
+            observationOnly: true,
+            observationTouched: true,
+            reason: 'rtc-observation-only',
+            archivePaths: [archivePath],
+            indexPath
         });
     });
 
@@ -61,9 +116,9 @@ describe('RTC observation-only change', () => {
             observationOnly: true,
             observationTouched: true,
             reason: 'rtc-observation-only',
-            archivePath: b06ArchivePath,
+            archivePaths: [b06ArchivePath],
             indexPath: b06IndexPath,
-            indexEntry: JSON.parse(indexLine(b06ArchivePath))
+            indexEntries: [JSON.parse(indexLine(b06ArchivePath))]
         });
     });
 
@@ -83,12 +138,51 @@ describe('RTC observation-only change', () => {
             })
         ],
         [
-            'two archives',
+            'two archives with only one index row',
             (fixture: Fixture) => ({
                 [archivePath]: 'zip-bytes',
                 [archivePath.replace('.zip', '-other.zip')]: 'zip-bytes',
                 [indexPath]: `${fixture.oldIndex}${indexLine(archivePath)}\n`
             })
+        ],
+        [
+            'duplicate rows in a batch',
+            (fixture: Fixture) => {
+                const secondArchivePath = archivePath.replace('20260827T031500Z', '20260827T031501Z');
+                return {
+                    [archivePath]: 'zip-bytes',
+                    [secondArchivePath]: 'zip-bytes',
+                    [indexPath]: fixture.oldIndex +
+                        indexLine(archivePath) +
+                        '\n' +
+                        indexLine(archivePath) +
+                        '\n'
+                };
+            }
+        ],
+        [
+            'archives from different streams',
+            (fixture: Fixture) => {
+                const b06ArchivePath = 'performance-observations/rtc-b06/2026/08/30/' +
+                    '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3.zip';
+                return {
+                    [archivePath]: 'zip-bytes',
+                    [b06ArchivePath]: 'zip-bytes',
+                    [indexPath]: `${fixture.oldIndex}${indexLine(archivePath)}\n`,
+                    'performance-observations/rtc-b06/index.jsonl': `${indexLine(b06ArchivePath)}\n`
+                };
+            }
+        ],
+        [
+            'malformed row in a batch',
+            (fixture: Fixture) => {
+                const secondArchivePath = archivePath.replace('20260827T031500Z', '20260827T031501Z');
+                return {
+                    [archivePath]: 'zip-bytes',
+                    [secondArchivePath]: 'zip-bytes',
+                    [indexPath]: `${fixture.oldIndex}${indexLine(archivePath)}\n{\n`
+                };
+            }
         ],
         [
             'unrelated file',
