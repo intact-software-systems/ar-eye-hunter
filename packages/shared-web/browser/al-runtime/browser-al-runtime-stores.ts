@@ -1,12 +1,3 @@
-import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import {
-    configureALRuntimeStoreScopes,
-    resolveALInboundRuntimeStores,
-    resolveALOutboundRuntimeStores,
-    type ALRuntimeStoreFactories,
-    type ALRuntimeStoreScope
-} from '@shared/alm/ALRuntimeStoreRegistry.ts';
 import type { CreateDefaultALRuntimeStoresInput } from '@shared/alm/al-runtime-stores.ts';
 import {
     createDefaultIndexedDbALInboundRuntimeStores,
@@ -15,6 +6,15 @@ import {
     createDefaultInMemoryALOutboundRuntimeStores,
     isIndexedDbALRuntimeStoreSupported
 } from '@shared/alm/al-runtime-stores.ts';
+import {
+    configureALRuntimeStoreScopes,
+    resolveALInboundRuntimeStores,
+    resolveALOutboundRuntimeStores,
+    type ALRuntimeStoreFactories,
+    type ALRuntimeStoreScope
+} from '@shared/alm/ALRuntimeStoreRegistry.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
 import {
     BROWSER_AL_RUNTIME_DB_NAME,

@@ -8,9 +8,9 @@ import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts'
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
+import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
-import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
@@ -284,14 +284,12 @@ describe('outbound admission persisted-record validation', () => {
         {
             label: 'zero-attempt',
             attempts: 0,
-            toPendingEffectId: (msgId: string) =>
-                toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync', 0])
+            toPendingEffectId: (msgId: string) => toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync', 0])
         },
         {
             label: 'foreign-message',
             attempts: 1,
-            toPendingEffectId: () =>
-                toALOutboundEffectId(['nack-retry', 'foreign-msg', 'not-yet-in-sync', 1])
+            toPendingEffectId: () => toALOutboundEffectId(['nack-retry', 'foreign-msg', 'not-yet-in-sync', 1])
         }
     ])('rejects a $label not-yet-in-sync retry snapshot', async ({ attempts, toPendingEffectId }) => {
         const { backend, store } = createAdmission();

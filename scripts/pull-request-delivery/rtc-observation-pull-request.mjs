@@ -29,8 +29,7 @@ export async function publishRtcObservationPullRequest(input, dependencies) {
         throw new Error('RTC observation archive identity is already used on main');
     }
 
-    const branchName =
-        `automation/${observation.stream}-observation-gh${input.runId}-a${input.runAttempt}`;
+    const branchName = `automation/${observation.stream}-observation-gh${input.runId}-a${input.runAttempt}`;
     const branchInput = {
         baseCommit,
         branchName,
