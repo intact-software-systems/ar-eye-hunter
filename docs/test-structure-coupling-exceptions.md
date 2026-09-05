@@ -131,15 +131,30 @@ moved or changed test.
       "id": "shared-web-room-formation-command-request",
       "domain": "Shared-web room formation commands",
       "owner": "Shared Web maintainers",
-      "summary": "A formation command issues exactly one lifecycle POST under one fresh request id whose body carries the actor, the reason and, for connect, the epoch and layout fence. Executable assertion: “connects the current planned layout with the cached epoch”.",
-      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#connects the current planned layout with the cached epoch",
-      "coverageRelation": "The handle test executes the command through the facade and observes the HTTP port the handle owns; the first-call body assertion is the wire contract the api-v1 lifecycle route decodes.",
+      "summary": "A formation command issues exactly one lifecycle POST under one fresh request id whose body carries the actor and the reason. Executable assertion: “plans through the bound room and accepts the receipt into the cache”.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#plans through the bound room and accepts the receipt into the cache",
+      "coverageRelation": "The handle test executes plan through the facade and observes the HTTP port the handle owns; the request-id path and first-call body assertions are the wire contract the api-v1 lifecycle route decodes.",
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "Room formation HTTP command port",
-        "observableEffect": "One POST per command under one fresh request id, carrying the actor, the reason and the command fence.",
+        "observableEffect": "One POST per command under one fresh request id, carrying the actor and the reason.",
         "requiredConstraint": "Exactly one POST per command; a retry after a typed conflict is a new call with a new request id.",
         "failureRationale": "A second POST under a fresh id would submit the transition twice, and reusing a spent id replays the very denial the retry meant to escape."
+      }
+    },
+    {
+      "id": "shared-web-room-formation-connect-fence",
+      "domain": "Shared-web room formation connect",
+      "owner": "Shared Web maintainers",
+      "summary": "A connect with no explicit layout names the cached formation epoch and the planned-slot identity in its one lifecycle POST. Executable assertion: “connects the current planned layout with the cached epoch”.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#connects the current planned layout with the cached epoch",
+      "coverageRelation": "The handle test seeds the snapshot and the planned slot, executes connect through the facade, and observes the single POST on the HTTP port the handle owns; the body is the fence the server compares.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Room formation HTTP command port",
+        "observableEffect": "One connect POST whose body carries the cached epoch and the planned-slot identity.",
+        "requiredConstraint": "Exactly one POST carries the fence; a superseded identity is answered by the server, never retried under the same request id.",
+        "failureRationale": "Two POSTs would race the fence against itself, and a fence read from anywhere but the cached snapshot and slot could dial a layout the caller never saw."
       }
     },
     {
@@ -1585,7 +1600,7 @@ moved or changed test.
       "id": "test-structure-coupling-b604e54c823905c7",
       "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
       "kind": "mock-invocation-count-or-order",
-      "contract": "shared-web-room-formation-command-request",
+      "contract": "shared-web-room-formation-connect-fence",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Web maintainers",
