@@ -1,4 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
+import { withPollUntil } from '../execution/with-poll-until.ts';
 import { toHttpInteractionStatus } from './http-response-expectations.ts';
 
 const SUCCESS = 'SUCCESS';
@@ -173,70 +174,14 @@ function isPollUntilHttpRequest(request: any): boolean {
         isRecord(request?.poll);
 }
 
-function toPollUntilPolicy(request: any): any {
-    const poll = isRecord(request?.poll) ? request.poll : {};
-
-    return {
-        maxAttempts: Number.parseInt(String(poll.maxAttempts ?? 10), 10),
-        maxDurationMs: Number.parseInt(String(poll.maxDurationMs ?? 15000), 10),
-        backoffMs: Number.parseInt(String(poll.backoffMs ?? 100), 10),
-        backoffMultiplier: Number.parseFloat(String(poll.backoffMultiplier ?? 2))
-    };
-}
-
-function withPollReportFields(status: any, poll: any): any {
-    return {
-        ...status,
-        pollAttempts: poll.attempts,
-        pollExhausted: poll.exhausted,
-        pollElapsedMs: poll.elapsedMs
-    };
-}
-
 // Success is the step's own expect passing; exhaustion of either bound is a
-// failure carrying the last attempt's status.
-async function executePollUntilHttp(interaction: any, config: any): Promise<any> {
-    const policy = toPollUntilPolicy(interaction.request);
-    const startedAtEpochMs = Date.now();
-    let lastStatus: any;
-
-    for (let attemptNumber = 1; attemptNumber <= policy.maxAttempts; attemptNumber++) {
-        lastStatus = await executeSingleHttpAttempt(interaction, config);
-
-        if (lastStatus?.status === SUCCESS) {
-            return withPollReportFields(lastStatus, {
-                attempts: attemptNumber,
-                exhausted: false,
-                elapsedMs: Date.now() - startedAtEpochMs
-            });
-        }
-
-        const backoffMs = toBackoffMs(
-            { backoffMs: policy.backoffMs, backoffMultiplier: policy.backoffMultiplier },
-            attemptNumber
-        );
-        const elapsedMs = Date.now() - startedAtEpochMs;
-        if (attemptNumber >= policy.maxAttempts || elapsedMs + backoffMs > policy.maxDurationMs) {
-            return withPollReportFields(lastStatus, {
-                attempts: attemptNumber,
-                exhausted: true,
-                elapsedMs
-            });
-        }
-
-        await sleep(backoffMs);
-    }
-
-    return withPollReportFields(lastStatus, {
-        attempts: policy.maxAttempts,
-        exhausted: true,
-        elapsedMs: Date.now() - startedAtEpochMs
-    });
-}
 
 export function executeHttpInteraction(interaction: any, config: any): Promise<any> {
     if (isPollUntilHttpRequest(interaction.request)) {
-        return executePollUntilHttp(interaction, config);
+        return withPollUntil({
+            request: interaction.request,
+            execute: () => executeSingleHttpAttempt(interaction, config)
+        });
     }
 
     return executeSingleHttpAttempt(interaction, config);

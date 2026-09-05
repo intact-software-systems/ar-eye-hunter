@@ -27,6 +27,7 @@ import {
     rememberWsCloseEvent
 } from './execution/execute-ws-interaction.ts';
 import { isRallarRemoteBrowserRequest } from './execution/remote-browser-execution.ts';
+import { withPollUntil } from './execution/with-poll-until.ts';
 import { validateAssertValueComparators } from './expectations/assert-value-comparators.ts';
 import { monotonicComparisonFailures } from './expectations/monotonic-comparison-failures.ts';
 import { parallelAggregateFailure } from './expectations/parallel-aggregate-expectation.ts';
@@ -934,16 +935,28 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
     const config = toInteractionExecutionConfig(interactionWithConfig, interaction);
     applyInteractionCorrelation(interactionWithConfig, interaction, config, context);
 
+    // These three had no retry loop of their own, so a recipe waiting on a
+    // durable row, a derived value or a parallel outcome had to sleep. HTTP
+    // already polls inside its own executor.
     if (interactionWithConfig.ASSERT) {
-        return executeAssertInteraction(interaction, config, context);
+        return withPollUntil({
+            request: interaction.request,
+            execute: () => executeAssertInteraction(interaction, config, context)
+        });
     }
 
     if (interactionWithConfig.SET) {
-        return executeSetInteraction(interaction, config, context);
+        return withPollUntil({
+            request: interaction.request,
+            execute: () => executeSetInteraction(interaction, config, context)
+        });
     }
 
     if (interactionWithConfig.PARALLEL) {
-        return executeParallelInteraction(interaction, config, context);
+        return withPollUntil({
+            request: interaction.request,
+            execute: () => executeParallelInteraction(interaction, config, context)
+        });
     }
 
     if (interactionWithConfig.WS) {

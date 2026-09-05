@@ -764,13 +764,40 @@ HTTP retry configuration lives under `request.resilience.retry` or
 WS and RTC waits use `expect.withinMs`. Message waits can also use
 `expect.consume` and `expect.ordered`.
 
-For convergence, prefer the `http.poll-until` step documented above over HTTP
-retry: retry is for transient transport failures, polling is for state that has
-not converged yet. **`poll-until` is HTTP-only** — `assert`, `set` and `parallel`
-have no retry loop, so a recipe waiting on a durable row or a parallel outcome
-still has to sleep. Sleeping is a real cost: the api-v1 corpus carries 371
-seconds of unconditional `delayMs` across 59 steps, concentrated in five
-recipes, almost all of it hand-rolled polling.
+For convergence, prefer polling over HTTP retry: retry is for transient
+transport failures, polling is for state that has not converged yet.
+
+**A `poll` block works on `http`, `assert`, `set` and `parallel`.** Declaring one
+repeats the step until its own `expect` passes, so a recipe waiting on a derived
+value, a durable queue row or a parallel outcome no longer has to sleep and
+hope. Sleeping is a real cost: the api-v1 corpus still carries 371 seconds of
+unconditional `delayMs` across 59 steps, almost all of it hand-rolled polling
+that a `poll` block now expresses directly.
+
+```json
+{
+  "name": "theQueueRowReachedItsTerminalState",
+  "type": "set.state-write-evidence",
+  "output": "stateWriteEvidence",
+  "poll": { "maxAttempts": 20, "maxDurationMs": 15000, "backoffMs": 250, "backoffMultiplier": 1 },
+  "request": { "stateWriteEvidence": { "match": "bb-request-{runId}", "minimumMatchedRows": 1 } }
+}
+```
+
+A step that declares no `poll` runs exactly once and carries no poll fields, so
+nothing changes for the rest of the corpus. The result reports `pollAttempts`,
+`pollExhausted` and `pollElapsedMs`.
+
+### `stableForMs`: converged, not passing through
+
+`poll.stableForMs` requires the condition to hold **continuously** for that long,
+and any lapse restarts the window. That is the difference between state that has
+converged and state passing through the expected value on its way somewhere
+else — the assertion a churn or replanning recipe actually wants.
+
+A run whose condition held at the last attempt but never for the full window is
+reported as a **failure**, not a pass: treating it as success would be exactly
+the silent weakening the window exists to prevent.
 
 ## Counting Frames With `expect.count`
 
