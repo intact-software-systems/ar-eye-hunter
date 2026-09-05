@@ -14,6 +14,10 @@ import {
     type RallarStateEventsPort
 } from '@shared-web/browser/people/browser-rallar-people-events.ts';
 import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
+import {
+    createRoomLayoutSlots,
+    type RallarRoomLayoutSlotsPort
+} from '@shared-web/browser/rooms/formation/room-layout-slots.ts';
 import { createRoomEvents, type RallarRoomEventsPort } from '@shared-web/browser/rooms/room-events.ts';
 import {
     resolveBrowserRoomTransportTarget,
@@ -52,6 +56,7 @@ export interface BrowserRuntimeFoundation {
 export interface BrowserStateComposition {
     readonly stateStore: RallarStatePort;
     readonly roomStateStore: RallarRoomStateStorePort;
+    readonly roomLayoutSlots: RallarRoomLayoutSlotsPort;
     readonly readDefaults: () => RallarDefaults | undefined;
     readonly resolveDefaultRoomRef: () => GroupRef | undefined;
     readonly resolveDefaultRoom: () => string | GroupRef | undefined;
@@ -120,6 +125,7 @@ export function createBrowserStateComposition(
     input: CreateBrowserStateCompositionInput
 ): BrowserStateComposition {
     const stateCache = createRallarStateCacheReadPort();
+    const roomLayoutSlots = createRoomLayoutSlots();
     const roomStateStore = createRoomStateStore({
         runtime: input.stateRuntime,
         readSession,
@@ -149,6 +155,7 @@ export function createBrowserStateComposition(
     return {
         stateStore,
         roomStateStore,
+        roomLayoutSlots,
         readDefaults,
         resolveDefaultRoomRef,
         resolveDefaultRoom,

@@ -8,9 +8,10 @@ import type {
     GroupTopologyReconfigureLanding,
     GroupTransportState
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { resolveDialLayoutRoles } from '@shared/api/group-lifecycle/resolve-dial-layout-roles.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { GroupConnectRequest, GroupReconfigureRequest, MutationActorInput } from '@shared/api/state-types.ts';
-import { isOverlayIdentity } from '@shared/repository/overlays-repository.ts';
+import { isOverlayIdentity, toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 import type {
     AcceptStateGroupInviteBody,
     BanStateGroupMemberBody,
@@ -29,6 +30,11 @@ import type {
     UpsertStateGroupMemberBody
 } from '../api/state-mutation-http-contracts.ts';
 
+import type {
+    RallarRoomFormationStatus,
+    RallarRoomLayout,
+    RallarRoomLayoutRole
+} from './formation/rallar-room-formation-contracts.ts';
 import type { RallarCreateRoomInput, RallarRoomState, RallarRoomSummary } from './rallar-room-contracts.ts';
 
 export type {
@@ -177,6 +183,12 @@ export type RoomFormationGroupStateRequest = MutationActorInput | GroupConnectRe
 export interface ToRoomFormationGroupStateRequestInput extends RoomGroupStateMutationActorInput {
     readonly command: RoomFormationCommand;
     readonly reason: string | undefined;
+}
+
+export interface ToRallarRoomFormationStatusInput {
+    readonly snapshot: GroupSnapshot;
+    readonly planned: OverlayInfo | undefined;
+    readonly accepted: OverlayInfo | undefined;
 }
 
 export interface ToRallarRoomSummaryInput {
@@ -398,6 +410,47 @@ export function toRoomFormationGroupStateRequest(
         case 'start':
             return actor;
     }
+}
+
+export function toRallarRoomLayout(
+    role: RallarRoomLayoutRole,
+    overlay: OverlayInfo | undefined,
+    roomRef: GroupRef
+): RallarRoomLayout | undefined {
+    if (
+        overlay === undefined ||
+        overlay.provenance !== 'server' ||
+        overlay.state !== 'active' ||
+        !isSameGroupRef(overlay.groupRef, roomRef)
+    ) {
+        return undefined;
+    }
+    return { role, identity: toOverlayLayoutIdentity(overlay), overlay };
+}
+
+export function toRallarRoomFormationStatus(
+    input: ToRallarRoomFormationStatusInput
+): RallarRoomFormationStatus {
+    const { group } = input.snapshot;
+    const acceptedIdentity = group.acceptedLayoutIdentity;
+    const acceptedMatchesSnapshot = acceptedIdentity !== null &&
+        input.accepted !== undefined &&
+        isOverlayIdentity(input.accepted, acceptedIdentity);
+    return {
+        roomRef: group,
+        stage: group.lifecycleState,
+        formationEpoch: group.formationEpoch,
+        formationAttemptCount: group.formationAttemptCount,
+        lastFormationOutcome: group.lastFormationOutcome,
+        transportState: group.transportState,
+        dialing: resolveDialLayoutRoles(group.lifecycleState),
+        memberPolicy: group.memberPolicy,
+        accepted: acceptedMatchesSnapshot ? toRallarRoomLayout('accepted', input.accepted, group) : undefined,
+        planned: toRallarRoomLayout('planned', input.planned, group),
+        condition: group.activationStatus?.condition,
+        coverageRate: group.activationStatus?.coverageRate,
+        snapshot: input.snapshot
+    };
 }
 
 export function toRallarRoomSummary(input: ToRallarRoomSummaryInput): RallarRoomSummary {

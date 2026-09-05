@@ -33,6 +33,9 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
+import { createRoomFormation } from './formation/create-room-formation.ts';
+import type { RallarRoomFormation } from './formation/rallar-room-formation-contracts.ts';
+import type { RallarRoomLayoutSlotsPort } from './formation/room-layout-slots.ts';
 import { enterRoom, joinRoom } from './join-room.ts';
 import { leaveRoom } from './leave-room.ts';
 import type {
@@ -90,6 +93,7 @@ export interface CreateBrowserRallarRoomsInput {
     readonly resolveDefaultRoomRef: () => GroupRef | undefined;
     readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
     readonly acceptSnapshots: (input: RallarStateSnapshotAcceptanceInput) => Promise<void>;
+    readonly roomLayoutSlots: RallarRoomLayoutSlotsPort;
 }
 
 export interface BrowserRallarRooms {
@@ -107,6 +111,7 @@ export interface BrowserRallarRooms {
     join(room: string | GroupRef | RallarJoinRoomInput, options?: RallarJoinRoomOptions): Promise<GroupSnapshot>;
     enter(room: string | GroupRef | RallarJoinRoomInput, options?: RallarJoinRoomOptions): Promise<RallarRoomSession>;
     session(room?: string | GroupRef): RallarRoomSession;
+    formation(room?: string | GroupRef): RallarRoomFormation;
     leave(input?: string | RallarLeaveRoomOptions): Promise<GroupSnapshot | undefined>;
     update(input: RallarUpdateRoomInput): Promise<GroupSnapshot>;
     archive(
@@ -164,6 +169,7 @@ export interface BrowserRallarRooms {
 interface CreateRoomEntryOperationsInput {
     readonly rooms: CreateBrowserRallarRoomsInput;
     readonly createSession: (roomRef: GroupRef) => RallarRoomSession;
+    readonly createFormation: (roomRef: GroupRef) => RallarRoomFormation;
     readonly resolveRoomRef: (room: string | GroupRef, scope?: StateScope) => GroupRef | undefined;
     readonly onCacheChange: (listener: () => void | Promise<void>) => RallarUnsubscribe;
 }
@@ -185,6 +191,18 @@ export function createBrowserRallarRooms(
     const refresh = async (
         refreshInput?: StateScope | RallarScopedOperationOptions
     ): Promise<RallarRoomState> => await refreshRooms(input, refreshInput);
+    const createFormation = (roomRef: GroupRef): RallarRoomFormation =>
+        createRoomFormation({
+            roomRef,
+            stateStore: input.stateStore,
+            slots: input.roomLayoutSlots,
+            refreshRoom: async (target) => await refreshRoom(input, target),
+            connect: input.connect,
+            requireSession: input.requireSession,
+            resolveOperationOptions: input.resolveOperationOptions,
+            runAuthAwareOperation: input.runAuthAwareOperation,
+            acceptSnapshots: input.acceptSnapshots
+        });
     const createSession = (roomRef: GroupRef): RallarRoomSession =>
         createRoomSession({
             roomRef,
@@ -192,7 +210,8 @@ export function createBrowserRallarRooms(
             messages: input.messages,
             realtime: input.realtime,
             leaveRoom: async (leaveInput) => await leaveRoom({ ...input, input: leaveInput }),
-            refreshRoom: async (roomRef, options) => await refreshRoom(input, roomRef, options)
+            refreshRoom: async (roomRef, options) => await refreshRoom(input, roomRef, options),
+            createFormation
         });
 
     return {
@@ -200,6 +219,7 @@ export function createBrowserRallarRooms(
         ...createRoomEntryOperations({
             rooms: input,
             createSession,
+            createFormation,
             resolveRoomRef,
             onCacheChange
         }),
@@ -250,6 +270,7 @@ function createRoomEntryOperations(
     | 'join'
     | 'enter'
     | 'session'
+    | 'formation'
     | 'leave'
     | 'waitForPresence'
 > {
@@ -272,6 +293,10 @@ function createRoomEntryOperations(
             }),
         session: (room) =>
             input.createSession(
+                resolveRoomSessionRef(input.rooms, room, input.resolveRoomRef)
+            ),
+        formation: (room) =>
+            input.createFormation(
                 resolveRoomSessionRef(input.rooms, room, input.resolveRoomRef)
             ),
         leave: async (leaveInput) => await leaveRoom({ ...input.rooms, input: leaveInput }),

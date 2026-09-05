@@ -77,6 +77,7 @@ export function createBrowserRoomsComposition(
     const rooms = createBrowserRallarRooms({
         stateStore: input.state.roomStateStore,
         roomEvents: input.stateEvents.roomEvents,
+        roomLayoutSlots: input.state.roomLayoutSlots,
         messages: input.messaging.messages,
         realtime: input.realtime.realtime,
         connect: async (options) => await input.session.connect(options),

@@ -25,6 +25,8 @@ import type {
 } from '@shared-web/browser/rooms/room-group-state-translation.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 
+import type { RallarRoomFormation } from './formation/rallar-room-formation-contracts.ts';
+
 export interface RallarRoomSummary {
     readonly roomId: string;
     readonly roomRef: GroupRef;
@@ -188,6 +190,7 @@ export type RallarRoomSessionMessageDefinition = string | RallarRoomMessageChann
 export interface RallarRoomSession {
     readonly roomId: string;
     readonly roomRef: GroupRef;
+    readonly formation: RallarRoomFormation;
     snapshot(): GroupSnapshot | undefined;
     summary(): RallarRoomSummary | undefined;
     leave(
