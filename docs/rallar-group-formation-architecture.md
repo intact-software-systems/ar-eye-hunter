@@ -103,10 +103,12 @@ transport valve asks the same two and adds no third.
 | `manager`     | A resolved lifecycle manager. No manager resolves → `lifecycle-manager-unavailable`; a non-manager → `forbidden-role`.                              |
 | `server-auto` | No principal, ever (`forbidden-role`), owner included. Among the presets only `drop-in-social` uses it, and its `immediate` formation never phases. |
 
-`validateGroupLifecyclePolicy` does not reject a custom `server-auto` policy with
-`formation: 'phased'`. Such a group is created forming without a principal who can advance it.
-General automatic planning/connect trigger evaluation is deferred; initial formation retries are the
-narrow existing exception.
+`validateGroupLifecyclePolicy` rejects the `server-auto` combinations that could never advance:
+`server-auto-requires-automatic-trigger` when a `phased` group's plan or connect trigger is
+`manual`, and `server-auto-requires-automatic-activation` when its `activation.mode` is. Both are
+the same deadlock — `server-auto` denies every principal, so a boundary only a principal could
+cross is one the group would wait at forever. A `phased` `server-auto` policy whose triggers and
+activation are all automatic is accepted, because the automation can advance it.
 
 `fail-formation` has no HTTP route. The `formation-criterion` authority permits only activate/fail
 with observed evidence. Retry plan/connect use `formation-automation`; topology publication cannot
@@ -844,33 +846,39 @@ The pure core is pinned in `packages/tests/shared/`: `group-lifecycle-policy.tes
 `group-formation-reading.test.ts`, `group-admission-decision.test.ts`, and
 `group-lifecycle-managers.test.ts`. The server side is pinned in `packages/tests/shared-server/`:
 `group-policy.test.ts`, `group-create-lifecycle-policy.test.ts`,
-`group-lifecycle-policy-repository.test.ts`, `group-state/group-lifecycle-command-policy.test.ts`,
-`group-state/group-lifecycle-safety-baseline.test.ts`,
-`group-state/mutation/group-lifecycle-mutation.test.ts`,
-`group-state/mutation/group-admission-mutation.test.ts`,
-`topology/replay/work/rtc-topology-work-handler.test.ts` (the
+`group-lifecycle-policy-repository.test.ts`, `rallar-system/group-state/group-lifecycle-command-policy.test.ts`,
+`rallar-system/group-state/group-lifecycle-safety-baseline.test.ts`,
+`rallar-system/group-state/mutation/group-lifecycle-mutation.test.ts`,
+`rallar-system/group-state/mutation/group-admission-mutation.test.ts`,
+`rallar-system/topology/replay/work/rtc-topology-work-handler.test.ts` (the
 damped edge-trigger; the criterion, formation timer and durable retry latch have focused semantic tests), and
 `rallar-system/topology/planning/group-topology-planning-service.test.ts` (the FORMING gate). The
 data gate is pinned in `apps/api-v1/test/services/ws-topic-room-authorizer.test.ts`.
 
 ### Recipes and profiles
 
-Every recipe exercising lifecycle behaviour names the policy it tests. The nine single-server
+Every recipe exercising lifecycle behaviour names the policy it tests. The fifteen single-server
 recipes live in `packages/shared-test/black-box-runner/tests/api-v1/` and sit in the
 `api-v1-black-box` and `api-v1-black-box-recipes` profiles of `recipe-matrix.json`, so the memory
 backend runs them in the fast loop and the Postgres CI job runs them in its base phase:
 
-| Recipe                               | Pins                                                                                                                                                                                                                           |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `api-v1-group-lifecycle-policy`      | a preset with overrides is accepted; absent ≡ explicit `optimistic`; the two validity `400`s                                                                                                                                   |
-| `api-v1-group-lifecycle-transitions` | the explicit lifecycle HTTP commands and their epoch advances (`fail-formation` is criterion-only and pinned by the criterion, windows, and match recipes), FORMING holds planning, non-manager and illegal-transition denials |
-| `api-v1-group-formation-criterion`   | threshold, deadline, degraded, and evidence-driven activation                                                                                                                                                                  |
-| `api-v1-group-manager-succession`    | assigned managers, succession on removal and on leave, the zero-manager fallback                                                                                                                                               |
-| `api-v1-group-admission-approval`    | parking, grant, decline, re-request, zero-manager recovery, epoch survival, park while active                                                                                                                                  |
-| `api-v1-group-admission-windows`     | the binding phases of capacity, deadline, and `closed`                                                                                                                                                                         |
-| `api-v1-group-data-policy`           | the data gate, the CRDT exemption, `allowed` and default-group flows, post-activation flow, and the forming allowed-group transport valve                                                                                      |
-| `api-v1-match-preset`                | the composed `match` preset, including all-or-nothing failure and lobby re-opening                                                                                                                                             |
-| `api-v1-drop-in-social-preset`       | the composed `drop-in-social` preset                                                                                                                                                                                           |
+| Recipe                                | Pins                                                                                                                                                                                                                           |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `api-v1-group-lifecycle-policy`       | a preset with overrides is accepted; absent ≡ explicit `optimistic`; the two validity `400`s                                                                                                                                   |
+| `api-v1-group-lifecycle-transitions`  | the explicit lifecycle HTTP commands and their epoch advances (`fail-formation` is criterion-only and pinned by the criterion, windows, and match recipes), FORMING holds planning, non-manager and illegal-transition denials |
+| `api-v1-group-formation-criterion`    | threshold, deadline, degraded, and evidence-driven activation                                                                                                                                                                  |
+| `api-v1-group-manager-succession`     | assigned managers, succession on removal and on leave, the zero-manager fallback                                                                                                                                               |
+| `api-v1-group-admission-approval`     | parking, grant, decline, re-request, zero-manager recovery, epoch survival, park while active                                                                                                                                  |
+| `api-v1-group-admission-windows`      | the binding phases of capacity, deadline, and `closed`                                                                                                                                                                         |
+| `api-v1-group-data-policy`            | the data gate, the CRDT exemption, `allowed` and default-group flows, post-activation flow, and the forming allowed-group transport valve                                                                                      |
+| `api-v1-match-preset`                 | the composed `match` preset, including all-or-nothing failure and lobby re-opening                                                                                                                                             |
+| `api-v1-drop-in-social-preset`        | the composed `drop-in-social` preset                                                                                                                                                                                           |
+| `api-v1-automatic-formation-triggers` | the `after` plan and connect triggers advancing a `phased` group with no application command, and a commanded replan dialing the layout it produced rather than the one it replaced                                            |
+| `api-v1-presence-formation-trigger`   | the `presence` trigger: a group holds in `forming` on one live member and plans and dials itself as the second arrives                                                                                                         |
+| `api-v1-commanded-replanning`         | `commanded` replanning holds the automatic replan, `layoutStale` latches, and promotion after `connect`/`activate` clears the obligation                                                                                       |
+| `api-v1-debounced-replanning`         | the replanning window: due time extends with a change inside it, stops extending at the maximum wait, and one replan carries the burst's last presence revision                                                                |
+| `api-v1-reconfiguration-fails`        | a reconnection below the floor returns the group to `active` with the accepted layout identity byte-identical across the failure                                                                                               |
+| `api-v1-group-status-lifecycle`       | the stored condition walking `inactive → initialising → active → failed`, read off the group row rather than the view's fallback                                                                                               |
 
 A recipe sits in exactly one of the profiles a single Postgres CI job runs: the job runs the base
 profile and then the cluster profile against the same servers under one run id, and a recipe in
@@ -977,8 +985,6 @@ writing this document:
   `400 app-inbox-malformed-command`; the issue codes never reach the response.
 - **Typed WS NACK reasons.** Every policy denial over WS is `unauthorized`; the admission codes are
   typed on HTTP only, and the data-gate code reaches no wire at all.
-- **A validity rule for `server-auto` with `phased` formation.** The combination is accepted at
-  creation and produces a group nothing can establish.
 - **Per-edge confirm-or-fail establishment.** `strictConfirmation: true` is rejected at creation.
   The `match` preset therefore has no per-edge audit trail — a disputed session has "we were at
   94%" rather than "edge (A, B) never confirmed at T" — and no server-controlled establishment

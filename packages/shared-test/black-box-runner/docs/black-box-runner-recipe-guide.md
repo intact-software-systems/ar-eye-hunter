@@ -246,7 +246,8 @@ Common fields:
   `compatible-complete`, `exact-structure`, `exact`); `compatible-complete` keeps
   extra object keys tolerated but rejects unexpected array elements, closing the
   vacuous-assertion gap where `compatible` matches an empty expected array
-  against anything
+  against anything. **No mode compares array order** — see _Array comparison is
+  unordered in every mode_ below before asserting on a sequence
 - `output`: optional output name for the step result
 - `outputPath`: optional path inside the result to store under `output`
 - `outputs`: optional map of output names to result paths
@@ -474,7 +475,8 @@ Common fields:
   `compatible-complete`, `exact-structure`, `exact`); `compatible-complete` keeps
   extra object keys tolerated but rejects unexpected array elements, closing the
   vacuous-assertion gap where `compatible` matches an empty expected array
-  against anything
+  against anything. **No mode compares array order** — see _Array comparison is
+  unordered in every mode_ below before asserting on a sequence
 - `expect.ignoreJsonKeys`: keys to ignore
 - `expect.ignoreJsonPaths`: paths to ignore
 
@@ -762,9 +764,119 @@ HTTP retry configuration lives under `request.resilience.retry` or
 WS and RTC waits use `expect.withinMs`. Message waits can also use
 `expect.consume` and `expect.ordered`.
 
-There is no separate poll step yet. Model polling with HTTP retry for transient
-status codes or with explicit repeated steps until a recipe needs a stronger
-generic polling primitive.
+For convergence, prefer the `http.poll-until` step documented above over HTTP
+retry: retry is for transient transport failures, polling is for state that has
+not converged yet. **`poll-until` is HTTP-only** — `assert`, `set` and `parallel`
+have no retry loop, so a recipe waiting on a durable row or a parallel outcome
+still has to sleep. Sleeping is a real cost: the api-v1 corpus carries 371
+seconds of unconditional `delayMs` across 59 steps, concentrated in five
+recipes, almost all of it hand-rolled polling.
+
+## Array Comparison Is Unordered In Every Mode
+
+Every comparison mode matches array elements by containment, not by position.
+Measured against `CompareJson` directly:
+
+| Mode                   | `['a','b','c']` vs `['c','b','a']` | `{events: []}` vs `{events: [{...},{...}]}` |
+| ---------------------- | ---------------------------------- | ------------------------------------------- |
+| `compatible` (default) | matches                            | **matches** — vacuous                       |
+| `compatible-structure` | matches                            | **matches** — vacuous                       |
+| `compatible-complete`  | matches                            | rejected                                    |
+| `exact-structure`      | matches                            | rejected                                    |
+| `exact`                | matches                            | rejected                                    |
+
+Two consequences worth internalising before writing an assertion.
+
+**Order is never checked, including under `exact`.** To assert a sequence, read
+positions explicitly — `body.0.eventType`, `body.1.eventType` — because both
+`[n]` and `.n` resolve in output paths. An expected array proves only that each
+element appears _somewhere_ in the actual array.
+
+**Because matching is unordered, enumerating permutations under `expect.anyOf`
+is dead code.** A race whose two outcomes are `[200, 409]` in either order needs
+one alternative, not two; the second can never be the one that matches. Five
+recipes in the api-v1 corpus carry this idiom today.
+
+**The default mode is the vacuous one.** `compatible` matching an empty expected
+array against a populated actual is exactly how an assertion ends up proving
+nothing. Set `compatible-complete` or stronger whenever the array's contents are
+the point of the assertion.
+
+## Primitives This Guide Previously Omitted
+
+Four working features had no documentation, which is why recipes hand-roll
+weaker substitutes for them.
+
+### `expect.missingActualValue` — assert on a value that may not exist
+
+An `assert` step whose `actual` placeholder cannot resolve normally throws
+`Cannot resolve placeholder {x}` and fails the step. Supplying
+`missingActualValue` substitutes that value instead of throwing, which is how a
+recipe asserts _absence_ of a captured output rather than crashing on it:
+
+```json
+{
+  "name": "noRejectionWasRecorded",
+  "type": "assert",
+  "actual": "{rejectionCode}",
+  "missingActualValue": "none",
+  "expect": { "body": "none" }
+}
+```
+
+Substitution applies recursively through arrays and objects, so a composite
+`actual` can carry several possibly-absent members.
+
+### `expect.monotonicPaths` — assert a series never regresses
+
+Each path must resolve to a non-empty array of finite numbers; the step fails on
+the first element smaller than its predecessor, reporting `regressionIndex`,
+`previous` and `current`. Use it for revisions, generations and epochs, where the
+product property is "never goes backwards" rather than any particular value:
+
+```json
+{
+  "name": "generationsAdvanced",
+  "type": "assert",
+  "actual": { "generations": ["{genA}", "{genB}", "{genC}"] },
+  "expect": { "monotonicPaths": ["generations"] }
+}
+```
+
+Equal neighbours pass — this is non-decreasing, not strictly increasing.
+
+### `set.state-write-evidence` — assert on durable queue rows
+
+Runs an SQL collector against the run's database and captures the matching
+`resource_inbox` / `resource_inbox_results` rows as a step output. This is the
+only way a recipe can observe what a mutation did _durably_ — `status`,
+`resultStatus`, `attempts`, `startAt`/`endAt`/`nextAt`, `outboxIds` and the
+decoded `durableResult`:
+
+```json
+{
+  "name": "exposeStateWriteEvidence",
+  "type": "set.state-write-evidence",
+  "output": "stateWriteEvidence",
+  "request": {
+    "stateWriteEvidence": {
+      "match": "bb-request-prune-{executionToken}",
+      "commandTypes": ["ADMIN_PRUNE_EXPIRED"],
+      "minimumMatchedRows": 1
+    }
+  }
+}
+```
+
+It has **no poll loop**, so a recipe waiting for a row to reach a terminal state
+has to sleep first. That is a real limitation, not a style choice — one corpus
+recipe pays a 65-second unconditional wait for it.
+
+### `anyOfMatchedIndex` — which alternative matched
+
+An `assert` using `expect.anyOf` reports the index of the alternative that
+matched in its success status. Read it to distinguish _which_ branch of an
+asymmetric race actually occurred, rather than only that one of them did.
 
 ## Post-run Assertions And Thresholds
 
@@ -1208,6 +1320,46 @@ Provider adapters may call Rallar facade methods internally. Recipes should
 still describe observable network behavior: HTTP calls, WS messages, RTC
 connect/send/wait/close, and assertions.
 
+## Identifiers
+
+**`{runId}` is per profile run, not per recipe.** It resolves from one
+environment variable that every recipe binds under the same name, so it is
+byte-identical in every recipe executing in that run. Recipes run sequentially
+against one server and one database for the whole run.
+
+That combination has one consequence that surprises everybody: **an identifier
+collision breaks the other recipe, not yours.** Two recipes sending the same
+`/requests/<id>` are one AppInbox replay — the second gets the first's receipt
+back, so it passes while the recipe it collided with fails somewhere unrelated.
+Nothing in the framework namespaces identifiers per recipe.
+
+**Every identifier a recipe invents must carry `{runId}`.** Request ids, message
+ids, resource ids, group ids, application and workspace ids, usernames. Request
+ids are additionally constrained to 20-128 characters of `[A-Za-z0-9_-]`, which
+bounds any naming scheme.
+
+**A replayed request id is permanent.** AppInbox rows are written to never
+expire, so a replay returns the first receipt verbatim — success _or_ the
+original failure — and `prune-expired` cannot reclaim them. A recipe with a fixed
+identifier therefore does not merely repeat itself on a second run against the
+same database: it goes **green while executing no new server logic**. That is the
+worst available failure mode, because nothing reports it.
+
+**Auth identifiers are scoped by identity, not by run.** A login request id is
+keyed on the normalized username, and `clientId` and `sessionId` are _derived
+from_ the request id — so a fixed login id collides across recipes even when
+everything downstream looks unique.
+
+**After cloning a recipe, re-derive every identifier literal.** Enumerate every
+`/requests/<id>` segment, `msgId`, `traceId`, `resourceId` and every id in
+`variables`, then diff against the rest of the corpus. Run the profile **with and
+without** your new matrix entry: a green new recipe is not evidence the suite is
+unbroken, because the recipe you broke is a different one.
+
+**`[201, 409]` on a register step is a smell, not a pattern to copy.** Accepting
+the conflict status usually means an identifier is being reused across runs and
+the recipe has stopped asserting what it was written to assert.
+
 ## Authoring Checklist
 
 - Start with the external behavior being tested.
@@ -1220,6 +1372,9 @@ connect/send/wait/close, and assertions.
 - Prefer explicit connection names for actors such as `aliceRtc`, `bobRtc`, and
   `serverWs`.
 - Use `--dry-run` before a live browser or network run when changing recipes.
+- Give every identifier you invent a `{runId}` suffix, and after cloning a recipe
+  re-derive every identifier literal — see _Identifiers_ above. A stale one breaks
+  the recipe you cloned from, not yours.
 
 ## Related Docs
 
