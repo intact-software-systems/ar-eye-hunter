@@ -1,6 +1,9 @@
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeAuthMutation } from '@shared-server/rallar-system/auth/mutation/compute/compute-auth-mutation.ts';
-import { validateAuthMutation } from '@shared-server/rallar-system/auth/mutation/validate/validate-auth-mutation.ts';
+import {
+    assertAuthMutationComputed,
+    validateAuthMutation
+} from '@shared-server/rallar-system/auth/mutation/validate/validate-auth-mutation.ts';
 import { writeAuthMutation } from '@shared-server/rallar-system/auth/mutation/write-auth-mutation.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -42,10 +45,12 @@ describe('auth mutation write purity', () => {
             read,
             facts
         });
-        validateAuthMutation({ command, read, facts, computed });
+        const validationInput = { command, read, facts, computed };
+        assertAuthMutationComputed(validationInput);
+        expect(validateAuthMutation(validationInput)).toEqual([]);
         expect(computed.persistence.operations).toHaveLength(2);
         expect(() =>
-            validateAuthMutation({
+            assertAuthMutationComputed({
                 command,
                 read,
                 facts,

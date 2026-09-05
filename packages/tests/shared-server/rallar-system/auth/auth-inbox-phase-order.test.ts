@@ -16,7 +16,9 @@ import type {
     AuthMutationRead,
     AuthMutationResult
 } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
+import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
 import { decodeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-intent.ts';
+import type { AuthMutationValidationIssue } from '@shared-server/rallar-system/auth/mutation/validate/auth-mutation-validation.ts';
 
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
 import type {
@@ -28,8 +30,8 @@ import type {
     AppInboxCompletionComputed,
     AppInboxCompletionFacts
 } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
-import { readAuthMutationAttempt } from '@shared-server/rallar-system/auth/mutation/read-auth-mutation-attempt.ts';
 import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
+import { readAuthMutationAttempt } from '@shared-server/rallar-system/auth/mutation/read-auth-mutation-attempt.ts';
 
 const decodeOrderCase = 'decodes before queue identity validation and exits before mutation phases on mismatch';
 
@@ -74,7 +76,14 @@ describe('auth inbox mutation phase order', () => {
         };
         const written: Array<readonly [PSqlSql, AuthMutationComputed]> = [];
         const handler = new AuthInboxHandler({
-            mutationService: createMutationService({ actions, read, computed, result, written }),
+            mutationService: createMutationService({
+                actions,
+                read,
+                computed,
+                result,
+                written,
+                validationIssues: []
+            }),
             credentialIssuer: createCredentialIssuer(actions),
             transactionWriter: new RecordingTransactionWriter(actions, transaction),
             nowEpochMs: () => {
@@ -90,11 +99,70 @@ describe('auth inbox mutation phase order', () => {
             'read',
             'completion',
             'compute',
+            'assert',
             'validate',
             'transaction',
             'write'
         ]);
         expect(written).toEqual([[transaction, computed]]);
+    });
+
+    it('throws the first validation cause before transaction entry', async () => {
+        const actions: string[] = [];
+        const read: AuthMutationRead = {
+            kind: 'issue-session',
+            userByUsername: null,
+            userByClientId: null,
+            byToken: null,
+            bySession: null,
+            expiredByTokenEntry: null,
+            expiredBySessionEntry: null
+        };
+        const result = { requestId: 'handler-session-request' } as AuthMutationResult;
+        const computed = {
+            command: {} as AuthMutationCommand,
+            read,
+            result,
+            sessions: [],
+            agentTickets: [],
+            logoutOutbox: null,
+            outcome: 'write',
+            persistence: { operations: [], logoutOutbox: null }
+        } as const;
+        const rejection = new AuthMutationRejectedError('Auth policy rejected', 403);
+        const handler = new AuthInboxHandler({
+            mutationService: createMutationService({
+                actions,
+                read,
+                computed,
+                result,
+                written: [],
+                validationIssues: [{
+                    path: 'command.authority',
+                    message: rejection.message,
+                    cause: rejection
+                }]
+            }),
+            credentialIssuer: createCredentialIssuer(actions),
+            transactionWriter: new RecordingTransactionWriter(actions, {} as PSqlSql),
+            nowEpochMs: () => {
+                actions.push('clock');
+                return 1_000;
+            }
+        });
+
+        await expect(
+            handler.processAuthMutation(createIssueSessionIntent(), createContext(createIssueSessionIntent()))
+        ).rejects.toBe(rejection);
+        expect(actions).toEqual([
+            'clock',
+            'facts',
+            'read',
+            'completion',
+            'compute',
+            'assert',
+            'validate'
+        ]);
     });
 });
 
@@ -146,6 +214,7 @@ interface MutationServiceRecording {
     readonly computed: AuthMutationComputed;
     readonly result: AuthMutationResult;
     readonly written: Array<readonly [PSqlSql, AuthMutationComputed]>;
+    readonly validationIssues: readonly AuthMutationValidationIssue[];
 }
 
 function createMutationService(input: MutationServiceRecording): AuthMutationService {
@@ -159,8 +228,12 @@ function createMutationService(input: MutationServiceRecording): AuthMutationSer
             input.actions.push('compute');
             return input.computed;
         },
+        assertComputed: () => {
+            input.actions.push('assert');
+        },
         validate: () => {
             input.actions.push('validate');
+            return input.validationIssues;
         },
         write: async (transaction, candidate) => {
             input.actions.push('write');
@@ -179,6 +252,7 @@ function createUnreachableMutationService(actions: string[]): AuthMutationServic
         serviceId: 'auth-service',
         read: async () => unreachable(),
         compute: unreachable,
+        assertComputed: unreachable,
         validate: unreachable,
         write: async () => unreachable()
     };

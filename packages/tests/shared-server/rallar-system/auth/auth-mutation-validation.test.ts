@@ -10,7 +10,10 @@ import type {
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
 import { computeAuthMutation } from '@shared-server/rallar-system/auth/mutation/compute/compute-auth-mutation.ts';
 import { computeAuthPersistence } from '@shared-server/rallar-system/auth/mutation/compute/compute-auth-persistence.ts';
-import { validateAuthMutation } from '@shared-server/rallar-system/auth/mutation/validate/validate-auth-mutation.ts';
+import {
+    assertAuthMutationComputed,
+    validateAuthMutation
+} from '@shared-server/rallar-system/auth/mutation/validate/validate-auth-mutation.ts';
 
 const user = {
     clientId: 'client-1',
@@ -84,16 +87,15 @@ describe('auth mutation validation', () => {
         for (const { command, read } of authMutationCases()) {
             const computed = computeAuth(command, read);
 
-            expect(
-                () =>
-                    validateAuthMutation({
-                        command,
-                        read,
-                        facts: authFacts(command),
-                        computed
-                    }),
-                command.kind
-            ).not.toThrow();
+            const validationInput = {
+                command,
+                read,
+                facts: authFacts(command),
+                computed
+            };
+
+            expect(() => assertAuthMutationComputed(validationInput), command.kind).not.toThrow();
+            expect(validateAuthMutation(validationInput), command.kind).toEqual([]);
             expect(computed.command).toBe(command);
             expect(computed.read).toBe(read);
         }
@@ -102,14 +104,13 @@ describe('auth mutation validation', () => {
     it.each(validationRejectionCases())(
         'preserves the $label rejection',
         ({ command, read, computed, message, status }) => {
-            const rejection = captureRejection(() =>
-                validateAuthMutation({
-                    command,
-                    read,
-                    facts: authFacts(command),
-                    computed
-                })
-            );
+            const issues = validateAuthMutation({
+                command,
+                read,
+                facts: authFacts(command),
+                computed
+            });
+            const rejection = issues[0]?.cause;
 
             expect(rejection).toBeInstanceOf(AuthMutationRejectedError);
             expect(rejection).toMatchObject({ message, status, code: 'auth-mutation-rejected' });
@@ -120,13 +121,13 @@ describe('auth mutation validation', () => {
         'rejects a self-consistent $label tamper',
         ({ command, read, computed }) => {
             expect(() =>
-                validateAuthMutation({
+                assertAuthMutationComputed({
                     command,
                     read,
                     facts: authFacts(command),
                     computed
                 })
-            ).toThrow('Auth computed value differs');
+            ).toThrow();
         }
     );
 });
@@ -499,18 +500,6 @@ function computeAuth(command: AuthMutationCommand, read: AuthMutationRead) {
 
 function authFacts(command: AuthMutationCommand) {
     return { kind: command.kind, serviceId: 'auth-service' } as const;
-}
-
-function captureRejection(callback: () => void): Error {
-    try {
-        callback();
-    }
-    catch (error) {
-        return error instanceof Error
-            ? error
-            : new TypeError('Auth validation rejected with a non-Error value');
-    }
-    throw new Error('Expected auth validation rejection');
 }
 
 function matchingSessionEntries(value: typeof session) {

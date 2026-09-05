@@ -397,5 +397,7 @@ it('rejects websocket ticket issuance when the presented session token differs',
     const facts = { kind: command.kind, serviceId: service.serviceId } as const;
     const computed = service.compute(command, read, facts);
 
-    expect(() => service.validate({ command, read, facts, computed })).toThrow(/authority|token/u);
+    const issues = service.validate({ command, read, facts, computed });
+
+    expect(issues[0]?.cause.message).toMatch(/authority|token/u);
 });

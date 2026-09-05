@@ -1,5 +1,3 @@
-import { validateRuntimeStateExpiredAuthority } from '../../../../runtime-state/runtime-state-expired-entry.ts';
-import { authTicketDigestKey } from '../../persistence/auth-storage-keys.ts';
 import type {
     AuthMutationCommand,
     AuthMutationComputed,
@@ -7,12 +5,12 @@ import type {
     ConsumeAuthAgentTicketCommand,
     IssueAuthAgentTicketsCommand
 } from '../auth-mutation-contracts.ts';
-import { AuthMutationRejectedError } from '../auth-mutation-rejected-error.ts';
 import {
     equalAuthJson,
-    requireAuthTicket,
+    toAuthMutationValidationIssue,
     validateIssueSessionRead,
-    validateLiveSessionAuthority
+    validateLiveSessionAuthority,
+    type AuthMutationValidationIssue
 } from './auth-mutation-validation.ts';
 
 type AuthAgentTicketMutationCommand = Extract<
@@ -39,7 +37,7 @@ interface ValidateIssuedAuthAgentTicketInput {
 
 export function validateAuthAgentTicketMutation(
     validation: ValidateAuthAgentTicketMutationInput
-): void {
+): readonly AuthMutationValidationIssue[] {
     switch (validation.kind) {
         case 'issue-agent-tickets':
             return validateAgentIssueRead(
@@ -59,37 +57,46 @@ export function validateAgentIssueRead(
     command: IssueAuthAgentTicketsCommand,
     read: Extract<AuthMutationRead, { kind: 'issue-agent-tickets'; }>,
     computed: AuthMutationComputed
-): void {
-    validateAgentTicketBatchShape(command, read, computed);
-    validateLiveSessionAuthority({
-        expected: command.authority,
-        read: read.authority,
-        capturedAtEpochMs: command.capturedAtEpochMs,
-        label: 'Agent ticket authority'
-    });
+): readonly AuthMutationValidationIssue[] {
+    const issues = [
+        ...validateAgentTicketBatchShape(command, read, computed),
+        ...validateLiveSessionAuthority({
+            expected: command.authority,
+            read: read.authority,
+            capturedAtEpochMs: command.capturedAtEpochMs,
+            label: 'Agent ticket authority'
+        })
+    ];
     const seenAgentIds = new Set<string>();
     const seenSessionIds = new Set<string>();
     const seenTicketDigests = new Set<string>();
     for (let index = 0; index < command.tickets.length; index += 1) {
-        validateIssuedAuthAgentTicket({
-            command,
-            read,
-            computed,
-            index,
-            seenAgentIds,
-            seenSessionIds,
-            seenTicketDigests
-        });
+        issues.push(
+            ...validateIssuedAuthAgentTicket({
+                command,
+                read,
+                computed,
+                index,
+                seenAgentIds,
+                seenSessionIds,
+                seenTicketDigests
+            })
+        );
     }
+    return issues;
 }
 
 export function validateConsumeAgentTicketRead(
     command: ConsumeAuthAgentTicketCommand,
     read: Extract<AuthMutationRead, { kind: 'consume-agent-ticket'; }>
-): void {
-    const ticket = requireAuthTicket(read.ticket).value;
+): readonly AuthMutationValidationIssue[] {
+    if (read.ticket === null) {
+        return [toAuthMutationValidationIssue('read.ticket', 'Auth ticket is invalid or consumed', 404)];
+    }
+    const issues: AuthMutationValidationIssue[] = [];
+    const ticket = read.ticket.value;
     if (ticket.expiresAtEpochMs <= command.capturedAtEpochMs) {
-        throw new AuthMutationRejectedError('Agent ticket is expired', 410);
+        issues.push(toAuthMutationValidationIssue('read.ticket', 'Agent ticket is expired', 410));
     }
     if (
         !read.session ||
@@ -97,88 +104,128 @@ export function validateConsumeAgentTicketRead(
         read.session.value.clientId !== ticket.clientId ||
         read.session.value.accessTokenDigest !== ticket.accessTokenDigest
     ) {
-        throw new AuthMutationRejectedError('Agent ticket authority differs', 401);
+        issues.push(toAuthMutationValidationIssue('read.session', 'Agent ticket authority differs', 401));
     }
+    return issues;
 }
 
 function validateAgentTicketBatchShape(
     command: IssueAuthAgentTicketsCommand,
     read: Extract<AuthMutationRead, { kind: 'issue-agent-tickets'; }>,
     computed: AuthMutationComputed
-): void {
+): readonly AuthMutationValidationIssue[] {
+    const issues: AuthMutationValidationIssue[] = [];
     if (command.tickets.length === 0 || command.tickets.length !== computed.sessions.length) {
-        throw new AuthMutationRejectedError('Agent ticket batch is invalid');
+        issues.push(toAuthMutationValidationIssue('command.tickets', 'Agent ticket batch is invalid'));
     }
     if (
         read.tickets.length !== command.tickets.length ||
         read.expiredTicketEntries.length !== command.tickets.length
     ) {
-        throw new AuthMutationRejectedError('Agent ticket read batch is invalid');
+        issues.push(toAuthMutationValidationIssue('read.tickets', 'Agent ticket read batch is invalid'));
     }
+    return issues;
 }
 
-function validateIssuedAuthAgentTicket(validation: ValidateIssuedAuthAgentTicketInput): void {
+function validateIssuedAuthAgentTicket(
+    validation: ValidateIssuedAuthAgentTicketInput
+): readonly AuthMutationValidationIssue[] {
+    const issues: AuthMutationValidationIssue[] = [];
     const ticket = validation.command.tickets[validation.index];
-    validateAgentTicketAuthority(ticket, validation.command);
-    validateAgentTicketLifecycle(ticket, validation.command.capturedAtEpochMs);
-    validateAgentTicketIdentity(ticket, validation);
-    validateIssueSessionRead(validation.computed.sessions[validation.index]?.session, {
-        kind: 'issue-session',
-        ...validation.read.sessions[validation.index]
-    });
+    issues.push(...validateAgentTicketAuthority(ticket, validation.command, validation.index));
+    issues.push(...validateAgentTicketLifecycle(ticket, validation.command.capturedAtEpochMs, validation.index));
+    issues.push(...validateAgentTicketIdentity(ticket, validation));
+    const sessionRead = validation.read.sessions[validation.index];
+    if (sessionRead !== undefined) {
+        issues.push(
+            ...validateIssueSessionRead({
+                session: validation.computed.sessions[validation.index]?.session,
+                read: { kind: 'issue-session', ...sessionRead },
+                path: `read.sessions[${validation.index}]`
+            })
+        );
+    }
     const current = validation.read.tickets[validation.index];
-    validateRuntimeStateExpiredAuthority({
-        live: current,
-        expiredEntry: validation.read.expiredTicketEntries[validation.index],
-        expectedKey: authTicketDigestKey(ticket.ticketDigest),
-        label: 'Agent ticket read'
-    });
     if (
         current &&
         !equalAuthJson(current.value, validation.computed.agentTickets[validation.index])
     ) {
-        throw new AuthMutationRejectedError('Agent ticket digest collision', 409);
+        issues.push(
+            toAuthMutationValidationIssue(
+                `read.tickets[${validation.index}]`,
+                'Agent ticket digest collision',
+                409
+            )
+        );
     }
+    return issues;
 }
 
 function validateAgentTicketAuthority(
     ticket: IssueAuthAgentTicketsCommand['tickets'][number],
-    command: IssueAuthAgentTicketsCommand
-): void {
+    command: IssueAuthAgentTicketsCommand,
+    index: number
+): readonly AuthMutationValidationIssue[] {
     if (
         ticket.clientId !== command.authority.clientId ||
         ticket.username !== command.authority.username
     ) {
-        throw new AuthMutationRejectedError('Agent ticket authority differs', 403);
+        return [
+            toAuthMutationValidationIssue(
+                `command.tickets[${index}]`,
+                'Agent ticket authority differs',
+                403
+            )
+        ];
     }
+    return [];
 }
 
 function validateAgentTicketLifecycle(
     ticket: IssueAuthAgentTicketsCommand['tickets'][number],
-    capturedAtEpochMs: number
-): void {
+    capturedAtEpochMs: number,
+    index: number
+): readonly AuthMutationValidationIssue[] {
     if (
         ticket.issuedAtEpochMs !== capturedAtEpochMs ||
         ticket.sessionExpiresAtEpochMs <= capturedAtEpochMs ||
         ticket.ticketExpiresAtEpochMs <= capturedAtEpochMs ||
         ticket.ticketExpiresAtEpochMs > ticket.sessionExpiresAtEpochMs
     ) {
-        throw new AuthMutationRejectedError('Agent ticket lifecycle is invalid', 410);
+        return [
+            toAuthMutationValidationIssue(
+                `command.tickets[${index}]`,
+                'Agent ticket lifecycle is invalid',
+                410
+            )
+        ];
     }
+    return [];
 }
 
 function validateAgentTicketIdentity(
     ticket: IssueAuthAgentTicketsCommand['tickets'][number],
     validation: ValidateIssuedAuthAgentTicketInput
-): void {
-    if (
-        validation.seenAgentIds.has(ticket.agentId) ||
-        validation.seenSessionIds.has(ticket.sessionId) ||
-        validation.seenTicketDigests.has(ticket.ticketDigest)
-    ) {
-        throw new AuthMutationRejectedError('Agent ticket batch identity is duplicated', 409);
+): readonly AuthMutationValidationIssue[] {
+    const issues: AuthMutationValidationIssue[] = [];
+    const path = `command.tickets[${validation.index}]`;
+    if (validation.seenAgentIds.has(ticket.agentId)) {
+        issues.push(
+            toAuthMutationValidationIssue(`${path}.agentId`, 'Agent ticket batch identity is duplicated', 409)
+        );
+    }
+    if (validation.seenSessionIds.has(ticket.sessionId)) {
+        issues.push(
+            toAuthMutationValidationIssue(`${path}.sessionId`, 'Agent ticket batch identity is duplicated', 409)
+        );
+    }
+    if (validation.seenTicketDigests.has(ticket.ticketDigest)) {
+        issues.push(
+            toAuthMutationValidationIssue(`${path}.ticketDigest`, 'Agent ticket batch identity is duplicated', 409)
+        );
     }
     validation.seenAgentIds.add(ticket.agentId);
     validation.seenSessionIds.add(ticket.sessionId);
     validation.seenTicketDigests.add(ticket.ticketDigest);
+    return issues;
 }

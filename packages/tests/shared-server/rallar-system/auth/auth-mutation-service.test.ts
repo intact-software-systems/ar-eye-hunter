@@ -39,7 +39,8 @@ describe('auth mutation service phases', () => {
         expect(computed.command).toBe(command);
         expect(computed.read).toBe(read);
         expect(computed.outcome).toBe('no-op');
-        expect(service.validate({ command, read, facts, computed })).toBeUndefined();
+        expect(() => service.assertComputed({ command, read, facts, computed })).not.toThrow();
+        expect(service.validate({ command, read, facts, computed })).toEqual([]);
         await expect(service.write(undefined as never, computed)).resolves.toBe(computed.result);
     });
 });

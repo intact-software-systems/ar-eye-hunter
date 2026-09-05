@@ -4,8 +4,7 @@ import type {
     AuthMutationFacts,
     AuthMutationRead
 } from '../auth-mutation-contracts.ts';
-import { AuthMutationRejectedError } from '../auth-mutation-rejected-error.ts';
-import { requireMatchingAuthKind } from '../validate/auth-mutation-validation.ts';
+import { assertMatchingAuthKind } from '../validate/auth-mutation-validation.ts';
 import { computeAuthAgentTicketMutation } from './compute-auth-agent-ticket-mutation.ts';
 import { computeAuthPersistence } from './compute-auth-persistence.ts';
 import { computeAuthSessionMutation } from './compute-auth-session-mutation.ts';
@@ -19,8 +18,8 @@ export interface ComputeAuthMutationInput {
 }
 
 export function computeAuthMutation(input: ComputeAuthMutationInput): AuthMutationComputed {
-    requireMatchingAuthKind(input.command, input.read);
-    requireMatchingFacts(input.command, input.facts);
+    assertMatchingAuthKind(input.command, input.read);
+    assertMatchingFacts(input.command, input.facts);
     const commandKind = input.command.kind;
     const computed = (() => {
         switch (commandKind) {
@@ -56,8 +55,8 @@ export function computeAuthMutation(input: ComputeAuthMutationInput): AuthMutati
     return { ...computed, persistence: computeAuthPersistence(computed, commandKind) };
 }
 
-function requireMatchingFacts(command: AuthMutationCommand, facts: AuthMutationFacts): void {
+function assertMatchingFacts(command: AuthMutationCommand, facts: AuthMutationFacts): void {
     if (facts.kind !== command.kind) {
-        throw new AuthMutationRejectedError('Auth command/facts operation differs');
+        throw new TypeError('Auth command/facts operation differs');
     }
 }

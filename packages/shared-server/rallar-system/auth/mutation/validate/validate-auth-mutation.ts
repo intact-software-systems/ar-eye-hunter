@@ -1,12 +1,20 @@
+import {
+    validateComputedData,
+    validateComputedProjection
+} from '../../../computed-data-validation.ts';
 import type {
     AuthMutationCommand,
     AuthMutationComputed,
     AuthMutationFacts,
     AuthMutationRead
 } from '../auth-mutation-contracts.ts';
-import { AuthMutationRejectedError } from '../auth-mutation-rejected-error.ts';
 import { computeAuthMutation } from '../compute/compute-auth-mutation.ts';
-import { equalAuthJson, requireMatchingAuthKind } from './auth-mutation-validation.ts';
+import {
+    assertAuthRuntimeStateAuthority,
+    assertMatchingAuthKind,
+    toAuthMutationValidationIssue,
+    type AuthMutationValidationIssue
+} from './auth-mutation-validation.ts';
 import { validateAuthAgentTicketMutation } from './validate-auth-agent-ticket-mutation.ts';
 import { validateAuthSessionMutation } from './validate-auth-session-mutation.ts';
 import { validateAuthTicketMutation } from './validate-auth-ticket-mutation.ts';
@@ -19,45 +27,70 @@ export interface ValidateAuthMutationInput {
     readonly computed: AuthMutationComputed;
 }
 
-export function validateAuthMutation(input: ValidateAuthMutationInput): void {
+export function validateAuthMutation(
+    input: ValidateAuthMutationInput
+): readonly AuthMutationValidationIssue[] {
     const { command, read, facts, computed } = input;
-    requireMatchingAuthKind(command, read);
-    if (computed.command !== command || computed.read !== read) {
-        throw new AuthMutationRejectedError('Auth computed input identity differs');
-    }
+    const issues: AuthMutationValidationIssue[] = [];
     if (command.capturedAtEpochMs < 0) {
-        throw new AuthMutationRejectedError('Auth command timestamp is invalid');
+        issues.push(
+            toAuthMutationValidationIssue(
+                'command.capturedAtEpochMs',
+                'Auth command timestamp is invalid'
+            )
+        );
+    }
+    if (command.kind !== read.kind || command.kind !== facts.kind) {
+        return issues;
     }
     const commandKind = command.kind;
     switch (commandKind) {
         case 'register-user':
-            validateAuthUserMutation({ kind: commandKind, command, read });
+            issues.push(...validateAuthUserMutation({ kind: commandKind, command, read }));
             break;
         case 'issue-session':
-            validateAuthSessionMutation({ kind: commandKind, command, read, computed });
-            validateAuthUserMutation({ kind: commandKind, command, read });
+            issues.push(...validateAuthSessionMutation({ kind: commandKind, command, read, computed }));
+            issues.push(...validateAuthUserMutation({ kind: commandKind, command, read }));
             break;
         case 'logout-session':
-            validateAuthSessionMutation({ kind: commandKind, command, read, computed });
+            issues.push(...validateAuthSessionMutation({ kind: commandKind, command, read, computed }));
             break;
         case 'issue-ws-ticket':
         case 'consume-ws-ticket':
-            validateAuthTicketMutation({ kind: commandKind, command, read });
+            issues.push(...validateAuthTicketMutation({ kind: commandKind, command, read }));
             break;
         case 'issue-agent-tickets':
         case 'consume-agent-ticket':
-            validateAuthAgentTicketMutation({ kind: commandKind, command, read, computed });
+            issues.push(...validateAuthAgentTicketMutation({ kind: commandKind, command, read, computed }));
             break;
     }
-    const expected = computeAuthMutation({ command, read, facts });
-    if (!isExactAuthComputed(expected, computed)) {
-        throw new AuthMutationRejectedError('Auth computed value differs');
+    return issues;
+}
+
+export function assertAuthMutationComputed(input: ValidateAuthMutationInput): void {
+    const dataIssues = validateComputedData(input.computed, 'computed');
+    if (dataIssues[0] !== undefined) {
+        throw dataIssues[0].cause;
+    }
+    assertMatchingAuthKind(input.command, input.read);
+    assertMatchingAuthFacts(input.command, input.facts);
+    if (input.computed.command !== input.command || input.computed.read !== input.read) {
+        throw new TypeError('Auth computed input identity differs');
+    }
+    assertAuthRuntimeStateAuthority(input.command, input.read);
+    const expected = computeAuthMutation({
+        command: input.command,
+        read: input.read,
+        facts: input.facts
+    });
+    const projectionIssues = validateComputedProjection(expected, input.computed, 'computed');
+    if (projectionIssues[0] !== undefined) {
+        throw new TypeError('Auth computed value differs', { cause: projectionIssues[0].cause });
     }
 }
 
-function isExactAuthComputed(
-    expected: AuthMutationComputed,
-    computed: AuthMutationComputed
-): boolean {
-    return equalAuthJson(expected, computed);
+function assertMatchingAuthFacts(command: AuthMutationCommand, facts: AuthMutationFacts): void {
+    if (facts.kind !== command.kind) {
+        throw new TypeError('Auth command/facts operation differs');
+    }
 }

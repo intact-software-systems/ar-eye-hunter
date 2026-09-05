@@ -9,7 +9,9 @@ import type {
 } from './mutation/auth-mutation-contracts.ts';
 import { computeAuthMutation } from './mutation/compute/compute-auth-mutation.ts';
 import { readAuthMutation } from './mutation/read/read-auth-mutation.ts';
+import type { AuthMutationValidationIssue } from './mutation/validate/auth-mutation-validation.ts';
 import {
+    assertAuthMutationComputed,
     validateAuthMutation,
     type ValidateAuthMutationInput
 } from './mutation/validate/validate-auth-mutation.ts';
@@ -25,7 +27,8 @@ export interface AuthMutationService {
         read: AuthMutationRead,
         facts: AuthMutationFacts
     ) => AuthMutationComputed;
-    readonly validate: (input: ValidateAuthMutationInput) => void;
+    readonly validate: (input: ValidateAuthMutationInput) => readonly AuthMutationValidationIssue[];
+    readonly assertComputed: (input: ValidateAuthMutationInput) => void;
     readonly write: (
         transaction: PSqlSql,
         computed: AuthMutationComputed
@@ -47,6 +50,7 @@ export function createAuthMutationService(
         read: async (command) => await readAuthMutation(users, sessions, command),
         compute: (command, read, facts) => computeAuthMutation({ command, read, facts }),
         validate: validateAuthMutation,
+        assertComputed: assertAuthMutationComputed,
         write: async (transaction, computed) => await writeAuthMutation(transaction, computed)
     };
 }
