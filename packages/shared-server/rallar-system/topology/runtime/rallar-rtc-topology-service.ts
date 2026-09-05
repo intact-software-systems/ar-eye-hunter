@@ -28,6 +28,7 @@ export interface RallarRtcTopologyServiceOptions {
     readonly treeExitWidth?: number;
     readonly rttRebuildDebounceMs?: number;
     readonly now?: () => number;
+    readonly durationNowMs?: () => number;
 }
 
 export interface RallarRtcTopologyUpdateResult {
@@ -87,8 +88,11 @@ export class RallarRtcTopologyService {
         this.metrics.recordPublish(changed);
     }
 
-    recordTopologyPlanningObservation(observation: RtcTopologyPlanningObservation): void {
-        this.metrics.recordPlanningObservation(observation);
+    recordTopologyPlanningObservation(
+        observation: RtcTopologyPlanningObservation,
+        topologyWorkComputeDurationMs: number
+    ): void {
+        this.metrics.recordPlanningObservation(observation, topologyWorkComputeDurationMs);
     }
 
     recordTopologyRebuildSkippedFingerprint(): void {
@@ -195,6 +199,10 @@ export class RallarRtcTopologyService {
         return this.now();
     }
 
+    readDurationNowMs(): number {
+        return this.durationNowMs();
+    }
+
     readRttReportingDegreeLimit(options: RallarRtcTopologyServiceOptions = this.options): number {
         return this.planner.readRttReportingDegreeLimit(options);
     }
@@ -223,6 +231,6 @@ export class RallarRtcTopologyService {
     }
 
     private durationNowMs(): number {
-        return globalThis.performance?.now() ?? Date.now();
+        return this.options.durationNowMs?.() ?? globalThis.performance?.now() ?? Date.now();
     }
 }

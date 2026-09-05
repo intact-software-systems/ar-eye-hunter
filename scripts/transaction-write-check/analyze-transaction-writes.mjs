@@ -262,10 +262,7 @@ function analyzeCall(input) {
             boundary
         });
     }
-    else if (
-        !isReviewedCallableParameterInvocation(call) &&
-        !isSpecializedTransactionOperation(call)
-    ) {
+    else if (!isReviewedCallableParameterInvocation(call)) {
         if (isUnresolvedCallableParameterInvocation(call)) {
             addFinding({
                 findings,
@@ -328,11 +325,12 @@ function hasParameterOnlyPersistedValueTransformation(call, root) {
     if (!isAllowedTransactionOperation(call)) {
         return false;
     }
-    return call.getArguments().some((argument) =>
-        isConstructedPersistedValue(argument) &&
-        referencesPreTransactionInput(argument, root) &&
-        !referencesDirectDatabaseResult(argument, root)
-    );
+    return call.getArguments().some((argument) => {
+        const persistedValue = resolveConstructedPersistedValue(argument);
+        return persistedValue !== undefined &&
+            referencesPreTransactionInput(persistedValue, root) &&
+            !referencesDirectDatabaseResult(persistedValue, root);
+    });
 }
 
 function isConstructedPersistedValue(argument) {
@@ -343,17 +341,60 @@ function isConstructedPersistedValue(argument) {
         Node.isTemplateExpression(argument);
 }
 
+function resolveConstructedPersistedValue(expression, visited = new Set()) {
+    if (isConstructedPersistedValue(expression)) {
+        return expression;
+    }
+    if (!Node.isIdentifier(expression)) {
+        return undefined;
+    }
+    for (const declaration of resolvedDeclarations(expression)) {
+        if (!Node.isVariableDeclaration(declaration) || visited.has(declaration)) {
+            continue;
+        }
+        visited.add(declaration);
+        const initializer = declaration.getInitializer();
+        if (!initializer) {
+            continue;
+        }
+        const resolved = resolveConstructedPersistedValue(initializer, visited);
+        if (resolved) {
+            return resolved;
+        }
+    }
+    return undefined;
+}
+
 function referencesPreTransactionInput(expression, root) {
-    return expressionIdentifiers(expression).some((identifier) => {
-        return resolvedDeclarations(identifier).some((declaration) => {
+    return referencesPreTransactionInputThroughDeclarations(expression, root, new Set());
+}
+
+function referencesPreTransactionInputThroughDeclarations(expression, root, visited) {
+    return expressionIdentifiers(expression).some((identifier) =>
+        resolvedDeclarations(identifier).some((declaration) => {
+            if (visited.has(declaration)) {
+                return false;
+            }
+            visited.add(declaration);
             if (Node.isParameterDeclaration(declaration)) {
                 const owner = declaration.getFirstAncestor(isFunctionDeclaration);
                 return owner !== root || !isTransactionParameter(declaration);
             }
-            return Node.isVariableDeclaration(declaration) &&
-                declaration.getFirstAncestor(isFunctionDeclaration) !== root;
-        });
-    });
+            if (!Node.isVariableDeclaration(declaration)) {
+                return false;
+            }
+            if (declaration.getFirstAncestor(isFunctionDeclaration) !== root) {
+                return true;
+            }
+            const initializer = declaration.getInitializer();
+            if (initializer) {
+                return referencesPreTransactionInputThroughDeclarations(initializer, root, visited);
+            }
+            const forOf = declaration.getFirstAncestorByKind(SyntaxKind.ForOfStatement);
+            return forOf !== undefined &&
+                referencesPreTransactionInputThroughDeclarations(forOf.getExpression(), root, visited);
+        })
+    );
 }
 
 function referencesDirectDatabaseResult(expression, root) {
@@ -422,7 +463,15 @@ function precomputableOperation(call, operation) {
     ) {
         return undefined;
     }
-    return PRECOMPUTABLE_NAME.test(name) ? name : undefined;
+    if (
+        PRECOMPUTABLE_NAME.test(name) &&
+        !call.getArguments().some((argument) =>
+            referencesDirectDatabaseResult(argument, call.getFirstAncestor(isFunctionDeclaration))
+        )
+    ) {
+        return name;
+    }
+    return undefined;
 }
 
 function appInboxWriteBoundary(call) {
@@ -531,20 +580,6 @@ function isSpecializedTransactionBoundary(call) {
     return owner !== undefined && allowedOwners.has(declarationName(owner));
 }
 
-function isSpecializedTransactionOperation(call) {
-    const expression = call.getExpression();
-    const symbol = Node.isPropertyAccessExpression(expression)
-        ? expression.getNameNode().getSymbol()
-        : expression.getSymbol();
-    const resolved = symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
-    return (resolved?.getDeclarations() ?? []).some((declaration) => {
-        const allowedOwners = SPECIALIZED_TRANSACTION_OWNERS.get(
-            sourcePath(declaration.getSourceFile())
-        );
-        return allowedOwners?.has(declarationName(declaration)) ?? false;
-    });
-}
-
 function isUnresolvedCallableParameterInvocation(call) {
     return callableParameterDeclarations(call.getExpression()).some((declaration) =>
         !isPromiseSettlementParameter(declaration) &&
@@ -567,14 +602,28 @@ function isReviewedTransactionForwardingReference(call, callback) {
 }
 
 function callableParameterDeclarations(expression) {
-    if (!Node.isIdentifier(expression)) {
+    const unwrapped = unwrapExpression(expression);
+    if (!Node.isIdentifier(unwrapped)) {
         return [];
     }
-    return resolvedDeclarations(expression).filter(
+    return resolvedDeclarations(unwrapped).filter(
         (declaration) =>
             Node.isParameterDeclaration(declaration) &&
             declaration.getType().getCallSignatures().length > 0
     );
+}
+
+function unwrapExpression(expression) {
+    if (
+        Node.isAsExpression(expression) ||
+        Node.isNonNullExpression(expression) ||
+        Node.isParenthesizedExpression(expression) ||
+        Node.isSatisfiesExpression(expression) ||
+        Node.isTypeAssertion(expression)
+    ) {
+        return unwrapExpression(expression.getExpression());
+    }
+    return expression;
 }
 
 function resolveCallTargets(call, project) {
@@ -809,4 +858,8 @@ function compareFindings(left, right) {
         left.line - right.line ||
         left.column - right.column ||
         left.operation.localeCompare(right.operation);
+}
+
+export function isBlockingTransactionWriteFinding(finding) {
+    return finding.rule !== 'transaction.unresolved-provenance';
 }

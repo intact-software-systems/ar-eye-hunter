@@ -68,6 +68,7 @@ interface RtcTopologyWorkHandlerOptions {
     readonly topologyPlanning: Pick<
         GroupTopologyPlanningService,
         | 'readTopologyPlanningAuthority'
+        | 'readDurationNowMs'
         | 'observeCommittedTopology'
         | 'recordTopologyPlanningObservation'
         | 'recordTopologyPublication'
@@ -155,7 +156,8 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         await writeAcceptedRtcTopologyWork({
             options,
             accepted: rttRefinementSkip,
-            computedWrite
+            computedWrite,
+            computeDurationMs: 0
         });
         await deferredCriterionPetitioner?.request(workEnvelope.data, mutationRead);
         return;
@@ -172,12 +174,14 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         serviceId: options.serviceId,
         publisherStreamId: options.topologyDelivery?.publisherStreamId
     };
+    const computeStartedAtMs = options.topologyPlanning.readDurationNowMs();
     const computed = await computeRtcTopologyWork(computationInput);
     await validateRtcTopologyWork(computationInput, computed);
     await writeAcceptedRtcTopologyWork({
         options,
         accepted: computed.accepted,
-        computedWrite: computed.write
+        computedWrite: computed.write,
+        computeDurationMs: options.topologyPlanning.readDurationNowMs() - computeStartedAtMs
     });
 }
 
@@ -293,12 +297,13 @@ interface WriteAcceptedRtcTopologyWorkInput {
     readonly options: RtcTopologyWorkHandlerOptions;
     readonly accepted: AcceptedRtcTopologyWork;
     readonly computedWrite: AcceptedRtcTopologyWorkWrite;
+    readonly computeDurationMs: number;
 }
 
 async function writeAcceptedRtcTopologyWork(
     input: WriteAcceptedRtcTopologyWorkInput
 ): Promise<void> {
-    const { options, accepted, computedWrite } = input;
+    const { options, accepted, computedWrite, computeDurationMs } = input;
     if (accepted.decision === 'skipped-rtt-refinement') {
         await writeCompletionOnly(options.database, computedWrite);
         return;
@@ -312,13 +317,13 @@ async function writeAcceptedRtcTopologyWork(
         return;
     }
     if (accepted.decision === 'skipped-unchanged' || accepted.decision === 'skipped-frozen') {
-        await writeSkippedTopologyWork({ options, accepted, computedWrite });
+        await writeSkippedTopologyWork({ options, accepted, computedWrite, computeDurationMs });
         return;
     }
     const computed = accepted.computed;
     if (computed.outcome === 'superseded') {
         await writeCompletionOnly(options.database, computedWrite);
-        recordCommittedPlanningObservation(options, accepted);
+        recordCommittedPlanningObservation(options, accepted, computeDurationMs);
         options.topologyPlanning.observeCommittedTopology(accepted.group, computed.current);
         // The winning cycle publishes, but it petitions from its own
         // revision: this one still carries presence evidence the winner may
@@ -334,7 +339,7 @@ async function writeAcceptedRtcTopologyWork(
         executionRepository: options.executionRepository,
         deliveryAppend: options.topologyDelivery?.append
     }, transaction);
-    recordCommittedPlanningObservation(options, accepted);
+    recordCommittedPlanningObservation(options, accepted, computeDurationMs);
     await finishCommittedTopologyWork(options, accepted, computed);
 }
 
@@ -367,12 +372,13 @@ interface WriteSkippedTopologyWorkInput {
     readonly options: RtcTopologyWorkHandlerOptions;
     readonly accepted: Extract<AcceptedRtcTopologyWork, { decision: 'skipped-unchanged' | 'skipped-frozen'; }>;
     readonly computedWrite: AcceptedRtcTopologyWorkWrite;
+    readonly computeDurationMs: number;
 }
 
 async function writeSkippedTopologyWork(
     input: WriteSkippedTopologyWorkInput
 ): Promise<void> {
-    const { options, accepted, computedWrite } = input;
+    const { options, accepted, computedWrite, computeDurationMs } = input;
     const transaction = requireTopologyTransactionWrite(computedWrite);
     await writeRtcTopologyPublicationTransaction({
         database: options.database,
@@ -383,7 +389,7 @@ async function writeSkippedTopologyWork(
         options.topologyPlanning.recordTopologyPlanFrozen();
     }
     else {
-        recordCommittedPlanningObservation(options, accepted);
+        recordCommittedPlanningObservation(options, accepted, computeDurationMs);
         options.topologyPlanning.recordTopologyPublication(false);
     }
     await petitionCommittedCriterion(options, accepted.criterionPetition);
@@ -418,10 +424,14 @@ async function finishCommittedTopologyWork(
 
 function recordCommittedPlanningObservation(
     options: RtcTopologyWorkHandlerOptions,
-    accepted: Extract<AcceptedRtcTopologyWork, { decision: 'accepted' | 'skipped-unchanged'; }>
+    accepted: Extract<AcceptedRtcTopologyWork, { decision: 'accepted' | 'skipped-unchanged'; }>,
+    computeDurationMs: number
 ): void {
     if (accepted.planningObservation !== null) {
-        options.topologyPlanning.recordTopologyPlanningObservation(accepted.planningObservation);
+        options.topologyPlanning.recordTopologyPlanningObservation(
+            accepted.planningObservation,
+            computeDurationMs
+        );
     }
 }
 

@@ -2,6 +2,7 @@ import type { EvolvePlannedTopologyFullRebuildReason } from '../planning/evolve-
 
 export interface RallarRtcTopologyMetrics {
     readonly topologyUpdateCount: number;
+    readonly topologyWorkComputeDurationMs: number;
     readonly topologyChangedCount: number;
     readonly topologyUnchangedCount: number;
     readonly updatesWithRttMeasurementCount: number;
@@ -56,6 +57,7 @@ export interface RtcTopologyPlanningObservation {
 
 interface RtcTopologyMetricsState {
     topologyUpdateCount: number;
+    topologyWorkComputeDurationMs: number;
     topologyChangedCount: number;
     topologyUnchangedCount: number;
     updatesWithRttMeasurementCount: number;
@@ -120,8 +122,14 @@ export class RtcTopologyMetrics {
         this.state.topologyUnchangedCount += 1;
     }
 
-    recordPlanningObservation(observation: RtcTopologyPlanningObservation): void {
+    recordPlanningObservation(
+        observation: RtcTopologyPlanningObservation,
+        topologyWorkComputeDurationMs: number
+    ): void {
         this.recordTopologyUpdate(observation.relevantRttMeasurementCount);
+        this.state.topologyWorkComputeDurationMs += nonNegativeDurationMs(
+            topologyWorkComputeDurationMs
+        );
         this.recordTopologyResult(observation.resultChanged);
         this.state.starPlanCount += observation.starPlanCount;
         this.state.noRttTreePlanCount += observation.noRttTreePlanCount;
@@ -272,6 +280,7 @@ export class RtcTopologyMetrics {
 function createRtcTopologyMetricsState(): RtcTopologyMetricsState {
     return {
         topologyUpdateCount: 0,
+        topologyWorkComputeDurationMs: 0,
         topologyChangedCount: 0,
         topologyUnchangedCount: 0,
         updatesWithRttMeasurementCount: 0,

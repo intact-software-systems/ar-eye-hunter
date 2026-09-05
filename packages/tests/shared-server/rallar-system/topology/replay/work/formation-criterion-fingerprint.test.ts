@@ -85,13 +85,17 @@ describe('formation criterion after unchanged topology inputs', () => {
     );
 
     it('applies computed planning metrics only after the topology transaction commits', async () => {
-        const fixture = createCriterionFingerprintFixture();
+        const times = [10, 17, 20, 28];
+        const fixture = createCriterionFingerprintFixture(() => times.shift() ?? 28);
         fixture.failCommit = true;
 
         await expect(fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded' }))
             .rejects.toThrow('Injected commit failure');
 
-        expect(fixture.topologyService.readMetrics().topologyUpdateCount).toBe(0);
+        expect(fixture.topologyService.readMetrics()).toMatchObject({
+            topologyUpdateCount: 0,
+            topologyWorkComputeDurationMs: 0
+        });
         const reserved = await fixture.queue.getItem(toCoalescedGroupRevisionKey(fixture.current.group));
         if (reserved === undefined) {
             throw new Error('Retry requires the original reserved entry');
@@ -102,6 +106,7 @@ describe('formation criterion after unchanged topology inputs', () => {
 
         expect(fixture.topologyService.readMetrics()).toMatchObject({
             topologyUpdateCount: 1,
+            topologyWorkComputeDurationMs: 8,
             updatesWithoutRttMeasurementCount: 1,
             starPlanCount: 1,
             topologyChangedCount: 1
@@ -226,7 +231,9 @@ function lifecycleSnapshot(stage: GroupLifecycleState, revision: number): GroupS
     };
 }
 
-function createCriterionFingerprintFixture(): CriterionFingerprintFixture {
+function createCriterionFingerprintFixture(
+    durationNowMs: () => number = () => 0
+): CriterionFingerprintFixture {
     const queue = new InMemoryQueueBox();
     const repository = new FakeRuntimeStateRepository();
     const snapshots = new RtcTopologySnapshotRepository(repository);
@@ -236,7 +243,7 @@ function createCriterionFingerprintFixture(): CriterionFingerprintFixture {
         effects: [] as string[],
         submitted: [] as CriterionSubmission[]
     };
-    const topologyService = new RallarRtcTopologyService({ now: () => NOW });
+    const topologyService = new RallarRtcTopologyService({ now: () => NOW, durationNowMs });
     const planning = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: () => state.current,
         readCurrentGroupSnapshot: async () => state.current,

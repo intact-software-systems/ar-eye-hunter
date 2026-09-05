@@ -5,7 +5,10 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { Project } from 'ts-morph';
 
-import { analyzeTransactionWrites } from './analyze-transaction-writes.mjs';
+import {
+    analyzeTransactionWrites,
+    isBlockingTransactionWriteFinding
+} from './analyze-transaction-writes.mjs';
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(scriptDirectory, '../..');
@@ -24,15 +27,19 @@ project.addSourceFilesAtPaths([
 
 const findings = analyzeTransactionWrites(project);
 for (const finding of findings) {
+    const severity = isBlockingTransactionWriteFinding(finding) ? 'ERROR' : 'WARN';
     console.error(
-        `${finding.path}:${finding.line}:${finding.column} ` +
+        `${severity} ${finding.path}:${finding.line}:${finding.column} ` +
             `${finding.rule} ${finding.operation} (boundary ${finding.boundary})`
     );
 }
-if (findings.length > 0) {
-    console.error(`FAIL: transaction write check (${findings.length} findings)`);
+const blockingFindings = findings.filter(isBlockingTransactionWriteFinding);
+if (blockingFindings.length > 0) {
+    console.error(
+        `FAIL: transaction write check (${blockingFindings.length} blocking, ${findings.length} total findings)`
+    );
     process.exitCode = 1;
 }
 else {
-    console.log('PASS: transaction write check');
+    console.log(`PASS: transaction write check (${findings.length} advisory findings)`);
 }

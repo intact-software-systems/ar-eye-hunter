@@ -20,8 +20,7 @@ import type { RtcTopologyPlanningObservation } from '../runtime/rtc-topology-met
 import {
     computeGroupTopologyFromAuthority,
     requireFrozenTopology,
-    validateComputedGroupTopology,
-    type TopologyPlanningRequest
+    validateComputedGroupTopology
 } from './compute-group-topology-from-authority.ts';
 import type {
     GroupTopologyPlanningAuthority,
@@ -68,6 +67,11 @@ export interface GroupTopologyPlanningServiceDependencies {
     readonly serverDefaults?: GroupTopologyServerOptions;
 }
 
+interface MeasuredGroupTopologyPlan {
+    readonly computed: ReconcileGroupTopologyResult;
+    readonly computeDurationMs: number;
+}
+
 export class GroupTopologyPlanningService {
     private readonly dependencies: GroupTopologyPlanningServiceDependencies;
 
@@ -79,8 +83,18 @@ export class GroupTopologyPlanningService {
         this.dependencies.topologyService.recordTopologyPublishResult(published);
     }
 
-    recordTopologyPlanningObservation(observation: RtcTopologyPlanningObservation): void {
-        this.dependencies.topologyService.recordTopologyPlanningObservation(observation);
+    recordTopologyPlanningObservation(
+        observation: RtcTopologyPlanningObservation,
+        topologyWorkComputeDurationMs: number
+    ): void {
+        this.dependencies.topologyService.recordTopologyPlanningObservation(
+            observation,
+            topologyWorkComputeDurationMs
+        );
+    }
+
+    readDurationNowMs(): number {
+        return this.dependencies.topologyService.readDurationNowMs();
     }
 
     recordTopologyRebuildSkippedFingerprint(): void {
@@ -124,30 +138,26 @@ export class GroupTopologyPlanningService {
         };
     }
 
-    computeTopologyFromAuthority(
-        authority: GroupTopologyPlanningAuthority,
-        previous: RallarOverlayTopologySnapshot | undefined,
-        planning: TopologyPlanningRequest
-    ): ReconcileGroupTopologyResult {
-        return computeGroupTopologyFromAuthority(authority, previous, planning);
-    }
-
     private async readAndComputeGroupTopology(
         group: GroupSnapshot,
         previous: RallarOverlayTopologySnapshot | undefined
-    ): Promise<ReconcileGroupTopologyResult> {
+    ): Promise<MeasuredGroupTopologyPlan> {
         const authority = await this.readTopologyPlanningAuthority({
             groupRef: group.group,
             knownGroup: group,
             snapshotSelection: 'prefer-current'
         });
         // The machinery's own reconcile sweep: automatic by definition.
-        const computed = this.computeTopologyFromAuthority(authority, previous, {
+        const startedAtMs = this.readDurationNowMs();
+        const computed = computeGroupTopologyFromAuthority(authority, previous, {
             intent: 'full-rebuild',
             origin: 'automatic'
         });
         validateComputedGroupTopology(computed);
-        return computed;
+        return {
+            computed,
+            computeDurationMs: this.readDurationNowMs() - startedAtMs
+        };
     }
 
     async reconfigureGroupTopology(
@@ -202,13 +212,17 @@ export class GroupTopologyPlanningService {
             throw new TypeError('Persistent topology reconciliation requires APP_OUTBOX');
         }
         const previous = this.dependencies.topologyService.readSnapshot(group);
-        const result = await this.readAndComputeGroupTopology(group, previous);
+        const measured = await this.readAndComputeGroupTopology(group, previous);
+        const result = measured.computed;
         if (result.action === 'frozen') {
             return result;
         }
         this.observeCommittedTopology(group, result.snapshot);
         if (result.planningObservation !== null) {
-            this.recordTopologyPlanningObservation(result.planningObservation);
+            this.recordTopologyPlanningObservation(
+                result.planningObservation,
+                measured.computeDurationMs
+            );
         }
         return result;
     }
