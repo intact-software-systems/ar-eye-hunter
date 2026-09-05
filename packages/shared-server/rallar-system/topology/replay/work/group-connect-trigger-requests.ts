@@ -9,6 +9,7 @@ import { serializeCanonicalJson } from '../../../protocol/canonical-json.ts';
 export interface PublicationConnectTriggerRequestsInput {
     readonly automationEnabled: boolean;
     readonly target: RallarOverlayTopologySnapshot | null;
+    readonly sourceWorkId: string;
     readonly entry: ResourceEntry;
 }
 
@@ -23,7 +24,10 @@ export function computePublicationConnectTriggerRequests(
         work: {
             kind: 'publication',
             groupRef: target.groupRef,
-            wakeIdentity: serializeCanonicalJson({ source: entry.key, expectedLayout: toGroupLayoutIdentity(target) })
+            wakeIdentity: serializeCanonicalJson({
+                sourceWorkId: input.sourceWorkId,
+                expectedLayout: toGroupLayoutIdentity(target)
+            })
         },
         senderId: entry.audit.createdBy,
         createdAtEpochMs: entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
