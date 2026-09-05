@@ -2145,6 +2145,29 @@
         ]
       },
       "description": "No-browser API-v1 ban governance: a banned member cannot shed the ban through the self-service member upsert. Self status 'left' and a self rejoin both answer 403 member-banned while the row stays banned, and only the founder's unban returns the principal to a rejoinable state."
+    },
+    {
+      "id": "api-v1-group-ownership-transfer",
+      "recipe": "tests/api-v1/api-v1-group-ownership-transfer.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-ownership-transfer",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 ownership transfer: the highest-authority group mutation, whose denial paths no recipe reached. A plain member is denied forbidden-role, a non-member target is the compute's 400 rather than the contract's 404, an accepted transfer swaps both roles at once so the old owner becomes admin, and a sole owner targeting themselves is denied last-owner by the governance policy before the compute's self-transfer no-op can run."
     }
   ]
 }
