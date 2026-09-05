@@ -143,7 +143,7 @@ function createInternalMutationPreparer(
             resolvedJoinCode: null,
             joinCodeVerifier: null,
             internalAuthority,
-            ...(dependencies.capacity ? { capacity: dependencies.capacity } : {}),
+            capacity: dependencies.capacity ?? { defaultMaxMembers: null },
             authenticatedAuthority: null
         };
         // Run the capability matrix at prepare time: a command a mode cannot

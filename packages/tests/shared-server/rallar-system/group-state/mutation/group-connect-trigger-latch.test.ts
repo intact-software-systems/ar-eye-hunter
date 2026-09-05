@@ -6,6 +6,7 @@ import {
 import { computeGroupConnectTriggerEntry } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
 import { decodeGroupConnectTriggerWork } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
 import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
+import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { MEMBERS_NAMESPACE } from '@shared-server/rallar-system/group-state/persistence/group-state-runtime-namespaces.ts';
 import { createGroupConnectTriggerWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-group-connect-trigger-work-handler.ts';
 import {
@@ -30,6 +31,7 @@ import {
     toAutomaticGroupConnectCommand
 } from '@shared-server/rallar-system/topology/replay/work/create-group-connect-trigger-work-handler.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -244,6 +246,10 @@ async function connectWriteHarness() {
     }
     const batch = computed.persistence.guardedBatch;
     await harness.runtimeRepository.upsert(batch.guard.namespace, batch.guard.key, JSON.stringify(read.group!.value), NEVER_EXPIRE_AT_TIMESTAMP);
+    await new GroupLifecyclePolicyRepository(harness.runtimeRepository).writePolicy(
+        IDENTITY.groupRef,
+        resolveGroupLifecyclePolicyPreset('optimistic')
+    );
     for (const effect of batch.effects) {
         if (effect.effectId !== 'planned-layout-fence' && effect.effectId !== 'connect-trigger-latch') {
             continue;

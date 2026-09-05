@@ -111,6 +111,7 @@ export class GroupStateTestMutationExecutor {
             resolvedJoinCode: null,
             joinCodeVerifier: null,
             internalAuthority: authority,
+            capacity: { defaultMaxMembers: null },
             authenticatedAuthority: null
         };
         const computed = computeGroupMutation({ command, read, facts });

@@ -24,6 +24,10 @@ import {
     toAuthorisedWsClientConnection,
     toAuthorisedWsClientDisconnectEnqueue
 } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+import {
+    computeClientMutationOperation,
+    validateClientMutationOperation
+} from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-computation.ts';
 import { ClientStateInboxHandler } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
 import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import {
@@ -36,6 +40,7 @@ import type {
     ClientMutationRead
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
+import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import type { ClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import {
     toWsSessionLifecycleKey,
@@ -55,6 +60,13 @@ import type {
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { readClientExpiryTestEnqueueData } from './app-client-inbox-expiry-fixtures.ts';
+import {
+    connectCommand,
+    disconnectCommand,
+    emptyRead,
+    readAfterWrite,
+    requireWrite
+} from './client-mutation-compute-test-fixtures.ts';
 
 const NOW_EPOCH_MS = 1_000;
 const SERVICE_ID = 'client-inbox-phase-test';
@@ -86,6 +98,67 @@ const CURRENT_AUDIT: AuditStamp = {
 };
 
 describe('ClientStateInboxHandler phases', () => {
+    it('rejects a disconnect candidate whose lifecycle write is missing', async () => {
+        const connectedCommand = await connectCommand();
+        const connected = requireWrite(
+            computeClientMutation({ command: connectedCommand, read: emptyRead(connectedCommand) })
+        );
+        const command = await disconnectCommand();
+        const read = readAfterWrite(command, connected);
+        const context = createContext<ClientStateWritten>({
+            type: AppInboxType.CLIENT_SESSION_DISCONNECT,
+            resourceId: 'missing-lifecycle-write',
+            contextId: 'client-handler-test',
+            data: {}
+        });
+        const lifecycle = {
+            kind: 'disconnect',
+            facts: {
+                scope: {
+                    kind: 'client',
+                    ...SCOPE,
+                    principalId: 'alice',
+                    clientInstanceId: 'browser'
+                },
+                sessionId: 'session-1',
+                generationId: 'generation-1',
+                generationStartedAtEpochMs: 2_000,
+                disconnectedAtEpochMs: 4_000,
+                reason: 'closed',
+                expireAtEpochMs: 8_000
+            },
+            read: lifecycleRead({
+                scope: {
+                    kind: 'client',
+                    ...SCOPE,
+                    principalId: 'alice',
+                    clientInstanceId: 'browser'
+                },
+                sessionId: 'session-1'
+            }, false)
+        } as const;
+        const completionFacts = { entry: context.entry, completedAtEpochMs: 4_000 };
+        const computed = computeClientMutationOperation({
+            command,
+            read,
+            completionFacts,
+            lifecycle
+        });
+        if (computed.outcome !== 'completed') {
+            throw new TypeError('Expected a completed disconnect computation');
+        }
+
+        expect(() =>
+            validateClientMutationOperation({
+                command,
+                read,
+                completionFacts,
+                lifecycle,
+                computed: { ...computed, lifecycleComputed: undefined }
+            })
+        ).toThrow('Client mutation lifecycle computation is missing');
+    });
+
     it.each([
         { generationClosed: false, label: 'active', writes: true },
         { generationClosed: true, label: 'inactive', writes: false }

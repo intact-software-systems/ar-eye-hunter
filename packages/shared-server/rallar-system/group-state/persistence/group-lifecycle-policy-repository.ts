@@ -1,4 +1,3 @@
-import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -15,22 +14,11 @@ import {
 export const GROUP_LIFECYCLE_POLICIES_NAMESPACE = 'group-state:lifecycle-policies';
 
 /**
- * `absent` and `corrupt` are separate outcomes on purpose. A neighbouring store
- * decodes a bad row as absent because failing open there only costs a rebuild;
- * here it would silently reopen a group whose stored policy closed it. Storage
- * therefore reports what it found and the enforcement point decides, rather
- * than one failure posture being baked in before there is an enforcer.
- */
-/**
- * The stored policy folded to the policy a caller applies: an absent
- * document is the default preset, and an unreadable one is no policy at
- * all, so every caller fails closed on the same fact.
+ * Fold a successful storage read to its policy. Missing and unreadable current
+ * rows both fail closed as no policy.
  */
 export function toReadGroupLifecyclePolicy(read: GroupLifecyclePolicyRead): GroupLifecyclePolicy | null {
-    if (read.status === 'corrupt') {
-        return null;
-    }
-    return read.status === 'present' ? read.policy : createDefaultGroupLifecyclePolicy();
+    return read.status === 'present' ? read.policy : null;
 }
 
 export type GroupLifecyclePolicyRead =

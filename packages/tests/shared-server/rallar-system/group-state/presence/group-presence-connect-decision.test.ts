@@ -254,6 +254,7 @@ function connectCommand(): GroupStateMutationCommand {
             resolvedJoinCode: null,
             joinCodeVerifier: null,
             internalAuthority: 'none',
+            capacity: { defaultMaxMembers: null },
             authenticatedAuthority: { principalId: 'owner', sessionId: 'session-1' }
         }
     };

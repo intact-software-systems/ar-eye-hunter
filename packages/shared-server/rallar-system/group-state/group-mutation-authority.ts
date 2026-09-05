@@ -116,7 +116,7 @@ async function prepareAuthorizedGroupMutation(
         resolvedJoinCode,
         joinCodeVerifier: await toJoinCodeVerifier(resolvedJoinCode),
         internalAuthority: 'none',
-        ...(dependencies.capacity ? { capacity: dependencies.capacity } : {}),
+        capacity: dependencies.capacity ?? { defaultMaxMembers: null },
         authenticatedAuthority: {
             principalId: authorized.authorityProof.principalId,
             sessionId: authorized.authorityProof.sessionId

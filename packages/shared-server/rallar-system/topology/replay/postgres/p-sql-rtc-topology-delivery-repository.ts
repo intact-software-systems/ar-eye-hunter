@@ -1,7 +1,7 @@
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import type { RtcTopologyDeliveryAppendPort } from '../delivery/rtc-topology-delivery-append-port.ts';
 import type {
-    RtcTopologyDeliveryAppendInput,
+    RtcTopologyDeliveryAppend,
     RtcTopologyDeliveryAppendResult,
     RtcTopologyDeliveryCompactionInput,
     RtcTopologyDeliveryCompactionResult,
@@ -17,7 +17,6 @@ import type { RtcTopologyDeliveryPublicationReader } from '../delivery/rtc-topol
 import {
     readRtcTopologyDeliverySafeInteger,
     RtcTopologyDeliveryCorruptionError,
-    validateRtcTopologyDeliveryAppendInput,
     validateRtcTopologyDeliveryLogEntry,
     validateRtcTopologyDeliveryPublicationReadInput,
     validateRtcTopologyDeliveryStreamId,
@@ -97,9 +96,8 @@ export class PSqlRtcTopologyDeliveryRepository
 
     async appendOrValidate(
         transaction: PSqlSql,
-        input: RtcTopologyDeliveryAppendInput
+        input: RtcTopologyDeliveryAppend
     ): Promise<RtcTopologyDeliveryAppendResult> {
-        validateRtcTopologyDeliveryAppendInput(input);
         const result = await appendOrReadExistingEntry(transaction, input);
         if (result) {
             const entry = toLogEntry(result);
@@ -192,7 +190,7 @@ export class PSqlRtcTopologyDeliveryRepository
 
 async function appendOrReadExistingEntry(
     sql: PSqlSql,
-    input: RtcTopologyDeliveryAppendInput
+    input: RtcTopologyDeliveryAppend
 ): Promise<AppendQueryRow | undefined> {
     const rows = await sql<AppendQueryRow[]>`
     with existing_publication as materialized (
@@ -256,7 +254,7 @@ async function appendOrReadExistingEntry(
         ${input.outboxKey.topicId},
         ${input.outboxKey.resourceId},
         ${input.outboxKey.contextId},
-        ${new Date(input.retainUntilEpochMs)}
+        ${input.retainUntilIsoTimestamp}::timestamptz
       from advanced_stream
       returning
         publisher_stream_id,

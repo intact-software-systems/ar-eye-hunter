@@ -126,6 +126,29 @@ describe('group-state AppInbox transaction result boundary', () => {
         expect(await harness.repository.readSnapshot(harness.groupRef)).toBeUndefined();
     });
 
+    it('rejects prepared facts that omit current capacity policy', async () => {
+        const harness = await createGroupStateTransactionBoundaryHarness();
+        const authority = requireJsonWireObject(
+            harness.context.enqueue.authority,
+            'Prepared authority'
+        );
+        const facts = requireJsonWireObject(authority.facts, 'Prepared facts');
+        const { capacity: _capacity, ...factsWithoutCapacity } = facts;
+        const malformedContext = {
+            ...harness.context,
+            enqueue: {
+                ...harness.context.enqueue,
+                authority: { ...authority, facts: factsWithoutCapacity }
+            }
+        };
+
+        await expect(
+            harness.handler.processGroupStateMutation(malformedContext)
+        ).rejects.toThrow('App inbox prepared group mutation is malformed.');
+        expect(harness.reachedStages).toEqual([]);
+        expect(await harness.repository.readSnapshot(harness.groupRef)).toBeUndefined();
+    });
+
     it('persists an inactive presence result once without active mutation effects', async () => {
         const actions: string[] = [];
         const transactionWriter: GroupStateInboxHandlerDependencies['transactionWriter'] = {
@@ -262,6 +285,7 @@ function inactiveConnectContext(): AppInboxMessageContext<GroupStateInboxDurable
             resolvedJoinCode: null,
             joinCodeVerifier: null,
             internalAuthority: 'none',
+            capacity: { defaultMaxMembers: null },
             authenticatedAuthority: { principalId: 'owner', sessionId: 'inactive-session' }
         },
         causalToken: 'causal-token',

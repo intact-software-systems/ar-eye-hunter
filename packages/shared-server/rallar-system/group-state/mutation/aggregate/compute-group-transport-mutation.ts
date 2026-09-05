@@ -88,6 +88,7 @@ export function computeGroupTransportMutation(
         initialPresenceSummary: null,
         presenceAdmission: null,
         eventType: 'group-updated',
+        lifecyclePolicy: null,
         presenceSummaryWork: 'enqueue'
     });
 }

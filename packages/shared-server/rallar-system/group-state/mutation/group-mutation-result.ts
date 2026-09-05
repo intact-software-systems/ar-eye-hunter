@@ -1,3 +1,6 @@
+import type {
+    GroupLifecyclePolicy
+} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 import type {
     AuditStamp,
@@ -56,6 +59,7 @@ export interface GroupMutationWriteInput {
     readonly plannedLayoutFence?: GroupPlannedLayoutRow | null;
     readonly connectTriggerLatchEffect?: RuntimeStateGuardedBatchEffect | null;
     readonly layoutTombstones?: GroupLayoutTombstones | null;
+    readonly lifecyclePolicy: GroupLifecyclePolicy | null;
 }
 
 export interface RejectedGroupMutationInput {
@@ -148,7 +152,7 @@ export function computeGroupMutationWriteResult(
         receipt,
         idempotency: toGroupMutationIdempotency(command, facts, receipt),
         outboxWrites: outboxEntries.map(computeAppOutboxInsert),
-        lifecyclePolicy: command.operation === 'createGroup' ? (command.input.lifecyclePolicy ?? null) : null,
+        lifecyclePolicy: input.lifecyclePolicy,
         acceptedLayoutPromotion,
         plannedLayoutFence,
         layoutTombstones,

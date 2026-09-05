@@ -19,6 +19,7 @@ export interface RtcTopologyInputFingerprintFacts {
     readonly group: GroupSnapshot;
     readonly effectiveConfig: EffectiveGroupTopologyConfig;
     readonly kindHysteresisWidths: RtcTopologyKindHysteresisWidths;
+    readonly rttReportingDegreeLimit: number;
 }
 
 export function computeAuthorityTopologyInputFingerprint(
@@ -27,7 +28,8 @@ export function computeAuthorityTopologyInputFingerprint(
     return computeRtcTopologyInputFingerprint({
         group: authority.group,
         effectiveConfig: authority.config.effective,
-        kindHysteresisWidths: authority.kindHysteresisWidths
+        kindHysteresisWidths: authority.kindHysteresisWidths,
+        rttReportingDegreeLimit: authority.rttReportingDegreeLimit
     });
 }
 
@@ -82,7 +84,8 @@ export async function computeRtcTopologyInputFingerprint(
         kindHysteresisWidths: {
             meshExitWidth: facts.kindHysteresisWidths.meshExitWidth,
             treeExitWidth: facts.kindHysteresisWidths.treeExitWidth
-        }
+        },
+        rttReportingDegreeLimit: facts.rttReportingDegreeLimit
     });
     return `sha256:${digest}`;
 }

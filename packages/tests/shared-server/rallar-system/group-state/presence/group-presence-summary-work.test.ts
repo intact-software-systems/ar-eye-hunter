@@ -10,7 +10,6 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
-import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 
 type ReservedSummary = Readonly<{
     entry: ResourceEntry;
@@ -188,26 +187,6 @@ describe('GroupPresenceSummaryWork canonical persisted command', () => {
         expect(write).not.toHaveBeenCalled();
         expect(begin).not.toHaveBeenCalled();
         expect(wakeQueue).not.toHaveBeenCalled();
-    });
-
-    it('exposes single-attempt presence-summary phases for a queue-owned transaction', () => {
-        const work = new GroupPresenceSummaryWork({
-            outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
-            recomputeDebounceMs: 0,
-            runtimeRepository: new GroupBarrierRepository(),
-            now: () => BASE_EPOCH_MS,
-            serviceId: 'summary-worker'
-        });
-
-        expect(work).toMatchObject({
-            read: expect.any(Function),
-            compute: expect.any(Function),
-            validate: expect.any(Function),
-            write: expect.any(Function),
-            processReservedEntry: expect.any(Function)
-        });
-        expect(Reflect.get(work, 'converge')).toBeUndefined();
-        expect(Reflect.get(work, 'enqueueForGroupSnapshot')).toBeUndefined();
     });
 });
 

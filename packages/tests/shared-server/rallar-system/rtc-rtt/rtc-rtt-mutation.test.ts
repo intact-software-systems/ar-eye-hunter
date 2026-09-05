@@ -1,6 +1,7 @@
 import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
+import { RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -181,6 +182,9 @@ describe('RTC RTT mutation phases', () => {
             'session-a',
             'session-b'
         ]);
+        expect(accepted.outboxWrites[0]?.entry.audit.expiryTs.epochMilliseconds).toBe(
+            accepted.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS
+        );
         const tampered = {
             ...accepted,
             endpointGuards: [...accepted.endpointGuards].reverse()

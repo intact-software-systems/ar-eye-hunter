@@ -14,11 +14,11 @@ import {
     writeRtcTopologyPublicationOutbox
 } from '../../publication/rtc-topology-ws-outbox-entry.ts';
 import type { RtcTopologyDeliveryAppendPort } from '../delivery/rtc-topology-delivery-append-port.ts';
-import type { RtcTopologyDeliveryAppendInput } from '../delivery/rtc-topology-delivery-contracts.ts';
+import type { RtcTopologyDeliveryAppend } from '../delivery/rtc-topology-delivery-contracts.ts';
 import { RtcTopologyDeliveryLeaseLostError } from '../delivery/rtc-topology-delivery-stream-service.ts';
 import {
-    isRtcTopologyDeliveryRetryableConflict,
-    toRtcTopologyDeliveryAppendInput
+    computeRtcTopologyDeliveryAppend,
+    isRtcTopologyDeliveryRetryableConflict
 } from '../delivery/rtc-topology-delivery-validation.ts';
 import type { RtcTopologyInputFingerprintWrite } from './rtc-topology-input-fingerprint.ts';
 import {
@@ -83,7 +83,7 @@ export async function writeRtcTopologyPublicationTransaction(
 
 export interface RtcTopologyPublicationDeliveryWrite {
     readonly outboxWrite: AppOutboxInsert;
-    readonly deliveryAppend: RtcTopologyDeliveryAppendInput | null;
+    readonly deliveryAppend: RtcTopologyDeliveryAppend | null;
 }
 
 export function computeRtcTopologyPublicationDeliveryWrite(
@@ -95,7 +95,7 @@ export function computeRtcTopologyPublicationDeliveryWrite(
         outboxWrite,
         deliveryAppend: publisherStreamId === undefined
             ? null
-            : toRtcTopologyDeliveryAppendInput(
+            : computeRtcTopologyDeliveryAppend(
                 publisherStreamId,
                 publication,
                 outboxWrite.entry

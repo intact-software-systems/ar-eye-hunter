@@ -92,7 +92,7 @@ describe('group lifecycle transition computation', () => {
         });
     });
 
-    it('keeps an absent-policy group active for the apply landing while commanding its replan', () => {
+    it('keeps an optimistic-policy group active for the apply landing while commanding its replan', () => {
         const computed = computeGroupMutation({
             command: transitionCommand('reconfigureGroup'),
             read: createGroupAuthorityRead({ lifecycleState: 'active', formationEpoch: 4 }),
@@ -109,7 +109,7 @@ describe('group lifecycle transition computation', () => {
     it.each(
         [
             { description: 'hold policy to apply', policy: resolveGroupLifecyclePolicyPreset('match'), landing: 'apply', lifecycleState: 'active' },
-            { description: 'absent default to hold', policy: null, landing: 'hold', lifecycleState: 'reconfiguring' }
+            { description: 'optimistic default to hold', policy: null, landing: 'hold', lifecycleState: 'reconfiguring' }
         ] as const
     )(
         'lets a reconfigure landing override $description',
@@ -606,14 +606,16 @@ describe('group lifecycle transition computation', () => {
         expect((computed.guard.value as Group).lastFormationOutcome).toBe(null);
     });
 
-    it('treats an absent policy as the optimistic preset', () => {
-        // optimistic is any-member initiated, so a plain member may command.
+    it('fails closed when a current group has no lifecycle policy row', () => {
         const computed = computeGroupMutation({
             command: transitionCommand('planGroupLayout'),
             read: createGroupAuthorityRead({ lifecycleState: 'forming', formationEpoch: 0 }, { policy: 'absent' }),
             facts: createGroupAuthorityFacts()
         });
-        expect(computed.outcome).toBe('write');
+        expect(computed).toMatchObject({
+            outcome: 'rejected',
+            receipt: { rejection: 'Group lifecycle policy is unreadable: Group lifecycle policy is missing' }
+        });
     });
 });
 

@@ -70,6 +70,7 @@ export function computeGroupPresenceWrite({
         initialPresenceSummary: null,
         eventType,
         eventGroup: stored.value,
+        lifecyclePolicy: null,
         presenceAdmission,
         presenceSummaryWork
     });

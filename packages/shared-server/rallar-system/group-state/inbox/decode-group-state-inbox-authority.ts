@@ -1,4 +1,4 @@
-import { requireExactKeys, requireExactOptionalKeys, requireString } from '../../protocol/exact-object-decoding.ts';
+import { requireExactKeys, requireString } from '../../protocol/exact-object-decoding.ts';
 import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type {
@@ -187,9 +187,9 @@ function decodePreparedGroupMutationFacts(
     value: JsonWireValue | undefined
 ): Omit<GroupMutationFacts, 'attemptCount'> {
     const facts = requireJsonWireObject(value, 'Prepared group mutation facts');
-    requireExactOptionalKeys({
-        value: facts,
-        required: [
+    requireExactKeys(
+        facts,
+        [
             'nowEpochMs',
             'expireAtEpochMs',
             'serviceId',
@@ -198,11 +198,11 @@ function decodePreparedGroupMutationFacts(
             'resolvedJoinCode',
             'joinCodeVerifier',
             'internalAuthority',
+            'capacity',
             'authenticatedAuthority'
         ],
-        optional: ['capacity'],
-        label: 'Prepared group mutation facts'
-    });
+        'Prepared group mutation facts'
+    );
     const withAttemptCount = { ...facts, attemptCount: 1 };
     const decodedFacts = withAttemptCount as GroupMutationFacts;
     assertGroupMutationFacts(decodedFacts);
@@ -215,9 +215,7 @@ function decodePreparedGroupMutationFacts(
         resolvedJoinCode: decodedFacts.resolvedJoinCode,
         joinCodeVerifier: decodedFacts.joinCodeVerifier,
         internalAuthority: decodedFacts.internalAuthority,
-        ...(decodedFacts.capacity === undefined
-            ? {}
-            : { capacity: decodedFacts.capacity }),
+        capacity: decodedFacts.capacity,
         authenticatedAuthority: decodedFacts.authenticatedAuthority
     };
 }

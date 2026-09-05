@@ -127,7 +127,7 @@ export function createGroupAuthorityRead(
         authorityPresenceSessions: [],
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
-        lifecyclePolicy: toLifecyclePolicyRead(options.policy ?? 'absent'),
+        lifecyclePolicy: toLifecyclePolicyRead(options.policy ?? 'optimistic'),
         activeMemberPrincipalIds: options.activeMemberPrincipalIds ??
             (options.actorIsMember === false ? [] : [actorPrincipalId]),
         connectTriggerLatch: null,
@@ -186,6 +186,7 @@ export function createGroupAuthorityFacts(principalId = 'alice'): GroupMutationF
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
+        capacity: { defaultMaxMembers: null },
         authenticatedAuthority: {
             principalId,
             sessionId: `${principalId}-session`

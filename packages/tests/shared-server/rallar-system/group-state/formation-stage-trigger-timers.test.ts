@@ -501,7 +501,10 @@ function createTimerHandler(
                 nowEpochMs: input.nowEpochMs
             })
         },
-        readLifecyclePolicy: async () => ({ status: 'absent' }),
+        readLifecyclePolicy: async () => ({
+            status: 'present',
+            policy: resolveGroupLifecyclePolicyPreset('optimistic')
+        }),
         submitCommand: async (command) => {
             input.submitCriterion?.push(command);
         },

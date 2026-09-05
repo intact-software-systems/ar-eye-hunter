@@ -222,8 +222,7 @@ export function computeRtcRttMutation(
             affectedGroups,
             receipt,
             rtt: authority.command.rtt,
-            senderId: authority.command.alSenderId,
-            expireAtEpochMs: authority.facts.purgeAfterEpochMs
+            senderId: authority.command.alSenderId
         })
     };
 }
@@ -234,7 +233,6 @@ function computeRtcRttOutboxWrites(
         receipt: RtcRttMutationReceipt;
         rtt: RttMeasurementInfo;
         senderId: string;
-        expireAtEpochMs: number;
     }>
 ): readonly AppOutboxInsert[] {
     return input.affectedGroups.map((group, index) =>
@@ -249,7 +247,7 @@ function computeRtcRttOutboxWrites(
             rtt: input.rtt,
             refinementObservationId: input.receipt.receiptId,
             createdAtEpochMs: input.receipt.acceptedAtEpochMs,
-            expireAtEpochMs: input.expireAtEpochMs,
+            expireAtEpochMs: input.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS,
             senderId: input.senderId,
             requestOptions: toCanonicalGroupTopologyConfigPatch({}),
             publish: true

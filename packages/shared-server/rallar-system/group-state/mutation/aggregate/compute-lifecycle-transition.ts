@@ -399,6 +399,7 @@ function computeLifecycleTransitionWrite(
         command,
         read,
         facts,
+        lifecyclePolicy: null,
         guard: {
             kind: 'group',
             operation: 'update',

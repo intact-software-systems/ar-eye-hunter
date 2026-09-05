@@ -50,9 +50,6 @@ export function assertGroupMutationFacts(facts: GroupMutationFacts): void {
 }
 
 function assertCapacityFacts(capacity: GroupMutationFacts['capacity']): void {
-    if (capacity === undefined) {
-        return;
-    }
     const record = requireRecord(capacity, 'Group mutation capacity facts');
     assertExactKeys(record, ['defaultMaxMembers'], 'Group mutation capacity facts');
     if (record.defaultMaxMembers === null) {

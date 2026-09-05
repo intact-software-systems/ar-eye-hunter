@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { RtcTopologyDeliveryAppendInput } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-contracts.ts';
+import type { RtcTopologyDeliveryAppend } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-contracts.ts';
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
 
-const APPEND_INPUT: RtcTopologyDeliveryAppendInput = {
+const APPEND_INPUT: RtcTopologyDeliveryAppend = {
     publisherStreamId: '00000000-0000-4000-8000-000000000001',
     groupRef: {
         applicationId: 'delivery-app',
@@ -17,7 +17,8 @@ const APPEND_INPUT: RtcTopologyDeliveryAppendInput = {
         resourceId: 'delivery-resource',
         contextId: 'delivery-context'
     },
-    retainUntilEpochMs: 86_401_000
+    retainUntilEpochMs: 86_401_000,
+    retainUntilIsoTimestamp: '1970-01-02T00:00:01.000Z'
 };
 
 const APPENDED_ROW = {
@@ -37,18 +38,25 @@ const APPENDED_ROW = {
 describe('RTC topology delivery append query', () => {
     it('appends through one database round trip on the uncontended success path', async () => {
         const observedQueries: string[] = [];
-        const transaction = createSuccessfulAppendTransaction(observedQueries);
+        const observedParameters: PSqlParameter[] = [];
+        const transaction = createSuccessfulAppendTransaction(observedQueries, observedParameters);
         const repository = new PSqlRtcTopologyDeliveryRepository(transaction);
 
         await expect(repository.appendOrValidate(transaction, APPEND_INPUT)).resolves.toEqual({
             status: 'appended',
             entry: {
-                ...APPEND_INPUT,
+                publisherStreamId: APPEND_INPUT.publisherStreamId,
+                groupRef: APPEND_INPUT.groupRef,
+                publicationId: APPEND_INPUT.publicationId,
+                outboxKey: APPEND_INPUT.outboxKey,
+                retainUntilEpochMs: APPEND_INPUT.retainUntilEpochMs,
                 sequence: 1,
                 insertedAtEpochMs: 1_000
             }
         });
         expect(observedQueries).toHaveLength(1);
+        expect(observedParameters.some((parameter) => parameter instanceof Date)).toBe(false);
+        expect(observedParameters).toContain(APPEND_INPUT.retainUntilIsoTimestamp);
     });
 
     it('leaves the single-use stream lookup available for PostgreSQL to inline', async () => {
@@ -74,20 +82,24 @@ describe('RTC topology delivery append query', () => {
     });
 });
 
-function createSuccessfulAppendTransaction(observedQueries: string[]): PSqlSql {
+function createSuccessfulAppendTransaction(
+    observedQueries: string[],
+    observedParameters: PSqlParameter[] = []
+): PSqlSql {
     function query<Result>(
         strings: TemplateStringsArray,
-        ..._values: readonly PSqlParameter[]
+        ...values: readonly PSqlParameter[]
     ): Promise<Result>;
     function query(values: readonly PSqlParameter[]): object;
     function query<Result>(
         input: TemplateStringsArray | readonly PSqlParameter[],
-        ..._values: readonly PSqlParameter[]
+        ...values: readonly PSqlParameter[]
     ): Promise<Result> | object {
         if (!isTemplateStringsArray(input)) {
             return {};
         }
         const strings = input;
+        observedParameters.push(...values);
         const query = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
         observedQueries.push(query);
 

@@ -227,18 +227,30 @@ export function validateClientMutationOperation(
         return;
     }
     assertMutationProjections(input.computed);
-    if (input.lifecycle?.kind === 'connect' && input.computed.lifecycleComputed) {
+    if (input.lifecycle === undefined) {
+        assertValidCompletion(
+            input.completionFacts,
+            input.computed.durableResult,
+            input.computed.completion
+        );
+        return;
+    }
+    const lifecycleComputed = input.computed.lifecycleComputed;
+    if (lifecycleComputed === undefined) {
+        throw new TypeError('Client mutation lifecycle computation is missing');
+    }
+    if (input.lifecycle.kind === 'connect') {
         validateWsSessionConnectGuard(
             input.lifecycle.facts,
             input.lifecycle.read,
-            input.computed.lifecycleComputed
+            lifecycleComputed
         );
     }
-    if (input.lifecycle?.kind === 'disconnect' && input.computed.lifecycleComputed) {
+    else {
         validateWsSessionGenerationClosed(
             input.lifecycle.facts,
             input.lifecycle.read,
-            input.computed.lifecycleComputed
+            lifecycleComputed
         );
     }
     assertValidCompletion(

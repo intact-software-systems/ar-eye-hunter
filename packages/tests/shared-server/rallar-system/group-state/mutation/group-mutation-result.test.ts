@@ -8,6 +8,7 @@ import type {
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation-result.ts';
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
+import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type {
     AuditStamp,
@@ -110,6 +111,20 @@ describe('group mutation receipt causal invariants', () => {
     const groupRef = runtimeGroupRef;
 
     describe('group mutation rejected-result persistence', () => {
+        it('persists the resolved current lifecycle policy when create omits a preset', async () => {
+            const runtime = new FakeRuntimeStateRepository();
+            await seedOpenGroup(runtime, 'default-policy-room');
+
+            expect(
+                await new GroupLifecyclePolicyRepository(runtime).readPolicy(
+                    groupRef('default-policy-room')
+                )
+            ).toMatchObject({
+                status: 'present',
+                policy: { admission: { mode: 'open' } }
+            });
+        });
+
         it('does not persist a rejected receipt, event, or outbox effect', async () => {
             const runtime = new FakeRuntimeStateRepository();
             await seedOpenGroup(runtime, 'ephemeral-rejection-room');
@@ -397,6 +412,7 @@ function createMutationFacts(): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
+        capacity: { defaultMaxMembers: null },
         authenticatedAuthority: {
             principalId: 'alice',
             sessionId: 'alice-session'

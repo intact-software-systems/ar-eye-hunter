@@ -4,6 +4,7 @@ import type { RtcTopologyPublication } from '../../publication/rtc-topology-publ
 import { validateRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
 import { validateRtcTopologyPublication } from '../../publication/validate-rtc-topology-publication.ts';
 import type {
+    RtcTopologyDeliveryAppend,
     RtcTopologyDeliveryAppendInput,
     RtcTopologyDeliveryLogEntry,
     RtcTopologyDeliveryPublicationReadInput
@@ -58,17 +59,21 @@ export function isRtcTopologyDeliveryRetryableConflict(error: Error): boolean {
     );
 }
 
-export function toRtcTopologyDeliveryAppendInput(
+export function computeRtcTopologyDeliveryAppend(
     publisherStreamId: string,
     publication: RtcTopologyPublication,
     outbox: ResourceEntry
-): RtcTopologyDeliveryAppendInput {
+): RtcTopologyDeliveryAppend {
     validateRtcTopologyDeliveryStreamId(publisherStreamId);
     validateRtcTopologyPublication(publication, publication.groupRef);
     validateDeliveryGroupRef(publication);
 
     validateRtcTopologyPublicationOutbox(publication, outbox);
 
+    const retainUntilEpochMs = readRtcTopologyDeliverySafeInteger(
+        publication.message.constraints?.expiresAtMs,
+        'RTC topology delivery retention timestamp'
+    );
     return {
         publisherStreamId,
         groupRef: {
@@ -82,25 +87,9 @@ export function toRtcTopologyDeliveryAppendInput(
             resourceId: outbox.key.resourceId,
             contextId: outbox.key.contextId
         },
-        retainUntilEpochMs: readRtcTopologyDeliverySafeInteger(
-            publication.message.constraints?.expiresAtMs,
-            'RTC topology delivery retention timestamp'
-        )
+        retainUntilEpochMs,
+        retainUntilIsoTimestamp: new Date(retainUntilEpochMs).toISOString()
     };
-}
-
-export function validateRtcTopologyDeliveryAppendInput(
-    input: RtcTopologyDeliveryAppendInput
-): void {
-    validateRtcTopologyDeliveryStreamId(input.publisherStreamId);
-    validateRtcTopologyDeliveryPublicationReadInput(input);
-    validateNonEmpty(input.outboxKey.topicId, 'outbox topic ID');
-    validateNonEmpty(input.outboxKey.resourceId, 'outbox resource ID');
-    validateNonEmpty(input.outboxKey.contextId, 'outbox context ID');
-    readRtcTopologyDeliverySafeInteger(
-        input.retainUntilEpochMs,
-        'RTC topology delivery retention timestamp'
-    );
 }
 
 export function validateRtcTopologyDeliveryPublicationReadInput(

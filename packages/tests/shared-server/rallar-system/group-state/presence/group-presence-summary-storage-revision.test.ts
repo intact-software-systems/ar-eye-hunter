@@ -8,6 +8,7 @@ import type {
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
+import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { decodeCanonicalGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { describe, expect, it } from 'vitest';
@@ -177,8 +178,10 @@ function mutationRead(storageRevision: number): GroupMutationRead {
         authorityPresenceSessions: [],
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
-        // upsertMember consults the admission policy; absent means open admission.
-        lifecyclePolicy: { status: 'absent' },
+        lifecyclePolicy: {
+            status: 'present',
+            policy: resolveGroupLifecyclePolicyPreset('optimistic')
+        },
         activeMemberPrincipalIds: null,
         plannedLayoutRow: null,
         connectTriggerLatch: null,
@@ -226,6 +229,7 @@ function mutationFacts(): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
+        capacity: { defaultMaxMembers: null },
         authenticatedAuthority: {
             principalId: 'member',
             sessionId: 'member-session'

@@ -113,7 +113,7 @@ export type GroupMutationCommand =
                 & Readonly<{
                     /** Null on principal commands; the retry leg's causal fence when internal. */
                     expectedFormationEpoch: number | null;
-                    /** Null preserves the stored or absent-policy landing decision. */
+                    /** Null preserves the stored policy's landing decision. */
                     landing: GroupTopologyReconfigureLanding | null;
                 }>;
         }>
@@ -476,12 +476,8 @@ export interface GroupMutationFacts {
     readonly resolvedJoinCode: string | null;
     readonly joinCodeVerifier: string | null;
     readonly internalAuthority: (typeof GROUP_MUTATION_INTERNAL_AUTHORITY_MODES)[number];
-    /**
-     * Operational capacity defaults captured at preparation time; absent when
-     * the runtime configured no defaults, which preserves stored-cap-only
-     * admission and keeps pre-existing durable preparations valid.
-     */
-    readonly capacity?: GroupPolicyCapacityConfig;
+    /** Operational capacity defaults captured completely at preparation time. */
+    readonly capacity: GroupPolicyCapacityConfig;
     readonly authenticatedAuthority:
         | Readonly<{
             principalId: string;

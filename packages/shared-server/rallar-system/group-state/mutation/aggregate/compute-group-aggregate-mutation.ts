@@ -108,6 +108,7 @@ export function computeCreate(
         initialPresenceSummary: toInitialGroupPresenceSummaryCandidate(summary, read.presenceSummary),
         presenceAdmission: null,
         eventType: 'group-created',
+        lifecyclePolicy: resolveCreateGroupLifecyclePolicy(command),
         presenceSummaryWork: 'enqueue',
         extraOutboxEntries: computeFormationTimerEntries({
             command,
@@ -259,6 +260,7 @@ function groupWrite(input: GroupWriteInput): GroupMutationComputed {
         members: [],
         initialPresenceSummary: null,
         eventType,
+        lifecyclePolicy: null,
         presenceSummaryWork: 'enqueue'
     });
 }
