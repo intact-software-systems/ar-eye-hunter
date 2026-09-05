@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 import { tryWith } from '@shared/resilience/TryWith.ts';
 import postgres from 'postgres';
 
@@ -13,7 +14,6 @@ import {
     type PGliteBlackBoxSnapshotPublisher
 } from './pglite-black-box-evidence-snapshot.ts';
 import { createPGliteSqlClient } from './pglite-sql-adapter.ts';
-import { POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID } from './postgres-timestamp-without-time-zone-oid.ts';
 
 export interface ApiV1DatabaseLifecycle {
     readonly database: PSqlSql;
@@ -249,12 +249,7 @@ const PRODUCTION_OPERATIONS: ApiV1DatabaseLifecycleOperations = {
             max: input.max,
             idle_timeout: input.idleTimeoutSeconds,
             types: {
-                timestampWithoutTimeZone: {
-                    to: POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID,
-                    from: [POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID],
-                    serialize: (value: string) => value,
-                    parse: (value: string) => value
-                }
+                timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType()
             }
         })),
     readyPostgres: async (client) => {

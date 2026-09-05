@@ -1,4 +1,5 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import { fromCanonicalGroupTopologyConfigPatch, toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -180,7 +181,13 @@ async function main(): Promise<void> {
 
     const inputValue = readInputValue();
     const traceFilePath = readWorkerTraceFilePath(inputValue);
-    const postgresSql = postgres(databaseUrl, { max: 2, idle_timeout: 1 });
+    const postgresSql = postgres(databaseUrl, {
+        max: 2,
+        idle_timeout: 1,
+        types: {
+            timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType()
+        }
+    });
     const sql = toPSqlSql(postgresSql);
 
     try {

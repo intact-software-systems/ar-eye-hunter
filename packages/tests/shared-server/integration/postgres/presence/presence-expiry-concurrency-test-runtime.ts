@@ -1,4 +1,5 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 import type { RuntimeStateEntry, RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ClientSessionRef } from '@shared/api/client-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -20,7 +21,13 @@ type PostgresSql =
     }>;
 type PostgresFactory = (
     databaseUrl: string,
-    options: Readonly<{ max: number; idle_timeout: number; }>
+    options: Readonly<{
+        max: number;
+        idle_timeout: number;
+        types: Readonly<{
+            timestampWithoutTimeZone: ReturnType<typeof createPostgresTimestampWithoutTimeZoneTextType>;
+        }>;
+    }>
 ) => PostgresSql;
 const requestIdFor = createPostgresTestRequestIdFactory();
 
@@ -117,7 +124,13 @@ export async function cleanupRuntimeState(sql: PostgresSql, applicationId: strin
 export function createSql(databaseUrl: string, maxConnections = 1): PostgresSql {
     const postgres = createRequire(import.meta.url)('postgres') as PostgresFactory;
 
-    return postgres(databaseUrl, { max: maxConnections, idle_timeout: 1 });
+    return postgres(databaseUrl, {
+        max: maxConnections,
+        idle_timeout: 1,
+        types: {
+            timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType()
+        }
+    });
 }
 
 export function toRuntimeRepository(sql: PostgresSql): PSqlRuntimeStateRepository {

@@ -1,6 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID } from './postgres-timestamp-without-time-zone-oid.ts';
+import { POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 
 type PGliteQueryExecutor = Readonly<{
     query<T>(
