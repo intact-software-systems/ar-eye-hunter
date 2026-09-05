@@ -77,13 +77,15 @@ describe('PSqlQueueBox', () => {
         const repo = createRepo({
             replaceIfObserved
         });
+        repo.transaction.mockRejectedValue(
+            new Error('Exact compare-and-replace must not open a callback transaction')
+        );
 
         const queue = new PSqlQueueBox(repo as never);
         const returned = await queue.replaceIfObserved(previous, replacement);
 
         expect(returned).toBe(replacement);
         expect(replaceIfObserved).toHaveBeenCalledWith(previous, replacement);
-        expect(repo.transaction).not.toHaveBeenCalled();
     });
 
     it('skips entries that can no longer be reserved after selection', async () => {

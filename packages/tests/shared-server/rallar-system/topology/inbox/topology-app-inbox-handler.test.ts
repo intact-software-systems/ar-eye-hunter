@@ -151,7 +151,6 @@ describe('TopologyAppInboxHandler', () => {
         const context = await topologyContext([]);
         const computed = configWriteComputed();
         const policyCause = new Error('Topology config policy denied');
-        const writeComputedMutation = vi.fn();
         const handler = new TopologyAppInboxHandler({
             groupStateService: sessionReader([]),
             nowEpochMs: () => NOW_EPOCH_MS,
@@ -161,7 +160,9 @@ describe('TopologyAppInboxHandler', () => {
                     entry: context.entry,
                     completedAtEpochMs: NOW_EPOCH_MS
                 }),
-                writeComputedMutation
+                writeComputedMutation: async () => {
+                    throw new Error('Validation failures must not open a transaction');
+                }
             }
         });
 
@@ -182,7 +183,6 @@ describe('TopologyAppInboxHandler', () => {
                 reconfigureMutation: unusedReconfigureMutation()
             })
         ).rejects.toBe(policyCause);
-        expect(writeComputedMutation).not.toHaveBeenCalled();
     });
 
     it('rejects idempotency conflict before transaction or wake', async () => {
