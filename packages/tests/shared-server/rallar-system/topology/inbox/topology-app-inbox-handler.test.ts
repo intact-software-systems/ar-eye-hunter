@@ -104,6 +104,7 @@ describe('TopologyAppInboxHandler', () => {
                 }),
                 validate: vi.fn(() => {
                     phases.push('validate');
+                    return [];
                 }),
                 write: vi.fn(async () => {
                     phases.push('write');
@@ -146,6 +147,44 @@ describe('TopologyAppInboxHandler', () => {
         ]);
     });
 
+    it('throws the first mutation validation cause before the transaction', async () => {
+        const context = await topologyContext([]);
+        const computed = configWriteComputed();
+        const policyCause = new Error('Topology config policy denied');
+        const writeComputedMutation = vi.fn();
+        const handler = new TopologyAppInboxHandler({
+            groupStateService: sessionReader([]),
+            nowEpochMs: () => NOW_EPOCH_MS,
+            wakeQueue: vi.fn(),
+            transactionWriter: {
+                readCompletionFacts: (context) => ({
+                    entry: context.entry,
+                    completedAtEpochMs: NOW_EPOCH_MS
+                }),
+                writeComputedMutation
+            }
+        });
+
+        await expect(
+            handler.processMutation(context, {
+                configMutationService: {
+                    read: vi.fn(async () => configRead()),
+                    compute: vi.fn(() => computed),
+                    validate: vi.fn(() => [{
+                        code: 'policy-denied',
+                        path: ['command'],
+                        message: policyCause.message,
+                        cause: policyCause
+                    }]),
+                    write: vi.fn(),
+                    recordCommittedWrite: vi.fn()
+                },
+                reconfigureMutation: unusedReconfigureMutation()
+            })
+        ).rejects.toBe(policyCause);
+        expect(writeComputedMutation).not.toHaveBeenCalled();
+    });
+
     it('rejects idempotency conflict before transaction or wake', async () => {
         const phases: string[] = [];
         const context = await topologyContext(phases);
@@ -167,7 +206,7 @@ describe('TopologyAppInboxHandler', () => {
                             receivedCommandHash: 'sha256:received'
                         }) as const
                 ),
-                validate: vi.fn(),
+                validate: vi.fn(() => []),
                 write: vi.fn(async () => await Promise.reject(new Error('Unexpected config write'))),
                 recordCommittedWrite: vi.fn()
             },
@@ -211,6 +250,7 @@ describe('TopologyAppInboxHandler', () => {
                 }),
                 validate: vi.fn(() => {
                     phases.push('validate');
+                    return [];
                 }),
                 write: vi.fn(async () => {
                     phases.push('write');

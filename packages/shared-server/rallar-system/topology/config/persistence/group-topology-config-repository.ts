@@ -6,19 +6,19 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
+import {
+    assertGroupTopologyConfigGeneration,
+    assertGroupTopologyConfigInvariantGeneration,
+    assertGroupTopologyConfigMutationRecord,
+    assertStoredGroupTopologyConfig,
+    assertStoredGroupTopologyOverride
+} from '../mutation/assert-topology-config-records.ts';
 import type {
     GroupTopologyConfigGeneration,
     GroupTopologyConfigGenerationTarget,
     GroupTopologyConfigInvariantGeneration,
     GroupTopologyConfigMutationRecord
 } from '../mutation/group-topology-config-mutation-contracts.ts';
-import {
-    validateGroupTopologyConfigGeneration,
-    validateGroupTopologyConfigInvariantGeneration,
-    validateGroupTopologyConfigMutationRecord,
-    validateStoredGroupTopologyConfig,
-    validateStoredGroupTopologyOverride
-} from '../mutation/validate-topology-config-records.ts';
 import {
     assertRetainedGroupTopologyEntry,
     decodeGroupTopologyGenerationEntry,
@@ -128,7 +128,7 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
         config: StoredGroupTopologyConfig,
         expectedRevision: number | null
     ): Promise<GroupTopologyConfigCommitResult> {
-        validateStoredGroupTopologyConfig(config, config.groupRef);
+        assertStoredGroupTopologyConfig(config, config.groupRef);
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
                 GROUP_TOPOLOGY_CONFIG_NAMESPACE,
@@ -186,7 +186,7 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
         override: StoredGroupTopologyOverride,
         expectedRevision: number | null
     ): Promise<GroupTopologyConfigCommitResult> {
-        validateStoredGroupTopologyOverride(override, override.groupRef);
+        assertStoredGroupTopologyOverride(override, override.groupRef);
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
                 GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
@@ -258,7 +258,7 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
     async insertMutationRecord(
         record: GroupTopologyConfigMutationRecord
     ): Promise<GroupTopologyConfigCommitResult> {
-        validateGroupTopologyConfigMutationRecord(record, {
+        assertGroupTopologyConfigMutationRecord(record, {
             groupRef: record.groupRef,
             requestId: record.requestId
         });
@@ -307,7 +307,7 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
         generation: GroupTopologyConfigGeneration,
         expectedRevision: number | null
     ): Promise<GroupTopologyConfigCommitResult> {
-        validateGroupTopologyConfigGeneration(generation, generation.groupRef, generation.target);
+        assertGroupTopologyConfigGeneration(generation, generation.groupRef, generation.target);
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
                 GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
@@ -355,7 +355,7 @@ export class GroupTopologyConfigRepository extends GroupTopologyConfigSourceRepo
         generation: GroupTopologyConfigInvariantGeneration,
         expectedRevision: number | null
     ): Promise<GroupTopologyConfigCommitResult> {
-        validateGroupTopologyConfigInvariantGeneration(generation, generation.groupRef);
+        assertGroupTopologyConfigInvariantGeneration(generation, generation.groupRef);
         const result = expectedRevision === null
             ? await this.putValueIfAbsent(
                 GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,

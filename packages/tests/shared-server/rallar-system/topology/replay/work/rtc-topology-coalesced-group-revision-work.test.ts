@@ -5,8 +5,8 @@ import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     type CoalescedAppOutboxWorkData,
     type CoalescedAppOutboxWorkEnvelope
-} from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
-import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
+} from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
+import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
     computeTopologyReplanDueAt,
@@ -114,6 +114,9 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
         expect(envelope.resourceId).toBe(toRtcTopologyCoalescedGroupRevisionResourceId(OVERLAY_ID));
         expect(envelope.resourceId).toBe(`${OVERLAY_ID}:group-revision`);
         expect(envelope.data.kind).toBe('group-revision');
+        if (envelope.data.kind !== 'group-revision') {
+            throw new Error('Expected group-revision topology work');
+        }
         expect(envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]).toMatchObject({
             generation: 1,
             requestedAtEpochMs: BASE_EPOCH_MS,

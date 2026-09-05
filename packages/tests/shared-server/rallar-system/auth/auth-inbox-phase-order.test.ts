@@ -99,7 +99,6 @@ describe('auth inbox mutation phase order', () => {
             'read',
             'completion',
             'compute',
-            'assert',
             'validate',
             'transaction',
             'write'
@@ -160,7 +159,6 @@ describe('auth inbox mutation phase order', () => {
             'read',
             'completion',
             'compute',
-            'assert',
             'validate'
         ]);
     });
@@ -228,9 +226,6 @@ function createMutationService(input: MutationServiceRecording): AuthMutationSer
             input.actions.push('compute');
             return input.computed;
         },
-        assertComputed: () => {
-            input.actions.push('assert');
-        },
         validate: () => {
             input.actions.push('validate');
             return input.validationIssues;
@@ -252,7 +247,6 @@ function createUnreachableMutationService(actions: string[]): AuthMutationServic
         serviceId: 'auth-service',
         read: async () => unreachable(),
         compute: unreachable,
-        assertComputed: unreachable,
         validate: unreachable,
         write: async () => unreachable()
     };

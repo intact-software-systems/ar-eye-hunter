@@ -15,11 +15,11 @@ import type {
 } from '../delivery/rtc-topology-delivery-contracts.ts';
 import type { RtcTopologyDeliveryPublicationReader } from '../delivery/rtc-topology-delivery-publication-reader.ts';
 import {
+    assertRtcTopologyDeliveryLogEntry,
+    assertRtcTopologyDeliveryPublicationReadInput,
+    assertRtcTopologyDeliveryStreamId,
     readRtcTopologyDeliverySafeInteger,
     RtcTopologyDeliveryCorruptionError,
-    validateRtcTopologyDeliveryLogEntry,
-    validateRtcTopologyDeliveryPublicationReadInput,
-    validateRtcTopologyDeliveryStreamId,
     type RtcTopologyDeliveryBoundaryNumber
 } from '../delivery/rtc-topology-delivery-validation.ts';
 import { compactRtcTopologyDeliveryEntries } from './compact-rtc-topology-delivery-entries.ts';
@@ -64,8 +64,8 @@ export class PSqlRtcTopologyDeliveryRepository
     async registerStream(
         input: RtcTopologyDeliveryStreamRegistrationInput
     ): Promise<RtcTopologyDeliveryStreamRegistrationResult> {
-        validateRtcTopologyDeliveryStreamId(input.streamId);
-        validatePositiveDuration(input.leaseDurationMs);
+        assertRtcTopologyDeliveryStreamId(input.streamId);
+        assertPositiveDuration(input.leaseDurationMs);
         const rows = await this.sql<StreamRow[]>`
       insert into rtc_topology_delivery_stream (
         stream_id,
@@ -101,7 +101,7 @@ export class PSqlRtcTopologyDeliveryRepository
         const result = await appendOrReadExistingEntry(transaction, input);
         if (result) {
             const entry = toLogEntry(result);
-            validateRtcTopologyDeliveryLogEntry(entry, input);
+            assertRtcTopologyDeliveryLogEntry(entry, input);
             return { status: result.result_kind, entry };
         }
 
@@ -125,7 +125,7 @@ export class PSqlRtcTopologyDeliveryRepository
     async findPublicationDelivery(
         input: RtcTopologyDeliveryPublicationReadInput
     ): Promise<RtcTopologyDeliveryLogEntry | undefined> {
-        validateRtcTopologyDeliveryPublicationReadInput(input);
+        assertRtcTopologyDeliveryPublicationReadInput(input);
         const rows = await this.sql<DeliveryLogRow[]>`
       select
         publisher_stream_id::text,
@@ -158,8 +158,8 @@ export class PSqlRtcTopologyDeliveryRepository
     async renewStreamLease(
         input: RtcTopologyDeliveryStreamLeaseRenewalInput
     ): Promise<RtcTopologyDeliveryStreamLeaseRenewalResult> {
-        validateRtcTopologyDeliveryStreamId(input.streamId);
-        validatePositiveDuration(input.leaseDurationMs);
+        assertRtcTopologyDeliveryStreamId(input.streamId);
+        assertPositiveDuration(input.leaseDurationMs);
         const rows = await this.sql<StreamRow[]>`
       update rtc_topology_delivery_stream
       set lease_expires_at = clock_timestamp() +
@@ -368,7 +368,7 @@ function toLogEntry(row: DeliveryLogRow): RtcTopologyDeliveryLogEntry {
     };
 }
 
-function validatePositiveDuration(durationMs: number): void {
+function assertPositiveDuration(durationMs: number): void {
     if (!Number.isSafeInteger(durationMs) || durationMs <= 0) {
         throw new TypeError('RTC topology delivery lease duration must be a positive safe integer');
     }

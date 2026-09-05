@@ -2,13 +2,14 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
 import type { RtcRttRefinementService } from '../../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
 import type { RtcTopologyMutationComputed, RtcTopologyMutationRead } from '../../mutation/rtc-topology-mutations.ts';
-import type { RtcTopologyWorkRuntime } from '../../mutation/rtc-topology-outbox-work.ts';
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyPlanningService } from '../../planning/group-topology-planning-service.ts';
 import { computeRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
@@ -63,7 +64,7 @@ import {
 } from './group-activation-status-observer.ts';
 
 interface RtcTopologyWorkHandlerOptions {
-    readonly runtime: RtcTopologyWorkRuntime;
+    readonly outboxQueueReader: OutboxQueueReader;
     readonly database: PSqlSql;
     readonly topologyPlanning: Pick<
         GroupTopologyPlanningService,
@@ -119,7 +120,10 @@ interface ProcessRtcTopologyWorkInput {
 async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promise<void> {
     const { options, message, entry, deferredCriterionPetitioner } = input;
     const reservationFinish = computeRtcTopologyReservationFinish(entry, new Date());
-    const workEnvelope = readRtcTopologyWorkEnvelope(message, options.runtime.workType);
+    const workEnvelope = readRtcTopologyWorkEnvelope(
+        message,
+        AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
+    );
     const workId = toRtcTopologyExecutionId(workEnvelope);
     const mutationRead = await options.executionRepository.readTopologyMutation(
         workEnvelope.data.groupSnapshot.group,
@@ -152,7 +156,10 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
             publisherStreamId: options.topologyDelivery?.publisherStreamId
         };
         const computedWrite = computeRtcTopologyWorkWrite(writeInput);
-        validateRtcTopologyWorkWrite(writeInput, computedWrite);
+        const issues = validateRtcTopologyWorkWrite(writeInput, computedWrite);
+        if (issues[0] !== undefined) {
+            throw issues[0].cause;
+        }
         await writeAcceptedRtcTopologyWork({
             options,
             accepted: rttRefinementSkip,
@@ -176,7 +183,10 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
     };
     const computeStartedAtMs = options.topologyPlanning.readDurationNowMs();
     const computed = await computeRtcTopologyWork(computationInput);
-    await validateRtcTopologyWork(computationInput, computed);
+    const issues = await validateRtcTopologyWork(computationInput, computed);
+    if (issues[0] !== undefined) {
+        throw issues[0].cause;
+    }
     await writeAcceptedRtcTopologyWork({
         options,
         accepted: computed.accepted,
@@ -196,7 +206,10 @@ async function processLoadedRtcTopologyWork(
         publisherStreamId: options.topologyDelivery?.publisherStreamId
     };
     const computed = computeRtcTopologyReplayWrite(replayInput);
-    validateRtcTopologyReplayWrite(replayInput, computed);
+    const issues = validateRtcTopologyReplayWrite(replayInput, computed);
+    if (issues[0] !== undefined) {
+        throw issues[0].cause;
+    }
     await writeRtcTopologyPublicationTransaction({
         database: options.database,
         executionRepository: options.executionRepository,
@@ -217,7 +230,7 @@ async function readLoadedRtcTopologyWork(
     }
     const outboxKey = computeRtcTopologyPublicationOutbox(publication).key;
     const [outbox, delivery] = await Promise.all([
-        options.runtime.outboxQueueReader.outbox.getItem(outboxKey),
+        options.outboxQueueReader.outbox.getItem(outboxKey),
         options.topologyDelivery
             ? options.topologyDelivery.reader.findPublicationDelivery({
                 groupRef: publication.groupRef,

@@ -73,6 +73,13 @@ export interface GroupTopologyConfigMutationFacts {
     readonly attemptCount: number;
 }
 
+export interface TopologyConfigMutationValidationIssue {
+    readonly code: string;
+    readonly path: readonly (string | number)[];
+    readonly message: string;
+    readonly cause: Error;
+}
+
 export type TopologyConfigWriteGuard =
     | Readonly<{
         target: 'config';

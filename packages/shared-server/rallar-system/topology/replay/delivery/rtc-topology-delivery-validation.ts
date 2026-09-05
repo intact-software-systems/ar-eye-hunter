@@ -1,7 +1,7 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
-import { validateRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
+import { assertRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
 import { validateRtcTopologyPublication } from '../../publication/validate-rtc-topology-publication.ts';
 import type {
     RtcTopologyDeliveryAppend,
@@ -64,11 +64,11 @@ export function computeRtcTopologyDeliveryAppend(
     publication: RtcTopologyPublication,
     outbox: ResourceEntry
 ): RtcTopologyDeliveryAppend {
-    validateRtcTopologyDeliveryStreamId(publisherStreamId);
+    assertRtcTopologyDeliveryStreamId(publisherStreamId);
     validateRtcTopologyPublication(publication, publication.groupRef);
-    validateDeliveryGroupRef(publication);
+    assertDeliveryGroupRef(publication);
 
-    validateRtcTopologyPublicationOutbox(publication, outbox);
+    assertRtcTopologyPublicationOutbox(publication, outbox);
 
     const retainUntilEpochMs = readRtcTopologyDeliverySafeInteger(
         publication.message.constraints?.expiresAtMs,
@@ -92,16 +92,16 @@ export function computeRtcTopologyDeliveryAppend(
     };
 }
 
-export function validateRtcTopologyDeliveryPublicationReadInput(
+export function assertRtcTopologyDeliveryPublicationReadInput(
     input: RtcTopologyDeliveryPublicationReadInput
 ): void {
-    validateNonEmpty(input.groupRef.applicationId, 'application ID');
-    validateNonEmpty(input.groupRef.workspaceId, 'workspace ID');
-    validateNonEmpty(input.groupRef.groupId, 'group ID');
-    validateNonEmpty(input.publicationId, 'publication ID');
+    assertNonEmpty(input.groupRef.applicationId, 'application ID');
+    assertNonEmpty(input.groupRef.workspaceId, 'workspace ID');
+    assertNonEmpty(input.groupRef.groupId, 'group ID');
+    assertNonEmpty(input.publicationId, 'publication ID');
 }
 
-export function validateRtcTopologyDeliveryLogEntry(
+export function assertRtcTopologyDeliveryLogEntry(
     entry: RtcTopologyDeliveryLogEntry,
     expected: RtcTopologyDeliveryAppendInput
 ): void {
@@ -121,13 +121,13 @@ export function validateRtcTopologyDeliveryLogEntry(
     }
 }
 
-export function validateRtcTopologyDeliveryStreamId(streamId: string): void {
+export function assertRtcTopologyDeliveryStreamId(streamId: string): void {
     if (!UUID_PATTERN.test(streamId)) {
         throw new TypeError('RTC topology publisher stream ID must be a UUID');
     }
 }
 
-function validateDeliveryGroupRef(publication: RtcTopologyPublication): void {
+function assertDeliveryGroupRef(publication: RtcTopologyPublication): void {
     const { applicationId, workspaceId, groupId } = publication.groupRef;
     if (
         typeof applicationId !== 'string' ||
@@ -141,7 +141,7 @@ function validateDeliveryGroupRef(publication: RtcTopologyPublication): void {
     }
 }
 
-function validateNonEmpty(value: string, label: string): void {
+function assertNonEmpty(value: string, label: string): void {
     if (value.trim().length === 0) {
         throw new TypeError(`RTC topology delivery ${label} must be non-empty`);
     }

@@ -6,7 +6,7 @@ import type {
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
-import { readDefaultGroupTopologyConfig } from '../group-topology-config.ts';
+import { resolveDefaultGroupTopologyConfig } from '../group-topology-config.ts';
 import { computeTopologyConfigRuntimeWrites } from './compute-topology-config-runtime-writes.ts';
 import type {
     GroupTopologyConfigGeneration,
@@ -54,7 +54,7 @@ function computePutConfig(
     const config: StoredGroupTopologyConfig = {
         groupRef: copyGroupRef(command.aggregateRef),
         config: applyGroupTopologyConfigPatch({
-            fallback: readDefaultGroupTopologyConfig(topologyMutation.serverDefaults),
+            fallback: resolveDefaultGroupTopologyConfig(topologyMutation.serverDefaults),
             current: current?.value.config,
             patch: command.input.config ?? {}
         }),
@@ -93,7 +93,7 @@ function computePutOverride(
         groupRef: copyGroupRef(command.aggregateRef),
         config: applyGroupTopologyConfigPatch({
             fallback: read.config?.value.config ??
-                readDefaultGroupTopologyConfig(topologyMutation.serverDefaults),
+                resolveDefaultGroupTopologyConfig(topologyMutation.serverDefaults),
             current: current?.value.config,
             patch: command.input.config ?? {}
         }),

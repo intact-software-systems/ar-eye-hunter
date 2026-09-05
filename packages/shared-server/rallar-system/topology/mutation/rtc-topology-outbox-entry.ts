@@ -55,7 +55,7 @@ export type ComputedRtcTopologyOutbox =
         }>
     );
 
-interface RtcTopologyGroupRevisionWork {
+export interface RtcTopologyGroupRevisionWork {
     readonly kind: 'group-revision';
     readonly overlayId: string;
     readonly groupSnapshot: GroupSnapshot;
@@ -66,7 +66,7 @@ interface RtcTopologyGroupRevisionWork {
     readonly publish: boolean;
 }
 
-interface RtcTopologyRttRefreshWork {
+export interface RtcTopologyRttRefreshWork {
     readonly kind: 'rtt-refresh';
     readonly overlayId: string;
     readonly groupSnapshot: GroupSnapshot;

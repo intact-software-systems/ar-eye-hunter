@@ -12,7 +12,7 @@ import type {
     RtcTopologyDeliveryStreamRegistrationInput,
     RtcTopologyDeliveryStreamRegistrationResult
 } from './rtc-topology-delivery-contracts.ts';
-import { validateRtcTopologyDeliveryStreamId } from './rtc-topology-delivery-validation.ts';
+import { assertRtcTopologyDeliveryStreamId } from './rtc-topology-delivery-validation.ts';
 export interface RtcTopologyDeliveryStreamMaintenancePort {
     registerStream(
         input: RtcTopologyDeliveryStreamRegistrationInput
@@ -75,7 +75,7 @@ export class RtcTopologyDeliveryStreamService {
     #compactionRunning = false;
 
     constructor(options: RtcTopologyDeliveryStreamServiceOptions) {
-        validateRtcTopologyDeliveryStreamId(options.streamId);
+        assertRtcTopologyDeliveryStreamId(options.streamId);
         this.#streamId = options.streamId;
         this.#repository = options.repository;
         this.#policy = options.policy;

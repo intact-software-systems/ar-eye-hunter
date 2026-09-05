@@ -11,7 +11,7 @@ import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     type CoalescedAppOutboxWorkMetadata
-} from '../../../app-outbox/coalesced-app-outbox-work-service.ts';
+} from '../../../app-outbox/coalesced-app-outbox-work.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import {
     readRtcRttTopologyOutboxIdentity,
@@ -22,7 +22,7 @@ import { validateRtcRttMeasurement } from '../../../rtc-rtt/persistence/rtc-rtt-
 import type {
     RtcTopologyGroupRevisionWork,
     RtcTopologyRttRefreshWork
-} from '../../mutation/rtc-topology-outbox-work.ts';
+} from '../../mutation/rtc-topology-outbox-entry.ts';
 
 export interface RtcTopologyWorkEnvelope<T extends object> {
     readonly type: string;
@@ -34,10 +34,13 @@ export interface RtcTopologyWorkEnvelope<T extends object> {
 }
 
 export type PersistedRtcTopologyWork =
-    & (RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork)
-    & Readonly<{
-        [COALESCED_APP_OUTBOX_WORK_FIELD]?: CoalescedAppOutboxWorkMetadata;
-    }>;
+    | (
+        & RtcTopologyGroupRevisionWork
+        & Readonly<{
+            [COALESCED_APP_OUTBOX_WORK_FIELD]?: CoalescedAppOutboxWorkMetadata;
+        }>
+    )
+    | RtcTopologyRttRefreshWork;
 
 interface RequireWorkKeysInput {
     readonly value: JsonWireObject;
@@ -76,7 +79,9 @@ export function readRtcTopologyWorkEnvelope(
 export function toRtcTopologyExecutionId(
     envelope: RtcTopologyWorkEnvelope<PersistedRtcTopologyWork>
 ): string {
-    const metadata = envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD];
+    const metadata = envelope.data.kind === 'group-revision'
+        ? envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]
+        : undefined;
     return [
         envelope.topicId,
         envelope.contextId,
@@ -202,7 +207,7 @@ function readGroupRevisionWork(input: ReadRtcTopologyWorkVariantInput): Persiste
         work.sourceGroupStateCausalRevision,
         'RTC topology work source causal revision'
     );
-    validateWorkGroupCausalRevision(sourceGroupStateCausalRevision, commonWork.groupSnapshot);
+    assertWorkGroupCausalRevision(sourceGroupStateCausalRevision, commonWork.groupSnapshot);
     if (work.origin !== 'automatic' && work.origin !== 'commanded') {
         throw new TypeError('RTC topology group-revision work origin is invalid');
     }
@@ -222,20 +227,14 @@ function readRttRefreshWork(input: ReadRtcTopologyWorkVariantInput): PersistedRt
     requireWorkKeys({
         value: work,
         required: [...commonKeys, ...revision, 'rtt', 'refinementObservationId'],
-        allowed: [
-            ...commonKeys,
-            ...revision,
-            'rtt',
-            'refinementObservationId',
-            COALESCED_APP_OUTBOX_WORK_FIELD
-        ],
+        allowed: [...commonKeys, ...revision, 'rtt', 'refinementObservationId'],
         label: 'RTC topology work data'
     });
     const requestedGroupStateCausalRevision = readWorkGroupCausalRevision(
         work.requestedGroupStateCausalRevision,
         'RTC topology RTT group causal revision'
     );
-    validateWorkGroupCausalRevision(requestedGroupStateCausalRevision, commonWork.groupSnapshot);
+    assertWorkGroupCausalRevision(requestedGroupStateCausalRevision, commonWork.groupSnapshot);
     requireWorkInteger(work.requestedRttVersion, 'RTC topology RTT version');
     validateRtcRttMeasurement(work.rtt);
     requireWorkString(work.refinementObservationId, 'RTC topology RTT refinement observation id');
@@ -246,17 +245,12 @@ function readRttRefreshWork(input: ReadRtcTopologyWorkVariantInput): PersistedRt
     ) {
         throw new TypeError('RTC topology RTT observation differs from work identity');
     }
-    const metadata = readOptionalCoalescedWorkMetadata(work);
-    if (metadata && durableIdentity) {
-        throw new TypeError('RTC topology RTT work cannot combine coalesced and durable identity');
-    }
     if (
-        !metadata &&
-        (!durableIdentity ||
-            durableIdentity.receiptId !== work.refinementObservationId ||
-            durableIdentity.version !== rtt.version)
+        !durableIdentity ||
+        durableIdentity.receiptId !== work.refinementObservationId ||
+        durableIdentity.version !== rtt.version
     ) {
-        throw new TypeError('RTC topology RTT work lacks durable or coalesced identity');
+        throw new TypeError('RTC topology RTT work lacks its durable identity');
     }
     return {
         kind: 'rtt-refresh',
@@ -264,8 +258,7 @@ function readRttRefreshWork(input: ReadRtcTopologyWorkVariantInput): PersistedRt
         requestedGroupStateCausalRevision,
         requestedRttVersion: work.requestedRttVersion,
         rtt,
-        refinementObservationId: work.refinementObservationId,
-        ...optionalCoalescedMetadata(metadata)
+        refinementObservationId: work.refinementObservationId
     };
 }
 
@@ -288,7 +281,7 @@ function readWorkGroupCausalRevision(
     };
 }
 
-function validateWorkGroupCausalRevision(
+function assertWorkGroupCausalRevision(
     revision: GroupStateCausalRevision,
     snapshot: GroupSnapshot
 ): void {

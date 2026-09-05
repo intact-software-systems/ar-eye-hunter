@@ -1,9 +1,9 @@
+import { assertGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/assert-topology-config-records.ts';
 import { computeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-mutation.ts';
 import { validateTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation.ts';
-import { validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts';
 import { describe, expect, it } from 'vitest';
 import {
-    createTopologyConfigMutationTestInput,
+    createDefaultTopologyConfigMutationTestInput,
     createTopologyTestAuthorityGuard,
     createTopologyTestGroupRef,
     createTopologyTestGroupSnapshot,
@@ -26,29 +26,27 @@ describe('group topology config mutation compute', () => {
         expect(first).toEqual(second);
         expect(laterPolicy).toEqual(first);
         expect(input).toEqual(before);
-        expect(() => validateTopologyConfigMutation({ ...input, computed: first })).not.toThrow();
-        expect(() => validateTopologyConfigMutation({ ...input, computed: second })).not.toThrow();
-        expect(() =>
-            validateTopologyConfigMutation({
-                ...laterPolicyInput,
-                computed: laterPolicy
-            })
-        ).not.toThrow();
+        expect(validateTopologyConfigMutation({ ...input, computed: first })).toEqual([]);
+        expect(validateTopologyConfigMutation({ ...input, computed: second })).toEqual([]);
+        expect(validateTopologyConfigMutation({
+            ...laterPolicyInput,
+            computed: laterPolicy
+        })).toEqual([]);
 
         if (first.outcome !== 'write') {
             throw new Error('Expected an applied topology config mutation');
         }
         expect(() =>
-            validateMutationRecord(input, {
+            assertMutationRecord(input, {
                 ...first.receipt,
                 outboxIds: ['state-mutation-attacker-selected']
             })
         ).toThrow('Topology config receipt outbox identity is invalid');
-        expect(() => validateMutationRecord(input, { ...first.receipt, acceptedConfig: null })).toThrow(
+        expect(() => assertMutationRecord(input, { ...first.receipt, acceptedConfig: null })).toThrow(
             'accepted config does not match operation'
         );
         expect(() =>
-            validateMutationRecord(input, {
+            assertMutationRecord(input, {
                 ...first.receipt,
                 acceptedConfig: { topologyKind: 'tree' } as WriteReceipt['acceptedConfig']
             })
@@ -56,7 +54,7 @@ describe('group topology config mutation compute', () => {
     });
 
     it('clears durable and override fields back to their immediate fallback', () => {
-        const durableInput = createTopologyConfigMutationTestInput({
+        const durableInput = createDefaultTopologyConfigMutationTestInput({
             operation: 'putConfig',
             config: { degreeLimit: null },
             durableDegreeLimit: 9,
@@ -68,7 +66,7 @@ describe('group topology config mutation compute', () => {
         }
         expect(durable.result.config.config.degreeLimit).toBe(5);
 
-        const overrideInput = createTopologyConfigMutationTestInput({
+        const overrideInput = createDefaultTopologyConfigMutationTestInput({
             operation: 'putOverride',
             config: { degreeLimit: null },
             durableDegreeLimit: 4,
@@ -123,8 +121,8 @@ function deterministicMutationInput() {
     });
 }
 
-function validateMutationRecord(input: DeterministicMutationInput, receipt: WriteReceipt) {
-    return validateGroupTopologyConfigMutationRecord(
+function assertMutationRecord(input: DeterministicMutationInput, receipt: WriteReceipt) {
+    return assertGroupTopologyConfigMutationRecord(
         {
             groupRef: input.command.aggregateRef,
             requestId: input.command.requestId,

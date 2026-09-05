@@ -395,7 +395,7 @@ describe('authoritative mutation guidance integrity', () => {
         '%s distinguishes downstream QueueBox retries from AppInbox ingress retries',
         (filePath) => {
             expectAllNormalized(readRepo(filePath), [
-                'RtcTopologyOutboxWork',
+                'RTC topology work handler',
                 'ResourceInbox/QueueBox attempt boundary',
                 'neither service owns the transaction or retry boundary'
             ]);

@@ -8,18 +8,17 @@ import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts
 import { validateComputedProjection } from '../../../computed-data-validation.ts';
 import {
     computeTopologyMutation,
-    validateTopologyMutation,
     type RtcTopologyMutationComputed,
     type RtcTopologyMutationInput
 } from '../../mutation/rtc-topology-mutations.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
-import { validateRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
+import { assertRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
 import type { RtcTopologyPlanningObservation } from '../../runtime/rtc-topology-metrics.ts';
 import type { RtcTopologyDeliveryLogEntry } from '../delivery/rtc-topology-delivery-contracts.ts';
 import {
-    RtcTopologyDeliveryCorruptionError,
-    validateRtcTopologyDeliveryLogEntry
+    assertRtcTopologyDeliveryLogEntry,
+    RtcTopologyDeliveryCorruptionError
 } from '../delivery/rtc-topology-delivery-validation.ts';
 import { computePublicationConnectTriggerRequests } from './group-connect-trigger-requests.ts';
 import { computeRtcTopologyInputFingerprintWrite } from './rtc-topology-input-fingerprint.ts';
@@ -170,20 +169,8 @@ export function computeRtcTopologyWorkWrite(
 export function validateRtcTopologyWorkWrite(
     input: ComputeRtcTopologyWorkWriteInput,
     computed: AcceptedRtcTopologyWorkWrite
-): void {
-    if (input.accepted.decision === 'accepted') {
-        validateTopologyMutation({
-            ...input.accepted.mutationInput,
-            computed: input.accepted.computed
-        });
-    }
-    const expected = computeRtcTopologyWorkWrite(input);
-    const issue = validateComputedProjection(expected, computed, 'computed')[0];
-    if (issue !== undefined) {
-        throw new TypeError(
-            `RTC topology work write differs from its canonical computation: ${issue.message}`
-        );
-    }
+): ReturnType<typeof validateComputedProjection> {
+    return validateComputedProjection(computeRtcTopologyWorkWrite(input), computed, 'computed');
 }
 
 export function computeRtcTopologyReplayWrite(
@@ -201,7 +188,7 @@ export function computeRtcTopologyReplayWrite(
         );
     }
     try {
-        validateRtcTopologyPublicationOutbox(computed.publication, outbox);
+        assertRtcTopologyPublicationOutbox(computed.publication, outbox);
     }
     catch {
         throw new RtcTopologyDeliveryCorruptionError(
@@ -218,7 +205,7 @@ export function computeRtcTopologyReplayWrite(
                 `RTC topology publication ${computed.publication.publicationId} has no durable delivery`
             );
         }
-        validateRtcTopologyDeliveryLogEntry(input.read.delivery, expectedDelivery);
+        assertRtcTopologyDeliveryLogEntry(input.read.delivery, expectedDelivery);
     }
     return {
         loaded: computed,
@@ -236,18 +223,8 @@ export function computeRtcTopologyReplayWrite(
 export function validateRtcTopologyReplayWrite(
     input: ComputeRtcTopologyReplayWriteInput,
     computed: ComputedRtcTopologyReplayWrite
-): void {
-    validateTopologyMutation({
-        ...toReplayMutationInput(input.read.mutation),
-        computed: computed.loaded
-    });
-    const expected = computeRtcTopologyReplayWrite(input);
-    const issue = validateComputedProjection(expected, computed, 'computed')[0];
-    if (issue !== undefined) {
-        throw new TypeError(
-            `RTC topology replay write differs from its canonical computation: ${issue.message}`
-        );
-    }
+): ReturnType<typeof validateComputedProjection> {
+    return validateComputedProjection(computeRtcTopologyReplayWrite(input), computed, 'computed');
 }
 
 function toReplayMutationInput(read: RtcTopologyMutationInput['read']): RtcTopologyMutationInput {

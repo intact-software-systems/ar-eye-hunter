@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import type { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
@@ -251,7 +250,7 @@ function createCriterionFingerprintFixture(
         topologyService,
         topologySnapshotRepository: snapshots
     }).planning;
-    const runtime = createRtcTopologyOutboxPublisher({ outboxQueueReader: new OutboxQueueReader(queue) });
+    const outboxQueueReader = new OutboxQueueReader(queue);
     const database = createAppInboxTestDatabase(queue, { replace: async (entry) => entry }, {
         runtimeRepository: repository,
         onStage: (stage) => {
@@ -262,7 +261,7 @@ function createCriterionFingerprintFixture(
         }
     });
     const handler = createRtcTopologyWorkHandler({
-        runtime,
+        outboxQueueReader,
         database,
         topologyPlanning: planning,
         executionRepository: new RtcTopologyExecutionRepository(repository),

@@ -45,7 +45,7 @@ describe('stale RTC topology publication', () => {
             currentGuard: { expectedRevision: 7, current },
             publication
         });
-        expect(() => validateTopologyMutation({ ...input, computed })).not.toThrow();
+        expect(validateTopologyMutation({ ...input, computed })).toEqual([]);
     });
 });
 

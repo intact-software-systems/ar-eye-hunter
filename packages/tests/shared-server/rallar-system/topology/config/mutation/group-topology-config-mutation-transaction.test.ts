@@ -11,14 +11,14 @@ import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/m
 
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
-    createTopologyConfigMutationTestInput,
+    createDefaultTopologyConfigMutationTestInput,
     deepFreezeTopologyTestValue
 } from './group-topology-config-mutation-test-fixtures.ts';
 
 describe('group topology config mutation phases', () => {
     it('computes override expiry from explicit command and read facts without a prepare phase', () => {
         const service = createService();
-        const mutation = createTopologyConfigMutationTestInput({ operation: 'putOverride' });
+        const mutation = createDefaultTopologyConfigMutationTestInput({ operation: 'putOverride' });
         const command = {
             ...mutation.command,
             commandHash: `sha256:${'a'.repeat(64)}`,
@@ -42,7 +42,8 @@ describe('group topology config mutation phases', () => {
                 acceptedExpiresAtEpochMs: 15_000
             }
         });
-        expect(() => service.validate({ command, read, attemptCount: 1, computed })).not.toThrow();
+        const validation = { command, read, attemptCount: 1, computed };
+        expect(service.validate(validation)).toEqual([]);
     });
 
     it('keeps compute and validate repeatable after explicit read facts are captured', () => {
@@ -50,7 +51,7 @@ describe('group topology config mutation phases', () => {
             throw new Error('Compute and validate must use the captured authority fact');
         };
         const service = createService(isPlatformAdmin);
-        const mutation = createTopologyConfigMutationTestInput();
+        const mutation = createDefaultTopologyConfigMutationTestInput();
         const read = deepFreezeTopologyTestValue({
             state: mutation.read,
             policyNowEpochMs: 1_000,
@@ -62,13 +63,15 @@ describe('group topology config mutation phases', () => {
         const second = service.compute(mutation.command, read, 1);
 
         expect(second).toEqual(first);
-        expect(() => service.validate({ command: mutation.command, read, attemptCount: 1, computed: first })).not.toThrow();
-        expect(() => service.validate({ command: mutation.command, read, attemptCount: 1, computed: second })).not.toThrow();
+        const firstValidation = { command: mutation.command, read, attemptCount: 1, computed: first };
+        const secondValidation = { command: mutation.command, read, attemptCount: 1, computed: second };
+        expect(service.validate(firstValidation)).toEqual([]);
+        expect(service.validate(secondValidation)).toEqual([]);
     });
 
     it('executes persistence-ready computed data without serializing in the transaction', async () => {
         const service = createService();
-        const mutation = createTopologyConfigMutationTestInput();
+        const mutation = createDefaultTopologyConfigMutationTestInput();
         const read = {
             state: mutation.read,
             policyNowEpochMs: 1_000,
@@ -76,7 +79,8 @@ describe('group topology config mutation phases', () => {
             serverDefaults: {}
         };
         const computed = service.compute(mutation.command, read, 1);
-        service.validate({ command: mutation.command, read, attemptCount: 1, computed });
+        const validation = { command: mutation.command, read, attemptCount: 1, computed };
+        expect(service.validate(validation)).toEqual([]);
         if (computed.outcome !== 'write') {
             throw new Error('Expected topology config write');
         }
@@ -96,7 +100,7 @@ describe('group topology config mutation phases', () => {
 
     it('executes each computed runtime write before the APP_OUTBOX write', async () => {
         const service = createService();
-        const mutation = createTopologyConfigMutationTestInput();
+        const mutation = createDefaultTopologyConfigMutationTestInput();
         const read = {
             state: mutation.read,
             policyNowEpochMs: 1_000,
@@ -104,7 +108,8 @@ describe('group topology config mutation phases', () => {
             serverDefaults: {}
         };
         const computed = service.compute(mutation.command, read, 1);
-        service.validate({ command: mutation.command, read, attemptCount: 1, computed });
+        const validation = { command: mutation.command, read, attemptCount: 1, computed };
+        expect(service.validate(validation)).toEqual([]);
         if (computed.outcome !== 'write') {
             throw new Error('Expected topology config write');
         }

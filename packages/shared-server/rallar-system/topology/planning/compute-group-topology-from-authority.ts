@@ -1,11 +1,11 @@
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupTopologyValidationIssue } from '@shared/api/graph-topology-management-types.ts';
 import { readGroupCreatedByPrincipalId, readGroupMemberSessionIds } from '@shared/api/group-client-views.ts';
 import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 import { filterRtcRttMeasurementsForGroup } from '../../rtc-rtt/policy/rtc-rtt-measurement-policy.ts';
-import { GroupTopologyValidationError } from '../group-topology-errors.ts';
 import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
 import type { RtcTopologyPlanningIntent } from '../runtime/rallar-rtc-topology-service.ts';
 import type { GroupTopologyPlanningAuthority } from './group-topology-planning-authority.ts';
@@ -68,29 +68,33 @@ export function computeGroupTopologyFromAuthority(
     return { ...result, action: 'planned' };
 }
 
-export function validateComputedGroupTopology(computed: ReconcileGroupTopologyResult): void {
-    validateComputedTopologySnapshot(computed.action === 'planned' ? computed.snapshot : computed.current);
+export function validateComputedGroupTopology(
+    computed: ReconcileGroupTopologyResult
+): readonly GroupTopologyValidationIssue[] {
+    return validateComputedTopologySnapshot(
+        computed.action === 'planned' ? computed.snapshot : computed.current
+    );
 }
 
-export function validateComputedTopologySnapshot(snapshot: RallarOverlayTopologySnapshot): void {
+export function validateComputedTopologySnapshot(
+    snapshot: RallarOverlayTopologySnapshot
+): readonly GroupTopologyValidationIssue[] {
     if (snapshot.state === 'removed') {
-        return;
+        return [];
     }
     const result = validateGroupTopologyNextHops({
         activeSessionIds: new Set(snapshot.activeSessionIds),
         nextHopsBySessionId: snapshot.nextHopsBySessionId,
         maxDegree: snapshot.degreeLimit
     });
-    if (!result.valid) {
-        throw new GroupTopologyValidationError(
-            result.issues.map((issue) => ({
-                code: issue.code,
-                path: issue.sessionId ? ['nextHopsBySessionId', issue.sessionId] : undefined,
-                message: issue.code,
-                details: issue
-            }))
-        );
-    }
+    return result.valid
+        ? []
+        : result.issues.map((issue) => ({
+            code: issue.code,
+            path: issue.sessionId ? ['nextHopsBySessionId', issue.sessionId] : undefined,
+            message: issue.code,
+            details: issue
+        }));
 }
 
 export function requireFrozenTopology(

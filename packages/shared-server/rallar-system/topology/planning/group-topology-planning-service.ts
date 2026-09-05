@@ -11,6 +11,7 @@ import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/gro
 import { filterRtcRttMeasurementsForGroup } from '../../rtc-rtt/policy/rtc-rtt-measurement-policy.ts';
 import type { GroupTopologyConfigQueryService } from '../config/group-topology-config-query-service.ts';
 import type { GroupTopologyServerOptions } from '../config/group-topology-config.ts';
+import { GroupTopologyValidationError } from '../group-topology-errors.ts';
 import { RTC_TOPOLOGY_REPLAY_RETENTION_MS } from '../replay/consumer/rtc-topology-replay-policy.ts';
 import {
     RallarRtcTopologyService,
@@ -153,7 +154,7 @@ export class GroupTopologyPlanningService {
             intent: 'full-rebuild',
             origin: 'automatic'
         });
-        validateComputedGroupTopology(computed);
+        this.assertValidComputedGroupTopology(computed);
         return {
             computed,
             computeDurationMs: this.readDurationNowMs() - startedAtMs
@@ -192,7 +193,11 @@ export class GroupTopologyPlanningService {
             ),
             { previous, topologyOptions: config.effective }
         );
-        validateComputedGroupTopology({ ...result, action: 'planned', planningObservation: null });
+        this.assertValidComputedGroupTopology({
+            ...result,
+            action: 'planned',
+            planningObservation: null
+        });
         const published = await this.publishIfRequested(
             group,
             result,
@@ -263,7 +268,11 @@ export class GroupTopologyPlanningService {
         if (!result) {
             return undefined;
         }
-        validateComputedGroupTopology({ ...result, action: 'planned', planningObservation: null });
+        this.assertValidComputedGroupTopology({
+            ...result,
+            action: 'planned',
+            planningObservation: null
+        });
         const published = await this.publishIfRequested(
             group,
             result,
@@ -283,6 +292,13 @@ export class GroupTopologyPlanningService {
             this.dependencies.topologyService.removeGroupTopology(group);
         }
         return Promise.resolve();
+    }
+
+    private assertValidComputedGroupTopology(computed: ReconcileGroupTopologyResult): void {
+        const issues = validateComputedGroupTopology(computed);
+        if (issues.length > 0) {
+            throw new GroupTopologyValidationError(issues);
+        }
     }
 
     /**

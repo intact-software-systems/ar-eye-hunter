@@ -12,7 +12,7 @@ import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction
 import { writeResourceInboxReservationFinish } from '../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
-import { CoalescedAppOutboxWorkService } from '../../app-outbox/coalesced-app-outbox-work-service.ts';
+import { writeCoalescedAppOutboxWork } from '../../app-outbox/coalesced-app-outbox-work.ts';
 import type { GroupFormationPresenceSummarySink } from '../../observability/formation-metrics.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../../topology/persistence/rtc-topology-errors.ts';
@@ -52,17 +52,11 @@ export interface GroupPresenceSummaryWorkOptions {
 
 export class GroupPresenceSummaryWork {
     private readonly now: () => number;
-    private readonly coalescedTopologyWorkService: CoalescedAppOutboxWorkService;
     private readonly options: GroupPresenceSummaryWorkOptions;
 
     public constructor(options: GroupPresenceSummaryWorkOptions) {
         this.options = options;
         this.now = options.now ?? Date.now;
-        this.coalescedTopologyWorkService = new CoalescedAppOutboxWorkService(
-            options.outboxQueueReader,
-            options.serviceId,
-            this.now
-        );
     }
 
     public async read(
@@ -180,7 +174,7 @@ export class GroupPresenceSummaryWork {
             await writeAppOutboxInsert(transaction, outboxWrite);
         }
         if (computed.topologyReplan.decision === 'enqueue') {
-            await this.coalescedTopologyWorkService.write(
+            await writeCoalescedAppOutboxWork(
                 transaction,
                 computed.topologyReplan.work
             );

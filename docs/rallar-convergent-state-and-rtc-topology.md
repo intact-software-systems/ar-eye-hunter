@@ -249,7 +249,8 @@ identity rather than applying the state mutation again.
 
 ## RTT Refresh Work
 
-RTT refresh is a latest-value workload and may coalesce while pending:
+RTT refresh is a latest-value workload with one durable identity per accepted
+measurement:
 
 ```ts
 type RtcTopologyRttRefreshWork = {
@@ -265,15 +266,10 @@ type RtcTopologyRttRefreshWork = {
 RTT scheduling resolves the scoped group once and embeds that exact snapshot.
 It does not depend on an ambient full-cache scan at execution time.
 
-A `NEW` RTT envelope may merge versions and reasons. A `RESERVED` envelope is
-immutable. When a newer RTT arrives during processing,
-`CoalescedAppOutboxWorkService` returns `blockedByReserved`, and the publisher
-creates a deterministic successor keyed by group revision, endpoint pair, and
-RTT version.
-
-Coalescing retains the newest exact group snapshot, maximum requested RTT
-version, and immutable request time selected for the resulting generation.
-RTT measurements themselves remain latest-value inputs read during execution.
+The in-memory RTT scheduler may debounce a burst before publication. Once an
+accepted measurement becomes durable work, its queue identity includes the
+measurement receipt and version. The persisted decoder requires that current
+identity and does not accept the group-revision coalescing metadata.
 
 ## Topology Calculation And Latest State
 
@@ -294,7 +290,7 @@ commit path. The write transaction CAS-guards the snapshot first, then inserts
 the compact work claim and immutable publication. A conflict persists nothing
 and returns to its ResourceInbox/QueueBox attempt boundary. AppInbox owns
 incoming HTTP/WS mutation retries. Downstream `APP_OUTBOX` work such as
-`RtcTopologyOutboxWork` repeats the full read/compute/validate/write sequence on
+the RTC topology work handler repeats the full read/compute/validate/write sequence on
 its own attempt boundary. In both cases, neither service owns the transaction or
 retry boundary.
 
@@ -677,7 +673,7 @@ Focused transaction-ownership and concurrency coverage lives in:
 
 - `packages/tests/repo/transaction-write-check.test.ts`
 - `packages/tests/shared-server/rallar-system/state-sync/cached-state-services.test.ts`
-- `packages/tests/shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.test.ts`
+- `packages/tests/shared-server/rallar-system/topology/replay/work/rtc-topology-work-handler.test.ts`
 - `packages/tests/shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-log.test.ts`
 - `packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-service.test.ts`
 - `packages/tests/shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydrator.test.ts`

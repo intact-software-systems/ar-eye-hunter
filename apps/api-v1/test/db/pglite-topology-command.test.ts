@@ -8,17 +8,19 @@ import {
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
+import { writeCoalescedAppOutboxWork } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
-import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-stream-service.ts';
 import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
+import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
@@ -341,26 +343,34 @@ Deno.test(
             const outboxReader = new OutboxQueueReader(
                 new RetryObservedQueueBox(resourceInbox)
             );
-            const workRuntime = createRtcTopologyOutboxPublisher({
-                outboxQueueReader: outboxReader,
-                senderId: 'pglite-removal-retry',
-                now: () => nowEpochMs
-            });
             const executionRepository = new RtcTopologyExecutionRepository(
                 runtimeRepository,
                 60_000,
                 () => nowEpochMs
             );
             outboxReader.onOutboxMessageDo(
-                workRuntime.workType,
+                AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
                 createRtcTopologyWorkHandler({
-                    runtime: workRuntime,
+                    outboxQueueReader: outboxReader,
                     database: sql,
                     topologyPlanning: topologyManagement.planning,
                     executionRepository
                 })
             );
-            await workRuntime.publisher.enqueueForGroupSnapshot(durableTerminal);
+            const topologyWork = computeCoalescedRtcTopologyGroupRevisionWork({
+                aggregateRef: durableTerminal.group,
+                groupSnapshot: durableTerminal,
+                requestedAtEpochMs: nowEpochMs,
+                expireAtEpochMs: 4_102_444_800_000,
+                timing: {
+                    window: { debounceMs: 0, maxWaitMs: null },
+                    replanNotBeforeEpochMs: null
+                },
+                senderId: 'pglite-removal-retry',
+                origin: 'automatic',
+                previousEntry: null
+            });
+            await sql.begin((transaction) => writeCoalescedAppOutboxWork(transaction, topologyWork));
 
             await outboxReader.dequeueOutbox(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,

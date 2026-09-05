@@ -18,7 +18,7 @@ import {
 import {
     isMutableCoalescedStatus,
     type ComputedCoalescedAppOutboxWork
-} from '../../app-outbox/coalesced-app-outbox-work-service.ts';
+} from '../../app-outbox/coalesced-app-outbox-work.ts';
 import { validateComputedProjection } from '../../computed-data-validation.ts';
 import type { ComputedDataValidationIssue } from '../../computed-data-validation.ts';
 import {

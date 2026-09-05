@@ -5,6 +5,7 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import { decodeRuntimeStateRevision } from '../../../runtime-state/postgres/runtime-state-row-codec.ts';
+import { validateComputedProjection } from '../../computed-data-validation.ts';
 import type { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
 import { GROUPS_NAMESPACE } from '../../group-state/persistence/group-state-runtime-namespaces.ts';
 import { canUpdateGroupSnapshot } from '../../group-state/policy/group-governance-policy.ts';
@@ -15,7 +16,6 @@ import {
     type ComputedRtcTopologyOutbox
 } from '../mutation/rtc-topology-outbox-entry.ts';
 import type { RtcTopologyOutboxWriter } from '../mutation/rtc-topology-outbox-writer.ts';
-import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import type {
     GroupTopologyPlanningAuthority,
     ReadGroupTopologyPlanningAuthorityInput
@@ -23,7 +23,8 @@ import type {
 import type {
     GroupTopologyReconfigureCommand,
     GroupTopologyReconfigureComputed,
-    GroupTopologyReconfigureRead
+    GroupTopologyReconfigureRead,
+    GroupTopologyReconfigureValidationIssue
 } from './group-topology-reconfigure-contracts.ts';
 
 export interface GroupTopologyReconfigureMutationDependencies {
@@ -113,18 +114,44 @@ export class GroupTopologyReconfigureMutation {
         command: GroupTopologyReconfigureCommand,
         read: GroupTopologyReconfigureRead,
         computed: GroupTopologyReconfigureComputed
-    ): void {
+    ): readonly GroupTopologyReconfigureValidationIssue[] {
+        const issues: GroupTopologyReconfigureValidationIssue[] = [];
         const lifecycle = canMutateActiveGroup({
             group: read.authority.group.group,
             nowEpochMs: read.authority.nowEpochMs
         });
         if (!lifecycle.allowed) {
-            throw new GroupPolicyDeniedError(lifecycle);
+            issues.push({
+                code: lifecycle.code,
+                path: ['read', 'authority', 'group', 'group'],
+                message: lifecycle.message,
+                cause: new GroupPolicyDeniedError(lifecycle)
+            });
         }
-        this.validateActor(command, read);
-        if (!rtcTopologySemanticEqual(computed, this.compute(command, read))) {
-            throw new TypeError('Topology reconfigure computation is invalid');
+        if (lifecycle.allowed && !read.actorIsPlatformAdmin) {
+            const actorPolicy = canUpdateGroupSnapshot({
+                snapshot: read.authority.group,
+                actor: { principalId: command.actorPrincipalId },
+                nowEpochMs: read.authority.nowEpochMs
+            });
+            if (!actorPolicy.allowed) {
+                issues.push({
+                    code: actorPolicy.code,
+                    path: ['command', 'actorPrincipalId'],
+                    message: actorPolicy.message,
+                    cause: new GroupPolicyDeniedError(actorPolicy)
+                });
+            }
         }
+        for (const issue of validateComputedProjection(this.compute(command, read), computed, 'computed')) {
+            issues.push({
+                code: 'computed-projection-invalid',
+                path: [issue.path],
+                message: issue.message,
+                cause: issue.cause
+            });
+        }
+        return issues;
     }
 
     async write(
@@ -154,22 +181,5 @@ export class GroupTopologyReconfigureMutation {
 
     recordCommittedWrite(): void {
         this.dependencies.outboxWriter.recordCommittedWrites(1);
-    }
-
-    private validateActor(
-        command: GroupTopologyReconfigureCommand,
-        read: GroupTopologyReconfigureRead
-    ): void {
-        if (read.actorIsPlatformAdmin) {
-            return;
-        }
-        const policy = canUpdateGroupSnapshot({
-            snapshot: read.authority.group,
-            actor: { principalId: command.actorPrincipalId },
-            nowEpochMs: read.authority.nowEpochMs
-        });
-        if (!policy.allowed) {
-            throw new GroupPolicyDeniedError(policy);
-        }
     }
 }

@@ -47,7 +47,7 @@ export type ResolveOverrideExpiresAtEpochMsInput = Readonly<{
     expiresAtEpochMs?: number;
 }>;
 
-export function readDefaultGroupTopologyConfig(
+export function resolveDefaultGroupTopologyConfig(
     serverOptions: GroupTopologyServerOptions = {}
 ): EffectiveGroupTopologyConfig {
     return {
@@ -59,7 +59,9 @@ export function readDefaultGroupTopologyConfig(
     };
 }
 
-export function validateGroupTopologyConfigPatch(patch: GroupTopologyConfigPatch): void {
+export function validateGroupTopologyConfigPatch(
+    patch: GroupTopologyConfigPatch
+): readonly GroupTopologyValidationIssue[] {
     const issues: GroupTopologyValidationIssue[] = [];
 
     for (const key of ['degreeLimit', 'treeMinSize', 'meshMinSize', 'meshParamK'] as const) {
@@ -91,13 +93,13 @@ export function validateGroupTopologyConfigPatch(patch: GroupTopologyConfigPatch
         });
     }
 
-    throwIfIssues(issues);
+    return issues;
 }
 
-export function validateEffectiveGroupTopologyConfig(config: EffectiveGroupTopologyConfig): void {
-    validateGroupTopologyConfigPatch(config);
-
-    const issues: GroupTopologyValidationIssue[] = [];
+export function validateEffectiveGroupTopologyConfig(
+    config: EffectiveGroupTopologyConfig
+): readonly GroupTopologyValidationIssue[] {
+    const issues = [...validateGroupTopologyConfigPatch(config)];
     if (config.meshMinSize < config.treeMinSize) {
         issues.push({
             code: 'mesh-min-size-before-tree-min-size',
@@ -122,30 +124,36 @@ export function validateEffectiveGroupTopologyConfig(config: EffectiveGroupTopol
         });
     }
 
-    throwIfIssues(issues);
+    return issues;
 }
 
 export function resolveGroupTopologyConfig(
     input: ResolveGroupTopologyConfigInput
 ): GroupTopologyConfigView {
     if (input.durable) {
-        validateGroupTopologyConfigPatch(input.durable.config);
+        throwGroupTopologyConfigValidationError(
+            validateGroupTopologyConfigPatch(input.durable.config)
+        );
     }
     if (input.temporary) {
-        validateGroupTopologyConfigPatch(input.temporary.config);
+        throwGroupTopologyConfigValidationError(
+            validateGroupTopologyConfigPatch(input.temporary.config)
+        );
     }
     if (input.requestOptions) {
-        validateGroupTopologyConfigPatch(input.requestOptions);
+        throwGroupTopologyConfigValidationError(
+            validateGroupTopologyConfigPatch(input.requestOptions)
+        );
     }
 
-    const serverDefaults = readDefaultGroupTopologyConfig(input.serverOptions);
+    const serverDefaults = resolveDefaultGroupTopologyConfig(input.serverOptions);
     const effective = {
         ...serverDefaults,
         ...(input.durable?.config ?? {}),
         ...(input.temporary?.config ?? {}),
         ...toSetTopologyConfigPatch(input.requestOptions ?? {})
     };
-    validateEffectiveGroupTopologyConfig(effective);
+    throwGroupTopologyConfigValidationError(validateEffectiveGroupTopologyConfig(effective));
 
     return {
         serverDefaults,
@@ -186,7 +194,7 @@ export function resolveOverrideExpiresAtEpochMs(
         !Number.isFinite(requestedExpiresAtEpochMs) ||
         requestedExpiresAtEpochMs <= input.nowEpochMs
     ) {
-        throwIfIssues([
+        throwGroupTopologyConfigValidationError([
             {
                 code: 'override-expiry-not-in-future',
                 path: [input.expiresAtEpochMs === undefined ? 'ttlMs' : 'expiresAtEpochMs'],
@@ -212,7 +220,9 @@ export function computeOverrideExpiresAtEpochMs(
     );
 }
 
-function throwIfIssues(issues: readonly GroupTopologyValidationIssue[]): void {
+function throwGroupTopologyConfigValidationError(
+    issues: readonly GroupTopologyValidationIssue[]
+): void {
     if (issues.length > 0) {
         throw new GroupTopologyConfigValidationError(issues);
     }

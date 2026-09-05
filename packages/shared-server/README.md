@@ -104,7 +104,7 @@ HTTP or WebSocket entry
 AppInbox owns the ingress transaction and retry boundary. Its current
 ResourceInbox retry policy allows **20 total processing attempts**. A domain
 service never opens, commits, replaces, or retries that transaction.
-`RtcTopologyOutboxWork` and other downstream work run under their own
+The RTC topology work handler and other downstream work run under their own
 ResourceInbox/QueueBox attempt boundary; neither service owns the transaction
 or retry boundary.
 

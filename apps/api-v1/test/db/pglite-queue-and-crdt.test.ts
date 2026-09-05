@@ -11,11 +11,10 @@ import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/p
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import {
-    CoalescedAppOutboxWorkService,
-    computeCoalescedAppOutboxWork
-} from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
+    computeCoalescedAppOutboxWork,
+    writeCoalescedAppOutboxWork
+} from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
-import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
@@ -44,6 +43,32 @@ interface StringCountRow {
 
 interface CreatedTimestampRow {
     readonly created_ts: string;
+}
+
+function createInitialCoalescedTopologyWork(groupId: string) {
+    const groupRef = {
+        applicationId: 'coalesced-write-test',
+        workspaceId: 'queuebox',
+        groupId
+    };
+    const groupSnapshot = topologyGroupSnapshotWithSessionIds(
+        groupRef,
+        ['session-a'],
+        500
+    );
+    return computeCoalescedRtcTopologyGroupRevisionWork({
+        aggregateRef: groupRef,
+        groupSnapshot,
+        requestedAtEpochMs: 500,
+        expireAtEpochMs: FUTURE_MS,
+        timing: {
+            window: { debounceMs: 0, maxWaitMs: null },
+            replanNotBeforeEpochMs: null
+        },
+        senderId: 'rallar-server',
+        origin: 'automatic',
+        previousEntry: null
+    });
 }
 
 interface ExpireTimestampRow {
@@ -407,78 +432,14 @@ Deno.test(
 );
 
 Deno.test(
-    'Coalesced APP_OUTBOX RTC topology work fits the durable resource inbox key columns',
-    async () => {
-        await withPGliteSql(async (sql) => {
-            const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(sql));
-            const service = new CoalescedAppOutboxWorkService(
-                new OutboxQueueReader(queue),
-                'rallar-server-instance-with-a-long-identity',
-                () => 500
-            );
-            const groupId = 'rallar-bb-group-chromium-w0-configured-live-distributed-run-1234567890';
-            const overlayId = JSON.stringify(['rallar-server', 'default', groupId]);
-            const contextId = `rallar-server:default:${groupId}`;
-
-            const result = await service.enqueue({
-                type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
-                topicId: 'app-outbox.rtc-topology',
-                resourceId: overlayId,
-                contextId,
-                data: { overlayId }
-            });
-            const updated = await service.enqueue({
-                type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
-                topicId: 'app-outbox.rtc-topology',
-                resourceId: overlayId,
-                contextId,
-                data: { overlayId, revision: 2 },
-                reason: 'rtt'
-            });
-            const stored = await queue.getItem(updated.entry.key);
-            const rowCount = await sql<StringCountRow[]>`
-      select count(*) as count
-      from resource_inbox
-      where fk_ext_bank_id = ${updated.entry.key.contextId}
-        and ri_resource_id = ${updated.entry.key.resourceId}
-        and ri_topic_id = ${updated.entry.key.topicId}
-    `;
-
-            assert.ok(stored);
-            assert.equal(stored.typeId, 'APP_OUTBOX');
-            assert.equal(result.action, 'inserted');
-            assert.equal(updated.action, 'updated');
-            assert.equal(Number(rowCount[0].count), 1);
-            assert.ok(stored.key.topicId.length <= 36);
-            assert.ok(stored.key.resourceId.length <= 36);
-            assert.ok(stored.key.contextId.length <= 35);
-            assert.ok(stored.audit.createdBy.length <= 16);
-            assert.deepEqual(service.readEnvelope(stored), updated.envelope);
-            assert.equal(updated.envelope.resourceId, overlayId);
-            assert.equal(updated.envelope.contextId, contextId);
-            assert.equal(updated.envelope.data.revision, 2);
-        });
-    }
-);
-
-Deno.test(
     'transaction-bound APP_OUTBOX coalescing fences generation and reserved work',
     async () => {
         await withPGliteSql(async (sql) => {
             const repository = createPSqlResourceInboxRepository(sql);
             const queue = new PSqlQueueBox(repository);
-            const service = new CoalescedAppOutboxWorkService(
-                new OutboxQueueReader(queue),
-                'rallar-server',
-                () => 500
-            );
-            const first = (await service.enqueue({
-                type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
-                topicId: 'app-outbox.rtc-topology',
-                resourceId: 'transactional-overlay',
-                contextId: 'transactional-room',
-                data: { overlayId: 'transactional-overlay', revision: 1 }
-            })).entry;
+            const firstWrite = createInitialCoalescedTopologyWork('transactional-overlay');
+            await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, firstWrite));
+            const first = firstWrite.entryWrite.entry;
             const second = advanceCoalescedGeneration(first, 2);
             const successor = createResourceEntry('transactional-successor', {
                 topicId: first.key.topicId,
@@ -487,14 +448,9 @@ Deno.test(
                 payload: { generation: 2, kind: 'successor' }
             });
 
-            const statusFirst = (await service.enqueue({
-                type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
-                topicId: 'app-outbox.rtc-topology',
-                resourceId: 'transactional-status-fence',
-                contextId: 'transactional-room',
-                data: { overlayId: 'transactional-status-fence', revision: 1 }
-            })).entry;
-            await repository.entries.writeIfAbsentOrMatch(statusFirst);
+            const statusFirstWrite = createInitialCoalescedTopologyWork('transactional-status-fence');
+            await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, statusFirstWrite));
+            const statusFirst = statusFirstWrite.entryWrite.entry;
             await sql`
       update resource_inbox
       set ri_status = ${EntityStatus.RETRY}
@@ -515,13 +471,8 @@ Deno.test(
                 EntityStatus.RETRY
             );
 
-            const updated = await sql.begin(async (transaction) =>
-                await service.write(
-                    transaction,
-                    computeCoalescedAppOutboxWork(first, second, successor)
-                )
-            );
-            assert.equal(updated.action, 'updated');
+            const updatedWrite = computeCoalescedAppOutboxWork(first, second, successor);
+            await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, updatedWrite));
             assert.equal((await repository.entries.findByKey(first.key))?.resource, second.resource);
 
             const reserved = await queue.reserveEntries(
@@ -534,17 +485,15 @@ Deno.test(
             assert.ok(observedReserved);
             const third = advanceCoalescedGeneration(second, 3);
             const blockedWrite = computeCoalescedAppOutboxWork(observedReserved, third, successor);
-            const blocked = await sql.begin(async (transaction) => await service.write(transaction, blockedWrite));
+            await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, blockedWrite));
 
-            assert.equal(blocked.action, 'successor');
-            assert.equal(blocked.blockedByReserved, true);
             assert.equal((await repository.entries.findAnyByKey(first.key))?.resource, second.resource);
             assert.equal((await repository.entries.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
             assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
 
             await assert.rejects(
                 async () => {
-                    await sql.begin(async (transaction) => await service.write(transaction, blockedWrite));
+                    await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, blockedWrite));
                 },
                 (error) =>
                     error instanceof ResourceInboxInvariantCorruptionError &&
@@ -561,7 +510,7 @@ Deno.test(
             );
             await assert.rejects(
                 async () => {
-                    await sql.begin(async (transaction) => await service.write(transaction, conflictingSuccessorWrite));
+                    await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, conflictingSuccessorWrite));
                 },
                 (error) =>
                     error instanceof ResourceInboxInvariantCorruptionError &&
@@ -575,18 +524,9 @@ Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in plac
     await withPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql);
         const queue = new PSqlQueueBox(repository);
-        const service = new CoalescedAppOutboxWorkService(
-            new OutboxQueueReader(queue),
-            'rallar-server',
-            () => 500
-        );
-        const first = (await service.enqueue({
-            type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
-            topicId: 'app-outbox.rtc-topology',
-            resourceId: 'revive-overlay',
-            contextId: 'revive-room',
-            data: { overlayId: 'revive-overlay', revision: 1 }
-        })).entry;
+        const firstWrite = createInitialCoalescedTopologyWork('revive-overlay');
+        await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, firstWrite));
+        const first = firstWrite.entryWrite.entry;
         const reserved = await queue.reserveEntries(
             new Set([first.typeId]),
             new Set([EntityStatus.NEW]),
@@ -613,15 +553,13 @@ Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in plac
             payload: { generation: 2, kind: 'successor' }
         });
         const revivedWrite = computeCoalescedAppOutboxWork(finished!, revivedEntry, successor);
-        const revived = await sql.begin(async (transaction) => await service.write(transaction, revivedWrite));
-        assert.equal(revived.action, 'updated');
+        await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, revivedWrite));
         const stored = await repository.entries.findByKey(first.key);
         assert.equal(stored?.status, EntityStatus.NEW);
         assert.equal(stored?.resource, revivedEntry.resource);
         assert.equal(stored?.dequeueAudit.attempts, 0);
 
-        const staleExpected = await sql.begin(async (transaction) => await service.write(transaction, revivedWrite));
-        assert.equal(staleExpected.action, 'successor');
+        await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, revivedWrite));
         assert.equal((await repository.entries.findByKey(first.key))?.resource, revivedEntry.resource);
         assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
     });
@@ -658,17 +596,9 @@ Deno.test(
             );
             const resourceInbox = createPSqlResourceInboxRepository(sql);
             const queue = new PSqlQueueBox(resourceInbox);
-            const coalescedService = new CoalescedAppOutboxWorkService(
-                new OutboxQueueReader(queue),
-                'fingerprint-gate-worker',
-                () => nowEpochMs
-            );
+            const outboxQueueReader = new OutboxQueueReader(queue);
             const handler = createRtcTopologyWorkHandler({
-                runtime: createRtcTopologyOutboxPublisher({
-                    outboxQueueReader: new OutboxQueueReader(queue),
-                    senderId: 'fingerprint-gate-worker',
-                    now: () => nowEpochMs
-                }),
+                outboxQueueReader,
                 database: sql,
                 topologyPlanning: topologyManagement.planning,
                 executionRepository
@@ -689,7 +619,7 @@ Deno.test(
                 currentSnapshot = snapshot;
                 const previousEntry = (await queue.getItem(coalescedKey)) ?? null;
                 const computed = toCoalescedComputed(snapshot, previousEntry);
-                await sql.begin(async (transaction) => await coalescedService.write(transaction, computed));
+                await sql.begin(async (transaction) => await writeCoalescedAppOutboxWork(transaction, computed));
                 await sql`
         update resource_inbox
         set ri_status = 'RESERVED', ri_attempts = ri_attempts + 1,

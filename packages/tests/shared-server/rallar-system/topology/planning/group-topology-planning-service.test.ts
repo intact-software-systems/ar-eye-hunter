@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { GROUP_LIFECYCLE_STATES, type GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
-import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
+import {
+    computeGroupTopologyFromAuthority,
+    validateComputedTopologySnapshot
+} from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import type { ReconcileGroupTopologyResult } from '@shared-server/rallar-system/topology/planning/group-topology-planning-contracts.ts';
 import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import type { GroupTopologyReplanningRead } from '@shared-server/rallar-system/topology/planning/resolve-topology-plan-action.ts';
@@ -169,6 +172,31 @@ describe('GroupTopologyPlanningService', () => {
                 nextHopsBySessionId: {}
             }
         });
+    });
+
+    it('returns every deterministic topology issue without throwing', () => {
+        const computed = computeGroupTopologyFromAuthority(
+            planningAuthority(groupWithSessionsIn('active')),
+            undefined,
+            { intent: 'full-rebuild', origin: 'automatic' }
+        );
+        const snapshot = {
+            ...requirePlannedTopology(computed).snapshot,
+            activeSessionIds: ['session-a', 'session-b'],
+            nextHopsBySessionId: { 'session-a': ['inactive-session'] }
+        };
+
+        expect(validateComputedTopologySnapshot(snapshot)).toEqual([
+            expect.objectContaining({
+                code: 'missing-active-session',
+                path: ['nextHopsBySessionId', 'session-b']
+            }),
+            expect.objectContaining({
+                code: 'inactive-session-present',
+                path: ['nextHopsBySessionId', 'inactive-session']
+            }),
+            expect.objectContaining({ code: 'disconnected', path: undefined })
+        ]);
     });
 
     it('computes deterministic planning observation without mutating metrics or hidden snapshot state', () => {

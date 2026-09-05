@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-stream-service.ts';
 import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
 import { PSqlRtcTopologyReplayRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-repository.ts';
-import { createPGliteSqlClient, type PGliteSql } from '../../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import { createPGliteSqlClient, type PGliteSql } from '../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
 
 const CONSUMER = '00000000-0000-4000-8000-000000000001';
 const PUBLISHER_A = '00000000-0000-4000-8000-000000000002';
@@ -22,9 +22,9 @@ describe('PSqlRtcTopologyReplayRepository', () => {
             const cursors = await repository.initializeConsumer({ consumerStreamId: CONSUMER });
 
             expect(cursors).toEqual([
-                replayCursor(CONSUMER, 0, 1, 0),
-                replayCursor(PUBLISHER_A, 2, 1, 2),
-                replayCursor(PUBLISHER_B, 5, 3, 5)
+                replayCursor({ publisherStreamId: CONSUMER, headSequence: 0, retainedFromSequence: 1, lastProcessedSequence: 0 }),
+                replayCursor({ publisherStreamId: PUBLISHER_A, headSequence: 2, retainedFromSequence: 1, lastProcessedSequence: 2 }),
+                replayCursor({ publisherStreamId: PUBLISHER_B, headSequence: 5, retainedFromSequence: 3, lastProcessedSequence: 5 })
             ]);
             expect(await readCursorRows(sql, CONSUMER)).toEqual([
                 { publisher_stream_id: CONSUMER, last_processed_sequence: 0 },
@@ -44,9 +44,9 @@ describe('PSqlRtcTopologyReplayRepository', () => {
             const cursors = await repository.discoverPublishers({ consumerStreamId: CONSUMER });
 
             expect(cursors).toEqual([
-                replayCursor(CONSUMER, 0, 1, 0),
-                replayCursor(PUBLISHER_A, 2, 1, 2),
-                replayCursor(PUBLISHER_B, 5, 3, 2)
+                replayCursor({ publisherStreamId: CONSUMER, headSequence: 0, retainedFromSequence: 1, lastProcessedSequence: 0 }),
+                replayCursor({ publisherStreamId: PUBLISHER_A, headSequence: 2, retainedFromSequence: 1, lastProcessedSequence: 2 }),
+                replayCursor({ publisherStreamId: PUBLISHER_B, headSequence: 5, retainedFromSequence: 3, lastProcessedSequence: 2 })
             ]);
         });
     });
@@ -294,7 +294,7 @@ async function withReplayRepository(
     const sql = createPGliteSqlClient(raw);
     try {
         const schema = readFileSync(
-            new URL('../../../../../../../apps/api-v1/src/db/in-memory-schema.sql', import.meta.url),
+            new URL('../../../../../../apps/api-v1/src/db/in-memory-schema.sql', import.meta.url),
             'utf8'
         );
         await sql.exec(schema);
@@ -379,17 +379,19 @@ async function readStreamIds(sql: PGliteSql): Promise<string[]> {
     return rows.map((row) => row.stream_id);
 }
 
-function replayCursor(
-    publisherStreamId: string,
-    headSequence: number,
-    retainedFromSequence: number,
-    lastProcessedSequence: number
-) {
+interface ReplayCursorExpectation {
+    readonly publisherStreamId: string;
+    readonly headSequence: number;
+    readonly retainedFromSequence: number;
+    readonly lastProcessedSequence: number;
+}
+
+function replayCursor(input: ReplayCursorExpectation) {
     return expect.objectContaining({
         consumerStreamId: CONSUMER,
-        publisherStreamId,
-        headSequence,
-        retainedFromSequence,
-        lastProcessedSequence
+        publisherStreamId: input.publisherStreamId,
+        headSequence: input.headSequence,
+        retainedFromSequence: input.retainedFromSequence,
+        lastProcessedSequence: input.lastProcessedSequence
     });
 }

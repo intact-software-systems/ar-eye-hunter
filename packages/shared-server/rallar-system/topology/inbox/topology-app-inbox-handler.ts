@@ -97,6 +97,10 @@ interface TopologyReconfigureOperationComputed {
     readonly completion: AppInboxCompletionComputed<TopologyReconfigureInboxResult>;
 }
 
+interface TopologyOperationValidationIssue {
+    readonly cause: Error;
+}
+
 export function decodeTopologyAppInboxResult(value: JsonWireValue): TopologyAppInboxResult {
     const result = readJsonRecord(value, 'Topology AppInbox result');
     if (result.status === 'queued') {
@@ -234,7 +238,7 @@ export class TopologyAppInboxHandler {
             completionFacts,
             owners.configMutationService
         );
-        this.validateTopologyConfigOperation(
+        const validationIssues = this.validateTopologyConfigOperation(
             command,
             read,
             attemptCount,
@@ -242,6 +246,9 @@ export class TopologyAppInboxHandler {
             owners.configMutationService,
             computed
         );
+        if (validationIssues[0] !== undefined) {
+            throw validationIssues[0].cause;
+        }
         if (computed.outcome === 'idempotency-conflict') {
             throw new GroupTopologyConfigIdempotencyConflictError(
                 computed.mutation.existingCommandHash,
@@ -293,13 +300,16 @@ export class TopologyAppInboxHandler {
             completionFacts,
             mutation
         );
-        this.validateTopologyReconfigureOperation(
+        const validationIssues = this.validateTopologyReconfigureOperation(
             command,
             read,
             completionFacts,
             mutation,
             computed
         );
+        if (validationIssues[0] !== undefined) {
+            throw validationIssues[0].cause;
+        }
         const result = await this.dependencies.transactionWriter.writeComputedMutation(
             context,
             computed.completion,
@@ -344,33 +354,40 @@ export class TopologyAppInboxHandler {
         completionFacts: AppInboxCompletionFacts,
         mutation: TopologyAppInboxMutationOwners['configMutationService'],
         computed: TopologyConfigOperationComputed
-    ): void {
-        mutation.validate({
+    ): readonly TopologyOperationValidationIssue[] {
+        const validation = {
             command,
             read,
             attemptCount,
             computed: computed.mutation
-        });
-        if (computed.outcome === 'idempotency-conflict') {
-            return;
+        };
+        const mutationIssues = mutation.validate(validation);
+        if (mutationIssues[0] !== undefined) {
+            return mutationIssues;
         }
+        if (computed.outcome === 'idempotency-conflict') {
+            return [];
+        }
+        const issues: TopologyOperationValidationIssue[] = [];
         if (
             !jsonEquals(
                 computed.durableResult,
                 toTopologyConfigMutationResult(computed.mutation)
             )
         ) {
-            throw new TypeError('Topology config result differs from its computed mutation');
+            issues.push({
+                cause: new TypeError('Topology config result differs from its computed mutation')
+            });
         }
         const completionInput = {
             ...completionFacts,
             durableResult: computed.durableResult,
             status: EntityStatus.COMPLETED
         } as const;
-        const issues = validateAppInboxCompletion(completionInput, computed.completion);
-        if (issues[0] !== undefined) {
-            throw issues[0].cause;
-        }
+        return [
+            ...issues,
+            ...validateAppInboxCompletion(completionInput, computed.completion)
+        ];
     }
 
     private computeTopologyReconfigureOperation(
@@ -404,8 +421,12 @@ export class TopologyAppInboxHandler {
         completionFacts: AppInboxCompletionFacts,
         mutation: TopologyAppInboxMutationOwners['reconfigureMutation'],
         computed: TopologyReconfigureOperationComputed
-    ): void {
-        mutation.validate(command, read, computed.mutation);
+    ): readonly TopologyOperationValidationIssue[] {
+        const mutationIssues = mutation.validate(command, read, computed.mutation);
+        if (mutationIssues[0] !== undefined) {
+            return mutationIssues;
+        }
+        const issues: TopologyOperationValidationIssue[] = [];
         const expectedResult = {
             status: 'queued',
             groupRef: command.groupRef,
@@ -413,16 +434,18 @@ export class TopologyAppInboxHandler {
             outboxId: computed.mutation.resourceId
         } as const;
         if (!jsonEquals(computed.durableResult, expectedResult)) {
-            throw new TypeError('Topology reconfigure result differs from its computed mutation');
+            issues.push({
+                cause: new TypeError('Topology reconfigure result differs from its computed mutation')
+            });
         }
         const completionInput = {
             ...completionFacts,
             durableResult: computed.durableResult,
             status: EntityStatus.COMPLETED
         } as const;
-        const issues = validateAppInboxCompletion(completionInput, computed.completion);
-        if (issues[0] !== undefined) {
-            throw issues[0].cause;
-        }
+        return [
+            ...issues,
+            ...validateAppInboxCompletion(completionInput, computed.completion)
+        ];
     }
 }

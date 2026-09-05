@@ -3,15 +3,18 @@ import type {
     GroupTopologyConfigAcceptedCausalRevision
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
-import { validateEffectiveGroupTopologyConfig } from '../group-topology-config.ts';
+import {
+    GroupTopologyConfigValidationError,
+    validateEffectiveGroupTopologyConfig
+} from '../group-topology-config.ts';
 
-export function validateTopologyConfigObject(value: object, label: string): void {
+export function assertTopologyConfigObject(value: object, label: string): void {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError(`${label} is invalid`);
     }
 }
 
-export function validateTopologyConfigExactKeys(
+export function assertTopologyConfigExactKeys(
     value: object,
     keys: readonly string[],
     label: string
@@ -21,13 +24,13 @@ export function validateTopologyConfigExactKeys(
     }
 }
 
-export function validateTopologyStorageRevision(value: number, label: string): void {
+export function assertTopologyStorageRevision(value: number, label: string): void {
     if (!Number.isSafeInteger(value) || Number(value) < 0 || Object.is(value, -0)) {
         throw new TypeError(`${label} is invalid`);
     }
 }
 
-export function validateTopologyPositiveInteger(value: number, label: string): void {
+export function assertTopologyPositiveInteger(value: number, label: string): void {
     if (!Number.isSafeInteger(value) || Number(value) <= 0) {
         throw new TypeError(`${label} is invalid`);
     }
@@ -39,8 +42,8 @@ export function requireTopologyString(value: string, label: string): void {
     }
 }
 
-export function validateTopologyGroupRef(value: GroupRef, label: string): void {
-    validateTopologyConfigObject(value, label);
+export function assertTopologyGroupRef(value: GroupRef, label: string): void {
+    assertTopologyConfigObject(value, label);
     requireTopologyString(value.applicationId, `${label} applicationId`);
     requireTopologyString(value.workspaceId, `${label} workspaceId`);
     requireTopologyString(value.groupId, `${label} groupId`);
@@ -54,12 +57,12 @@ export function sameTopologyGroupRef(left: GroupRef, right: GroupRef): boolean {
     );
 }
 
-export function validateAcceptedTopologyConfig(
+export function assertAcceptedTopologyConfig(
     value: EffectiveGroupTopologyConfig,
     label: string
 ): void {
-    validateTopologyConfigObject(value, label);
-    validateTopologyConfigExactKeys(
+    assertTopologyConfigObject(value, label);
+    assertTopologyConfigExactKeys(
         value,
         ['topologyKind', 'degreeLimit', 'treeMinSize', 'meshMinSize', 'meshParamK'],
         label
@@ -73,32 +76,35 @@ export function validateAcceptedTopologyConfig(
     ) {
         throw new TypeError(`${label} topologyKind is invalid`);
     }
-    validateTopologyPositiveInteger(degreeLimit, `${label} degreeLimit`);
-    validateTopologyPositiveInteger(treeMinSize, `${label} treeMinSize`);
-    validateTopologyPositiveInteger(meshMinSize, `${label} meshMinSize`);
-    validateTopologyPositiveInteger(meshParamK, `${label} meshParamK`);
-    validateEffectiveGroupTopologyConfig({
+    assertTopologyPositiveInteger(degreeLimit, `${label} degreeLimit`);
+    assertTopologyPositiveInteger(treeMinSize, `${label} treeMinSize`);
+    assertTopologyPositiveInteger(meshMinSize, `${label} meshMinSize`);
+    assertTopologyPositiveInteger(meshParamK, `${label} meshParamK`);
+    const issues = validateEffectiveGroupTopologyConfig({
         topologyKind,
         degreeLimit,
         treeMinSize,
         meshMinSize,
         meshParamK
     });
+    if (issues.length > 0) {
+        throw new GroupTopologyConfigValidationError(issues);
+    }
 }
 
-export function validateTopologyAcceptedCausalRevision(
+export function assertTopologyAcceptedCausalRevision(
     value: GroupTopologyConfigAcceptedCausalRevision,
     label: string
 ): void {
-    validateTopologyConfigObject(value, label);
+    assertTopologyConfigObject(value, label);
 }
 
-export function validateTopologyCausalRevision(
+export function assertTopologyCausalRevision(
     value: GroupStateCausalRevision,
     label: string
 ): void {
-    validateTopologyConfigObject(value, label);
-    validateTopologyConfigExactKeys(value, ['groupRevision', 'presenceRevision'], label);
-    validateTopologyStorageRevision(value.groupRevision, `${label} groupRevision`);
-    validateTopologyStorageRevision(value.presenceRevision, `${label} presenceRevision`);
+    assertTopologyConfigObject(value, label);
+    assertTopologyConfigExactKeys(value, ['groupRevision', 'presenceRevision'], label);
+    assertTopologyStorageRevision(value.groupRevision, `${label} groupRevision`);
+    assertTopologyStorageRevision(value.presenceRevision, `${label} presenceRevision`);
 }

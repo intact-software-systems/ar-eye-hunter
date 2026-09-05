@@ -37,9 +37,7 @@ describe('RTC topology complete write computation', () => {
             }
         } as const;
 
-        await expect(validateRtcTopologyWork(input, altered)).rejects.toThrow(
-            'RTC topology work write differs from its canonical computation'
-        );
+        expect(await validateRtcTopologyWork(input, altered)).not.toEqual([]);
         await expect(computeRtcTopologyWork(input)).resolves.toEqual(computed);
     });
 
@@ -57,9 +55,7 @@ describe('RTC topology complete write computation', () => {
             }
         } as const;
 
-        expect(() => validateRtcTopologyWorkWrite(input, altered)).toThrow(
-            'RTC topology work write differs from its canonical computation'
-        );
+        expect(validateRtcTopologyWorkWrite(input, altered)).not.toEqual([]);
         expect(computeRtcTopologyWorkWrite(input)).toEqual(computed);
     });
 });

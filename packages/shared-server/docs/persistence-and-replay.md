@@ -106,9 +106,9 @@ outbox work in the same transaction as their first guard and durable result.
 The worker later resolves current recipients or executes the named downstream
 capability.
 
-`RtcTopologyOutboxWork` has a separate ResourceInbox/QueueBox attempt boundary.
-It repeats its full topology read/compute/validate/write flow; neither service
-owns the transaction or retry boundary. Publication-bearing work guards the
+The RTC topology work handler has a separate ResourceInbox/QueueBox attempt
+boundary. It repeats its full topology read/compute/validate/write flow; neither
+service owns the transaction or retry boundary. Publication-bearing work guards the
 snapshot and inserts its immutable publication and durable delivery entry
 atomically. Publication-null work may update guarded current state without
 creating external fanout.

@@ -42,7 +42,7 @@ describe('GroupTopologyReconfigureMutation', () => {
             },
             publish: true
         });
-        expect(() => mutation.validate(command, read, computed)).not.toThrow();
+        expect(mutation.validate(command, read, computed)).toEqual([]);
     });
 
     it('rejects a non-admin actor who cannot update the current group', () => {
@@ -50,9 +50,38 @@ describe('GroupTopologyReconfigureMutation', () => {
         const command = { ...createCommand(), actorPrincipalId: 'intruder' };
         const read = createRead();
 
-        expect(() => mutation.validate(command, read, mutation.compute(command, read))).toThrow(
+        const issues = mutation.validate(command, read, mutation.compute(command, read));
+
+        expect(issues).toEqual([
+            expect.objectContaining({
+                code: 'member-not-active',
+                path: ['command', 'actorPrincipalId']
+            })
+        ]);
+        expect(issues[0]?.cause).toHaveProperty(
+            'message',
             'Forbidden: An active group member is required for this operation.'
         );
+    });
+
+    it('does not duplicate a lifecycle denial as a dependent governance denial', () => {
+        const mutation = createMutation();
+        const command = { ...createCommand(), actorPrincipalId: 'intruder' };
+        const read = createRead();
+        const expiredRead = {
+            ...read,
+            authority: {
+                ...read.authority,
+                group: {
+                    ...read.authority.group,
+                    group: { ...read.authority.group.group, expiresAtEpochMs: 500 }
+                }
+            }
+        };
+
+        expect(mutation.validate(command, expiredRead, mutation.compute(command, expiredRead))).toEqual([
+            expect.objectContaining({ code: 'group-not-active' })
+        ]);
     });
 
     it('uses only the administrator decision captured in read', () => {
@@ -63,26 +92,49 @@ describe('GroupTopologyReconfigureMutation', () => {
         const callerDeniedCommand = { ...command, isPlatformAdmin: false };
         const callerAllowedCommand = { ...command, isPlatformAdmin: true };
 
-        expect(() =>
-            mutation.validate(
-                callerDeniedCommand,
-                createRead(true),
-                mutation.compute(callerDeniedCommand, createRead(true))
-            )
-        ).not.toThrow();
-        expect(() =>
-            mutation.validate(
-                callerAllowedCommand,
-                createRead(false),
-                mutation.compute(callerAllowedCommand, createRead(false))
-            )
-        ).toThrow('Forbidden: An active group member is required for this operation.');
+        const adminRead = createRead(true);
+        const memberRead = createRead(false);
+        expect(mutation.validate(
+            callerDeniedCommand,
+            adminRead,
+            mutation.compute(callerDeniedCommand, adminRead)
+        )).toEqual([]);
+        expect(mutation.validate(
+            callerAllowedCommand,
+            memberRead,
+            mutation.compute(callerAllowedCommand, memberRead)
+        )).toEqual([
+            expect.objectContaining({ code: 'member-not-active' })
+        ]);
     });
 
     it.each([
-        ['publication flag', (computed: object) => ({ ...computed, publish: false })],
-        ['payload kind', (computed: object) => ({ ...computed, payloadKind: 'snapshot' })],
-        ['request options', (computed: object) => ({ ...computed, requestOptions: { topologyKind: 'tree', unexpected: true } })],
+        [
+            'publication flag',
+            (computed: ReturnType<GroupTopologyReconfigureMutation['compute']>) => ({
+                ...computed,
+                publish: false
+            })
+        ],
+        [
+            'payload kind',
+            (computed: ReturnType<GroupTopologyReconfigureMutation['compute']>) => {
+                const altered = { ...computed };
+                Reflect.set(altered, 'payloadKind', 'snapshot');
+                return altered;
+            }
+        ],
+        [
+            'request options',
+            (computed: ReturnType<GroupTopologyReconfigureMutation['compute']>) => {
+                const altered = { ...computed };
+                Reflect.set(altered, 'requestOptions', {
+                    topologyKind: 'tree',
+                    unexpected: true
+                });
+                return altered;
+            }
+        ],
         [
             'aggregate identity',
             (computed: ReturnType<GroupTopologyReconfigureMutation['compute']>) => ({
@@ -96,9 +148,9 @@ describe('GroupTopologyReconfigureMutation', () => {
         const read = createRead();
         const computed = corrupt(mutation.compute(command, read));
 
-        expect(() => Reflect.apply(mutation.validate, mutation, [command, read, computed])).toThrow(
-            'Topology reconfigure computation is invalid'
-        );
+        expect(mutation.validate(command, read, computed)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ code: 'computed-projection-invalid' })
+        ]));
     });
 
     it('writes the computed authority and outbox without decoding in the transaction', async () => {
@@ -106,7 +158,7 @@ describe('GroupTopologyReconfigureMutation', () => {
         const command = createCommand();
         const read = createRead();
         const computed = mutation.compute(command, read);
-        mutation.validate(command, read, computed);
+        expect(mutation.validate(command, read, computed)).toEqual([]);
         const parse = vi.spyOn(JSON, 'parse').mockImplementation(() => {
             throw new Error('Decoding entered the transaction');
         });

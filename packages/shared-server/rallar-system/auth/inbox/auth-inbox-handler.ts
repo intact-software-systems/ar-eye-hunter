@@ -61,7 +61,6 @@ export class AuthInboxHandler {
             facts: read.facts,
             computed: computedMutation
         };
-        this.dependencies.mutationService.assertComputed(validationInput);
         const mutationIssues = this.dependencies.mutationService.validate(validationInput);
         if (mutationIssues[0] !== undefined) {
             throw mutationIssues[0].cause;

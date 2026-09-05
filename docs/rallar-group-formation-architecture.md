@@ -168,10 +168,10 @@ consulted policy: `debounced` coalesces under the policy's `debounceWindowMs` an
 than `maxReplanWaitMs` after the first change of a series; `auto` carries no policy window and keeps
 the server's `topology.recompute.formationDebounceMs`, unbounded, so it replans on the first
 opportunity after a change; `commanded` coalesces its commanded follow-ups under the policy window;
-a stage outside the policy and an unreadable policy keep the server window unbounded. The coalesced
-row carries the series anchor (`windowOpenedAtEpochMs`), minted by the generic coalescing service,
-kept by every merge and restarted by a successor row or a revived terminal row; a migration backfilled
-it onto rows written before it existed, so every reader requires it. A queued replan of a live
+a stage outside the policy and an unreadable policy keep the server window unbounded. The canonical
+coalesced-work computation puts the series anchor (`windowOpenedAtEpochMs`) on every row, keeps it
+through each merge, and restarts it for a successor row or revived terminal row. Readers require
+that current shape directly; there is no predecessor-format decoder. A queued replan of a live
 planned layout is floored at the layout's last write plus the minimum layout age (1 000 ms), decided
 when the change is queued. RTT refreshes are the machinery's own work and keep the server's
 unbounded window.
@@ -847,7 +847,8 @@ The pure core is pinned in `packages/tests/shared/`: `group-lifecycle-policy.tes
 `group-lifecycle-policy-repository.test.ts`, `group-state/group-lifecycle-command-policy.test.ts`,
 `group-state/group-lifecycle-safety-baseline.test.ts`,
 `group-state/mutation/group-lifecycle-mutation.test.ts`,
-`group-state/mutation/group-admission-mutation.test.ts`, `rtc-topology-outbox-work.test.ts` (the
+`group-state/mutation/group-admission-mutation.test.ts`,
+`topology/replay/work/rtc-topology-work-handler.test.ts` (the
 damped edge-trigger; the criterion, formation timer and durable retry latch have focused semantic tests), and
 `rallar-system/topology/planning/group-topology-planning-service.test.ts` (the FORMING gate). The
 data gate is pinned in `apps/api-v1/test/services/ws-topic-room-authorizer.test.ts`.

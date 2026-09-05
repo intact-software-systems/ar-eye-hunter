@@ -2,7 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { GroupConnectTriggerLatchRepository } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
-import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
+import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyGroupSnapshotReader } from '@shared-server/rallar-system/topology/planning/group-topology-planning-contracts.ts';
 import { RtcTopologyReplayEntryHandlerService } from '@shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.ts';
@@ -16,6 +16,7 @@ import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     AppTopics,
@@ -150,9 +151,6 @@ describe('RTC topology websocket publication', () => {
         const topologyService = new RallarRtcTopologyService();
         const appOutbox = new InMemoryQueueBox(new Map());
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
-        const topologyOutbox = createRtcTopologyOutboxPublisher({
-            outboxQueueReader
-        });
         installTestTopologyOutbox(service, {
             topologyPlanning: createTopologyOwners(topologyService).planning,
             rtcTopologyAppOutbox: {
@@ -183,8 +181,8 @@ describe('RTC topology websocket publication', () => {
 
         expect(await appOutbox.getAllKeys()).toEqual([]);
         expect(countSentTopologyMessages(sockets)).toBe(0);
-        await topologyOutbox.publisher.enqueueForGroupSnapshot(group);
-        await topologyOutbox.publisher.enqueueForGroupSnapshot(group);
+        await enqueueTopologyGroupRevision(outboxQueueReader, group, 'active-work');
+        await enqueueTopologyGroupRevision(outboxQueueReader, group, 'active-work');
         const [activeKey] = await appOutbox.getAllKeys();
         expect(activeKey).toMatchObject({
             topicId: 'app-outbox.rtc-topology',
@@ -231,7 +229,7 @@ describe('RTC topology websocket publication', () => {
         );
 
         expect(await appOutbox.getAllKeys()).toHaveLength(1);
-        await topologyOutbox.publisher.enqueueForGroupSnapshot(archivedGroup);
+        await enqueueTopologyGroupRevision(outboxQueueReader, archivedGroup, 'archived-work');
         expect(await appOutbox.getAllKeys()).toHaveLength(2);
         expect(countSentTopologyMessages(sockets)).toBe(0);
     });
@@ -329,56 +327,31 @@ describe('RTC topology websocket publication', () => {
         ).toBe(false);
         expect(countSentTopologyMessages(createSocketsFrom([senderSocket, peerSocket]))).toBe(0);
     });
-
-    it('converges multiple app-outbox publishers on one immutable work identity', async () => {
-        configureTestCacheRepositories();
-        const appOutboxQueue = new InMemoryQueueBox(new Map());
-        const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
-        const deliveryId = [
-            'group-command-1',
-            'rtc-topology-recompute',
-            'group-revision',
-            `group=${group.causalRevision.groupRevision};presence=${group.causalRevision.presenceRevision}`
-        ].join(':');
-        const publisherA = createRtcTopologyOutboxPublisher({
-            outboxQueueReader: new OutboxQueueReader(appOutboxQueue),
-            senderId: 'worker-a',
-            now: () => 1_000
-        }).publisher;
-        const publisherB = createRtcTopologyOutboxPublisher({
-            outboxQueueReader: new OutboxQueueReader(appOutboxQueue),
-            senderId: 'worker-b',
-            now: () => 1_001
-        }).publisher;
-
-        const [first, second] = await Promise.all([
-            publisherA.enqueueForStateMutation(group, deliveryId),
-            publisherB.enqueueForStateMutation(group, deliveryId)
-        ]);
-
-        expect(first).toEqual(second);
-        expect(first.effectiveCausalRevision).toEqual(group.causalRevision);
-        const [key] = await appOutboxQueue.getAllKeys();
-        expect(key?.resourceId).toEqual(expect.any(String));
-        expect(await appOutboxQueue.getAllKeys()).toHaveLength(1);
-        const entry = await appOutboxQueue.getItem(key!);
-        const message = decodePersistedALMessage(entry!.resource);
-        const envelope = readRtcTopologyWorkEnvelope(
-            message,
-            AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
-        );
-        expect(message.route).toEqual(key);
-        expect(envelope).toMatchObject({
-            resourceId: deliveryId,
-            senderId: expect.stringMatching(/^worker-/),
-            data: {
-                groupSnapshot: group,
-                requestOptions: {},
-                publish: true
-            }
-        });
-    });
 });
+
+async function enqueueTopologyGroupRevision(
+    outboxQueueReader: OutboxQueueReader,
+    group: GroupSnapshot,
+    commandId: string
+): Promise<void> {
+    await outboxQueueReader.outbox.enqueueIfAbsent(
+        computeRtcTopologyOutboxInsert({
+            commandId,
+            aggregateRef: group.group,
+            acceptedCausalRevision: group.causalRevision,
+            groupSnapshot: group,
+            effectKind: 'rtc-topology-recompute',
+            payloadKind: 'group-revision',
+            origin: 'automatic',
+            createdAtEpochMs: 1_000,
+            expireAtEpochMs: 4_102_444_800_000,
+            senderId: 'server-1',
+            resourceId: `${commandId}:group-revision:group=${group.causalRevision.groupRevision};presence=${group.causalRevision.presenceRevision}`,
+            requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+            publish: true
+        }).entry
+    );
+}
 
 class FakeSocket extends EventTarget implements WebSocket {
     readonly CONNECTING = WebSocket.CONNECTING;

@@ -67,7 +67,7 @@ export function computeRtcTopologyPublicationOutbox(
     };
 }
 
-export function validateRtcTopologyPublicationOutbox(
+export function assertRtcTopologyPublicationOutbox(
     publication: RtcTopologyPublication,
     outbox: ResourceEntry
 ): void {

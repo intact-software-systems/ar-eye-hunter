@@ -9,21 +9,38 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import { createTestGroup } from '../../../../../create-test-group.ts';
 
 export interface CreateTopologyConfigMutationTestInput {
-    readonly operation?: 'putConfig' | 'putOverride';
-    readonly commandId?: string | null;
-    readonly config?: GroupTopologyConfigPatch;
-    readonly durableDegreeLimit?: number;
-    readonly overrideDegreeLimit?: number | null;
-    readonly requestId?: string | null;
+    readonly operation: 'putConfig' | 'putOverride';
+    readonly commandId: string | null;
+    readonly config: GroupTopologyConfigPatch;
+    readonly durableDegreeLimit: number | undefined;
+    readonly overrideDegreeLimit: number | null | undefined;
+    readonly requestId: string | null;
 }
 
-export function createTopologyConfigMutationTestInput(
-    settings: CreateTopologyConfigMutationTestInput = {}
+export function createDefaultTopologyConfigMutationTestInput(
+    overrides: Partial<CreateTopologyConfigMutationTestInput> = {}
 ) {
-    const operation = settings.operation ?? 'putConfig';
+    const operation = overrides.operation ?? 'putConfig';
+    const requestId = overrides.requestId === undefined ? `request-${operation}` : overrides.requestId;
+    return createTopologyConfigMutationTestInput({
+        operation,
+        requestId,
+        commandId: overrides.commandId === undefined
+            ? (requestId ?? `command-${operation}`)
+            : overrides.commandId,
+        config: overrides.config ?? { topologyKind: 'tree' },
+        durableDegreeLimit: overrides.durableDegreeLimit,
+        overrideDegreeLimit: overrides.overrideDegreeLimit
+    });
+}
+
+function createTopologyConfigMutationTestInput(
+    settings: CreateTopologyConfigMutationTestInput
+) {
+    const operation = settings.operation;
     const groupRef = createTopologyTestGroupRef();
-    const requestId = settings.requestId === undefined ? `request-${operation}` : settings.requestId;
-    const commandId = settings.commandId === undefined ? (requestId ?? `command-${operation}`) : settings.commandId;
+    const requestId = settings.requestId;
+    const commandId = settings.commandId;
     const read = createTopologyConfigMutationRead({
         durableDegreeLimit: settings.durableDegreeLimit,
         overrideDegreeLimit: settings.overrideDegreeLimit
@@ -36,7 +53,7 @@ export function createTopologyConfigMutationTestInput(
         commandHash: `sha256:${'c'.repeat(64)}`,
         capturedAtEpochMs: 1_000,
         input: {
-            config: settings.config ?? { topologyKind: 'tree' },
+            config: settings.config,
             updatedByPrincipalId: 'owner',
             ttlMs: operation === 'putOverride' ? 5_000 : null,
             expiresAtEpochMs: null

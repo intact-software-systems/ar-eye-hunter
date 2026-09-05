@@ -1,9 +1,6 @@
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeAuthMutation } from '@shared-server/rallar-system/auth/mutation/compute/compute-auth-mutation.ts';
-import {
-    assertAuthMutationComputed,
-    validateAuthMutation
-} from '@shared-server/rallar-system/auth/mutation/validate/validate-auth-mutation.ts';
+import { validateAuthMutation } from '@shared-server/rallar-system/auth/mutation/validate/validate-auth-mutation.ts';
 import { writeAuthMutation } from '@shared-server/rallar-system/auth/mutation/write-auth-mutation.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -46,20 +43,17 @@ describe('auth mutation write purity', () => {
             facts
         });
         const validationInput = { command, read, facts, computed };
-        assertAuthMutationComputed(validationInput);
         expect(validateAuthMutation(validationInput)).toEqual([]);
         expect(computed.persistence.operations).toHaveLength(2);
-        expect(() =>
-            assertAuthMutationComputed({
-                command,
-                read,
-                facts,
-                computed: {
-                    ...computed,
-                    persistence: { operations: [], logoutOutbox: null }
-                }
-            })
-        ).toThrow('Auth computed value differs');
+        expect(validateAuthMutation({
+            command,
+            read,
+            facts,
+            computed: {
+                ...computed,
+                persistence: { operations: [], logoutOutbox: null }
+            }
+        })).not.toEqual([]);
 
         const originalStringify = JSON.stringify;
         JSON.stringify = () => {

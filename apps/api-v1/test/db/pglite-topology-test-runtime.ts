@@ -24,9 +24,6 @@ import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-syste
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import type { GroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
 import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
-import {
-    createRtcTopologyOutboxPublisher
-} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
@@ -350,13 +347,9 @@ async function registerTopologyWorkDelivery(setup: PGliteTopologyWorkSetup): Pro
         })).status,
         'registered'
     );
-    const runtime = createRtcTopologyOutboxPublisher({
-        outboxQueueReader: new OutboxQueueReader(queue),
-        senderId: 'pglite-topology-worker',
-        now: () => nowEpochMs
-    });
+    const outboxQueueReader = new OutboxQueueReader(queue);
     const handler = createRtcTopologyWorkHandler({
-        runtime,
+        outboxQueueReader,
         database: sql,
         topologyPlanning: topologyManagement.planning,
         executionRepository,

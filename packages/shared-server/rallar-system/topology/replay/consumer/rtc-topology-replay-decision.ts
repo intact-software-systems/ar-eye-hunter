@@ -9,8 +9,8 @@ import { rtcTopologySemanticEqual } from '../../persistence/rtc-topology-semanti
 import { compareTopologyTuple } from '../../persistence/rtc-topology-snapshot-contract.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import {
-    computeRtcTopologyPublicationOutbox,
-    validateRtcTopologyPublicationOutbox
+    assertRtcTopologyPublicationOutbox,
+    computeRtcTopologyPublicationOutbox
 } from '../../publication/rtc-topology-ws-outbox-entry.ts';
 import { validateRtcTopologyPublication } from '../../publication/validate-rtc-topology-publication.ts';
 import type { RtcTopologyDeliveryLogEntry } from '../delivery/rtc-topology-delivery-contracts.ts';
@@ -68,7 +68,7 @@ export function decideRtcTopologyReplayEntry(
         throw corruption(input.entry, 'the log identity differs from its publication outbox');
     }
     try {
-        validateRtcTopologyPublicationOutbox(publication, outbox);
+        assertRtcTopologyPublicationOutbox(publication, outbox);
     }
     catch {
         throw corruption(input.entry, 'the durable outbox differs from its publication');

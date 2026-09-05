@@ -10,10 +10,7 @@ import type {
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
 import { computeAuthMutation } from '@shared-server/rallar-system/auth/mutation/compute/compute-auth-mutation.ts';
 import { computeAuthPersistence } from '@shared-server/rallar-system/auth/mutation/compute/compute-auth-persistence.ts';
-import {
-    assertAuthMutationComputed,
-    validateAuthMutation
-} from '@shared-server/rallar-system/auth/mutation/validate/validate-auth-mutation.ts';
+import { validateAuthMutation } from '@shared-server/rallar-system/auth/mutation/validate/validate-auth-mutation.ts';
 
 const user = {
     clientId: 'client-1',
@@ -94,7 +91,6 @@ describe('auth mutation validation', () => {
                 computed
             };
 
-            expect(() => assertAuthMutationComputed(validationInput), command.kind).not.toThrow();
             expect(validateAuthMutation(validationInput), command.kind).toEqual([]);
             expect(computed.command).toBe(command);
             expect(computed.read).toBe(read);
@@ -120,14 +116,12 @@ describe('auth mutation validation', () => {
     it.each(computedTamperCases())(
         'rejects a self-consistent $label tamper',
         ({ command, read, computed }) => {
-            expect(() =>
-                assertAuthMutationComputed({
-                    command,
-                    read,
-                    facts: authFacts(command),
-                    computed
-                })
-            ).toThrow();
+            expect(validateAuthMutation({
+                command,
+                read,
+                facts: authFacts(command),
+                computed
+            })).not.toEqual([]);
         }
     );
 });

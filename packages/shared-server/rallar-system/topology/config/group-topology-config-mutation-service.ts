@@ -9,10 +9,8 @@ import {
 import { computeTopologyConfigMutation } from './mutation/compute-topology-config-mutation.ts';
 import type * as mutationContracts from './mutation/group-topology-config-mutation-contracts.ts';
 import { readTopologyConfigMutation } from './mutation/read-topology-config-mutation.ts';
-import {
-    probeTopologyConfigMutationIdempotency,
-    validateTopologyConfigMutationIdempotency
-} from './mutation/topology-config-mutation-idempotency.ts';
+import { probeTopologyConfigMutationIdempotency } from './mutation/topology-config-mutation-idempotency.ts';
+import { validateTopologyConfigMutationPolicy } from './mutation/validate-topology-config-mutation-policy.ts';
 import { validateTopologyConfigMutation } from './mutation/validate-topology-config-mutation.ts';
 import { writeTopologyConfigMutation } from './mutation/write-topology-config-mutation.ts';
 import type { GroupTopologyConfigRepository } from './persistence/group-topology-config-repository.ts';
@@ -85,28 +83,21 @@ export class GroupTopologyConfigMutationService {
         });
     }
 
-    validate(validation: GroupTopologyConfigMutationValidation): void {
-        const { command, read, attemptCount, computed } = validation;
-        if (computed.outcome === 'replay' || computed.outcome === 'idempotency-conflict') {
-            validateTopologyConfigMutationIdempotency({
+    validate(
+        validation: GroupTopologyConfigMutationValidation
+    ): readonly mutationContracts.TopologyConfigMutationValidationIssue[] {
+        const { command, read, attemptCount } = validation;
+        const facts = toTopologyConfigMutationFacts(command, read, attemptCount);
+        return [
+            ...validateTopologyConfigMutationPolicy(command, read.state, facts),
+            ...validateTopologyConfigMutation({
                 command,
                 read: read.state,
-                commandHash: command.commandHash,
-                authorityFacts: {
-                    isPlatformAdmin: read.isPlatformAdmin,
-                    policyNowEpochMs: read.policyNowEpochMs
-                },
-                computed
-            });
-            return;
-        }
-        validateTopologyConfigMutation({
-            command,
-            read: read.state,
-            facts: toTopologyConfigMutationFacts(command, read, attemptCount),
-            serverDefaults: read.serverDefaults,
-            computed
-        });
+                facts,
+                serverDefaults: read.serverDefaults,
+                computed: validation.computed
+            })
+        ];
     }
 
     async write(

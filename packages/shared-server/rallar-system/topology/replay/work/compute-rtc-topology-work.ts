@@ -9,8 +9,10 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { validateComputedProjection } from '../../../computed-data-validation.ts';
+import { GroupTopologyValidationError } from '../../group-topology-errors.ts';
 import {
     computeTopologyMutation,
+    validateTopologyMutation,
     type RtcTopologyMutationInput,
     type RtcTopologyMutationRead
 } from '../../mutation/rtc-topology-mutations.ts';
@@ -25,7 +27,6 @@ import {
 } from '../../planning/materialize-rtc-overlay-topology-broadcast-message.ts';
 import {
     computeRtcTopologyWorkWrite,
-    validateRtcTopologyWorkWrite,
     type AcceptedRtcTopologyWork,
     type AcceptedRtcTopologyWorkWrite,
     type ComputeRtcTopologyWorkWriteInput
@@ -69,6 +70,12 @@ interface ComputedRtcTopologyWork {
     readonly write: AcceptedRtcTopologyWorkWrite;
 }
 
+export interface RtcTopologyWorkValidationIssue {
+    readonly path: string;
+    readonly message: string;
+    readonly cause: Error;
+}
+
 interface ComputeFingerprintSkipInput {
     readonly facts: RtcTopologyWorkFacts;
     readonly mutationRead: RtcTopologyMutationRead;
@@ -108,38 +115,57 @@ export async function computeRtcTopologyWork(
 export async function validateRtcTopologyWork(
     input: ComputeRtcTopologyWorkInput,
     computed: ComputedRtcTopologyWork
-): Promise<void> {
+): Promise<readonly RtcTopologyWorkValidationIssue[]> {
     const expected = await computeRtcTopologyWork(input);
-    validateAcceptedTopologyDecision(expected.accepted);
-    const decisionIssue = validateComputedProjection(
-        expected.accepted,
-        computed.accepted,
-        'computed.accepted'
-    )[0];
-    if (decisionIssue !== undefined) {
-        throw new TypeError('RTC topology work decision differs from its canonical computation');
-    }
-    validateRtcTopologyWorkWrite(
-        toRtcTopologyWorkWriteInput(input, expected.accepted),
-        computed.write
-    );
+    return [
+        ...validateComputedProjection(expected, computed, 'computed'),
+        ...validateAcceptedTopologyDecision(expected.accepted)
+    ];
 }
 
-function validateAcceptedTopologyDecision(accepted: AcceptedRtcTopologyWork): void {
+function validateAcceptedTopologyDecision(
+    accepted: AcceptedRtcTopologyWork
+): readonly RtcTopologyWorkValidationIssue[] {
     if (accepted.decision === 'skipped-rtt-refinement') {
-        return;
+        return [];
     }
     if (accepted.decision === 'accepted') {
         if (accepted.mutationInput.candidate === null) {
-            throw new TypeError('Accepted RTC topology work requires a computed topology');
+            const message = 'Accepted RTC topology work requires a computed topology';
+            return [{ path: 'computed.accepted.mutationInput.candidate', message, cause: new TypeError(message) }];
         }
-        validateComputedTopologySnapshot(accepted.mutationInput.candidate);
-        return;
+        return [
+            ...validateTopologyMutation({
+                ...accepted.mutationInput,
+                computed: accepted.computed
+            }),
+            ...validateTopologySnapshot(
+                accepted.mutationInput.candidate,
+                'computed.accepted.mutationInput.candidate'
+            )
+        ];
     }
     if (accepted.criterionPetition === null) {
-        throw new TypeError('Skipped RTC topology work requires its selected topology');
+        const message = 'Skipped RTC topology work requires its selected topology';
+        return [{ path: 'computed.accepted.criterionPetition', message, cause: new TypeError(message) }];
     }
-    validateComputedTopologySnapshot(accepted.criterionPetition.planned);
+    return validateTopologySnapshot(
+        accepted.criterionPetition.planned,
+        'computed.accepted.criterionPetition.planned'
+    );
+}
+
+function validateTopologySnapshot(
+    snapshot: RallarOverlayTopologySnapshot,
+    path: string
+): readonly RtcTopologyWorkValidationIssue[] {
+    const topologyIssues = validateComputedTopologySnapshot(snapshot);
+    const cause = new GroupTopologyValidationError(topologyIssues);
+    return topologyIssues.map((issue) => ({
+        path: `${path}.${(issue.path ?? []).join('.')}`,
+        message: issue.message,
+        cause
+    }));
 }
 
 function toRtcTopologyWorkWriteInput(

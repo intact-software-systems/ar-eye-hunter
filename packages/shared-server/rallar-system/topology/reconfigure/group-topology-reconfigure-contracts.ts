@@ -21,6 +21,13 @@ export interface GroupTopologyReconfigureRead {
     readonly actorIsPlatformAdmin: boolean;
 }
 
+export interface GroupTopologyReconfigureValidationIssue {
+    readonly code: string;
+    readonly path: readonly (string | number)[];
+    readonly message: string;
+    readonly cause: Error;
+}
+
 export interface GroupTopologyReconfigureAuthorityWrite {
     readonly namespace: string;
     readonly key: string;

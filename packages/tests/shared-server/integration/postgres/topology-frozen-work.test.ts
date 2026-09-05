@@ -13,7 +13,6 @@ import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.t
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
-import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
@@ -97,11 +96,6 @@ interface FrozenWorkHarness {
 function createFrozenWorkHarness(sql: PSqlSql, now: () => number): FrozenWorkHarness {
     const resources = createPSqlResourceInboxRepository(sql);
     const outboxQueueReader = new OutboxQueueReader(new PSqlQueueBox(resources));
-    const runtime = createRtcTopologyOutboxPublisher({
-        outboxQueueReader,
-        senderId: 'topology-frozen-test',
-        now
-    });
     const runtimeRepository = new PSqlRuntimeStateRepository(sql);
     const groupStateRepository = createTestGroupStateRepository(
         runtimeRepository,
@@ -126,9 +120,9 @@ function createFrozenWorkHarness(sql: PSqlSql, now: () => number): FrozenWorkHar
         onMessage: async () => {}
     });
     outboxQueueReader.onOutboxMessageDo(
-        runtime.workType,
+        AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
         createRtcTopologyWorkHandler({
-            runtime,
+            outboxQueueReader,
             database: sql,
             topologyPlanning: topologyManagement.planning,
             executionRepository,
