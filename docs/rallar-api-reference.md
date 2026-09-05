@@ -189,8 +189,11 @@ revision-floor query, and updates only that room.
 `input` can be a display name string or an object. It does not leave the
 previous current room, so use it when multi-room membership is intentional.
 Object input can include `groupId`, `displayName`, `description`, `joinMode`,
-`maxMembers`, `maxSessionsPerMember`, `metadata`, `expiresAtEpochMs`, and
-`purgeAfterEpochMs`. `joinMode` is one of `open`, `invite-only`, or `code`.
+`maxMembers`, `maxSessionsPerMember`, `metadata`, `expiresAtEpochMs`,
+`purgeAfterEpochMs`, and `lifecyclePolicy`. `joinMode` is one of `open`,
+`invite-only`, or `code`. `lifecyclePolicy` is the sparse `GroupLifecyclePolicyInput`
+described in `docs/rallar-group-formation-architecture.md`; omitting it creates the
+group with the `optimistic` preset, exactly as before.
 
 `rooms.createAndSwitch(input)` creates a group/room, makes it current, and then
 leaves the previous current room when it is different. It accepts the same input

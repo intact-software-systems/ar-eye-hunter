@@ -404,6 +404,24 @@ describe('room request translation', () => {
         });
     });
 
+    it('forwards a lifecycle policy verbatim and omits it when absent', () => {
+        const withPolicy = toCreateGroupStateRequest({
+            groupId: 'room-3',
+            room: {
+                displayName: 'Match',
+                lifecyclePolicy: { preset: 'match', establishment: { maxConcurrentEdgeSetups: 2 } }
+            },
+            ...actor
+        });
+        expect(withPolicy.lifecyclePolicy).toEqual({
+            preset: 'match',
+            establishment: { maxConcurrentEdgeSetups: 2 }
+        });
+        expect(
+            'lifecyclePolicy' in toCreateGroupStateRequest({ groupId: 'room-4', room: { displayName: 'Lobby' }, ...actor })
+        ).toBe(false);
+    });
+
     it('retains facade inputs and authoritative request result types', () => {
         expectTypeOf<RallarCreateRoomInput>().toMatchTypeOf<RoomCreateGroupStateFields>();
         expectTypeOf<RallarUpdateRoomInput>().toMatchTypeOf<UpdateStateGroupBody>();

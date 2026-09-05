@@ -110,6 +110,7 @@ export interface RoomCreateGroupStateFields extends
         | 'metadata'
         | 'expiresAtEpochMs'
         | 'purgeAfterEpochMs'
+        | 'lifecyclePolicy'
     > {}
 
 export interface RoomJoinGroupStateFields {
@@ -190,7 +191,8 @@ export function toCreateGroupStateRequest(
         actorSessionId: input.actorSessionId,
         metadata: room.metadata ?? {},
         ...(room.expiresAtEpochMs === undefined ? {} : { expiresAtEpochMs: room.expiresAtEpochMs }),
-        ...(room.purgeAfterEpochMs === undefined ? {} : { purgeAfterEpochMs: room.purgeAfterEpochMs })
+        ...(room.purgeAfterEpochMs === undefined ? {} : { purgeAfterEpochMs: room.purgeAfterEpochMs }),
+        ...(room.lifecyclePolicy === undefined ? {} : { lifecyclePolicy: room.lifecyclePolicy })
     };
 }
 

@@ -48,6 +48,7 @@ describe('room create operations', () => {
             maxMembers: 8,
             maxSessionsPerMember: 2,
             metadata: { map: 'fjord' },
+            lifecyclePolicy: { preset: 'managed' },
             scope,
             timeoutMs: 55
         });
@@ -66,7 +67,8 @@ describe('room create operations', () => {
                     joinMode: 'open',
                     maxMembers: 8,
                     maxSessionsPerMember: 2,
-                    metadata: { map: 'fjord' }
+                    metadata: { map: 'fjord' },
+                    lifecyclePolicy: { preset: 'managed' }
                 }
             }
         );

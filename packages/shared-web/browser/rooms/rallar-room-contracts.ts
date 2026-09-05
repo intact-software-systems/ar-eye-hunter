@@ -83,6 +83,7 @@ export interface RallarCreateRoomInput extends
         | 'metadata'
         | 'expiresAtEpochMs'
         | 'purgeAfterEpochMs'
+        | 'lifecyclePolicy'
     > {
     readonly groupId?: string;
     readonly displayName: string;
