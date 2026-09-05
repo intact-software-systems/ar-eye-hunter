@@ -209,7 +209,23 @@ arena, leave the old arena" flows.
 default room, or the current room without joining.
 
 `RallarRoomSession` exposes `roomId`, `roomRef`, `snapshot()`, `summary()`,
-`leave()`, `refresh()`, `message(...)`, and `realtime(...)`.
+`leave()`, `refresh()`, `message(...)`, `realtime(...)`, and `formation`.
+
+`rooms.formation(room?)` returns a `RallarRoomFormation` bound to an explicit room, the default
+room, or the current room; `RallarRoomSession` exposes the same handle as `formation`. It carries
+the eight application-facing formation commands of the group lifecycle
+(`docs/rallar-group-formation-architecture.md`): `plan()`, `connect(options?)`, `activate()`,
+`reconfigure({ landing? })`, `pause()`, `resume()`, `reset()` and `start()`. Each resolves to the
+receipt `GroupSnapshot` once the transition committed; planning, publication and RTC readiness stay
+asynchronous. `connect()` names the room's current planned layout and the cached formation epoch;
+pass `layout` to name a specific `GroupLayoutIdentity`. When no planned layout is published the
+call throws a `RallarValidationError` issue `no-planned-layout` before any request is sent.
+`formation.status()` is the free, in-memory view: stage, epoch, attempt count, transport state,
+which layout roles the browser dials, the accepted and planned layouts it holds, and the pushed
+activation condition. Commands reject with `ApiHttpError`; `toRoomFormationDenial(error)`
+classifies it as `{ kind: 'policy', code }` for a stage or initiator denial or
+`{ kind: 'layout', code }` for `group-connect-no-planned-layout` and
+`group-connect-planned-layout-superseded`, the two typed `409` conflicts of `connect`.
 
 `rooms.leave(input?)` leaves a room. It can use explicit `roomId`, `roomRef`, the default room, or the current room.
 

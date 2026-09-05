@@ -39,6 +39,7 @@ export type {
 export type * from '@shared-web/browser/rallar-realtime-facade.ts';
 export type * from '@shared-web/browser/rallar-rtc-facade.ts';
 export type * from '@shared-web/browser/rallar-shared-contracts.ts';
+export type * from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 export type * from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 export type * from '@shared-web/browser/session/rallar-auth-facade.ts';
 export type * from '@shared-web/browser/stats/rallar-stats-operations.ts';
