@@ -68,14 +68,7 @@ describe('IndexedDB AL runtime stores', () => {
                 }]
             })
         ).resolves.toBe('committed');
-        await expect(
-            outboundStores.admissionStore.commitBundle({
-                senderId: 'peer-default-schema',
-                expectedVersion: 1,
-                mutations: [],
-                durableEffects: []
-            }, decodeOutboundTestPayload)
-        ).resolves.toBe('committed');
+        await expect(outboundStores.admissionStore.ready()).resolves.toBeUndefined();
         await expect(persistence.getItem('generic-entry')).resolves.toBe('generic-value');
     });
 

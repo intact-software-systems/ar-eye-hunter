@@ -24,9 +24,10 @@ const IMMEDIATE_CALLBACK_METHODS = new Set([
     'reduceRight',
     'some'
 ]);
-const PRECOMPUTABLE_NAME = /^(?:compute|prepare|serialize|canonicalize|hash|encode)(?:$|[A-Z_])/u;
-const TRANSACTION_TYPE = /(?:PSqlSql|IDBTransaction)/u;
+const TRANSACTION_TYPE = /^(?:import\("[^"]+"\)\.)?(?:PSqlSql|IDBTransaction)$/u;
 const DATABASE_RECEIVER_TYPE = /(?:Sql|Database|Repository|Runtime|PGlite)/u;
+const INDEXED_DB_WRITE_METHODS = new Set(['add', 'clear', 'delete', 'put']);
+const TRANSACTION_CONTROL_METHODS = new Set(['begin', 'savepoint', 'transaction']);
 const APP_INBOX_TRANSACTION_WRITER_TYPE = /AppInbox(?:Mutation)?TransactionWriter/u;
 const APP_INBOX_WRITE_METHOD = 'writeComputedMutation';
 const SPECIALIZED_TRANSACTION_OWNERS = new Map([
@@ -243,6 +244,13 @@ function analyzeExecutionNode(input) {
 function analyzeCall(input) {
     const { root, call, findings, boundary, project, callables } = input;
     const operation = callOperation(call);
+    reportProhibitedCall({ root, call, findings, boundary, project, operation });
+    followCallTarget({ call, findings, boundary, project, callables, operation });
+    followTransactionCallbacks({ call, findings, boundary, project, callables, operation });
+}
+
+function reportProhibitedCall(input) {
+    const { root, call, findings, boundary, project, operation } = input;
     const precomputable = precomputableOperation(call, operation);
     if (precomputable) {
         addFinding({
@@ -262,33 +270,49 @@ function analyzeCall(input) {
             boundary
         });
     }
-    else if (!isReviewedCallableParameterInvocation(call)) {
-        if (isUnresolvedCallableParameterInvocation(call)) {
-            addFinding({
-                findings,
-                node: call,
-                rule: 'transaction.unresolved-provenance',
-                operation,
-                boundary
-            });
-        }
-        else {
-            const targets = resolveCallTargets(call, project);
-            for (const callable of targets.bodies) {
-                callables.push(analysisRoot(callable));
-            }
-            if (targets.unresolved && !isDirectTransactionOperation(call)) {
-                addFinding({
-                    findings,
-                    node: call,
-                    rule: 'transaction.unresolved-provenance',
-                    operation,
-                    boundary
-                });
-            }
-        }
+    else if (isPersistedAuthoredHelperResult(call, root, project)) {
+        addFinding({
+            findings,
+            node: call,
+            rule: 'transaction.precomputable-work',
+            operation,
+            boundary
+        });
     }
+}
 
+function followCallTarget(input) {
+    const { call, findings, boundary, project, callables, operation } = input;
+    if (isReviewedCallableParameterInvocation(call)) {
+        return;
+    }
+    if (isUnresolvedCallableParameterInvocation(call)) {
+        addFinding({
+            findings,
+            node: call,
+            rule: 'transaction.unresolved-provenance',
+            operation,
+            boundary
+        });
+        return;
+    }
+    const targets = resolveCallTargets(call, project);
+    for (const callable of targets.bodies) {
+        callables.push(analysisRoot(callable));
+    }
+    if (targets.unresolved && !isDirectTransactionOperation(call)) {
+        addFinding({
+            findings,
+            node: call,
+            rule: 'transaction.unresolved-provenance',
+            operation,
+            boundary
+        });
+    }
+}
+
+function followTransactionCallbacks(input) {
+    const { call, findings, boundary, project, callables, operation } = input;
     for (const callback of transactionExecutedCallbackArguments(call)) {
         const callbackBodies = resolveCallableBodies(callback, project);
         if (callbackBodies.length === 0) {
@@ -322,7 +346,7 @@ function transactionExecutedCallbackArguments(call) {
 }
 
 function hasParameterOnlyPersistedValueTransformation(call, root) {
-    if (!isDirectTransactionOperation(call)) {
+    if (!isPersistedWriteOperation(call)) {
         return false;
     }
     return call.getArguments().some((argument) => {
@@ -414,9 +438,93 @@ function referencesDirectDatabaseResult(expression, root) {
                 ...(Node.isCallExpression(initializer) ? [initializer] : []),
                 ...initializer.getDescendantsOfKind(SyntaxKind.CallExpression)
             ];
-            return calls.some(isDirectTransactionOperation);
+            return calls.some(isDirectDatabaseResultCall);
         });
     });
+}
+
+function isPersistedAuthoredHelperResult(call, root, project) {
+    const targets = resolveCallTargets(call, project);
+    if (
+        isPersistedWriteOperation(call) ||
+        targets.bodies.length === 0 ||
+        callableClosureContainsExplicitPrecomputableWork(targets.bodies, project) ||
+        call.getArguments().some((argument) => referencesDirectDatabaseResult(argument, root))
+    ) {
+        return false;
+    }
+    if (isWithinPersistedWriteArgument(call)) {
+        return true;
+    }
+    const declaration = initializedVariableDeclaration(call);
+    return declaration !== undefined &&
+        root.getDescendantsOfKind(SyntaxKind.Identifier).some((identifier) =>
+            identifier.getStart() > declaration.getStart() &&
+            resolvedDeclarations(identifier).includes(declaration) &&
+            isWithinPersistedWriteArgument(identifier)
+        );
+}
+
+function callableClosureContainsExplicitPrecomputableWork(callables, project, visited = new Set()) {
+    for (const callable of callables) {
+        const identity = `${callable.getSourceFile().getFilePath()}:${callable.getStart()}`;
+        if (visited.has(identity)) {
+            continue;
+        }
+        visited.add(identity);
+        const body = functionBody(callable);
+        if (!body) {
+            continue;
+        }
+        for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+            if (call.getFirstAncestor(isFunctionDeclaration) !== callable) {
+                continue;
+            }
+            if (precomputableOperation(call, callOperation(call))) {
+                return true;
+            }
+            const targets = resolveCallTargets(call, project);
+            if (callableClosureContainsExplicitPrecomputableWork(targets.bodies, project, visited)) {
+                return true;
+            }
+            const callbacks = transactionExecutedCallbackArguments(call)
+                .flatMap((callback) => resolveCallableBodies(callback, project));
+            if (callableClosureContainsExplicitPrecomputableWork(callbacks, project, visited)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function initializedVariableDeclaration(expression) {
+    let current = expression;
+    while (current.getParent() && isTransparentExpression(current.getParent())) {
+        current = current.getParent();
+    }
+    const parent = current.getParent();
+    return Node.isVariableDeclaration(parent) && parent.getInitializer() === current
+        ? parent
+        : undefined;
+}
+
+function isTransparentExpression(node) {
+    return Node.isAsExpression(node) ||
+        Node.isAwaitExpression(node) ||
+        Node.isNonNullExpression(node) ||
+        Node.isParenthesizedExpression(node) ||
+        Node.isSatisfiesExpression(node) ||
+        Node.isTypeAssertion(node);
+}
+
+function isWithinPersistedWriteArgument(node) {
+    return node.getAncestors().some((ancestor) =>
+        Node.isCallExpression(ancestor) &&
+        isPersistedWriteOperation(ancestor) &&
+        ancestor.getArguments().some((argument) =>
+            argument.getStart() <= node.getStart() && argument.getEnd() >= node.getEnd()
+        )
+    );
 }
 
 function resolvedDeclarations(identifier) {
@@ -462,14 +570,6 @@ function precomputableOperation(call, operation) {
         expression.getExpression().getExpression().getText() === 'TextEncoder'
     ) {
         return undefined;
-    }
-    if (
-        PRECOMPUTABLE_NAME.test(name) &&
-        !call.getArguments().some((argument) =>
-            referencesDirectDatabaseResult(argument, call.getFirstAncestor(isFunctionDeclaration))
-        )
-    ) {
-        return name;
     }
     return undefined;
 }
@@ -535,10 +635,11 @@ function looksLikeDatabaseReceiver(receiver) {
 function reportTransactionLoop(call, findings) {
     const loop = call.getFirstAncestor((ancestor) =>
         Node.isForStatement(ancestor) ||
+        Node.isForOfStatement(ancestor) ||
         Node.isWhileStatement(ancestor) ||
         Node.isDoStatement(ancestor)
     );
-    if (loop) {
+    if (loop && (!Node.isForOfStatement(loop) || isRetryShapedForOfTransaction(call, loop))) {
         addFinding({
             findings,
             node: call,
@@ -547,6 +648,20 @@ function reportTransactionLoop(call, findings) {
             boundary: call
         });
     }
+}
+
+function isRetryShapedForOfTransaction(call, loop) {
+    const initializer = loop.getInitializer();
+    if (!Node.isVariableDeclarationList(initializer)) {
+        return true;
+    }
+    const declarations = initializer.getDeclarations();
+    if (declarations.some((declaration) => /(?:attempt|retries?|retry)/iu.test(declaration.getName()))) {
+        return true;
+    }
+    return !call.getDescendantsOfKind(SyntaxKind.Identifier).some((identifier) =>
+        resolvedDeclarations(identifier).some((declaration) => declarations.includes(declaration))
+    );
 }
 
 function isTransactionWriteDeclaration(declaration) {
@@ -628,6 +743,10 @@ function unwrapExpression(expression) {
 
 function resolveCallTargets(call, project) {
     const expression = call.getExpression();
+    const immediate = unwrapExpression(expression);
+    if (Node.isArrowFunction(immediate) || Node.isFunctionExpression(immediate)) {
+        return { bodies: [immediate], unresolved: false };
+    }
     const symbol = Node.isPropertyAccessExpression(expression)
         ? expression.getNameNode().getSymbol()
         : expression.getSymbol();
@@ -685,6 +804,39 @@ function isDirectTransactionOperation(call) {
     return Node.isIdentifier(receiver) && resolvedDeclarations(receiver).some(
         (declaration) => Node.isParameterDeclaration(declaration) && isTransactionParameter(declaration)
     );
+}
+
+function isDirectDatabaseResultCall(call) {
+    if (!isDirectTransactionOperation(call)) {
+        return false;
+    }
+    const expression = call.getExpression();
+    if (!Node.isPropertyAccessExpression(expression)) {
+        return false;
+    }
+    return !isExactType(expression.getExpression(), 'IDBTransaction');
+}
+
+function isPersistedWriteOperation(call) {
+    if (isDirectTransactionOperation(call)) {
+        const expression = call.getExpression();
+        return !Node.isPropertyAccessExpression(expression) ||
+            !TRANSACTION_CONTROL_METHODS.has(expression.getName());
+    }
+    const expression = call.getExpression();
+    return Node.isPropertyAccessExpression(expression) &&
+        INDEXED_DB_WRITE_METHODS.has(expression.getName()) &&
+        isExactType(expression.getExpression(), 'IDBObjectStore');
+}
+
+function isExactType(node, expectedName) {
+    const type = node.getType();
+    const symbol = type.getAliasSymbol() ?? type.getSymbol();
+    if (symbol?.getName() === expectedName) {
+        return true;
+    }
+    const typeText = type.getText(node);
+    return new RegExp(`^(?:import\\("[^"]+"\\)\\.)?${expectedName}$`, 'u').test(typeText);
 }
 
 function isTransactionArgument(argument) {

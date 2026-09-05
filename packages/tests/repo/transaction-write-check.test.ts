@@ -7,39 +7,26 @@ import {
 } from '../../../scripts/transaction-write-check/analyze-transaction-writes.mjs';
 
 describe('transaction write check', () => {
-    it('reports governed deterministic helpers before following their implementation', () => {
+    it('reports persisted values returned by authored helpers', () => {
         const findings = analyzeFixture(`
-            interface Sql {
-                begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
-                query(value: string): Promise<void>;
+            interface PSqlSql {
+                insert(value: object): Promise<void>;
+                update(value: number): Promise<void>;
             }
-            declare const database: Sql;
             declare const computed: { row: string };
-            function computeRow(): string { return JSON.stringify(computed); }
-            export async function execute(): Promise<void> {
-                await database.begin(async (transaction) => {
-                    const row = computeRow();
-                    await transaction.query(row);
-                });
-            }
-        `);
-
-        expect(findings.map((finding) => finding.operation)).toEqual(['computeRow']);
-    });
-
-    it('reports authored no-argument deterministic helpers in transaction writes', () => {
-        const findings = analyzeFixture(`
-            interface PSqlSql { update(value: number): Promise<void>; }
-            function computeWinnerRevision(): number { return 7; }
+            function deriveRow(): object { return { resource: computed.row }; }
+            function materializeWinnerRevision(): number { return 7; }
             export async function writeMutation(transaction: PSqlSql): Promise<void> {
-                await transaction.update(computeWinnerRevision());
+                const row = deriveRow();
+                await transaction.insert(row);
+                await transaction.update(materializeWinnerRevision());
             }
         `);
 
-        expect(findings).toMatchObject([{
-            rule: 'transaction.precomputable-work',
-            operation: 'computeWinnerRevision'
-        }]);
+        expect(findings.map((finding) => finding.operation)).toEqual([
+            'deriveRow',
+            'materializeWinnerRevision'
+        ]);
     });
 
     it('follows imported transaction callback aliases', () => {
@@ -808,6 +795,56 @@ describe('transaction write check', () => {
         expect(findings).toEqual([]);
     });
 
+    it('does not treat an IndexedDB object store adapter as returned database data', () => {
+        const findings = analyzeFixture(`
+            declare const db: IDBDatabase;
+            declare const computed: { readonly value: string };
+            function deriveRow(store: IDBObjectStore): object {
+                void store;
+                return { value: computed.value };
+            }
+            export function writeMutation(): void {
+                const transaction = db.transaction('items', 'readwrite');
+                const store = transaction.objectStore('items');
+                store.put(deriveRow(store));
+            }
+        `);
+
+        expect(findings).toMatchObject([{
+            rule: 'transaction.precomputable-work',
+            operation: 'deriveRow'
+        }]);
+    });
+
+    it('does not mistake a transaction type nested in a writer type for the transaction', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql { query(value: string): Promise<void>; }
+            interface TransactionBoundWriter<T> { materialize(): string; }
+            export async function writeMutation(
+                transaction: PSqlSql,
+                writer: TransactionBoundWriter<PSqlSql>
+            ): Promise<void> {
+                await transaction.query(writer.materialize());
+            }
+        `);
+
+        expect(findings).toMatchObject([{
+            rule: 'transaction.unresolved-provenance',
+            operation: 'writer.materialize'
+        }]);
+    });
+
+    it('follows an immediately invoked inline callable', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql { query(value: string): Promise<void>; }
+            export async function writeMutation(transaction: PSqlSql): Promise<void> {
+                await transaction.query((() => JSON.stringify({ value: 1 }))());
+            }
+        `);
+
+        expect(findings.map((finding) => finding.operation)).toContain('JSON.stringify');
+    });
+
     it('keeps unresolved provenance advisory while blocking proven transaction work', () => {
         expect(isBlockingTransactionWriteFinding({
             rule: 'transaction.unresolved-provenance'
@@ -954,6 +991,24 @@ describe('transaction write check', () => {
         );
 
         expect(analyzeTransactionWrites(project, [source])).toEqual([]);
+    });
+
+    it('reports retry-shaped for-of transaction loops', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql { begin<T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T>; }
+            declare const database: PSqlSql;
+            declare const attempts: readonly number[];
+            export async function writeWithRetry(): Promise<void> {
+                for (const attempt of attempts) {
+                    await database.begin(async () => undefined);
+                }
+            }
+        `);
+
+        expect(findings).toMatchObject([{
+            rule: 'transaction.inner-retry',
+            operation: 'database.begin'
+        }]);
     });
 
     it('exempts exact conditional ResourceInbox owners and fails closed for neighboring methods', () => {
