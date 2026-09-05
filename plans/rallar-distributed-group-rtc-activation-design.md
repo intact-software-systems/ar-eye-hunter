@@ -1,10 +1,27 @@
 # Distributed Group RTC Activation Design
 
-Status: approved design direction; implementation not started. Revised
-2026-08-07 after a full design review (activation-flow correctness,
+Status: **superseded as an implementation target; retained as design
+direction.** Group activation shipped between 2026-08 and 2026-09 by a
+different route — see `playground/rtc-design/2026-08-22-group-activation-product-plan.md`
+and `docs/rallar-group-formation-architecture.md` for what was actually
+built. Read this document for the reasoning it records, not for the machinery
+it specifies.
+
+The delivered design keeps this document's principles: no server owns a
+group, any server sharing the database may claim the work, and an accepted
+layout is never overwritten by an unconfirmed plan — the non-goal this
+document states and the delivered accepted/planned split enforces.
+
+It does **not** adopt this document's mechanism. `ASYNC_REMOTE_QUEUE`,
+`AWAITING_REMOTE` and the `group_batch` coordination row exist nowhere in the
+repository; the shipped lifecycle rides the existing AppInbox mutation
+doctrine with a stage machine on the group aggregate instead. Anything below
+that names those three is unbuilt by decision, not by omission.
+
+Revised 2026-08-07 after a full design review (activation-flow correctness,
 distributed-systems behavior, scalability at hundreds of sessions, security,
-and operational complexity). All review decisions are folded into this
-document.
+and operational complexity). All review decisions of that pass are folded into
+this document.
 
 Governance note: before implementation starts, this design must be reconciled
 with `plans/rallar-architecture-quality-and-rtc-program-roadmap.md`, which
