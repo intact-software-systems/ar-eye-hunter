@@ -1,7 +1,12 @@
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { isSameGroupRef, toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { resolveDialLayoutRoles } from '@shared/api/group-lifecycle/resolve-dial-layout-roles.ts';
-import { isOverlayIdentity, toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
+import {
+    isOverlayIdentity,
+    toOverlayLayoutIdentity,
+    type OverlayRepositoryChange
+} from '@shared/repository/overlays-repository.ts';
 
 import type { GroupRef, GroupSnapshot } from '../room-group-state-translation.ts';
 import type { RallarRoomStateStorePort } from '../room-state-store.ts';
@@ -76,5 +81,27 @@ export function toRallarRoomFormationStatus(
         condition: group.activationStatus?.condition,
         coverageRate: group.activationStatus?.coverageRate,
         snapshot: input.snapshot
+    };
+}
+
+export function subscribeRoomFormation(
+    input: ReadRoomFormationStatusInput,
+    listener: () => void | Promise<void>
+): RallarUnsubscribe {
+    const overlayId = toScopedOverlayId(input.roomRef);
+    const onSlotChange = (change: OverlayRepositoryChange) => {
+        if (change.overlayId === overlayId) {
+            return listener();
+        }
+    };
+    const unsubscribes = [
+        input.stateStore.onCacheChange(listener),
+        input.slots.onPlannedChange(onSlotChange),
+        input.slots.onAcceptedChange(onSlotChange)
+    ];
+    return () => {
+        for (const unsubscribe of unsubscribes) {
+            unsubscribe();
+        }
     };
 }

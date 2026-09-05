@@ -6,6 +6,7 @@ import {
 } from './command-room-formation.ts';
 import type { RallarRoomFormation, RallarRoomFormationCommandOptions } from './rallar-room-formation-contracts.ts';
 import { readRoomFormationStatus } from './room-formation-observation.ts';
+import { waitForRoomCondition, waitForRoomStage } from './wait-for-room-formation.ts';
 
 export interface CreateRoomFormationInput extends RoomFormationCommandPorts {
     readonly roomRef: GroupRef;
@@ -28,6 +29,14 @@ export function createRoomFormation(input: CreateRoomFormationInput): RallarRoom
         pause: async (options) => await submit({ command: 'pause' }, options),
         resume: async (options) => await submit({ command: 'resume' }, options),
         reset: async (options) => await submit({ command: 'reset' }, options),
-        start: async (options) => await submit({ command: 'start' }, options)
+        start: async (options) => await submit({ command: 'start' }, options),
+        waitForStage: async (stage, options = {}) =>
+            await waitForRoomStage({ ...input, stages: toList(stage), options }),
+        waitForCondition: async (condition, options = {}) =>
+            await waitForRoomCondition({ ...input, conditions: toList(condition), options })
     };
+}
+
+function toList<T>(value: T | readonly T[]): readonly T[] {
+    return Array.isArray(value) ? value : [value as T];
 }

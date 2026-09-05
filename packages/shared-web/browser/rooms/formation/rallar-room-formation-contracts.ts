@@ -53,6 +53,14 @@ export interface RallarRoomReconfigureOptions extends RallarRoomFormationCommand
     readonly landing?: GroupTopologyReconfigureLanding;
 }
 
+export type RallarRoomFormationWaitStatus = 'ready' | 'timeout' | 'aborted' | 'not-found';
+
+export interface RallarRoomFormationWaitResult {
+    readonly status: RallarRoomFormationWaitStatus;
+    readonly roomRef: GroupRef;
+    readonly formation: RallarRoomFormationStatus | undefined;
+}
+
 export interface RallarRoomFormation {
     readonly roomRef: GroupRef;
     status(): RallarRoomFormationStatus | undefined;
@@ -64,6 +72,14 @@ export interface RallarRoomFormation {
     resume(options?: RallarRoomFormationCommandOptions): Promise<GroupSnapshot>;
     reset(options?: RallarRoomFormationCommandOptions): Promise<GroupSnapshot>;
     start(options?: RallarRoomFormationCommandOptions): Promise<GroupSnapshot>;
+    waitForStage(
+        stage: GroupLifecycleState | readonly GroupLifecycleState[],
+        options?: RallarScopedOperationOptions
+    ): Promise<RallarRoomFormationWaitResult>;
+    waitForCondition(
+        condition: GroupActivationCondition | readonly GroupActivationCondition[],
+        options?: RallarScopedOperationOptions
+    ): Promise<RallarRoomFormationWaitResult>;
 }
 
 export type RallarRoomFormationDenial =
