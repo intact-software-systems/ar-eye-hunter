@@ -952,7 +952,95 @@ function validateStrictStep(step: JsonRecord, path: string): readonly BlackBoxRu
             });
         }
     }
+    issues.push(...validateStrictExpectIsHonoured(step, type, path));
+    issues.push(...validateStrictExpectIsNotVacuous(step, path));
     return issues;
+}
+
+/**
+ * Assertion keys a WebSocket send never reads. `sendWs` dispatches on
+ * `expect.messages` and `expect.message` only, so these two describe a check
+ * the runner will not perform. Wait plumbing (`connection`, `withinMs`,
+ * `consume`) is deliberately absent from this list: those are honoured
+ * elsewhere on the step and flagging them would be noise, not a finding.
+ */
+const WS_SEND_IGNORED_ASSERTION_KEYS = ['absent', 'close'];
+
+function validateStrictExpectIsHonoured(
+    step: JsonRecord,
+    type: string,
+    path: string
+): readonly BlackBoxRunnerPreflightIssue[] {
+    const expected = asRecord(step.expect || step.response);
+    const expectedKeys = Object.keys(expected);
+    if (expectedKeys.length <= 0) {
+        return [];
+    }
+
+    if (type === 'parallel') {
+        return [{
+            severity: 'error',
+            code: 'STRICT_EXPECT_IGNORED',
+            message: 'Parallel steps ignore expect entirely; assert on the group steps instead.',
+            path: `${path}.expect`
+        }];
+    }
+
+    const action = String(asRecord(step.request).action || '').toLowerCase();
+    const isWsSend = type.startsWith('ws') && (action === 'send' || action.length <= 0);
+    if (!isWsSend) {
+        return [];
+    }
+
+    return expectedKeys
+        .filter((key) => WS_SEND_IGNORED_ASSERTION_KEYS.includes(key))
+        .map((key): BlackBoxRunnerPreflightIssue => ({
+            severity: 'error',
+            code: 'STRICT_EXPECT_IGNORED',
+            message: `WebSocket send steps read only expect.message and expect.messages; expect.${key} is ignored. ` +
+                'Use a ws.wait step for it.',
+            path: `${path}.expect.${key}`
+        }));
+}
+
+/**
+ * `compatible` and `compatible-structure` match an empty expected array against
+ * any actual array, so an empty one asserts nothing at all. The stricter modes
+ * reject it, which is what makes the mode part of the check rather than the
+ * array alone.
+ */
+const VACUOUS_ARRAY_COMPARISONS = ['', 'compatible', 'compatible-structure'];
+
+function validateStrictExpectIsNotVacuous(
+    step: JsonRecord,
+    path: string
+): readonly BlackBoxRunnerPreflightIssue[] {
+    const expected = asRecord(step.expect || step.response);
+    const comparison = String(expected.comparison || '').toLowerCase();
+    if (!VACUOUS_ARRAY_COMPARISONS.includes(comparison)) {
+        return [];
+    }
+
+    return toEmptyArrayPaths(expected.body, `${path}.expect.body`)
+        .map((emptyPath): BlackBoxRunnerPreflightIssue => ({
+            severity: 'error',
+            code: 'STRICT_EXPECT_VACUOUS',
+            message: 'An empty expected array matches anything under compatible; ' +
+                'use compatible-complete or a non-empty expectation.',
+            path: emptyPath
+        }));
+}
+
+function toEmptyArrayPaths(value: unknown, path: string): readonly string[] {
+    if (Array.isArray(value)) {
+        return value.length <= 0
+            ? [path]
+            : value.flatMap((item, index) => toEmptyArrayPaths(item, `${path}[${index}]`));
+    }
+
+    return isRecord(value)
+        ? Object.entries(value).flatMap(([key, item]) => toEmptyArrayPaths(item, `${path}.${key}`))
+        : [];
 }
 
 function validateStrictSet(step: JsonRecord, path: string): readonly BlackBoxRunnerPreflightIssue[] {

@@ -1,0 +1,17 @@
+{
+  "note": "Recipes with expectations the runner does not compare. New recipes must add none; these are pre-existing and each is a weakened assertion to be repaired.",
+  "debtByRecipe": {
+    "api-v1-admin-operations": 4,
+    "api-v1-admin-support": 4,
+    "api-v1-black-box-control-auth": 4,
+    "api-v1-crdt-append-history": 1,
+    "api-v1-cross-application-ws-isolation": 2,
+    "api-v1-cross-principal-client-state-isolation": 2,
+    "api-v1-drop-in-social-preset": 1,
+    "api-v1-group-data-policy": 2,
+    "api-v1-group-lifecycle-policy": 2,
+    "api-v1-group-manager-succession": 2,
+    "api-v1-ice-config": 3,
+    "api-v1-openapi-topology-auth": 20
+  }
+}
