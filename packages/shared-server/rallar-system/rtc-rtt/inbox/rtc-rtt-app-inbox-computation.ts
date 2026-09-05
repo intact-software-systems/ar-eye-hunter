@@ -13,6 +13,7 @@ import type {
     RtcRttMutationFacts,
     RtcRttMutationRead
 } from '../mutation/rtc-rtt-mutation-contracts.ts';
+import { validateRtcRttMutation } from '../mutation/validate-rtc-rtt-mutation.ts';
 import { toRtcRttAppInboxResult, type RtcRttAppInboxResult } from './rtc-rtt-app-inbox-result.ts';
 
 interface RtcRttAppInboxMutationInput {
@@ -49,6 +50,7 @@ export function validateRtcRttAppInboxMutation(
     input: RtcRttAppInboxMutationInput,
     computed: RtcRttAppInboxMutationComputed
 ): ReturnType<typeof validateComputedProjection> {
+    validateRtcRttMutation({ ...input, computed: computed.mutation });
     const durableResult = toRtcRttAppInboxResult(computed.mutation, input.requestId);
     const completionInput = {
         ...input.completionFacts,

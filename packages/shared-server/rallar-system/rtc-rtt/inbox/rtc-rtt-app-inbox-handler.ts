@@ -1,7 +1,6 @@
 import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
-import { assertRtcRttMutation } from '../mutation/assert-rtc-rtt-mutation.ts';
 import { readRtcRttMutation } from '../mutation/read-rtc-rtt-mutation.ts';
 import { writeRtcRttMutation } from '../mutation/write-rtc-rtt-mutation.ts';
 import {
@@ -88,7 +87,6 @@ export class RtcRttAppInboxHandler {
             completionFacts
         };
         const computed = computeRtcRttAppInboxMutation(computationInput);
-        assertRtcRttMutation({ command, read, facts, computed: computed.mutation });
         const validationIssue = validateRtcRttAppInboxMutation(computationInput, computed)[0];
         if (validationIssue !== undefined) {
             throw validationIssue.cause;

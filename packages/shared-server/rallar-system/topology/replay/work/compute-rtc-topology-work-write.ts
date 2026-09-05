@@ -181,32 +181,6 @@ export function computeRtcTopologyReplayWrite(
     if (computed.outcome !== 'loaded') {
         throw new RuntimeStateWriteConflictError();
     }
-    const outbox = input.read.outbox;
-    if (outbox === null) {
-        throw new RtcTopologyDeliveryCorruptionError(
-            `RTC topology publication ${computed.publication.publicationId} has no durable outbox`
-        );
-    }
-    try {
-        assertRtcTopologyPublicationOutbox(computed.publication, outbox);
-    }
-    catch {
-        throw new RtcTopologyDeliveryCorruptionError(
-            `RTC topology publication ${computed.publication.publicationId} has a conflicting durable outbox`
-        );
-    }
-    const expectedDelivery = computeRtcTopologyPublicationDeliveryWrite(
-        computed.publication,
-        input.publisherStreamId
-    ).deliveryAppend;
-    if (expectedDelivery !== null) {
-        if (input.read.delivery === null) {
-            throw new RtcTopologyDeliveryCorruptionError(
-                `RTC topology publication ${computed.publication.publicationId} has no durable delivery`
-            );
-        }
-        assertRtcTopologyDeliveryLogEntry(input.read.delivery, expectedDelivery);
-    }
     return {
         loaded: computed,
         transaction: {
@@ -224,7 +198,42 @@ export function validateRtcTopologyReplayWrite(
     input: ComputeRtcTopologyReplayWriteInput,
     computed: ComputedRtcTopologyReplayWrite
 ): ReturnType<typeof validateComputedProjection> {
-    return validateComputedProjection(computeRtcTopologyReplayWrite(input), computed, 'computed');
+    const expected = computeRtcTopologyReplayWrite(input);
+    validateRtcTopologyReplayRead(input, expected.loaded);
+    return validateComputedProjection(expected, computed, 'computed');
+}
+
+function validateRtcTopologyReplayRead(
+    input: ComputeRtcTopologyReplayWriteInput,
+    loaded: Extract<RtcTopologyMutationComputed, { outcome: 'loaded'; }>
+): void {
+    const outbox = input.read.outbox;
+    if (outbox === null) {
+        throw new RtcTopologyDeliveryCorruptionError(
+            `RTC topology publication ${loaded.publication.publicationId} has no durable outbox`
+        );
+    }
+    try {
+        assertRtcTopologyPublicationOutbox(loaded.publication, outbox);
+    }
+    catch {
+        throw new RtcTopologyDeliveryCorruptionError(
+            `RTC topology publication ${loaded.publication.publicationId} has a conflicting durable outbox`
+        );
+    }
+    const expectedDelivery = computeRtcTopologyPublicationDeliveryWrite(
+        loaded.publication,
+        input.publisherStreamId
+    ).deliveryAppend;
+    if (expectedDelivery === null) {
+        return;
+    }
+    if (input.read.delivery === null) {
+        throw new RtcTopologyDeliveryCorruptionError(
+            `RTC topology publication ${loaded.publication.publicationId} has no durable delivery`
+        );
+    }
+    assertRtcTopologyDeliveryLogEntry(input.read.delivery, expectedDelivery);
 }
 
 function toReplayMutationInput(read: RtcTopologyMutationInput['read']): RtcTopologyMutationInput {

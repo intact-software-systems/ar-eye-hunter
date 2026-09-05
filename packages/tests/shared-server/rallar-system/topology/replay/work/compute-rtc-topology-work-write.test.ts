@@ -1,8 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { computeTopologyMutation } from '@shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts';
+import { createRtcTopologyExecutionReceipt } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import {
+    computeRtcTopologyReplayWrite,
     computeRtcTopologyWorkWrite,
+    validateRtcTopologyReplayWrite,
     validateRtcTopologyWorkWrite,
     type AcceptedRtcTopologyWork,
     type ComputeRtcTopologyWorkWriteInput
@@ -17,6 +20,11 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
+import {
+    createGroupRef,
+    createPublication,
+    createTopologySnapshot
+} from '../../rtc-topology-repository-test-fixtures.ts';
 import { createRtcTopologyGroupSnapshot } from '../../rtc-topology-test-fixtures.ts';
 
 describe('RTC topology complete write computation', () => {
@@ -57,6 +65,50 @@ describe('RTC topology complete write computation', () => {
 
         expect(validateRtcTopologyWorkWrite(input, altered)).not.toEqual([]);
         expect(computeRtcTopologyWorkWrite(input)).toEqual(computed);
+    });
+
+    it('leaves durable replay checks to validation', () => {
+        const snapshot = createTopologySnapshot(createGroupRef(), 1);
+        const publication = createPublication(snapshot, 'work-1');
+        const input = {
+            read: {
+                mutation: {
+                    snapshot: {
+                        entry: {
+                            key: 'snapshot',
+                            value: JSON.stringify(snapshot),
+                            expireAtTimestamp: 10_000,
+                            updatedTimestamp: 'now',
+                            revision: 1
+                        },
+                        value: snapshot
+                    },
+                    publicationClaim: {
+                        receipt: createRtcTopologyExecutionReceipt(publication, {
+                            commandHash: `sha256:${'a'.repeat(64)}`,
+                            attemptCount: 1,
+                            acceptedStorageRevision: 1
+                        }),
+                        publication
+                    }
+                },
+                outbox: createReservedEntry(),
+                delivery: null
+            },
+            reservationFinish: {
+                key: createReservedEntry().key,
+                expectedAttempts: 2,
+                status: EntityStatus.COMPLETED,
+                completedAt: new Date('2026-01-02T03:05:00.000Z')
+            },
+            publisherStreamId: undefined
+        } as const;
+
+        const computed = computeRtcTopologyReplayWrite(input);
+
+        expect(() => validateRtcTopologyReplayWrite(input, computed)).toThrow(
+            'has a conflicting durable outbox'
+        );
     });
 });
 

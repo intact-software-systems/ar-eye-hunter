@@ -106,7 +106,7 @@ export class GroupStateInboxHandler {
             if (outcome.status === 'inactive') {
                 const completionInput = this.readCompletionInput(context, outcome);
                 const completion = computeAppInboxCompletion(completionInput);
-                this.assertCompletionValid(completionInput, completion);
+                this.validateCompletion(completionInput, completion);
                 const durableResult = await this.dependencies.transactionWriter.writeComputedMutation(
                     context,
                     completion,
@@ -116,7 +116,7 @@ export class GroupStateInboxHandler {
                 return durableResult;
             }
             if (!isCommittableMutation(outcome.computed)) {
-                this.assertMutationValid(command, outcome.read, outcome.computed);
+                this.validateMutation(command, outcome.read, outcome.computed);
                 validateWsSessionConnectGuard(
                     outcome.lifecycleGuardFacts,
                     outcome.lifecycleRead,
@@ -128,13 +128,13 @@ export class GroupStateInboxHandler {
             const durableResult = computed.receipt;
             const completionInput = this.readCompletionInput(context, durableResult);
             const completion = computeAppInboxCompletion(completionInput);
-            this.assertMutationValid(command, outcome.read, computed);
+            this.validateMutation(command, outcome.read, computed);
             validateWsSessionConnectGuard(
                 outcome.lifecycleGuardFacts,
                 outcome.lifecycleRead,
                 outcome.lifecycleGuard
             );
-            this.assertCompletionValid(completionInput, completion);
+            this.validateCompletion(completionInput, completion);
             return await this.commitMutation({
                 context,
                 command,
@@ -147,7 +147,7 @@ export class GroupStateInboxHandler {
         const resultRead = await this.readResultFacts(command);
         const computed = this.dependencies.mutationService.compute(command, resultRead.mutationRead);
         if (!isCommittableMutation(computed)) {
-            this.assertMutationValid(command, resultRead.mutationRead, computed);
+            this.validateMutation(command, resultRead.mutationRead, computed);
             throwNonCommittableMutation(command, computed);
         }
         const resultInput = {
@@ -158,7 +158,7 @@ export class GroupStateInboxHandler {
             recordedEvent: resultRead.recordedEvent
         } as const;
         const result = computeGroupStateInboxResult(resultInput);
-        this.assertInboxResultValid(resultInput, result);
+        this.validateInboxResult(resultInput, result);
         const computedResult = result.fold(
             (conflict) => {
                 throw new GroupStateInboxResultReadConflictError(conflict);
@@ -168,8 +168,8 @@ export class GroupStateInboxHandler {
         const durableResult = computedResult.durableResult;
         const completionInput = this.readCompletionInput(context, durableResult);
         const completion = computeAppInboxCompletion(completionInput);
-        this.assertMutationValid(command, resultRead.mutationRead, computed);
-        this.assertCompletionValid(completionInput, completion);
+        this.validateMutation(command, resultRead.mutationRead, computed);
+        this.validateCompletion(completionInput, completion);
         return await this.commitMutation({ context, command, computed, durableResult, completion });
     }
 
@@ -244,7 +244,7 @@ export class GroupStateInboxHandler {
         } as const;
     }
 
-    private assertCompletionValid<Result>(
+    private validateCompletion<Result>(
         input: AppInboxCompletionInput<Result>,
         computed: AppInboxCompletionComputed<Result>
     ): void {
@@ -254,7 +254,7 @@ export class GroupStateInboxHandler {
         }
     }
 
-    private assertMutationValid(
+    private validateMutation(
         command: GroupStateMutationCommand,
         read: GroupMutationRead,
         computed: GroupMutationComputed
@@ -265,7 +265,7 @@ export class GroupStateInboxHandler {
         }
     }
 
-    private assertInboxResultValid(
+    private validateInboxResult(
         input: ComputeGroupStateInboxResultInput,
         computed: GroupStateInboxResultComputation
     ): void {

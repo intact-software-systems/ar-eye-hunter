@@ -10,7 +10,7 @@ import type {
     RtcRttMutationRead
 } from './rtc-rtt-mutation-contracts.ts';
 
-export function assertRtcRttMutation(
+export function validateRtcRttMutation(
     input: Readonly<{
         command: RtcRttMutationCommand;
         read: RtcRttMutationRead;

@@ -194,7 +194,7 @@ export class GroupPresenceSummaryWork {
             expectedAttempts: entry.dequeueAudit.attempts
         }, this.now());
         const computed = this.compute(work, read);
-        this.assertValid(work, read, computed);
+        this.validateComputed(work, read, computed);
         await runInPSqlTransaction(this.options.database, async (transaction) => {
             await this.write(transaction, computed);
             const finished = await writeResourceInboxReservationFinish(
@@ -218,7 +218,7 @@ export class GroupPresenceSummaryWork {
         return (await this.options.outboxQueueReader.outbox.getItem(key)) ?? null;
     }
 
-    private assertValid(
+    private validateComputed(
         work: GroupPresenceSummaryWorkData,
         read: GroupPresenceSummaryWorkRead,
         computed: GroupPresenceSummaryComputedWork

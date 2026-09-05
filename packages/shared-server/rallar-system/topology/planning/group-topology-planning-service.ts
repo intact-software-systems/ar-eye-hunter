@@ -154,7 +154,7 @@ export class GroupTopologyPlanningService {
             intent: 'full-rebuild',
             origin: 'automatic'
         });
-        this.assertValidComputedGroupTopology(computed);
+        this.validateComputedGroupTopology(computed);
         return {
             computed,
             computeDurationMs: this.readDurationNowMs() - startedAtMs
@@ -193,7 +193,7 @@ export class GroupTopologyPlanningService {
             ),
             { previous, topologyOptions: config.effective }
         );
-        this.assertValidComputedGroupTopology({
+        this.validateComputedGroupTopology({
             ...result,
             action: 'planned',
             planningObservation: null
@@ -268,7 +268,7 @@ export class GroupTopologyPlanningService {
         if (!result) {
             return undefined;
         }
-        this.assertValidComputedGroupTopology({
+        this.validateComputedGroupTopology({
             ...result,
             action: 'planned',
             planningObservation: null
@@ -294,7 +294,7 @@ export class GroupTopologyPlanningService {
         return Promise.resolve();
     }
 
-    private assertValidComputedGroupTopology(computed: ReconcileGroupTopologyResult): void {
+    private validateComputedGroupTopology(computed: ReconcileGroupTopologyResult): void {
         const issues = validateComputedGroupTopology(computed);
         if (issues.length > 0) {
             throw new GroupTopologyValidationError(issues);
