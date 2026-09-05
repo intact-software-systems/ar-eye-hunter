@@ -102,6 +102,16 @@ Browser HTTP starts from the operation's product owner. Generic request
 execution and typed HTTP failures remain under [`api/`](./api/), but that
 directory does not own product workflows.
 
+- [createRoomFormation](./rooms/formation/create-room-formation.ts) owns the room-bound formation
+  handle: [commandRoomFormation](./rooms/formation/command-room-formation.ts) posts the lifecycle
+  commands through [room-formation-http-api.ts](./rooms/formation/room-formation-http-api.ts) and
+  accepts each receipt into the state cache;
+  [waitForRoomLayout](./rooms/formation/wait-for-room-formation.ts) and its stage and condition
+  siblings observe the cache and the two overlay slots through
+  [createRoomLayoutSlots](./rooms/formation/room-layout-slots.ts) on the shared
+  [waitForRoomChange](./rooms/wait-for-room-change.ts) engine;
+  [readRoomFormationView](./rooms/formation/read-room-formation-view.ts) fetches and validates the
+  formation view.
 - [createAndJoinStateGroup](./rooms/room-group-state-workflows.ts) translates
   room intent, then calls
   [createStateGroup](./rooms/room-group-state-http-api.ts) and
