@@ -1,4 +1,9 @@
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
+import type {
+    RallarOnChangeOptions,
+    RallarStateListener,
+    RallarUnsubscribe
+} from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupConnectRejectionCode } from '@shared/api/group-lifecycle/group-connect-rejection-codes.ts';
@@ -75,6 +80,18 @@ export interface RallarRoomLayoutWaitResult {
     readonly formation: RallarRoomFormationStatus | undefined;
 }
 
+export type RallarRoomLayoutEvent =
+    | Readonly<{ kind: 'layoutPlanned'; roomRef: GroupRef; layout: RallarRoomLayout; }>
+    | Readonly<{ kind: 'layoutAccepted'; roomRef: GroupRef; layout: RallarRoomLayout; }>
+    | Readonly<{
+        kind: 'layoutRemoved';
+        roomRef: GroupRef;
+        role: RallarRoomLayoutRole;
+        previous: RallarRoomLayout | undefined;
+    }>;
+
+export type RallarRoomLayoutListener = (event: RallarRoomLayoutEvent) => void | Promise<void>;
+
 export interface RallarRoomFormation {
     readonly roomRef: GroupRef;
     status(): RallarRoomFormationStatus | undefined;
@@ -95,6 +112,11 @@ export interface RallarRoomFormation {
         options?: RallarScopedOperationOptions
     ): Promise<RallarRoomFormationWaitResult>;
     waitForLayout(options?: RallarRoomLayoutWaitOptions): Promise<RallarRoomLayoutWaitResult>;
+    onChange(
+        listener: RallarStateListener<RallarRoomFormationStatus>,
+        options?: RallarOnChangeOptions
+    ): RallarUnsubscribe;
+    onLayout(listener: RallarRoomLayoutListener): RallarUnsubscribe;
 }
 
 export type RallarRoomFormationDenial =
