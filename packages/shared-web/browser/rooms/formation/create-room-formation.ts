@@ -21,6 +21,7 @@ import type {
     RallarRoomLayoutListener,
     RallarRoomLayoutRole
 } from './rallar-room-formation-contracts.ts';
+import { readRoomFormationView } from './read-room-formation-view.ts';
 import {
     readRoomFormationStatus,
     subscribeRoomFormation,
@@ -41,6 +42,8 @@ export function createRoomFormation(input: CreateRoomFormationInput): RallarRoom
     return {
         roomRef: input.roomRef,
         status: () => readRoomFormationStatus(input),
+        readView: async (options = {}) =>
+            await readRoomFormationView({ roomRef: input.roomRef, options, ports: input }),
         plan: async (options) => await submit({ command: 'plan' }, options),
         connect: async (options = {}) => await connectRoomFormation({ roomRef: input.roomRef, options, ports: input }),
         activate: async (options) => await submit({ command: 'activate' }, options),

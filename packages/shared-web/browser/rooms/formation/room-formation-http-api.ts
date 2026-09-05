@@ -1,7 +1,8 @@
+import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 
 import { readApiBaseUrl } from '../../api-client-config.ts';
-import { executeHttpRequest, type ApiMutationRequestOptions } from '../../api/http-request.ts';
+import { executeHttpRequest, type ApiMutationRequestOptions, type ApiRequestOptions } from '../../api/http-request.ts';
 import { defaultStateScope, toStateGroupHttpPath } from '../../api/state-http-path.ts';
 import type {
     GroupSnapshot,
@@ -32,6 +33,21 @@ async function commandStateGroupFormation(input: CommandRoomFormationHttpInput):
     );
 }
 
+async function readStateGroupFormationView(
+    groupId: string,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions
+): Promise<GroupFormationView> {
+    return await executeHttpRequest<void, GroupFormationView>(
+        readApiBaseUrl(),
+        `${toStateGroupHttpPath(scope, groupId)}/formation`,
+        'GET',
+        undefined,
+        options
+    );
+}
+
 export const roomFormationHttpApi = Object.freeze({
-    command: commandStateGroupFormation
+    command: commandStateGroupFormation,
+    readView: readStateGroupFormationView
 });

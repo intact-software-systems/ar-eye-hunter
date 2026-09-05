@@ -7,6 +7,7 @@ import type {
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupConnectRejectionCode } from '@shared/api/group-lifecycle/group-connect-rejection-codes.ts';
+import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type {
     GroupFormationOutcome,
@@ -95,6 +96,7 @@ export type RallarRoomLayoutListener = (event: RallarRoomLayoutEvent) => void | 
 export interface RallarRoomFormation {
     readonly roomRef: GroupRef;
     status(): RallarRoomFormationStatus | undefined;
+    readView(options?: RallarScopedOperationOptions): Promise<GroupFormationView>;
     plan(options?: RallarRoomFormationCommandOptions): Promise<GroupSnapshot>;
     connect(options?: RallarRoomConnectOptions): Promise<GroupSnapshot>;
     activate(options?: RallarRoomFormationCommandOptions): Promise<GroupSnapshot>;
