@@ -62,24 +62,25 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Status:** Tasks 4A/4B, B04, native-browser B05 capture, the continuous B05
 observation stream, and B06 E3-memory observation tooling are merged. Five
-distinct valid B05 archive PRs (#402, #405, #463, #474, and #494) are awaiting
-human review and chronological merge; they are independent time-series samples
-and must not be closed as duplicates. Four B06 observations are preserved as
-failed evidence with `acceptedMetrics: false`; there is not yet a valid B06 E3
-result. The latest failed observation is PR #498. It ran after the earlier room
-readiness/durable-delivery and setup-phase fixes and exposed a separate
-post-activation readiness-barrier defect. PR #499 contains the focused fix and
-regression proof. Main-wide typechecking is independently repaired by PR #496.
-B07 remains held, and evidence ranking cannot start until a valid B06 primary
-and any required repeat are archived.
+distinct valid B05 observations through 2026-09-05 are archived on `main`: PR
+#402 landed directly, and the four observations formerly published by PRs
+#405, #463, #474, and #494 landed through batch PRs #507 and #504 before the
+superseded PRs and branches were closed. Five B06 observations have failed with
+`acceptedMetrics: false`; the first four are archived on `main`, and the fifth
+is preserved by PR #509 pending human review. There is not yet a valid B06 E3
+result. That fifth observation ran after PR #499's post-activation delivery
+barrier and exposed a narrower topology-publication revision race. PR #510
+contains the focused fix and regression proof. B07 remains held, and evidence
+ranking cannot start until a valid B06 primary and any required repeat are
+archived.
 
 ### Current execution horizon
 
-| Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                   |
-| ----- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Publish the pending evidence and prerequisite fixes | Merge B05 archives #402, #405, #463, #474, and #494 in chronological order; merge failed B06 archive #498; merge main typecheck repair #496 and post-activation readiness fix #499 with green relevant gates. Delete observation branches only after their PRs merge. |
-| 2     | Capture B06 E3-memory from moving `main`            | Manually dispatch `RTC-B06 Performance Observation` after #499 reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.                                |
-| 3     | Reconcile B05 and B06                               | Name the selected valid B05 observations or time window, compare them with the valid B06 observation without pooling unlike environments, decide whether E4-pg is required by the candidate call path, and rank at most one candidate—or `none`.                      |
+| Order | Slice                                           | Completion evidence                                                                                                                                                                                                                              |
+| ----- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | Publish the failed evidence and its focused fix | Human review and green relevant gates allow failed-observation PR #509 and topology-publication barrier fix PR #510 to merge independently. The failed ZIP remains evidence and is not replaced by a later successful run.                       |
+| 2     | Capture B06 E3-memory from moving `main`        | Manually dispatch `RTC-B06 Performance Observation` after #510 reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.           |
+| 3     | Reconcile B05 and B06                           | Name the selected valid B05 observations or time window, compare them with the valid B06 observation without pooling unlike environments, decide whether E4-pg is required by the candidate call path, and rank at most one candidate—or `none`. |
 
 If the next B06 run fails, retain it as failed evidence and diagnose the first
 failed attempt from that run. Fix only the evidenced tooling or product defect,
@@ -3694,6 +3695,14 @@ valid observations or an explicit time window. RTC-B06 is active under Task
 10; its next requirement is valid E3-memory evidence, not another activation
 decision.
 
+The four initially overlapping 2026-09-02 through 2026-09-05 observation PRs
+were consolidated without changing their immutable ZIPs or canonical rows.
+Batch evidence PR #507 and batch-integrity verifier PR #504 landed the four
+observations together; only then were superseded PRs #405, #463, #474, and
+#494 and their remote branches closed. The batch verifier classifies files
+from the pull request merge base, so an advancing `main` cannot make unrelated
+base-side observations appear to be mixed product changes.
+
 **Superseded historical procedure (preserved for provenance; do not execute):**
 
 **Organization prerequisite:** use only the unchanged exact Task 7 anchor and
@@ -3857,23 +3866,37 @@ performance-observations/rtc-b06/YYYY/MM/DD/<observation-id>.zip
 performance-observations/rtc-b06/index.jsonl
 ```
 
-Current evidence contains four failed B06 primaries and no accepted metrics.
+Current evidence contains five failed B06 primaries and no accepted metrics.
 The fourth archive is PR #498. Its first retained default attempt timed out
 receiving `messages.rtc` multicast on agent C after the warmup passed. That run
 exposed a post-activation readiness gap: the lifecycle driver proved readiness
 before activation, refreshed the accepted room layout after activation, and
-returned without proving final delivery readiness. PR #499 adds that final
-barrier and direct ordering/timing regression coverage.
+returned without proving final delivery readiness. Merged PR #499 added that
+final barrier and direct ordering/timing regression coverage.
+
+The fifth failed observation is PR #509, dispatched from commit
+`27fdb5dfd714ae97a35e7330d55156f0a5af9999` after PR #499 merged. Its default
+warmup reached formation epoch 10, but an activation-status update advanced the
+active topology from the lifecycle-stage receipt's group revision 25 to group
+revision 26. The driver incorrectly required exact revision equality and could
+not accept the valid newer same-epoch publication. PR #510 changes the receipt
+revision into a lower bound while preserving the exact expected session layout
+and formation-epoch fence; it adds regression coverage for that transition and
+does not retain the obsolete exact-revision behavior.
 
 - [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
       publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
-- [x] Preserve all four unsuccessful primaries as failed evidence rather than
+- [x] Preserve the first four unsuccessful primaries as failed evidence rather than
       accepting their metrics or replacing their attempt identities.
-- [x] Diagnose the latest failure to the missing post-activation readiness
-      barrier and publish the focused correction in PR #499.
-- [ ] Merge PR #499 after relevant validation and human review.
+- [x] Diagnose the fourth failure to the missing post-activation readiness
+      barrier, merge the focused correction in PR #499, and dispatch run
+      33983623186 from the then-current `main`.
+- [x] Diagnose run 33983623186's first failure to the exact-revision race and
+      publish its failed archive as PR #509 and its focused correction as PR
+      #510.
+- [ ] Merge PRs #509 and #510 after relevant validation and human review.
 - [ ] Manually dispatch `RTC-B06 Performance Observation` from the then-current
-      `main` after the fix merges.
+      `main` after PR #510 merges.
 - [ ] Verify that its observation-only pull request passes RTC observation
       integrity and merge the ZIP/index row. A valid primary must report
       `acceptedMetrics: true`; complete any controller-required repeat.
