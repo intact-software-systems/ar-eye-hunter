@@ -8,8 +8,8 @@ import {
 } from './group-topology-config.ts';
 import { computeTopologyConfigMutation } from './mutation/compute-topology-config-mutation.ts';
 import type * as mutationContracts from './mutation/group-topology-config-mutation-contracts.ts';
+import { probeTopologyConfigMutationIdempotency } from './mutation/probe-topology-config-mutation-idempotency.ts';
 import { readTopologyConfigMutation } from './mutation/read-topology-config-mutation.ts';
-import { probeTopologyConfigMutationIdempotency } from './mutation/topology-config-mutation-idempotency.ts';
 import { validateTopologyConfigMutationPolicy } from './mutation/validate-topology-config-mutation-policy.ts';
 import { validateTopologyConfigMutation } from './mutation/validate-topology-config-mutation.ts';
 import { writeTopologyConfigMutation } from './mutation/write-topology-config-mutation.ts';

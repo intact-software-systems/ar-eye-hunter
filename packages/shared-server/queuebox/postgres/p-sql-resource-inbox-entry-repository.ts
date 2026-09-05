@@ -1,15 +1,15 @@
-import { hasSameResourceEntryValue } from '@shared/queuebox/queue-box-types.ts';
+import { hasSameResourceEntryValue } from '@shared/queuebox/has-same-resource-entry-value.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+import { PSqlResourceInboxEntryReader } from './p-sql-resource-inbox-entry-reader.ts';
+import { replaceObservedResourceInboxEntry } from './replace-observed-resource-inbox-entry.ts';
 import {
-    hasMatchingImmutableResourceInboxContent,
-    isValidResourceInboxLifecycle,
     ResourceInboxRow,
-    rowsToMap,
     toDomain,
     toPgTimestamp,
     toSystemDate
 } from './resource-inbox-row-codec.ts';
+import { writeResourceInboxEntryIfAbsentOrMatch } from './write-resource-inbox-entry-if-absent-or-match.ts';
 
 export class ResourceInboxInvariantCorruptionError extends Error {
     readonly code = 'resource-inbox-invariant-corruption';
@@ -25,12 +25,12 @@ export class ResourceInboxInvariantCorruptionError extends Error {
 }
 
 export class PSqlResourceInboxEntryRepository {
-    static readonly MAX_ROWS_TO_RETURN = 50;
-
     private readonly sql: PSqlSql;
+    private readonly reader: PSqlResourceInboxEntryReader;
 
     constructor(sql: PSqlSql) {
         this.sql = sql;
+        this.reader = new PSqlResourceInboxEntryReader(sql);
     }
 
     // ---------------------------------
@@ -82,117 +82,29 @@ export class PSqlResourceInboxEntryRepository {
     async writeIfAbsentOrMatch(
         entry: ResourceEntry
     ): Promise<'inserted' | 'matched'> {
-        const systemDate = toSystemDate(entry);
-        const inserted = await this.sql<ResourceInboxRow[]>`
-            insert into resource_inbox (ri_resource_id,
-                                        ri_topic_id,
-                                        ri_resource,
-                                        ri_type_id,
-                                        ri_status,
-                                        fk_ext_bank_id,
-                                        system_date,
-                                        created_by,
-                                        created_ts,
-                                        expire_ts,
-                                        start_ts,
-                                        end_ts,
-                                        next_ts,
-                                        ri_attempts)
-            values (${entry.key.resourceId},
-                    ${entry.key.topicId},
-                    ${entry.resource},
-                    ${entry.typeId},
-                    ${entry.status},
-                    ${entry.key.contextId},
-                    ${systemDate},
-                    ${entry.audit.createdBy},
-                    ${toPgTimestamp(entry.audit.createdTs)},
-                    ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
-                    ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
-                    ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
-                    ${entry.dequeueAudit.attempts ?? 0})
-            on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)
-                do nothing
-            returning *
-        `;
-
-        if (inserted.length === 1) {
-            return 'inserted';
-        }
-        if (inserted.length !== 0) {
+        const result = await writeResourceInboxEntryIfAbsentOrMatch(this.sql, {
+            entry,
+            systemDate: toSystemDate(entry),
+            createdTimestamp: toPgTimestamp(entry.audit.createdTs),
+            expiryTimestamp: toPgTimestamp(entry.audit.expiryTs),
+            startTimestamp: entry.dequeueAudit.startTs
+                ? toPgTimestamp(entry.dequeueAudit.startTs)
+                : null,
+            endTimestamp: entry.dequeueAudit.endTs
+                ? toPgTimestamp(entry.dequeueAudit.endTs)
+                : null,
+            nextTimestamp: entry.dequeueAudit.nextTs
+                ? toPgTimestamp(entry.dequeueAudit.nextTs)
+                : null,
+            attempts: entry.dequeueAudit.attempts ?? 0
+        });
+        if (result.outcome === 'corruption') {
             throw new ResourceInboxInvariantCorruptionError(
                 entry.key,
-                'Resource inbox insert returned an unexpected row count'
+                result.message
             );
         }
-
-        const rows = await this.sql<ResourceInboxRow[]>`
-            select ri_row_id,
-                   ri_resource_id,
-                   ri_topic_id,
-                   ri_resource,
-                   ri_type_id,
-                   ri_status,
-                   fk_ext_bank_id,
-                   case
-                       when extract(year from system_date) > 9999
-                           then '+' || lpad(extract(year from system_date)::text, 6, '0') ||
-                                to_char(system_date, '-MM-DD')
-                       else to_char(system_date, 'YYYY-MM-DD')
-                       end as system_date,
-                   created_by,
-                   case
-                       when extract(year from created_ts) > 9999
-                           then '+' || lpad(extract(year from created_ts)::text, 6, '0') ||
-                                to_char(created_ts, '-MM-DD"T"HH24:MI:SS.US')
-                       else to_char(created_ts, 'YYYY-MM-DD"T"HH24:MI:SS.US')
-                       end as created_ts,
-                   case
-                       when extract(year from expire_ts) > 9999
-                           then '+' || lpad(extract(year from expire_ts)::text, 6, '0') ||
-                                to_char(expire_ts, '-MM-DD"T"HH24:MI:SS.US')
-                       else to_char(expire_ts, 'YYYY-MM-DD"T"HH24:MI:SS.US')
-                       end as expire_ts,
-                   case
-                       when extract(year from start_ts) > 9999
-                           then '+' || lpad(extract(year from start_ts)::text, 6, '0') ||
-                                to_char(start_ts, '-MM-DD"T"HH24:MI:SS.US')
-                       else to_char(start_ts, 'YYYY-MM-DD"T"HH24:MI:SS.US')
-                       end as start_ts,
-                   case
-                       when extract(year from end_ts) > 9999
-                           then '+' || lpad(extract(year from end_ts)::text, 6, '0') ||
-                                to_char(end_ts, '-MM-DD"T"HH24:MI:SS.US')
-                       else to_char(end_ts, 'YYYY-MM-DD"T"HH24:MI:SS.US')
-                       end as end_ts,
-                   case
-                       when extract(year from next_ts) > 9999
-                           then '+' || lpad(extract(year from next_ts)::text, 6, '0') ||
-                                to_char(next_ts, '-MM-DD"T"HH24:MI:SS.US')
-                       else to_char(next_ts, 'YYYY-MM-DD"T"HH24:MI:SS.US')
-                       end as next_ts,
-                   ri_attempts
-            from resource_inbox
-            where ri_topic_id = ${entry.key.topicId}
-              and ri_resource_id = ${entry.key.resourceId}
-              and fk_ext_bank_id = ${entry.key.contextId}
-            limit 1
-        `;
-        const existing = rows[0];
-        if (
-            rows.length !== 1 ||
-            !existing ||
-            !isValidResourceInboxLifecycle(existing) ||
-            !hasMatchingImmutableResourceInboxContent(existing, entry)
-        ) {
-            throw new ResourceInboxInvariantCorruptionError(
-                entry.key,
-                'Resource inbox immutable content or lifecycle differs'
-            );
-        }
-
-        return 'matched';
+        return result.outcome;
     }
 
     async replacePendingIfMatch(
@@ -277,61 +189,12 @@ export class PSqlResourceInboxEntryRepository {
             );
         }
 
-        const rows = await this.sql<ResourceInboxRow[]>`
-            update resource_inbox
-            set ri_resource = ${replacement.resource},
-                ri_type_id = ${replacement.typeId},
-                ri_status = ${replacement.status},
-                system_date = ${toSystemDate(replacement)},
-                created_by = ${replacement.audit.createdBy},
-                created_ts = ${toPgTimestamp(replacement.audit.createdTs)},
-                expire_ts = ${toPgTimestamp(replacement.audit.expiryTs)},
-                start_ts = ${
-            replacement.dequeueAudit.startTs
-                ? toPgTimestamp(replacement.dequeueAudit.startTs)
-                : null
-        },
-                end_ts = ${
-            replacement.dequeueAudit.endTs
-                ? toPgTimestamp(replacement.dequeueAudit.endTs)
-                : null
-        },
-                next_ts = ${
-            replacement.dequeueAudit.nextTs
-                ? toPgTimestamp(replacement.dequeueAudit.nextTs)
-                : null
-        },
-                ri_attempts = ${replacement.dequeueAudit.attempts}
-            where ri_row_id = ${expectedRowId}
-              and ri_topic_id = ${expected.key.topicId}
-              and ri_resource_id = ${expected.key.resourceId}
-              and fk_ext_bank_id = ${expected.key.contextId}
-              and ri_type_id = ${expected.typeId}
-              and ri_resource = ${expected.resource}
-              and ri_status = ${expected.status}
-              and system_date = ${toSystemDate(expected)}
-              and created_by = ${expected.audit.createdBy}
-              and created_ts = ${toPgTimestamp(expected.audit.createdTs)}
-              and expire_ts = ${toPgTimestamp(expected.audit.expiryTs)}
-              and start_ts is not distinct from ${
-            expected.dequeueAudit.startTs
-                ? toPgTimestamp(expected.dequeueAudit.startTs)
-                : null
-        }
-              and end_ts is not distinct from ${
-            expected.dequeueAudit.endTs
-                ? toPgTimestamp(expected.dequeueAudit.endTs)
-                : null
-        }
-              and next_ts is not distinct from ${
-            expected.dequeueAudit.nextTs
-                ? toPgTimestamp(expected.dequeueAudit.nextTs)
-                : null
-        }
-              and ri_attempts = ${expected.dequeueAudit.attempts}
-              and expire_ts > (now() at time zone 'UTC')
-            returning *
-        `;
+        const rows = await replaceObservedResourceInboxEntry({
+            sql: this.sql,
+            expected,
+            replacement,
+            expectedRowId
+        });
 
         if (rows.length === 0) {
             return null;
@@ -505,88 +368,30 @@ export class PSqlResourceInboxEntryRepository {
     }
 
     async findByKey(key: Key): Promise<ResourceEntry | null> {
-        const now = new Date();
-        const rows = await this.sql<ResourceInboxRow[]>`
-            select *
-            from resource_inbox
-            where ri_topic_id = ${key.topicId}
-              and ri_resource_id = ${key.resourceId}
-              and fk_ext_bank_id = ${key.contextId}
-              and expire_ts > ${now}
-            limit 1
-        `;
-
-        return rows.length === 0 ? null : toDomain(rows[0]);
+        return await this.reader.findByKey(key);
     }
 
     async findAnyByKey(key: Key): Promise<ResourceEntry | null> {
-        const rows = await this.sql<ResourceInboxRow[]>`
-            select *
-            from resource_inbox
-            where ri_topic_id = ${key.topicId}
-              and ri_resource_id = ${key.resourceId}
-              and fk_ext_bank_id = ${key.contextId}
-            limit 1
-        `;
-
-        return rows.length === 0 ? null : toDomain(rows[0]);
+        return await this.reader.findAnyByKey(key);
     }
 
     async findAllByTopicAndResourceId(
         topicId: string,
         resourceId: string
     ): Promise<readonly ResourceEntry[]> {
-        const rows = await this.sql<ResourceInboxRow[]>`
-            select *
-            from resource_inbox
-            where ri_topic_id = ${topicId}
-              and ri_resource_id = ${resourceId}
-              and expire_ts > (now() at time zone 'UTC')
-            order by ri_row_id
-        `;
-        return rows.map(toDomain);
+        return await this.reader.findAllByTopicAndResourceId(topicId, resourceId);
     }
 
     async findAllKeys(): Promise<Key[]> {
-        const now = new Date();
-        const rows = await this.sql<Pick<ResourceInboxRow, 'ri_topic_id' | 'ri_resource_id' | 'fk_ext_bank_id'>[]>`
-            select ri_topic_id, ri_resource_id, fk_ext_bank_id
-            from resource_inbox
-            where expire_ts > ${now}
-            order by ri_row_id
-        `;
-
-        return rows.map((row) => ({
-            topicId: row.ri_topic_id,
-            resourceId: row.ri_resource_id,
-            contextId: row.fk_ext_bank_id
-        }));
+        return await this.reader.findAllKeys();
     }
 
     async findByTopicId(topicId: string): Promise<Map<string, ResourceEntry>> {
-        const now = new Date();
-        const rows = await this.sql<ResourceInboxRow[]>`
-            select *
-            from resource_inbox
-            where ri_topic_id = ${topicId}
-              and expire_ts > ${now}
-            order by ri_row_id
-            limit ${PSqlResourceInboxEntryRepository.MAX_ROWS_TO_RETURN}
-        `;
-        return rowsToMap(rows);
+        return await this.reader.findByTopicId(topicId);
     }
 
     async findByTypeId(typeId: string): Promise<Map<string, ResourceEntry>> {
-        const now = new Date();
-        const rows = await this.sql<ResourceInboxRow[]>`
-            select *
-            from resource_inbox
-            where ri_type_id = ${typeId}
-              and expire_ts > ${now}
-            order by ri_row_id
-            limit ${PSqlResourceInboxEntryRepository.MAX_ROWS_TO_RETURN}
-        `;
-        return rowsToMap(rows);
+        return await this.reader.findByTypeId(typeId);
     }
 
     // ---------------------------------
@@ -594,42 +399,11 @@ export class PSqlResourceInboxEntryRepository {
     // ---------------------------------
 
     async isAnyWithStatuses(statuses: ReadonlySet<EntityStatus>): Promise<boolean> {
-        if (statuses.size === 0) {
-            return false;
-        }
-
-        const now = new Date();
-
-        const rows = await this.sql<{ one: number; }[]>`
-            select 1 as one
-            from resource_inbox
-            where ri_status in ${this.sql([...statuses])}
-              and expire_ts > ${now}
-            limit 1
-        `;
-
-        return rows.length > 0;
+        return await this.reader.isAnyWithStatuses(statuses);
     }
 
-    async isEntryWithStatus(key: Key, statuses: EntityStatus[]) {
-        if (statuses.length === 0) {
-            return false;
-        }
-
-        const now = new Date();
-
-        const rows = await this.sql<{ one: number; }[]>`
-            select 1 as one
-            from resource_inbox
-            where ri_status in ${this.sql(statuses)}
-              and ri_topic_id = ${key.topicId}
-              and ri_resource_id = ${key.resourceId}
-              and fk_ext_bank_id = ${key.contextId}
-              and expire_ts > ${now}
-            limit 1
-        `;
-
-        return rows.length > 0;
+    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
+        return await this.reader.isEntryWithStatus(key, statuses);
     }
 
     // ---------------------------------

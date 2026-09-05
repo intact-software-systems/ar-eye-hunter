@@ -6,6 +6,7 @@ import { RateLimiter } from '../resilience/Resilience.ts';
 import { computeIndexedDbFairnessReservation } from './compute-indexed-db-fairness-reservation.ts';
 import { computeIndexedDbQueueRelease } from './compute-indexed-db-queue-release.ts';
 import { ResilienceDto } from './DequeueResourceEntryController.ts';
+import { hasSameResourceEntryValue } from './has-same-resource-entry-value.ts';
 import {
     decodeStoredResourceEntry,
     type StoredResourceEntry
@@ -28,7 +29,6 @@ import {
 } from './indexed-db-queue-box-store.ts';
 import { IndexedDbQueueWriteConflictError } from './indexed-db-queue-write-conflict-error.ts';
 import {
-    hasSameResourceEntryValue,
     QueueBoxResourceEntryRepository,
     ResourceInboxFairnessReservationInput,
     ResourceInboxFairnessSelection,

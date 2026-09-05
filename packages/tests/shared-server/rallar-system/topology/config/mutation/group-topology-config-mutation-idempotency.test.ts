@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { computeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-mutation.ts';
-import { probeTopologyConfigMutationIdempotency } from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-idempotency.ts';
+import { probeTopologyConfigMutationIdempotency } from '@shared-server/rallar-system/topology/config/mutation/probe-topology-config-mutation-idempotency.ts';
 import { validateTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation.ts';
 import { createDefaultTopologyConfigMutationTestInput } from './group-topology-config-mutation-test-fixtures.ts';
 

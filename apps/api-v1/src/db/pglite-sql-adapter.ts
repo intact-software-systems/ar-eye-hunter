@@ -2,10 +2,16 @@ import { PGlite } from '@electric-sql/pglite';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
 type PGliteQueryExecutor = Readonly<{
-    query<T>(query: string, params?: unknown[]): Promise<{ rows: T[]; }>;
+    query<T>(
+        query: string,
+        params?: unknown[],
+        options?: PGliteQueryOptions
+    ): Promise<{ rows: T[]; }>;
 }>;
 
-type PGliteTransactionExecutor = PGliteQueryExecutor;
+type PGliteQueryOptions = Readonly<{
+    parsers?: Readonly<Record<number, (value: string) => string>>;
+}>;
 
 type PGliteSavepointState = {
     nextId: number;
@@ -19,6 +25,13 @@ type PGliteSqlArrayFragment = Readonly<{
     kind: 'array';
     values: readonly unknown[];
 }>;
+
+const POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID = 1114;
+const PGLITE_QUERY_OPTIONS: PGliteQueryOptions = {
+    parsers: {
+        [POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID]: (value) => value
+    }
+};
 
 type SqlCallableOptions = Readonly<{
     raw: PGlite;
@@ -84,7 +97,7 @@ function attachPGliteBegin(sql: PSqlSql, options: SqlCallableOptions): void {
             return await fn(sql as PSqlSql);
         }
 
-        return await options.raw.transaction(async (tx: PGliteTransactionExecutor) => {
+        return await options.raw.transaction(async (tx: PGliteQueryExecutor) => {
             const txSql = createSqlCallable({
                 raw: options.raw,
                 executor: tx,
@@ -165,7 +178,8 @@ async function queryRows(
     const query = renderPGliteTemplate(strings, values);
     const result = await options.executor.query<Record<string, unknown>>(
         query.text,
-        query.params
+        query.params,
+        PGLITE_QUERY_OPTIONS
     );
 
     return result.rows;

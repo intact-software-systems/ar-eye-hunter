@@ -1,11 +1,4 @@
-import { Temporal } from '@js-temporal/polyfill';
-
-import {
-    ResourceInboxRowCorruptionError,
-    toDomain,
-    toPgTimestamp,
-    type ResourceInboxRow
-} from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+import { ResourceInboxRowCorruptionError, toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -20,15 +13,6 @@ describe('resource inbox row decoding', () => {
         expect(() => toDomain(createRow({ ri_status: 'UNKNOWN' }))).toThrow(
             ResourceInboxRowCorruptionError
         );
-    });
-
-    it('writes timestamps at the millisecond precision returned by database adapters', () => {
-        expect(
-            toPgTimestamp(Temporal.PlainDateTime.from('2026-09-05T16:28:39.847520'))
-        ).toBe('2026-09-05T16:28:39.847Z');
-        expect(
-            toPgTimestamp(Temporal.Instant.from('2026-09-05T14:28:39.847520Z'))
-        ).toBe('2026-09-05T14:28:39.847Z');
     });
 });
 

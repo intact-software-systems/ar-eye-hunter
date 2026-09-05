@@ -4,8 +4,8 @@ import { EnqueuedType } from '../api/api-config.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { ResilienceDto } from './DequeueResourceEntryController.ts';
+import { hasSameResourceEntryValue } from './has-same-resource-entry-value.ts';
 import {
-    hasSameResourceEntryValue,
     isIdempotentHandlerFinalizedRelease,
     QueueBoxResourceEntryRepository,
     ResourceInboxFairnessReservationInput,

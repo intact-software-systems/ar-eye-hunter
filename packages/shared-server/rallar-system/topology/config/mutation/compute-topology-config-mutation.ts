@@ -14,7 +14,7 @@ import type {
     TopologyConfigMutationInput,
     TopologyConfigWriteGuard
 } from './group-topology-config-mutation-contracts.ts';
-import { probeTopologyConfigMutationIdempotency } from './topology-config-mutation-idempotency.ts';
+import { probeTopologyConfigMutationIdempotency } from './probe-topology-config-mutation-idempotency.ts';
 import {
     createTopologyConfigMutationRecord,
     createTopologyConfigNoOpReceipt,
