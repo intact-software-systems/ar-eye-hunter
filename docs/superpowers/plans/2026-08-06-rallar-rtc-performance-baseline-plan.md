@@ -76,11 +76,14 @@ archived.
 
 ### Current execution horizon
 
-| Order | Slice                                           | Completion evidence                                                                                                                                                                                                                              |
-| ----- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1     | Publish the failed evidence and its focused fix | Human review and green relevant gates allow failed-observation PR #509 and topology-publication barrier fix PR #510 to merge independently. The failed ZIP remains evidence and is not replaced by a later successful run.                       |
-| 2     | Capture B06 E3-memory from moving `main`        | Manually dispatch `RTC-B06 Performance Observation` after #510 reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.           |
-| 3     | Reconcile B05 and B06                           | Name the selected valid B05 observations or time window, compare them with the valid B06 observation without pooling unlike environments, decide whether E4-pg is required by the candidate call path, and rank at most one candidate—or `none`. |
+| Order | Slice                                           | Completion evidence                                                                                                                                                                                                                    |
+| ----- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Publish the failed evidence and its focused fix | Human review and green relevant gates allow failed-observation PR #509 and topology-publication barrier fix PR #510 to merge independently. The failed ZIP remains evidence and is not replaced by a later successful run.             |
+| 2     | Capture B06 E3-memory from moving `main`        | Manually dispatch `RTC-B06 Performance Observation` after #510 reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived. |
+
+After these two slices, Task 12 will choose the B05 observation window,
+revisit whether the candidate call path requires E4-pg, and reconcile the
+unlike-environment evidence before ranking at most one candidate—or `none`.
 
 If the next B06 run fails, retain it as failed evidence and diagnose the first
 failed attempt from that run. Fix only the evidenced tooling or product defect,
@@ -3880,9 +3883,10 @@ warmup reached formation epoch 10, but an activation-status update advanced the
 active topology from the lifecycle-stage receipt's group revision 25 to group
 revision 26. The driver incorrectly required exact revision equality and could
 not accept the valid newer same-epoch publication. PR #510 changes the receipt
-revision into a lower bound while preserving the exact expected session layout
-and formation-epoch fence; it adds regression coverage for that transition and
-does not retain the obsolete exact-revision behavior.
+revision into a lower bound while preserving the required-session check, the
+selected layout identity, and the server-enforced formation-epoch fence; it
+adds regression coverage for that transition and does not retain the obsolete
+exact-revision behavior.
 
 - [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
       publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
