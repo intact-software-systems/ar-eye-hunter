@@ -440,7 +440,11 @@ function appInboxWriteBoundary(call) {
 function transactionBoundary(call) {
     const expression = call.getExpression();
     if (Node.isIdentifier(expression) && expression.getText() === 'runInPSqlTransaction') {
-        return { kind: 'callback', callback: call.getArguments()[1] };
+        const database = call.getArguments()[0];
+        const callback = call.getArguments()[1];
+        return database && isCallbackReference(callback) && looksLikeDatabaseReceiver(database)
+            ? { kind: 'callback', callback }
+            : undefined;
     }
     if (!Node.isPropertyAccessExpression(expression)) {
         return undefined;

@@ -486,6 +486,24 @@ describe('transaction write check', () => {
         expect(findings).toEqual([]);
     });
 
+    it('does not recognize an unrelated function from its wrapper name alone', () => {
+        const findings = analyzeFixture(`
+            interface Coordinator {}
+            declare function runInPSqlTransaction(
+                coordinator: Coordinator,
+                work: (value: string) => void
+            ): void;
+            declare const coordinator: Coordinator;
+            export function execute(): void {
+                runInPSqlTransaction(coordinator, () => {
+                    JSON.stringify({ value: 1 });
+                });
+            }
+        `);
+
+        expect(findings).toEqual([]);
+    });
+
     it('recognizes the canonical PostgreSQL transaction wrapper', () => {
         const findings = analyzeFixture(`
             interface PSqlSql { query(value: unknown): Promise<void>; }
