@@ -19,8 +19,8 @@ import { evaluateRtcRttMeasurement } from '../policy/rtc-rtt-measurement-policy.
 import { computeRtcRttRuntimeWrites } from './compute-rtc-rtt-runtime-writes.ts';
 import {
     assertReceiptOnlyRttInputs,
-    requireRttAuthority,
-    validateRtcRttMutationFacts
+    assertRtcRttMutationFacts,
+    requireRttAuthority
 } from './rtc-rtt-mutation-authority.ts';
 import type {
     RtcRttMutationCommand,
@@ -50,7 +50,7 @@ export function computeRtcRttMutation(
         facts: RtcRttMutationFacts;
     }>
 ): RtcRttMutationComputed {
-    validateRtcRttMutationFacts(input.facts);
+    assertRtcRttMutationFacts(input.facts);
     if (input.read.receipt) {
         assertReceiptOnlyRttInputs(input.command, input.facts);
         if (input.read.receipt.value.commandHash !== input.facts.commandHash) {

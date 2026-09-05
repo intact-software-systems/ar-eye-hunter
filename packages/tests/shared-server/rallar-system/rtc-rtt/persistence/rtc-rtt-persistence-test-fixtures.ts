@@ -1,9 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { encodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { assertRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/assert-rtc-rtt-mutation.ts';
 import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
 import { readRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/read-rtc-rtt-mutation.ts';
 import type { RtcRttMutationCommand, RtcRttMutationComputed } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
-import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
 import { RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
@@ -64,7 +64,7 @@ export async function executeRtcRttMutation(
             attemptCount: input.attemptCount
         };
     const computed = computeRtcRttMutation({ command, read, facts });
-    validateRtcRttMutation({ command, read, facts, computed });
+    assertRtcRttMutation({ command, read, facts, computed });
     if (computed.outcome === 'write') {
         await input.runtime.begin(async () => {
             for (const guard of computed.endpointGuards) {

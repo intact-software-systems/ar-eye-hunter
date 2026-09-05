@@ -1,6 +1,6 @@
+import { assertRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/assert-rtc-rtt-mutation.ts';
 import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
-import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
 import { RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -189,10 +189,10 @@ describe('RTC RTT mutation phases', () => {
             ...accepted,
             endpointGuards: [...accepted.endpointGuards].reverse()
         };
-        expect(() => validateRtcRttMutation({ ...acceptedInput, computed: tampered })).toThrow(
+        expect(() => assertRtcRttMutation({ ...acceptedInput, computed: tampered })).toThrow(
             'differs from canonical'
         );
-        expect(() => validateRtcRttMutation({ ...acceptedInput, computed: tampered })).toThrow(
+        expect(() => assertRtcRttMutation({ ...acceptedInput, computed: tampered })).toThrow(
             'differs from canonical'
         );
     });
@@ -325,7 +325,7 @@ describe('RTC RTT mutation phases', () => {
                 causalRevision?: unknown;
             }
         ).causalRevision;
-        expect(() => validateRtcRttMutation({ ...input, computed: malformed })).toThrow(
+        expect(() => assertRtcRttMutation({ ...input, computed: malformed })).toThrow(
             'RTC RTT mutation differs from canonical computation'
         );
     });
@@ -783,8 +783,8 @@ function computeAndValidateRttTwice(input: Parameters<typeof computeRtcRttMutati
     const first = computeRtcRttMutation(input);
     const second = computeRtcRttMutation(input);
     expect(second).toEqual(first);
-    expect(() => validateRtcRttMutation({ ...input, computed: first })).not.toThrow();
-    expect(() => validateRtcRttMutation({ ...input, computed: first })).not.toThrow();
+    expect(() => assertRtcRttMutation({ ...input, computed: first })).not.toThrow();
+    expect(() => assertRtcRttMutation({ ...input, computed: first })).not.toThrow();
     return first;
 }
 

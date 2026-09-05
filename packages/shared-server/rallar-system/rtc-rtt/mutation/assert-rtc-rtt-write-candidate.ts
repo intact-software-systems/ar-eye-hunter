@@ -17,7 +17,7 @@ import {
 import type { RtcRttMutationComputed } from './rtc-rtt-mutation-contracts.ts';
 import { toRtcRttTopologyOutboxId } from './rtc-rtt-mutation-identifiers.ts';
 
-export function validateRtcRttWriteCandidate(
+export function assertRtcRttWriteCandidate(
     value: Extract<RtcRttMutationComputed, { outcome: 'write'; }>,
     mutationExpireAtTimestamp: number
 ): void {
@@ -49,12 +49,12 @@ export function validateRtcRttWriteCandidate(
     const expectedGroups = canonicalReceipt.affectedGroupRefs.map(
         toCanonicalRtcTopologyGroupIdentity
     );
-    validateAffectedGroups(candidate.affectedGroups, expectedGroups, canonicalReceipt);
-    const measurement = validateMeasurementGuard(candidate.measurementGuard, canonicalReceipt);
-    validateEndpointGuards(candidate.endpointGuards, canonicalReceipt, measurement.purgeAfterEpochMs);
+    assertAffectedGroups(candidate.affectedGroups, expectedGroups, canonicalReceipt);
+    const measurement = assertMeasurementGuard(candidate.measurementGuard, canonicalReceipt);
+    assertEndpointGuards(candidate.endpointGuards, canonicalReceipt, measurement.purgeAfterEpochMs);
 }
 
-function validateAffectedGroups(
+function assertAffectedGroups(
     value: JsonWireValue,
     expectedGroups: readonly string[],
     receipt: RtcRttMutationReceipt
@@ -68,7 +68,7 @@ function validateAffectedGroups(
         snapshotValidation.validatePersistedGroupSnapshot(rawGroup);
         const group = rawGroup as GroupSnapshot;
         const identity = toCanonicalRtcTopologyGroupIdentity(group.group);
-        validateAffectedGroupAgainstReceipt(group, receipt);
+        assertAffectedGroupAgainstReceipt(group, receipt);
         if (
             receipt.outboxIds[index] !==
                 toRtcRttTopologyOutboxId(receipt.receiptId, group.group, receipt.commandHash)
@@ -82,13 +82,13 @@ function validateAffectedGroups(
     }
 }
 
-function validateMeasurementGuard(
+function assertMeasurementGuard(
     value: JsonWireValue,
     receipt: RtcRttMutationReceipt
 ): Readonly<{ value: RttMeasurementInfo; purgeAfterEpochMs: number; }> {
     const guard = record(value, 'RTC RTT measurement guard');
     exactKeys(guard, ['expectedRevision', 'value', 'purgeAfterEpochMs']);
-    validateExpectedRevision(guard.expectedRevision, 'measurement');
+    assertExpectedRevision(guard.expectedRevision, 'measurement');
     validateRtcRttMeasurement(guard.value);
     const measurement = guard.value as RttMeasurementInfo;
     safeInteger(guard.purgeAfterEpochMs, receipt.acceptedAtEpochMs + 1, 'measurement purge time');
@@ -106,7 +106,7 @@ function validateMeasurementGuard(
     };
 }
 
-function validateEndpointGuards(
+function assertEndpointGuards(
     value: JsonWireValue,
     receipt: RtcRttMutationReceipt,
     purgeAfterEpochMs: number
@@ -125,7 +125,7 @@ function validateEndpointGuards(
         if (endpointId !== expectedEndpointIds[index]) {
             throw new TypeError('RTC RTT endpoint guards are not canonical');
         }
-        validateExpectedRevision(guard.expectedRevision, 'endpoint');
+        assertExpectedRevision(guard.expectedRevision, 'endpoint');
         safeInteger(guard.expireAtTimestamp, receipt.acceptedAtEpochMs + 1, 'endpoint guard expiry');
         validateRtcRttEndpointAdmission(guard.value, endpointId, guard.expireAtTimestamp as number);
         const admission = guard.value as RtcRttEndpointAdmission;
@@ -141,7 +141,7 @@ function validateEndpointGuards(
     }
 }
 
-function validateAffectedGroupAgainstReceipt(
+function assertAffectedGroupAgainstReceipt(
     group: GroupSnapshot,
     receipt: RtcRttMutationReceipt
 ): void {
@@ -170,7 +170,7 @@ function validateAffectedGroupAgainstReceipt(
     }
 }
 
-function validateExpectedRevision(
+function assertExpectedRevision(
     value: JsonWireValue,
     authority: string
 ): asserts value is number | null {

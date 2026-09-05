@@ -3,6 +3,7 @@ import {
     computeRtcRttAppInboxMutation,
     validateRtcRttAppInboxMutation
 } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-app-inbox-computation.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 import { createAtomicHarness } from '../app-inbox/test-support/app-inbox-transaction-test-runtime.ts';
 
@@ -67,12 +68,21 @@ describe('RTC RTT AppInbox computation', () => {
             affectedGroups: [],
             updated: false
         });
-        expect(() => validateRtcRttAppInboxMutation(input, computed)).not.toThrow();
-        expect(() =>
-            validateRtcRttAppInboxMutation(input, {
-                ...computed,
-                durableResult: { ...computed.durableResult, updated: true }
-            })
-        ).toThrow('computed.durableResult.updated differs from the computed value');
+        expect(validateRtcRttAppInboxMutation(input, computed)).toEqual([]);
+        const issues = validateRtcRttAppInboxMutation(input, {
+            ...computed,
+            durableResult: { ...computed.durableResult, updated: true },
+            completion: {
+                ...computed.completion,
+                finalizedEntry: {
+                    ...computed.completion.finalizedEntry,
+                    status: EntityStatus.FAILED
+                }
+            }
+        });
+        expect(issues.map((issue) => issue.path)).toEqual([
+            'computed.durableResult.updated',
+            'computed.finalizedEntry.status'
+        ]);
     });
 });

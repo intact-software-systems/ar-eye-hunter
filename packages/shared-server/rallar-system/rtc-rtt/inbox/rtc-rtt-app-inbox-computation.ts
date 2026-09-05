@@ -13,7 +13,6 @@ import type {
     RtcRttMutationFacts,
     RtcRttMutationRead
 } from '../mutation/rtc-rtt-mutation-contracts.ts';
-import { validateRtcRttMutation } from '../mutation/validate-rtc-rtt-mutation.ts';
 import { toRtcRttAppInboxResult, type RtcRttAppInboxResult } from './rtc-rtt-app-inbox-result.ts';
 
 interface RtcRttAppInboxMutationInput {
@@ -49,25 +48,19 @@ export function computeRtcRttAppInboxMutation(
 export function validateRtcRttAppInboxMutation(
     input: RtcRttAppInboxMutationInput,
     computed: RtcRttAppInboxMutationComputed
-): void {
-    const projectionIssue = validateComputedProjection(
-        computeRtcRttAppInboxMutation(input),
-        computed,
-        'computed'
-    )[0];
-    if (projectionIssue !== undefined) {
-        throw projectionIssue.cause;
-    }
-    validateRtcRttMutation({ ...input, computed: computed.mutation });
-    const completionIssue = validateAppInboxCompletion(
-        {
-            ...input.completionFacts,
-            durableResult: computed.durableResult,
-            status: EntityStatus.COMPLETED
-        },
-        computed.completion
-    )[0];
-    if (completionIssue !== undefined) {
-        throw completionIssue.cause;
-    }
+): ReturnType<typeof validateComputedProjection> {
+    const durableResult = toRtcRttAppInboxResult(computed.mutation, input.requestId);
+    const completionInput = {
+        ...input.completionFacts,
+        durableResult,
+        status: EntityStatus.COMPLETED
+    } as const;
+    return [
+        ...validateComputedProjection(
+            durableResult,
+            computed.durableResult,
+            'computed.durableResult'
+        ),
+        ...validateAppInboxCompletion(completionInput, computed.completion)
+    ];
 }

@@ -1,5 +1,6 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { encodeJsonWireValue, hashMutationCommand } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { assertRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/assert-rtc-rtt-mutation.ts';
 import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
 import { readRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/read-rtc-rtt-mutation.ts';
 import type {
@@ -9,7 +10,6 @@ import type {
     RtcRttMutationLifecycleFacts,
     RtcRttStableRequest
 } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
-import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
 import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/write-rtc-rtt-mutation.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import type { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
@@ -63,7 +63,7 @@ export async function executeRtcRttMutation(
         };
     }
     const computed = computeRtcRttMutation({ command, read, facts });
-    validateRtcRttMutation({ command, read, facts, computed });
+    assertRtcRttMutation({ command, read, facts, computed });
     if (computed.outcome !== 'write') {
         return { computed, updated: false };
     }

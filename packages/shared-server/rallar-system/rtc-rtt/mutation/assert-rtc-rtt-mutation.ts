@@ -1,6 +1,7 @@
 import { compareRtcTopologyIdentifiers } from '../../topology/persistence/rtc-topology-identifiers.ts';
 import { rtcTopologySemanticEqual } from '../../topology/persistence/rtc-topology-semantic-equal.ts';
 import { RTC_RTT_MUTATION_RETENTION_MS } from '../persistence/rtc-rtt-persistence-validation-primitives.ts';
+import { assertRtcRttWriteCandidate } from './assert-rtc-rtt-write-candidate.ts';
 import { computeRtcRttMutation } from './compute-rtc-rtt-mutation.ts';
 import type {
     RtcRttMutationCommand,
@@ -8,9 +9,8 @@ import type {
     RtcRttMutationFacts,
     RtcRttMutationRead
 } from './rtc-rtt-mutation-contracts.ts';
-import { validateRtcRttWriteCandidate } from './validate-rtc-rtt-write-candidate.ts';
 
-export function validateRtcRttMutation(
+export function assertRtcRttMutation(
     input: Readonly<{
         command: RtcRttMutationCommand;
         read: RtcRttMutationRead;
@@ -23,7 +23,7 @@ export function validateRtcRttMutation(
         throw new TypeError('RTC RTT mutation differs from canonical computation');
     }
     if (input.computed.outcome === 'write') {
-        validateRtcRttWriteCandidate(
+        assertRtcRttWriteCandidate(
             input.computed,
             input.computed.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS
         );
