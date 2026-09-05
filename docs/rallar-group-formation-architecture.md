@@ -886,38 +886,44 @@ a set — a scenario that disappears from either side fails.
 | Scenario                   | Pinned by                                                                                                                                                                                                                                   |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `held-layout`              | `api-v1-group-lifecycle-transitions` (`topologyHeldWhileForming`, `managerPlans*`, `acceptedLayoutPromotedAfterActivate`)                                                                                                                   |
-| `discovery-holds-dials`    | unpinned server-side by design — bootstrap suppression is a browser decision, and no shared-web test covers a `phased` group yet                                                                                                            |
+| `discovery-holds-dials`    | `packages/tests/shared/webrtc-group-dial-policy.test.ts` — the stage gate and the provenance gate, each shown load-bearing without the other; end-to-end browser behaviour is still uncovered                                               |
 | `connect-names-its-layout` | `packages/tests/shared/expected-layout-fence.test.ts` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-lifecycle-mutation.test.ts`; no recipe drives the two denials                                              |
 | `connect-trigger-handoff`  | `api-v1-automatic-formation-triggers` (the commanded replan is dialed, never the candidate it replaced)                                                                                                                                     |
 | `dialing-layout-frozen`    | `api-v1-automatic-formation-triggers` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-planned-layout-promotion.test.ts`                                                                                          |
 | `apply-landing`            | `packages/tests/shared-server/rallar-system/group-state/mutation/group-planned-layout-promotion.test.ts`; the restart-convergence half is unpinned                                                                                          |
 | `held-reconfiguration`     | `api-v1-commanded-replanning` (the hold landing keeps the accepted layout while the replan is dialed)                                                                                                                                       |
-| `reconfiguration-fails`    | unpinned — no recipe drives a reconnection below the floor; `packages/tests/shared/group-lifecycle-stage-matrices.test.ts` pins only the transition                                                                                         |
+| `reconfiguration-fails`    | `api-v1-reconfiguration-fails` (a reconnection misses the floor, the group returns to `active`, and the accepted layout identity is byte-identical across the failure)                                                                      |
 | `pause-resume`             | `api-v1-group-data-policy` (the transport valve) and `api-v1-group-lifecycle-transitions`                                                                                                                                                   |
 | `reconfigure-while-halted` | `api-v1-group-lifecycle-transitions` (`pauseBeforeHoldReconfiguration` through `reactivateGroup`)                                                                                                                                           |
 | `commanded-replanning`     | `api-v1-commanded-replanning`                                                                                                                                                                                                               |
 | `debounced-replanning`     | `api-v1-debounced-replanning`                                                                                                                                                                                                               |
 | `pacing-sweep`             | unpinned — the headless parallelism sweep over `maxConcurrentEdgeSetups` is not built                                                                                                                                                       |
-| `status-lifecycle`         | the status-lifecycle recipe, in review rather than on `main`                                                                                                                                                                                |
+| `status-lifecycle`         | `api-v1-group-status-lifecycle` (the condition walks `inactive → initialising → active → failed`, read off the group row)                                                                                                                   |
 | `status-convergence`       | `packages/tests/shared-server/rallar-system/group-state/mutation/group-activation-status-convergence.test.ts` — not expressible as a recipe, because two interleaved writers cannot be sequenced from outside the server                    |
 | `status-on-connect`        | unpinned — `api-v1-group-state-reconnect-resync` pins the server half (a floored read after reconnect cannot return before the snapshot and the layout it names have both arrived); the member's own readiness is browser-side and untested |
 | `stale-petition-fenced`    | `packages/tests/shared/expected-layout-fence.test.ts` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-formation-fence-service-read.test.ts`                                                                      |
 | `automatic-progression`    | `api-v1-automatic-formation-triggers` (`after`) and `api-v1-presence-formation-trigger` (`presence`); no recipe covers `immediate`                                                                                                          |
 | `reset-to-dormant`         | `api-v1-group-lifecycle-transitions` (`resetPausedLifecycleSeries`, `startResetLifecycleSeries`)                                                                                                                                            |
 | `exhaustion-is-terminal`   | `api-v1-match-preset` (both attempts spent, parked in `dormant`, lobby still closed) and `api-v1-group-formation-criterion`                                                                                                                 |
-| `attempt-series-resets`    | `api-v1-group-formation-criterion` (`automaticRetryExhaustsOnlyAfterSecondFailedDial`); the post-reconfiguration budget is unpinned                                                                                                         |
-| `member-progress`          | unpinned — the per-member fraction is a browser derivation with no shared-web test                                                                                                                                                          |
+| `attempt-series-resets`    | `api-v1-group-formation-criterion` (`automaticRetryExhaustsOnlyAfterSecondFailedDial`) and `api-v1-reconfiguration-fails`, which activates to zero and then spends one of two attempts                                                      |
+| `member-progress`          | `packages/tests/shared-web/rtc-room-transport-state.test.ts` — the precedence ladder, including `idle` while no layout exists; the monotonic fraction itself is still uncovered                                                             |
 | `reset-tears-down`         | unpinned — live-RTC, and no lifecycle manifest exists in the distributed lane                                                                                                                                                               |
 | `reset-no-stale-hydration` | unpinned — live-RTC, same lane                                                                                                                                                                                                              |
 | `start-rebuilds-unchanged` | `api-v1-group-lifecycle-transitions` (`startResetLifecycleSeries` re-plans an unchanged member set)                                                                                                                                         |
 | `absent-policy-parity`     | `api-v1-group-lifecycle-policy` (absent policy is byte-identical to an explicit `optimistic`)                                                                                                                                               |
 
-**7 scenarios are unpinned** today, and one more (`status-lifecycle`) is in review rather than on
-`main`. Five of the seven need infrastructure this workstream does not own — two live-RTC lifecycle
-manifests, one headless pacing sweep, two browser-side derivations — and two are server-side gaps a
-recipe could close. Two further rows, `apply-landing` and `attempt-series-resets`, name a half that
-is unpinned inside an otherwise covered scenario. The count in this paragraph is checked against the
-table itself, so it cannot drift as rows change.
+**4 scenarios are unpinned** today, and every one of them needs infrastructure this workstream does
+not own: two live-RTC lifecycle manifests (`reset-tears-down`, `reset-no-stale-hydration`), one
+headless parallelism sweep (`pacing-sweep`), and the browser readiness barrier
+(`status-on-connect`). No server-side gap remains that a recipe could close.
+
+Two rows still name a half that is unpinned inside an otherwise covered scenario, and they are the
+honest residue rather than an oversight: `apply-landing`'s restart-convergence leg, and the
+end-to-end browser behaviour behind `discovery-holds-dials` and `member-progress`. Each of those is
+pinned where the decision is actually made — the pure function — and unpinned where a browser would
+exercise it.
+
+The count in this paragraph is checked against the table itself, so it cannot drift as rows change.
 
 ### Scale tiers
 
