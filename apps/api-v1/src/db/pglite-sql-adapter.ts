@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID } from './postgres-timestamp-without-time-zone-oid.ts';
 
 type PGliteQueryExecutor = Readonly<{
     query<T>(
@@ -26,7 +27,6 @@ type PGliteSqlArrayFragment = Readonly<{
     values: readonly unknown[];
 }>;
 
-const POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID = 1114;
 const PGLITE_QUERY_OPTIONS: PGliteQueryOptions = {
     parsers: {
         [POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID]: (value) => value

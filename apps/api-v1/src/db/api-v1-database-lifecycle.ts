@@ -13,6 +13,7 @@ import {
     type PGliteBlackBoxSnapshotPublisher
 } from './pglite-black-box-evidence-snapshot.ts';
 import { createPGliteSqlClient } from './pglite-sql-adapter.ts';
+import { POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID } from './postgres-timestamp-without-time-zone-oid.ts';
 
 export interface ApiV1DatabaseLifecycle {
     readonly database: PSqlSql;
@@ -246,7 +247,15 @@ const PRODUCTION_OPERATIONS: ApiV1DatabaseLifecycleOperations = {
     createPostgresClient: (input) =>
         toApiV1PostgresClient(postgres(input.connectionUrl, {
             max: input.max,
-            idle_timeout: input.idleTimeoutSeconds
+            idle_timeout: input.idleTimeoutSeconds,
+            types: {
+                timestampWithoutTimeZone: {
+                    to: POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID,
+                    from: [POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID],
+                    serialize: (value: string) => value,
+                    parse: (value: string) => value
+                }
+            }
         })),
     readyPostgres: async (client) => {
         await client`select 1`;
