@@ -87,7 +87,7 @@ describe('the group narrative reports the lifecycle plane', () => {
         expect(condition?.certainty).toBe('inferred');
     });
 
-    it('reports the confirmed status the writer stored', () => {
+    it('reports the published status the writer stored', () => {
         const narrative = narrativeFor({
             // Same series as the status, so it is current rather than stale.
             formationEpoch: 4,
