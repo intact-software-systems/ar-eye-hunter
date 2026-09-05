@@ -12,3 +12,5 @@
 # Repository-wide dprint reformat (Prettier and `deno fmt` retired).
 # Add the squashed commit SHA here once it lands on main.
 61e95edf35df9ecf2241356dfd43ce38298f7ec0
+# Formatting-only pass over the fifteen files the reformat commit had not reached.
+31b3608585a696f7706efa5c8e50a4a4ce44abbb
