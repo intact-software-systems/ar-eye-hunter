@@ -1,9 +1,13 @@
 # Group Activation — Implementation Plan (2026-08-22)
 
-Status: **implementation in progress — Slices 1–8 are merged, the last through PR #396 on
-2026-09-01. Slice 9a, the truthful RTC lifecycle signals, is in delivery on
-`codex/group-activation-rtc-lifecycle-signals` (PR #404), and Slice 9b, the wire path and the
-per-group in-flight bound, is stacked on it on `codex/group-activation-in-flight-bound`. Re-baselined
+Status: **all fourteen slices delivered; the last are in review, not yet merged.** Slices 1–12a are
+merged, the last through PR #466 on 2026-09-04. Slices 12b, 13 and 14 are open for review as PRs
+#483–#490: the status-lifecycle recipe, the operator surface, the workbench collection, the
+commanded-origin fix carried from 10a, reason-code parity, slice 14's documentation and cutover
+runbook, and the `reconfiguration-fails` acceptance recipe. What remains after those merge is not
+implementation: it is the plan-completion gate set on the resulting default-branch commit, and the
+scenarios slice 14's coverage table records as needing live-RTC, headless or browser-side
+infrastructure this workstream does not own. Re-baselined
 against product decisions 1–42. The product decisions are settled;
 the implementation decisions record current reasoning, while ownership, decomposition, file and
 symbol inventories, dependencies and gates must be refreshed against the actual delivery head before
