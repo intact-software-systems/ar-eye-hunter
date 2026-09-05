@@ -13,9 +13,9 @@ import {
 import { requirePositiveSafeInteger, requireTimestamp } from '../../validation/client-timestamp-validation.ts';
 import { validateClientPrincipalRef } from '../../validation/validate-client-principal-ref.ts';
 import { CLIENT_MUTATION_OPERATIONS, type ClientMutationCommand } from '../client-mutation-contracts.ts';
-import { validateClientMutationOperationInput } from './validate-client-mutation-operation-input.ts';
+import { assertClientMutationOperationInput } from './assert-client-mutation-operation-input.ts';
 
-export function validateClientMutationCommand(
+export function assertClientMutationCommand(
     command: unknown
 ): asserts command is ClientMutationCommand {
     const value = decodeClientValidationRecord(command, 'Client mutation command');
@@ -24,17 +24,17 @@ export function validateClientMutationCommand(
     requireNonEmptyString(value.commandId, 'Client mutation commandId');
     requireNullableNonEmptyString(value.requestId, 'Client mutation requestId');
     validateClientPrincipalRef(value.aggregateRef, 'Client mutation aggregateRef');
-    validateClientMutationFacts(value.facts);
-    validateClientMutationAuthority(value.authority);
+    assertClientMutationFacts(value.facts);
+    assertClientMutationAuthority(value.authority);
     const input = decodeClientValidationRecord(value.input, 'Client mutation input');
-    validateClientMutationOperationInput({
+    assertClientMutationOperationInput({
         operation,
         input,
         commandRoot: value
     });
 }
 
-export function validateClientMutationFacts(facts: unknown): void {
+export function assertClientMutationFacts(facts: unknown): void {
     const value = decodeClientValidationRecord(facts, 'Client mutation facts');
     requireExactKeys(
         value,
@@ -59,10 +59,10 @@ export function validateClientMutationFacts(facts: unknown): void {
     }
 }
 
-function validateClientMutationAuthority(authority: unknown): void {
+function assertClientMutationAuthority(authority: unknown): void {
     const value = decodeClientValidationRecord(authority, 'Client mutation authority');
     if (value.kind === 'issued-session') {
-        validateIssuedSessionAuthority(value);
+        assertIssuedSessionAuthority(value);
         return;
     }
     if (value.kind === 'system') {
@@ -80,7 +80,7 @@ function validateClientMutationAuthority(authority: unknown): void {
     rejectClientMutation('Client mutation authority kind is invalid');
 }
 
-function validateIssuedSessionAuthority(value: ClientValidationRecord): void {
+function assertIssuedSessionAuthority(value: ClientValidationRecord): void {
     requireExactKeys(
         value,
         [

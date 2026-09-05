@@ -9,13 +9,11 @@ import type { AppInboxExecutionMetadata } from '../../app-inbox/app-inbox-contra
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import {
     computeAppInboxCompletion,
-    validateAppInboxCompletion,
     type AppInboxCompletionComputed,
     type AppInboxCompletionFacts
 } from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import {
     computeAppOutboxInsert,
-    isExactAppOutboxInsert,
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
 import { validateComputedProjection } from '../../computed-data-validation.ts';
@@ -23,8 +21,6 @@ import {
     computeWsSessionConnectGuard,
     computeWsSessionGenerationClosed,
     isWsSessionGenerationClosed,
-    validateWsSessionConnectGuard,
-    validateWsSessionGenerationClosed,
     type WsSessionGenerationCloseFacts,
     type WsSessionGenerationFacts,
     type WsSessionGenerationGuardFacts,
@@ -47,7 +43,11 @@ import type {
 } from '../mutation/client-mutation-contracts.ts';
 import { computeClientMutation } from '../mutation/compute/compute-client-mutation.ts';
 import { validateClientMutationAuthorityPolicy } from '../mutation/result-validation/validate-client-mutation-authority-policy.ts';
-import { validateClientMutation } from '../mutation/result-validation/validate-client-mutation.ts';
+import {
+    assertClientMutationComputed,
+    validateClientMutation
+} from '../mutation/result-validation/validate-client-mutation.ts';
+import type { ClientMutationValidationIssue } from '../validation/client-mutation-rejection.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
     ClientAuthorisedWsSessionDisconnectAppInboxPayload
@@ -217,47 +217,26 @@ export function computeClientMutationOperation(
 
 export function validateClientMutationOperation(
     input: ValidateClientMutationOperationInput
+): readonly ClientMutationValidationIssue[] {
+    return validateClientMutation({
+        command: input.command,
+        read: input.read
+    });
+}
+
+export function assertClientMutationOperationComputed(
+    input: ValidateClientMutationOperationInput
 ): void {
-    validateClientMutation({
+    assertExactOperationComputed(
+        computeClientMutationOperation(input),
+        input.computed,
+        'Client mutation operation computed'
+    );
+    assertClientMutationComputed({
         command: input.command,
         read: input.read,
         computed: input.computed.mutation
     });
-    if (input.computed.outcome === 'idempotency-conflict') {
-        return;
-    }
-    assertMutationProjections(input.computed);
-    if (input.lifecycle === undefined) {
-        assertValidCompletion(
-            input.completionFacts,
-            input.computed.durableResult,
-            input.computed.completion
-        );
-        return;
-    }
-    const lifecycleComputed = input.computed.lifecycleComputed;
-    if (lifecycleComputed === undefined) {
-        throw new TypeError('Client mutation lifecycle computation is missing');
-    }
-    if (input.lifecycle.kind === 'connect') {
-        validateWsSessionConnectGuard(
-            input.lifecycle.facts,
-            input.lifecycle.read,
-            lifecycleComputed
-        );
-    }
-    else {
-        validateWsSessionGenerationClosed(
-            input.lifecycle.facts,
-            input.lifecycle.read,
-            lifecycleComputed
-        );
-    }
-    assertValidCompletion(
-        input.completionFacts,
-        input.computed.durableResult,
-        input.computed.completion
-    );
 }
 
 export function computeAuthorisedWsConnectOperation(
@@ -299,53 +278,28 @@ export function computeAuthorisedWsConnectOperation(
     };
 }
 
-export function validateAuthorisedWsConnectOperation(
+export function validateAuthorisedWsConnectPolicy(
+    input: ValidateAuthorisedWsConnectOperationInput
+): readonly ClientMutationValidationIssue[] {
+    return validateClientMutationAuthorityPolicy(input.command, input.read);
+}
+
+export function assertAuthorisedWsConnectComputed(
     input: ValidateAuthorisedWsConnectOperationInput
 ): void {
-    const generationClosed = isWsSessionGenerationClosed(
-        input.lifecycleFacts,
-        input.lifecycleRead
+    assertExactOperationComputed(
+        computeAuthorisedWsConnectOperation(input),
+        input.computed,
+        'Authorised WebSocket client operation computed'
     );
     if (input.computed.outcome === 'inactive') {
-        if (
-            !generationClosed ||
-            input.computed.durableResult.sessionId !== input.lifecycleFacts.sessionId ||
-            input.computed.durableResult.generationId !== input.lifecycleFacts.generationId
-        ) {
-            throw new TypeError('Inactive WebSocket client completion differs');
-        }
-        assertValidCompletion(
-            input.completionFacts,
-            input.computed.durableResult,
-            input.computed.completion
-        );
         return;
     }
-    if (generationClosed) {
-        throw new TypeError('Active WebSocket client mutation used a closed generation');
-    }
-    validateClientMutation({
+    assertClientMutationComputed({
         command: input.command,
         read: input.read,
         computed: input.computed.mutation
     });
-    if (input.computed.outcome === 'idempotency-conflict') {
-        return;
-    }
-    assertMutationProjections(input.computed);
-    if (!input.computed.lifecycleComputed) {
-        throw new TypeError('Active WebSocket client lifecycle computation is missing');
-    }
-    validateWsSessionConnectGuard(
-        toWsSessionGenerationGuardFacts(input.connection, input.lifecycleFacts),
-        input.lifecycleRead,
-        input.computed.lifecycleComputed
-    );
-    assertValidCompletion(
-        input.completionFacts,
-        input.computed.durableResult,
-        input.computed.completion
-    );
 }
 
 export function computeMissingSessionDisconnect(
@@ -367,26 +321,19 @@ export function computeMissingSessionDisconnect(
     };
 }
 
-export function validateMissingSessionDisconnect(
+export function validateMissingSessionDisconnectPolicy(
+    input: ValidateMissingSessionDisconnectInput
+): readonly ClientMutationValidationIssue[] {
+    return validateClientMutationAuthorityPolicy(input.command, input.read);
+}
+
+export function assertMissingSessionDisconnectComputed(
     input: ValidateMissingSessionDisconnectInput
 ): void {
-    validateClientMutationAuthorityPolicy(input.command, input.read);
-    validateWsSessionGenerationClosed(
-        input.lifecycleFacts,
-        input.lifecycleRead,
-        input.computed.lifecycleComputed
-    );
-    if (
-        input.computed.durableResult.sessionId !==
-            input.commandInput.connection.authSession.sessionId ||
-        input.computed.durableResult.generationId !== input.commandInput.connection.generationId
-    ) {
-        throw new TypeError('Missing-session WebSocket completion differs');
-    }
-    assertValidCompletion(
-        input.completionFacts,
-        input.computed.durableResult,
-        input.computed.completion
+    assertExactOperationComputed(
+        computeMissingSessionDisconnect(input),
+        input.computed,
+        'Missing-session WebSocket disconnect computed'
     );
 }
 
@@ -414,65 +361,26 @@ export function computeExpiredSessionsOperation(
     };
 }
 
-export function validateExpiredSessionsOperation(
+export function validateExpiredSessionsPolicy(
+    input: ValidateExpiredSessionsOperationInput
+): readonly ClientMutationValidationIssue[] {
+    return input.reads.flatMap(({ command, read }) => validateClientMutationAuthorityPolicy(command, read));
+}
+
+export function assertExpiredSessionsOperation(
     input: ValidateExpiredSessionsOperationInput
 ): void {
-    if (
-        input.page.candidates.length > CLIENT_EXPIRED_SESSION_PAGE_SIZE ||
-        input.computed.mutations.length !== input.reads.length ||
-        input.reads.length !== input.page.candidates.length
-    ) {
-        throw new TypeError('Expired client mutation aggregate length differs');
-    }
-    if (
-        input.page.nextAfterKey !== null &&
-        input.page.nextAfterKey === input.pageInput.afterKey
-    ) {
-        throw new TypeError('Expired client session page cursor did not advance');
-    }
+    assertExactOperationComputed(
+        computeExpiredSessionsOperation(input),
+        input.computed,
+        'Expired client sessions operation computed'
+    );
     for (const [index, { command, read }] of input.reads.entries()) {
-        const mutation = input.computed.mutations[index];
-        if (!mutation) {
-            throw new TypeError('Expired client mutation aggregate entry is missing');
-        }
-        validateClientMutation({ command, read, computed: mutation });
-    }
-    if (input.computed.outcome === 'idempotency-conflict') {
-        return;
-    }
-    const expectedApplied = input.computed.mutations.filter(
-        (mutation) => mutation.outcome === 'write'
-    );
-    const expectedWrites = input.computed.mutations.filter(requiresClientWrite);
-    const projectionIssue = validateComputedProjection(
-        {
-            durableResult: expectedApplied.map(toClientStateWritten),
-            writes: expectedWrites,
-            committedSnapshots: expectedApplied.map((mutation) => mutation.snapshot)
-        },
-        {
-            durableResult: input.computed.durableResult,
-            writes: input.computed.writes,
-            committedSnapshots: input.computed.committedSnapshots
-        },
-        'computed'
-    )[0];
-    if (projectionIssue !== undefined) {
-        throw new TypeError('Expired client mutation projections differ');
-    }
-    assertValidCompletion(
-        input.completionFacts,
-        input.computed.durableResult,
-        input.computed.completion
-    );
-    const expectedSuccessor = computeExpiredSessionSuccessorWrite(input);
-    if (
-        expectedSuccessor === null
-            ? input.computed.successorWrite !== null
-            : input.computed.successorWrite === null ||
-                !isExactAppOutboxInsert(expectedSuccessor.entry, input.computed.successorWrite)
-    ) {
-        throw new TypeError('Expired client session successor differs');
+        assertClientMutationComputed({
+            command,
+            read,
+            computed: input.computed.mutations[index]!
+        });
     }
 }
 
@@ -499,41 +407,14 @@ function computeCompletion<Result>(
     });
 }
 
-function assertValidCompletion<Result>(
-    facts: AppInboxCompletionFacts,
-    durableResult: Result,
-    completion: AppInboxCompletionComputed<Result>
+function assertExactOperationComputed<Expected, Candidate>(
+    expected: Expected,
+    candidate: Candidate,
+    path: string
 ): void {
-    const issues = validateAppInboxCompletion(
-        { ...facts, durableResult, status: EntityStatus.COMPLETED },
-        completion
-    );
-    if (issues[0] !== undefined) {
-        throw issues[0].cause;
-    }
-}
-
-function assertMutationProjections(
-    computed: Extract<ClientMutationOperationComputed, { outcome: 'completed'; }>
-): void {
-    const expectedWrites = requiresClientWrite(computed.mutation)
-        ? [computed.mutation]
-        : [];
-    const projectionIssue = validateComputedProjection(
-        {
-            durableResult: toClientStateWritten(computed.mutation),
-            writes: expectedWrites,
-            committedSnapshots: [computed.mutation.snapshot]
-        },
-        {
-            durableResult: computed.durableResult,
-            writes: computed.writes,
-            committedSnapshots: computed.committedSnapshots
-        },
-        'computed'
-    )[0];
+    const projectionIssue = validateComputedProjection(expected, candidate, path)[0];
     if (projectionIssue !== undefined) {
-        throw new TypeError('Client mutation projections differ');
+        throw projectionIssue.cause;
     }
 }
 

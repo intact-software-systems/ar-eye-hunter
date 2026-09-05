@@ -25,8 +25,8 @@ import {
     toAuthorisedWsClientDisconnectEnqueue
 } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import {
-    computeClientMutationOperation,
-    validateClientMutationOperation
+    assertClientMutationOperationComputed,
+    computeClientMutationOperation
 } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-computation.ts';
 import { ClientStateInboxHandler } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
 import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
@@ -149,14 +149,14 @@ describe('ClientStateInboxHandler phases', () => {
         }
 
         expect(() =>
-            validateClientMutationOperation({
+            assertClientMutationOperationComputed({
                 command,
                 read,
                 completionFacts,
                 lifecycle,
                 computed: { ...computed, lifecycleComputed: undefined }
             })
-        ).toThrow('Client mutation lifecycle computation is missing');
+        ).toThrow(/lifecycleComputed/);
     });
 
     it.each([
@@ -389,9 +389,50 @@ describe('ClientStateInboxHandler phases', () => {
             'observe'
         ]);
     });
+
+    it('does not enter the transaction when mutation policy validation returns issues', async () => {
+        const fixture = createHandlerFixture({
+            authoritySessionClientId: 'mallory',
+            generationClosed: false,
+            sessionPresent: true
+        });
+        const context = createContext<ClientStateWritten>({
+            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            resourceId: 'reject-mismatched-authority',
+            contextId: 'app-1:workspace-1:alice',
+            senderId: 'alice',
+            authority: toClientMutationIssuedSessionAuthority(
+                SESSION,
+                SCOPE,
+                'upsertPrincipal'
+            ),
+            data: {}
+        });
+
+        await expect(
+            fixture.handler.processCommand(
+                context,
+                toUpsertClientPrincipalMutationInput({
+                    scope: SCOPE,
+                    principalId: 'alice',
+                    request: { username: 'alice', requestId: 'reject-mismatched-authority' },
+                    defaultCommandId: 'reject-mismatched-authority'
+                })
+            )
+        ).rejects.toMatchObject({ code: 'client-mutation-rejected', status: 400 });
+
+        expect(fixture.actions).toEqual([
+            'completion.read',
+            'domain.read',
+            'mutation.compute',
+            'mutation.validate'
+        ]);
+        expect(fixture.writesByTransaction).toEqual([]);
+    });
 });
 
 interface HandlerFixtureOptions {
+    readonly authoritySessionClientId?: string;
     readonly expiryCandidates?: readonly ClientSessionExpiryCandidate[];
     readonly failFirstExpiryTransactionAtWrite?: number;
     readonly generationClosed: boolean;
@@ -417,7 +458,16 @@ function createHandlerFixture(options: HandlerFixtureOptions): {
     const mutationService = {
         read: async (command: ClientMutationCommand): Promise<ClientMutationRead> => {
             actions.push('domain.read');
-            return clientMutationRead(command, options.sessionPresent);
+            const read = clientMutationRead(command, options.sessionPresent);
+            return options.authoritySessionClientId && read.authoritySession
+                ? {
+                    ...read,
+                    authoritySession: {
+                        ...read.authoritySession,
+                        clientId: options.authoritySessionClientId
+                    }
+                }
+                : read;
         },
         write: async (_transaction: PSqlSql, computed: ClientMutationComputedWrite) => {
             actions.push('domain.write');

@@ -21,31 +21,31 @@ import {
 import { requireSha256 } from '../../validation/client-string-validation.ts';
 import { validateClientPrincipalRef } from '../../validation/validate-client-principal-ref.ts';
 import type { ClientMutationComputed, ConditionalCandidate } from '../client-mutation-contracts.ts';
-import { validateClientPersistenceShape } from './validate-client-persistence.ts';
+import { assertClientPersistenceShape } from './assert-client-persistence.ts';
 
-export function validateClientMutationResult(
+export function assertClientMutationResult(
     computed: unknown
 ): asserts computed is ClientMutationComputed {
     const value = decodeClientValidationRecord(computed, 'Client mutation computed');
     switch (value.outcome) {
         case 'replay':
-            validateReplayResult(value);
+            assertReplayResult(value);
             return;
         case 'no-op':
-            validateNoOpResult(value);
+            assertNoOpResult(value);
             return;
         case 'idempotency-conflict':
-            validateIdempotencyConflictResult(value);
+            assertIdempotencyConflictResult(value);
             return;
         case 'write':
-            validateAppliedWriteResult(value);
+            assertAppliedWriteResult(value);
             return;
         default:
             rejectClientMutation('Client mutation computed outcome is invalid');
     }
 }
 
-function validateReplayResult(value: ClientValidationRecord): void {
+function assertReplayResult(value: ClientValidationRecord): void {
     requireExactKeys(value, ['outcome', 'receipt', 'snapshot', 'event'], 'Client mutation computed');
     validateClientMutationReceipt(value.receipt, 'Client mutation computed.receipt');
     validateAuthoritativeClientSnapshot(value.snapshot);
@@ -54,7 +54,7 @@ function validateReplayResult(value: ClientValidationRecord): void {
     }
 }
 
-function validateNoOpResult(value: ClientValidationRecord): void {
+function assertNoOpResult(value: ClientValidationRecord): void {
     assertClientBoolean(value.persistIdempotency, 'Client mutation computed.persistIdempotency');
     requireExactKeys(
         value,
@@ -83,11 +83,11 @@ function validateNoOpResult(value: ClientValidationRecord): void {
             value.idempotency,
             'Client mutation computed.idempotency'
         );
-        validateClientPersistenceShape(value.persistence);
+        assertClientPersistenceShape(value.persistence);
     }
 }
 
-function validateIdempotencyConflictResult(value: ClientValidationRecord): void {
+function assertIdempotencyConflictResult(value: ClientValidationRecord): void {
     requireExactKeys(
         value,
         ['outcome', 'existingCommandHash', 'receivedCommandHash'],
@@ -97,7 +97,7 @@ function validateIdempotencyConflictResult(value: ClientValidationRecord): void 
     requireSha256(value.receivedCommandHash, 'Client mutation computed.receivedCommandHash');
 }
 
-function validateAppliedWriteResult(value: ClientValidationRecord): void {
+function assertAppliedWriteResult(value: ClientValidationRecord): void {
     requireExactKeys(
         value,
         [
@@ -116,7 +116,7 @@ function validateAppliedWriteResult(value: ClientValidationRecord): void {
         'Client mutation computed'
     );
     const principalCandidate = value.principal;
-    validateConditionalCandidate(
+    assertConditionalCandidate(
         principalCandidate,
         'Client mutation computed.principal',
         validateClientPrincipal
@@ -124,12 +124,12 @@ function validateAppliedWriteResult(value: ClientValidationRecord): void {
     if (principalCandidate.operation === 'none') {
         rejectClientMutation('Client mutation computed principal guard is required');
     }
-    validateConditionalCandidate(
+    assertConditionalCandidate(
         value.instance,
         'Client mutation computed.instance',
         validateClientInstance
     );
-    validateConditionalCandidate(
+    assertConditionalCandidate(
         value.session,
         'Client mutation computed.session',
         validateClientSession
@@ -149,13 +149,13 @@ function validateAppliedWriteResult(value: ClientValidationRecord): void {
     if (!Array.isArray(value.outboxWrites) || value.outboxWrites.length !== 2) {
         rejectClientMutation('Client mutation computed outboxWrites must contain snapshot and event');
     }
-    validateClientPersistenceShape(value.persistence);
+    assertClientPersistenceShape(value.persistence);
 }
 
-function validateConditionalCandidate<T>(
+function assertConditionalCandidate<T>(
     value: ClientValidationValue,
     label: string,
-    validateValue: (value: ClientValidationValue, label: string) => void
+    assertValue: (value: ClientValidationValue, label: string) => void
 ): asserts value is ClientValidationRecord & ConditionalCandidate<T> {
     const candidate = decodeClientValidationRecord(value, label);
     switch (candidate.operation) {
@@ -164,11 +164,11 @@ function validateConditionalCandidate<T>(
             return;
         case 'insert':
             requireExactKeys(candidate, ['operation', 'value'], label);
-            validateValue(candidate.value, `${label}.value`);
+            assertValue(candidate.value, `${label}.value`);
             return;
         case 'update':
             requireExactKeys(candidate, ['operation', 'value', 'expectedRevision'], label);
-            validateValue(candidate.value, `${label}.value`);
+            assertValue(candidate.value, `${label}.value`);
             if (
                 !Number.isSafeInteger(candidate.expectedRevision) ||
                 (candidate.expectedRevision as number) < 0 ||

@@ -19,7 +19,11 @@ import {
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import type { ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import {
+    assertClientMutationComputed,
+    ClientMutationIdempotencyConflictError,
+    validateClientMutation
+} from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
@@ -123,7 +127,11 @@ function createClientStateTestMutationExecutor(
                 await writeClientStateTestMutation(input, computed);
             }
             if (computed.outcome === 'idempotency-conflict') {
-                throw new Error('Validated idempotency conflict is unreachable');
+                throw new ClientMutationIdempotencyConflictError(
+                    commandInput.commandId,
+                    computed.existingCommandHash,
+                    computed.receivedCommandHash
+                );
             }
             attemptsByCommandId.delete(commandInput.commandId);
             return toClientStateWritten(computed);
@@ -161,7 +169,13 @@ async function computeClientStateTestMutation(
     );
     timeClientStateMutationPhase(
         { timing: context.mutationTiming, command, operation: 'mutation.validate' },
-        () => validateClientMutation({ command, read, computed })
+        () => {
+            assertClientMutationComputed({ command, read, computed });
+            const issue = validateClientMutation({ command, read })[0];
+            if (issue !== undefined) {
+                throw issue.cause;
+            }
+        }
     );
     return computed;
 }

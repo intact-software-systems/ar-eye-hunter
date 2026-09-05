@@ -3,7 +3,7 @@ import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-sta
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import { clientStateSessionStorageKey } from '../persistence/client-state-session-storage-key.ts';
 
-export function validateClientExpiredSessionAuthority(
+export function assertClientExpiredSessionAuthority(
     input: Readonly<{
         aggregateRef: ClientPrincipalRef;
         clientInstanceId: string | null;

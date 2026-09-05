@@ -36,7 +36,7 @@ export async function readClientMutation(
             : { value: undefined, expiredEntry: undefined }
     ]);
 
-    validatePrincipalSnapshotRevision(principalSnapshot);
+    assertPrincipalSnapshotRevision(principalSnapshot);
     const receiptEvent = await readReceiptEvent(repository, command, idempotency);
 
     return {
@@ -78,7 +78,7 @@ function readIdempotency(repository: ClientStateRepository, command: ClientMutat
         : repository.findIdempotentClientMutationReceiptEntry(command.aggregateRef, command.requestId);
 }
 
-function validatePrincipalSnapshotRevision(
+function assertPrincipalSnapshotRevision(
     principalSnapshot: Awaited<ReturnType<ClientStateRepository['readPrincipalSnapshot']>>
 ): void {
     if (

@@ -5,10 +5,14 @@ import type {
     ClientMutationFacts,
     ClientMutationRead
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
-import { validateClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts';
+import { assertClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/assert-client-mutation-command.ts';
 import { validateClientMutationRequest } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { validateClientMutationAuthorityPolicy } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
+import {
+    assertClientMutationComputed,
+    validateClientMutation
+} from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 
 import { deepFreeze } from './client-mutation-concurrency-test-runtime.ts';
@@ -16,7 +20,8 @@ import {
     clientMutationPrincipalRef as principalRef,
     emptyClientMutationRead,
     validAuthority,
-    validAuthoritySession
+    validAuthoritySession,
+    validPrincipalCommand
 } from './client-mutation-validation-test-fixtures.ts';
 
 describe('client mutation validation', () => {
@@ -43,7 +48,7 @@ describe('client mutation validation', () => {
     it('preserves command root-before-input validation order', () => {
         expectRejected(
             () =>
-                validateClientMutationCommand({
+                assertClientMutationCommand({
                     operation: 'heartbeatSession',
                     commandId: '',
                     requestId: null,
@@ -59,7 +64,7 @@ describe('client mutation validation', () => {
     it('preserves issued-session authority expiry validation', () => {
         expectRejected(
             () =>
-                validateClientMutationCommand({
+                assertClientMutationCommand({
                     operation: 'upsertPrincipal',
                     commandId: 'command-1',
                     requestId: null,
@@ -199,10 +204,63 @@ describe('client mutation computation determinism', () => {
         });
         const first = computeClientMutation({ command, read });
         const second = computeClientMutation({ command, read });
-        validateClientMutation({ command, read, computed: first });
-        validateClientMutation({ command, read, computed: second });
+        assertClientMutationComputed({ command, read, computed: first });
+        assertClientMutationComputed({ command, read, computed: second });
+        expect(validateClientMutation({ command, read })).toEqual([]);
+        expect(validateClientMutation({ command, read })).toEqual([]);
         expect(second).toEqual(first);
         expect(command).toEqual(deepFreeze(structuredClone(command)));
         expect(read).toEqual(deepFreeze(structuredClone(read)));
+    });
+});
+
+describe('client mutation authority policy', () => {
+    it('returns every independently discoverable authority issue without throwing', () => {
+        const command = validPrincipalCommand();
+        if (command.operation !== 'upsertPrincipal' || command.authority.kind !== 'issued-session') {
+            throw new TypeError('Expected issued-session principal command');
+        }
+        const mismatchedCommand: ClientMutationCommand = {
+            ...command,
+            authority: {
+                ...command.authority,
+                operation: 'upsertInstance',
+                applicationId: 'other-app',
+                workspaceId: 'other-workspace',
+                principalId: 'mallory',
+                sessionId: 'mallory-session'
+            },
+            input: {
+                ...command.input,
+                actorPrincipalId: 'eve',
+                actorSessionId: 'eve-session'
+            }
+        };
+        const read: ClientMutationRead = {
+            ...emptyClientMutationRead(),
+            authoritySession: {
+                ...validAuthoritySession(),
+                clientId: 'bob',
+                sessionId: 'bob-session',
+                issuedAtEpochMs: 1,
+                expiresAtEpochMs: command.facts.nowEpochMs + 8_000
+            }
+        };
+
+        expect(
+            validateClientMutationAuthorityPolicy(mismatchedCommand, read)
+                .map(({ path }) => path)
+        ).toEqual([
+            'command.authority.operation',
+            'command.authority.applicationId',
+            'command.authority.workspaceId',
+            'command.authority.principalId',
+            'read.authoritySession.clientId',
+            'read.authoritySession.sessionId',
+            'read.authoritySession.issuedAtEpochMs',
+            'read.authoritySession.expiresAtEpochMs',
+            'command.input.actorPrincipalId',
+            'command.input.actorSessionId'
+        ]);
     });
 });

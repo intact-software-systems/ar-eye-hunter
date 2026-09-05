@@ -32,28 +32,28 @@ type OperationInputValidation = Readonly<{
     commandRoot: ClientValidationRecord;
 }>;
 
-export function validateClientMutationOperationInput(validation: OperationInputValidation): void {
-    validateActorInput(validation.input);
+export function assertClientMutationOperationInput(validation: OperationInputValidation): void {
+    assertActorInput(validation.input);
     switch (validation.operation) {
         case 'upsertPrincipal':
-            return validatePrincipalInput(validation);
+            return assertPrincipalInput(validation);
         case 'upsertInstance':
-            return validateInstanceInput(validation);
+            return assertInstanceInput(validation);
         case 'connectSession':
         case 'connectAuthorisedWsSession':
-            return validateConnectInput(validation);
+            return assertConnectInput(validation);
         case 'heartbeatSession':
-            return validateHeartbeatInput(validation);
+            return assertHeartbeatInput(validation);
         case 'disconnectSession':
         case 'disconnectAuthorisedWsSession':
-            return validateDisconnectInput(validation);
+            return assertDisconnectInput(validation);
         case 'expireSession':
-            return validateExpiryInput(validation);
+            return assertExpiryInput(validation);
     }
 }
 
-function validatePrincipalInput(validation: OperationInputValidation): void {
-    validateRoot(validation, 'Client principal command');
+function assertPrincipalInput(validation: OperationInputValidation): void {
+    assertRoot(validation, 'Client principal command');
     requireExactKeys(validation.input, principalInputKeys, 'Client principal input');
     requireNonEmptyString(validation.input.username, 'Client principal username');
     requireNullableString(validation.input.displayName, 'Client principal displayName');
@@ -73,8 +73,8 @@ function validatePrincipalInput(validation: OperationInputValidation): void {
     );
 }
 
-function validateInstanceInput(validation: OperationInputValidation): void {
-    validateRoot(validation, 'Client instance command', true);
+function assertInstanceInput(validation: OperationInputValidation): void {
+    assertRoot(validation, 'Client instance command', true);
     requireExactKeys(validation.input, instanceInputKeys, 'Client instance input');
     requireNullableEnum(validation.input.status, CLIENT_INSTANCE_STATUSES, 'Client instance status');
     requireNullableEnum(validation.input.platform, CLIENT_PLATFORMS, 'Client instance platform');
@@ -84,10 +84,10 @@ function validateInstanceInput(validation: OperationInputValidation): void {
     requireNullableStringArray(validation.input.capabilities, 'Client instance capabilities');
 }
 
-function validateConnectInput(validation: OperationInputValidation): void {
-    validateSessionRoot(validation);
+function assertConnectInput(validation: OperationInputValidation): void {
+    assertSessionRoot(validation);
     requireExactKeys(validation.input, connectInputKeys, 'Client connect input');
-    validateGenerationId(validation.input.generationId);
+    assertGenerationId(validation.input.generationId);
     requireNullableEnum(
         validation.input.presenceState,
         CLIENT_PRESENCE_STATES,
@@ -98,11 +98,11 @@ function validateConnectInput(validation: OperationInputValidation): void {
     for (const field of connectTimestampFields) {
         requireNullableTimestamp(validation.input[field], `Client connect ${field}`);
     }
-    validateCommandConnectAdditions(validation.input);
-    validateConnectTimestampOrder(validation.input);
+    assertCommandConnectAdditions(validation.input);
+    assertConnectTimestampOrder(validation.input);
 }
 
-function validateCommandConnectAdditions(input: ClientValidationRecord): void {
+function assertCommandConnectAdditions(input: ClientValidationRecord): void {
     requireNullableEnum(input.instancePlatform, CLIENT_PLATFORMS, 'Client connect instancePlatform');
     requireNullableString(input.instanceUserAgent, 'Client connect instanceUserAgent');
     requireNullableStringArray(input.instanceCapabilities, 'Client connect instanceCapabilities');
@@ -111,10 +111,10 @@ function validateCommandConnectAdditions(input: ClientValidationRecord): void {
     requireNullableStringArray(input.principalRoles, 'Client connect principalRoles');
 }
 
-function validateHeartbeatInput(validation: OperationInputValidation): void {
-    validateSessionRoot(validation);
+function assertHeartbeatInput(validation: OperationInputValidation): void {
+    assertSessionRoot(validation);
     requireExactKeys(validation.input, heartbeatInputKeys, 'Client heartbeat input');
-    validateGenerationId(validation.input.generationId);
+    assertGenerationId(validation.input.generationId);
     requireNullableEnum(
         validation.input.presenceState,
         CLIENT_PRESENCE_STATES,
@@ -125,23 +125,23 @@ function validateHeartbeatInput(validation: OperationInputValidation): void {
         'Client heartbeat lastHeartbeatAtEpochMs'
     );
     requireNullableTimestamp(validation.input.expiresAtEpochMs, 'Client heartbeat expiresAtEpochMs');
-    validateHeartbeatTimestampOrder(validation.input);
+    assertHeartbeatTimestampOrder(validation.input);
 }
 
-function validateDisconnectInput(validation: OperationInputValidation): void {
-    validateSessionRoot(validation);
+function assertDisconnectInput(validation: OperationInputValidation): void {
+    assertSessionRoot(validation);
     requireExactKeys(validation.input, disconnectInputKeys, 'Client disconnect input');
-    validateGenerationId(validation.input.generationId);
+    assertGenerationId(validation.input.generationId);
     for (const field of disconnectTimestampFields) {
         requireNullableTimestamp(validation.input[field], `Client disconnect ${field}`);
     }
-    validateDisconnectTimestampOrder(validation.input);
+    assertDisconnectTimestampOrder(validation.input);
 }
 
-function validateExpiryInput(validation: OperationInputValidation): void {
-    validateSessionRoot(validation);
+function assertExpiryInput(validation: OperationInputValidation): void {
+    assertSessionRoot(validation);
     requireExactKeys(validation.input, expiryInputKeys, 'Client expiry input');
-    validateGenerationId(validation.input.generationId);
+    assertGenerationId(validation.input.generationId);
     requirePositiveSafeInteger(validation.input.generationVersion, 'Client expiry generationVersion');
     requireTimestamp(
         validation.input.observedExpiresAtEpochMs,
@@ -155,7 +155,7 @@ function validateExpiryInput(validation: OperationInputValidation): void {
     }
 }
 
-function validateRoot(validation: OperationInputValidation, label: string, instance = false): void {
+function assertRoot(validation: OperationInputValidation, label: string, instance = false): void {
     const root = validation.commandRoot;
     requireExactKeys(root, instance ? instanceCommandKeys : commandBaseKeys, label);
     if (instance) {
@@ -163,25 +163,25 @@ function validateRoot(validation: OperationInputValidation, label: string, insta
     }
 }
 
-function validateSessionRoot(validation: OperationInputValidation): void {
+function assertSessionRoot(validation: OperationInputValidation): void {
     const root = validation.commandRoot;
     requireExactKeys(root, sessionCommandKeys, 'Client session command');
     requireNonEmptyString(root.clientInstanceId, 'Client session clientInstanceId');
     requireNonEmptyString(root.sessionId, 'Client session sessionId');
 }
 
-function validateActorInput(input: ClientValidationRecord): void {
+function assertActorInput(input: ClientValidationRecord): void {
     requireNullableNonEmptyString(input.actorPrincipalId, 'Client mutation actorPrincipalId');
     requireNullableNonEmptyString(input.actorSessionId, 'Client mutation actorSessionId');
     requireNullableString(input.reason, 'Client mutation reason');
     requireNullableString(input.traceId, 'Client mutation traceId');
 }
 
-function validateGenerationId(value: ClientValidationValue): void {
+function assertGenerationId(value: ClientValidationValue): void {
     requireNonEmptyString(value, 'Client session generationId');
 }
 
-function validateConnectTimestampOrder(input: ClientValidationRecord): void {
+function assertConnectTimestampOrder(input: ClientValidationRecord): void {
     const authenticatedAt = timestampValue(input.authenticatedAtEpochMs);
     const connectedAt = timestampValue(input.connectedAtEpochMs);
     const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
@@ -201,7 +201,7 @@ function validateConnectTimestampOrder(input: ClientValidationRecord): void {
     }
 }
 
-function validateHeartbeatTimestampOrder(input: ClientValidationRecord): void {
+function assertHeartbeatTimestampOrder(input: ClientValidationRecord): void {
     const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
     const expiresAt = timestampValue(input.expiresAtEpochMs);
     if (heartbeatAt !== undefined && expiresAt !== undefined && expiresAt < heartbeatAt) {
@@ -211,7 +211,7 @@ function validateHeartbeatTimestampOrder(input: ClientValidationRecord): void {
     }
 }
 
-function validateDisconnectTimestampOrder(input: ClientValidationRecord): void {
+function assertDisconnectTimestampOrder(input: ClientValidationRecord): void {
     const disconnectedAt = timestampValue(input.disconnectedAtEpochMs);
     const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
     const expiresAt = timestampValue(input.expiresAtEpochMs);

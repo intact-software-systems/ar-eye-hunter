@@ -8,7 +8,7 @@ import { toClientMutationCommand, type ClientMutationPersistedFacts } from '@sha
 import { toConnectClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-connect-client-session-mutation-input.ts';
 import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
-import { validateClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts';
+import { assertClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/assert-client-mutation-command.ts';
 import { clientStateInstanceStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-instance-storage-key.ts';
 import {
     clientStatePrincipalStorageKey,
@@ -184,7 +184,7 @@ describe('client mutation command contracts', () => {
 
     it('rejects malformed authoritative command shapes for every client branch before compute or hash', () => {
         for (const command of malformedAuthoritativeCommands()) {
-            expect(() => validateClientMutationCommand(command)).toThrow(ClientMutationRejectedError);
+            expect(() => assertClientMutationCommand(command)).toThrow(ClientMutationRejectedError);
         }
     });
 });

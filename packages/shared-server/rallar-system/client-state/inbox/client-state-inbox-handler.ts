@@ -23,25 +23,32 @@ import {
 import { toClientMutationCommand, type ClientMutationPersistedFacts } from '../mutation/client-mutation-command.ts';
 import type {
     ClientMutationCommand,
-    ClientMutationCommandInput
+    ClientMutationCommandInput,
+    ClientMutationComputed
 } from '../mutation/client-mutation-contracts.ts';
 import { toConnectClientSessionMutationInput } from '../mutation/command-input/to-connect-client-session-mutation-input.ts';
 import { toDisconnectClientSessionMutationInput } from '../mutation/command-input/to-disconnect-client-session-mutation-input.ts';
 import { toExpireClientSessionMutationInput } from '../mutation/command-input/to-expire-client-session-mutation-input.ts';
+import { ClientMutationIdempotencyConflictError } from '../mutation/result-validation/validate-client-mutation.ts';
+import type { ClientMutationValidationIssue } from '../validation/client-mutation-rejection.ts';
 import type {
     ClientAuthorisedWsSessionConnectAppInboxPayload,
     ClientAuthorisedWsSessionDisconnectAppInboxPayload
 } from './app-client-inbox-contracts.ts';
 import { readClientMutationAuthority } from './authenticated-client-mutation-ingress.ts';
 import {
+    assertAuthorisedWsConnectComputed,
+    assertClientMutationOperationComputed,
+    assertExpiredSessionsOperation,
+    assertMissingSessionDisconnectComputed,
     computeAuthorisedWsConnectOperation,
     computeClientMutationOperation,
     computeExpiredSessionsOperation,
     computeMissingSessionDisconnect,
-    validateAuthorisedWsConnectOperation,
+    validateAuthorisedWsConnectPolicy,
     validateClientMutationOperation,
-    validateExpiredSessionsOperation,
-    validateMissingSessionDisconnect,
+    validateExpiredSessionsPolicy,
+    validateMissingSessionDisconnectPolicy,
     type ClientExpiredSessionMutationRead
 } from './client-state-inbox-computation.ts';
 import type { AuthorisedWsClientMutationResult } from './client-state-inbox-result-codec.ts';
@@ -88,17 +95,22 @@ export class ClientStateInboxHandler {
         );
         timeClientStateMutationPhase(
             { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
-            () =>
-                validateClientMutationOperation({
+            () => {
+                const validationInput = {
                     command,
                     read,
                     completionFacts,
                     lifecycle: undefined,
                     computed
-                })
+                } as const;
+                assertClientMutationOperationComputed(validationInput);
+                throwFirstClientMutationValidationIssue(
+                    validateClientMutationOperation(validationInput)
+                );
+            }
         );
         if (computed.outcome === 'idempotency-conflict') {
-            throw new Error('Validated client idempotency conflict is unreachable');
+            throwClientMutationIdempotencyConflict(command, computed.mutation);
         }
         const result = await timeClientStateMutationCommit(
             { timing: this.dependencies.mutationTiming, writes: computed.writes },
@@ -140,8 +152,8 @@ export class ClientStateInboxHandler {
         );
         timeClientStateMutationPhase(
             { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
-            () =>
-                validateAuthorisedWsConnectOperation({
+            () => {
+                const validationInput = {
                     connection,
                     command,
                     read,
@@ -149,10 +161,15 @@ export class ClientStateInboxHandler {
                     lifecycleRead,
                     completionFacts,
                     computed
-                })
+                } as const;
+                assertAuthorisedWsConnectComputed(validationInput);
+                throwFirstClientMutationValidationIssue(
+                    validateAuthorisedWsConnectPolicy(validationInput)
+                );
+            }
         );
         if (computed.outcome === 'idempotency-conflict') {
-            throw new Error('Validated client idempotency conflict is unreachable');
+            throwClientMutationIdempotencyConflict(command, computed.mutation);
         }
         if (computed.outcome === 'inactive') {
             return await this.dependencies.transactionWriter.writeComputedMutation(
@@ -206,8 +223,8 @@ export class ClientStateInboxHandler {
             );
             timeClientStateMutationPhase(
                 { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
-                () =>
-                    validateMissingSessionDisconnect({
+                () => {
+                    const validationInput = {
                         commandInput: input,
                         command,
                         read,
@@ -215,7 +232,12 @@ export class ClientStateInboxHandler {
                         lifecycleRead,
                         completionFacts,
                         computed
-                    })
+                    } as const;
+                    assertMissingSessionDisconnectComputed(validationInput);
+                    throwFirstClientMutationValidationIssue(
+                        validateMissingSessionDisconnectPolicy(validationInput)
+                    );
+                }
             );
             return await this.dependencies.transactionWriter.writeComputedMutation(
                 context,
@@ -245,17 +267,22 @@ export class ClientStateInboxHandler {
         );
         timeClientStateMutationPhase(
             { timing: this.dependencies.mutationTiming, command, operation: 'mutation.validate' },
-            () =>
-                validateClientMutationOperation({
+            () => {
+                const validationInput = {
                     command,
                     read,
                     completionFacts,
                     lifecycle: lifecycleInput,
                     computed
-                })
+                } as const;
+                assertClientMutationOperationComputed(validationInput);
+                throwFirstClientMutationValidationIssue(
+                    validateClientMutationOperation(validationInput)
+                );
+            }
         );
         if (computed.outcome === 'idempotency-conflict') {
-            throw new Error('Validated client idempotency conflict is unreachable');
+            throwClientMutationIdempotencyConflict(command, computed.mutation);
         }
         const result = await timeClientStateMutationCommit(
             { timing: this.dependencies.mutationTiming, writes: computed.writes },
@@ -327,14 +354,32 @@ export class ClientStateInboxHandler {
                     command: firstRead.command,
                     operation: 'mutation.validate'
                 },
-                () => validateExpiredSessionsOperation(validateInput)
+                () => {
+                    assertExpiredSessionsOperation(validateInput);
+                    throwFirstClientMutationValidationIssue(
+                        validateExpiredSessionsPolicy(validateInput)
+                    );
+                }
             );
         }
         else {
-            validateExpiredSessionsOperation(validateInput);
+            assertExpiredSessionsOperation(validateInput);
+            throwFirstClientMutationValidationIssue(
+                validateExpiredSessionsPolicy(validateInput)
+            );
         }
         if (computed.outcome === 'idempotency-conflict') {
-            throw new Error('Validated client idempotency conflict is unreachable');
+            const conflictIndex = computed.mutations.findIndex(
+                (mutation) => mutation.outcome === 'idempotency-conflict'
+            );
+            const conflict = computed.mutations[conflictIndex];
+            if (!conflict || conflict.outcome !== 'idempotency-conflict') {
+                throw new TypeError('Expired client mutation conflict is missing');
+            }
+            throwClientMutationIdempotencyConflict(
+                reads[conflictIndex]!.command,
+                conflict
+            );
         }
         const result = await timeClientStateMutationCommit(
             { timing: this.dependencies.mutationTiming, writes: computed.writes },
@@ -441,6 +486,25 @@ export class ClientStateInboxHandler {
             })
         );
     }
+}
+
+function throwFirstClientMutationValidationIssue(
+    issues: readonly ClientMutationValidationIssue[]
+): void {
+    if (issues[0] !== undefined) {
+        throw issues[0].cause;
+    }
+}
+
+function throwClientMutationIdempotencyConflict(
+    command: ClientMutationCommand,
+    computed: Extract<ClientMutationComputed, { outcome: 'idempotency-conflict'; }>
+): never {
+    throw new ClientMutationIdempotencyConflictError(
+        command.commandId,
+        computed.existingCommandHash,
+        computed.receivedCommandHash
+    );
 }
 
 function toClientMutationPersistedFacts(

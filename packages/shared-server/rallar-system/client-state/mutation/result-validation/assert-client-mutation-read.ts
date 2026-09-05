@@ -14,10 +14,10 @@ import {
 import { sameClientPrincipalRef } from '../../client-state-semantic-equality.ts';
 import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
 import { decodeClientValidationRecord, requireExactKeys } from '../../validation/client-record-validation.ts';
+import { assertClientExpiredSessionAuthority } from '../assert-client-expired-session-authority.ts';
 import type { ClientMutationCommand, ClientMutationRead } from '../client-mutation-contracts.ts';
-import { validateClientExpiredSessionAuthority } from '../validate-client-expired-session-authority.ts';
 
-export function validateClientMutationRead(
+export function assertClientMutationRead(
     command: ClientMutationCommand,
     read: ClientMutationRead
 ): void {
@@ -36,26 +36,26 @@ export function validateClientMutationRead(
         ],
         'Client mutation read'
     );
-    validateNullableEntryValue(read.principal, 'Client principal read', validateClientPrincipal);
-    validateNullableEntryValue(read.instance, 'Client instance read', validateClientInstance);
-    validateNullableEntryValue(read.session, 'Client session read', validateClientSession);
-    validateClientExpiredSessionAuthority({
+    assertNullableEntryValue(read.principal, 'Client principal read', validateClientPrincipal);
+    assertNullableEntryValue(read.instance, 'Client instance read', validateClientInstance);
+    assertNullableEntryValue(read.session, 'Client session read', validateClientSession);
+    assertClientExpiredSessionAuthority({
         aggregateRef: command.aggregateRef,
         clientInstanceId: 'clientInstanceId' in command ? command.clientInstanceId : null,
         sessionId: 'sessionId' in command ? command.sessionId : null,
         liveSession: read.session,
         expiredSessionEntry: read.expiredSessionEntry
     });
-    validateNullableEntryValue(
+    assertNullableEntryValue(
         read.idempotency,
         'Client idempotency read',
         validateClientMutationIdempotencyRecordValue
     );
-    validateClientMutationSnapshotRead(command, read);
-    validateClientMutationReadScope(command, read);
+    assertClientMutationSnapshotRead(command, read);
+    assertClientMutationReadScope(command, read);
 }
 
-function validateClientMutationSnapshotRead(
+function assertClientMutationSnapshotRead(
     command: ClientMutationCommand,
     read: ClientMutationRead
 ): void {
@@ -79,7 +79,7 @@ function validateClientMutationSnapshotRead(
     }
 }
 
-function validateClientMutationReadScope(
+function assertClientMutationReadScope(
     command: ClientMutationCommand,
     read: ClientMutationRead
 ): void {
@@ -95,11 +95,11 @@ function validateClientMutationReadScope(
             throw new ClientMutationRejectedError('Client instance read is wrongly scoped');
         }
     }
-    validateClientMutationSessionReadScope(command, read);
-    validateClientMutationIdempotencyRead(command, read);
+    assertClientMutationSessionReadScope(command, read);
+    assertClientMutationIdempotencyRead(command, read);
 }
 
-function validateClientMutationSessionReadScope(
+function assertClientMutationSessionReadScope(
     command: ClientMutationCommand,
     read: ClientMutationRead
 ): void {
@@ -119,7 +119,7 @@ function validateClientMutationSessionReadScope(
     }
 }
 
-function validateClientMutationIdempotencyRead(
+function assertClientMutationIdempotencyRead(
     command: ClientMutationCommand,
     read: ClientMutationRead
 ): void {
@@ -136,10 +136,10 @@ function validateClientMutationIdempotencyRead(
     }
 }
 
-function validateNullableEntryValue(
+function assertNullableEntryValue(
     value: unknown,
     label: string,
-    validateValue: (value: unknown, label: string) => void
+    assertValue: (value: unknown, label: string) => void
 ): void {
     if (value === null) {
         return;
@@ -147,5 +147,5 @@ function validateNullableEntryValue(
     const wrapped = decodeClientValidationRecord(value, label);
     requireExactKeys(wrapped, ['entry', 'value'], label);
     validateClientRuntimeStateEntry(wrapped.entry, `${label}.entry`);
-    validateValue(wrapped.value, `${label}.value`);
+    assertValue(wrapped.value, `${label}.value`);
 }

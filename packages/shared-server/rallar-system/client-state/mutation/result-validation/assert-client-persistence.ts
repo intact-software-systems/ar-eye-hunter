@@ -20,7 +20,7 @@ import type {
 } from '../client-mutation-contracts.ts';
 import { computeClientPersistence } from '../compute/compute-client-persistence.ts';
 
-export function validateClientPersistenceShape(value: ClientValidationValue): void {
+export function assertClientPersistenceShape(value: ClientValidationValue): void {
     const persistence = decodeClientValidationRecord(
         value,
         'Client mutation computed.persistence'
@@ -35,7 +35,7 @@ export function validateClientPersistenceShape(value: ClientValidationValue): vo
             'Client mutation computed.persistence.runtimeWrites must be an array'
         );
     }
-    persistence.runtimeWrites.forEach(validateClientRuntimeWriteShape);
+    persistence.runtimeWrites.forEach(assertClientRuntimeWriteShape);
     if (persistence.eventWrite === null) {
         return;
     }
@@ -56,7 +56,7 @@ export function validateClientPersistenceShape(value: ClientValidationValue): vo
     requireString(eventWrite.eventJson, 'Client mutation computed.persistence.eventWrite.eventJson');
 }
 
-export function validateExactClientPersistence(
+export function assertExactClientPersistence(
     computed: Exclude<ClientMutationComputed, { outcome: 'idempotency-conflict'; }>
 ): void {
     if (
@@ -65,7 +65,7 @@ export function validateExactClientPersistence(
     ) {
         return;
     }
-    validateClientPersistenceInput(computed);
+    assertClientPersistenceInput(computed);
     const issue = validateComputedProjection(
         computeClientPersistence(computed),
         computed.persistence,
@@ -76,7 +76,7 @@ export function validateExactClientPersistence(
     }
 }
 
-function validateClientRuntimeWriteShape(value: ClientValidationValue, index: number): void {
+function assertClientRuntimeWriteShape(value: ClientValidationValue, index: number): void {
     const label = `Client mutation computed.persistence.runtimeWrites[${index}]`;
     const write = decodeClientValidationRecord(value, label);
     requireExactKeys(
@@ -100,7 +100,7 @@ function validateClientRuntimeWriteShape(value: ClientValidationValue, index: nu
     }
 }
 
-function validateClientPersistenceInput(computed: ClientMutationDomainWrite): void {
+function assertClientPersistenceInput(computed: ClientMutationDomainWrite): void {
     if (computed.outcome === 'no-op') {
         assertCanonicalClientStateIdempotencyRecord(
             computed.idempotency,

@@ -31,6 +31,12 @@ interface ClientIngressRecord {
     readonly [key: string]: ClientIngressValue;
 }
 
+export interface IssuedClientMutationIngressValidationIssue {
+    readonly path: string;
+    readonly message: string;
+    readonly cause: NonRetryableException;
+}
+
 export function readAuthenticatedClientMutationIngress(
     enqueue: AppInboxEnqueueInput
 ): AuthenticatedClientMutationIngress {
@@ -111,28 +117,67 @@ export function validateIssuedClientMutationIngress(
     authority: IssuedAuthSession,
     ingress: AuthenticatedClientMutationIngress,
     nowEpochMs: number
-): void {
-    if (
-        !authority.accessToken ||
-        !authority.sessionId ||
-        !authority.clientId ||
-        authority.issuedAtEpochMs >= authority.expiresAtEpochMs ||
-        authority.expiresAtEpochMs <= nowEpochMs
-    ) {
-        throw new NonRetryableException(
-            'Authenticated client mutation session is invalid or expired.'
-        );
+): readonly IssuedClientMutationIngressValidationIssue[] {
+    const issues: IssuedClientMutationIngressValidationIssue[] = [];
+    if (!authority.accessToken) {
+        issues.push(toIngressValidationIssue(
+            'authority.accessToken',
+            'Authenticated client mutation access token is missing.'
+        ));
     }
-    if (
-        ingress.principalId !== authority.clientId ||
-        ingress.senderId !== authority.clientId ||
-        (ingress.actorPrincipalId !== null && ingress.actorPrincipalId !== authority.clientId) ||
-        (ingress.actorSessionId !== null && ingress.actorSessionId !== authority.sessionId) ||
-        (ingress.sessionId !== null && ingress.sessionId !== authority.sessionId)
-    ) {
-        throw new NonRetryableException(
-            'Authenticated client mutation principal or session authority differs.'
-        );
+    if (!authority.sessionId) {
+        issues.push(toIngressValidationIssue(
+            'authority.sessionId',
+            'Authenticated client mutation session id is missing.'
+        ));
+    }
+    if (!authority.clientId) {
+        issues.push(toIngressValidationIssue(
+            'authority.clientId',
+            'Authenticated client mutation client id is missing.'
+        ));
+    }
+    if (authority.issuedAtEpochMs >= authority.expiresAtEpochMs) {
+        issues.push(toIngressValidationIssue(
+            'authority.expiresAtEpochMs',
+            'Authenticated client mutation session expiry must follow issuance.'
+        ));
+    }
+    if (authority.expiresAtEpochMs <= nowEpochMs) {
+        issues.push(toIngressValidationIssue(
+            'authority.expiresAtEpochMs',
+            'Authenticated client mutation session is expired.'
+        ));
+    }
+    if (ingress.principalId !== authority.clientId) {
+        issues.push(toIngressValidationIssue(
+            'ingress.principalId',
+            'Authenticated client mutation principal differs from issued authority.'
+        ));
+    }
+    if (ingress.senderId !== authority.clientId) {
+        issues.push(toIngressValidationIssue(
+            'ingress.senderId',
+            'Authenticated client mutation sender differs from issued authority.'
+        ));
+    }
+    if (ingress.actorPrincipalId !== null && ingress.actorPrincipalId !== authority.clientId) {
+        issues.push(toIngressValidationIssue(
+            'ingress.actorPrincipalId',
+            'Authenticated client mutation actor principal differs from issued authority.'
+        ));
+    }
+    if (ingress.actorSessionId !== null && ingress.actorSessionId !== authority.sessionId) {
+        issues.push(toIngressValidationIssue(
+            'ingress.actorSessionId',
+            'Authenticated client mutation actor session differs from issued authority.'
+        ));
+    }
+    if (ingress.sessionId !== null && ingress.sessionId !== authority.sessionId) {
+        issues.push(toIngressValidationIssue(
+            'ingress.sessionId',
+            'Authenticated client mutation session differs from issued authority.'
+        ));
     }
     const expectedContextId = toAuthenticatedClientMutationContextId({
         scope: ingress.scope,
@@ -141,8 +186,19 @@ export function validateIssuedClientMutationIngress(
         callerSessionId: authority.sessionId
     });
     if (ingress.contextId !== expectedContextId) {
-        throw new NonRetryableException('Authenticated client mutation AppInbox context differs.');
+        issues.push(toIngressValidationIssue(
+            'ingress.contextId',
+            'Authenticated client mutation AppInbox context differs.'
+        ));
     }
+    return issues;
+}
+
+function toIngressValidationIssue(
+    path: string,
+    message: string
+): IssuedClientMutationIngressValidationIssue {
+    return { path, message, cause: new NonRetryableException(message) };
 }
 
 export function toAuthenticatedClientMutationContextId(

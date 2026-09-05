@@ -1,6 +1,4 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
@@ -144,7 +142,10 @@ export class AppClientInboxService {
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, ClientStateWritten>> {
         const ingress = readAuthenticatedClientMutationIngress(enqueue);
-        validateIssuedClientMutationIngress(authority, ingress, Date.now());
+        const ingressIssue = validateIssuedClientMutationIngress(authority, ingress, Date.now())[0];
+        if (ingressIssue !== undefined) {
+            throw ingressIssue.cause;
+        }
         const result = await this.commandClient.enqueueAndWaitForResult(
             {
                 ...enqueue,
@@ -190,9 +191,8 @@ export class AppClientInboxService {
     public async processExpiredSessions(
         atEpochMs: number = Date.now()
     ): Promise<Either<AppInboxFailure, readonly ClientStateWritten[]>> {
-        return await this.commandClient.enqueueReplacingWhenAndWaitForResult(
+        return await this.commandClient.enqueueReplacingTerminalAndWaitForResult(
             this.toExpiredSessionsEnqueue({ atEpochMs, afterKey: null }),
-            (entry) => isCompletedOrFailed(entry.status),
             decodeExpiredClientSessionsResult
         );
     }

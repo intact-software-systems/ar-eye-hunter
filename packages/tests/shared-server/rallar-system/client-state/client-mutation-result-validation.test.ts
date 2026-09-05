@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { validateClientMutationResult } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-result.ts';
+import { assertClientMutationResult } from '@shared-server/rallar-system/client-state/mutation/result-validation/assert-client-mutation-result.ts';
 import {
-    ClientMutationIdempotencyConflictError,
+    assertClientMutationComputed,
     validateClientMutation
 } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
@@ -18,7 +18,8 @@ describe('client mutation result validation', () => {
         const read = emptyRead(command);
         const computed = requireWrite(computeClientMutation({ command, read }));
 
-        expect(() => validateClientMutation({ command, read, computed })).not.toThrow();
+        expect(validateClientMutation({ command, read })).toEqual([]);
+        expect(() => assertClientMutationComputed({ command, read, computed })).not.toThrow();
     });
 
     it('rejects an accessor-backed computed result without invoking the accessor', async () => {
@@ -33,7 +34,9 @@ describe('client mutation result validation', () => {
             }
         });
 
-        expect(() => validateClientMutation({ command, read, computed: accessorBacked })).toThrow('Client mutation computed.snapshot must be a data property');
+        expect(() => assertClientMutationComputed({ command, read, computed: accessorBacked })).toThrow(
+            'Client mutation computed.snapshot must be a data property'
+        );
         expect(accessorRead).toBe(false);
     });
 
@@ -50,14 +53,14 @@ describe('client mutation result validation', () => {
             receipt: { ...computed.receipt, commandHash: 'not-a-hash' }
         };
 
-        expect(() => validateClientMutationResult(malformed)).toThrowError(
+        expect(() => assertClientMutationResult(malformed)).toThrowError(
             new ClientMutationRejectedError(
                 'Client mutation computed.receipt.commandHash must be a canonical SHA-256 digest'
             )
         );
     });
 
-    it('throws the canonical conflict error after validating a conflict result', async () => {
+    it('accepts a canonical idempotency conflict as validated data', async () => {
         const command = await principalCommand();
         const applied = requireWrite(computeClientMutation({ command, read: emptyRead(command) }));
         if (!applied.idempotency) {
@@ -73,9 +76,8 @@ describe('client mutation result validation', () => {
         };
         const computed = computeClientMutation({ command: conflicting, read });
 
-        expect(() => validateClientMutation({ command: conflicting, read, computed })).toThrow(
-            ClientMutationIdempotencyConflictError
-        );
+        expect(validateClientMutation({ command: conflicting, read })).toEqual([]);
+        expect(() => assertClientMutationComputed({ command: conflicting, read, computed })).not.toThrow();
     });
 
     it('rejects self-consistent state sync and outbox values that differ from canonical computation', async () => {
@@ -95,7 +97,7 @@ describe('client mutation result validation', () => {
         };
 
         expect(() =>
-            validateClientMutation({
+            assertClientMutationComputed({
                 command,
                 read,
                 computed: selfConsistentButNoncanonical

@@ -67,17 +67,80 @@ describe('AppClientInbox authentication', () => {
         });
 
         try {
-            expect(() =>
+            expect(
                 validateIssuedClientMutationIngress(
                     authority,
                     ingress,
                     authority.issuedAtEpochMs + 1
                 )
-            ).not.toThrow();
+            ).toEqual([]);
         }
         finally {
             dateNow.mockRestore();
         }
+    });
+
+    it('returns every independent issued-authority ingress issue without throwing', () => {
+        const authority = issuedSession('alice', 'alice-session');
+        const ingress = readAuthenticatedClientMutationIngress({
+            type: AppInboxType.CLIENT_SESSION_DISCONNECT,
+            topicId: AppInboxType.CLIENT_SESSION_DISCONNECT,
+            resourceId: 'aggregate-ingress-issues',
+            contextId: 'wrong-context',
+            senderId: 'mallory',
+            data: {
+                scope: SCOPE,
+                principalId: 'mallory',
+                clientInstanceId: 'browser',
+                sessionId: 'mallory-session',
+                request: {
+                    requestId: 'aggregate-ingress-issues',
+                    actorPrincipalId: 'mallory',
+                    actorSessionId: 'mallory-session'
+                }
+            }
+        });
+
+        expect(
+            validateIssuedClientMutationIngress(
+                { ...authority, expiresAtEpochMs: authority.issuedAtEpochMs },
+                ingress,
+                authority.issuedAtEpochMs + 1
+            ).map(({ path, message }) => ({ path, message }))
+        ).toEqual([
+            {
+                path: 'authority.expiresAtEpochMs',
+                message: 'Authenticated client mutation session expiry must follow issuance.'
+            },
+            {
+                path: 'authority.expiresAtEpochMs',
+                message: 'Authenticated client mutation session is expired.'
+            },
+            {
+                path: 'ingress.principalId',
+                message: 'Authenticated client mutation principal differs from issued authority.'
+            },
+            {
+                path: 'ingress.senderId',
+                message: 'Authenticated client mutation sender differs from issued authority.'
+            },
+            {
+                path: 'ingress.actorPrincipalId',
+                message: 'Authenticated client mutation actor principal differs from issued authority.'
+            },
+            {
+                path: 'ingress.actorSessionId',
+                message: 'Authenticated client mutation actor session differs from issued authority.'
+            },
+            {
+                path: 'ingress.sessionId',
+                message: 'Authenticated client mutation session differs from issued authority.'
+            },
+            {
+                path: 'ingress.contextId',
+                message: 'Authenticated client mutation AppInbox context differs.'
+            }
+        ]);
     });
 
     it('returns the exact terminal left for a malformed completed client result', async () => {
@@ -219,9 +282,9 @@ describe('AppClientInbox authentication', () => {
         const read = await service.read(command);
         const computed = computeClientMutation({ command, read });
 
-        expect(() => validateClientMutation({ command, read, computed })).toThrow(
-            /authority|authenticated|principal/i
-        );
+        expect(
+            validateClientMutation({ command, read }).map(({ path }) => path)
+        ).toContain('command.authority.principalId');
     });
 
     it('rejects a durable Mallory authority targeting Alice before any domain write', async () => {
