@@ -1,687 +1,467 @@
 # ALM protocol static audit
 
-Date: 2026-08-29
+Reviewed: 2026-09-05\
+Source: `02d65ac4a458b98b92ebda22cf3ff84041027eb9`\
+Original audit: 2026-08-29
+
+This review supersedes the original audit's current-state claims. Finding IDs F1–F17 remain
+stable so the [improvement roadmap](alm-improvement-plan.md) can connect each remaining gap
+to implementation and validation. The [product description](alm-complete-product-description.md)
+distinguishes current capabilities from the intended product.
 
 ## Executive summary
 
-ALM has a substantial protocol core: a versioned envelope, QoS normalization,
-deduplication, ordering, supersedence, forwarding, acknowledgement/negative
-acknowledgement/repair messages, durable admission effects, and both RTC and WS
-adapters. The admission stores atomically commit state and side effects, and the
-effect lease/replay design gives the implementation useful crash recovery.
+ALM has a versioned envelope, QoS normalization, ordering, deduplication, supersedence,
+forwarding, ACK/NACK/repair, and atomic admission/effect persistence shared by RTC and WS.
+Durable effects have claims, leases, retries, expiry, and restart replay.
 
-It is not yet a complete transport-neutral delivery protocol. The highest-risk
-gaps are:
+The code has advanced since August 29. Browser live ingress now structurally decodes
+AL envelopes. IndexedDB admission reads are readonly, prefix reads stop at the prefix
+boundary, and expiry has an index. Runtime factories construct only canonical admission
+stores. Ended-session QueueBox databases are deleted. RTC snapshot-floor checks and durable
+replay fences exist, as do inbound disposal fences and regression tests.
 
-1. `at-least-once` is selectable with `ack: none`. Default browser RTC and WS
-   send paths request that combination, although transport submission is not a
-   logical receipt. RTC additionally reports an AL send as successful even when
-   `QRtcDataChannel` has dropped, queued, or replaced it under backpressure.
-2. Browser RTC and WS ingress cast decoded objects to `ALMessage`; RTC only warns
-   when the envelope sender differs from the authenticated channel peer. Control
-   messages then bypass normal admission planning and are parsed with unchecked
-   `JSON.parse(...) as ...` casts.
-3. RTC multicast can fail open when its target group/overlay cannot be resolved:
-   planning continues without a membership set, and an empty membership set is
-   treated as permission for local delivery.
-4. Browser typed-channel RTC↔WS fallback creates a new message for each attempt
-   and treats admission-like statuses as success, so attempts do not share one
-   identity, acknowledgement obligation, or truthful fallback trigger.
-5. Browser AL admission uses one unindexed IndexedDB object store. Prefix reads
-   scan the whole store, every point read opens a separate `readwrite`
-   transaction, and effect execution repeatedly scans all stored AL rows.
-6. Even volatile immediate traffic is written through persistent admission
-   state and durable effects. A minimal successful volatile outbound message
-   follows at least 12 IndexedDB transactions and three whole-store scans before
-   returning; this is a code-path count, not a measured latency result.
-7. QueueBox creates four object stores per browser session. New stores require
-   database version upgrades, ended-session stores are never removed, and the
-   15-second cleanup scans every historical QueueBox store.
-8. Several envelope capabilities have no general runtime semantics: action
-   correlation, trace propagation, RTC membership/snapshot fencing, a distinct
-   group-leader acknowledgement, and general principal/world audience
-   resolution. Some have application-specific WS handling, but not protocol-wide
-   behavior.
+The highest-priority remaining gaps are:
 
-The best optimization is architectural: keep ALM transport-neutral, but split
-the volatile and durable execution paths. Volatile best-effort RTC should use
-in-memory bounded state and the data-channel flow-control result. Durable or
-repairable messages should use a single indexed browser database schema with
-transactional, bounded queries. Both RTC and WS must continue to share envelope,
-policy, validation, acknowledgement, repair, and observability semantics.
+1. Reliable browser defaults still request no ACK. RTC also discards data-channel
+   queue/drop/replacement outcomes and reports a prepared send as sent.
+2. Control payloads lack a validated, authenticated admission boundary. RTC provenance and
+   room authorization need explicit rules that preserve authorized relays.
+3. RTC snapshot enforcement depends on a supplied `minSnapshotVersion`; unversioned room
+   traffic can still reach the empty-membership fail-open policy.
+4. Fallback constructs separate messages, and RTC/WS admission scopes do not establish one
+   cross-carrier delivery/deduplication lifecycle.
+5. Volatile ALM still uses persistent admission, durable dispatch has two work owners, and
+   effect/queue selection remains proportional to stored work despite improved prefix reads.
+6. Ordering gaps and protocol collections lack comprehensive bounds. Shared semantic keys
+   are not fully protected by sender-specific admission guards.
 
-## Scope and evidence rules
+These are code-derived findings. No current browser latency profile or ALM transaction-count
+measurement was captured. The original numeric transaction baseline is withdrawn.
 
-This is a static analysis of:
+## Scope and evidence
 
-- the contract and policy under
-  [`packages/shared/al-contracts`](../../packages/shared/al-contracts/);
-- the canonical runtimes and admission stores under
-  [`packages/shared/alm`](../../packages/shared/alm/);
-- RTC integration in
-  [`WebRtcOverlayMulticastManager`](../../packages/shared/multicast/WebRtcOverlayMulticastManager.ts),
-  [`WebRtcOverlayMulticastService`](../../packages/shared/multicast/WebRtcOverlayMulticastService.ts),
-  [`WebRtcRxStreamerService`](../../packages/shared/services/WebRtcRxStreamerService.ts),
-  and [`QRtcDataChannel`](../../packages/shared/webrtc/QRtcDataChannel.ts);
-- browser WS integration in
-  [`WsQueueBoxClientService`](../../packages/shared/services/WsQueueBoxClientService.ts);
-- server WS integration in
-  [`ws-queue-box-server-service.ts`](../../packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts);
-- browser persistence and scheduling under
-  [`packages/shared-web/browser/al-runtime`](../../packages/shared-web/browser/al-runtime/),
-  [`packages/shared-web/browser/queuebox`](../../packages/shared-web/browser/queuebox/),
-  and [`indexed-db-queue-box.ts`](../../packages/shared/queuebox/indexed-db-queue-box.ts);
-- focused ALM, RTC, WS, and IndexedDB tests.
+Reviewed owners:
 
-Finding confidence is reported as:
+- [AL contracts, policy, and envelope/control decoding](../../packages/shared/al-contracts/).
+- [Inbound admission and delivery](../../packages/shared/alm/inbound/) and
+  [outbound admission and durable replay](../../packages/shared/alm/outbound/README.md).
+- [RTC overlay manager](../../packages/shared/multicast/web-rtc-overlay-multicast-manager.ts),
+  [overlay service](../../packages/shared/multicast/web-rtc-overlay-multicast-service.ts),
+  [RTC receiver](../../packages/shared/services/web-rtc-rx-streamer-service.ts), and
+  [data channel](../../packages/shared/webrtc/qrtc-data-channel.ts).
+- [Browser WS](../../packages/shared/services/ws-queue-box-client-service.ts) and
+  [server WS](../../packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts).
+- [Browser AL persistence](../../packages/shared-web/browser/al-runtime/),
+  [browser QueueBox](../../packages/shared-web/browser/queuebox/),
+  [IndexedDB QueueBox](../../packages/shared/queuebox/indexed-db-queue-box.ts),
+  [typed browser messages](../../packages/shared-web/browser/messages/), and
+  [PostgreSQL admission adapters](../../packages/shared-server/al-runtime/postgres/).
 
-- **Proven from code**: a direct control-flow, data-flow, or complexity property.
-- **Strong suspicion**: code gives a credible bottleneck or failure mechanism,
-  but representative runtime evidence is still needed.
-- **Needs runtime measurement**: a hypothesis or optimization decision that
-  cannot be ranked confidently from static analysis.
+**Proven from code** means the cited implementation establishes the control flow, missing
+validation, or algorithmic work; it does not establish measured runtime impact.
+**Needs runtime measurement** means a performance or environment hypothesis remains unmeasured.
+**Coverage inspected** means the named test and its assertions were read, not executed successfully.
 
-No browser profile or traffic benchmark was run for this report. Consequently,
-the report identifies code-proven work and likely bottlenecks but does not claim
-wall-clock dominance or a percentage improvement.
+The focused Vitest command could not start because the worktree had no
+`node_modules/.bin/vitest` (exit 127). No runtime pass is inferred from inspected coverage.
 
 ## Current architecture
 
 ```text
 typed caller
-    -> ALMessage v2 builder
-    -> QoS normalization / transport planning
-    -> versioned admission read + atomic state/effect commit
-    -> durable effect drain
-        -> immediate RTC/WS send, or
-        -> QueueBox persistence -> polling/reservation -> dequeue send
-    -> peer/server inbound admission
-    -> local callback, QueueBox inbox, forwarding, ACK/NACK/repair
+  -> carrier-specific ALMessage construction
+  -> QoS / transport planning
+  -> admission read -> computation -> versioned state/effect commit
+  -> durable effect worker
+       -> immediate RTC/WS submission, or
+       -> QueueBox -> dequeue -> admission/send effect
+  -> remote envelope decoder
+       -> control admission, or
+       -> normal admission -> local delivery / forwarding / receipt / repair
 ```
 
-Both transports use the shared ALM runtime:
+Browser WS, RTC reception, and RTC overlay sending have distinct runtime scopes. The browser
+chooses IndexedDB when supported; volatile delivery does not select a different admission
+backend. Server WS uses the shared runtimes with PostgreSQL adapters.
 
-- Browser WS creates one inbound and one outbound AL admission scope.
-- RTC creates an inbound scope for the receiver and an outbound scope for the
-  overlay manager.
-- Server WS creates inbound/outbound scopes backed by PostgreSQL runtime state.
+The [outbound navigation map](../../packages/shared/alm/outbound/README.md) now documents
+construction, dispatch admission, repair admission, and the independently owned effect drain.
+Former large runtime/store modules have been split. Current standards and owner-to-result
+navigation govern cleanup, not the original file-size inventory.
 
-That shared semantic path is valuable and should be preserved. The problem is
-that the browser implementation also makes persistent admission the mandatory
-mechanical path for volatile RTC traffic.
-
-## Contract-to-implementation coverage
-
-| Contract surface                             | Current coverage            | Gap                                                                                                                                                                                                                                                                                |
-| -------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Versioned identity, route, JSON payload      | Partial                     | Full persisted-envelope decoding exists, but browser live ingress and browser QueueBox reads bypass it. Builders do not populate `sessionId` or `traceId`.                                                                                                                         |
-| Unicast                                      | Implemented                 | Sender/recipient authorization is transport-specific, not part of a shared live-ingress boundary.                                                                                                                                                                                  |
-| Multicast `GroupRef`                         | Partial                     | RTC uses current membership when resolution succeeds, but ignores `membershipEpoch`/`minSnapshotVersion` and fails open for local delivery when group/overlay resolution fails.                                                                                                    |
-| Broadcast room/world/all/principal           | Partial                     | WS has room and application-specific principal/state-sync resolution. Generic policy treats every non-excluded browser as a broadcast recipient and does not interpret scope/principal/fixed recipients. The public builder cannot create principal or fixed-recipient broadcasts. |
-| Forwarding and fanout                        | Implemented for RTC overlay | RTC forward copies append the local peer and decrement hop TTL. `random-k` sorts all candidates, which is avoidable for large candidate sets.                                                                                                                                      |
-| Hop/time/freshness expiry                    | Implemented                 | Persisted arrays and strings are not bounded, and messages without explicit expiry receive long repository fallback retention.                                                                                                                                                     |
-| Ordering epoch and sequence                  | Implemented                 | A large sequence gap allocates/enumerates every missing sequence; no maximum gap or repair page exists.                                                                                                                                                                            |
-| Best-effort / at-least-once                  | Partial                     | At-least-once does not require an acknowledgement. Browser RTC and WS default to that invalid combination; RTC can also complete an AL effect after the data-channel queue dropped it.                                                                                             |
-| RTC↔WS transport fallback                    | Partial                     | Typed channels expose fallback strategies, but each attempt creates a new message ID and several admission/skip statuses suppress fallback. There is no shared attempt, dedup, ACK, or terminal lifecycle.                                                                         |
-| ACK/NACK/repair                              | Partial                     | Hop and subtree tracking and RTC repair routes exist. `all-logical-recipients` and `group-leader` both collapse to the same subtree algorithm. Control payloads are not runtime validated or bound to envelope/channel identities.                                                 |
-| Deduplication                                | Implemented                 | Version conflicts are sender-scoped while `msg-id` and explicit semantic keys can be cross-sender; concurrent cross-sender writes can both admit.                                                                                                                                  |
-| Latest-wins supersedence                     | Implemented                 | Canonical admission owns it, but unused legacy stores remain exported and are still constructed.                                                                                                                                                                                   |
-| Congestion policy                            | Declared and unit-tested    | Production browser composition installs no QoS live-state provider. Data-channel backpressure results are not fed into AL policy.                                                                                                                                                  |
-| Volatile/local inbox/local outbox durability | Partial                     | Queue selection follows the effective policy, but all browser messages still persist admission bookkeeping and durable effects.                                                                                                                                                    |
-| Shared/exclusive ownership                   | Implemented locally         | Exclusive selects one callback in a process; it is not an exclusive distributed consumer claim. The product meaning is not stated.                                                                                                                                                 |
-| Correlation actions                          | Missing                     | `corrId` and `replyToMsgId` are decoded and persisted only; no request/reply registry, propagation, or matching behavior exists.                                                                                                                                                   |
-| Diagnostics/tracing                          | Partial                     | RTC appends visited peers. `traceId` is not created/propagated, visited peers are not bounded, and full RTC envelopes are logged on the hot path.                                                                                                                                  |
+RTC forwarding preserves the original `id.senderId`. The authenticated channel peer is the
+immediate hop, which can be an authorized relay. Requiring equality for every message would
+break legitimate overlay traffic. The selected trust model authorizes each hop and its
+claimed origin against room authority; it does not cryptographically prove an origin against
+a malicious authorized relay. Domain authority remains outside ALM.
 
 ## Ranked findings
 
 ### F1 — At-least-once has no dependable logical receipt
 
-- **Severity:** High
-- **Confidence:** Proven from code
-- **Evidence:** Browser
-  [WS](../../packages/shared-web/browser/messages/browser-rallar-message-sender.ts#L108)
-  and
-  [RTC](../../packages/shared-web/browser/messages/browser-rallar-message-sender.ts#L180)
-  both default to `reliability: 'at-least-once'` with `ack: 'none'`.
-  WS transport submission is not a logical delivery receipt. RTC has an
-  additional loss mechanism: the overlay calls `peer.channel.send(msg)` and
-  returns `sent` in
-  [`WebRtcOverlayMulticastManager.ts`](../../packages/shared/multicast/WebRtcOverlayMulticastManager.ts#L586).
-  `QRtcDataChannel.send()` delegates to `sendRawOrThrow`, which throws only for
-  `closed`; `sendRaw` can return `queued`, `dropped`, or `replaced`, and the
-  default overflow policy is `drop-new` in
-  [`QRtcDataChannel.ts`](../../packages/shared/webrtc/QRtcDataChannel.ts#L116).
-- **Impact:** Both default carriers advertise at-least-once without evidence of
-  logical delivery. On RTC, QueueBox and the AL effect can also be completed
-  after the actual payload was dropped. With no ACK, retry and repair have no
-  loss signal.
-- **Product correction:** A transport send result must be an AL result. An
-  at-least-once policy must either require a valid ACK strategy or be rejected/
-  explicitly downgraded. Queued data-channel sends remain pending AL effects;
-  dropped/replaced sends become retry, supersedence, or terminal outcomes based
-  on policy.
-- **Validation:** On both RTC and WS, assert that at-least-once/no-ack is
-  rejected or explicitly downgraded. On RTC, saturate `bufferedAmount` above the
-  high watermark with `drop-new` and assert that an acknowledged message remains
-  pending/retries until delivery is observed.
+**Status:** Open. **Severity:** High. **Confidence:** Proven from code.
 
-### F2 — Browser ingress is not a protocol trust boundary
+[BrowserRallarMessageSender](../../packages/shared-web/browser/messages/browser-rallar-message-sender.ts)
+still defaults RTC and WS to `reliability: 'at-least-once'` with `ack: 'none'`.
+`WebRtcOverlayMulticastManager.sendPreparedMessage` checks readiness, then calls
+`peer.channel.send(msg)` and returns `sent`. [QRtcDataChannel](../../packages/shared/webrtc/qrtc-data-channel.ts)
+exposes `sent/queued/dropped/replaced/closed`, but its older `send()` path discards those
+outcomes except for the closed-channel exception. Default overflow is still `drop-new`.
 
-- **Severity:** High
-- **Confidence:** Proven from code
-- **Evidence:** RTC casts `data as ALMessage`, logs the complete object, and only
-  warns on sender/channel mismatch in
-  [`WebRtcRxStreamerService.ts`](../../packages/shared/services/WebRtcRxStreamerService.ts#L124).
-  Browser WS likewise casts in
-  [`WsQueueBoxClientService.ts`](../../packages/shared/services/WsQueueBoxClientService.ts#L366).
-  Server WS does use `decodePersistedALMessageValue` in
-  [`ws-queue-box-server-service.ts`](../../packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts#L221).
-  Control messages bypass ordinary planning in
-  [`ALInboundMessageRuntime.ts`](../../packages/shared/alm/ALInboundMessageRuntime.ts#L136),
-  while `parseALControlMessage` performs unchecked JSON casts in
-  [`al-control.ts`](../../packages/shared/al-contracts/al-control.ts#L120).
-- **Impact:** Malformed input can throw inside hot receive paths. A peer can
-  spoof envelope/control payload identities, inject ACK/NACK/repair state, or
-  cause oversized ordering/diagnostic work. WS browser code also has no
-  defensive boundary against a malformed server/plugin payload.
-- **Product correction:** Every live and persisted boundary uses one bounded
-  envelope decoder, one control decoder, and transport identity binding. RTC
-  requires `id.senderId === channel peer`; WS server requires the authenticated
-  connection identity; control `fromPeerId`/`toPeerId` must match envelope and
-  local identities.
-- **Validation:** Fuzz RTC and WS ingress with missing fields, wrong versions,
-  non-JSON payloads, oversized arrays, spoofed senders, and mismatched control
-  identities. Assert rejection before admission mutation or callbacks.
+**Impact:** transport submission does not establish logical receipt, and send work can
+complete after a data-channel drop without an ACK-driven loss signal.
 
-### F3 — RTC multicast authorization fails open when group resolution fails
+**Correction and proof:** connect structured transport outcomes to the lifecycle and require
+an effective receipt for at-least-once. Cover every overflow outcome and WS disconnect, then
+prove pending reliable work reaches a receipt or a truthful terminal result. Control traffic
+must not create recursive ACK obligations.
 
-- **Severity:** High
-- **Confidence:** Proven from code
-- **Evidence:** Incoming RTC multicast resolves its group/overlay in
-  [`WebRtcOverlayMulticastManager.ts`](../../packages/shared/multicast/WebRtcOverlayMulticastManager.ts#L244).
-  When resolution fails, it still invokes `planALMessageHandling` without
-  `groupMemberPeerIds`. The planner converts an absent list to an empty set, and
-  `isLogicalRecipient` treats an empty multicast membership set as permission in
-  [`al-policy.ts`](../../packages/shared/al-contracts/al-policy.ts#L1445).
-- **Impact:** An authenticated peer can address an unresolved or unauthorized
-  `GroupRef` and still trigger local delivery. The same missing authority context
-  can influence acknowledgement/control state; forwarding happens to stop only
-  because no overlay neighbors are present. This is a fail-open room boundary,
-  not merely stale epoch handling.
-- **Product correction:** Multicast requires a current authoritative snapshot
-  matching the complete `GroupRef` before local delivery, forwarding, ACK, or
-  control mutation. Missing, stale, mismatched, or removed group/overlay state
-  must produce a stable authorization/no-route outcome. An empty authoritative
-  group must be distinguishable from missing authority data.
-- **Validation:** Send multicast from an authenticated RTC peer for unknown,
-  mismatched-scope, removed-overlay, stale-epoch, and below-minimum-snapshot
-  groups. Assert zero callback, forwarding, ACK, repair, and durable-state
-  mutation; then prove a resolved empty group is also rejected correctly.
+### F2 — Structural decoding is present; the trust boundary is incomplete
 
-### F4 — RTC↔WS fallback does not preserve one logical message lifecycle
+**Status:** Partly resolved. **Severity:** High. **Confidence:** Proven from code.
 
-- **Severity:** High for reliability, Medium for compatibility
-- **Confidence:** Proven from code
-- **Evidence:** Typed channels implement `ws-then-rtc` and
-  `rtc-with-ws-fallback` by invoking two independent send methods in
-  [`browser-typed-message-channels.ts`](../../packages/shared-web/browser/messages/browser-typed-message-channels.ts#L95).
-  Each method constructs a fresh AL message in
-  [`browser-rallar-message-sender.ts`](../../packages/shared-web/browser/messages/browser-rallar-message-sender.ts#L108),
-  so attempts receive different message IDs. The fallback helper treats
-  `enqueued`, `sent-immediate`, `duplicate`, `superseded`, and `skipped` as
-  successful; the RTC backpressure defect can therefore suppress WS fallback
-  after an actual data-channel drop.
-- **Impact:** One application send can have two dedup/order/ACK identities, or
-  can stop after an admission status that is not transport delivery. Expiry,
-  supersedence, correlation, diagnostics, and terminal outcomes are not one
-  cross-transport lifecycle.
-- **Product correction:** Construct and admit one logical envelope before
-  transport selection. Record carrier attempts under the same message ID,
-  deadline, dedup key, ordering identity, ACK obligation, and terminal result.
-  Only an explicit policy-defined attempt outcome may stop or trigger fallback.
-- **Validation:** Force every nonterminal/terminal outcome on the first carrier,
-  including RTC queued/dropped/replaced and WS disconnected/queued. Assert one
-  message ID, a complete ordered attempt history, exactly one logical delivery,
-  and the specified fallback decision.
+[RTC live ingress](../../packages/shared/services/web-rtc-rx-streamer-service.ts) and
+[browser WS ingress](../../packages/shared/services/ws-queue-box-client-service.ts) now call
+`decodePersistedALMessageValue`; QueueBox read paths use `decodePersistedALMessage`. The old
+RTC full-envelope log and sender-mismatch warning are gone. Server WS also decodes and
+checks its resolved connection sender.
 
-### F5 — Volatile RTC pays persistent admission cost
+The [envelope decoder](../../packages/shared/al-contracts/al-message-persistence-validation.ts)
+checks structure, known fields, version, and value shapes. It does not impose the full byte,
+collection, payload-JSON, or authorization contract. [Control parsing](../../packages/shared/al-contracts/al-control.ts)
+still uses unchecked JSON casts. [Inbound control handling](../../packages/shared/alm/inbound/al-inbound-message-runtime.ts)
+bypasses ordinary planning and passes no authenticated transport identity into control admission.
 
-- **Severity:** High for performance, Medium for semantics
-- **Confidence:** Proven from code for work performed; runtime impact needs measurement
-- **Evidence:** Browser scopes choose IndexedDB whenever available in
-  [`browser-al-runtime-stores.ts`](../../packages/shared-web/browser/al-runtime/browser-al-runtime-stores.ts#L30).
-  Outbound computation always writes message ownership, a sent snapshot, and a
-  durable send effect for immediate prepared traffic in
-  [`ALOutboundMessageRuntime.ts`](../../packages/shared/alm/ALOutboundMessageRuntime.ts#L522).
-  Inbound volatile delivery is likewise represented as a persisted
-  `dispatch-local` effect in
-  [`ALInboundMessageRuntime.ts`](../../packages/shared/alm/ALInboundMessageRuntime.ts#L763).
-  Default retention keeps sent snapshots/message owners for one hour and effects
-  for 30 minutes in
-  [`ALStoreRetention.ts`](../../packages/shared/alm/ALStoreRetention.ts#L1).
-- **Impact:** The `volatile` policy only avoids QueueBox persistence; it does not
-  avoid IndexedDB. High-rate RTC position/telemetry traffic accumulates
-  full-envelope sent snapshots and competes with WS and cleanup transactions.
-- **Optimization:** Use a bounded in-memory admission/effect path for truly
-  volatile best-effort messages. Persist only state required by explicit
-  durability, retry, ACK, repair, ordering across restart, or supersedence across
-  restart. Keep the same pure policy planner and outcome model for both paths.
-- **Validation:** Compare volatile and durable RTC workloads by message rate,
-  p50/p95 enqueue-to-send latency, main-thread time, IndexedDB transactions,
-  bytes written, and recovery behavior.
+**Correction and proof:** extend the canonical bounded boundary; validate direct/relay
+provenance, control source/destination, and tracked audience before mutation. Fuzz malformed
+JSON, unknown variants, oversized fields, forged controls, and valid forwarded messages
+through actual RTC/WS ingress. Assert no unauthorized state changes, delivery, or payload logging.
 
-### F6 — Admission reads and effect drains multiply IndexedDB transactions
+### F3 — Unversioned RTC room messages bypass snapshot enforcement
 
-- **Severity:** High for high-rate browser workloads
-- **Confidence:** Proven from code for complexity and transaction count; needs runtime measurement for ranking
-- **Evidence:** Every `get` creates its own `readwrite` transaction and every
-  `list(prefix)` opens an unbounded cursor over the shared store in both
-  [`ALInboundAdmissionStore.ts`](../../packages/shared/alm/ALInboundAdmissionStore.ts#L1346)
-  and
-  [`ALOutboundAdmissionStore.ts`](../../packages/shared/alm/ALOutboundAdmissionStore.ts#L1095).
-  `readOutgoingMessage` performs sequential sent/version/pending/repair/control
-  reads in
-  [`ALOutboundAdmissionStore.ts`](../../packages/shared/alm/ALOutboundAdmissionStore.ts#L387).
-  Effect claim sorts every effect after a prefix list, each completion is another
-  transaction, the loop claims again, and then peeks through another prefix list
-  in
-  [`ALOutboundAdmissionStore.ts`](../../packages/shared/alm/ALOutboundAdmissionStore.ts#L637)
-  and
-  [`ALOutboundMessageRuntime.ts`](../../packages/shared/alm/ALOutboundMessageRuntime.ts#L725).
-- **Minimum warm-path call-graph count:** For an already-ready runtime with one
-  effect, no unrelated pending effects, and no supersedence, ACKs, conflicts, or
-  retry, one volatile outbound message with one prepared send performs seven
-  point-read transactions, one commit, one claim scan, one completion, one empty
-  claim scan, and one next-ready scan: **at least 12 IndexedDB transactions and
-  three whole-store scans**. A minimal unordered inbound local dispatch follows
-  at least nine transactions and the same three scans. First-use effect bootstrap
-  adds more empty-claim/peek work. These are static path counts, not browser
-  measurements.
-- **Optimization:** Read a message's admission snapshot in one transaction.
-  Add structured namespace/kind/status/retry/expiry keys and compound indexes.
-  Claim at most 16 effects directly from a due-time index, and batch completion/
-  reschedule. Use bounded `IDBKeyRange` cursors; do expiry cleanup separately
-  rather than forcing every point read to be `readwrite`.
-- **Validation:** Instrument transaction count and cursor rows visited per AL
-  operation. Verify the optimized volatile path performs zero IndexedDB work and
-  the durable path performs a bounded number independent of unrelated rows.
+**Status:** Partly resolved. **Severity:** High. **Confidence:** Proven from code.
 
-### F7 — Default durable RTC traverses two persistence schedulers
+[planRtcRoomSnapshotAdmission](../../packages/shared/multicast/rtc-room-snapshot-admission.ts)
+checks a supplied floor against exact `GroupRef`, active status, expiry, and snapshot version.
+Missing/stale snapshots disable delivery, forwarding, and ACK and produce `not-yet-in-sync`.
+Durable consumption and relay replay recheck readiness.
 
-- **Severity:** High for latency/throughput
-- **Confidence:** Proven from code for the path; runtime impact needs measurement
-- **Evidence:** Public RTC defaults to at-least-once. The outbound runtime first
-  commits an admission effect that enqueues QueueBox. The browser engine polls
-  and reserves the QueueBox row, and dequeue re-enters the same outbound runtime
-  for another admission read/commit/send-effect cycle. The RTC tasks are wired in
-  [`initialise-browser-rtc-runtime.ts`](../../packages/shared-web/browser/rtc/initialise-browser-rtc-runtime.ts#L33).
-- **Impact:** One logical send pays admission state twice plus QueueBox
-  advertisement, reservation, release/finalization, and JSON/structured-clone
-  copies. It also introduces a scheduler hop even when the data channel is open.
-- **Optimization:** Give one owner the durable state machine. An admitted durable
-  outbound record should itself be the indexed work queue, or QueueBox should be
-  the sole durable work record referenced by admission state. Avoid an admission
-  effect whose only job is to create a second durable queue item.
-- **Validation:** Trace a single message ID from API call to `RTCDataChannel.send`
-  and assert one durable work record, one claim, and one terminal transition.
+However, `isRtcRoomSnapshotCurrent` returns true for room messages without
+`minSnapshotVersion`; originating plans also bypass the inbound check.
+[isLogicalRecipient](../../packages/shared/al-contracts/al-policy.ts) still permits multicast
+local delivery with an empty membership set. Neither path enforces authoritative membership
+epochs. Snapshot freshness alone is not origin/relay/recipient authorization.
 
-### F8 — Prefix scans are whole-store scans and cleanup telemetry understates them
+**Correction and proof:** require room authority independently of caller-supplied floors.
+Distinguish missing evidence and bounded catch-up from proved unauthorized traffic;
+do not require a new server round trip when existing authority is sufficient.
+Cover successful delayed-snapshot/bootstrap recovery as well as unversioned messages,
+empty membership, wrong scope, removed/expired groups, disallowed relays, and replay after
+membership changes. Preserve the inspected [snapshot admission](../../packages/tests/shared/multicast/rtc-room-snapshot-admission.test.ts),
+[snapshot-floor](../../packages/tests/shared/rtc-snapshot-floor-admission.test.ts), and
+[durable replay](../../packages/tests/shared/multicast/rtc-snapshot-durable-replay.test.ts) coverage;
+replace assertions that intentionally permit the old bypass when behavior changes.
 
-- **Severity:** Medium–High
-- **Confidence:** Proven from code
-- **Evidence:** AL inbound/outbound and legacy persistence share the `entries`
-  object store without indexes. Cursor helpers call `openCursor()` with no key
-  range and then test `startsWith`. Browser AL cleanup does the same every 60
-  seconds in
-  [`browser-al-runtime-cleanup.ts`](../../packages/shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts#L137).
-  Its `scanned` counter increments only after a key matches the requested prefix,
-  although the cursor visits every row.
-- **Impact:** Work for one RTC session grows with unrelated WS, other-session,
-  and legacy AL rows. Diagnostics hide that total amplification.
-- **Optimization:** Store namespace and record kind as indexed fields or use
-  lexicographically bounded key ranges. Report `cursorVisited`, `matched`, and
-  `deleted` separately.
-- **Validation:** Seed unrelated namespaces, run one effect claim/cleanup, and
-  assert cursor visits remain bounded to the requested namespace.
+### F4 — RTC/WS fallback lacks one logical lifecycle
 
-### F9 — QueueBox schema and cleanup grow with historical sessions
+**Status:** Open. **Severity:** High. **Confidence:** Proven from code.
 
-- **Severity:** Medium–High
-- **Confidence:** Proven from code for unbounded schema growth; blocked/latency impact needs measurement
-- **Evidence:** Browser QueueBox creates four session-named object stores in
-  [`browser-queuebox-persistence.ts`](../../packages/shared-web/browser/queuebox/browser-queuebox-persistence.ts#L28).
-  Missing stores trigger a database version upgrade in
-  [`openIndexedDb.ts`](../../packages/shared/persistence/openIndexedDb.ts#L21).
-  Session termination deletes AL rows but does not remove or purge QueueBox
-  stores in
-  [`session-auth-lifecycle.ts`](../../packages/shared-web/browser/session/session-auth-lifecycle.ts#L276).
-  Every 15 seconds cleanup enumerates every `queuebox:*` store and scans each
-  sequentially. No production caller uses the session-specific QueueBox cleanup
-  helper.
-- **Impact:** Every new login can add up to four permanent schema objects and
-  schema upgrades. Cleanup cost grows with historical sessions even when their
-  stores are empty; open connections can make upgrades blocked or churn
-  connection reopen work.
-- **Optimization:** Use a fixed QueueBox store with `queueId`/session/direction
-  columns and indexes. Purge ended-session rows by indexed range. If separate
-  stores must remain during migration, delete them in a coordinated version
-  upgrade after all owners close.
-- **Validation:** Cycle hundreds of sessions and record DB version, object-store
-  count, upgrade blocking, cleanup duration, and rows visited.
+[Typed channels](../../packages/shared-web/browser/messages/browser-typed-message-channels.ts)
+call separate RTC/WS send methods; each builds a new envelope. Their success helper includes
+`enqueued`, `sent-immediate`, `duplicate`, `superseded`, and `skipped`, so admission status
+can suppress fallback without delivery. [Browser runtime scopes](../../packages/shared-web/browser/al-runtime/browser-al-runtime-stores.ts)
+also separate RTC and WS inbound admission: a shared outgoing ID alone would not establish
+cross-carrier receiver deduplication.
 
-### F10 — QueueBox polling still scans empty RTC/WS stores
+**Correction and proof:** create one logical envelope/audience before carrier selection;
+retain one deadline and terminal owner across attempts. Share receiver deduplication at
+the logical session boundary. Exercise delayed first-carrier delivery, fallback, late ACKs,
+duplicates, cancellation, expiry, and supersedence in both carrier orders.
 
-- **Severity:** Medium
-- **Confidence:** Proven from code for periodic work; runtime cost needs measurement
-- **Evidence:** The browser engine invokes all registered `isWork` tasks every
-  100 ms under work and backs off only to roughly 3 seconds when idle in
-  [`InboxOutboxEngine.ts`](../../packages/shared/services/InboxOutboxEngine.ts#L7).
-  `IndexedDbQueueBox.isAnyEntryToLock` may perform separate full cursor scans for
-  timeout, reservable, and finalization checks, then schedules another cleanup
-  scan in
-  [`indexed-db-queue-box.ts`](../../packages/shared/queuebox/indexed-db-queue-box.ts#L758).
-- **Impact:** A connected browser has four WS/RTC tasks polling stores even when
-  volatile inbound RTC dispatch bypasses the inbox queue.
-- **Optimization:** Wake on enqueue, socket/channel readiness, retry due-time,
-  and cross-tab `BroadcastChannel`; retain a low-frequency recovery poll. Use
-  indexed existence queries limited to one result.
-- **Validation:** Measure IndexedDB operations per idle minute and wake-to-send
-  latency before/after event-driven scheduling.
+### F5 — Volatile ALM still pays persistent admission cost
 
-### F11 — Message storage is amplified across admission effects and QueueBox
+**Status:** Open. **Severity:** High for fast-path semantics.
+**Confidence:** Proven from code; latency impact needs measurement.
 
-- **Severity:** Medium
-- **Confidence:** Proven from code
-- **Evidence:** Outbound admission stores a full sent snapshot. A send effect
-  stores `msg` and, for RTC, another AL message as `prepared`; an outbox effect
-  stores `msg` plus an entry containing `JSON.stringify(msg)`. QueueBox then
-  structured-clones the entry. Inbound local effects similarly store `msg`, the
-  serialized entry, and the complete plan. See
-  [`ALOutboundMessageRuntime.ts`](../../packages/shared/alm/ALOutboundMessageRuntime.ts#L553),
-  [`ALInboundMessageRuntime.ts`](../../packages/shared/alm/ALInboundMessageRuntime.ts#L763),
-  and
-  [`QueueBoxUtilities.ts`](../../packages/shared/services/QueueBoxUtilities.ts#L84).
-- **Impact:** Payload size multiplies bytes cloned and written, and the same
-  envelope is repeatedly stringified. This increases GC and main-thread/IDB
-  serialization cost.
-- **Optimization:** Persist one canonical envelope record and reference it from
-  work/state records, or persist one prepared serialized byte/string form.
-  Reuse the validation serialization and keep plans as compact policy/version
-  identifiers where safe.
-- **Validation:** Measure bytes written and allocations by payload size and
-  fanout. Verify restart/replay remains self-contained.
+[Browser store selection](../../packages/shared-web/browser/al-runtime/browser-al-runtime-stores.ts)
+chooses IndexedDB by support, not per-message durability.
+[Outbound computation](../../packages/shared/alm/outbound/compute-al-outbound-dispatch.ts)
+creates ownership/sent state and durable send effects for immediate messages; inbound local
+delivery likewise uses admitted effects. Volatile avoids a QueueBox selection, not all AL
+persistence. The separate raw realtime lane must not be confused with this ALM path.
 
-### F12 — Ordering gap work is unbounded
+**Correction and proof:** use bounded memory for volatile best-effort ALM with the same
+semantic policy. Measure actual browser ALM sends and prove zero AL-owned IndexedDB operations,
+while preserving explicitly durable restart behavior.
 
-- **Severity:** High for hostile/untrusted ingress; Medium otherwise
-- **Confidence:** Proven from code
-- **Evidence:** The envelope decoder accepts any non-negative safe integer
-  sequence. Ordering creates `Array.from({ length: seq - 1 })` for the first gap
-  and otherwise loops from expected sequence to received sequence in
-  [`al-runtime.ts`](../../packages/shared/al-contracts/al-runtime.ts#L315).
-- **Impact:** A single large sequence can allocate or loop billions/trillions of
-  entries before admission rejects or repairs it. Missing-sequence arrays are
-  then copied into NACK/repair messages and durable effect IDs.
-- **Optimization:** Define a maximum admissible gap and buffered-count/byte
-  budget. Represent gaps as ranges/interval sets and page repair requests. A
-  gap beyond the window requests snapshot/resync instead of enumerating.
-- **Validation:** Fuzz maximum safe integer and large gaps; assert constant or
-  bounded work and a clean resync outcome.
+### F6 — Admission uses separate snapshots and unbounded matching-effect selection
 
-### F13 — Control and diagnostic collections lack hard bounds
+**Status:** Revised. **Severity:** Medium–High. **Confidence:** Proven from code;
+performance ranking needs measurement.
 
-- **Severity:** Medium
-- **Confidence:** Proven from code
-- **Evidence:** Persisted validation checks string arrays structurally but not
-  their length or string byte size. Inbound ACK history appends duplicates;
-  NACK/repair histories append within TTL windows. `visitedPeerIds`, fixed
-  recipients, next hops, exclusions, and missing sequences have no envelope
-  bound.
-- **Impact:** Peers can increase plan, clone, sort, serialization, and storage
-  work within the retention window. Full-envelope RTC logging adds payload and
-  privacy cost on every received message.
-- **Optimization:** Protocol limits belong in the decoder: envelope bytes,
-  payload bytes, array counts, identifier bytes, ordering gap, fanout, and
-  control history. Deduplicate histories on their stable identity. Make hot-path
-  logging sampled metadata only.
-- **Validation:** Boundary/fuzz tests at each limit plus an observability test
-  that payload content never enters routine logs.
+[IndexedDbAdmissionBackend](../../packages/shared/alm/indexed-db-admission-backend.ts) now
+uses [readonly snapshots](../../packages/shared/alm/read-indexed-db-admission-snapshot.ts),
+with expired-row removal as a separate guarded write. Prefix reads start at a lower bound
+and stop on prefix exit. Buffered writes commit under a database revision guard.
 
-### F14 — Sender-scoped versions do not protect cross-sender semantic keys
+Admission still assembles state through separate reads. Both
+[outbound claims](../../packages/shared/alm/outbound/al-outbound-admission-effect-store.ts)
+and [inbound claims](../../packages/shared/alm/inbound/al-inbound-durable-effect-store.ts)
+list/sort matching effects before limiting claims; peeking also reads matching work. A bounded
+result count does not bound selection work. Shared database revision contention across
+unrelated writers is a hypothesis requiring measurement.
 
-- **Severity:** Medium
-- **Confidence:** Proven from code
-- **Evidence:** Admission reads a dedup/supersedence key but optimistic commit
-  compares only `version:<senderId>` in
-  [`ALInboundAdmissionStore.ts`](../../packages/shared/alm/ALInboundAdmissionStore.ts#L701).
-  `msg-id` dedup is global, and explicit semantic/supersedence keys can be shared
-  across senders.
-- **Impact:** Concurrent messages from different senders can both read a missing
-  shared key, commit against independent sender versions, and both deliver or
-  overwrite the same semantic owner.
-- **Optimization:** Scope keys by sender when that is the defined semantic, or
-  include the shared arbitration key in the transaction's compare-and-set
-  domain. Make global versus sender-scoped identity explicit in the contract.
-- **Validation:** Concurrently admit two senders with the same global msg ID and
-  explicit semantic key; exactly one may win when the policy is global.
+**Correction and proof:** coherent admission snapshots and bounded due-time selection.
+Measure transactions, conflicts, visited/decoded rows, and bytes. The former 12-transaction,
+three-whole-store-scan outbound count and analogous inbound count are withdrawn: they do
+not describe this implementation and were never a measured baseline.
 
-### F15 — Canonical and legacy state owners coexist
+### F7 — Durable RTC traverses admission effects and QueueBox
 
-- **Severity:** Medium
-- **Confidence:** Proven from code
-- **Evidence:** `ALOutboundRuntimeStores` still exposes `supersedenceStore` and
-  `stateStore`, but `ALOutboundMessageRuntime` reads only `admissionStore`.
-  Browser and PostgreSQL factories nevertheless construct the legacy owners in
-  [`ALRuntimeStores.ts`](../../packages/shared/alm/ALRuntimeStores.ts#L42) and
-  [`create-p-sql-al-runtime-stores.ts`](../../packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts#L49).
-  `PersistentALSupersedenceStore` begins full hydration in its constructor in
-  [`al-runtime.ts`](../../packages/shared/al-contracts/al-runtime.ts#L871), using
-  a whole-store key scan followed by per-key reads. Exported legacy control,
-  ordering, dedup, supersedence, and runtime-state implementations duplicate the
-  canonical admission logic.
-- **Impact:** The browser can start unused IndexedDB hydration; server startup
-  can issue unused persistence work. Multiple public state owners obscure which
-  implementation is authoritative and raise regression risk.
-- **Optimization:** Make admission stores the sole canonical owner. Remove
-  unused factory construction and narrow legacy classes to an explicit
-  compatibility boundary only if verified external consumers require them.
-- **Validation:** Public API/consumer search plus startup telemetry showing no
-  legacy reads or extra namespaces.
+**Status:** Open. **Severity:** Medium–High. **Confidence:** Proven from code;
+latency impact needs measurement.
 
-### F16 — Several contract fields are storage-only or transport-specific
+[RTC composition](../../packages/shared-web/browser/rtc/initialise-browser-rtc-runtime.ts),
+[dispatch computation](../../packages/shared/alm/outbound/compute-al-outbound-dispatch.ts), and
+[outbound runtime](../../packages/shared/alm/outbound/al-outbound-message-runtime.ts) retain
+admission-effect-to-QueueBox-to-dequeue-to-send-effect dispatch. Enqueue wakeups reduce
+avoidable delay but do not remove the second durable work owner.
 
-- **Severity:** Medium product completeness
-- **Confidence:** Proven from code
-- **Evidence:** Production semantic searches find no use of `actions.corrId`,
-  `actions.replyToMsgId`, or AL `id.traceId`; `sessionId` is not populated by the
-  builders. RTC send accepts `membershipEpoch`/`minSnapshotVersion`, but the RTC
-  planner does not compare either to current topology state. `group-leader` and
-  `all-logical-recipients` both map to `subtree`. The general recipient planner
-  ignores broadcast scope, principal reference, fixed recipients, and snapshot
-  fencing; WS has separate application-specific resolution.
-- **Impact:** The wire schema promises behavior that consumers cannot rely on
-  consistently across RTC and WS.
-- **Product correction:** Either define and implement one semantic owner for
-  each field or remove/version the unsupported field. Transport-specific
-  adapters may supply membership/recipient data, but protocol decisions and
-  outcomes remain shared.
-- **Validation:** A cross-transport conformance suite executes the same envelope
-  scenarios over RTC and WS and compares admission/outcome semantics.
+**Correction and proof:** consolidate durable ALM work into the existing QueueBox/ResourceInbox
+owner. Keep ALM admission policy and validation as value computations; do not replace QueueBox
+with another queue, lease manager, or retry engine. Trace atomic admission/work recording,
+reservation, receipt, and retirement, including crashes between transitions. Extend canonical
+QueueBox behavior where needed; independent untouched consumers remain outside the change.
 
-### F17 — Lifecycle and result semantics are misleading
+### F8 — Prefix and expiry scans improved; bounded telemetry remains missing
 
-- **Severity:** Medium
-- **Confidence:** Proven from code
-- **Evidence:** `ALInboundMessageRuntime.dispose()` only clears a timer; it does
-  not mark the runtime disposed, unlike outbound. `sent-immediate` is computed
-  before the send effect runs. Effect failures are caught and rescheduled, so
-  enqueue can return `sent-immediate` when no transport send has succeeded yet.
-- **Impact:** Shutdown may accept/restart inbound work, and callers can mistake
-  durable acceptance for delivery/sending.
-- **Product correction:** Define result stages such as `accepted`, `queued`,
-  `transport-accepted`, `acknowledged`, `expired`, and `failed`. Dispose must
-  fence new work and release/stop workers deterministically.
-- **Validation:** Dispose during reads/effects and inject transport failures;
-  assert no new work is accepted and each result stage is truthful.
+**Status:** Original whole-store-scan mechanism resolved; residual work remains.
+**Severity:** Medium. **Confidence:** Proven from code.
 
-## Code quality assessment
+[Admission snapshots](../../packages/shared/alm/read-indexed-db-admission-snapshot.ts) use
+prefix-bounded cursors. [Database creation](../../packages/shared/alm/open-indexed-db-admission-database.ts)
+defines an expiry index, used by [browser cleanup](../../packages/shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts)
+for general expiry; session cleanup uses prefixes. The original unrelated-whole-store-scan
+claim is no longer correct.
 
-### Strengths
+Matching-prefix and expired selections still materialize results without a page limit.
+Cleanup's `scanned` value reports selected, filtered rows rather than complete cursor/byte telemetry.
 
-- Policy computation is mostly pure and independently testable.
-- Admission commits combine state mutations and durable effects atomically.
-- Effects have leases, retries, expiry, idempotent IDs, and restart tests.
-- Outbound same-sender work is serialized in-process and additionally guarded
-  by browser Web Locks; optimistic version checks provide a fallback.
-- RTC forwarding correctly appends visited peers and decrements hop TTL.
-- Server WS validates the envelope and has explicit room authorization/routing
-  ownership.
-- Focused tests cover normalization, ordering, replay, ACK races, repair,
-  IndexedDB restart, Web Locks, QueueBox reservation, and RTC multicast policy.
+**Correction and proof:** bounded cleanup/claim pages and separate visited, matched, deleted,
+and byte counters. Seed unrelated namespaces and many eligible rows; prove namespace isolation
+and hard work bounds, not merely small returned batches.
 
-### Maintainability risks
+### F9 — QueueBox uses per-queue databases with explicit session deletion
 
-- Core owners are too dense for quick human tracing:
-  `ALInboundAdmissionStore.ts` is about 2,300 lines,
-  `ALOutboundAdmissionStore.ts` about 1,500,
-  `ALOutboundMessageRuntime.ts` about 1,500, and `al-policy.ts` about 1,600.
-- Inbound/outbound IndexedDB backends and durable effect loops duplicate
-  transaction, lease, scan, retry, and serialization mechanics.
-- Canonical admission and exported legacy stores coexist.
-- Policy capability hooks exist, but the production compositions do not install
-  transport-aware capabilities, authorization, or live congestion providers.
-- The safe persisted-envelope decoder and principal target helper are not
-  exported by the shared package barrel, while unsafe builder/runtime entry
-  points are.
-- Comments and types overstate some semantics: `resourceId` is described as
-  optional but typed/decoded as mandatory; `visitedPeerIds` is described as
-  bounded without a bound; `sent-immediate` is admission-time rather than
-  send-time.
+**Status:** Original upgrade/never-cleaned-store claim superseded.
+**Severity:** Medium. **Confidence:** Proven from code; abandoned-session cost needs measurement.
 
-## Fault-tolerance assessment
+[Browser QueueBox persistence](../../packages/shared-web/browser/queuebox/browser-queuebox-persistence.ts)
+creates a database per session queue. [Session termination](../../packages/shared-web/browser/session/session-auth-lifecycle.ts)
+calls `deleteBrowserQueueBoxDatabasesForSession` for its four queue databases.
+[Database opening](../../packages/shared/persistence/open-indexed-db.ts) creates the initial
+schema and rejects incompatible existing schemas; it no longer adds session stores through
+upgrades. Periodic cleanup enumerates remaining queue databases.
 
-ALM's strongest fault-tolerance mechanism is durable effect replay. A crash
-between admission commit and side effect leaves claimable work; a crash after a
-QueueBox enqueue is safe because enqueue is idempotent. Lease ownership prevents
-two workers from normally executing the same pending effect concurrently, and
-tests exercise restart and ACK race cases.
+**Correction and proof:** bound database count and cleanup cost, including abandoned sessions
+and blocked deletion. Reuse the inspected [session-deletion tests](../../packages/tests/shared-web/queuebox/browser-queuebox-persistence.test.ts).
+The future fixed schema uses a coordinated explicit reset. Do not add silent schema rewrites
+or assume normal sign-out proves crash cleanup.
 
-The remaining fault model is incomplete:
+### F10 — Wakeups exist, but polling and whole-queue reads remain
 
-- Successful transport submission and logical delivery are conflated.
-- At-least-once can operate without any acknowledgement.
-- RTC multicast can deliver locally when authoritative group resolution fails.
-- RTC↔WS fallback does not preserve message identity or one delivery lifecycle.
-- A crash after a transport send but before effect completion legitimately
-  replays a duplicate; callers need explicit idempotency expectations.
-- RTC/WS browser live input is not validated or identity-bound.
-- Control state trusts the payload rather than the authenticated transport.
-- Large sequence gaps and unbounded arrays allow one message to monopolize work.
-- Browser storage quota, blocked upgrades, transaction aborts, and eviction do
-  not map to a public AL outcome or controlled fallback.
-- The volatile/durable distinction does not describe actual persistence.
+**Status:** Partly resolved. **Severity:** Medium. **Confidence:** Proven from code;
+idle cost needs measurement.
 
-## Performance optimization target state
+[InboxOutboxEngine](../../packages/shared/services/InboxOutboxEngine.ts) supports `wake()` and
+idle backoff, and browser sends wake it after queueing.
+[IndexedDbQueueBox.isAnyEntryToLock](../../packages/shared/queuebox/indexed-db-queue-box.ts)
+reads one collection for its work checks through
+[readAllStoredQueueEntries](../../packages/shared/queuebox/indexed-db-queue-box-store.ts), which
+uses `getAll()`. The original several-independent-cursor-scans description is obsolete;
+periodic queue-wide reads remain.
 
-The following shape preserves ALM over both RTC and WS:
+**Correction and proof:** extend existing wakes with readiness, due-time, and cross-context
+notifications, retaining a recovery poll. Use bounded indexed work queries. Measure idle ALM
+storage operations and wake-to-send latency, including background tabs and lost notifications.
 
-| Concern            | Target behavior                                                                                                                        |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Volatile fast path | Pure plan + bounded in-memory dedup/ordering + direct transport result; zero IndexedDB in the common case.                             |
-| Durable path       | One canonical work/state record, one atomic claim transition, and bounded indexed reads.                                               |
-| AL database        | Fixed stores with compound indexes for namespace, kind, status/due time, ordering track/sequence, and expiry.                          |
-| QueueBox           | Fixed store keyed by `queueId` and entry key; no per-session schema changes.                                                           |
-| Scheduling         | Event-driven wakeups with due-time timers and a slow recovery poll.                                                                    |
-| Serialization      | Validate and serialize once; persist/send the canonical representation or a reference.                                                 |
-| RTC backpressure   | Surface `sent/queued/dropped/replaced/closed` to ALM; connect queue state to congestion, retry, and supersedence.                      |
-| Repair             | Bounded sequence ranges/windows; snapshot resync beyond the repair window.                                                             |
-| Retention          | Per-record semantics, byte/count budgets, quota pressure policy, indexed eviction, and ended-session purge.                            |
-| Observability      | Per-transport stage latency, transaction/row/byte counts, effect backlog/age, retries, drops, ACK latency, and quota/upgrade failures. |
+### F11 — Admission and QueueBox amplify envelope storage
 
-## Measurement plan
+**Status:** Open. **Severity:** Medium. **Confidence:** Proven from code;
+allocation/byte impact needs measurement.
 
-Static analysis identifies where work occurs; representative profiling should
-rank the changes. The exact existing entry point is
-`npm run perf:rtc-baseline -- <command>`, catalogued in
-[`packages/shared-rtc-bench/README.md`](../../packages/shared-rtc-bench/README.md#L117),
-but its current data-channel and browser workloads do **not** execute the browser
-AL admission/effect/QueueBox/IndexedDB path. A focused browser ALM workload must
-therefore be added to that package-owned harness before these hypotheses can be
-accepted or rejected. Generated artifacts belong under `tmp/perf/`.
+[Outbound computation](../../packages/shared/alm/outbound/compute-al-outbound-dispatch.ts)
+stores sent-message state and effects containing both `msg` and prepared transport values.
+Queue effects also contain serialized entries. [Inbound preparation](../../packages/shared/alm/inbound/prepare-al-inbound-commit-bundle.ts)
+and [QueueBoxUtilities](../../packages/shared/services/QueueBoxUtilities.ts) retain multiple
+representations for delivery.
 
-Measure these scenarios separately:
+**Correction and proof:** one canonical durable envelope referenced by compact work/receipt
+state, with reusable validated serialization. Measure bytes/allocations by payload and fanout,
+and prove replay does not depend on a missing ephemeral object.
 
-1. Volatile RTC, open channel, 1/4/16 peers, 128 B/4 KiB/64 KiB payloads.
-2. Default at-least-once RTC with QueueBox and no ACK, then with hop/subtree ACK.
-3. Ordered RTC with no gaps, small gaps, and out-of-window gaps.
-4. RTC under data-channel high-watermark backpressure for each overflow policy.
-5. WS with the same logical envelopes for semantic and storage comparison.
-6. Cold start with 1, 10, 100, and 1,000 historical sessions.
-7. Foreground/background tab and two tabs sharing a session.
-8. IndexedDB quota pressure, blocked schema upgrade, transaction abort, and
-   restart between each durable transition.
+### F12 — Ordering gaps remain unbounded
 
-Run cold-browser and warm-runtime cohorts separately. The structural hypotheses
-are confirmed only if volatile traffic records nonzero IndexedDB operations,
-durable per-message transactions/scans match or exceed the static lower bounds,
-or idle/session-history work grows with unrelated rows/stores; any zero-count or
-bounded result falsifies the corresponding claim. Rank optimizations by paired
-p95/p99 latency, main-thread time, and operation/byte deltas rather than one
-noisy run.
+**Status:** Open. **Severity:** High. **Confidence:** Proven from code.
 
-Collect:
+[computeALOrderingObservation](../../packages/shared/alm/compute-al-ordering-observation.ts)
+still creates `Array.from({ length: seq - 1 })` for an initial gap and enumerates intermediate
+sequences for subsequent gaps. The envelope decoder accepts non-negative safe integers without
+an admissible-gap window. Excessive CPU/memory work can occur before admission resolves.
 
-- end-to-end enqueue-to-transport and enqueue-to-ACK p50/p95/p99;
-- main-thread CPU and long tasks;
-- IndexedDB transaction count, duration, aborts, cursor rows visited, rows
-  matched, and bytes cloned/written/read;
-- QueueBox advertisement polls, claims, and idle operations per minute;
-- admission/effect/QueueBox row counts and oldest work age;
-- RTC buffered amount, queued/dropped/replaced/flushed counters;
-- duplicates, expiry, repair success, resync, and storage-quota outcomes.
+**Correction and proof:** return `resync-required` for out-of-window gaps without enumeration,
+cap buffered count/bytes/age and aggregate ownership, and use bounded range/page repair.
+Matching duplicates and obsolete replaceable state are permitted no-ops. Test boundaries and
+`Number.MAX_SAFE_INTEGER`, requiring typed resynchronization and bounded work.
 
-## Recommended product priorities
+### F13 — Protocol collections lack complete resource bounds
 
-1. Close trust and reliability failures: fail-closed RTC group authorization,
-   validated ingress, identity-bound controls, transport send outcomes, and
-   ACK-required at-least-once on RTC and WS.
-2. Remove IndexedDB from volatile RTC and collapse the durable double queue.
-3. Replace full scans/per-session stores with fixed indexed schemas and bounded
-   work.
-4. Bound sequence, envelope, control, and diagnostic resources.
-5. Preserve one message identity/lifecycle across RTC↔WS fallback, complete or
-   version the remaining contract semantics, and add RTC/WS conformance tests.
-6. Consolidate canonical state ownership and remove unused legacy hydration.
+**Status:** Open with resolved logging and outbound-ACK subfindings.
+**Severity:** Medium–High. **Confidence:** Proven from code.
 
-## Test coverage gaps
+[Structural field validation](../../packages/shared/al-contracts/al-message-persistence/persisted-al-value-validation.ts)
+does not impose comprehensive count/byte budgets. [Inbound control admission](../../packages/shared/alm/inbound/al-inbound-admission-store.ts)
+appends ACKs; [outbound control admission](../../packages/shared/alm/outbound/al-outbound-admission-control-store.ts)
+already calls `appendUniqueALAck`. NACK/repair histories and other protocol collections still
+need bounds. The old full-envelope RTC receive log is removed; the shared payload-safe
+lifecycle diagnostic contract is still missing.
 
-The existing suite is strong on internal state transitions, but it does not
-currently demonstrate:
+**Correction and proof:** limit allocation and persistence before work, bound retained histories,
+and deduplicate by semantic identity. Test limits, one-over-limit inputs, repeated controls,
+and payload-free diagnostics.
 
-- browser RTC live-envelope validation and sender/channel rejection;
-- browser WS live-envelope validation;
-- RTC multicast rejection when group/overlay resolution or snapshot fencing
-  fails;
-- control payload validation and authenticated identity binding;
-- at-least-once/no-ACK rejection on RTC and WS, plus RTC `drop-new` behavior;
-- stable message identity and truthful outcomes across RTC↔WS fallback;
-- cross-transport semantic conformance for the same envelope;
-- RTC `membershipEpoch`/`minSnapshotVersion` fencing;
-- principal/world/fixed-recipient behavior as general ALM semantics;
-- bounded large-gap handling;
-- multi-sender global dedup/supersedence concurrency;
-- zero-IndexedDB volatile RTC behavior;
-- cursor/transaction/byte budgets;
-- historical-session schema and cleanup bounds;
-- quota, eviction, and blocked-upgrade outcomes;
-- truthful staged send-result semantics and inbound disposal fencing.
+### F14 — Sender versions do not validate shared-key predecessors
 
-## Bottom line
+**Status:** Open. **Severity:** Medium. **Confidence:** Proven from code.
 
-ALM should remain the shared application message protocol for RTC and WS. The
-current pure policy and durable admission model are a strong base. The product
-is held back by an incomplete trust/reliability boundary and by applying the
-durable browser state machine to every message. A complete ALM makes guarantees
-observable and transport-neutral while allowing different execution strategies:
-an IndexedDB-free volatile RTC fast path and a bounded, indexed durable path for
-RTC and WS.
+[Inbound admission](../../packages/shared/alm/inbound/al-inbound-admission-store.ts) reads
+shared dedup/supersedence state, but `writeCommitBundle` validates only the sender's version
+before applying computed mutations. Global IDs and explicit semantic keys can cross senders.
+The IndexedDB revision is captured when the backend write begins, not when the earlier
+admission decision read its shared-key predecessor.
+
+The unsafe schedule does not require overlapping final transactions: A and B both read an
+absent shared key; A commits; B begins its backend write afterward with a current backend
+revision and unchanged B sender-version, then commits its stale shared-key decision.
+
+**Correction and proof:** compare-and-set the actual shared arbitration predecessor with
+explicit identity scope. Test that schedule and overlapping writers through memory, IndexedDB,
+and affected PostgreSQL boundaries. Cover global, sender-scoped, and semantic keys; lock
+ordering is not the acceptance criterion.
+
+### F15 — Unused factory hydration is removed; legacy exports remain
+
+**Status:** Partly resolved. **Severity:** Medium maintenance risk.
+**Confidence:** Proven from code.
+
+[Shared/browser factories](../../packages/shared/alm/al-runtime-stores.ts) and
+[PostgreSQL factories](../../packages/shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts)
+now construct admission stores only. Unused supersedence/runtime-state hydration is no longer
+part of those composition paths.
+
+[The public barrel](../../packages/shared/mod.ts) still exports older control,
+ordering/dedup/supersedence, and runtime-state surfaces. Export presence alone does not prove
+that every contract or implementation is unused.
+
+**Correction and proof:** trace verified consumers, retain canonical contracts where needed,
+and remove affected obsolete implementations in the approved coordinated cutover. Validate
+public surfaces and consumers; do not plan already-completed construction removal again.
+
+### F16 — Several capabilities remain incomplete or carrier-specific
+
+**Status:** Open with snapshot-floor progress. **Severity:** Medium product completeness.
+**Confidence:** Proven from code.
+
+[Envelope/builders](../../packages/shared/al-contracts/al-contract.ts) retain correlation and
+trace fields without a general request/reply or trace lifecycle. Builders do not populate AL
+session/trace identity. `membershipEpoch` is copied into ordering epoch but not checked against
+authoritative membership. RTC snapshot floors are enforced as described in F3.
+
+[Shared policy](../../packages/shared/al-contracts/al-policy.ts) still maps leader and
+all-recipient ACK requests to subtree behavior; generic broadcast recipient checks do not
+resolve principal/world/fixed audience semantics. WS supplies specialized audience handling.
+Browser RTC composition supplies no live QoS provider. The complete envelope decoder is not
+exported through the broad shared barrel.
+
+**Correction and proof:** give every promised capability a runtime owner and safe public
+surface, or report it unsupported. Share topic/audience/effective-policy semantics across
+carriers and verify them through conformance scenarios. Never equate ordering, formation,
+and membership epochs.
+
+### F17 — Disposal is fenced; send-result stages remain misleading
+
+**Status:** Partly resolved. **Severity:** Medium. **Confidence:** Proven from code.
+
+[Inbound runtime](../../packages/shared/alm/inbound/al-inbound-message-runtime.ts),
+[effect worker](../../packages/shared/alm/inbound/al-inbound-durable-effect-worker.ts), and
+[admitted delivery](../../packages/shared/alm/inbound/al-inbound-admitted-delivery.ts) now fence
+disposal. Inspected tests cover disposal during admission/storage waits and cancellation of
+pending retries. The old claim that dispose only clears one timer is false.
+
+[Outbound computation](../../packages/shared/alm/outbound/compute-al-outbound-dispatch.ts)
+still chooses `sent-immediate` before its send effect establishes transport acceptance.
+Rescheduled effect failures can therefore coexist with that admission result.
+
+**Correction and proof:** preserve disposal fixes and expose truthful staged outcomes and
+terminal reasons. Extend [worker lifecycle coverage](../../packages/tests/shared/alm/al-inbound-effect-worker-lifecycle.test.ts)
+with end-to-end receipt, cancellation, and restart lifecycle tests.
+
+## Existing strengths and coverage
+
+Retain pure policy/observation computation, atomic admission/work recording, persisted decoding,
+reservation recovery and restart replay, and named outbound ownership boundaries. Preserve these
+behaviors through existing QueueBox ownership rather than retaining a redundant ALM effect queue.
+Use one bounded read method, value-only pure compute, pure validation returning `Either`, and
+write/send that does not mutate the computed value. Existing coverage
+includes normalization, ordering, ACK races, repair, Web Locks, IndexedDB replay, QueueBox
+reservation, snapshot catch-up, and disposal.
+
+Additional inspected suites include [persisted envelope decoding](../../packages/tests/shared/al-message-persistence-decoding.test.ts),
+[admission backend validation](../../packages/tests/shared/alm/al-admission-backend.test.ts),
+[outbound IndexedDB replay](../../packages/tests/shared/alm/al-outbound-indexeddb-replay.test.ts),
+[data-channel flow control](../../packages/tests/shared/qrtc-data-channel.test.ts), and
+[browser cleanup validation](../../packages/tests/shared-web/al-runtime/browser-al-runtime-cleanup-validation.test.ts).
+These tests do not collectively prove the missing cross-transport product guarantees.
+
+Dense policy/admission owners need normal touched-file standards review when changed. Do
+not reproduce obsolete owner sizes, enforce historical line-count targets, or split cohesive
+behavior solely to satisfy a metric.
+
+## Measurement and validation plan
+
+Follow [performance harness guidance](../../scripts/perf/README.md) and the
+[RTC benchmark catalog](../../packages/shared-rtc-bench/README.md). The current B06
+[three-browser suite](../../tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts)
+executes both raw realtime and `messages.rtc`, including delivery/reconnect/retention scenarios.
+Extend it with ALM storage and lifecycle measurements. Native data-channel-only workloads
+cannot isolate ALM admission costs; current B06 coverage is not an ALM transaction budget.
+
+| Hypothesis                                     | Measurement and falsifier                                                                                                                                                     |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Volatile ALM performs persistent work.         | Count AL-owned IndexedDB operations for an actual volatile send; zero operations falsify the path claim for that measured composition.                                        |
+| Durable cost grows with matching backlog.      | Hold one due message constant and increase future/done effects; bounded visited/decoded rows and bytes falsify the growth claim.                                              |
+| Session history adds browser work.             | Separate sign-out from abandoned sessions; measure database count, cleanup work, blocked deletion, and idle operations. Bounded results falsify unbounded-history hypotheses. |
+| Duplicate envelope representations are costly. | Measure allocations/bytes for 128 B, 4 KiB, and 64 KiB payloads with 1/4/16 peers; insignificant amplification lowers this priority.                                          |
+| Shared revision fencing causes contention.     | Measure conflicts/throughput for independent namespaces and same-key writers; no unrelated conflicts falsify the contention hypothesis.                                       |
+
+Separate cold-browser and warm-runtime cohorts. Include background tabs, two tabs sharing a
+session, RTC backpressure, comparable WS envelopes, ordering gaps, quota/abort/eviction, and
+restart around durable transitions. Record p50/p95/p99 transport/receipt latency, main-thread
+work, storage transactions/rows/bytes, work age, retries/repairs, terminal outcomes, and exact
+workload/environment. Artifacts belong under `tmp/perf/`. Do not estimate database operation
+counts from this source review.
+
+## Product priorities
+
+1. Close bounded-input/control-trust gaps and require room authority while preserving bounded
+   evidence recovery, duplicate no-ops, and optimistic room progress.
+2. Establish truthful purpose-specific receipts, one fallback lifecycle, and the zero-IDB volatile path.
+3. Correct shared-key arbitration and finish bounded recovery/membership fencing.
+4. Harden volatile scale and consolidate durable work into existing QueueBox, with bounded storage.
+5. Complete consumer-backed audiences, QoS, correlation, ownership, and diagnostics; return
+   unproven general-purpose capabilities to the user for a scope decision.
+
+The [roadmap evidence matrix](alm-improvement-plan.md#requirement-to-evidence-matrix) maps
+every finding and product completion criterion to current coverage, missing proof, and a
+milestone. Tests accompany each behavior change; coverage is not a final cleanup phase.
