@@ -28,6 +28,7 @@ import {
 } from './indexed-db-queue-box-store.ts';
 import { IndexedDbQueueWriteConflictError } from './indexed-db-queue-write-conflict-error.ts';
 import {
+    hasSameResourceEntryValue,
     QueueBoxResourceEntryRepository,
     ResourceInboxFairnessReservationInput,
     ResourceInboxFairnessSelection,
@@ -156,9 +157,21 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
+        const db = await this.#connection.get();
+        const stored = await readStoredQueueEntry(
+            db,
+            this.#storeName,
+            toKeyAsString(resourceEntry.key)
+        );
+        if (stored && !isStoredQueueEntryExpired(stored, Temporal.Now.instant())) {
+            return decodeStoredResourceEntry(stored);
+        }
+        const computed = {
+            mutations: [computeIndexedDbQueuePut(stored, resourceEntry)],
+            result: resourceEntry
+        };
         try {
-            const result = await this.enqueueOrUpdate(resourceEntry, () => undefined);
-            return result.entry;
+            return await this.#write(db, computed);
         }
         catch (error) {
             if (!(error instanceof IndexedDbQueueWriteConflictError)) {
@@ -172,57 +185,37 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         }
     }
 
-    async enqueueIf(
-        resourceEntry: ResourceEntry,
-        enqueueIt: (existing: ResourceEntry) => boolean
-    ): Promise<ResourceEntry | undefined> {
-        const result = await this.enqueueOrUpdate(
-            resourceEntry,
-            (existing) => enqueueIt(existing) ? resourceEntry : undefined
-        );
-        return result.previous;
-    }
-
-    async enqueueOrUpdate(
-        resourceEntry: ResourceEntry,
-        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined
-    ) {
+    async replaceIfObserved(
+        expected: ResourceEntry,
+        replacement: ResourceEntry
+    ): Promise<ResourceEntry | null> {
+        if (toKeyAsString(expected.key) !== toKeyAsString(replacement.key)) {
+            throw new TypeError('Queue replacement key differs from its observation');
+        }
         const db = await this.#connection.get();
-        const keyString = toKeyAsString(resourceEntry.key);
+        const keyString = toKeyAsString(expected.key);
         const stored = await readStoredQueueEntry(db, this.#storeName, keyString);
-        const now = Temporal.Now.instant();
-        let computed: IndexedDbQueueComputedWrite<{
-            action: 'inserted' | 'updated' | 'unchanged';
-            entry: ResourceEntry;
-            previous?: ResourceEntry;
-        }>;
-        if (!stored || isStoredQueueEntryExpired(stored, now)) {
-            computed = {
-                mutations: [computeIndexedDbQueuePut(stored, resourceEntry)],
-                result: { action: 'inserted', entry: resourceEntry }
-            };
+        if (
+            !stored ||
+            isStoredQueueEntryExpired(stored, Temporal.Now.instant()) ||
+            !hasSameResourceEntryValue(decodeStoredResourceEntry(stored), expected)
+        ) {
+            return null;
         }
-        else {
-            const previous = decodeStoredResourceEntry(stored);
-            const updated = updateExisting(previous);
-            if (!updated) {
-                computed = {
-                    mutations: [],
-                    result: { action: 'unchanged', entry: previous, previous }
-                };
+
+        const computed = {
+            mutations: [computeIndexedDbQueuePut(stored, replacement)],
+            result: replacement
+        };
+        try {
+            return await this.#write(db, computed);
+        }
+        catch (error) {
+            if (error instanceof IndexedDbQueueWriteConflictError) {
+                return null;
             }
-            else {
-                computed = {
-                    mutations: [computeIndexedDbQueuePut(stored, updated)],
-                    result: { action: 'updated', entry: updated, previous }
-                };
-            }
+            throw error;
         }
-        const result = await this.#write(db, computed);
-        if (result.action === 'unchanged') {
-            console.log('Entry already exists: ', resourceEntry.key);
-        }
-        return result;
     }
 
     async releaseEntries(

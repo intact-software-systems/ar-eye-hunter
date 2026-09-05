@@ -40,13 +40,6 @@ export class InboxQueueReader {
         return await this.reader.enqueueIfAbsent(message);
     }
 
-    async enqueueIf(
-        message: ALMessage,
-        enqueueIf: (entry: ResourceEntry) => boolean
-    ): Promise<ResourceEntry | undefined> {
-        return await this.reader.enqueueIf(message, enqueueIf);
-    }
-
     async dequeueInbox(typesToDequeue: Set<string>, resilience: ResilienceDto): Promise<void> {
         await this.reader.dequeue(typesToDequeue, resilience);
     }

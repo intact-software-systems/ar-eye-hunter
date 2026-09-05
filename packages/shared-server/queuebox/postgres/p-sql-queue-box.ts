@@ -16,12 +16,10 @@ import {
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
-    toResourceInboxWorkAdvertisementOptions,
-    type EnqueueOrUpdateResult
+    toResourceInboxWorkAdvertisementOptions
 } from '@shared/queuebox/queue-box-types.ts';
 import {
     EntityStatus,
-    isExpiredResourceEntry,
     Key,
     NEW_AND_RETRY_STATUSES,
     ResourceEntry,
@@ -296,60 +294,11 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         );
     }
 
-    async enqueueIf(
-        resourceEntry: ResourceEntry,
-        enqueueIt: (existing: ResourceEntry) => boolean
-    ): Promise<ResourceEntry | undefined> {
-        return await this.resourceInbox.transaction(
-            async (txRepo: PSqlResourceInboxRepository) => {
-                const previous = await txRepo.entries.findAnyByKey(resourceEntry.key);
-                if (!previous || isExpiredResourceEntry(previous)) {
-                    await txRepo.entries.replace(resourceEntry);
-                    return undefined;
-                }
-
-                if (enqueueIt(previous)) {
-                    await txRepo.entries.replace(resourceEntry);
-                }
-
-                return previous;
-            }
-        );
-    }
-
-    async enqueueOrUpdate(
-        resourceEntry: ResourceEntry,
-        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined
-    ): Promise<EnqueueOrUpdateResult> {
-        return await this.resourceInbox.transaction(
-            async (txRepo: PSqlResourceInboxRepository) => {
-                const previous = await txRepo.entries.findAnyByKey(resourceEntry.key);
-                if (!previous || isExpiredResourceEntry(previous)) {
-                    await txRepo.entries.replace(resourceEntry);
-                    return {
-                        action: 'inserted',
-                        entry: resourceEntry,
-                        previous: undefined
-                    };
-                }
-
-                const updated = updateExisting(previous);
-                if (!updated) {
-                    return {
-                        action: 'unchanged',
-                        entry: previous,
-                        previous
-                    };
-                }
-
-                await txRepo.entries.replace(updated);
-                return {
-                    action: 'updated',
-                    entry: updated,
-                    previous
-                };
-            }
-        );
+    async replaceIfObserved(
+        expected: ResourceEntry,
+        replacement: ResourceEntry
+    ): Promise<ResourceEntry | null> {
+        return await this.resourceInbox.entries.replaceIfObserved(expected, replacement);
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {

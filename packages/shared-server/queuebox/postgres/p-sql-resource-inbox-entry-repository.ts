@@ -1,3 +1,4 @@
+import { hasSameResourceEntryValue } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import {
@@ -255,6 +256,98 @@ export class PSqlResourceInboxEntryRepository {
             throw new ResourceInboxInvariantCorruptionError(
                 next.key,
                 'Resource inbox pending replacement returned different content'
+            );
+        }
+        return updated;
+    }
+
+    async replaceIfObserved(
+        expected: ResourceEntry,
+        replacement: ResourceEntry
+    ): Promise<ResourceEntry | null> {
+        const expectedRowId = toExpectedRowId(expected);
+        if (
+            expected.key.topicId !== replacement.key.topicId ||
+            expected.key.resourceId !== replacement.key.resourceId ||
+            expected.key.contextId !== replacement.key.contextId
+        ) {
+            throw new ResourceInboxInvariantCorruptionError(
+                replacement.key,
+                'Resource inbox replacement key differs from its observation'
+            );
+        }
+
+        const rows = await this.sql<ResourceInboxRow[]>`
+            update resource_inbox
+            set ri_resource = ${replacement.resource},
+                ri_type_id = ${replacement.typeId},
+                ri_status = ${replacement.status},
+                system_date = ${toSystemDate(replacement)},
+                created_by = ${replacement.audit.createdBy},
+                created_ts = ${toPgTimestamp(replacement.audit.createdTs)},
+                expire_ts = ${toPgTimestamp(replacement.audit.expiryTs)},
+                start_ts = ${
+            replacement.dequeueAudit.startTs
+                ? toPgTimestamp(replacement.dequeueAudit.startTs)
+                : null
+        },
+                end_ts = ${
+            replacement.dequeueAudit.endTs
+                ? toPgTimestamp(replacement.dequeueAudit.endTs)
+                : null
+        },
+                next_ts = ${
+            replacement.dequeueAudit.nextTs
+                ? toPgTimestamp(replacement.dequeueAudit.nextTs)
+                : null
+        },
+                ri_attempts = ${replacement.dequeueAudit.attempts}
+            where ri_row_id = ${expectedRowId}
+              and ri_topic_id = ${expected.key.topicId}
+              and ri_resource_id = ${expected.key.resourceId}
+              and fk_ext_bank_id = ${expected.key.contextId}
+              and ri_type_id = ${expected.typeId}
+              and ri_resource = ${expected.resource}
+              and ri_status = ${expected.status}
+              and system_date = ${toSystemDate(expected)}
+              and created_by = ${expected.audit.createdBy}
+              and created_ts = ${toPgTimestamp(expected.audit.createdTs)}
+              and expire_ts = ${toPgTimestamp(expected.audit.expiryTs)}
+              and start_ts is not distinct from ${
+            expected.dequeueAudit.startTs
+                ? toPgTimestamp(expected.dequeueAudit.startTs)
+                : null
+        }
+              and end_ts is not distinct from ${
+            expected.dequeueAudit.endTs
+                ? toPgTimestamp(expected.dequeueAudit.endTs)
+                : null
+        }
+              and next_ts is not distinct from ${
+            expected.dequeueAudit.nextTs
+                ? toPgTimestamp(expected.dequeueAudit.nextTs)
+                : null
+        }
+              and ri_attempts = ${expected.dequeueAudit.attempts}
+              and expire_ts > (now() at time zone 'UTC')
+            returning *
+        `;
+
+        if (rows.length === 0) {
+            return null;
+        }
+        if (rows.length !== 1) {
+            throw new ResourceInboxInvariantCorruptionError(
+                replacement.key,
+                'Resource inbox compare-and-replace returned an unexpected row count'
+            );
+        }
+
+        const updated = toDomain(rows[0]);
+        if (!hasSameResourceEntryValue(updated, { ...replacement, db: updated.db })) {
+            throw new ResourceInboxInvariantCorruptionError(
+                replacement.key,
+                'Resource inbox compare-and-replace returned different content'
             );
         }
         return updated;
@@ -618,4 +711,15 @@ function hasReservedIdentity(
         materialized.key.resourceId === reserved.key.resourceId &&
         materialized.key.contextId === reserved.key.contextId &&
         materialized.typeId === reserved.typeId;
+}
+
+function toExpectedRowId(expected: ResourceEntry): bigint {
+    const rowId = expected.db?.id;
+    if (rowId === undefined || !/^[1-9]\d*$/u.test(rowId)) {
+        throw new ResourceInboxInvariantCorruptionError(
+            expected.key,
+            'Resource inbox observation has no valid database row identity'
+        );
+    }
+    return BigInt(rowId);
 }

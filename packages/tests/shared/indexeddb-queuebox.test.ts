@@ -109,44 +109,34 @@ describe('IndexedDbQueueBox', () => {
         ]);
     });
 
-    it('uses enqueueIf predicate to decide whether active entries are overwritten', async () => {
+    it('replaces an entry only while its complete observed value is current', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'presence.state.v1';
         const queue = new IndexedDbQueueBox({ dbName });
         const original = createEntry(typeId, 'resource-1', {
             resource: JSON.stringify({ version: 1 })
         });
-        const skippedReplacement = createEntry(typeId, 'resource-1', {
+        const replacement = createEntry(typeId, 'resource-1', {
             resource: JSON.stringify({ version: 2 })
         });
-        const acceptedReplacement = createEntry(typeId, 'resource-1', {
+        const staleReplacement = createEntry(typeId, 'resource-1', {
             resource: JSON.stringify({ version: 3 })
         });
 
         await queue.enqueueIfAbsent(original);
+        const observed = await queue.getItem(original.key);
+        if (observed === undefined) {
+            throw new Error('Expected the queue entry to be observable');
+        }
 
-        const skip = vi.fn(() => false);
-        const skippedPrevious = await queue.enqueueIf(skippedReplacement, skip);
-        expect(skippedPrevious?.resource).toBe(original.resource);
-        expect(skip).toHaveBeenCalledWith(
-            expect.objectContaining({
-                resource: original.resource
-            })
-        );
-        expect((await queue.getItem(original.key))?.resource).toBe(original.resource);
+        expect(await queue.replaceIfObserved(observed, replacement)).toEqual(replacement);
+        expect((await queue.getItem(original.key))?.resource).toBe(replacement.resource);
 
-        const overwrite = vi.fn(() => true);
-        const overwrittenPrevious = await queue.enqueueIf(acceptedReplacement, overwrite);
-        expect(overwrittenPrevious?.resource).toBe(original.resource);
-        expect(overwrite).toHaveBeenCalledWith(
-            expect.objectContaining({
-                resource: original.resource
-            })
-        );
-        expect((await queue.getItem(original.key))?.resource).toBe(acceptedReplacement.resource);
+        expect(await queue.replaceIfObserved(observed, staleReplacement)).toBeNull();
+        expect((await queue.getItem(original.key))?.resource).toBe(replacement.resource);
     });
 
-    it('computes an enqueueIf replacement before opening its write transaction', async () => {
+    it('computes a compare-and-replace mutation before opening its write transaction', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const queue = new IndexedDbQueueBox({ dbName });
         const original = createEntry('presence.state.v1', 'prepared-write', {
@@ -156,18 +146,26 @@ describe('IndexedDbQueueBox', () => {
             resource: JSON.stringify({ version: 2 })
         });
         await queue.enqueue(original);
+        const observed = await queue.getItem(original.key);
+        if (observed === undefined) {
+            throw new Error('Expected the queue entry to be observable');
+        }
 
         const transaction = vi.spyOn(IDBDatabase.prototype, 'transaction');
-        await queue.enqueueIf(replacement, () => {
-            expect(transaction.mock.calls.some((call) => call[1] === 'readwrite')).toBe(false);
-            return true;
-        });
+        const persistenceReadyReplacement: ResourceEntry = {
+            ...replacement,
+            get resource(): string {
+                expect(transaction.mock.calls.some((call) => call[1] === 'readwrite')).toBe(false);
+                return replacement.resource;
+            }
+        };
+        await queue.replaceIfObserved(observed, persistenceReadyReplacement);
 
         expect(transaction.mock.calls.some((call) => call[1] === 'readonly')).toBe(true);
         expect(transaction.mock.calls.some((call) => call[1] === 'readwrite')).toBe(true);
     });
 
-    it('overwrites expired entries with enqueueIf without calling the predicate', async () => {
+    it('does not replace an expired observation', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'presence.state.v1';
         const queue = new IndexedDbQueueBox({ dbName });
@@ -178,17 +176,11 @@ describe('IndexedDbQueueBox', () => {
         const replacement = createEntry(typeId, 'resource-1', {
             resource: JSON.stringify({ version: 2 })
         });
-        let predicateVisited = false;
-        const enqueueIt = () => {
-            predicateVisited = true;
-            return false;
-        };
 
         await queue.enqueue(expired);
 
-        expect(await queue.enqueueIf(replacement, enqueueIt)).toBeUndefined();
-        expect(predicateVisited).toBe(false);
-        expect((await queue.getItem(expired.key))?.resource).toBe(replacement.resource);
+        expect(await queue.replaceIfObserved(expired, replacement)).toBeNull();
+        expect(await queue.getItem(expired.key)).toBeUndefined();
     });
 
     it('persists entries across queue instances and supports reserve/release flow', async () => {

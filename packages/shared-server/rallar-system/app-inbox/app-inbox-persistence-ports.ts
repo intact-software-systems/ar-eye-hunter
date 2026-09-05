@@ -2,6 +2,11 @@ import type { EntityStatus, Key, ResourceEntry } from '@shared/queuebox/Resource
 
 export interface AppInboxEntryRepository {
     isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean>;
+    tryWriteIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry | null>;
+    replaceIfObserved(
+        expected: ResourceEntry,
+        replacement: ResourceEntry
+    ): Promise<ResourceEntry | null>;
     writeMaterializedIfAbsentOrReplaceExpired(
         placeholder: ResourceEntry,
         materialize: () => Promise<ResourceEntry>

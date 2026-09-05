@@ -881,6 +881,89 @@ describe('PostgreSQL resource inbox persistence', () => {
         );
     });
 
+    it('replaces only the exact live PostgreSQL row observation', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const harness = createResourceInboxSqlHarness();
+        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const key = createKey('replace-observed');
+        const observed = await repo.entries.write(createEntry(key, {
+            text: 'observed',
+            expiryTs: Temporal.Now.instant().add({ minutes: 5 })
+        }));
+        const replacement = {
+            ...observed,
+            resource: JSON.stringify({ text: 'replacement' })
+        };
+
+        expect(await repo.entries.replaceIfObserved(observed, replacement)).toMatchObject({
+            resource: replacement.resource,
+            db: observed.db
+        });
+
+        const replaced = await repo.entries.findAnyByKey(key);
+        if (replaced === null) {
+            throw new Error('Expected the replaced row');
+        }
+        const stored = findStoredResourceInboxRow(harness.rows, key);
+        if (stored === undefined) {
+            throw new Error('Expected the stored row');
+        }
+        stored.ri_attempts = 1n;
+        stored.ri_status = EntityStatus.RESERVED;
+        stored.start_ts = toStoredResourceInboxTimestamp(
+            Temporal.Now.instant().add({ seconds: 1 })
+        );
+
+        expect(
+            await repo.entries.replaceIfObserved(replaced, {
+                ...replaced,
+                resource: JSON.stringify({ text: 'stale replacement' })
+            })
+        ).toBeNull();
+        expect(JSON.parse(stored.ri_resource)).toEqual({ text: 'replacement' });
+    });
+
+    it('rejects a recreated or expired PostgreSQL row as a stale observation', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const harness = createResourceInboxSqlHarness();
+        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
+        const recreatedKey = createKey('replace-recreated');
+        const recreatedObserved = await repo.entries.write(createEntry(recreatedKey, {
+            text: 'observed',
+            expiryTs: Temporal.Now.instant().add({ minutes: 5 })
+        }));
+        const recreatedRow = findStoredResourceInboxRow(harness.rows, recreatedKey);
+        if (recreatedRow === undefined) {
+            throw new Error('Expected the recreated-row fixture');
+        }
+        recreatedRow.ri_row_id += 1n;
+
+        expect(
+            await repo.entries.replaceIfObserved(recreatedObserved, {
+                ...recreatedObserved,
+                resource: JSON.stringify({ text: 'must not replace recreated row' })
+            })
+        ).toBeNull();
+
+        const expiredKey = createKey('replace-expired');
+        const expiredObserved = await repo.entries.write(createEntry(expiredKey, {
+            text: 'observed',
+            expiryTs: Temporal.Now.instant().add({ seconds: 1 })
+        }));
+        vi.setSystemTime(new Date('2026-01-01T00:00:02.000Z'));
+
+        expect(
+            await repo.entries.replaceIfObserved(expiredObserved, {
+                ...expiredObserved,
+                resource: JSON.stringify({ text: 'must not replace expired row' })
+            })
+        ).toBeNull();
+    });
+
     it('filters expired rows from reads and startProcessingEntity', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
