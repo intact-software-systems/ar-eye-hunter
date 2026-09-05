@@ -95,9 +95,10 @@ export function toGroupSnapshotFromDeltaEnvelope(
 }
 
 /**
- * D2 application order: the no-op rule is evaluated before the apply rule, so
- * a summary no-op envelope (predecessor === resulting) resolves as a no-op at
- * the cached tuple instead of reaching the apply path.
+ * A cached snapshot that strictly dominates the envelope is a no-op. At an
+ * equal resulting tuple, an envelope for an older group event still requires
+ * a refresh: a newer event may have advanced the cached revision without
+ * carrying the older event's affected member slice.
  */
 function resolveGroupStateDeltaDisposition(
     cached: GroupSnapshot | undefined,
@@ -110,8 +111,14 @@ function resolveGroupStateDeltaDisposition(
         cached.causalRevision,
         envelope.resultingCausalRevision
     );
-    if (againstResulting === 'equal' || againstResulting === 'dominates') {
+    if (againstResulting === 'dominates') {
         return 'no-op';
+    }
+    if (againstResulting === 'equal') {
+        return envelope.event.causalRevision.groupRevision ===
+                envelope.resultingCausalRevision.groupRevision
+            ? 'no-op'
+            : 'causal-gap';
     }
     const againstPredecessor = compareGroupCausalRevision(
         cached.causalRevision,

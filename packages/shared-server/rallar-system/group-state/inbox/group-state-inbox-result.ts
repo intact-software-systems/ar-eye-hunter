@@ -1,5 +1,6 @@
 import type { GroupEvent, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import { validateComputedProjection } from '../../computed-data-validation.ts';
 import type { ComputedDataValidationIssue } from '../../computed-data-validation.ts';
@@ -27,40 +28,105 @@ export interface ComputeGroupStateInboxResultInput {
     readonly recordedEvent: GroupEvent | undefined;
 }
 
-export class GroupStateInboxResultReadConflictError extends Error {
-    readonly code = 'runtime-state-write-conflict';
-
-    constructor() {
-        super('Group state result snapshot no longer matches the mutation read.');
-        this.name = 'GroupStateInboxResultReadConflictError';
-    }
+export interface GroupStateInboxResultReadConflict {
+    readonly kind: 'read-conflict';
+    readonly message: string;
 }
 
-export function computeGroupStateInboxResult(input: ComputeGroupStateInboxResultInput): GroupStateInboxDurableResult {
+export type GroupStateInboxResultComputed =
+    | Readonly<{
+        kind: 'presence';
+        durableResult: GroupMutationReceipt;
+    }>
+    | Readonly<{
+        kind: 'group';
+        snapshot: GroupSnapshot;
+        event: GroupEvent | null;
+        durableResult: GroupStateWritten | GroupJoinCodeWritten;
+    }>;
+
+export type GroupStateInboxResultComputation = Either<GroupStateInboxResultReadConflict, GroupStateInboxResultComputed>;
+
+const RESULT_READ_CONFLICT: GroupStateInboxResultReadConflict = {
+    kind: 'read-conflict',
+    message: 'Group state result snapshot no longer matches the mutation read.'
+};
+
+export function computeGroupStateInboxResult(
+    input: ComputeGroupStateInboxResultInput
+): GroupStateInboxResultComputation {
     if (isPresenceOperation(input.command.command.operation)) {
-        return input.computed.receipt;
+        return Either.ofRight({
+            kind: 'presence',
+            durableResult: input.computed.receipt
+        });
     }
-    assertSnapshotMatchesRead(input.currentSnapshot, input.read);
+    if (hasResultReadConflict(input)) {
+        return Either.ofLeft(RESULT_READ_CONFLICT);
+    }
     const snapshot = input.computed.outcome === 'write'
         ? assembleCommittedSnapshot(input, input.computed)
         : input.currentSnapshot;
     if (snapshot === undefined) {
-        throw new GroupStateInboxResultReadConflictError();
+        return Either.ofLeft(RESULT_READ_CONFLICT);
     }
     const event = input.computed.outcome === 'write'
         ? input.computed.event
         : readRecordedEvent(input.recordedEvent, input.computed.receipt);
-    return input.command.command.operation === 'rotateGroupJoinCode'
+    const durableResult = input.command.command.operation === 'rotateGroupJoinCode'
         ? toJoinCodeResult(input.computed.receipt, snapshot, event)
         : toGroupMutationResult({ command: input.command, receipt: input.computed.receipt, snapshot, event });
+    return Either.ofRight({ kind: 'group', snapshot, event, durableResult });
 }
 
 export function validateGroupStateInboxResult(
     input: ComputeGroupStateInboxResultInput,
-    computed: GroupStateInboxDurableResult
+    computed: GroupStateInboxResultComputation
 ): readonly ComputedDataValidationIssue[] {
-    const expected = computeGroupStateInboxResult(input);
-    return validateComputedProjection(expected, computed, 'computed');
+    if (isPresenceOperation(input.command.command.operation)) {
+        return computed.right === undefined
+            ? validateComputedProjection(
+                { kind: 'presence', durableResult: input.computed.receipt },
+                computed.left,
+                'computed.right'
+            )
+            : validateComputedProjection(
+                { kind: 'presence', durableResult: input.computed.receipt },
+                computed.right,
+                'computed.right'
+            );
+    }
+    if (hasResultReadConflict(input)) {
+        return computed.left === undefined
+            ? validateComputedProjection(RESULT_READ_CONFLICT, computed.right, 'computed.left')
+            : validateComputedProjection(RESULT_READ_CONFLICT, computed.left, 'computed.left');
+    }
+    if (computed.right === undefined) {
+        return validateComputedProjection(
+            expectedComputedResultKind(input),
+            computed.left,
+            'computed.right'
+        );
+    }
+    if (computed.right.kind === 'presence') {
+        return validateComputedProjection({ kind: 'group' }, computed.right, 'computed.right');
+    }
+    const event = input.computed.outcome === 'write'
+        ? input.computed.event
+        : readRecordedEvent(input.recordedEvent, input.computed.receipt);
+    const durableResult = input.command.command.operation === 'rotateGroupJoinCode'
+        ? toJoinCodeResult(input.computed.receipt, computed.right.snapshot, event)
+        : toGroupMutationResult({
+            command: input.command,
+            receipt: input.computed.receipt,
+            snapshot: computed.right.snapshot,
+            event
+        });
+    return validateComputedProjection(
+        { kind: 'group', snapshot: computed.right.snapshot, event, durableResult },
+        computed.right,
+        'computed.right'
+    );
 }
 
 interface ToGroupMutationResultInput {
@@ -70,29 +136,33 @@ interface ToGroupMutationResultInput {
     readonly event: GroupEvent | null;
 }
 
-function assertSnapshotMatchesRead(
+function snapshotMatchesRead(
     snapshot: GroupSnapshot | undefined,
     read: GroupMutationRead
-): void {
+): boolean {
     if (read.group === null) {
-        if (snapshot !== undefined) {
-            throw new GroupStateInboxResultReadConflictError();
-        }
-        return;
+        return snapshot === undefined;
     }
     const presenceRevision = read.presenceSummary?.value.causalRevision.presenceRevision ?? 0;
     const expectedSnapshotGroup = {
         ...read.group.value,
         presenceVersion: presenceRevision
     };
-    if (
-        snapshot === undefined ||
-        !jsonEquals(snapshot.group, expectedSnapshotGroup) ||
-        snapshot.causalRevision.groupRevision !== read.group.value.snapshotVersion ||
-        snapshot.causalRevision.presenceRevision !== presenceRevision
-    ) {
-        throw new GroupStateInboxResultReadConflictError();
-    }
+    return snapshot !== undefined &&
+        jsonEquals(snapshot.group, expectedSnapshotGroup) &&
+        snapshot.causalRevision.groupRevision === read.group.value.snapshotVersion &&
+        snapshot.causalRevision.presenceRevision === presenceRevision;
+}
+
+function hasResultReadConflict(input: ComputeGroupStateInboxResultInput): boolean {
+    return !snapshotMatchesRead(input.currentSnapshot, input.read) ||
+        input.computed.outcome !== 'write' && input.currentSnapshot === undefined;
+}
+
+function expectedComputedResultKind(
+    input: ComputeGroupStateInboxResultInput
+): Readonly<{ kind: GroupStateInboxResultComputed['kind']; }> {
+    return { kind: isPresenceOperation(input.command.command.operation) ? 'presence' : 'group' };
 }
 
 function assembleCommittedSnapshot(

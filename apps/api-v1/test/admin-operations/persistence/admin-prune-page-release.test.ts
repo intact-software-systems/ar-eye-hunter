@@ -45,7 +45,7 @@ Deno.test('PSQL queue release accepts the exact admin page completed in its dele
             expiredRows: { 'runtime-state': 1 }
         }));
         const results = new ResourceInboxResultsRepository(sql);
-        await results.writeIfAbsentOrReplaceExpired(aggregate);
+        await results.replace(aggregate);
         await sql`insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, revision)
             values ('prune-release', 'expired', '{}', ${new Date(now - 1)}, 1)`;
         const reserved = await queue.reserveEntries(new Set([EnqueuedType.APP_OUTBOX]), new Set([EntityStatus.NEW]), {
@@ -130,7 +130,7 @@ Deno.test('admin prune conflicts and preserves runtime state replaced after the 
             expiredRows: { 'runtime-state': 1 }
         }));
         const results = new ResourceInboxResultsRepository(sql);
-        await results.writeIfAbsentOrReplaceExpired(aggregateEntry);
+        await results.replace(aggregateEntry);
         await sql`
             insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, revision)
             values ('stale-runtime-page', 'same-identity', '{"version":1}', ${new Date(now - 1)}, 1)

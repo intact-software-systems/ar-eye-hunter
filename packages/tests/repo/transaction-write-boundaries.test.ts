@@ -93,6 +93,51 @@ describe('transaction write boundaries', () => {
         ]);
     });
 
+    it('follows named, imported, and aliased call, apply, and Reflect.apply invocations', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        project.createSourceFile(
+            '/packages/domain/serialize.ts',
+            `export function serializeCall(value: object): string {
+                 return JSON.stringify(value);
+             }
+             export function serializeApply(value: object): string {
+                 return JSON.stringify(value);
+             }
+             export function serializeReflect(value: object): string {
+                 return JSON.stringify(value);
+             }`
+        );
+        const source = project.createSourceFile(
+            '/packages/domain/write.ts',
+            `import {
+                 serializeApply,
+                 serializeCall,
+                 serializeReflect
+             } from './serialize.ts';
+             interface PSqlSql { query(value: string): Promise<void>; }
+             declare const Reflect: {
+                 apply<T>(target: (value: object) => T, receiver: undefined, args: [object]): T;
+             };
+             export async function writeMutation(
+                 transaction: PSqlSql,
+                 computed: object
+             ): Promise<void> {
+                 const encode = serializeApply;
+                 await transaction.query(serializeCall.call(undefined, computed));
+                 await transaction.query(encode.apply(undefined, [computed]));
+                 await transaction.query(Reflect.apply(serializeReflect, undefined, [computed]));
+             }`
+        );
+
+        const findings = analyzeTransactionWrites(project, [source]);
+
+        expect(findings.map((finding) => finding.operation)).toEqual([
+            'JSON.stringify',
+            'JSON.stringify',
+            'JSON.stringify'
+        ]);
+    });
+
     it('follows IndexedDB request event handlers while the write transaction is active', () => {
         const findings = analyzeFixture(`
             declare const db: IDBDatabase;
@@ -403,7 +448,7 @@ describe('transaction write boundaries', () => {
         }]);
     });
 
-    it('exempts exact ResourceInbox operations and checks neighboring methods', () => {
+    it('checks callback-bearing ResourceInbox operations and neighboring methods', () => {
         const project = new Project({ useInMemoryFileSystem: true });
         const source = project.createSourceFile(
             '/packages/shared-server/queuebox/postgres/p-sql-queue-box.ts',
@@ -430,10 +475,20 @@ describe('transaction write boundaries', () => {
              }`
         );
 
-        expect(analyzeTransactionWrites(project, [source])).toMatchObject([{
-            rule: 'transaction.unresolved-provenance',
-            operation: 'decide'
-        }]);
+        expect(analyzeTransactionWrites(project, [source])).toMatchObject([
+            {
+                rule: 'transaction.unresolved-provenance',
+                operation: 'decide'
+            },
+            {
+                rule: 'transaction.unresolved-provenance',
+                operation: 'update'
+            },
+            {
+                rule: 'transaction.unresolved-provenance',
+                operation: 'decide'
+            }
+        ]);
     });
 
     it('does not exempt new files merely because they share the ResourceInbox directory', () => {

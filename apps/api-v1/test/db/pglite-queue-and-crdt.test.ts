@@ -378,7 +378,7 @@ Deno.test(
                 status: EntityStatus.COMPLETED,
                 payload: { text: 'result' }
             });
-            const activeResult = await results.writeIfAbsentOrReplaceExpired(resultEntry);
+            const activeResult = await results.replace(resultEntry);
             assert.equal(activeResult.key.resourceId, 'result-1');
 
             const replacedResult = await results.replace(

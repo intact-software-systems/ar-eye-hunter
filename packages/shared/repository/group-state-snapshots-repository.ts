@@ -279,6 +279,31 @@ export function removeGroupStateSnapshotIfUnchanged(
     return removed;
 }
 
+export function replaceGroupStateSnapshotIfUnchanged(
+    expected: GroupSnapshot,
+    replacement: GroupSnapshot,
+    manager?: RepositoryManager
+): boolean {
+    const expectedKey = toGroupStateSnapshotRepositoryKey(expected.group);
+    const replacementKey = toGroupStateSnapshotRepositoryKey(replacement.group);
+    if (expectedKey !== replacementKey) {
+        throw new TypeError('Group snapshot replacement must retain the group reference.');
+    }
+    const repository = requireGroupStateSnapshotRepository(manager);
+    const replaced = repository.compareAndSet(expectedKey, expected, replacement);
+    if (!replaced) {
+        return false;
+    }
+    observedGroupSnapshotKeysForRepository(repository).add(expectedKey);
+    replaceGroupSnapshotInSessionIndex({
+        repository,
+        key: expectedKey,
+        previous: expected,
+        next: replacement
+    });
+    return true;
+}
+
 export function getAllGroupStateSnapshots(
     manager?: RepositoryManager
 ): GroupSnapshot[] {

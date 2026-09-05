@@ -104,12 +104,20 @@ export function resolveCallTargets(call, project) {
     }
     if (
         Node.isPropertyAccessExpression(immediate) &&
-        ['apply', 'call'].includes(immediate.getName())
+        ['apply', 'call'].includes(immediate.getName()) &&
+        immediate.getExpression().getType().getCallSignatures().length > 0
     ) {
         const invoked = unwrapExpression(immediate.getExpression());
-        if (Node.isArrowFunction(invoked) || Node.isFunctionExpression(invoked)) {
-            return { bodies: [invoked], unresolved: false };
-        }
+        const bodies = resolveCallableBodies(invoked, project);
+        return { bodies, unresolved: bodies.length === 0 };
+    }
+    if (
+        Node.isPropertyAccessExpression(immediate) &&
+        immediate.getExpression().getText() === 'Reflect' &&
+        immediate.getName() === 'apply'
+    ) {
+        const bodies = resolveCallableBodies(call.getArguments()[0], project);
+        return { bodies, unresolved: bodies.length === 0 };
     }
     const symbol = Node.isPropertyAccessExpression(expression)
         ? expression.getNameNode().getSymbol()

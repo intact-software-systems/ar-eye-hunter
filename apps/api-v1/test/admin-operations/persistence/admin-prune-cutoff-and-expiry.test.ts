@@ -16,7 +16,7 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const databaseNow = await readPGliteDatabaseEpochMs(sql);
-            await new ResourceInboxResultsRepository(sql).writeIfAbsentOrReplaceExpired(
+            await new ResourceInboxResultsRepository(sql).replace(
                 createResourceEntry('resource-1', {
                     topicId: 'topic-1',
                     contextId: 'context-1',
@@ -49,7 +49,7 @@ Deno.test('prune progress renews physical and JSON aggregate expiry together', a
             expiredRows: { 'runtime-state': 1 }
         });
         const currentEntry = toAdminPruneAggregateEntry(current);
-        await new ResourceInboxResultsRepository(sql).writeIfAbsentOrReplaceExpired(currentEntry);
+        await new ResourceInboxResultsRepository(sql).replace(currentEntry);
         const renewed = {
             ...current,
             revision: 1,

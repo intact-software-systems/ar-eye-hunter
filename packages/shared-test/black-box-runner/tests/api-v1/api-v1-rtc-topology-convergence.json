@@ -742,8 +742,8 @@
       "name": "assertPrimaryExactRevisions",
       "type": "assert",
       "actual": {
-        "firstRevision": "{primaryFirstEnvelope.resultingCausalRevision.groupRevision}",
-        "secondRevision": "{primarySecondEnvelope.resultingCausalRevision.groupRevision}"
+        "firstRevision": "{primaryFirstEnvelope.event.causalRevision.groupRevision}",
+        "secondRevision": "{primarySecondEnvelope.event.causalRevision.groupRevision}"
       },
       "expect": {
         "anyOf": [
@@ -762,8 +762,8 @@
       "name": "assertTertiaryExactRevisions",
       "type": "assert",
       "actual": {
-        "firstRevision": "{tertiaryFirstEnvelope.resultingCausalRevision.groupRevision}",
-        "secondRevision": "{tertiarySecondEnvelope.resultingCausalRevision.groupRevision}"
+        "firstRevision": "{tertiaryFirstEnvelope.event.causalRevision.groupRevision}",
+        "secondRevision": "{tertiarySecondEnvelope.event.causalRevision.groupRevision}"
       },
       "expect": {
         "anyOf": [

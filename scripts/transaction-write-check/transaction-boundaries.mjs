@@ -59,8 +59,6 @@ const SPECIALIZED_TRANSACTION_OWNERS = new Map([
             'reserveRetryExhaustionFinalizations',
             'releaseEntries',
             'enqueue',
-            'enqueueIf',
-            'enqueueOrUpdate',
             'enqueueIfAbsent'
         ])
     ],
@@ -81,10 +79,6 @@ const SPECIALIZED_TRANSACTION_OWNERS = new Map([
     [
         'packages/shared-server/queuebox/postgres/resource-inbox-finished-replacement.ts',
         new Set(['replaceFinishedResourceEntryIfMatch'])
-    ],
-    [
-        'packages/shared-server/queuebox/postgres/resource-inbox-results-repository.ts',
-        new Set(['begin'])
     ]
 ]);
 

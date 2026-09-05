@@ -31,7 +31,10 @@ import { decodeGroupStateInboxAuthority } from './decode-group-state-inbox-autho
 import {
     computeGroupStateInboxResult,
     validateGroupStateInboxResult,
-    type GroupStateInboxDurableResult
+    type ComputeGroupStateInboxResultInput,
+    type GroupStateInboxDurableResult,
+    type GroupStateInboxResultComputation,
+    type GroupStateInboxResultReadConflict
 } from './group-state-inbox-result.ts';
 
 export interface GroupStateInboxResultReader {
@@ -154,11 +157,18 @@ export class GroupStateInboxHandler {
             currentSnapshot: resultRead.currentSnapshot,
             recordedEvent: resultRead.recordedEvent
         } as const;
-        const durableResult = computeGroupStateInboxResult(resultInput);
+        const result = computeGroupStateInboxResult(resultInput);
+        this.assertInboxResultValid(resultInput, result);
+        const computedResult = result.fold(
+            (conflict) => {
+                throw new GroupStateInboxResultReadConflictError(conflict);
+            },
+            (computed) => computed
+        );
+        const durableResult = computedResult.durableResult;
         const completionInput = this.readCompletionInput(context, durableResult);
         const completion = computeAppInboxCompletion(completionInput);
         this.assertMutationValid(command, resultRead.mutationRead, computed);
-        this.assertInboxResultValid(resultInput, durableResult);
         this.assertCompletionValid(completionInput, completion);
         return await this.commitMutation({ context, command, computed, durableResult, completion });
     }
@@ -256,8 +266,8 @@ export class GroupStateInboxHandler {
     }
 
     private assertInboxResultValid(
-        input: Parameters<typeof validateGroupStateInboxResult>[0],
-        computed: GroupStateInboxDurableResult
+        input: ComputeGroupStateInboxResultInput,
+        computed: GroupStateInboxResultComputation
     ): void {
         const issue = validateGroupStateInboxResult(input, computed)[0];
         if (issue !== undefined) {
@@ -278,6 +288,15 @@ export class GroupStateInboxHandler {
         catch {
             // Recording must never affect group mutation behavior.
         }
+    }
+}
+
+class GroupStateInboxResultReadConflictError extends Error {
+    readonly code = 'runtime-state-write-conflict';
+
+    constructor(conflict: GroupStateInboxResultReadConflict) {
+        super(conflict.message);
+        this.name = 'GroupStateInboxResultReadConflictError';
     }
 }
 

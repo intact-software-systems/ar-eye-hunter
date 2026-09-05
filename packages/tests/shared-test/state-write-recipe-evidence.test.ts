@@ -71,19 +71,20 @@ describe('API-v1 state-write recipe evidence', () => {
 
         const assertionSteps = recipe.steps.slice(-terminalNames.length, -trailingNonAssertCount);
         expect(assertionSteps[0].actual).toEqual({
-            firstRevision: '{primaryFirstEnvelope.resultingCausalRevision.groupRevision}',
-            secondRevision: '{primarySecondEnvelope.resultingCausalRevision.groupRevision}'
+            firstRevision: '{primaryFirstEnvelope.event.causalRevision.groupRevision}',
+            secondRevision: '{primarySecondEnvelope.event.causalRevision.groupRevision}'
         });
         const group = {
             applicationId: 'app',
             workspaceId: 'workspace',
             groupId: 'group'
         };
-        // The delta envelope carries the revision the mutation produced as
-        // resultingCausalRevision; the retired snapshot frame carried it as
-        // causalRevision.
-        const envelope = (groupRevision: number, presenceRevision: number) => ({
-            resultingCausalRevision: { groupRevision, presenceRevision },
+        // A delayed summary may project both events onto the same newer
+        // resulting snapshot. The event retains the revision produced by its
+        // own mutation and is therefore the exact concurrency evidence.
+        const envelope = (eventRevision: number, presenceRevision: number) => ({
+            event: { causalRevision: { groupRevision: eventRevision, presenceRevision } },
+            resultingCausalRevision: { groupRevision: 4, presenceRevision: 8 },
             group
         });
         const variables = {
