@@ -1,8 +1,9 @@
 import type { ApiJsonValue } from '../api/api-json-value.ts';
+import { validateJsonMessageSize } from '../api/json-message-validation.ts';
 import { toError } from '../resilience/to-error.ts';
 
+import { OnQRtcMessageCallback, QRtcClientCallbacks } from './qrtc-client-callbacks.ts';
 import { QRtcPeerConnection } from './qrtc-peer-connection.ts';
-import { OnQRtcMessageCallback, QRtcClientCallbacks } from './QRtcClientCallbacks.ts';
 import { RtcDataChannelSendQueue } from './rtc-data-channel-send-queue.ts';
 
 export type RtcDataChannelPayload =
@@ -416,37 +417,48 @@ export class QRtcDataChannel {
             return;
         }
 
-        // Application payloads remain untrusted until the registered receiver validates them.
-        let message: RtcApplicationMessage = event.data;
-        if (typeof message === 'string') {
-            try {
-                // Without a reviver, JSON.parse validates the complete JSON value shape.
-                message = JSON.parse(message) as ApiJsonValue;
-            }
-            catch {
-                if (!rawProcessed) {
-                    console.error('Failed to parse WebRTC JSON message');
-                }
-                return;
-            }
-        }
-        await this.dispatchApplicationMessage(message, event, rawProcessed);
+        await this.dispatchApplicationMessage(dataChannel, event, rawProcessed);
     }
 
     private async dispatchApplicationMessage(
-        message: RtcApplicationMessage,
+        dataChannel: RTCDataChannel,
         event: MessageEvent<RtcDataChannelPayload>,
         rawProcessed: boolean
     ): Promise<void> {
-        const messageType = typeof message === 'object' && message !== null && 'type' in message
-            ? message.type
-            : undefined;
         let isProcessed = rawProcessed;
+        let message: RtcApplicationMessage = event.data;
+        let hasDecoded = false;
         for (const subscription of this.onMessageCallbacks.values()) {
-            if (messageType && subscription.type !== messageType) {
-                continue;
+            if (this.status.dc !== dataChannel) {
+                return;
             }
             try {
+                if (subscription.callback.maxMessageBytes !== undefined) {
+                    const validated = validateJsonMessageSize(event.data, subscription.callback.maxMessageBytes);
+                    if (validated.left) {
+                        await subscription.callback.onRejected?.(validated.left, event);
+                        isProcessed = true;
+                        continue;
+                    }
+                }
+                if (!hasDecoded) {
+                    try {
+                        message = this.decodeApplicationMessage(event.data);
+                        hasDecoded = true;
+                    }
+                    catch {
+                        if (!rawProcessed) {
+                            console.error('Failed to parse WebRTC JSON message');
+                        }
+                        return;
+                    }
+                }
+                const messageType = typeof message === 'object' && message !== null && 'type' in message
+                    ? message.type
+                    : undefined;
+                if (messageType && subscription.type !== messageType) {
+                    continue;
+                }
                 await subscription.callback.onMessage(message, event);
                 isProcessed = true;
             }
@@ -457,6 +469,14 @@ export class QRtcDataChannel {
         if (!isProcessed) {
             console.warn('Received message with unknown callback type');
         }
+    }
+
+    private decodeApplicationMessage(data: RtcDataChannelPayload): RtcApplicationMessage {
+        if (typeof data !== 'string') {
+            return data;
+        }
+        // Without a reviver JSON.parse produces only JSON values; domain validation remains with the receiver.
+        return JSON.parse(data) as ApiJsonValue;
     }
 
     private async closeDataChannel(dataChannel: RTCDataChannel): Promise<void> {

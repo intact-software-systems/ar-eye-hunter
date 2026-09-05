@@ -147,25 +147,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
     };
     const rttRefinementSkip = claimRttRefinementSkip(attempt);
     if (rttRefinementSkip !== null) {
-        const writeInput: ComputeRtcTopologyWorkWriteInput = {
-            accepted: rttRefinementSkip,
-            entry,
-            reservationFinish,
-            formationAutomationEnabled: options.formationAutomation !== undefined,
-            serviceId: options.serviceId,
-            publisherStreamId: options.topologyDelivery?.publisherStreamId
-        };
-        const computedWrite = computeRtcTopologyWorkWrite(writeInput);
-        const issues = validateRtcTopologyWorkWrite(writeInput, computedWrite);
-        if (issues[0] !== undefined) {
-            throw issues[0].cause;
-        }
-        await writeAcceptedRtcTopologyWork({
-            options,
-            accepted: rttRefinementSkip,
-            computedWrite,
-            computeDurationMs: 0
-        });
+        await writeSkippedRttRefinement({ options, entry, reservationFinish, accepted: rttRefinementSkip });
         await deferredCriterionPetitioner?.request(workEnvelope.data, mutationRead);
         return;
     }
@@ -192,6 +174,36 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         accepted: computed.accepted,
         computedWrite: computed.write,
         computeDurationMs: options.topologyPlanning.readDurationNowMs() - computeStartedAtMs
+    });
+}
+
+interface WriteSkippedRttRefinementInput {
+    readonly options: RtcTopologyWorkHandlerOptions;
+    readonly entry: ResourceEntry;
+    readonly reservationFinish: ResourceInboxReservationFinish;
+    readonly accepted: AcceptedRtcTopologyWork;
+}
+
+async function writeSkippedRttRefinement(input: WriteSkippedRttRefinementInput): Promise<void> {
+    const { options, entry, reservationFinish, accepted } = input;
+    const writeInput: ComputeRtcTopologyWorkWriteInput = {
+        accepted: accepted,
+        entry,
+        reservationFinish,
+        formationAutomationEnabled: options.formationAutomation !== undefined,
+        serviceId: options.serviceId,
+        publisherStreamId: options.topologyDelivery?.publisherStreamId
+    };
+    const computedWrite = computeRtcTopologyWorkWrite(writeInput);
+    const issues = validateRtcTopologyWorkWrite(writeInput, computedWrite);
+    if (issues[0] !== undefined) {
+        throw issues[0].cause;
+    }
+    await writeAcceptedRtcTopologyWork({
+        options,
+        accepted: accepted,
+        computedWrite,
+        computeDurationMs: 0
     });
 }
 
@@ -228,9 +240,9 @@ async function readLoadedRtcTopologyWork(
     if (!publication) {
         throw new TypeError('RTC topology loaded replay requires its durable publication');
     }
-    const outboxKey = computeRtcTopologyPublicationOutbox(publication).key;
+    const outboxPages = computeRtcTopologyPublicationOutbox(publication);
     const [outbox, delivery] = await Promise.all([
-        options.outboxQueueReader.outbox.getItem(outboxKey),
+        Promise.all(outboxPages.map((page) => options.outboxQueueReader.outbox.getItem(page.key))),
         options.topologyDelivery
             ? options.topologyDelivery.reader.findPublicationDelivery({
                 groupRef: publication.groupRef,
@@ -240,7 +252,7 @@ async function readLoadedRtcTopologyWork(
     ]);
     return {
         mutation,
-        outbox: outbox ?? null,
+        outbox,
         delivery: delivery ?? null
     };
 }

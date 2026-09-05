@@ -1,4 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 import {
     newALBroadcastMessage,
@@ -10,12 +16,8 @@ import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createRallarMiddlewareTestRuntime } from './middleware/rallar-middleware-test-runtime.ts';
 import { createClientSnapshot } from './state-sync/http/rest-state-snapshot-read-test-fixtures.ts';
@@ -28,8 +30,8 @@ describe('state-sync websocket ingress', () => {
         const webSocketServer = new JsonWebSocketServer();
         const attacker = new RecordingOpenSocket();
         const recipient = new RecordingOpenSocket();
-        webSocketServer.addConnection(new ConnectionContext('attacker', attacker));
-        webSocketServer.addConnection(new ConnectionContext('session-alice', recipient));
+        webSocketServer.addConnection(new ConnectionContext({ id: 'attacker', socket: attacker }));
+        webSocketServer.addConnection(new ConnectionContext({ id: 'session-alice', socket: recipient }));
         const testRuntime = createRallarMiddlewareTestRuntime({
             resilience: {
                 inbox: createResilience(),

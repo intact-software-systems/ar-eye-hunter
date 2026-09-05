@@ -1,5 +1,6 @@
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import { createPagedSnapshotReceiver } from './browser-state-cache-lifecycle-fixtures.ts';
 // dprint-ignore
 import {
     newALBroadcastMessage,
@@ -49,7 +50,7 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
             onAllInboxMessagesDo: vi.fn((callback: {
                 onMessage: (message: ALMessage) => Promise<void>;
             }) => {
-                onInboxMessage = callback.onMessage;
+                onInboxMessage = createPagedSnapshotReceiver(callback.onMessage);
             })
         };
         const listener = vi.fn();

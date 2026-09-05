@@ -3,8 +3,9 @@ import { RtcTopologyReplayEntryHandlerService } from '@shared-server/rallar-syst
 import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it, vi } from 'vitest';
+import { assembleStateSnapshotMessages } from '../../../../../shared/state-snapshot-test-fixture.ts';
 
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { createRtcTopologyReplayFixture } from './rtc-topology-replay-fixture.ts';
@@ -18,7 +19,47 @@ describe('RtcTopologyReplayEntryHandlerService', () => {
             handler.handle(fixture.entry, fixture.databaseNowEpochMs, new AbortController().signal)
         ).resolves.toEqual({ status: 'delivered' });
         expect(send).toHaveBeenCalledOnce();
-        expect(send).toHaveBeenCalledWith(JSON.parse(fixture.outbox.resource));
+        expect(send).toHaveBeenCalledWith(JSON.parse(fixture.outbox[0].resource));
+    });
+
+    it('replays every page and recipient batch of a 1500-session publication as one logical result', async () => {
+        const fixture = createRtcTopologyReplayFixture(1500);
+        const { handler, send } = createHandler(fixture);
+        expect(fixture.outbox.length).toBeGreaterThan(6);
+        await expect(handler.handle(fixture.entry, fixture.databaseNowEpochMs, new AbortController().signal))
+            .resolves.toEqual({ status: 'delivered' });
+        const messages = send.mock.calls.map(([message]) => message);
+        expect(messages.map((message) => message.id.msgId)).toEqual(fixture.outbox.map((entry) => JSON.parse(entry.resource).id.msgId));
+        expect(
+            assembleStateSnapshotMessages(messages, fixture.entry.groupRef, fixture.databaseNowEpochMs)
+                .map((snapshot) => JSON.parse(snapshot.resource))
+        ).toEqual([fixture.currentSnapshot]);
+        expect(
+            new Set(messages.flatMap((message) =>
+                message.targets?.mode === 'broadcast'
+                    ? message.targets.recipientPeerIds ?? []
+                    : []
+            )).size
+        ).toBe(1500);
+    });
+
+    it('rejects a missing final durable page before sending any part of the publication', async () => {
+        const fixture = createRtcTopologyReplayFixture(1500);
+        const { handler, send } = createHandler({ ...fixture, outbox: fixture.outbox.slice(0, -1) });
+        await expect(handler.handle(fixture.entry, fixture.databaseNowEpochMs, new AbortController().signal))
+            .rejects.toBeInstanceOf(RtcTopologyDeliveryCorruptionError);
+        expect(send.mock.calls).toEqual([]);
+    });
+
+    it('does not advance the replay predecessor when a later page send fails', async () => {
+        const fixture = createRtcTopologyReplayFixture(1500);
+        const { handler, send } = createHandler(fixture);
+        send.mockImplementationOnce(() => ({ status: 'sent-live' }))
+            .mockImplementationOnce(() => ({ status: 'failed' }));
+        await expect(handler.handle(fixture.entry, fixture.databaseNowEpochMs, new AbortController().signal))
+            .resolves.toEqual({ status: 'send-failed' });
+        expect(send.mock.calls.map(([message]) => message.id.msgId))
+            .toEqual(fixture.outbox.slice(0, 2).map((entry) => JSON.parse(entry.resource).id.msgId));
     });
 
     it('materializes a fixed-audience current-state repair for stale history', async () => {
@@ -36,15 +77,11 @@ describe('RtcTopologyReplayEntryHandlerService', () => {
             handler.handle(fixture.entry, fixture.databaseNowEpochMs, new AbortController().signal)
         ).resolves.toEqual({ status: 'current-repair' });
         const message = send.mock.calls[0]![0];
-        expect(message.payload.resource).toBe(JSON.stringify(currentSnapshot));
-        expect(message.route).toEqual({
-            topicId: AppTopics.overlayTopology,
-            contextId: fixture.entry.groupRef.groupId,
-            resourceId: `${currentSnapshot.overlayId}:` +
-                `${currentSnapshot.sourceGroupStateCausalRevision.groupRevision}:` +
-                `${currentSnapshot.sourceGroupStateCausalRevision.presenceRevision}:` +
-                `${currentSnapshot.version}`
-        });
+        expect(assembleStateSnapshotMessages(send.mock.calls.map(([page]) => page), fixture.entry.groupRef, fixture.databaseNowEpochMs)[0].resource).toBe(
+            JSON.stringify(currentSnapshot)
+        );
+        expect(message.route).toMatchObject({ topicId: AppTopics.overlayTopology, contextId: fixture.entry.groupRef.groupId });
+        expect(message.route.resourceId.length).toBeLessThanOrEqual(128);
         expect(message.targets).toMatchObject({
             mode: 'broadcast',
             scope: 'room',
@@ -78,7 +115,9 @@ describe('RtcTopologyReplayEntryHandlerService', () => {
             handler.handle(fixture.entry, fixture.databaseNowEpochMs, new AbortController().signal)
         ).resolves.toEqual({ status: 'current-repair' });
         const message = send.mock.calls[0]![0];
-        expect(message.payload.resource).toBe(JSON.stringify(acceptedSnapshot));
+        expect(assembleStateSnapshotMessages(send.mock.calls.map(([page]) => page), fixture.entry.groupRef, fixture.databaseNowEpochMs)[0].resource).toBe(
+            JSON.stringify(acceptedSnapshot)
+        );
         expect(message.targets).toMatchObject({ recipientPeerIds: ['session-2'] });
     });
 
@@ -107,8 +146,9 @@ describe('RtcTopologyReplayEntryHandlerService', () => {
         await expect(
             handler.handle(fixture.entry, fixture.databaseNowEpochMs, new AbortController().signal)
         ).resolves.toEqual({ status: 'current-repair' });
-        const message = send.mock.calls[0]![0];
-        expect(message.payload.resource).toBe(JSON.stringify(tombstone));
+        expect(assembleStateSnapshotMessages(send.mock.calls.map(([page]) => page), fixture.entry.groupRef, fixture.databaseNowEpochMs)[0].resource).toBe(
+            JSON.stringify(tombstone)
+        );
     });
 
     it('treats no current local recipient as successful handling', async () => {
@@ -157,14 +197,12 @@ describe('RtcTopologyReplayEntryHandlerService', () => {
     });
 });
 
-type Fixture = ReturnType<typeof createRtcTopologyReplayFixture>;
-
 function createHandler(
     fixture:
-        & Omit<Fixture, 'publication' | 'outbox'>
+        & Omit<ReturnType<typeof createRtcTopologyReplayFixture>, 'publication' | 'outbox'>
         & Readonly<{
             publication?: RtcTopologyPublication;
-            outbox?: ResourceEntry;
+            outbox?: readonly ResourceEntry[];
             acceptedSnapshot?: RallarOverlayTopologySnapshot;
         }>,
     sendStatus: 'sent-live' | 'no-recipients' | 'partial-failure' | 'failed' = 'sent-live'
@@ -176,7 +214,7 @@ function createHandler(
                 findPublication: vi.fn(async () => fixture.publication)
             },
             outbox: {
-                getItem: vi.fn(async () => fixture.outbox)
+                getItem: vi.fn(async (key) => fixture.outbox?.find((page) => isKeysEqual(page.key, key)))
             },
             snapshots: {
                 findSnapshot: vi.fn(async () => fixture.currentSnapshot)

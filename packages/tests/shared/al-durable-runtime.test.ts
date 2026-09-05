@@ -16,23 +16,15 @@ import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-m
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
-    ALControlPersistenceValue,
-    ALOrderingTrackSnapshot,
     ALOutboundMessageRuntime,
-    ALSupersedencePersistenceValue,
     createALInboundAdmissionStore,
     createALOutboundAdmissionStore,
     InMemoryPersistenceProvider,
     InMemoryQueueBox,
-    newALAckControlMessage,
     newALMulticastMessage,
     newALNackControlMessage,
     newALUnicastMessage,
     normalizeALRuntimeStoreRetention,
-    PersistentALControlTracker,
-    PersistentALDedupStore,
-    PersistentALOrderingStore,
-    PersistentALSupersedenceStore,
     planALMessageHandling,
     QueueBoxUtilities,
     type ALMessage,
@@ -53,106 +45,6 @@ interface PersistentRuntimeStoreSet<TStores> extends PersistentAdmissionStorage 
 describe('Durable AL runtime stores', () => {
     afterEach(() => {
         vi.useRealTimers();
-    });
-
-    it('rehydrates dedup, ordering, and supersedence state from persistence', async () => {
-        const nowMs = Date.now();
-        const dedupProvider = new InMemoryPersistenceProvider<string, number>();
-        const dedup1 = new PersistentALDedupStore(dedupProvider);
-        await dedup1.ready();
-        await dedup1.mark('msg-1', 50, nowMs);
-
-        const dedup2 = new PersistentALDedupStore(dedupProvider);
-        await dedup2.ready();
-        expect(dedup2.has('msg-1', nowMs + 25)).toBe(true);
-        expect(dedup2.has('msg-1', nowMs + 51)).toBe(false);
-
-        const orderingProvider = new InMemoryPersistenceProvider<string, ALOrderingTrackSnapshot>();
-        const ordering1 = new PersistentALOrderingStore(orderingProvider);
-        await ordering1.ready();
-        await ordering1.accept(createOrderedMessage(2), nowMs);
-
-        const ordering2 = new PersistentALOrderingStore(orderingProvider);
-        await ordering2.ready();
-        expect(ordering2.peek(createOrderedMessage(1), nowMs + 1)).toMatchObject({
-            status: 'in-order',
-            releasableSeqs: [2]
-        });
-
-        const supersedenceProvider = new InMemoryPersistenceProvider<string, ALSupersedencePersistenceValue>();
-        const supersedence1 = new PersistentALSupersedenceStore(
-            supersedenceProvider
-        );
-        await supersedence1.ready();
-        await supersedence1.accept(
-            {
-                key: 'presence:room-1',
-                msgId: 'msg-new',
-                seq: 2,
-                ts: nowMs
-            },
-            nowMs
-        );
-
-        const supersedence2 = new PersistentALSupersedenceStore(
-            supersedenceProvider
-        );
-        await supersedence2.ready();
-        expect(
-            supersedence2.peek(
-                {
-                    key: 'presence:room-1',
-                    msgId: 'msg-old',
-                    seq: 1,
-                    ts: nowMs - 1
-                },
-                nowMs + 1
-            )
-        ).toMatchObject({
-            status: 'superseded',
-            latestMsgId: 'msg-new'
-        });
-    });
-
-    it('rehydrates pending acknowledgements and control event history', async () => {
-        const provider = new InMemoryPersistenceProvider<string, ALControlPersistenceValue>();
-        const tracker1 = new PersistentALControlTracker(provider);
-        await tracker1.ready();
-
-        await tracker1.accept(
-            newALNackControlMessage('peer-2', 'self', 'msg-1', 'gap')
-        );
-        await tracker1.trackPendingAck(
-            'msg-1',
-            'upstream-peer',
-            'subtree-complete',
-            ['peer-2'],
-            false
-        );
-
-        const tracker2 = new PersistentALControlTracker(provider);
-        await tracker2.ready();
-
-        expect(tracker2.read('msg-1').nacks).toHaveLength(1);
-        expect(tracker2.readPendingAck('msg-1')).toMatchObject({
-            toPeerId: 'upstream-peer',
-            localReady: false,
-            expectedFromPeerIds: ['peer-2'],
-            ackedFromPeerIds: []
-        });
-
-        expect(await tracker2.markPendingAckLocalReady('msg-1')).toBeUndefined();
-
-        const acceptance = await tracker2.accept(
-            newALAckControlMessage('peer-2', 'self', 'msg-1', 'delivered')
-        );
-        expect(acceptance.completedPendingAcks).toEqual([
-            {
-                msgId: 'msg-1',
-                toPeerId: 'upstream-peer',
-                status: 'subtree-complete'
-            }
-        ]);
     });
 
     it('keeps inbound dedup decisions across runtime restarts when stores are persisted', async () => {
@@ -177,7 +69,7 @@ describe('Durable AL runtime stores', () => {
             }
         );
 
-        await runtime1.handleIncomingMessage(msg, 'peer-1');
+        await runtime1.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
 
         const restartedRuntime = createDefaultInboundRuntime(
@@ -185,7 +77,7 @@ describe('Durable AL runtime stores', () => {
             dispatchedMsgIds
         );
 
-        await restartedRuntime.handleIncomingMessage(msg, 'peer-1');
+        await restartedRuntime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
     });
 
@@ -198,7 +90,7 @@ describe('Durable AL runtime stores', () => {
         const seq2 = createBufferedOrderedMessage(2, 'two');
         const seq1 = createBufferedOrderedMessage(1, 'one');
 
-        await runtime1.handleIncomingMessage(seq2, 'peer-1');
+        await runtime1.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([]);
 
         const runtime2 = createDefaultInboundRuntime(
@@ -207,7 +99,7 @@ describe('Durable AL runtime stores', () => {
             controlMessages
         );
 
-        await runtime2.handleIncomingMessage(seq1, 'peer-1');
+        await runtime2.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
         expect(controlMessages.map((msg) => msg.payload.typeId)).toContain(
@@ -286,15 +178,19 @@ describe('Durable AL runtime stores', () => {
         );
 
         await restartedForRepair.acceptControlMessage(
-            newALNackControlMessage('peer-1', 'self', seq2.id.msgId, 'gap', {
-                status: 'gap',
-                trackKey: toALOrderingTrackKey(seq1),
-                seq: 2,
-                expectedSeq: 1,
-                lastContiguousSeq: 0,
-                missingSeqs: [1],
-                releasableSeqs: []
-            })
+            newALNackControlMessage(
+                { v: 2, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
+                {
+                    msgId: seq2.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'gap',
+                    observedAtEpochMs: 1,
+                    orderingKey: toALOrderingTrackKey(seq1),
+                    expectedSeq: 1,
+                    missingSeqs: [1]
+                }
+            )
         );
 
         expect(sent.map((entry) => entry.msgId)).toContain(seq1.id.msgId);
@@ -397,16 +293,14 @@ function createDefaultInboundRuntime(
         selfPeerId: 'self',
         inbox: new InMemoryQueueBox(new Map<Key, ResourceEntry>()),
         stores: stores.runtimeStores,
-        planIncomingMessage: (msg, fromPeerId, runtime) =>
+        planIncomingMessage: (msg, source, observations) =>
             planALMessageHandling(msg, {
                 selfPeerId: 'self',
-                fromPeerId,
+                fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
                 connectedPeerIds: ['peer-1', 'peer-2'],
                 groupMemberPeerIds: ['self', 'peer-1', 'peer-2'],
                 overlayNeighborPeerIds: ['peer-2'],
-                dedupStore: runtime.dedupStore,
-                orderingStore: runtime.orderingStore,
-                supersedenceStore: runtime.supersedenceStore
+                ...observations
             }),
         readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),

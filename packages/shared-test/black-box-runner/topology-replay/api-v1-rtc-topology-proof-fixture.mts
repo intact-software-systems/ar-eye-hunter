@@ -1,13 +1,14 @@
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { ManagedApiServerPlan } from '../managed-api/with-managed-api-server-plans.mts';
 import { ApiV1RtcTopologyProofApi, type ProofGroupInput, type ProofSession } from './api-v1-rtc-topology-proof-api.mts';
 import { ApiV1RtcTopologyProofSocket } from './api-v1-rtc-topology-proof-websocket.mts';
 
-type ProofServerTopologyInput = Readonly<{
-    env: Record<string, string>;
-    primaryPlan: ManagedApiServerPlan;
-    secondaryPlan: ManagedApiServerPlan;
-    tertiaryPlan: ManagedApiServerPlan;
-}>;
+interface ProofServerTopologyInput {
+    readonly env: Record<string, string>;
+    readonly primaryPlan: ManagedApiServerPlan;
+    readonly secondaryPlan: ManagedApiServerPlan;
+    readonly tertiaryPlan: ManagedApiServerPlan;
+}
 
 export async function loginProofSessions(
     api: ApiV1RtcTopologyProofApi,
@@ -74,13 +75,14 @@ export async function prepareGroup(
 
 export async function attachAllSessions(
     api: ApiV1RtcTopologyProofApi,
-    sessions: readonly ProofSession[]
+    sessions: readonly ProofSession[],
+    groupRef: GroupRef
 ): Promise<readonly ApiV1RtcTopologyProofSocket[]> {
     const sockets: ApiV1RtcTopologyProofSocket[] = [];
     try {
         for (const session of sessions) {
             const ticket = await api.issueWebSocketTicket(session);
-            sockets.push(await ApiV1RtcTopologyProofSocket.open(session, ticket));
+            sockets.push(await ApiV1RtcTopologyProofSocket.open(session, ticket, groupRef));
         }
         return sockets;
     }

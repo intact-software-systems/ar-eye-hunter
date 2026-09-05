@@ -19,6 +19,7 @@ export interface PublishRallarServerWsMessageInput {
     readonly fanout: RallarServerWsFanout;
     readonly wakeOutbox?: () => void;
     readonly audience?: RallarServerWsRoomAudience;
+    readonly admittedPeerIds?: readonly string[];
     readonly nowEpochMs: number;
 }
 
@@ -46,7 +47,8 @@ export async function publishRallarServerWsMessage(
                 input.message,
                 input.audience === undefined
                     ? undefined
-                    : resolveAuthorizedRoomSessionIds(input.message, input.audience, input.nowEpochMs)
+                    : resolveAuthorizedRoomSessionIds(input.message, input.audience, input.nowEpochMs),
+                input.admittedPeerIds
             );
             if (result.status === 'no-recipients') {
                 console.warn(`Rallar server WS topic had no recipients: ${input.message.route.topicId}`);

@@ -33,7 +33,7 @@ import type {
     ReconcileGroupTopologyResult,
     ReconfigureGroupTopologyInput
 } from './group-topology-planning-contracts.ts';
-import { materializeRtcOverlayTopologyBroadcastMessage } from './materialize-rtc-overlay-topology-broadcast-message.ts';
+import { materializeRtcOverlayTopologyMessages } from './materialize-rtc-overlay-topology-messages.ts';
 import {
     consultsReplanningPolicy,
     resolveTopologyPlanAction,
@@ -44,39 +44,54 @@ import {
 } from './resolve-topology-plan-action.ts';
 import { selectGroupTopologyPlanningSnapshot } from './select-group-topology-planning-snapshot.ts';
 
-export interface GroupTopologyPlanningServiceDependencies {
-    readonly findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
-    readonly queryService: Pick<GroupTopologyConfigQueryService, 'readConfig' | 'readResolvedTopologyConfig'>;
-    readonly topologyService: RallarRtcTopologyService;
-    readonly readCurrentGroupSnapshot: (
-        groupRef: GroupRef,
-        knownGroup: GroupSnapshot | undefined
-    ) => Promise<GroupSnapshot | undefined>;
-    readonly readRttMeasurements: (
-        group: GroupSnapshot
-    ) => readonly RttMeasurementInfo[] | Promise<readonly RttMeasurementInfo[]>;
-    readonly topologyMode: 'local' | 'persistent';
-    /**
-     * The stored lifecycle-policy read, for the stage-keyed planning gate
-     * (plan slice 4b) — the same port every other topology consumer takes.
-     * Absent means no policy store exists in this composition; the default
-     * preset's mode then governs (`toGroupTopologyReplanningRead` owns that
-     * fold).
-     */
-    readonly readLifecyclePolicy?: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
-    readonly publisher?: GroupTopologyPublisher;
-    readonly serverDefaults?: GroupTopologyServerOptions;
-}
-
 interface MeasuredGroupTopologyPlan {
     readonly computed: ReconcileGroupTopologyResult;
     readonly computeDurationMs: number;
 }
 
-export class GroupTopologyPlanningService {
-    private readonly dependencies: GroupTopologyPlanningServiceDependencies;
+export namespace GroupTopologyPlanningService {
+    export interface Dependencies {
+        readonly findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
+        readonly queryService: Pick<GroupTopologyConfigQueryService, 'readConfig' | 'readResolvedTopologyConfig'>;
+        readonly topologyService: RallarRtcTopologyService;
+        readonly readCurrentGroupSnapshot: (
+            groupRef: GroupRef,
+            knownGroup: GroupSnapshot | undefined
+        ) => Promise<GroupSnapshot | undefined>;
+        readonly readRttMeasurements: (
+            group: GroupSnapshot
+        ) => readonly RttMeasurementInfo[] | Promise<readonly RttMeasurementInfo[]>;
+        readonly topologyMode: 'local' | 'persistent';
+        /**
+         * The stored lifecycle-policy read, for the stage-keyed planning gate
+         * (plan slice 4b) — the same port every other topology consumer takes.
+         * Absent means no policy store exists in this composition; the default
+         * preset's mode then governs (`toGroupTopologyReplanningRead` owns that
+         * fold).
+         */
+        readonly readLifecyclePolicy?: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
+        readonly publisher?: GroupTopologyPublisher;
+        readonly serverDefaults?: GroupTopologyServerOptions;
+    }
 
-    constructor(dependencies: GroupTopologyPlanningServiceDependencies) {
+    export interface RttMeasurementInput {
+        readonly group: GroupSnapshot;
+        readonly rttMeasurements: readonly RttMeasurementInfo[];
+        readonly topologyOptions: EffectiveGroupTopologyConfig;
+        readonly overlaySnapshot: RallarOverlayTopologySnapshot | undefined;
+    }
+    export interface PublicationInput {
+        readonly group: GroupSnapshot;
+        readonly result: RallarRtcTopologyUpdateResult;
+        readonly publisher: GroupTopologyPublisher | undefined;
+        readonly publish: boolean;
+    }
+}
+
+export class GroupTopologyPlanningService {
+    private readonly dependencies: GroupTopologyPlanningService.Dependencies;
+
+    constructor(dependencies: GroupTopologyPlanningService.Dependencies) {
         this.dependencies = dependencies;
     }
 
@@ -122,7 +137,7 @@ export class GroupTopologyPlanningService {
             : requireGroupTopologyPlanningSnapshot(input.groupRef, currentGroup);
         const [config, rttMeasurements, replanning] = await Promise.all([
             this.dependencies.queryService.readResolvedTopologyConfig(group.group, input.requestOptions),
-            this.readRawRttMeasurements(group),
+            this.dependencies.readRttMeasurements(group),
             this.readTopologyReplanningMode(group)
         ]);
         return {
@@ -185,12 +200,12 @@ export class GroupTopologyPlanningService {
         }
         const result = this.dependencies.topologyService.updateGroupTopology(
             group,
-            this.filterRttMeasurementsForGroup(
+            this.filterRttMeasurementsForGroup({
                 group,
-                await this.readRawRttMeasurements(group),
-                config.effective,
-                previous
-            ),
+                rttMeasurements: await this.dependencies.readRttMeasurements(group),
+                topologyOptions: config.effective,
+                overlaySnapshot: previous
+            }),
             { previous, topologyOptions: config.effective }
         );
         this.validateComputedGroupTopology({
@@ -198,12 +213,12 @@ export class GroupTopologyPlanningService {
             action: 'planned',
             planningObservation: null
         });
-        const published = await this.publishIfRequested(
+        const published = await this.publishIfRequested({
             group,
             result,
-            input.publisher,
-            input.publish ?? true
-        );
+            publisher: input.publisher,
+            publish: input.publish ?? true
+        });
         return toReconfigureGroupTopologyResponse({
             groupRef: input.groupRef,
             result,
@@ -257,12 +272,12 @@ export class GroupTopologyPlanningService {
         }
         const result = this.dependencies.topologyService.flushDueRttTopologyUpdate(
             group,
-            this.filterRttMeasurementsForGroup(
+            this.filterRttMeasurementsForGroup({
                 group,
-                await this.readRawRttMeasurements(group),
-                config.effective,
-                previous
-            ),
+                rttMeasurements: await this.dependencies.readRttMeasurements(group),
+                topologyOptions: config.effective,
+                overlaySnapshot: previous
+            }),
             { previous, topologyOptions: config.effective }
         );
         if (!result) {
@@ -273,12 +288,12 @@ export class GroupTopologyPlanningService {
             action: 'planned',
             planningObservation: null
         });
-        const published = await this.publishIfRequested(
+        const published = await this.publishIfRequested({
             group,
             result,
-            input.publisher,
-            input.publish ?? true
-        );
+            publisher: input.publisher,
+            publish: input.publish ?? true
+        });
         return toReconfigureGroupTopologyResponse({
             groupRef: input.groupRef,
             result,
@@ -337,18 +352,10 @@ export class GroupTopologyPlanningService {
         return group;
     }
 
-    private async readRawRttMeasurements(
-        group: GroupSnapshot
-    ): Promise<readonly RttMeasurementInfo[]> {
-        return await this.dependencies.readRttMeasurements(group);
-    }
-
     private filterRttMeasurementsForGroup(
-        group: GroupSnapshot,
-        rttMeasurements: readonly RttMeasurementInfo[],
-        topologyOptions: EffectiveGroupTopologyConfig,
-        overlaySnapshot: RallarOverlayTopologySnapshot | undefined
+        input: GroupTopologyPlanningService.RttMeasurementInput
     ): readonly RttMeasurementInfo[] {
+        const { group, rttMeasurements, topologyOptions, overlaySnapshot } = input;
         if (rttMeasurements.length === 0) {
             return rttMeasurements;
         }
@@ -364,11 +371,9 @@ export class GroupTopologyPlanningService {
     }
 
     private async publishIfRequested(
-        group: GroupSnapshot,
-        result: RallarRtcTopologyUpdateResult,
-        publisher: GroupTopologyPublisher | undefined,
-        publish: boolean
+        input: GroupTopologyPlanningService.PublicationInput
     ): Promise<boolean> {
+        const { group, result, publisher, publish } = input;
         if (!publish) {
             return false;
         }
@@ -378,15 +383,18 @@ export class GroupTopologyPlanningService {
             return false;
         }
         const createdAtEpochMs = this.dependencies.topologyService.readNowEpochMs();
-        const deliveredCount = await resolvedPublisher(
-            materializeRtcOverlayTopologyBroadcastMessage(group, result.snapshot, {
-                workId: crypto.randomUUID(),
-                createdAtEpochMs,
-                expiresAtEpochMs: createdAtEpochMs + RTC_TOPOLOGY_REPLAY_RETENTION_MS
-            }),
-            result.snapshot
-        );
-        const published = deliveredCount > 0;
+        const pages = materializeRtcOverlayTopologyMessages({
+            snapshot: result.snapshot,
+            targetGroupSnapshotVersion: group.group.snapshotVersion,
+            workId: crypto.randomUUID(),
+            createdAtEpochMs,
+            expiresAtEpochMs: createdAtEpochMs + RTC_TOPOLOGY_REPLAY_RETENTION_MS
+        });
+        let published = false;
+        for (const page of pages) {
+            const deliveredCount = await resolvedPublisher(page, result.snapshot);
+            published = deliveredCount > 0 || published;
+        }
         this.recordTopologyPublication(published);
         return published;
     }

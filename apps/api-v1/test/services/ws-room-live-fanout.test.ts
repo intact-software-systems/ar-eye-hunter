@@ -13,7 +13,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createGroupSnapshot } from '../../../../packages/tests/shared-server/rallar-system/group-state/snapshot/group-state-snapshot-test-fixtures.ts';
 import { createOpenTestWebSocket } from '../../../../packages/tests/shared-server/rallar-system/websocket/test-support/open-test-websocket.ts';
@@ -82,7 +82,7 @@ Deno.test('API authorized broadcast keeps exclusions and closed connections out 
     await putRoomSnapshot(runtime.repository, snapshot);
     const closedSocket = createOpenTestWebSocket();
     Object.defineProperty(closedSocket, 'readyState', { value: WebSocket.CLOSED });
-    runtime.socket.addConnection(new ConnectionContext('closed-session', closedSocket));
+    runtime.socket.addConnection(new ConnectionContext({ id: 'closed-session', socket: closedSocket }));
     const message = newALBroadcastMessage(
         'session-1',
         newALEventRoute('room.chat', 'group-1', 'broadcast-1'),
@@ -261,7 +261,7 @@ function createLiveRoomRuntime(): LiveRoomTestRuntime {
             assert.ok(typeof data === 'string');
             sent.push({ sessionId, encoded: data });
         };
-        socket.addConnection(new ConnectionContext(sessionId, webSocket));
+        socket.addConnection(new ConnectionContext({ id: sessionId, socket: webSocket }));
     }
     const service = createDefaultWsQueueBoxServerService({
         name: 'api-live-room-test',

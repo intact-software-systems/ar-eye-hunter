@@ -1,26 +1,24 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
+import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarRtcLifecycleEvent, RallarRtcStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
+import type * as RoomMutationWorkflowsModule from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
+import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
+import type * as StateEventHttpApiModule from '@shared-web/browser/state-read/state-event-http-api.ts';
+import type * as AuthModule from '@shared/api/auth.ts';
+import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
+import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
+import type { QRtcClientCallbacks } from '@shared/webrtc/qrtc-client-callbacks.ts';
 import type { QRtcDataChannel, RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
-import type { QRtcClientCallbacks } from '@shared/webrtc/QRtcClientCallbacks.ts';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
 import { createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
-
-import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
-type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
-type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
-type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
-type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
-type RoomMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
-type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
-type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
-type AuthModule = typeof import('@shared/api/auth.ts');
-type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
-type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
-
-const CLIENT_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repository.client-state-snapshots';
-const GROUP_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repository.group-state-snapshots';
 
 const mocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import(
@@ -40,26 +38,28 @@ const mocks = await vi.hoisted(async () => {
         rtcRxStreamer: vi.mocked(ctx.middleware.rtcRxStreamer),
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocketClient: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
-        clearSession: vi.fn<AuthModule['clearSession']>(),
-        hydrateStateCache: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['hydrate']>(() => Promise.resolve()),
+        clearSession: vi.fn<typeof AuthModule.clearSession>(),
+        hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle['hydrate']>(() => Promise.resolve()),
         initialiseApiMiddleware: vi.fn<BrowserTransportRuntimePort['init']>(() => Promise.resolve(ctx)),
-        createAndJoinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['createAndJoinStateGroup']>(
+        createAndJoinStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.createAndJoinStateGroup>(
             () => Promise.reject(new Error('create not mocked'))
         ),
-        joinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['joinStateGroup']>(() => Promise.reject(new Error('join not mocked'))),
-        leaveStateGroup: vi.fn<RoomGroupStateWorkflowsModule['leaveStateGroup']>(() => Promise.reject(new Error('leave not mocked'))),
-        updateStateGroupMetadata: vi.fn<RoomMutationWorkflowsModule['updateStateGroupMetadata']>(
+        joinStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.joinStateGroup>(() => Promise.reject(new Error('join not mocked'))),
+        leaveStateGroup: vi.fn<typeof RoomGroupStateWorkflowsModule.leaveStateGroup>(() => Promise.reject(new Error('leave not mocked'))),
+        updateStateGroupMetadata: vi.fn<typeof RoomMutationWorkflowsModule.updateStateGroupMetadata>(
             () => Promise.reject(new Error('metadata update not mocked'))
         ),
-        loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(ctx.session)),
-        listStateClientEvents: vi.fn<StateEventHttpApiModule['listStateClientEvents']>(() => Promise.reject(new Error('client events not mocked'))),
-        listStateClientEventPage: vi.fn<StateEventHttpApiModule['listStateClientEventPage']>(() => Promise.reject(new Error('client event page not mocked'))),
-        listStateGroupEvents: vi.fn<StateEventHttpApiModule['listStateGroupEvents']>(() => Promise.reject(new Error('group events not mocked'))),
-        listStateGroupEventPage: vi.fn<StateEventHttpApiModule['listStateGroupEventPage']>(
+        loginToApi: vi.fn<typeof AuthApiModule.loginToApi>(() => Promise.resolve(ctx.session)),
+        listStateClientEvents: vi.fn<typeof StateEventHttpApiModule.listStateClientEvents>(() => Promise.reject(new Error('client events not mocked'))),
+        listStateClientEventPage: vi.fn<typeof StateEventHttpApiModule.listStateClientEventPage>(() =>
+            Promise.reject(new Error('client event page not mocked'))
+        ),
+        listStateGroupEvents: vi.fn<typeof StateEventHttpApiModule.listStateGroupEvents>(() => Promise.reject(new Error('group events not mocked'))),
+        listStateGroupEventPage: vi.fn<typeof StateEventHttpApiModule.listStateGroupEventPage>(
             () => Promise.reject(new Error('group event page not mocked'))
         ),
-        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() => Promise.resolve({ loggedOut: true })),
-        registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
+        logoutFromApi: vi.fn<typeof AuthApiModule.logoutFromApi>(() => Promise.resolve({ loggedOut: true })),
+        registerWithApi: vi.fn<typeof AuthApiModule.registerWithApi>(() =>
             Promise.resolve({
                 clientId: 'client-new',
                 username: 'new-user',
@@ -67,32 +67,32 @@ const mocks = await vi.hoisted(async () => {
                 registeredAtEpochMs: 1_000
             })
         ),
-        onCacheChange: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>(() => vi.fn()),
-        readSession: vi.fn<AuthModule['readSession']>(() => ctx.session),
-        refreshStateSnapshots: vi.fn<RefreshStateSnapshotsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
-        findClientStateSnapshotByPrincipalId: vi.fn<ClientStateSnapshotsRepositoryModule['findClientStateSnapshotByPrincipalId']>(throwClientRepositoryMissing),
-        getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']>(throwClientRepositoryMissing),
-        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<
-            GroupStateSnapshotsRepositoryModule[
-                'findFirstGroupStateSnapshotRefSessionIdIsIn'
-            ]
-        >(throwGroupRepositoryMissing),
-        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(throwGroupRepositoryMissing),
-        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>(throwGroupRepositoryMissing),
-        writeSession: vi.fn<AuthModule['writeSession']>()
+        onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle['onChange']>(() => vi.fn()),
+        readSession: vi.fn<typeof AuthModule.readSession>(() => ctx.session),
+        refreshStateSnapshots: vi.fn<typeof RefreshStateSnapshotsModule.refreshStateSnapshots>(() => Promise.resolve({ clients: [], groups: [] })),
+        findClientStateSnapshotByPrincipalId: vi.fn<typeof ClientStateSnapshotsRepositoryModule.findClientStateSnapshotByPrincipalId>(
+            throwClientRepositoryMissing
+        ),
+        getAllClientStateSnapshots: vi.fn<typeof ClientStateSnapshotsRepositoryModule.getAllClientStateSnapshots>(throwClientRepositoryMissing),
+        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn>(
+            throwGroupRepositoryMissing
+        ),
+        findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(throwGroupRepositoryMissing),
+        getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>(throwGroupRepositoryMissing),
+        writeSession: vi.fn<typeof AuthModule.writeSession>()
     };
 });
 
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
-    (): Partial<MiddlewareModule> => ({
+    (): Partial<typeof MiddlewareModule> => ({
         initialiseMiddleware: async (_session, _topic, options) => (await mocks.initialiseApiMiddleware(options)).middleware
     })
 );
 
 vi.mock(
     import('@shared-web/browser/state-read/state-event-http-api.ts'),
-    (): Partial<StateEventHttpApiModule> => ({
+    (): Partial<typeof StateEventHttpApiModule> => ({
         listStateClientEventPage: mocks.listStateClientEventPage,
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
@@ -100,7 +100,7 @@ vi.mock(
     })
 );
 
-vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<AuthApiModule> => ({
+vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<typeof AuthApiModule> => ({
     loginToApi: mocks.loginToApi,
     logoutFromApi: mocks.logoutFromApi,
     registerWithApi: mocks.registerWithApi
@@ -108,31 +108,32 @@ vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<Auth
 
 vi.mock(
     import('@shared-web/browser/rooms/room-group-state-workflows.ts'),
-    (): Partial<RoomGroupStateWorkflowsModule> => ({
+    (): Partial<typeof RoomGroupStateWorkflowsModule> => ({
         createAndJoinStateGroup: mocks.createAndJoinStateGroup,
         joinStateGroup: mocks.joinStateGroup,
         leaveStateGroup: mocks.leaveStateGroup
     })
 );
-vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), (): Partial<RefreshStateSnapshotsModule> => ({
+vi.mock(import('@shared-web/browser/state-read/refresh-state-snapshots.ts'), (): Partial<typeof RefreshStateSnapshotsModule> => ({
     refreshStateSnapshots: mocks.refreshStateSnapshots
 }));
-vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'), (): Partial<RoomMutationWorkflowsModule> => ({
+vi.mock(import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts'), (): Partial<typeof RoomMutationWorkflowsModule> => ({
     updateStateGroupMetadata: mocks.updateStateGroupMetadata
 }));
 
 vi.mock(
     import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
-    (): Partial<StateCacheLifecycleModule> => ({
+    (): Partial<typeof StateCacheLifecycleModule> => ({
         browserStateCacheLifecycle: {
             hydrate: mocks.hydrateStateCache,
             onChange: mocks.onCacheChange,
-            initialise: vi.fn()
+            initialise: vi.fn(),
+            cancelSnapshotAssemblies: vi.fn(() => undefined)
         }
     })
 );
 
-vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
+vi.mock(import('@shared/api/auth.ts'), (): Partial<typeof AuthModule> => ({
     clearSession: mocks.clearSession,
     isLoggedIn: vi.fn(() => true),
     readSession: mocks.readSession,
@@ -141,7 +142,7 @@ vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
 
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
-    (): Partial<ClientStateSnapshotsRepositoryModule> => ({
+    (): Partial<typeof ClientStateSnapshotsRepositoryModule> => ({
         findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
         getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
     })
@@ -149,7 +150,7 @@ vi.mock(
 
 vi.mock(
     import('@shared/repository/group-state-snapshots-repository.ts'),
-    (): Partial<GroupStateSnapshotsRepositoryModule> => ({
+    (): Partial<typeof GroupStateSnapshotsRepositoryModule> => ({
         findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
         findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
         getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
@@ -709,21 +710,21 @@ describe('Rallar RTC recovery', () => {
     });
 });
 
-function createChannelHealth(
-    input: Readonly<{
-        peerId: string;
-        label: string;
-        state: string;
-        readyState: RTCDataChannelState;
-    }>
-): RtcDataChannelHealth {
+interface ChannelHealthInput {
+    readonly peerId: string;
+    readonly label: string;
+    readonly state: string;
+    readonly readyState: RTCDataChannelState;
+}
+
+function createChannelHealth(input: ChannelHealthInput): RtcDataChannelHealth {
     return {
         peerId: input.peerId,
         label: input.label,
         state: input.state,
         role: 'Initiator',
         readyState: input.readyState,
-        binaryType: 'arraybuffer' as const,
+        binaryType: 'arraybuffer',
         bufferedAmount: 0,
         bufferedAmountLowThreshold: 0,
         queuedItemCount: 0,
@@ -733,7 +734,7 @@ function createChannelHealth(
         flowControl: {
             highWatermarkBytes: 64 * 1024,
             lowWatermarkBytes: 16 * 1024,
-            overflow: 'drop-new' as const,
+            overflow: 'drop-new',
             maxQueueItems: 32
         },
         counters: {

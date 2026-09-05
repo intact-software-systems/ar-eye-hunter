@@ -1,9 +1,5 @@
-import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
-import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
+import { SimulatedMediaStream, SimulatedMediaTrack } from '../../shared/native-rtc-media-fixture.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
@@ -15,19 +11,6 @@ type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/
 type AuthModule = typeof import('@shared/api/auth.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
-
-interface ChannelHealthFixtureInput {
-    readonly peerId: string;
-    readonly label: string;
-    readonly state: string;
-    readonly readyState: RTCDataChannelState;
-}
-
-interface GroupSnapshotFixtureScope {
-    readonly applicationId?: string;
-    readonly workspaceId?: string;
-}
-
 const mocks = await vi.hoisted(async () => {
     const { createLightweightBrowserFacadeTestMocks } = await import(
         '../lightweight-browser-facade-test-mocks.ts'
@@ -71,7 +54,8 @@ vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts
     browserStateCacheLifecycle: {
         hydrate: mocks.hydrateStateCache,
         onChange: mocks.onCacheChange,
-        initialise: vi.fn()
+        initialise: vi.fn(),
+        cancelSnapshotAssemblies: vi.fn(() => undefined)
     }
 }));
 
@@ -140,9 +124,7 @@ describe('Rallar media sources', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        const stream = {
-            id: 'local-stream-1'
-        } as MediaStream;
+        const stream = new SimulatedMediaStream('local-stream-1', []);
         const laneOpenRequests: string[] = [];
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             async (peerId, laneId = 'reliable') => {
@@ -190,12 +172,12 @@ describe('Rallar media sources', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        const audioTrack = createMediaTrack('audio-track-1', 'audio');
-        const videoTrack = createMediaTrack('video-track-1', 'video');
-        const microphoneStream = createMediaStream('microphone-stream', [
+        const audioTrack = new SimulatedMediaTrack('audio', 'audio-track-1');
+        const videoTrack = new SimulatedMediaTrack('video', 'video-track-1');
+        const microphoneStream = new SimulatedMediaStream('microphone-stream', [
             audioTrack
         ]);
-        const cameraStream = createMediaStream('camera-stream', [videoTrack]);
+        const cameraStream = new SimulatedMediaStream('camera-stream', [videoTrack]);
         const facade = createRallarFacade();
 
         const microphone = await facade.media.microphone.start({
@@ -230,8 +212,8 @@ describe('Rallar media sources', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        const screenTrack = createMediaTrack('screen-track-1', 'video');
-        const screenStream = createMediaStream('screen-stream', [screenTrack]);
+        const screenTrack = new SimulatedMediaTrack('video', 'screen-track-1');
+        const screenStream = new SimulatedMediaStream('screen-stream', [screenTrack]);
         const laneOpenRequests: string[] = [];
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             async (peerId, laneId = 'reliable') => {
@@ -277,13 +259,6 @@ describe('Rallar media sources', () => {
     });
 });
 
-function findLatestWsAnyMessageCallback() {
-    return vi.mocked(mocks.ctx.middleware.webSocketQueueBox.onAnyInboxMessageDo)
-        .mock.calls
-        .filter(([callbackId]) => callbackId === 'rallar:ws:any-message')
-        .at(-1)?.[1];
-}
-
 function resetRepositoryDoublesToMissing(): void {
     mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
     mocks.getAllClientStateSnapshots.mockReturnValue([]);
@@ -315,149 +290,4 @@ function resetMiddlewareDoublesToDefaults(): void {
     vi.mocked(webSocketQueueBox.close).mockImplementation((code, reason) => {
         webSocketQueueBox.socket.close(code, reason);
     });
-}
-
-function createChannelHealth(input: ChannelHealthFixtureInput) {
-    return {
-        peerId: input.peerId,
-        label: input.label,
-        state: input.state,
-        role: 'Initiator',
-        readyState: input.readyState,
-        binaryType: 'arraybuffer' as const,
-        bufferedAmount: 0,
-        bufferedAmountLowThreshold: 0,
-        queuedItemCount: 0,
-        rawCallbackCount: 0,
-        messageCallbackCount: 0,
-        lifecycleCallbackCount: 0,
-        flowControl: {
-            highWatermarkBytes: 64 * 1024,
-            lowWatermarkBytes: 16 * 1024,
-            overflow: 'drop-new' as const,
-            maxQueueItems: 32
-        },
-        counters: {
-            sent: 0,
-            queued: 0,
-            dropped: 0,
-            replaced: 0,
-            closed: 0,
-            flushed: 0,
-            droppedOldest: 0,
-            droppedStale: 0,
-            receivedRaw: 0,
-            receivedString: 0,
-            receivedBinary: 0
-        }
-    };
-}
-
-function mockGroupSnapshot(snapshot: GroupSnapshot): void {
-    mockGroupSnapshots([snapshot]);
-}
-
-function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
-    mocks.getAllGroupStateSnapshots.mockImplementation(() => [...snapshots]);
-    mocks.findGroupStateSnapshotByRef.mockImplementation((ref) =>
-        snapshots.find((snapshot) =>
-            snapshot.group.groupId === ref.groupId &&
-            snapshot.group.applicationId === ref.applicationId &&
-            (snapshot.group.workspaceId ?? '') === (ref.workspaceId ?? '')
-        )
-    );
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation((sessionId) =>
-        snapshots.find((snapshot) => sessionId === snapshot.group.groupId)?.group
-    );
-}
-
-function withSnapshotVersion(
-    snapshot: GroupSnapshot,
-    snapshotVersion: number
-): GroupSnapshot {
-    return {
-        ...snapshot,
-        group: {
-            ...snapshot.group,
-            snapshotVersion
-        }
-    };
-}
-
-function createGroupSnapshot(
-    groupId: string,
-    sessionIds: readonly string[],
-    scope: GroupSnapshotFixtureScope = {}
-): GroupSnapshot {
-    const applicationId = scope.applicationId ?? 'app-1';
-    const workspaceId = scope.workspaceId ?? 'workspace-1';
-    return createGroupSnapshotFixture({
-        applicationId,
-        workspaceId,
-        groupId,
-        sessionIds
-    });
-}
-
-function createMediaTrack(
-    id: string,
-    kind: 'audio' | 'video'
-): MediaStreamTrack {
-    const listeners = new Set<EventListenerOrEventListenerObject>();
-    let readyState: MediaStreamTrackState = 'live';
-    const track = toTestDouble<MediaStreamTrack>({
-        id,
-        kind,
-        enabled: true,
-        get readyState() {
-            return readyState;
-        },
-        addEventListener: vi.fn((
-            type: string,
-            listener: EventListenerOrEventListenerObject
-        ) => {
-            if (type === 'ended') {
-                listeners.add(listener);
-            }
-        }),
-        removeEventListener: vi.fn((
-            type: string,
-            listener: EventListenerOrEventListenerObject
-        ) => {
-            if (type === 'ended') {
-                listeners.delete(listener);
-            }
-        }),
-        stop: vi.fn(() => {
-            readyState = 'ended';
-            const event = new Event('ended');
-            for (const listener of listeners) {
-                if (typeof listener === 'function') {
-                    listener(event);
-                }
-                else {
-                    listener.handleEvent(event);
-                }
-            }
-        })
-    });
-
-    return track;
-}
-
-function createMediaStream(
-    id: string,
-    tracks: readonly MediaStreamTrack[]
-): MediaStream {
-    return toTestDouble<MediaStream>({
-        id,
-        active: tracks.some((track) => track.readyState !== 'ended'),
-        getTracks: vi.fn(() => [...tracks]),
-        getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
-        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video'))
-    });
-}
-
-function toTestDouble<T>(members: Partial<T>): T {
-    return members as T;
 }

@@ -1,7 +1,5 @@
 import type { RallarCallSignalEvent, RallarIncomingCallInvite } from '@shared-web/browser/rallar-calls-facade.ts';
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
@@ -9,8 +7,6 @@ import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '
 import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
-import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
-import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 import { createBrowserRtcPeerTestDouble } from '../rtc/browser-rtc-peer-test-double.ts';
 
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
@@ -33,11 +29,6 @@ interface ChannelHealthFixtureInput {
     readonly label: string;
     readonly state: string;
     readonly readyState: RTCDataChannelState;
-}
-
-interface GroupSnapshotFixtureScope {
-    readonly applicationId?: string;
-    readonly workspaceId?: string;
 }
 
 const mocks = await vi.hoisted(async () => {
@@ -91,7 +82,8 @@ vi.mock(
         browserStateCacheLifecycle: {
             hydrate: mocks.hydrateStateCache,
             onChange: mocks.onCacheChange,
-            initialise: vi.fn()
+            initialise: vi.fn(),
+            cancelSnapshotAssemblies: vi.fn(() => undefined)
         }
     })
 );
@@ -514,54 +506,8 @@ function createChannelHealth(input: ChannelHealthFixtureInput): RtcDataChannelHe
     };
 }
 
-function mockGroupSnapshot(snapshot: GroupSnapshot): void {
-    mockGroupSnapshots([snapshot]);
-}
-
-function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
-    mocks.getAllGroupStateSnapshots.mockImplementation(() => [...snapshots]);
-    mocks.findGroupStateSnapshotByRef.mockImplementation((ref) =>
-        snapshots.find((snapshot) =>
-            snapshot.group.groupId === ref.groupId &&
-            snapshot.group.applicationId === ref.applicationId &&
-            (snapshot.group.workspaceId ?? '') === (ref.workspaceId ?? '')
-        )
-    );
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation((sessionId) =>
-        snapshots.find((snapshot) => snapshot.group.groupId === sessionId)?.group
-    );
-}
-
 function mockGroupRepositoryMissing(): void {
     mocks.getAllGroupStateSnapshots.mockReturnValue([]);
     mocks.findGroupStateSnapshotByRef.mockReturnValue(undefined);
     mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockReturnValue(undefined);
-}
-
-function withSnapshotVersion(
-    snapshot: GroupSnapshot,
-    snapshotVersion: number
-): GroupSnapshot {
-    return {
-        ...snapshot,
-        group: {
-            ...snapshot.group,
-            snapshotVersion
-        }
-    };
-}
-
-function createGroupSnapshot(
-    groupId: string,
-    sessionIds: readonly string[],
-    scope: GroupSnapshotFixtureScope = {}
-): GroupSnapshot {
-    const applicationId = scope.applicationId ?? 'app-1';
-    const workspaceId = scope.workspaceId ?? 'workspace-1';
-    return createGroupSnapshotFixture({
-        applicationId,
-        workspaceId,
-        groupId,
-        sessionIds
-    });
 }

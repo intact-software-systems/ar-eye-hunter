@@ -61,10 +61,14 @@ describe('IndexedDB AL runtime stores', () => {
             inboundStores.admissionStore.commitMutations({
                 senderId: 'peer-default-schema',
                 expectedVersion: undefined,
+                versionExpireAtTimestamp: Date.now() + 60_000,
                 mutations: [{
                     kind: 'set-msg-owner',
                     msgId: 'message-default-schema',
-                    senderId: 'peer-default-schema'
+                    senderId: 'peer-default-schema',
+                    source: { kind: 'ws-client', peerId: 'peer-default-schema' },
+                    supersedenceKey: null,
+                    expireAtTimestamp: Date.now() + 60_000
                 }]
             })
         ).resolves.toBe('committed');
@@ -98,11 +102,11 @@ describe('IndexedDB AL runtime stores', () => {
         );
 
         const runtime1 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
-        await runtime1.handleIncomingMessage(msg, 'peer-1');
+        await runtime1.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
 
         const runtime2 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
-        await runtime2.handleIncomingMessage(msg, 'peer-1');
+        await runtime2.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
     });
 
@@ -114,11 +118,11 @@ describe('IndexedDB AL runtime stores', () => {
         const seq2 = createOrderedMulticastMessage(2, 'two');
         const seq1 = createOrderedMulticastMessage(1, 'one');
 
-        await runtime1.handleIncomingMessage(seq2, 'peer-1');
+        await runtime1.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([]);
 
         const runtime2 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
-        await runtime2.handleIncomingMessage(seq1, 'peer-1');
+        await runtime2.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
     });
@@ -139,13 +143,11 @@ describe('IndexedDB AL runtime stores', () => {
                 dbName,
                 namespace
             }),
-            planIncomingMessage: (msg, fromPeerId, runtime) =>
+            planIncomingMessage: (msg, source, observations) =>
                 planALMessageHandling(msg, {
                     selfPeerId: 'self',
-                    fromPeerId,
-                    dedupStore: runtime.dedupStore,
-                    orderingStore: runtime.orderingStore,
-                    supersedenceStore: runtime.supersedenceStore
+                    fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
+                    ...observations
                 }),
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
@@ -172,7 +174,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         await inbox.getAllKeys();
         await runtime.ready();
-        await runtime.handleIncomingMessage(msg, 'peer-1');
+        await runtime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
         expect(await inbox.getAllKeys()).toEqual([]);
@@ -217,7 +219,7 @@ describe('IndexedDB AL runtime stores', () => {
             }
         );
 
-        await runtime.handleIncomingMessage(msg, 'peer-1');
+        await runtime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         runtime.dispose();
 
         const claimed = await stores.admissionStore.claimReadyEffects({
@@ -244,7 +246,7 @@ describe('IndexedDB AL runtime stores', () => {
         expect(typeof inboxEffect.payload.entry.audit.expiryTs).toBe('object');
     });
 
-    it('expires inbound control history and owner versions with configured retention', async () => {
+    it('expires inbound control history and owner versions before rejecting late controls', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
@@ -278,42 +280,97 @@ describe('IndexedDB AL runtime stores', () => {
             await stores.admissionStore.commitMutations({
                 senderId: msg.id.senderId,
                 expectedVersion: undefined,
+                versionExpireAtTimestamp: Date.now() + 20,
                 mutations: [
                     {
                         kind: 'set-msg-owner',
                         msgId: msg.id.msgId,
-                        senderId: msg.id.senderId
+                        senderId: msg.id.senderId,
+                        source: { kind: 'ws-client', peerId: msg.id.senderId },
+                        supersedenceKey: null,
+                        expireAtTimestamp: Date.now() + 20
+                    },
+                    {
+                        kind: 'set-control-pending',
+                        msgId: msg.id.msgId,
+                        senderId: msg.id.senderId,
+                        value: {
+                            kind: 'pending',
+                            value: {
+                                toPeerId: 'upstream',
+                                status: 'subtree-complete',
+                                localReady: false,
+                                expectedFromPeerIds: ['peer-2', 'peer-3'],
+                                ackedFromPeerIds: []
+                            }
+                        },
+                        expireAtTimestamp: Date.now() + 20
+                    },
+                    {
+                        kind: 'set-control-owners',
+                        msgId: msg.id.msgId,
+                        expected: undefined,
+                        value: {
+                            ambiguous: false,
+                            values: [
+                                { peerId: 'peer-2', senderId: msg.id.senderId },
+                                { peerId: 'peer-3', senderId: msg.id.senderId }
+                            ]
+                        },
+                        expireAtTimestamp: Date.now() + 20
                     }
                 ]
             })
         ).toBe('committed');
 
         await stores.admissionStore.acceptControlMessage(
-            newALAckControlMessage('peer-2', 'self', msg.id.msgId)
+            newALAckControlMessage(
+                { v: 2, msgId: 'control-ack-peer-2', ts: 1, senderId: 'peer-2' },
+                {
+                    ackedMsgId: msg.id.msgId,
+                    fromPeerId: 'peer-2',
+                    toPeerId: 'self',
+                    status: 'accepted',
+                    observedAtEpochMs: 1
+                }
+            )
         );
 
-        const beforeExpiry = await stores.admissionStore.readIncomingMessage(
+        const source = { kind: 'ws-client' as const, peerId: 'peer-1' };
+        const beforeReadAtMs = Date.now();
+        const beforeExpiry = await stores.admissionStore.readIncomingMessage({
             msg,
-            'peer-1',
-            planner
-        );
+            source,
+            nowMs: beforeReadAtMs,
+            prePlan: planner(msg, source, { nowMs: beforeReadAtMs })
+        });
         expect(beforeExpiry.clientRecord?.version).toBe(2);
         expect(beforeExpiry.acks).toHaveLength(1);
 
         await vi.advanceTimersByTimeAsync(21);
 
-        await stores.admissionStore.acceptControlMessage(
-            newALAckControlMessage('peer-3', 'self', msg.id.msgId)
-        );
+        await expect(stores.admissionStore.acceptControlMessage(
+            newALAckControlMessage(
+                { v: 2, msgId: 'control-ack-peer-3', ts: 2, senderId: 'peer-3' },
+                {
+                    ackedMsgId: msg.id.msgId,
+                    fromPeerId: 'peer-3',
+                    toPeerId: 'self',
+                    status: 'accepted',
+                    observedAtEpochMs: 2
+                }
+            )
+        )).resolves.toEqual({ handled: false, completedPendingAcks: [] });
 
-        const afterExpiry = await stores.admissionStore.readIncomingMessage(
+        const afterReadAtMs = Date.now();
+        const afterExpiry = await stores.admissionStore.readIncomingMessage({
             msg,
-            'peer-1',
-            planner
-        );
+            source,
+            nowMs: afterReadAtMs,
+            prePlan: planner(msg, source, { nowMs: afterReadAtMs })
+        });
         expect(afterExpiry.clientRecord).toBeUndefined();
-        expect(afterExpiry.acks).toHaveLength(1);
-        expect(afterExpiry.acks[0]?.fromPeerId).toBe('peer-3');
+        expect(afterExpiry.acks).toEqual([]);
     });
 
     it('expires outbound sent snapshots without explicit message expiry using repository defaults', async () => {
@@ -389,7 +446,16 @@ describe('IndexedDB AL runtime stores', () => {
         ).toBe('committed');
 
         await admissionStore.acceptControlMessage(
-            newALNackControlMessage('peer-1', 'self', msg.id.msgId, 'gap'),
+            newALNackControlMessage(
+                { v: 2, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
+                {
+                    msgId: msg.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'gap',
+                    observedAtEpochMs: 1
+                }
+            ),
             decodeOutboundTestPayload
         );
 
@@ -457,15 +523,19 @@ describe('IndexedDB AL runtime stores', () => {
 
         const runtime2 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent });
         await runtime2.acceptControlMessage(
-            newALNackControlMessage('peer-1', 'self', seq2.id.msgId, 'gap', {
-                status: 'gap',
-                trackKey: toALOrderingTrackKey(seq1),
-                seq: 2,
-                expectedSeq: 1,
-                lastContiguousSeq: 0,
-                missingSeqs: [1],
-                releasableSeqs: []
-            })
+            newALNackControlMessage(
+                { v: 2, msgId: 'control-ordering-gap', ts: 1, senderId: 'peer-1' },
+                {
+                    msgId: seq2.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'gap',
+                    observedAtEpochMs: 1,
+                    orderingKey: toALOrderingTrackKey(seq1),
+                    expectedSeq: 1,
+                    missingSeqs: [1]
+                }
+            )
         );
 
         expect(sent.filter((entry) => entry.msgId === seq1.id.msgId)).toHaveLength(2);
@@ -584,7 +654,16 @@ describe('IndexedDB AL runtime stores', () => {
                         ) {
                             acceptedAckDuringTimeout = true;
                             await admissionStore.acceptControlMessage(
-                                newALAckControlMessage('peer-1', 'self', msg.id.msgId),
+                                newALAckControlMessage(
+                                    { v: 2, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1' },
+                                    {
+                                        ackedMsgId: msg.id.msgId,
+                                        fromPeerId: 'peer-1',
+                                        toPeerId: 'self',
+                                        status: 'accepted',
+                                        observedAtEpochMs: 1
+                                    }
+                                ),
                                 decode
                             );
                         }
@@ -663,13 +742,11 @@ function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput) {
             dbName,
             namespace
         }),
-        planIncomingMessage: (msg, fromPeerId, runtime) =>
+        planIncomingMessage: (msg, source, observations) =>
             planALMessageHandling(msg, {
                 selfPeerId: 'self',
-                fromPeerId,
-                dedupStore: runtime.dedupStore,
-                orderingStore: runtime.orderingStore,
-                supersedenceStore: runtime.supersedenceStore
+                fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
+                ...observations
             }),
         readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
@@ -684,13 +761,11 @@ function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput) {
 }
 
 function createInboundPlanner(): ALInboundPlanner {
-    return (msg, fromPeerId, runtime) =>
+    return (msg, source, observations) =>
         planALMessageHandling(msg, {
             selfPeerId: 'self',
-            fromPeerId,
-            dedupStore: runtime.dedupStore,
-            orderingStore: runtime.orderingStore,
-            supersedenceStore: runtime.supersedenceStore
+            fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
+            ...observations
         });
 }
 
@@ -700,10 +775,10 @@ function createFlakyInboundAdmissionStore(
 ): ALInboundAdmissionStore {
     return {
         ready: () => inner.ready(),
-        readIncomingMessage: (msg, fromPeerId, planner) => inner.readIncomingMessage(msg, fromPeerId, planner),
-        readBufferedRelease: (trackKey, seq) => inner.readBufferedRelease(trackKey, seq),
+        readIncomingMessage: (input) => inner.readIncomingMessage(input),
+        readBufferedRelease: (input) => inner.readBufferedRelease(input),
         readDeliveryPredecessors: (trackKey, beforeSeq) => inner.readDeliveryPredecessors(trackKey, beforeSeq),
-        planStoredEntry: (msg, planner) => inner.planStoredEntry(msg, planner),
+        readStoredPlanningState: (input) => inner.readStoredPlanningState(input),
         commitMutations: (request) =>
             hooks.commitMutations
                 ? hooks.commitMutations(request)

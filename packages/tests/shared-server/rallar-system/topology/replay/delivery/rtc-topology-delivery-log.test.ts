@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { describe, expect, it } from 'vitest';
 
-import { toRtcTopologyPublicationId, toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
+import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/topology/publication/rtc-topology-ws-outbox-entry.ts';
 import {
@@ -13,7 +13,6 @@ import {
     RtcTopologyDeliveryCorruptionError
 } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
-import { AppTopics } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { createPGliteSqlClient, type PGliteSql } from '../../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
@@ -46,7 +45,7 @@ describe('RTC topology delivery log boundary', () => {
                 groupId: 'delivery-group'
             },
             publicationId: publication.publicationId,
-            outboxKey: outbox.key,
+            outboxKey: outbox[0].key,
             retainUntilEpochMs: 86_401_000,
             retainUntilIsoTimestamp: '1970-01-02T00:00:01.000Z'
         });
@@ -60,11 +59,11 @@ describe('RTC topology delivery log boundary', () => {
             'RTC topology publisher stream ID must be a UUID'
         );
         expect(() =>
-            computeRtcTopologyDeliveryAppend('00000000-0000-4000-8000-000000000001', publication, {
-                ...outbox,
-                key: { ...outbox.key, resourceId: 'different-resource' }
-            })
-        ).toThrow('RTC topology delivery outbox differs from its publication');
+            computeRtcTopologyDeliveryAppend('00000000-0000-4000-8000-000000000001', publication, [{
+                ...outbox[0],
+                key: { ...outbox[0].key, resourceId: 'different-resource' }
+            }])
+        ).toThrow('RTC topology delivery page differs from its publication');
     });
 
     it('maps only named delivery-log uniqueness races into retryable conflicts', () => {
@@ -498,36 +497,6 @@ function topologyPublication(
         createdAtEpochMs,
         updatedAtEpochMs: createdAtEpochMs
     };
-    const message = {
-        id: {
-            v: 2 as const,
-            msgId: toRtcTopologyPublicationMessageId(workId),
-            ts: createdAtEpochMs,
-            senderId: 'rallar-server'
-        },
-        route: {
-            topicId: AppTopics.overlayTopology,
-            resourceId: `${snapshot.overlayId}:4:6:8`,
-            contextId: groupRef.groupId
-        },
-        constraints: { expiresAtMs },
-        targets: {
-            mode: 'broadcast' as const,
-            scope: 'room' as const,
-            groupRef,
-            minSnapshotVersion: 10
-        },
-        delivery: {
-            reliability: 'best-effort' as const,
-            ack: 'none' as const
-        },
-        payload: {
-            typeId: AppTopics.overlayTopology,
-            contentType: 'application/json' as const,
-            resource: JSON.stringify(snapshot)
-        },
-        audit: { createdBy: 'rallar-server', createdTs: createdAtEpochMs }
-    };
 
     return {
         publicationId: toRtcTopologyPublicationId({
@@ -541,7 +510,8 @@ function topologyPublication(
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: 10,
         recipientSessionIds: snapshot.activeSessionIds,
-        message,
+        snapshot,
+        expiresAtEpochMs: expiresAtMs,
         createdAtEpochMs
     };
 }

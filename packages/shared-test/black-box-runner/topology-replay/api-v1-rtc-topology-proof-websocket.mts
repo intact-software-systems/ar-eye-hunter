@@ -1,36 +1,43 @@
+import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { validateSerializedALMessageSize } from '@shared/al-contracts/al-message-resource-limits.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { parseAuthoritativeOverlayTopologySnapshot } from '@shared/api/authoritative-state-validation.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { compareOverlayTopologyCausalTuple } from '@shared/api/overlay-topology.ts';
+import type { CompletedStateSnapshot } from '@shared/api/state-snapshot-page.ts';
+import { StateSnapshotAssembly } from '@shared/services/state-snapshot-assembly.ts';
 import type {
     ProofCausalRevision,
     ProofJsonObject,
-    ProofJsonValue,
     ProofSession
 } from './api-v1-rtc-topology-proof-api.mts';
-import { requireRecord, requireSafeInteger, requireString } from './api-v1-rtc-topology-proof-api.mts';
 
 export const RTC_TOPOLOGY_PROOF_ASSERTION_TIMEOUT_MS = 10_000;
 
 export type ProofTopologyDeliveryKind = 'publication' | 'hydration';
 
-export type ProofTopologyExpectation = Readonly<{
-    causalRevision: ProofCausalRevision;
-    causalMatch: 'exact' | 'at-least';
-    version?: number;
-    deliveryKind?: ProofTopologyDeliveryKind;
-    messageId?: string;
-}>;
+export interface ProofTopologyExpectation {
+    readonly causalRevision: ProofCausalRevision;
+    readonly causalMatch: 'exact' | 'at-least';
+    readonly version?: number;
+    readonly deliveryKind?: ProofTopologyDeliveryKind;
+    readonly messageId?: string;
+}
 
-export type ProofTopologyObservation = Readonly<{
-    causalRevision: ProofCausalRevision;
-    version: number;
-    semanticJson: string;
-    activeSessionIds: readonly string[];
-    nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
-    messageId: string;
-    deliveryKind: ProofTopologyDeliveryKind;
-}>;
+export interface ProofTopologyObservation {
+    readonly causalRevision: ProofCausalRevision;
+    readonly version: number;
+    readonly semanticJson: string;
+    readonly activeSessionIds: readonly string[];
+    readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
+    readonly messageId: string;
+    readonly deliveryKind: ProofTopologyDeliveryKind;
+}
 
 export class ApiV1RtcTopologyProofSocket {
     readonly #socket: WebSocket;
+    readonly #groupRef: GroupRef;
+    readonly #assembly = new StateSnapshotAssembly();
     readonly #label: string;
     readonly #observations: ProofTopologyObservation[] = [];
     readonly #waiters = new Set<() => void>();
@@ -38,25 +45,28 @@ export class ApiV1RtcTopologyProofSocket {
     readonly #frameTypeCounts = new Map<string, number>();
     #failure: Error | undefined;
 
-    private constructor(socket: WebSocket, label: string) {
+    private constructor(socket: WebSocket, label: string, groupRef: GroupRef) {
         this.#socket = socket;
+        this.#groupRef = groupRef;
         this.#label = label;
         socket.addEventListener('message', (event) => this.#onMessage(event));
         socket.addEventListener('close', () => {
+            this.#assembly.dispose();
             this.#failure = this.#failure ?? new Error(`WebSocket ${label} closed before proof completion.`);
             this.#wakeWaiters();
         });
         socket.addEventListener('error', () => {
+            this.#assembly.dispose();
             this.#failure = this.#failure ?? new Error(`WebSocket ${label} failed.`);
             this.#wakeWaiters();
         });
     }
 
-    static async open(session: ProofSession, ticket: string): Promise<ApiV1RtcTopologyProofSocket> {
+    static async open(session: ProofSession, ticket: string, groupRef: GroupRef): Promise<ApiV1RtcTopologyProofSocket> {
         const url = `${session.wsBaseUrl}/api/ws/${encodeURIComponent(session.sessionId)}` +
             `?ticket=${encodeURIComponent(ticket)}`;
         const socket = new WebSocket(url);
-        const client = new ApiV1RtcTopologyProofSocket(socket, session.label);
+        const client = new ApiV1RtcTopologyProofSocket(socket, session.label, groupRef);
         await waitForOpen(socket, session.label);
         return client;
     }
@@ -64,7 +74,9 @@ export class ApiV1RtcTopologyProofSocket {
     async waitForTopology(expectation: ProofTopologyExpectation): Promise<ProofTopologyObservation> {
         const deadline = Date.now() + RTC_TOPOLOGY_PROOF_ASSERTION_TIMEOUT_MS;
         while (true) {
-            this.#failure && fail(this.#failure);
+            if (this.#failure) {
+                throw this.#failure;
+            }
             const observation = this.#observations.find((candidate) =>
                 matchesProofTopologyExpectation(candidate, expectation)
             );
@@ -89,6 +101,7 @@ export class ApiV1RtcTopologyProofSocket {
     }
 
     close(): void {
+        this.#assembly.dispose();
         if (this.#socket.readyState === WebSocket.OPEN) {
             this.#socket.close(1000, 'rtc-topology-replay-proof-complete');
         }
@@ -112,16 +125,29 @@ export class ApiV1RtcTopologyProofSocket {
         try {
             const frameType = typeof event.data;
             this.#frameTypeCounts.set(frameType, (this.#frameTypeCounts.get(frameType) ?? 0) + 1);
-            if (typeof event.data === 'string') {
-                const message = requireRecord(JSON.parse(event.data), 'WebSocket message');
-                const route = requireRecord(message.route, 'WebSocket route');
-                if (typeof route.topicId === 'string') {
-                    this.#topicCounts.set(route.topicId, (this.#topicCounts.get(route.topicId) ?? 0) + 1);
-                }
+            if (typeof event.data !== 'string') {
+                return;
             }
-            const observation = decodeTopologyObservation(event.data);
-            if (observation) {
-                this.#observations.push(observation);
+            const sizeIssue = validateSerializedALMessageSize(event.data)[0];
+            if (sizeIssue) {
+                throw new TypeError(sizeIssue.message);
+            }
+            const decoded = decodeALMessageValue(JSON.parse(event.data));
+            if (decoded.left) {
+                throw new TypeError(decoded.left.message);
+            }
+            const message = decoded.right!;
+            const topic = message.route.topicId;
+            this.#topicCounts.set(topic, (this.#topicCounts.get(topic) ?? 0) + 1);
+            if (topic !== 'overlay.topology' || message.payload.typeId !== 'overlay.topology') {
+                return;
+            }
+            const accepted = this.#assembly.accept({ message, scope: this.#groupRef, nowMs: Date.now() });
+            if (accepted.left) {
+                throw new TypeError(accepted.left.message);
+            }
+            if (accepted.right!.kind === 'complete') {
+                this.#observations.push(decodeTopologyObservation(accepted.right!.snapshot, this.#groupRef));
             }
         }
         catch (error) {
@@ -181,56 +207,28 @@ function waitForOpen(socket: WebSocket, label: string): Promise<void> {
 }
 
 export function decodeTopologyObservation(
-    data: string | ArrayBuffer | Blob
-): ProofTopologyObservation | undefined {
-    if (typeof data !== 'string') {
-        return undefined;
+    completed: CompletedStateSnapshot,
+    groupRef: GroupRef
+): ProofTopologyObservation {
+    const snapshot = parseAuthoritativeOverlayTopologySnapshot(completed.resource, groupRef);
+    const revision = snapshot.sourceGroupStateCausalRevision;
+    if (
+        !isSameGroupRef(snapshot.groupRef, groupRef) || completed.page.scope.kind !== 'group' ||
+        completed.page.scope.resourceId !== groupRef.groupId ||
+        completed.page.revision !==
+            JSON.stringify([revision.groupRevision, revision.presenceRevision, snapshot.version])
+    ) {
+        throw new TypeError('Completed proof topology differs from its scoped page identity.');
     }
-    const message = requireRecord(JSON.parse(data), 'WebSocket message');
-    const route = requireRecord(message.route, 'WebSocket route');
-    if (route.topicId !== 'overlay.topology') {
-        return undefined;
-    }
-    const payload = requireRecord(message.payload, 'WebSocket payload');
-    if (payload.typeId !== 'overlay.topology') {
-        return undefined;
-    }
-    const id = requireRecord(message.id, 'WebSocket message identity');
-    const messageId = requireString(id.msgId, 'WebSocket message ID');
-    const snapshot = requireRecord(
-        JSON.parse(requireString(payload.resource, 'topology payload resource')),
-        'topology snapshot'
-    );
-    const causal = requireRecord(snapshot.sourceGroupStateCausalRevision, 'topology causal revision');
-    const activeSessionIds = requireStringArray(snapshot.activeSessionIds, 'active session IDs');
-    const nextHops = requireRecord(snapshot.nextHopsBySessionId, 'next hops');
     return {
-        causalRevision: {
-            groupRevision: requireSafeInteger(causal.groupRevision, 'topology group revision'),
-            presenceRevision: requireSafeInteger(causal.presenceRevision, 'topology presence revision')
-        },
-        version: requireSafeInteger(snapshot.version, 'topology version'),
+        causalRevision: revision,
+        version: snapshot.version,
         semanticJson: JSON.stringify(snapshot),
-        activeSessionIds,
-        nextHopsBySessionId: Object.fromEntries(
-            Object.entries(nextHops).map(([sessionId, peers]) => [
-                sessionId,
-                requireStringArray(peers, `next hops for ${sessionId}`)
-            ])
-        ),
-        messageId,
-        deliveryKind: readProofTopologyDeliveryKind(messageId)
+        activeSessionIds: snapshot.activeSessionIds,
+        nextHopsBySessionId: snapshot.nextHopsBySessionId,
+        messageId: completed.page.originalMessageId,
+        deliveryKind: readProofTopologyDeliveryKind(completed.page.originalMessageId)
     };
-}
-
-function requireStringArray(
-    value: ProofJsonValue | undefined,
-    label: string
-): readonly string[] {
-    if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
-        throw new TypeError(`${label} must be a string array.`);
-    }
-    return value;
 }
 
 function assertUniqueTopologyLanes(observation: ProofTopologyObservation, label: string): void {
@@ -338,8 +336,4 @@ function readProofTopologyDeliveryKind(messageId: string): ProofTopologyDelivery
         return 'hydration';
     }
     throw new TypeError('Proof topology message identity has an unknown delivery kind.');
-}
-
-function fail(error: Error): never {
-    throw error;
 }

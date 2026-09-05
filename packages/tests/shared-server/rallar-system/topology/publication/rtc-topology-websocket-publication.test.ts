@@ -46,8 +46,8 @@ describe('RTC topology websocket publication', () => {
         const server = new JsonWebSocketServer();
         const recordedSocket = new FakeSocket();
         const outsideSocket = new FakeSocket();
-        server.addConnection(new ConnectionContext('session-1', recordedSocket));
-        server.addConnection(new ConnectionContext('session-2', outsideSocket));
+        server.addConnection(new ConnectionContext({ id: 'session-1', socket: recordedSocket }));
+        server.addConnection(new ConnectionContext({ id: 'session-2', socket: outsideSocket }));
         const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
@@ -60,7 +60,7 @@ describe('RTC topology websocket publication', () => {
                 findPublication: async () => fixture.publication
             },
             outbox: {
-                getItem: async () => fixture.outbox
+                getItem: async (key) => fixture.outbox.find((page) => JSON.stringify(page.key) === JSON.stringify(key))
             },
             snapshots: {
                 findSnapshot: async () => fixture.currentSnapshot
@@ -78,7 +78,7 @@ describe('RTC topology websocket publication', () => {
                 new AbortController().signal
             )
         ).resolves.toEqual({ status: 'delivered' });
-        expect(recordedSocket.sent).toEqual([decodePersistedALMessage(fixture.outbox.resource)]);
+        expect(recordedSocket.sent).toEqual(fixture.outbox.map((page) => decodePersistedALMessage(page.resource)));
         expect(outsideSocket.sent).toEqual([]);
     });
 
@@ -90,9 +90,9 @@ describe('RTC topology websocket publication', () => {
         const peerSocket = new FakeSocket();
         const outsideSocket = new FakeSocket();
 
-        server.addConnection(new ConnectionContext('session-a', senderSocket));
-        server.addConnection(new ConnectionContext('session-b', peerSocket));
-        server.addConnection(new ConnectionContext('session-c', outsideSocket));
+        server.addConnection(new ConnectionContext({ id: 'session-a', socket: senderSocket }));
+        server.addConnection(new ConnectionContext({ id: 'session-b', socket: peerSocket }));
+        server.addConnection(new ConnectionContext({ id: 'session-c', socket: outsideSocket }));
 
         const service = createDefaultWsQueueBoxServerService({
             inbox: new InMemoryQueueBox(new Map()),
@@ -139,7 +139,7 @@ describe('RTC topology websocket publication', () => {
         ]);
 
         for (const [sessionId, socket] of sockets) {
-            server.addConnection(new ConnectionContext(sessionId, socket));
+            server.addConnection(new ConnectionContext({ id: sessionId, socket }));
         }
 
         const service = createDefaultWsQueueBoxServerService({
@@ -239,7 +239,7 @@ describe('RTC topology websocket publication', () => {
 
         const server = new JsonWebSocketServer();
         const senderSocket = new FakeSocket();
-        server.addConnection(new ConnectionContext('session-a', senderSocket));
+        server.addConnection(new ConnectionContext({ id: 'session-a', socket: senderSocket }));
 
         const appOutbox = new InMemoryQueueBox(new Map());
         const runtimeRepository = new FakeRuntimeStateRepository();
@@ -285,8 +285,8 @@ describe('RTC topology websocket publication', () => {
         const server = new JsonWebSocketServer();
         const senderSocket = new FakeSocket();
         const peerSocket = new FakeSocket();
-        server.addConnection(new ConnectionContext('session-a', senderSocket));
-        server.addConnection(new ConnectionContext('session-b', peerSocket));
+        server.addConnection(new ConnectionContext({ id: 'session-a', socket: senderSocket }));
+        server.addConnection(new ConnectionContext({ id: 'session-b', socket: peerSocket }));
 
         const wsOutbox = new InMemoryQueueBox(new Map());
         const appOutbox = new InMemoryQueueBox(new Map());

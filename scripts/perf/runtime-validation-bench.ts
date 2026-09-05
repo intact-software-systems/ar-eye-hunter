@@ -21,27 +21,48 @@ import type {
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type { AuditStamp as ClientAuditStamp, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { AuditStamp, ClientSnapshot } from '@shared/api/client-types.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { computeStateSnapshotPages } from '@shared/api/state-snapshot-page.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { ObservableLatestRepository } from '@shared/cache/ObservableLatestRepository.ts';
 import { RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+
+interface MeasureInput<TResult> {
+    readonly name: string;
+    readonly sizeLabel: string;
+    readonly run: number;
+    readonly details: BenchDetails;
+    readonly action: () => TResult | Promise<TResult>;
+}
+
+interface WaitUntilOptions {
+    readonly timeoutMs?: number;
+    readonly pollMs?: number;
+}
+
+interface MakeGroupSnapshotInput {
+    readonly groupIndex: number;
+    readonly memberCount: number;
+    readonly sessionsPerClient: number;
+    readonly liveUntil: number;
+}
 
 interface BenchDetails {
     [key: string]: JsonWireValue | undefined;
 }
 
 interface BenchResult {
-    name: string;
-    sizeLabel: string;
-    run: number;
-    durationMs: number;
-    memoryBefore: Deno.MemoryUsage;
-    memoryAfter: Deno.MemoryUsage;
-    details: BenchDetails;
+    readonly name: string;
+    readonly sizeLabel: string;
+    readonly run: number;
+    readonly durationMs: number;
+    readonly memoryBefore: Deno.MemoryUsage;
+    readonly memoryAfter: Deno.MemoryUsage;
+    readonly details: BenchDetails;
 }
 
 const OUT = Deno.args.find((arg) => arg.startsWith('--out='))?.slice('--out='.length) ??
@@ -65,48 +86,31 @@ function readOptionalGarbageCollector(runtime: typeof globalThis): (() => void) 
     return () => garbageCollector();
 }
 
-function now(): number {
-    return performance.now();
-}
-
 function memory(): Deno.MemoryUsage {
     gc();
     return Deno.memoryUsage();
 }
 
-async function measure<TResult>(
-    name: string,
-    sizeLabel: string,
-    run: number,
-    details: BenchDetails,
-    action: () => TResult | Promise<TResult>
-): Promise<BenchResult> {
+async function measure<TResult>(input: MeasureInput<TResult>): Promise<BenchResult> {
+    const { name, sizeLabel, run, details, action } = input;
     const memoryBefore = memory();
-    const start = now();
+    const start = performance.now();
     await action();
-    const durationMs = now() - start;
+    const durationMs = performance.now() - start;
     const memoryAfter = memory();
-    return {
-        name,
-        sizeLabel,
-        run,
-        durationMs,
-        memoryBefore,
-        memoryAfter,
-        details
-    };
+    return { name, sizeLabel, run, durationMs, memoryBefore, memoryAfter, details };
 }
 
 async function waitUntil(
     condition: () => boolean,
-    options: { timeoutMs?: number; pollMs?: number; } = {}
+    options: WaitUntilOptions = {}
 ): Promise<void> {
     const timeoutMs = options.timeoutMs ?? 2_000;
     const pollMs = options.pollMs ?? 1;
-    const deadline = now() + timeoutMs;
+    const deadline = performance.now() + timeoutMs;
 
     while (!condition()) {
-        if (now() >= deadline) {
+        if (performance.now() >= deadline) {
             throw new Error('Timed out waiting for benchmark condition');
         }
         await new Promise((resolve) => setTimeout(resolve, pollMs));
@@ -315,12 +319,12 @@ async function benchRuntimePrefix(results: BenchResult[]): Promise<void> {
                 pageSize: undefined
             };
             results.push(
-                await measure(
-                    'runtime-prefix.full-materialize-and-parse',
-                    `${size} rows`,
-                    run,
-                    fullDetails,
-                    async () => {
+                await measure({
+                    name: 'runtime-prefix.full-materialize-and-parse',
+                    sizeLabel: `${size} rows`,
+                    run: run,
+                    details: fullDetails,
+                    action: async () => {
                         let parsed = 0;
                         for (const entry of await fullRepo.findEntriesByPrefix(namespace, prefix)) {
                             JSON.parse(entry.value);
@@ -333,7 +337,7 @@ async function benchRuntimePrefix(results: BenchResult[]): Promise<void> {
                         fullDetails.findEntriesByPrefixPageCalls = fullRepo.findEntriesByPrefixPageCalls;
                         fullDetails.maxRowsReturnedPerRepositoryCall = fullRepo.maxRowsReturned;
                     }
-                )
+                })
             );
 
             const pagedRepo = new RuntimeStatePrefixBenchRepository(entries, namespace);
@@ -342,12 +346,12 @@ async function benchRuntimePrefix(results: BenchResult[]): Promise<void> {
                 pageSize: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
             };
             results.push(
-                await measure(
-                    'runtime-prefix.paged-read-and-parse',
-                    `${size} rows`,
-                    run,
-                    pagedDetails,
-                    async () => {
+                await measure({
+                    name: 'runtime-prefix.paged-read-and-parse',
+                    sizeLabel: `${size} rows`,
+                    run: run,
+                    details: pagedDetails,
+                    action: async () => {
                         let parsed = 0;
                         for await (
                             const entry of readRuntimeStateEntriesByPrefix(
@@ -366,7 +370,7 @@ async function benchRuntimePrefix(results: BenchResult[]): Promise<void> {
                         pagedDetails.findEntriesByPrefixPageCalls = pagedRepo.findEntriesByPrefixPageCalls;
                         pagedDetails.maxRowsReturnedPerRepositoryCall = pagedRepo.maxRowsReturned;
                     }
-                )
+                })
             );
         }
     }
@@ -380,31 +384,31 @@ async function benchEvents(results: BenchResult[]): Promise<void> {
         const bytes = rows.reduce((sum, row) => sum + row.length, 0);
         for (let run = 1; run <= RUNS; run++) {
             results.push(
-                await measure(
-                    'events.eager.parse-all-and-slice',
-                    `${size} rows`,
-                    run,
-                    { rows: size, rowBytes: bytes, limit },
-                    () => runEagerEventPipeline(rows, limit)
-                )
+                await measure({
+                    name: 'events.eager.parse-all-and-slice',
+                    sizeLabel: `${size} rows`,
+                    run: run,
+                    details: { rows: size, rowBytes: bytes, limit },
+                    action: () => runEagerEventPipeline(rows, limit)
+                })
             );
             results.push(
-                await measure(
-                    'events.page.parse-page-only',
-                    `${size} rows`,
-                    run,
-                    { rows: size, parsedRows: limit, rowBytes: rows.slice(-limit).join('').length, limit },
-                    () => runPagedEventPipeline(rows, limit)
-                )
+                await measure({
+                    name: 'events.page.parse-page-only',
+                    sizeLabel: `${size} rows`,
+                    run: run,
+                    details: { rows: size, parsedRows: limit, rowBytes: rows.slice(-limit).join('').length, limit },
+                    action: () => runPagedEventPipeline(rows, limit)
+                })
             );
             results.push(
-                await measure(
-                    'events.recent.parse-bounded-tail',
-                    `${size} rows`,
-                    run,
-                    { rows: size, parsedRows: limit, rowBytes: rows.slice(-limit).join('').length, limit },
-                    () => runRecentEventPipeline(rows, limit)
-                )
+                await measure({
+                    name: 'events.recent.parse-bounded-tail',
+                    sizeLabel: `${size} rows`,
+                    run: run,
+                    details: { rows: size, parsedRows: limit, rowBytes: rows.slice(-limit).join('').length, limit },
+                    action: () => runRecentEventPipeline(rows, limit)
+                })
             );
         }
     }
@@ -416,12 +420,12 @@ async function benchCacheRetention(results: BenchResult[]): Promise<void> {
         for (let run = 1; run <= RUNS; run++) {
             const repo = new ObservableLatestRepository<string, JsonWireValue>({ ttlMs: 0 });
             results.push(
-                await measure(
-                    'cache.observable-expired-retained-before-delete',
-                    `${size} keys`,
-                    run,
-                    { keys: size, ttlMs: 0 },
-                    async () => {
+                await measure({
+                    name: 'cache.observable-expired-retained-before-delete',
+                    sizeLabel: `${size} keys`,
+                    run: run,
+                    details: { keys: size, ttlMs: 0 },
+                    action: async () => {
                         for (let i = 0; i < size; i++) {
                             repo.set(`key-${i}`, { i, value: `value-${i}` });
                         }
@@ -431,7 +435,7 @@ async function benchCacheRetention(results: BenchResult[]): Promise<void> {
                             throw new Error(`Expected zero live values, got ${liveValues}`);
                         }
                     }
-                )
+                })
             );
             results.push({
                 name: 'cache.observable-size-after-expiry',
@@ -447,13 +451,13 @@ async function benchCacheRetention(results: BenchResult[]): Promise<void> {
                 }
             });
             results.push(
-                await measure(
-                    'cache.observable-delete-expired',
-                    `${size} keys`,
-                    run,
-                    { keys: size },
-                    () => repo.deleteExpired()
-                )
+                await measure({
+                    name: 'cache.observable-delete-expired',
+                    sizeLabel: `${size} keys`,
+                    run: run,
+                    details: { keys: size },
+                    action: () => repo.deleteExpired()
+                })
             );
             results.push({
                 name: 'cache.observable-size-after-delete',
@@ -475,12 +479,12 @@ async function benchCacheRetention(results: BenchResult[]): Promise<void> {
             });
             try {
                 results.push(
-                    await measure(
-                        'cache.observable-auto-delete-expired',
-                        `${size} keys`,
-                        run,
-                        { keys: size, ttlMs: 0, deleteExpiredIntervalMs: 1 },
-                        async () => {
+                    await measure({
+                        name: 'cache.observable-auto-delete-expired',
+                        sizeLabel: `${size} keys`,
+                        run: run,
+                        details: { keys: size, ttlMs: 0, deleteExpiredIntervalMs: 1 },
+                        action: async () => {
                             for (let i = 0; i < size; i++) {
                                 autoRepo.set(`auto-key-${i}`, {
                                     i,
@@ -489,7 +493,7 @@ async function benchCacheRetention(results: BenchResult[]): Promise<void> {
                             }
                             await waitUntil(() => autoRepo.size() === 0);
                         }
-                    )
+                    })
                 );
                 results.push({
                     name: 'cache.observable-size-after-auto-delete',
@@ -523,17 +527,17 @@ async function benchRateLimiter(results: BenchResult[]): Promise<void> {
         }
         for (let run = 1; run <= RUNS; run++) {
             results.push(
-                await measure(
-                    'rate-limiter.read-with-cache-size',
-                    `${size} cached keys`,
-                    run,
-                    { cachedKeysApprox: size, reads: 100 },
-                    () => {
+                await measure({
+                    name: 'rate-limiter.read-with-cache-size',
+                    sizeLabel: `${size} cached keys`,
+                    run: run,
+                    details: { cachedKeysApprox: size, reads: 100 },
+                    action: () => {
                         for (let i = 0; i < 100; i++) {
                             readRateLimiter('bench', `probe-${size}-${run}-${i}`, policy).allow();
                         }
                     }
-                )
+                })
             );
         }
     }
@@ -621,12 +625,8 @@ function makeClientSnapshot(index: number, sessionsPerClient: number, liveUntil:
     };
 }
 
-function makeGroupSnapshot(
-    groupIndex: number,
-    memberCount: number,
-    sessionsPerClient: number,
-    liveUntil: number
-): GroupSnapshot {
+function makeGroupSnapshot(input: MakeGroupSnapshotInput): GroupSnapshot {
+    const { groupIndex, memberCount, sessionsPerClient, liveUntil } = input;
     const ref = {
         applicationId: 'app',
         workspaceId: 'workspace',
@@ -712,7 +712,7 @@ function makeGroupSnapshot(
     };
 }
 
-function makeAuditStamp(): ClientAuditStamp {
+function makeAuditStamp(): AuditStamp {
     return {
         atEpochMs: 1_700_000_000_000,
         actor: { kind: 'service', serviceId: 'runtime-validation-benchmark' },
@@ -725,7 +725,7 @@ function makeAuditStamp(): ClientAuditStamp {
 function makeWsServer(connectionIds: readonly string[]): JsonWebSocketServer {
     const server = new JsonWebSocketServer();
     for (const id of connectionIds) {
-        server.addConnection(new ConnectionContext(id, new BenchmarkSocket()));
+        server.addConnection(new ConnectionContext({ id, socket: new BenchmarkSocket() }));
     }
     return server;
 }
@@ -747,13 +747,13 @@ async function benchStateSync(results: BenchResult[]): Promise<void> {
             snapshot.activeSessions.map((session) => session.sessionId)
         );
         const webSocketServer = makeWsServer(connectionIds);
-        const groupSnapshot = makeGroupSnapshot(
-            0,
-            Math.min(size.members, size.clients),
-            size.sessionsPerClient,
-            liveUntilEpochMs
-        );
-        const message = newALBroadcastMessage(
+        const groupSnapshot = makeGroupSnapshot({
+            groupIndex: 0,
+            memberCount: Math.min(size.members, size.clients),
+            sessionsPerClient: size.sessionsPerClient,
+            liveUntil: liveUntilEpochMs
+        });
+        const original = newALBroadcastMessage(
             'runtime-validation-benchmark',
             newALEventRoute(
                 AppTopics.groupStateSnapshot,
@@ -762,37 +762,69 @@ async function benchStateSync(results: BenchResult[]): Promise<void> {
             ),
             'room',
             AppTopics.groupStateSnapshot,
-            groupSnapshot,
-            { groupRef: groupSnapshot.group }
+            {},
+            {
+                groupRef: {
+                    applicationId: groupSnapshot.group.applicationId,
+                    workspaceId: groupSnapshot.group.workspaceId,
+                    groupId: groupSnapshot.group.groupId
+                }
+            }
         );
+
+        const pageResult = computeStateSnapshotPages({
+            envelope: {
+                ...original,
+                targets: original.targets,
+                delivery: original.delivery,
+                audit: original.audit,
+                constraints: { expiresAtMs: liveUntilEpochMs }
+            },
+            scope: {
+                kind: 'group',
+                applicationId: 'app',
+                workspaceId: 'workspace',
+                resourceId: groupSnapshot.group.groupId
+            },
+            revision:
+                `group=${groupSnapshot.causalRevision.groupRevision};presence=${groupSnapshot.causalRevision.presenceRevision}`,
+            resource: JSON.stringify(groupSnapshot)
+        });
+        const message = pageResult.right?.[0];
+        if (!message) {
+            throw new Error(pageResult.left?.message ?? 'Expected snapshot page');
+        }
 
         for (let run = 1; run <= RUNS; run++) {
             results.push(
-                await measure(
-                    'state-sync.resolve-group-recipients',
-                    `${size.clients} clients/${size.groups} groups label`,
-                    run,
-                    {
+                await measure({
+                    name: 'state-sync.resolve-group-recipients',
+                    sizeLabel: `${size.clients} clients/${size.groups} groups label`,
+                    run: run,
+                    details: {
                         clients: size.clients,
                         sessionsPerClient: size.sessionsPerClient,
                         groupsLabel: size.groups,
                         members: groupSnapshot.members.length,
                         connections: connectionIds.length
                     },
-                    () => {
+                    action: () => {
                         const recipients = resolveStateSyncRecipients(
                             webSocketServer,
                             message,
                             {
                                 readClientSnapshots: () => clientSnapshots,
+                                findGroupSnapshotByRef: () => groupSnapshot,
                                 now: () => nowEpochMs
                             }
                         );
-                        if (!recipients || recipients.length === 0) {
-                            throw new Error('Expected recipients');
+                        if (
+                            !recipients || recipients.length !== groupSnapshot.members.length * size.sessionsPerClient
+                        ) {
+                            throw new Error('Expected every authorized member session');
                         }
                     }
-                )
+                })
             );
         }
     }
@@ -808,23 +840,23 @@ async function benchSerialization(results: BenchResult[]): Promise<void> {
             const payload = { type: 'payload', body: 'x'.repeat(payloadBytes) };
             for (let run = 1; run <= RUNS; run++) {
                 results.push(
-                    await measure(
-                        'ws.broadcast-encode-once',
-                        `${recipients} recipients/${payloadBytes} bytes`,
-                        run,
-                        { recipients, payloadBytes },
-                        () => {
+                    await measure({
+                        name: 'ws.broadcast-encode-once',
+                        sizeLabel: `${recipients} recipients/${payloadBytes} bytes`,
+                        run: run,
+                        details: { recipients, payloadBytes },
+                        action: () => {
                             server.broadcast(payload);
                         }
-                    )
+                    })
                 );
                 results.push(
-                    await measure(
-                        'ws.direct-send-stringify-per-recipient',
-                        `${recipients} recipients/${payloadBytes} bytes`,
-                        run,
-                        { recipients, payloadBytes },
-                        () => {
+                    await measure({
+                        name: 'ws.direct-send-stringify-per-recipient',
+                        sizeLabel: `${recipients} recipients/${payloadBytes} bytes`,
+                        run: run,
+                        details: { recipients, payloadBytes },
+                        action: () => {
                             for (const id of connectionIds) {
                                 const ctx = server.connections.get(id);
                                 if (!ctx) {
@@ -833,21 +865,21 @@ async function benchSerialization(results: BenchResult[]): Promise<void> {
                                 ctx.socket.send(JSON.stringify(payload));
                             }
                         }
-                    )
+                    })
                 );
                 results.push(
-                    await measure(
-                        'ws.direct-send-encoded-once',
-                        `${recipients} recipients/${payloadBytes} bytes`,
-                        run,
-                        { recipients, payloadBytes },
-                        () => {
+                    await measure({
+                        name: 'ws.direct-send-encoded-once',
+                        sizeLabel: `${recipients} recipients/${payloadBytes} bytes`,
+                        run: run,
+                        details: { recipients, payloadBytes },
+                        action: () => {
                             const encoded = server.encode(payload);
                             for (const id of connectionIds) {
                                 server.sendEncoded(id, encoded);
                             }
                         }
-                    )
+                    })
                 );
             }
         }
@@ -864,13 +896,13 @@ async function benchLatestRepositoryCleanup(results: BenchResult[]): Promise<voi
             }
             await new Promise((resolve) => setTimeout(resolve, 2));
             results.push(
-                await measure(
-                    'latest-repository.delete-expired',
-                    `${size} keys`,
-                    run,
-                    { keys: size },
-                    () => repo.deleteExpired()
-                )
+                await measure({
+                    name: 'latest-repository.delete-expired',
+                    sizeLabel: `${size} keys`,
+                    run: run,
+                    details: { keys: size },
+                    action: () => repo.deleteExpired()
+                })
             );
         }
     }
@@ -882,12 +914,12 @@ async function benchCacheLeakChurn(results: BenchResult[]): Promise<void> {
     const batches = 10;
     for (let batch = 1; batch <= batches; batch++) {
         const firstKey = (batch - 1) * batchSize;
-        await measure(
-            'cache.leak-churn-insert-batch',
-            `${batch * batchSize} cumulative keys`,
-            1,
-            { batch, batchSize },
-            async () => {
+        await measure({
+            name: 'cache.leak-churn-insert-batch',
+            sizeLabel: `${batch * batchSize} cumulative keys`,
+            run: 1,
+            details: { batch, batchSize },
+            action: async () => {
                 for (let i = 0; i < batchSize; i++) {
                     const keyIndex = firstKey + i;
                     repo.set(`churn-${keyIndex}`, {
@@ -898,7 +930,7 @@ async function benchCacheLeakChurn(results: BenchResult[]): Promise<void> {
                 await new Promise((resolve) => setTimeout(resolve, 2));
                 repo.readAllValues();
             }
-        );
+        });
         results.push({
             name: 'cache.leak-churn-post-expiry',
             sizeLabel: `${batch * batchSize} cumulative keys`,
@@ -915,13 +947,13 @@ async function benchCacheLeakChurn(results: BenchResult[]): Promise<void> {
         });
     }
     results.push(
-        await measure(
-            'cache.leak-churn-delete-expired',
-            `${batchSize * batches} cumulative keys`,
-            1,
-            { batchSize, batches },
-            () => repo.deleteExpired()
-        )
+        await measure({
+            name: 'cache.leak-churn-delete-expired',
+            sizeLabel: `${batchSize * batches} cumulative keys`,
+            run: 1,
+            details: { batchSize, batches },
+            action: () => repo.deleteExpired()
+        })
     );
     results.push({
         name: 'cache.leak-churn-after-delete',
@@ -949,12 +981,12 @@ async function benchCacheAutoEvictionChurn(results: BenchResult[]): Promise<void
         for (let batch = 1; batch <= batches; batch++) {
             const firstKey = (batch - 1) * batchSize;
             results.push(
-                await measure(
-                    'cache.auto-eviction-churn-insert-batch',
-                    `${batch * batchSize} cumulative keys`,
-                    1,
-                    { batch, batchSize, deleteExpiredIntervalMs: 1 },
-                    async () => {
+                await measure({
+                    name: 'cache.auto-eviction-churn-insert-batch',
+                    sizeLabel: `${batch * batchSize} cumulative keys`,
+                    run: 1,
+                    details: { batch, batchSize, deleteExpiredIntervalMs: 1 },
+                    action: async () => {
                         for (let i = 0; i < batchSize; i++) {
                             const keyIndex = firstKey + i;
                             repo.set(`auto-churn-${keyIndex}`, {
@@ -964,7 +996,7 @@ async function benchCacheAutoEvictionChurn(results: BenchResult[]): Promise<void
                         }
                         await waitUntil(() => repo.size() === 0);
                     }
-                )
+                })
             );
             results.push({
                 name: 'cache.auto-eviction-churn-post-expiry',

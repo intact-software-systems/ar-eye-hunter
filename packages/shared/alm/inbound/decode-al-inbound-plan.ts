@@ -166,7 +166,11 @@ function assertOrderingObservation(value: PersistedALValue): void {
         'missingSeqs',
         'releasableSeqs'
     ], ['status', 'missingSeqs', 'releasableSeqs']);
-    requireVariant(ordering.status, ['untracked', 'in-order', 'gap', 'duplicate', 'stale'], 'ordering status');
+    requireVariant(
+        ordering.status,
+        ['untracked', 'in-order', 'gap', 'duplicate', 'stale', 'resync-required'],
+        'ordering status'
+    );
     requireOptionalPersistedALNonEmptyString(ordering.trackKey, 'ordering track key');
     requireOptionalPersistedALSafeInteger(ordering.seq, 0, 'ordering sequence');
     requireOptionalPersistedALSafeInteger(ordering.expectedSeq, 0, 'ordering expected sequence');

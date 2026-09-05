@@ -1,6 +1,10 @@
-import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
+import {
+    planALMessageHandling,
+    type ALMessageHandlingPlan,
+    type ALMessagePlanningObservations
+} from '@shared/al-contracts/al-policy.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
@@ -24,9 +28,18 @@ describe('inbound durable effect worker lifecycle', () => {
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', { text: 'hello' });
         await resources.admissionStore.commitBundle({
             senderId: message.id.senderId,
-            mutations: [],
+            versionExpireAtTimestamp: Date.now() + 60_000,
+            mutations: [{
+                kind: 'set-msg-owner',
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'ws-client', peerId: message.id.senderId },
+                supersedenceKey: null,
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }],
             durableEffects: [{
                 effectId: 'persisted-dispatch',
+                expireAtTimestamp: Date.now() + 60_000,
                 payload: {
                     kind: 'dispatch-local',
                     entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
@@ -46,7 +59,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             ...resources,
             inbox: new InMemoryQueueBox(new Map()),
-            planIncomingMessage: (plannedMessage, fromPeerId, stores) => planALMessageHandling(plannedMessage, { ...stores, selfPeerId: 'receiver', fromPeerId }),
+            planIncomingMessage,
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async (entry) => {
                 deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
@@ -80,7 +93,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             ...resources,
             inbox: new InMemoryQueueBox(new Map()),
-            planIncomingMessage: (message, fromPeerId, stores) => planALMessageHandling(message, { ...stores, selfPeerId: 'receiver', fromPeerId }),
+            planIncomingMessage,
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async () => {},
             sendControlMessage: async () => {}
@@ -109,9 +122,18 @@ describe('inbound durable effect worker lifecycle', () => {
         );
         await resources.admissionStore.commitBundle({
             senderId: message.id.senderId,
-            mutations: [],
+            versionExpireAtTimestamp: Date.now() + 60_000,
+            mutations: [{
+                kind: 'set-msg-owner',
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'ws-client', peerId: message.id.senderId },
+                supersedenceKey: null,
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }],
             durableEffects: [{
                 effectId: 'corrupt-delivery',
+                expireAtTimestamp: Date.now() + 60_000,
                 payload: {
                     kind: 'dispatch-local',
                     entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
@@ -121,8 +143,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             ...resources,
             inbox: new InMemoryQueueBox(new Map()),
-            planIncomingMessage: (plannedMessage, fromPeerId, stores) =>
-                planALMessageHandling(plannedMessage, { ...stores, selfPeerId: 'receiver', fromPeerId }),
+            planIncomingMessage,
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async () => {
                 throw new ALAdmissionCorruptionError(
@@ -149,9 +170,11 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         await resources.admissionStore.commitBundle({
             senderId: 'sender',
+            versionExpireAtTimestamp: Date.now() + 60_000,
             mutations: [],
             durableEffects: [{
                 effectId: 'corrupt-buffered-release',
+                expireAtTimestamp: Date.now() + 60_000,
                 payload: {
                     kind: 'release-buffered',
                     trackKey: 'chat:sender',
@@ -168,8 +191,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             ...resources,
             inbox: new InMemoryQueueBox(new Map()),
-            planIncomingMessage: (message, fromPeerId, stores) =>
-                planALMessageHandling(message, { ...stores, selfPeerId: 'receiver', fromPeerId }),
+            planIncomingMessage,
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async () => {},
             sendControlMessage: async () => {}
@@ -208,7 +230,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             ...resources,
             inbox: new InMemoryQueueBox(new Map()),
-            planIncomingMessage: (message, fromPeerId, stores) => planALMessageHandling(message, { ...stores, selfPeerId: 'receiver', fromPeerId }),
+            planIncomingMessage,
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async (entry) => {
                 deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
@@ -220,7 +242,10 @@ describe('inbound durable effect worker lifecycle', () => {
             const initialDrain = runtime.ready();
             await emptyRead.promise;
 
-            const admission = runtime.handleIncomingMessage(message, 'sender');
+            const admission = runtime.handleIncomingMessage(
+                message,
+                { kind: 'ws-client', peerId: 'sender' }
+            );
             await committed.promise;
             releaseEmptyRead.resolve();
             await Promise.all([initialDrain, admission]);
@@ -242,7 +267,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             ...resources,
             inbox: new InMemoryQueueBox(new Map()),
-            planIncomingMessage: (message, fromPeerId, stores) => planALMessageHandling(message, { ...stores, selfPeerId: 'receiver', fromPeerId }),
+            planIncomingMessage,
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async () => {
                 attempts += 1;
@@ -252,14 +277,14 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', { text: 'hello' });
         try {
-            await runtime.handleIncomingMessage(message, 'sender');
+            await runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
             expect(attempts).toBe(1);
             expect(vi.getTimerCount()).toBe(1);
 
             runtime.dispose();
             await vi.advanceTimersByTimeAsync(30_000);
             await runtime.ready();
-            await runtime.handleIncomingMessage(message, 'sender');
+            await runtime.handleIncomingMessage(message, { kind: 'ws-client', peerId: 'sender' });
 
             expect(attempts).toBe(1);
             expect(vi.getTimerCount()).toBe(0);
@@ -269,3 +294,18 @@ describe('inbound durable effect worker lifecycle', () => {
         }
     });
 });
+
+function planIncomingMessage(
+    message: ALMessage,
+    source: ALInboundMessageRuntime.Source,
+    observations: ALMessagePlanningObservations
+): ALMessageHandlingPlan {
+    return planALMessageHandling(message, {
+        ...observations,
+        selfPeerId: 'receiver',
+        fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
+        connectedPeerIds: ['sender'],
+        groupMemberPeerIds: ['sender', 'receiver'],
+        overlayNeighborPeerIds: []
+    });
+}

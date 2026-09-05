@@ -1,122 +1,110 @@
-import { describe, expect, it } from 'vitest';
-
-import { toRtcTopologyPublicationId, toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
+import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/topology/publication/rtc-topology-ws-outbox-entry.ts';
-import { AppTopics } from '@shared/api/api-config.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { describe, expect, it } from 'vitest';
+import { assembleStateSnapshotMessages } from '../../../../shared/state-snapshot-test-fixture.ts';
 
-describe('RTC topology publication WS outbox entry', () => {
-    it('bounds its persistence key without changing the published AL route', () => {
-        const publication = longRoutePublication();
-        expect(publication.message.route.resourceId.length).toBeGreaterThan(128);
-
-        const entry = computeRtcTopologyPublicationOutbox(publication);
-        const persistedMessage = JSON.parse(entry.resource) as {
-            route: typeof publication.message.route;
-            targets: { recipientPeerIds?: readonly string[]; };
-        };
-
-        expect(entry.key).toEqual(toAppQueueKey({
-            topicId: publication.message.route.topicId,
-            resourceId: publication.message.id.msgId,
-            contextId: publication.message.route.contextId
-        }));
-        expect(entry.key.resourceId.length).toBeLessThanOrEqual(36);
-        expect(persistedMessage.route).toEqual(publication.message.route);
-        expect(persistedMessage.targets.recipientPeerIds).toEqual(publication.recipientSessionIds);
+describe('RTC topology publication WS outbox pages', () => {
+    it('bounds routes and physical keys while preserving full scoped snapshot identity', () => {
+        const pages = computeRtcTopologyPublicationOutbox(createPublication('work-one'));
+        const message = decodePersistedALMessage(pages[0].resource);
+        expect(message.route.resourceId.length).toBeLessThanOrEqual(128);
+        expect(JSON.parse(assembleStateSnapshotMessages([message], createPublication('work-one').groupRef, 1000)[0].resource).groupRef)
+            .toEqual(createPublication('work-one').groupRef);
+        expect(pages[0].key.resourceId.length).toBeLessThanOrEqual(36);
+        expect(message.targets).toMatchObject({ recipientPeerIds: ['session-0000'] });
     });
 
     it('assigns distinct physical keys to publications sharing one logical route', () => {
-        const first = longRoutePublication('topology-work-1');
-        const second = longRoutePublication('topology-work-2');
+        const first = computeRtcTopologyPublicationOutbox(createPublication('work-one'))[0];
+        const second = computeRtcTopologyPublicationOutbox(createPublication('work-two'))[0];
+        expect(first.key).not.toEqual(second.key);
+        expect(decodePersistedALMessage(first.resource).route).toEqual(decodePersistedALMessage(second.resource).route);
+        expect(decodePersistedALMessage(first.resource).id.msgId).not.toBe(decodePersistedALMessage(second.resource).id.msgId);
+    });
 
-        const entries = [first, second].map(computeRtcTopologyPublicationOutbox);
-        const messages = entries.map((entry) =>
-            JSON.parse(entry.resource) as {
-                id: { msgId: string; };
-                route: typeof first.message.route;
-            }
+    it('publishes an oversized 1500-member topology to every frozen recipient without truncation', () => {
+        const publication = createPublication('large-room', 1500);
+        expect(new TextEncoder().encode(JSON.stringify(publication.snapshot)).length).toBeGreaterThan(64 * 1024);
+        const messages = computeRtcTopologyPublicationOutbox(publication).map((page) => decodePersistedALMessage(page.resource));
+        process.stdout.write(
+            'SNAPSHOT-MEASUREMENT ' +
+                JSON.stringify({
+                    kind: 'topology',
+                    members: 1500,
+                    bytes: new TextEncoder().encode(JSON.stringify(publication.snapshot)).length,
+                    envelopes: messages.length,
+                    logicalPages: new Set(messages.map((message) => JSON.parse(message.payload.resource).index)).size
+                }) + '\n'
         );
-
-        expect(entries[0].key).not.toEqual(entries[1].key);
-        expect(entries.every((entry) => entry.key.resourceId.length <= 36)).toBe(true);
-        expect(messages[0].route).toEqual(messages[1].route);
-        expect(messages[0].id.msgId).not.toBe(messages[1].id.msgId);
-        expect(new Map(entries.map((entry) => [JSON.stringify(entry.key), entry])).size).toBe(2);
+        const recipients = new Map<string, typeof messages>();
+        for (const message of messages) {
+            expect(new TextEncoder().encode(message.payload.resource).length).toBeLessThanOrEqual(64 * 1024);
+            expect(new TextEncoder().encode(JSON.stringify(message)).length).toBeLessThanOrEqual(128 * 1024);
+            if (message.targets?.mode !== 'broadcast') {
+                throw new Error('Expected frozen room broadcast');
+            }
+            expect(message.targets.recipientPeerIds!.length).toBeLessThanOrEqual(256);
+            for (const peer of message.targets.recipientPeerIds!) {
+                recipients.set(peer, [...(recipients.get(peer) ?? []), message]);
+            }
+        }
+        expect([...recipients.keys()]).toEqual(publication.recipientSessionIds);
+        const firstBatch = recipients.get('session-0000')!;
+        expect(firstBatch.length).toBeGreaterThan(1);
+        expect([...recipients.values()].every((pages) => pages.length === firstBatch.length)).toBe(true);
+        for (const peer of ['session-0000', 'session-0256', 'session-1499']) {
+            const snapshots = assembleStateSnapshotMessages(recipients.get(peer)!, publication.groupRef, 1000);
+            expect(snapshots).toHaveLength(1);
+            expect(JSON.parse(snapshots[0].resource)).toEqual(publication.snapshot);
+        }
     });
 });
 
-function longRoutePublication(workId = 'medium-scale-topology-work'): RtcTopologyPublication {
+function createPublication(workId: string, count = 1): RtcTopologyPublication {
     const groupRef = {
         applicationId: 'medium-scale-application'.repeat(2),
         workspaceId: 'medium-scale-workspace'.repeat(2),
         groupId: 'medium-scale-group'.repeat(2)
     };
-    const causalRevision = { groupRevision: 141, presenceRevision: 204 };
-    const createdAtEpochMs = 1_000;
-    const expiresAtMs = 2_000;
+    const activeSessionIds = Array.from({ length: count }, (_, index) => `session-${String(index).padStart(4, '0')}`);
     const snapshot: RallarOverlayTopologySnapshot = {
-        sourceGroupStateCausalRevision: causalRevision,
+        sourceGroupStateCausalRevision: { groupRevision: 141, presenceRevision: 204 },
         state: 'active',
         overlayId: toScopedOverlayId(groupRef),
         groupRef,
         name: 'Medium-scale group',
         topology: 'tree',
-        activeSessionIds: ['session-1'],
-        nextHopsBySessionId: { 'session-1': [] },
+        activeSessionIds,
+        nextHopsBySessionId: Object.fromEntries(
+            activeSessionIds.map((
+                id,
+                index
+            ) => [id, activeSessionIds.slice(Math.max(0, index - 1), index).concat(activeSessionIds.slice(index + 1, index + 2))])
+        ),
         degreeLimit: 2,
         version: 122,
         createdByClientId: 'owner',
-        createdAtEpochMs,
-        updatedAtEpochMs: createdAtEpochMs
-    };
-    const message = {
-        id: {
-            v: 2 as const,
-            msgId: toRtcTopologyPublicationMessageId(workId),
-            ts: createdAtEpochMs,
-            senderId: 'rallar-server'
-        },
-        route: {
-            topicId: AppTopics.overlayTopology,
-            resourceId: `${snapshot.overlayId}:${causalRevision.groupRevision}:` +
-                `${causalRevision.presenceRevision}:${snapshot.version}`,
-            contextId: groupRef.groupId
-        },
-        constraints: { expiresAtMs },
-        targets: {
-            mode: 'broadcast' as const,
-            scope: 'room' as const,
-            groupRef,
-            minSnapshotVersion: 101
-        },
-        delivery: {
-            reliability: 'best-effort' as const,
-            ack: 'none' as const
-        },
-        payload: {
-            typeId: AppTopics.overlayTopology,
-            contentType: 'application/json' as const,
-            resource: JSON.stringify(snapshot)
-        },
-        audit: { createdBy: 'rallar-server', createdTs: createdAtEpochMs }
+        createdAtEpochMs: 1000,
+        updatedAtEpochMs: 1000
     };
     return {
         publicationId: toRtcTopologyPublicationId({
             workId,
-            sourceGroupStateCausalRevision: causalRevision,
+            sourceGroupStateCausalRevision: snapshot.sourceGroupStateCausalRevision,
             overlayVersion: snapshot.version
         }),
         workId,
         groupRef,
-        sourceGroupStateCausalRevision: causalRevision,
+        sourceGroupStateCausalRevision: snapshot.sourceGroupStateCausalRevision,
         overlayVersion: snapshot.version,
         targetGroupSnapshotVersion: 101,
-        recipientSessionIds: snapshot.activeSessionIds,
-        message,
-        createdAtEpochMs
+        recipientSessionIds: activeSessionIds,
+        snapshot,
+        createdAtEpochMs: 1000,
+        expiresAtEpochMs: 2000
     };
 }

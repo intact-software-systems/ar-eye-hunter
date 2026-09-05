@@ -21,6 +21,41 @@ afterEach(() => {
 });
 
 describe('QRtcDataChannel', () => {
+    it('bounds decoded subscriptions before parsing while preserving the raw lane', async () => {
+        const fixture = createNativeDataChannelFixture();
+        const channel = new QRtcDataChannel(fixture.peerConnection, { peerId: 'peer-1', dataChannelName: 'room' });
+        const rejected: string[] = [];
+        const raw: unknown[] = [];
+        const decoded: unknown[] = [];
+        channel.onRtcMessageDo('alm', {
+            maxMessageBytes: 4,
+            onRejected: async (reason) => {
+                rejected.push(reason.code);
+            },
+            onMessage: async (value) => {
+                decoded.push(value);
+            }
+        });
+        channel.onRawMessageDo('raw', {
+            onMessage: async (value) => {
+                raw.push(value);
+            }
+        });
+        channel.connect(true);
+        const native = fixture.native.channels[0];
+        await native.open();
+        const parse = vi.spyOn(JSON, 'parse');
+        const binary = new ArrayBuffer(5);
+        await native.receive('"éé"');
+        await native.receive(binary);
+        expect(parse.mock.calls.some(([value]) => value === '"éé"')).toBe(false);
+        expect(rejected).toEqual(['oversized', 'oversized']);
+        expect(raw).toEqual(['"éé"', binary]);
+        expect(decoded).toEqual([]);
+        await native.receive('"é"');
+        expect(decoded).toEqual(['é']);
+    });
+
     it('creates an initiator channel, dispatches messages, and enforces send guards', async () => {
         const peerConnection = createNativeDataChannelFixture();
         const dataChannel = new QRtcDataChannel(

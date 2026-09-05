@@ -1,3 +1,9 @@
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
@@ -21,11 +27,6 @@ import {
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
 
 import { findCurrentClientSnapshot } from '../../../../../../apps/api-v1/src/crdt/create-api-crdt-document-authorizer.ts';
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
@@ -49,7 +50,7 @@ describe('CRDT principal fanout from a cold cache', () => {
         for (const id of ['alice', 'session-a', 'session-b']) {
             const sent: string[] = [];
             sockets.set(id, sent);
-            webSocketServer.addConnection(new ConnectionContext(id, new RecordingWebSocket(sent)));
+            webSocketServer.addConnection(new ConnectionContext({ id, socket: new RecordingWebSocket(sent) }));
         }
         const queue = new InMemoryQueueBox();
         const service = createDefaultWsQueueBoxServerService({

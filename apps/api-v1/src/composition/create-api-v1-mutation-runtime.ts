@@ -31,10 +31,19 @@ import {
     GroupPresenceSummaryWork
 } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import {
-    createCachedGroupStateService
+    createCachedGroupStateService,
+    type CachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { GroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
-import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
+import type {
+    CreateRallarMiddlewareOptions,
+    RallarMiddlewareResilience
+} from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
+import type {
+    RallarAdminInboxServiceFactory,
+    RallarAuthInboxServiceFactory,
+    RallarCrdtInboxServiceFactory
+} from '@shared-server/rallar-system/middleware/rallar-middleware-inbox-service-factories.ts';
 import {
     createGroupFormationMetricsRecorder,
     type RallarGroupFormationMetricsRecorder
@@ -49,7 +58,7 @@ import {
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { DequeueResourceEntryOptions, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createApiCrdtDocumentAuthorizer } from '../crdt/create-api-crdt-document-authorizer.ts';
 import { createApiCrdtInboxFactory } from '../crdt/create-api-crdt-inbox-factory.ts';
@@ -93,14 +102,14 @@ export interface ApiV1MutationRuntime {
     readonly clientSnapshotCache: ClientStateSnapshotReadThroughCache;
     readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
-    readonly groupStateService: ReturnType<typeof createCachedGroupStateService>;
+    readonly groupStateService: CachedGroupStateService;
     readonly appInboxDequeueOptions: DequeueResourceEntryOptions;
     readonly createGroupStateInboxService: CreateRallarMiddlewareOptions['createGroupStateInboxService'];
     readonly createAppClientInboxService: CreateRallarMiddlewareOptions['createAppClientInboxService'];
-    readonly createAppAuthInboxService: NonNullable<CreateRallarMiddlewareOptions['createAppAuthInboxService']>;
-    readonly createAppAdminInboxService: NonNullable<CreateRallarMiddlewareOptions['createAppAdminInboxService']>;
-    readonly createAppCrdtInboxService: NonNullable<CreateRallarMiddlewareOptions['createAppCrdtInboxService']>;
-    readonly resilience: CreateRallarMiddlewareOptions['resilience'];
+    readonly createAppAuthInboxService: RallarAuthInboxServiceFactory;
+    readonly createAppAdminInboxService: RallarAdminInboxServiceFactory;
+    readonly createAppCrdtInboxService: RallarCrdtInboxServiceFactory;
+    readonly resilience: RallarMiddlewareResilience;
 }
 
 interface ApiV1StateMutationDependencies {
@@ -135,8 +144,8 @@ interface ApiV1MutationResources {
 }
 
 interface CreateGroupStateInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
-    readonly groupStateService: ReturnType<typeof createCachedGroupStateService>;
-    readonly resultReader: ApiV1MutationResources['groupsRepository'];
+    readonly groupStateService: CachedGroupStateService;
+    readonly resultReader: GroupStateRepository;
     readonly groupFormationRecomputeDebounceMs: number;
 }
 
@@ -369,7 +378,7 @@ function createAppClientInboxServiceFactory(
 
 function createAppAuthInboxServiceFactory(
     input: CreateAppAuthInboxServiceFactoryInput
-): NonNullable<CreateRallarMiddlewareOptions['createAppAuthInboxService']> {
+): RallarAuthInboxServiceFactory {
     const credentialIssuer = createHmacAuthCredentialIssuer(input.authCredentialSecret);
 
     return ({ inboxQueueReader, wakeQueueEngine }) =>

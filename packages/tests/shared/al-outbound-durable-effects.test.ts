@@ -111,7 +111,16 @@ describe('AL outbound durable effect lifecycle', () => {
         const enqueue = enqueueOutboundOrThrow(runtime, msg);
         await emptyRead.promise;
         const acceptControl = runtime.acceptControlMessage(
-            newALNackControlMessage('peer-1', 'self', msg.id.msgId, 'gap')
+            newALNackControlMessage(
+                { v: 2, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
+                {
+                    msgId: msg.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'gap',
+                    observedAtEpochMs: 1
+                }
+            )
         );
         await controlStored.promise;
         await new Promise((resolve) => setTimeout(resolve, 0));
@@ -255,7 +264,16 @@ describe('AL outbound durable effect lifecycle', () => {
                         ) {
                             acceptedAckDuringTimeout = true;
                             await admissionStore.acceptControlMessage(
-                                newALAckControlMessage('peer-1', 'self', msg.id.msgId),
+                                newALAckControlMessage(
+                                    { v: 2, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1' },
+                                    {
+                                        ackedMsgId: msg.id.msgId,
+                                        fromPeerId: 'peer-1',
+                                        toPeerId: 'self',
+                                        status: 'accepted',
+                                        observedAtEpochMs: 1
+                                    }
+                                ),
                                 decodeOutboundTestPayload
                             );
                         }
@@ -321,8 +339,18 @@ describe('AL outbound durable effect lifecycle', () => {
                     commitBundle: async (bundle, decodePrepared) => {
                         if (!rejectedFirstCommit) {
                             rejectedFirstCommit = true;
+                            expect(await admissionStore.commitBundle(bundle, decodePrepared)).toBe('committed');
                             await admissionStore.acceptControlMessage(
-                                newALAckControlMessage('peer-1', 'self', msg.id.msgId),
+                                newALAckControlMessage(
+                                    { v: 2, msgId: 'control-conflict-ack', ts: 1, senderId: 'peer-1' },
+                                    {
+                                        ackedMsgId: msg.id.msgId,
+                                        fromPeerId: 'peer-1',
+                                        toPeerId: 'self',
+                                        status: 'accepted',
+                                        observedAtEpochMs: 1
+                                    }
+                                ),
                                 decodeOutboundTestPayload
                             );
                             return 'conflict';
@@ -368,9 +396,7 @@ describe('AL outbound durable effect lifecycle', () => {
         await vi.advanceTimersByTimeAsync(200);
 
         expect(rejectedFirstCommit).toBe(true);
-        expect(sent).toEqual([
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
-        ]);
+        expect(sent).toEqual([]);
         runtime.dispose();
     });
 
@@ -441,7 +467,16 @@ describe('AL outbound durable effect lifecycle', () => {
         runtime.dispose();
 
         const handled = await runtime.acceptControlMessage(
-            newALNackControlMessage('peer-1', 'self', 'missing-msg', 'gap')
+            newALNackControlMessage(
+                { v: 2, msgId: 'control-missing-gap', ts: 1, senderId: 'peer-1' },
+                {
+                    msgId: 'missing-msg',
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'gap',
+                    observedAtEpochMs: 1
+                }
+            )
         );
 
         expect(handled).toBe(false);
@@ -479,9 +514,20 @@ describe('AL outbound durable effect lifecycle', () => {
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             })
         });
+        const msg = createOutboundMessage('msg-control-conflict');
+        await enqueueOutboundOrThrow(runtime, msg);
 
         const accepted = runtime.acceptControlMessage(
-            newALNackControlMessage('peer-1', 'self', 'missing-msg', 'expired')
+            newALNackControlMessage(
+                { v: 2, msgId: 'control-expired', ts: 1, senderId: 'peer-1' },
+                {
+                    msgId: msg.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    reason: 'expired',
+                    observedAtEpochMs: 1
+                }
+            )
         );
         await vi.runAllTimersAsync();
 

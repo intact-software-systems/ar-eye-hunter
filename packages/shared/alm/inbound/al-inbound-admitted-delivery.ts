@@ -3,17 +3,16 @@ import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { NOT_COMPLETED_RETRYABLE_STATUSES } from '../../queuebox/ResourceEntry.ts';
-import {
-    RetryableConflictError,
-    tryWithPolicy,
-    type TryWithPolicy
-} from '../../resilience/TryWith.ts';
-import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALInboundAdmissionStore, ALPersistedInboundEffect } from './al-inbound-admission-store.ts';
 import { shouldDeferALInboundLocalDelivery } from './al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
+import {
+    computeALInboundBufferedReleasePlanningObservations,
+    computeALInboundStoredPlanningObservations
+} from './al-inbound-planner-snapshot.ts';
 import { computeALInboundBufferedRelease } from './compute-al-inbound-admission.ts';
-import { prepareALInboundCommitBundle } from './prepare-al-inbound-commit-bundle.ts';
+import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
+import { validateALInboundCommitBundle } from './validate-al-inbound-commit-bundle.ts';
 
 export namespace ALInboundAdmittedDelivery {
     export interface Dependencies extends
@@ -28,9 +27,7 @@ export namespace ALInboundAdmittedDelivery {
             | 'forwardMessage'
             | 'clock'
             | 'effectPreparation'
-        > {
-        readonly commitRetryPolicy: TryWithPolicy;
-    }
+        > {}
 }
 
 export class ALInboundAdmittedDelivery {
@@ -52,7 +49,7 @@ export class ALInboundAdmittedDelivery {
     ): Promise<'completed' | 'retry'> {
         if (effect.expireAtTimestamp <= this.dependencies.clock.nowMs()) {
             if (effect.payload.kind === 'dispatch-local' || effect.payload.kind === 'enqueue-inbox') {
-                await this.completeOrderedDelivery(this.dependencies.readStoredEntry(effect.payload.entry));
+                return await this.completeOrderedDelivery(this.dependencies.readStoredEntry(effect.payload.entry));
             }
             return 'completed';
         }
@@ -69,7 +66,7 @@ export class ALInboundAdmittedDelivery {
             case 'forward-message':
                 return await this.forwardAdmittedMessage(effect.payload.msg, effect.payload.fromPeerId);
             case 'release-buffered':
-                return await this.releaseBufferedMessageWithAdmission(
+                return await this.commitBufferedRelease(
                     effect.payload.trackKey,
                     effect.payload.seq
                 );
@@ -81,9 +78,12 @@ export class ALInboundAdmittedDelivery {
             return 'retry';
         }
         const msg = this.dependencies.readStoredEntry(entry);
-        const plan = await this.admissionStore.planStoredEntry(
+        const read = await this.admissionStore.readStoredPlanningState({ msg, nowMs: this.dependencies.clock.nowMs() });
+        const source = read.source;
+        const plan = this.dependencies.planIncomingMessage(
             msg,
-            this.dependencies.planIncomingMessage
+            source,
+            computeALInboundStoredPlanningObservations(read)
         );
 
         if (this.disposed || ALInboundAdmittedDelivery.shouldRetryAdmittedDelivery(plan)) {
@@ -91,8 +91,7 @@ export class ALInboundAdmittedDelivery {
         }
 
         if (plan.dropReason || !plan.localDelivery.enabled) {
-            await this.completeOrderedDelivery(msg);
-            return 'completed';
+            return await this.completeOrderedDelivery(msg);
         }
 
         if (await this.hasUndeliveredPredecessor(msg)) {
@@ -101,40 +100,26 @@ export class ALInboundAdmittedDelivery {
         if (this.disposed) {
             return 'retry';
         }
-        await this.dependencies.dispatchInboxEntry(entry, plan);
-        await this.completeOrderedDelivery(msg);
-        return 'completed';
-    }
-
-    private async releaseBufferedMessageWithAdmission(
-        trackKey: string,
-        seq: number
-    ): Promise<'completed' | 'retry'> {
-        try {
-            return await tryWithPolicy(
-                () => this.commitBufferedRelease(trackKey, seq),
-                this.dependencies.commitRetryPolicy
-            );
+        const dispatched = await this.dependencies.dispatchInboxEntry(entry, plan, source);
+        if (dispatched === 'retry') {
+            return 'retry';
         }
-        catch (error) {
-            if (error instanceof ALAdmissionCorruptionError) {
-                throw error;
-            }
-            throw new Error(
-                `Failed to release buffered inbound message after retries: ${trackKey}:${seq}`,
-                { cause: error }
-            );
-        }
+        return await this.completeOrderedDelivery(msg);
     }
 
     private async commitBufferedRelease(trackKey: string, seq: number): Promise<'completed' | 'retry'> {
-        const read = await this.admissionStore.readBufferedRelease(trackKey, seq);
+        const read = await this.admissionStore.readBufferedRelease({
+            trackKey,
+            seq,
+            nowMs: this.dependencies.clock.nowMs()
+        });
         if (!read) {
             return 'completed';
         }
-        const plan = await this.admissionStore.planStoredEntry(
+        const plan = this.dependencies.planIncomingMessage(
             read.snapshot.msg,
-            this.dependencies.planIncomingMessage
+            read.source,
+            computeALInboundBufferedReleasePlanningObservations(read)
         );
         if (
             ALInboundAdmittedDelivery.shouldRetryAdmittedDelivery(plan) ||
@@ -142,13 +127,17 @@ export class ALInboundAdmittedDelivery {
         ) {
             return 'retry';
         }
-        const computed = computeALInboundBufferedRelease(read, plan);
-        const bundle = prepareALInboundCommitBundle(computed, this.dependencies.effectPreparation);
-        const status = await this.admissionStore.commitBundle(bundle);
-        if (status === 'conflict') {
-            throw new RetryableConflictError('Buffered inbound release commit conflict');
+        const facts = readALInboundEffectFacts(read.snapshot.msg, read.nowMs, this.dependencies.effectPreparation);
+        const computed = computeALInboundBufferedRelease({ read, plan, facts });
+        const validated = validateALInboundCommitBundle(computed);
+        if (validated.left) {
+            return 'completed';
         }
-        return 'completed';
+        if (this.disposed) {
+            return 'retry';
+        }
+        const status = await this.admissionStore.commitBundle(validated.right!);
+        return status === 'conflict' ? 'retry' : 'completed';
     }
 
     private async hasUndeliveredPredecessor(msg: ALMessage): Promise<boolean> {
@@ -174,43 +163,51 @@ export class ALInboundAdmittedDelivery {
                     return true;
                 }
             }
-            await this.completeOrderedDelivery(predecessor.msg);
+            if (await this.completeOrderedDelivery(predecessor.msg) === 'retry') {
+                return true;
+            }
         }
         return false;
     }
 
-    private async completeOrderedDelivery(msg: ALMessage): Promise<void> {
+    private async completeOrderedDelivery(msg: ALMessage): Promise<'completed' | 'retry'> {
         const trackKey = toALOrderingTrackKey(msg);
         const seq = msg.ordering?.seq;
         if (trackKey === undefined || seq === undefined) {
-            return;
+            return 'completed';
         }
-        await tryWithPolicy(async () => {
-            const read = await this.admissionStore.readBufferedRelease(trackKey, seq);
-            if (!read || read.snapshot.msg.id.msgId !== msg.id.msgId) {
-                return;
-            }
-            const status = await this.admissionStore.commitMutations({
-                senderId: msg.id.senderId,
-                expectedVersion: read.clientRecord?.version,
-                mutations: [{ kind: 'delete-buffered', trackKey, seq }]
-            });
-            if (status === 'conflict') {
-                throw new RetryableConflictError('Ordered delivery completion conflict');
-            }
-        }, this.dependencies.commitRetryPolicy);
+        const read = await this.admissionStore.readBufferedRelease({
+            trackKey,
+            seq,
+            nowMs: this.dependencies.clock.nowMs()
+        });
+        if (!read || read.snapshot.msg.id.msgId !== msg.id.msgId) {
+            return 'completed';
+        }
+        const status = await this.admissionStore.commitMutations({
+            senderId: msg.id.senderId,
+            expectedVersion: read.clientRecord?.version,
+            versionExpireAtTimestamp: read.nowMs + read.retention.versionTtlMs,
+            mutations: [{ kind: 'delete-buffered', trackKey, seq }]
+        });
+        return status === 'conflict' ? 'retry' : 'completed';
     }
 
     private async forwardAdmittedMessage(msg: ALMessage, fromPeerId: string): Promise<'completed' | 'retry'> {
-        const plan = await this.admissionStore.planStoredEntry(
+        const read = await this.admissionStore.readStoredPlanningState({ msg, nowMs: this.dependencies.clock.nowMs() });
+        const plan = this.dependencies.planIncomingMessage(
             msg,
-            (message, _senderId, stores) => this.dependencies.planIncomingMessage(message, fromPeerId, stores)
+            read.source,
+            computeALInboundStoredPlanningObservations(read)
         );
         if (this.disposed || ALInboundAdmittedDelivery.shouldRetryAdmittedDelivery(plan)) {
             return 'retry';
         }
         if (!plan.dropReason && plan.forwarding.enabled) {
-            await this.dependencies.forwardMessage?.(msg, fromPeerId, plan);
+            const forwarded = await this.dependencies.forwardMessage?.(msg, fromPeerId, plan);
+            if (forwarded === 'retry') {
+                return 'retry';
+            }
         }
         return 'completed';
     }

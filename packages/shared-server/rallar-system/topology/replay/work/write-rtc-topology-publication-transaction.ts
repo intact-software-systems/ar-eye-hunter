@@ -10,8 +10,7 @@ import type { RtcTopologyMutationComputed } from '../../mutation/rtc-topology-mu
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import {
-    computeRtcTopologyPublicationOutboxInsert,
-    writeRtcTopologyPublicationOutbox
+    computeRtcTopologyPublicationOutboxWrites
 } from '../../publication/rtc-topology-ws-outbox-entry.ts';
 import type { RtcTopologyDeliveryAppendPort } from '../delivery/rtc-topology-delivery-append-port.ts';
 import type { RtcTopologyDeliveryAppend } from '../delivery/rtc-topology-delivery-contracts.ts';
@@ -82,7 +81,7 @@ export async function writeRtcTopologyPublicationTransaction(
 }
 
 export interface RtcTopologyPublicationDeliveryWrite {
-    readonly outboxWrite: AppOutboxInsert;
+    readonly outboxWrites: readonly AppOutboxInsert[];
     readonly deliveryAppend: RtcTopologyDeliveryAppend | null;
 }
 
@@ -90,15 +89,15 @@ export function computeRtcTopologyPublicationDeliveryWrite(
     publication: RtcTopologyPublication,
     publisherStreamId: string | undefined
 ): RtcTopologyPublicationDeliveryWrite {
-    const outboxWrite = computeRtcTopologyPublicationOutboxInsert(publication);
+    const outboxWrites = computeRtcTopologyPublicationOutboxWrites(publication);
     return {
-        outboxWrite,
+        outboxWrites,
         deliveryAppend: publisherStreamId === undefined
             ? null
             : computeRtcTopologyDeliveryAppend(
                 publisherStreamId,
                 publication,
-                outboxWrite.entry
+                outboxWrites.map((write) => write.entry)
             )
     };
 }
@@ -108,7 +107,9 @@ export async function writePublicationDelivery(
     computed: RtcTopologyPublicationDeliveryWrite,
     append: RtcTopologyDeliveryAppendPort | undefined
 ): Promise<void> {
-    await writeRtcTopologyPublicationOutbox(transaction, computed.outboxWrite);
+    for (const write of computed.outboxWrites) {
+        await writeAppOutboxInsert(transaction, write);
+    }
     if (!append || computed.deliveryAppend === null) {
         return;
     }

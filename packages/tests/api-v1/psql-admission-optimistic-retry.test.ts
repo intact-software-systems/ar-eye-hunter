@@ -44,10 +44,14 @@ describe('PSql admission optimistic retry', () => {
         await expect(store.commitMutations({
             senderId: 'peer-1',
             expectedVersion: undefined,
+            versionExpireAtTimestamp: Date.now() + 60_000,
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: 'inbound-conflict',
-                senderId: 'peer-1'
+                senderId: 'peer-1',
+                source: { kind: 'ws-client', peerId: 'peer-1' },
+                supersedenceKey: null,
+                expireAtTimestamp: Date.now() + 60_000
             }]
         })).resolves.toBe('conflict');
     });
@@ -67,30 +71,32 @@ describe('PSql admission optimistic retry', () => {
         await expect(store.commitMutations({
             senderId: 'peer-1',
             expectedVersion: undefined,
+            versionExpireAtTimestamp: Date.now() + 60_000,
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: 'inbound-error',
-                senderId: 'peer-1'
+                senderId: 'peer-1',
+                source: { kind: 'ws-client', peerId: 'peer-1' },
+                supersedenceKey: null,
+                expireAtTimestamp: Date.now() + 60_000
             }]
         })).rejects.toThrow('inbound storage unavailable');
     });
 
-    it('commits an inbound message after an apply-time CAS loss', async () => {
+    it('requires a fresh carrier delivery after an inbound apply-time CAS loss', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:inbound:runtime-retry';
         const plan: ALInboundPlanner = (
             msg,
-            fromPeerId,
-            stores
+            source,
+            observations
         ) => planALMessageHandling(msg, {
             selfPeerId: 'self',
-            fromPeerId,
+            fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
             connectedPeerIds: ['peer-1'],
             groupMemberPeerIds: ['self', 'peer-1'],
             overlayNeighborPeerIds: [],
-            dedupStore: stores.dedupStore,
-            orderingStore: stores.orderingStore,
-            supersedenceStore: stores.supersedenceStore
+            ...observations
         });
         const runtime = createDefaultALInboundMessageRuntime({
             selfPeerId: 'self',
@@ -112,10 +118,22 @@ describe('PSql admission optimistic retry', () => {
             { text: 'retry' }
         );
 
-        await runtime.handleIncomingMessage(msg, 'peer-1');
+        const source = { kind: 'ws-client' as const, peerId: 'peer-1' };
+        const conflicted = await runtime.handleIncomingMessage(msg, source);
 
         expect(repository.conflictCount).toBe(1);
         const admissionNamespace = `${namespace}:inbound:admission`;
+        expect(conflicted.right).toEqual({ kind: 'not-admitted', reason: 'conflict' });
+        expect(
+            await repository.findEntry(
+                admissionNamespace,
+                `${admissionNamespace}:version:peer-1`
+            )
+        ).toBeUndefined();
+
+        const admitted = await runtime.handleIncomingMessage(msg, source);
+
+        expect(admitted.right).toEqual({ kind: 'admitted' });
         expect(
             await repository.findEntry(
                 admissionNamespace,

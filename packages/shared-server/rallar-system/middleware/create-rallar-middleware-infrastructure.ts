@@ -1,10 +1,15 @@
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { AppTopics } from '@shared/api/api-config.ts';
+import { isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { validateRtcSignalingMessage } from '../communication/decode-rtc-signaling-route.ts';
 import { installQueueBoxPubSubBridge } from '../queue-pubsub/queue-box-pub-sub-bridge.ts';
-import { decodeStateSyncMessage } from '../state-sync/state-sync-payload.ts';
 import { createWsServerTargetResolver } from '../websocket/targets/create-ws-server-target-resolver.ts';
 import { initialiseRallarServerCacheRepositories } from './cache-repositories.ts';
 import type {
@@ -22,8 +27,6 @@ export function createRallarMiddlewareInfrastructure(
         createWsServerTargetResolver(webSocketServer, {
             findGroupSnapshotByRef: options.findGroupSnapshotByRef,
             findClientSnapshotByRef: options.findClientSnapshotByRef,
-            findGroupSnapshotById: options.findGroupSnapshotById,
-            resolveGroupRef: options.resolveGroupRef,
             now: options.now
         });
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({
@@ -35,7 +38,7 @@ export function createRallarMiddlewareInfrastructure(
         inboundStores: options.inboundStores,
         outboundStores: options.outboundStores,
         deliveryDiagnostics: options.wsDeliveryDiagnostics,
-        admitInboundMessage: (message) => decodeStateSyncMessage(message).kind === 'unsupported',
+        validateInboundMessage: validateMiddlewareALIngress,
         forwardsRoomScopedMessages: false
     });
     const queuePubSubBridgeReadiness = options.queuePubSubBridge
@@ -57,4 +60,34 @@ export function createRallarMiddlewareInfrastructure(
         queuePubSubBridgeReadiness,
         wakeQueueEngine
     };
+}
+
+function validateMiddlewareALIngress(message: ALMessage): Either<ALMessageRejection, ALMessage> {
+    if (
+        isStateSnapshotTopic(message.route.topicId) || isStateSnapshotTopic(message.payload.typeId) ||
+        message.route.topicId === AppTopics.clientStateEvent || message.payload.typeId === AppTopics.clientStateEvent ||
+        message.route.topicId === AppTopics.groupStateEvent || message.payload.typeId === AppTopics.groupStateEvent ||
+        isStateSnapshotPageResource(message.payload.resource)
+    ) {
+        return Either.ofLeft({ code: 'unsupported', message: 'State sync uses its own admission owner' });
+    }
+    const routeIsSignaling = message.route.topicId === AppTopics.rtcSignaling;
+    const payloadIsSignaling = message.payload.typeId === AppTopics.rtcSignaling;
+    if (routeIsSignaling || payloadIsSignaling) {
+        if (!routeIsSignaling || !payloadIsSignaling) {
+            return Either.ofLeft({ code: 'malformed', message: 'RTC signaling topic and payload type must agree' });
+        }
+        return validateRtcSignalingMessage(message);
+    }
+    return Either.ofRight(message);
+}
+
+function isStateSnapshotPageResource(resource: string): boolean {
+    try {
+        const value: unknown = JSON.parse(resource);
+        return typeof value === 'object' && value !== null && 'kind' in value && value.kind === 'state-snapshot-page';
+    }
+    catch {
+        return false;
+    }
 }

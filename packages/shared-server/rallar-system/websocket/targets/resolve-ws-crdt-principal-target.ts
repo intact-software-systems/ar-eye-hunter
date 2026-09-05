@@ -1,7 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { RALLAR_CRDT_UPDATE_TYPE_ID } from '@shared/crdt/mod.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { isClientSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
@@ -27,14 +27,19 @@ export function resolveWsCrdtPrincipalTargetRecipients(
         principalRef,
         input.message
     );
-    if (!snapshot) {
+    if (
+        !snapshot ||
+        snapshot.principal.applicationId !== principalRef.applicationId ||
+        snapshot.principal.principalId !== principalRef.principalId ||
+        (principalRef.workspaceId !== undefined && snapshot.principal.workspaceId !== principalRef.workspaceId)
+    ) {
         return [];
     }
     const nowEpochMs = input.options.now?.() ?? Date.now();
     return snapshot.activeSessions
         .filter((session) =>
             isClientSnapshotSessionLive(session, nowEpochMs) &&
-            input.webSocketServer.connections.get(session.sessionId)?.isOpen
+            input.webSocketServer.connections.get(session.connectionId ?? session.sessionId)?.isOpen
         )
         .map((session) => ({
             peerId: session.sessionId,
@@ -53,7 +58,7 @@ function readCrdtPrincipalRef(
         const value = decodeJsonWireValue(
             JSON.parse(message.payload.resource)
         );
-        const document = readJsonWireObject(readJsonWireObject(value)?.document);
+        const document = isJsonWireObject(value) && isJsonWireObject(value.document) ? value.document : undefined;
         if (!document) {
             return undefined;
         }
@@ -81,12 +86,6 @@ function readCrdtPrincipalRef(
     }
 }
 
-function readJsonWireObject(value: JsonWireValue | undefined): JsonWireObject | undefined {
-    return value !== undefined && isJsonWireObject(value)
-        ? value
-        : undefined;
-}
-
-function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+function isJsonWireObject(value: JsonWireValue | undefined): value is JsonWireObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

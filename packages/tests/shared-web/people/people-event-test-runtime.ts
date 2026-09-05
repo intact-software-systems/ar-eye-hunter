@@ -72,7 +72,8 @@ vi.mock(import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts
     browserStateCacheLifecycle: {
         hydrate: peopleEventMocks.hydrateStateCache,
         onChange: vi.fn(() => vi.fn()),
-        initialise: vi.fn()
+        initialise: vi.fn(),
+        cancelSnapshotAssemblies: vi.fn(() => undefined)
     }
 }));
 

@@ -1,4 +1,3 @@
-import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import assert from 'node:assert/strict';
 
 import { configureSharedGraphRepositories } from '@shared-graph/repository/configure-shared-graph-repositories.ts';
@@ -13,6 +12,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { installRtcRttSystemTopic } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { decodeTopologyAppInboxAuthority } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 import { readDurableTopologyAppInboxCommand, toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
@@ -31,8 +31,8 @@ import {
     createDefaultWsQueueBoxServerService,
     InMemoryQueueBox,
     JsonWebSocketServer,
-    newALBroadcastMessage,
-    newALEventRoute
+    newALEventRoute,
+    newALUntargetedMessage
 } from '@shared/mod.ts';
 import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -500,7 +500,7 @@ Deno.test(
             });
             const wsServer = new JsonWebSocketServer();
             const wsSocket = new PGliteTestSocket();
-            wsServer.addConnection(new ConnectionContext(authority.sessionId, wsSocket));
+            wsServer.addConnection(new ConnectionContext({ id: authority.sessionId, socket: wsSocket }));
             const wsService = createDefaultWsQueueBoxServerService({
                 inbox: new InMemoryQueueBox(new Map()),
                 outbox: new InMemoryQueueBox(new Map()),
@@ -522,13 +522,11 @@ Deno.test(
                 version: 1
             };
             const dispatchRtt = () =>
-                wsSocket.dispatchMessage(newALBroadcastMessage(
+                wsSocket.dispatchMessage(newALUntargetedMessage(
                     authority.sessionId,
                     newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay'),
-                    'room',
                     AppTopics.rtt,
-                    rtt,
-                    { groupRef }
+                    rtt
                 ));
             const rttPending = dispatchRtt();
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');

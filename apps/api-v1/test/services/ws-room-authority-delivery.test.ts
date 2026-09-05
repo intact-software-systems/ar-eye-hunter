@@ -6,6 +6,7 @@ import { createWsServerTargetResolver } from '@shared-server/rallar-system/webso
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALBroadcastMessage, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALEventRoute } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -14,7 +15,7 @@ import {
     createDefaultWsQueueBoxServerService,
     type WsQueueBoxServerService
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import { createOpenTestWebSocket } from '../../../../packages/tests/shared-server/rallar-system/websocket/test-support/open-test-websocket.ts';
@@ -122,7 +123,7 @@ Deno.test('current room denial emits the existing NACK without using a permissiv
         await harness.router.route(message);
 
         assert.equal(senderFrames.length, 1);
-        const nack = JSON.parse(senderFrames[0]!) as ALMessage;
+        const nack = decodePersistedALMessage(senderFrames[0]!);
         assert.notEqual(nack.route.topicId, 'room.chat');
         assert.match(nack.payload.resource, /unauthorized|not-yet-in-sync/);
         assert.deepEqual(recipientFrames, []);
@@ -154,7 +155,7 @@ Deno.test('room reconnect delivers to the current open socket and ignores delaye
     const oldSocket = createOpenTestWebSocket();
     const oldFrames: string[] = [];
     oldSocket.send = (frame) => oldFrames.push(String(frame));
-    harness.server.addConnection(new ConnectionContext('bob', oldSocket));
+    harness.server.addConnection(new ConnectionContext({ id: 'bob', socket: oldSocket }));
     const currentFrames = addRecordingConnection(harness.server, 'bob');
     oldSocket.dispatchEvent(new CloseEvent('close'));
     const message = roomMessage();
@@ -252,7 +253,7 @@ Deno.test('a socket closed during an awaited handler receives no authoritative l
     Object.defineProperty(socket, 'readyState', { get: () => readyState });
     const frames: string[] = [];
     socket.send = (frame) => frames.push(String(frame));
-    harness.server.addConnection(new ConnectionContext('bob', socket));
+    harness.server.addConnection(new ConnectionContext({ id: 'bob', socket }));
     harness.router.on({ topicId: 'room.chat' }, async () => {
         await Promise.resolve();
         readyState = WebSocket.CLOSED;
@@ -299,7 +300,7 @@ function addRecordingConnection(server: JsonWebSocketServer, sessionId: string):
         assert.equal(typeof frame, 'string');
         frames.push(String(frame));
     };
-    server.addConnection(new ConnectionContext(sessionId, socket));
+    server.addConnection(new ConnectionContext({ id: sessionId, socket }));
     return frames;
 }
 

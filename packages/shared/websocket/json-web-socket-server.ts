@@ -1,3 +1,5 @@
+import { validateJsonMessageSize, type JsonMessageRejection } from '../api/json-message-validation.ts';
+
 export interface WebSocketServerCallbacks {
     onConnection?: (ctx: ConnectionContext) => void;
     onError?: (ctx: ConnectionContext, ev: Event) => void;
@@ -11,12 +13,23 @@ export interface WebSocketServerCallbacks {
 }
 
 export interface WebSocketServerOnMessageCallback {
+    readonly maxMessageBytes?: number;
+    onRejected?: (ctx: ConnectionContext, reason: JsonMessageRejection, ev: MessageEvent) => Promise<void>;
     onMessage: (ctx: ConnectionContext, data: unknown, ev: MessageEvent) => Promise<void>;
 }
 
-export type EncodedJsonWebSocketMessage = Readonly<{
-    text: string;
-}>;
+export interface EncodedJsonWebSocketMessage {
+    readonly text: string;
+}
+
+export namespace ConnectionContext {
+    export interface Input {
+        readonly id: string;
+        readonly socket: WebSocket;
+        readonly generationId?: string;
+        readonly generationStartedAtEpochMs?: number;
+    }
+}
 
 export class ConnectionContext {
     public readonly id: string;
@@ -24,20 +37,24 @@ export class ConnectionContext {
     public readonly generationId: string;
     public readonly generationStartedAtEpochMs: number;
 
-    constructor(
-        id: string,
-        socket: WebSocket,
-        generationId: string = crypto.randomUUID(),
-        generationStartedAtEpochMs: number = Date.now()
-    ) {
-        this.id = id;
-        this.socket = socket;
-        this.generationId = generationId;
-        this.generationStartedAtEpochMs = generationStartedAtEpochMs;
+    constructor(input: ConnectionContext.Input) {
+        this.id = input.id;
+        this.socket = input.socket;
+        this.generationId = input.generationId ?? crypto.randomUUID();
+        this.generationStartedAtEpochMs = input.generationStartedAtEpochMs ?? Date.now();
     }
 
     get isOpen(): boolean {
         return this.socket.readyState === WebSocket.OPEN;
+    }
+}
+
+export namespace JsonWebSocketServer {
+    export interface CreateConnectionInput {
+        readonly id: string;
+        readonly socket: WebSocket;
+        readonly generationId?: string;
+        readonly observedAtEpochMs?: number;
     }
 }
 
@@ -48,12 +65,9 @@ export class JsonWebSocketServer {
 
     public readonly connections = new Map<string, ConnectionContext>();
 
-    createConnectionContext(
-        id: string,
-        socket: WebSocket,
-        generationId: string = crypto.randomUUID(),
-        observedAtEpochMs: number = Date.now()
-    ): ConnectionContext {
+    createConnectionContext(input: JsonWebSocketServer.CreateConnectionInput): ConnectionContext {
+        const generationId = input.generationId ?? crypto.randomUUID();
+        const observedAtEpochMs = input.observedAtEpochMs ?? Date.now();
         if (!Number.isSafeInteger(observedAtEpochMs) || observedAtEpochMs < 0) {
             throw new TypeError('WebSocket generation start must be a non-negative safe integer');
         }
@@ -65,7 +79,12 @@ export class JsonWebSocketServer {
             this.lastGenerationStartedAtEpochMs + 1
         );
         this.lastGenerationStartedAtEpochMs = generationStartedAtEpochMs;
-        return new ConnectionContext(id, socket, generationId, generationStartedAtEpochMs);
+        return new ConnectionContext({
+            id: input.id,
+            socket: input.socket,
+            generationId,
+            generationStartedAtEpochMs
+        });
     }
 
     // --------------------
@@ -116,34 +135,7 @@ export class JsonWebSocketServer {
             }
         });
 
-        ctx.socket.addEventListener('message', async (ev: MessageEvent) => {
-            let decoded: unknown = ev.data;
-
-            if (typeof ev.data === 'string') {
-                try {
-                    decoded = JSON.parse(ev.data);
-                }
-                catch (e) {
-                    for (const cb of this.webSocketServerCallbacks.values()) {
-                        try {
-                            cb.onParseError?.(ctx, ev.data, e);
-                        }
-                        catch (e2) {
-                            console.error('Callback onParseError failed:', e2);
-                        }
-                    }
-                }
-            }
-
-            for (const cb of this.onMessageCallbacks.values()) {
-                try {
-                    await cb.onMessage(ctx, decoded, ev);
-                }
-                catch (e) {
-                    console.error('Callback onMessage failed:', e);
-                }
-            }
-        });
+        ctx.socket.addEventListener('message', (event: MessageEvent) => this.dispatchMessage(ctx, event));
 
         ctx.socket.addEventListener('error', (ev: Event) => {
             for (const cb of this.webSocketServerCallbacks.values()) {
@@ -175,6 +167,60 @@ export class JsonWebSocketServer {
                 }
             }
         });
+    }
+
+    private async dispatchMessage(ctx: ConnectionContext, event: MessageEvent): Promise<void> {
+        if (this.connections.get(ctx.id) !== ctx) {
+            return;
+        }
+        if (this.onMessageCallbacks.size === 0) {
+            this.decodeMessage(ctx, event);
+            return;
+        }
+        let decoded: unknown = event.data;
+        let hasDecoded = false;
+        for (const callback of this.onMessageCallbacks.values()) {
+            if (this.connections.get(ctx.id) !== ctx) {
+                return;
+            }
+            try {
+                if (callback.maxMessageBytes !== undefined) {
+                    const validated = validateJsonMessageSize(event.data, callback.maxMessageBytes);
+                    if (validated.left) {
+                        await callback.onRejected?.(ctx, validated.left, event);
+                        continue;
+                    }
+                }
+                if (!hasDecoded) {
+                    decoded = this.decodeMessage(ctx, event);
+                    hasDecoded = true;
+                }
+                await callback.onMessage(ctx, decoded, event);
+            }
+            catch (error) {
+                console.error('Callback onMessage failed:', error);
+            }
+        }
+    }
+
+    private decodeMessage(ctx: ConnectionContext, event: MessageEvent): unknown {
+        if (typeof event.data !== 'string') {
+            return event.data;
+        }
+        try {
+            return JSON.parse(event.data);
+        }
+        catch (error) {
+            for (const callback of this.webSocketServerCallbacks.values()) {
+                try {
+                    callback.onParseError?.(ctx, event.data, error);
+                }
+                catch (callbackError) {
+                    console.error('Callback onParseError failed:', callbackError);
+                }
+            }
+            return event.data;
+        }
     }
 
     closeConnection(connectionId: string, code?: number, reason?: string): boolean {

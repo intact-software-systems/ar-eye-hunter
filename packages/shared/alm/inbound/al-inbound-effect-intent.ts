@@ -174,6 +174,8 @@ function toNackReason(reason?: string) {
     switch (reason) {
         case 'gap':
             return 'gap' as const;
+        case 'resync-required':
+            return 'resync-required' as const;
         case 'expired':
             return 'expired' as const;
         case 'overloaded':

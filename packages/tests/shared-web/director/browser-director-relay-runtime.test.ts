@@ -85,7 +85,8 @@ vi.mock(
         browserStateCacheLifecycle: {
             hydrate: mocks.hydrateStateCache,
             onChange: mocks.onCacheChange,
-            initialise: vi.fn()
+            initialise: vi.fn(),
+            cancelSnapshotAssemblies: vi.fn(() => undefined)
         }
     })
 );
@@ -672,11 +673,11 @@ function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
         snapshots.find((snapshot) =>
             snapshot.group.groupId === ref.groupId &&
             snapshot.group.applicationId === ref.applicationId &&
-            (snapshot.group.workspaceId ?? '') === (ref.workspaceId ?? '')
+            snapshot.group.workspaceId === ref.workspaceId
         )
     );
     mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation((sessionId) =>
-        snapshots.find((snapshot) => snapshot.group.groupId === sessionId)?.group
+        snapshots.find((snapshot) => snapshot.activeSessions.some((session) => session.sessionId === sessionId))?.group
     );
 }
 

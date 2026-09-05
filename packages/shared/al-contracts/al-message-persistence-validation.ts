@@ -1,4 +1,5 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { Either } from '../resilience/Either.ts';
+import type { ALMessage } from './al-contract.ts';
 
 import { assertPersistedALDelivery } from './al-message-persistence/assert-persisted-al-delivery.ts';
 import { assertPersistedALQos } from './al-message-persistence/assert-persisted-al-qos.ts';
@@ -14,6 +15,12 @@ import {
     type PersistedALRecord,
     type PersistedALValue
 } from './al-message-persistence/persisted-al-value-validation.ts';
+import { validateALMessageResourceLimits, validateSerializedALMessageSize } from './al-message-resource-limits.ts';
+
+export interface ALMessageRejection {
+    readonly code: 'malformed' | 'oversized' | 'unauthorized' | 'unsupported';
+    readonly message: string;
+}
 
 const MESSAGE_SECTIONS = [
     'id',
@@ -30,19 +37,65 @@ const MESSAGE_SECTIONS = [
     'diagnostics'
 ] as const;
 
-/** Decodes the complete persisted AL envelope without imposing topic semantics. */
-export function decodePersistedALMessageValue(value: unknown): ALMessage {
-    if (
-        !value || typeof value !== 'object' || Array.isArray(value) ||
-        Object.getPrototypeOf(value) !== Object.prototype
-    ) {
-        throw new TypeError('Persisted AL message is invalid');
+export function decodeALMessageValue(value: unknown): Either<ALMessageRejection, ALMessage> {
+    try {
+        const resourceIssues = validateALMessageResourceLimits(value);
+        if (resourceIssues.length > 0) {
+            return Either.ofLeft(resourceIssues[0]);
+        }
+        if (
+            !value || typeof value !== 'object' || Array.isArray(value) ||
+            Object.getPrototypeOf(value) !== Object.prototype
+        ) {
+            return Either.ofLeft({ code: 'malformed', message: 'AL envelope must be a plain object' });
+        }
+        const message = value as PersistedALRecord;
+        requirePersistedALFields(message, MESSAGE_SECTIONS, ['id', 'route', 'payload']);
+        const id = requirePersistedALRecord(message.id, 'id');
+        if (typeof id.v === 'number' && id.v !== 2) {
+            return Either.ofLeft({ code: 'unsupported', message: 'AL envelope version is unsupported' });
+        }
+        assertId(message.id);
+        assertRoute(message.route);
+        assertPayload(message.payload);
+        assertRoutingSections(message);
+        assertDeliverySections(message);
+        assertProvenanceSections(message);
+        return Either.ofRight(value as ALMessage);
     }
-    const message = value as PersistedALRecord;
-    requirePersistedALFields(message, MESSAGE_SECTIONS, ['id', 'route', 'payload']);
-    assertId(message.id);
-    assertRoute(message.route);
-    assertPayload(message.payload);
+    catch (error) {
+        return Either.ofLeft({
+            code: 'malformed',
+            message: error instanceof TypeError ? error.message : 'AL envelope is malformed'
+        });
+    }
+}
+
+export function decodeALMessage(serialized: string): Either<ALMessageRejection, ALMessage> {
+    const resourceIssues = validateSerializedALMessageSize(serialized);
+    if (resourceIssues.length > 0) {
+        return Either.ofLeft(resourceIssues[0]);
+    }
+    let value: unknown;
+    try {
+        value = JSON.parse(serialized);
+    }
+    catch {
+        return Either.ofLeft({ code: 'malformed', message: 'AL envelope must contain valid JSON' });
+    }
+    return decodeALMessageValue(value);
+}
+
+/** Persisted invalid envelopes are invariant corruption, not a recoverable live-ingress rejection. */
+export function decodePersistedALMessageValue(value: unknown): ALMessage {
+    return decodeALMessageValue(value).fold(throwPersistedALMessageCorruption, (message) => message);
+}
+
+export function decodePersistedALMessage(serialized: string): ALMessage {
+    return decodeALMessage(serialized).fold(throwPersistedALMessageCorruption, (message) => message);
+}
+
+function assertRoutingSections(message: PersistedALRecord): void {
     if (message.targets !== undefined) {
         assertPersistedALTargets(message.targets);
     }
@@ -59,6 +112,9 @@ export function decodePersistedALMessageValue(value: unknown): ALMessage {
         requireOptionalPersistedALSafeInteger(section.ttlHops, 0, 'constraint hop ttl');
         requireOptionalPersistedALSafeInteger(section.expiresAtMs, 0, 'constraint expiry');
     }
+}
+
+function assertDeliverySections(message: PersistedALRecord): void {
     if (message.ordering !== undefined) {
         const section = requirePersistedALRecord(message.ordering, 'ordering');
         requirePersistedALFields(section, ['orderingKey', 'epoch', 'seq'], []);
@@ -69,14 +125,17 @@ export function decodePersistedALMessageValue(value: unknown): ALMessage {
     if (message.delivery !== undefined) {
         assertPersistedALDelivery(message.delivery);
     }
+    if (message.qos !== undefined) {
+        assertPersistedALQos(message.qos);
+    }
+}
+
+function assertProvenanceSections(message: PersistedALRecord): void {
     if (message.actions !== undefined) {
         const section = requirePersistedALRecord(message.actions, 'actions');
         requirePersistedALFields(section, ['corrId', 'replyToMsgId'], []);
         requireOptionalPersistedALNonEmptyString(section.corrId, 'action correlation id');
         requireOptionalPersistedALNonEmptyString(section.replyToMsgId, 'action reply id');
-    }
-    if (message.qos !== undefined) {
-        assertPersistedALQos(message.qos);
     }
     if (message.audit !== undefined) {
         const section = requirePersistedALRecord(message.audit, 'audit');
@@ -89,20 +148,16 @@ export function decodePersistedALMessageValue(value: unknown): ALMessage {
         requirePersistedALFields(section, ['visitedPeerIds'], []);
         requireOptionalPersistedALStringArray(section.visitedPeerIds, 'diagnostic visited peers');
     }
-    return value as ALMessage;
-}
-
-export function decodePersistedALMessage(serialized: string): ALMessage {
-    return decodePersistedALMessageValue(JSON.parse(serialized));
 }
 
 function assertId(value: PersistedALValue): void {
     const id = requirePersistedALRecord(value, 'id');
-    requirePersistedALFields(
-        id,
-        ['v', 'msgId', 'ts', 'senderId', 'sessionId', 'traceId'],
-        ['v', 'msgId', 'ts', 'senderId']
-    );
+    requirePersistedALFields(id, ['v', 'msgId', 'ts', 'senderId', 'sessionId', 'traceId'], [
+        'v',
+        'msgId',
+        'ts',
+        'senderId'
+    ]);
     if (id.v !== 2) {
         throw new TypeError('Persisted AL id version is invalid');
     }
@@ -115,11 +170,7 @@ function assertId(value: PersistedALValue): void {
 
 function assertRoute(value: PersistedALValue): void {
     const route = requirePersistedALRecord(value, 'route');
-    requirePersistedALFields(
-        route,
-        ['topicId', 'resourceId', 'contextId'],
-        ['topicId', 'resourceId', 'contextId']
-    );
+    requirePersistedALFields(route, ['topicId', 'resourceId', 'contextId'], ['topicId', 'resourceId', 'contextId']);
     requirePersistedALNonEmptyString(route.topicId, 'route topic');
     requirePersistedALNonEmptyString(route.resourceId, 'route resource');
     requirePersistedALNonEmptyString(route.contextId, 'route context');
@@ -127,14 +178,14 @@ function assertRoute(value: PersistedALValue): void {
 
 function assertPayload(value: PersistedALValue): void {
     const payload = requirePersistedALRecord(value, 'payload');
-    requirePersistedALFields(
-        payload,
-        ['typeId', 'contentType', 'resource'],
-        ['typeId', 'resource']
-    );
+    requirePersistedALFields(payload, ['typeId', 'contentType', 'resource'], ['typeId', 'resource']);
     requirePersistedALNonEmptyString(payload.typeId, 'payload type');
     requirePersistedALNonEmptyString(payload.resource, 'payload resource');
     if (payload.contentType !== undefined && payload.contentType !== 'application/json') {
         throw new TypeError('Persisted AL payload content type is invalid');
     }
+}
+
+function throwPersistedALMessageCorruption(rejection: ALMessageRejection): never {
+    throw new TypeError(rejection.message);
 }

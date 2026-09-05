@@ -1,4 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi,
+    type MockInstance
+} from 'vitest';
+
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { QueueBoxPubSubBridge, QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
@@ -21,15 +30,7 @@ import {
     ConnectionContext,
     JsonWebSocketServer,
     type EncodedJsonWebSocketMessage
-} from '@shared/websocket/JsonWebSocketServer.ts';
-import {
-    afterEach,
-    describe,
-    expect,
-    it,
-    vi,
-    type MockInstance
-} from 'vitest';
+} from '@shared/websocket/json-web-socket-server.ts';
 
 import { createFlakyOutboundAdmissionStore } from './alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from './websocket/test-web-socket.ts';
@@ -136,10 +137,10 @@ describe('durable WS outbox owner misses', () => {
         });
 
         await owner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        expect(claimCalls).toBeGreaterThanOrEqual(3);
-        expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
+        await vi.waitFor(() => {
+            expect(claimCalls).toBeGreaterThanOrEqual(3);
+            expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
+        });
     });
 
     it('publishes a wrong-claimant outbox key so the socket owner delivers it', async () => {
@@ -368,13 +369,14 @@ describe('durable WS outbox owner misses', () => {
     it.each(['before', 'after'] as const)(
         'durably retries a remote owner send failure %s claimant completion',
         async (race) => {
+            vi.useFakeTimers({ toFake: ['Date'] });
             const outbox = new InMemoryQueueBox();
             const original = QueueBoxUtilities.toResourceEntryFromMsg(
                 createUnicastMessage(),
                 EnqueuedType.WS_OUTBOX
             );
             await outbox.enqueue(original);
-            const bus: QueueBoxPubSubBridge & { drain?(): Promise<void>; } = race === 'before'
+            const bus: DrainableBridgeBus = race === 'before'
                 ? createBridgeBus()
                 : createFireAndForgetBridgeBus();
             const claimant = createService({
@@ -434,7 +436,7 @@ describe('durable WS outbox owner misses', () => {
                 { retryPolicy: remoteRetryPolicy, jitterUnit: () => 0 }
             )).resolves.toBeUndefined();
 
-            await new Promise((resolve) => setTimeout(resolve, 55));
+            vi.advanceTimersByTime(55);
             await claimant.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
             await bus.drain?.();
 
@@ -464,15 +466,16 @@ function createUnicastMessage(
 
 function createSocket(): WsOutboxTestSocket {
     const socket = new JsonWebSocketServer();
-    const connection = new TestWebSocket('ws://test.invalid');
-    connection.open();
-    socket.connections.set(
-        'writer-session',
-        new ConnectionContext('writer-session', connection)
-    );
+    for (const id of ['writer-session', 'local-session', 'remote-session']) {
+        const connection = new TestWebSocket(`ws://${id}.invalid`);
+        connection.open();
+        socket.addConnection(new ConnectionContext({ id, socket: connection }));
+    }
     const encodedSends: Array<[string, EncodedJsonWebSocketMessage]> = [];
+    const send = socket.sendEncoded.bind(socket);
     const sendEncoded = vi.spyOn(socket, 'sendEncoded').mockImplementation(
         (connectionId: string, encoded: EncodedJsonWebSocketMessage) => {
+            send(connectionId, encoded);
             encodedSends.push([connectionId, encoded]);
         }
     );
@@ -504,7 +507,11 @@ function createBridgeBus(): QueueBoxPubSubBridge {
     };
 }
 
-function createFireAndForgetBridgeBus(): QueueBoxPubSubBridge & { drain(): Promise<void>; } {
+interface DrainableBridgeBus extends QueueBoxPubSubBridge {
+    drain?(): Promise<void>;
+}
+
+function createFireAndForgetBridgeBus(): DrainableBridgeBus {
     const subscribers: ((message: QueueBoxPubSubMessage) => Promise<void> | void)[] = [];
     let published: QueueBoxPubSubMessage[] = [];
     return {
@@ -522,23 +529,20 @@ function createFireAndForgetBridgeBus(): QueueBoxPubSubBridge & { drain(): Promi
     };
 }
 
-function createDelayedSecondSubscriberBridgeBus():
-    & QueueBoxPubSubBridge
-    & Readonly<{
-        releaseSecondSubscription(): void;
-    }> {
+interface DelayedBridgeBus extends QueueBoxPubSubBridge {
+    releaseSecondSubscription(): void;
+}
+
+function createDelayedSecondSubscriberBridgeBus(): DelayedBridgeBus {
     const subscribers: ((message: QueueBoxPubSubMessage) => Promise<void> | void)[] = [];
     let subscriptionCount = 0;
-    let releaseSecondSubscription: () => void = () => undefined;
-    const secondSubscription = new Promise<void>((resolve) => {
-        releaseSecondSubscription = resolve;
-    });
+    const secondSubscription = Promise.withResolvers<void>();
 
     return {
         subscribe: async (_channel, subscriber) => {
             subscriptionCount += 1;
             if (subscriptionCount === 2) {
-                await secondSubscription;
+                await secondSubscription.promise;
             }
             subscribers.push(subscriber);
         },
@@ -547,7 +551,7 @@ function createDelayedSecondSubscriberBridgeBus():
                 subscribers.map(async (subscriber) => await subscriber(message))
             );
         },
-        releaseSecondSubscription
+        releaseSecondSubscription: () => secondSubscription.resolve()
     };
 }
 

@@ -75,11 +75,15 @@ describe('PSqlInboundAdmissionBackend', () => {
         const status = await store.commitMutations({
             senderId: 'peer-1',
             expectedVersion: undefined,
+            versionExpireAtTimestamp: Date.now() + 60_000,
             mutations: [
                 {
                     kind: 'set-msg-owner',
                     msgId: 'msg-1',
-                    senderId: 'peer-1'
+                    senderId: 'peer-1',
+                    source: { kind: 'ws-client', peerId: 'peer-1' },
+                    supersedenceKey: null,
+                    expireAtTimestamp: Date.now() + 60_000
                 }
             ]
         });
@@ -107,16 +111,52 @@ describe('PSqlInboundAdmissionBackend', () => {
         await store.commitMutations({
             senderId: 'peer-1',
             expectedVersion: undefined,
+            versionExpireAtTimestamp: Date.now() + 60_000,
             mutations: [
                 {
                     kind: 'set-msg-owner',
                     msgId: 'msg-1',
-                    senderId: 'peer-1'
+                    senderId: 'peer-1',
+                    source: { kind: 'ws-client', peerId: 'peer-1' },
+                    supersedenceKey: null,
+                    expireAtTimestamp: Date.now() + 60_000
+                },
+                {
+                    kind: 'set-control-pending',
+                    msgId: 'msg-1',
+                    senderId: 'peer-1',
+                    value: {
+                        kind: 'pending',
+                        value: {
+                            toPeerId: 'peer-1',
+                            status: 'subtree-complete',
+                            localReady: false,
+                            expectedFromPeerIds: ['peer-2'],
+                            ackedFromPeerIds: []
+                        }
+                    },
+                    expireAtTimestamp: Date.now() + 60_000
+                },
+                {
+                    kind: 'set-control-owners',
+                    msgId: 'msg-1',
+                    expected: undefined,
+                    value: { ambiguous: false, values: [{ peerId: 'peer-2', senderId: 'peer-1' }] },
+                    expireAtTimestamp: Date.now() + 60_000
                 }
             ]
         });
         const acceptance = await store.acceptControlMessage(
-            newALAckControlMessage('peer-2', 'self', 'msg-1', 'delivered')
+            newALAckControlMessage(
+                { v: 2, msgId: 'ack-msg-1', ts: 1, senderId: 'peer-2' },
+                {
+                    ackedMsgId: 'msg-1',
+                    fromPeerId: 'peer-2',
+                    toPeerId: 'self',
+                    status: 'delivered',
+                    observedAtEpochMs: 1
+                }
+            )
         );
 
         expect(acceptance.handled).toBe(true);
@@ -126,7 +166,7 @@ describe('PSqlInboundAdmissionBackend', () => {
             version: 2
         });
 
-        const ackEntry = await repository.findEntry(namespace, `${namespace}:control:acks:msg-1`);
+        const ackEntry = await repository.findEntry(namespace, `${namespace}:control:acks:msg-1:peer-1`);
         expect(ackEntry).toBeDefined();
     });
 });
@@ -259,12 +299,37 @@ describe('PSqlOutboundAdmissionBackend', () => {
                     kind: 'set-msg-owner',
                     msgId: msg.id.msgId,
                     senderId: 'self'
+                },
+                {
+                    kind: 'set-sent-message',
+                    snapshot: { msgId: msg.id.msgId, msg }
+                },
+                {
+                    kind: 'set-pending-ack',
+                    snapshot: {
+                        msgId: msg.id.msgId,
+                        expectedPeerIds: ['peer-1'],
+                        ackedPeerIds: [],
+                        timeoutMs: 2_000,
+                        maxAttempts: 3,
+                        attempts: 0,
+                        deadlineAtMs: Date.now() + 2_000
+                    }
                 }
             ],
             durableEffects: []
         }, decodePreparedOutboundSend);
         const acceptance = await store.acceptControlMessage(
-            newALAckControlMessage('peer-1', 'self', msg.id.msgId),
+            newALAckControlMessage(
+                { v: 2, msgId: 'ack-outbound-message', ts: 1, senderId: 'peer-1' },
+                {
+                    ackedMsgId: msg.id.msgId,
+                    fromPeerId: 'peer-1',
+                    toPeerId: 'self',
+                    status: 'delivered',
+                    observedAtEpochMs: 1
+                }
+            ),
             decodePreparedOutboundSend
         );
 

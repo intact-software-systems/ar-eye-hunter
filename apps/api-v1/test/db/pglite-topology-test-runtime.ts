@@ -30,7 +30,6 @@ import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topolog
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
-import { materializeRtcOverlayTopologyBroadcastMessage } from '@shared-server/rallar-system/topology/planning/materialize-rtc-overlay-topology-broadcast-message.ts';
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/topology/publication/rtc-topology-ws-outbox-entry.ts';
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
@@ -322,14 +321,14 @@ async function planTopologyWorkPublication(
         overlayVersion: topology.version,
         targetGroupSnapshotVersion: groupSnapshot.group.snapshotVersion,
         recipientSessionIds: topology.activeSessionIds,
-        message: materializeRtcOverlayTopologyBroadcastMessage(
-            groupSnapshot,
-            topology,
-            { workId, createdAtEpochMs: nowEpochMs, expiresAtEpochMs }
-        ),
+        snapshot: topology,
+        expiresAtEpochMs,
         createdAtEpochMs: nowEpochMs
     };
-    const publicationEntry = computeRtcTopologyPublicationOutbox(publication);
+    const pages = computeRtcTopologyPublicationOutbox(publication);
+    assert.equal(pages.length, 1, 'The empty-topology transaction fixture expects one page');
+    const [publicationEntry] = pages;
+    assert.ok(publicationEntry);
     return { topology, publication, publicationEntry };
 }
 

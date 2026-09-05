@@ -1,11 +1,11 @@
 import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
+import { jsonEquals } from '../../repository/state-utils.ts';
 import type { ALAdmissionBackend, ALAdmissionWriteContext } from '../al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../ALStoreRetention.ts';
-import { jsonEquals } from '../../repository/state-utils.ts';
 import type {
     ALInboundDeliveryPredecessor,
     ALInboundDurableEffect,
@@ -238,6 +238,26 @@ export class ALInboundDurableEffectStore {
             expireAtTimestamp
         );
         await this.trackEffectDelivery(tx, effect, expireAtTimestamp);
+    }
+
+    async writePreparedEffect(
+        tx: ALAdmissionWriteContext,
+        effect: ALInboundDurableEffectWrite,
+        observedAtMs: number
+    ): Promise<void> {
+        await tx.set(
+            this.toEffectKey(effect.effectId),
+            toStoredPersistedInboundEffect({
+                effectId: effect.effectId,
+                payload: effect.payload,
+                status: 'pending',
+                attempts: 0,
+                retryAtMs: observedAtMs,
+                updatedAtMs: observedAtMs,
+                expireAtTimestamp: effect.expireAtTimestamp
+            }),
+            effect.expireAtTimestamp
+        );
     }
 
     private async trackEffectDelivery(

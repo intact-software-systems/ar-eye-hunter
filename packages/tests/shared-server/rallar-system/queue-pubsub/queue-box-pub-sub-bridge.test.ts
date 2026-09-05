@@ -11,33 +11,28 @@ import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persis
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { OnWebSocketServerMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
-import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-type QueueMessageCallback = Parameters<QueueBoxPubSubWsService['onAllInboxMessagesDo']>[0];
 type ClusterPublisher = Parameters<QueueBoxPubSubWsService['onOutboxClusterPublishDo']>[0];
 
 interface TestQueueBoxPubSubBridge extends QueueBoxPubSubBridge {
-    readonly published: Array<
-        Readonly<{
-            channel: string;
-            message: QueueBoxPubSubMessage;
-        }>
-    >;
+    readonly published: PublishedQueueMessage[];
     readonly subscribedChannels: string[];
     readonly subscriber?: Parameters<QueueBoxPubSubBridge['subscribe']>[1];
 }
 
-interface Deferred {
-    readonly promise: Promise<void>;
-    resolve(): void;
+interface PublishedQueueMessage {
+    readonly channel: string;
+    readonly message: QueueBoxPubSubMessage;
 }
 
 describe('QueueBoxPubSubBridge', () => {
     it('exposes the actual transport subscription as readiness', async () => {
-        const subscription = createDeferred();
+        const subscription = Promise.withResolvers<void>();
         const timingEvents: RallarTimingEvent[] = [];
         const bridge: QueueBoxPubSubBridge = {
             publish: async () => undefined,
@@ -119,7 +114,7 @@ describe('QueueBoxPubSubBridge', () => {
     });
 
     it('publishes all inbox and outbox entries through the supplied bridge', async () => {
-        const inboxCallbacks: QueueMessageCallback[] = [];
+        const inboxCallbacks: OnWebSocketServerMessageCallback<ALMessage>[] = [];
         const outboxPublishers: ClusterPublisher[] = [];
         const bridge = createBridge();
         const deliveredMessages: ALMessage[] = [];
@@ -141,7 +136,10 @@ describe('QueueBoxPubSubBridge', () => {
         const entry = createWsEntry();
 
         const message = decodePersistedALMessage(entry.resource);
-        await inboxCallbacks[0].onMessage(message, entry, new JsonWebSocketServer());
+        await inboxCallbacks[0].onMessage(message, entry, {
+            server: new JsonWebSocketServer(),
+            source: { kind: 'ws-client', peerId: message.id.senderId }
+        });
         await outboxPublishers[0](message, entry);
 
         expect(bridge.published).toEqual([
@@ -480,7 +478,7 @@ class RecordingInMemoryQueueBox extends InMemoryQueueBox {
 interface CreateTestQueueBoxPubSubWsServiceInput {
     readonly inbox?: InMemoryQueueBox;
     readonly outbox?: InMemoryQueueBox;
-    readonly registerInboxCallback?: (callback: QueueMessageCallback) => void;
+    readonly registerInboxCallback?: (callback: OnWebSocketServerMessageCallback<ALMessage>) => void;
     readonly registerOutboxPublisher?: (publisher: ClusterPublisher) => void;
     readonly sendToTargetsWithResult?: (
         message: ALMessage
@@ -565,16 +563,4 @@ function createWsOutboxEntry(): ResourceEntry {
         ),
         EnqueuedType.WS_OUTBOX
     );
-}
-
-function createDeferred(): Deferred {
-    let resolvePromise: () => void = () => undefined;
-    const promise = new Promise<void>((resolve) => {
-        resolvePromise = resolve;
-    });
-
-    return {
-        promise,
-        resolve: () => resolvePromise()
-    };
 }

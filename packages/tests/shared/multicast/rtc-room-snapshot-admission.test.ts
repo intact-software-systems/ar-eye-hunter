@@ -1,155 +1,127 @@
-import {
-    describe,
-    expect,
-    it
-} from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import {
-    newALBroadcastMessage,
-    newALMulticastMessage,
-    type ALMessage
-} from '@shared/al-contracts/al-contract.ts';
-import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import type { OverlayInfo } from '@shared/api/api-config.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
 
-import { createTestGroup } from '../../create-test-group.ts';
+import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 
-const roomRef: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
-const route = { topicId: 'room.messages', contextId: 'room', resourceId: 'probe' };
+const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+const message = newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'message' }, roomRef, 'chat.v1', {});
+const nowMs = 100;
 
-describe('RTC room snapshot admission', () => {
-    it('does not turn terminal expiry or duplicate rejection into a snapshot retry', () => {
-        const message = createRoomMessage('multicast', 5);
-        const expiredMessage = { ...message, constraints: { expiresAtMs: 10 } };
-        const expiredPlan = planALMessageHandling(expiredMessage, { selfPeerId: 'receiver', fromPeerId: 'sender', nowMs: 100 });
-        const duplicatePlan = planALMessageHandling(message, {
-            selfPeerId: 'receiver',
-            fromPeerId: 'sender',
-            seenDedupKeys: new Set([message.id.msgId])
-        });
-        const expired = planRtcRoomSnapshotAdmission({
-            message: expiredMessage,
-            plan: expiredPlan,
-            snapshot: undefined,
-            fromPeerId: 'sender',
-            nowMs: 100
-        });
-        const duplicate = planRtcRoomSnapshotAdmission({
+function snapshot(): GroupSnapshot {
+    return createGroupSnapshotFixture({ ...roomRef, sessionIds: ['origin', 'relay', 'receiver', 'downstream'] });
+}
+
+function overlay(): OverlayInfo {
+    return {
+        overlayId: 'room',
+        groupRef: roomRef,
+        provenance: 'server',
+        state: 'active',
+        topology: 'tree',
+        name: 'Room',
+        sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 1 },
+        nextHopSessionIds: ['relay', 'downstream'],
+        degreeLimit: 2,
+        overlayVersion: 1,
+        createdByClientId: 'owner',
+        createdAtEpochMs: 1,
+        updatedAtEpochMs: 1
+    };
+}
+
+describe('RTC room authority', () => {
+    it('requires evidence for no-floor messages, then permits an active direct room recipient without topology', () => {
+        const input = { message, selfPeerId: 'receiver', fromPeerId: 'origin', recipientPeerId: undefined, nowMs, overlay: undefined };
+        expect(computeRtcRoomSnapshotAdmission({ ...input, snapshot: undefined }).kind).toBe('pending');
+        expect(computeRtcRoomSnapshotAdmission({ ...input, snapshot: snapshot() }).kind).toBe('authorized');
+    });
+
+    it('authorizes a different immediate relay only from a matching active server topology', () => {
+        const input = { message, selfPeerId: 'receiver', fromPeerId: 'relay', recipientPeerId: undefined, nowMs, snapshot: snapshot() };
+        expect(computeRtcRoomSnapshotAdmission({ ...input, overlay: overlay() }).kind).toBe('authorized');
+        expect(computeRtcRoomSnapshotAdmission({ ...input, overlay: undefined }).kind).toBe('pending');
+        expect(computeRtcRoomSnapshotAdmission({ ...input, overlay: { ...overlay(), provenance: 'bootstrap' } }).kind).toBe('pending');
+        expect(computeRtcRoomSnapshotAdmission({ ...input, overlay: { ...overlay(), nextHopSessionIds: ['downstream'] } }).kind).toBe('unauthorized');
+        expect(computeRtcRoomSnapshotAdmission({ ...input, overlay: { ...overlay(), state: 'removed' } }).kind).toBe('unauthorized');
+    });
+
+    it('checks room scope and expiry before snapshot catch-up', () => {
+        const current = snapshot();
+        const versioned = { ...message, targets: { mode: 'multicast' as const, groupRef: roomRef, minSnapshotVersion: current.group.snapshotVersion + 1 } };
+        const input = { message: versioned, selfPeerId: 'receiver', fromPeerId: 'origin', recipientPeerId: undefined, overlay: undefined, nowMs };
+        expect(computeRtcRoomSnapshotAdmission({ ...input, snapshot: current }).kind).toBe('pending');
+        expect(computeRtcRoomSnapshotAdmission({ ...input, snapshot: { ...current, group: { ...current.group, workspaceId: 'other' } } }).kind).toBe(
+            'unauthorized'
+        );
+        expect(computeRtcRoomSnapshotAdmission({ ...input, snapshot: { ...current, group: { ...current.group, expiresAtEpochMs: nowMs } } }).kind).toBe(
+            'unauthorized'
+        );
+    });
+
+    it('rejects an expired session or inactive member even while a stale session row remains', () => {
+        const current = snapshot();
+        const input = { message, selfPeerId: 'receiver', fromPeerId: 'origin', recipientPeerId: undefined, overlay: undefined, nowMs };
+        const expired = {
+            ...current,
+            activeSessions: current.activeSessions.map((session) => session.sessionId === 'origin' ? { ...session, expiresAtEpochMs: nowMs } : session)
+        };
+        expect(computeRtcRoomSnapshotAdmission({ ...input, snapshot: expired }).kind).toBe('unauthorized');
+        const originPrincipal = current.activeSessions.find((session) => session.sessionId === 'origin')!.principalId;
+        const left = {
+            ...current,
+            members: current.members.map((member) =>
+                member.principalId === originPrincipal && member.status === 'active' ? { ...member, status: 'left' as const, left: member.updated } : member
+            )
+        };
+        expect(computeRtcRoomSnapshotAdmission({ ...input, snapshot: left }).kind).toBe('unauthorized');
+        expect(computeRtcRoomSnapshotAdmission({ ...input, snapshot: { ...current, members: [], activeSessions: [] } }).kind).toBe('pending');
+    });
+
+    it('plans a frozen authority observation without changing it', () => {
+        const current = snapshot();
+        const input = { message, selfPeerId: 'receiver', fromPeerId: 'relay', recipientPeerId: undefined, overlay: overlay(), nowMs, snapshot: current };
+        freezeRoomObservation(input);
+        const before = JSON.stringify(input);
+        const admitted = computeRtcRoomSnapshotAdmission(input);
+        expect(admitted.kind).toBe('authorized');
+        expect(computeRtcRoomSnapshotAdmission(input)).toEqual(admitted);
+        expect(JSON.stringify(input)).toBe(before);
+    });
+
+    it('requires recipient membership and a permitted outgoing edge independent of diagnostics', () => {
+        const input = {
             message,
-            plan: duplicatePlan,
-            snapshot: undefined,
-            fromPeerId: 'sender',
-            nowMs: 100
-        });
-        expect(expired.nack.reason).toBe('expired');
-        expect(duplicate.nack.enabled).toBe(false);
-        expect(duplicate.localDelivery.enabled).toBe(false);
-        expect(duplicate.forwarding.enabled).toBe(false);
-    });
-
-    it.each(['multicast', 'broadcast'] as const)('rejects a %s against missing, old, expired, or wrong-scope snapshots', (mode) => {
-        const message = createRoomMessage(mode, 5);
-        const plan = createHandlingPlan(message);
-        const current = createSnapshot(5);
-        const invalidSnapshots = [
-            undefined,
-            createSnapshot(4),
-            { ...current, group: { ...current.group, applicationId: 'other-app' } },
-            { ...current, group: { ...current.group, workspaceId: 'other-workspace' } },
-            { ...current, group: { ...current.group, groupId: 'other-room' } },
-            { ...current, group: { ...current.group, expiresAtEpochMs: 100 } }
-        ];
-        for (const snapshot of invalidSnapshots) {
-            const rejected = planRtcRoomSnapshotAdmission({ message, plan, snapshot, fromPeerId: 'sender', nowMs: 100 });
-            expect(rejected.dropReason).toBe('not-yet-in-sync');
-            expect(rejected.localDelivery).toEqual({ enabled: false, persist: false, deferred: false });
-            expect(rejected.forwarding).toEqual({ enabled: false, persist: false, nextHopPeerIds: [] });
-            expect(rejected.ack.enabled).toBe(false);
-            expect(rejected.repair.enabled).toBe(false);
-            expect(rejected.nack).toEqual({
-                enabled: true,
-                toPeerId: 'sender',
-                reason: 'not-yet-in-sync',
-                missingSeqs: []
-            });
+            selfPeerId: 'receiver',
+            fromPeerId: undefined,
+            recipientPeerId: 'downstream',
+            nowMs,
+            snapshot: snapshot(),
+            overlay: overlay()
+        };
+        expect(computeRtcRoomSnapshotAdmission(input).kind).toBe('authorized');
+        expect(computeRtcRoomSnapshotAdmission({ ...input, recipientPeerId: 'relay' }).kind).toBe('authorized');
+        expect(computeRtcRoomSnapshotAdmission({ ...input, recipientPeerId: 'origin' }).kind).toBe('unauthorized');
+        for (const visitedPeerIds of [[], ['receiver'], ['origin', 'relay', 'receiver']]) {
+            expect(
+                computeRtcRoomSnapshotAdmission({
+                    ...input,
+                    message: { ...message, diagnostics: { visitedPeerIds } },
+                    overlay: { ...overlay(), state: 'removed' }
+                }).kind
+            ).toBe('unauthorized');
         }
-    });
-
-    it.each(['multicast', 'broadcast'] as const)('preserves valid %s delivery and forwarding at equal or newer versions', (mode) => {
-        const message = createRoomMessage(mode, 5);
-        const plan = createHandlingPlan(message);
-        for (const version of [5, 6]) {
-            const admitted = planRtcRoomSnapshotAdmission({
-                message,
-                plan,
-                snapshot: createSnapshot(version),
-                fromPeerId: 'sender',
-                nowMs: 100
-            });
-            expect(admitted.dropReason).toBeUndefined();
-            expect(admitted.localDelivery.enabled).toBe(true);
-            expect(admitted.forwarding.nextHopPeerIds).toEqual(['downstream']);
-            expect(admitted.nack.enabled).toBe(false);
-        }
-    });
-
-    it('does not require a snapshot for unversioned room messages or originating plans', () => {
-        const unversioned = createRoomMessage('multicast', undefined);
-        const versioned = createRoomMessage('multicast', 5);
-        expect(
-            planRtcRoomSnapshotAdmission({
-                message: unversioned,
-                plan: createHandlingPlan(unversioned),
-                snapshot: undefined,
-                fromPeerId: 'sender',
-                nowMs: 100
-            }).localDelivery.enabled
-        ).toBe(true);
-        expect(
-            planRtcRoomSnapshotAdmission({
-                message: versioned,
-                plan: createHandlingPlan(versioned),
-                snapshot: undefined,
-                fromPeerId: undefined,
-                nowMs: 100
-            }).forwarding.nextHopPeerIds
-        ).toEqual(['downstream']);
-    });
-
-    it('fails closed for a versioned room broadcast without a scoped identity', () => {
-        const message = newALBroadcastMessage('sender', route, 'room', 'probe.v1', {}, { minSnapshotVersion: 5 });
-        const plan = createHandlingPlan(message);
-        expect(
-            planRtcRoomSnapshotAdmission({ message, plan, snapshot: createSnapshot(6), fromPeerId: 'sender', nowMs: 100 })
-                .dropReason
-        ).toBe('not-yet-in-sync');
     });
 });
 
-function createRoomMessage(mode: 'multicast' | 'broadcast', minSnapshotVersion: number | undefined): ALMessage {
-    return mode === 'multicast'
-        ? newALMulticastMessage('sender', route, roomRef, 'probe.v1', {}, { minSnapshotVersion })
-        : newALBroadcastMessage('sender', route, 'room', 'probe.v1', {}, { groupRef: roomRef, minSnapshotVersion });
-}
-
-function createHandlingPlan(message: ALMessage) {
-    return planALMessageHandling(message, {
-        selfPeerId: 'receiver',
-        fromPeerId: 'sender',
-        groupMemberPeerIds: ['sender', 'receiver', 'downstream'],
-        connectedPeerIds: ['sender', 'downstream'],
-        overlayNeighborPeerIds: ['downstream']
-    });
-}
-
-function createSnapshot(snapshotVersion: number): GroupSnapshot {
-    return {
-        group: createTestGroup({ ...roomRef, snapshotVersion }),
-        causalRevision: { groupRevision: 1, presenceRevision: 1 },
-        members: [],
-        activeSessions: [],
-        memberCount: 0,
-        onlineMemberCount: 0
-    };
+function freezeRoomObservation(value: object): void {
+    Object.freeze(value);
+    for (const child of Object.values(value)) {
+        if (child !== null && typeof child === 'object' && !Object.isFrozen(child)) {
+            freezeRoomObservation(child);
+        }
+    }
 }

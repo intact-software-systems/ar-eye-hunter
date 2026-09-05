@@ -1,12 +1,46 @@
+import { describe, expect, it } from 'vitest';
+
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
 import type { RallarCrdtPrincipalSnapshotRef } from '@shared-server/rallar-system/websocket/targets/ws-server-target-resolution-options.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { RALLAR_CRDT_UPDATE_TYPE_ID } from '@shared/crdt/mod.ts';
 import { ConnectionContext, JsonWebSocketServer, newALRoute, newALUnicastMessage } from '@shared/mod.ts';
-import { describe, expect, it } from 'vitest';
+
 import { createOpenTestWebSocket } from '../test-support/open-test-websocket.ts';
 
 describe('CRDT principal post-commit routing', () => {
+    it.each(['applicationId', 'workspaceId', 'principalId'] as const)('rejects a principal lookup returning another %s', (field) => {
+        const server = new JsonWebSocketServer();
+        server.addConnection(new ConnectionContext({ id: 'session-a', socket: createOpenTestWebSocket() }));
+        const snapshot = createPrincipalSnapshot('workspace-a', 10_000);
+        const resolver = createWsServerTargetResolver(server, {
+            now: () => 10_000,
+            findClientSnapshotByRef: () => ({ ...snapshot, principal: { ...snapshot.principal, [field]: 'another' } })
+        });
+
+        expect(resolver.resolvePeerRecipients?.('alice', principalMessage('workspace-a'))).toEqual([]);
+    });
+
+    it('checks the resolved socket connection while retaining the logical peer ID', () => {
+        const server = new JsonWebSocketServer();
+        server.addConnection(new ConnectionContext({ id: 'socket-a', socket: createOpenTestWebSocket() }));
+        const snapshot = createPrincipalSnapshot('workspace-a', 10_000);
+        const resolver = createWsServerTargetResolver(server, {
+            now: () => 10_000,
+            findClientSnapshotByRef: () => ({
+                ...snapshot,
+                activeSessions: snapshot.activeSessions.map((session) => ({
+                    ...session,
+                    connectionId: session.sessionId === 'session-a' ? 'socket-a' : 'closed-socket'
+                }))
+            })
+        });
+
+        expect(resolver.resolvePeerRecipients?.('alice', principalMessage('workspace-a'))).toEqual([
+            { peerId: 'session-a', connectionId: 'socket-a' }
+        ]);
+    });
+
     it('resolves a logical principal target to every active session', () => {
         const { resolver } = principalResolver({
             openConnectionIds: ['session-a', 'session-b'],
@@ -64,18 +98,18 @@ describe('CRDT principal post-commit routing', () => {
     });
 });
 
-function principalResolver(
-    input: Readonly<{
-        openConnectionIds: readonly string[];
-        workspaceId: string | undefined;
-        onRef?: (ref: RallarCrdtPrincipalSnapshotRef) => void;
-        isCurrent?: () => boolean;
-    }>
-) {
+interface PrincipalResolverInput {
+    readonly openConnectionIds: readonly string[];
+    readonly workspaceId: string | undefined;
+    readonly onRef?: (ref: RallarCrdtPrincipalSnapshotRef) => void;
+    readonly isCurrent?: () => boolean;
+}
+
+function principalResolver(input: PrincipalResolverInput) {
     const now = 10_000;
     const server = new JsonWebSocketServer();
     for (const connectionId of input.openConnectionIds) {
-        server.addConnection(new ConnectionContext(connectionId, createOpenTestWebSocket()));
+        server.addConnection(new ConnectionContext({ id: connectionId, socket: createOpenTestWebSocket() }));
     }
     const resolver = createWsServerTargetResolver(server, {
         findClientSnapshotByRef: (ref) => {

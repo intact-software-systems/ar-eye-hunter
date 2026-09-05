@@ -1,5 +1,21 @@
 import assert from 'node:assert/strict';
 
+import {
+    createPSqlResourceInboxRepository,
+    type PSqlResourceInboxRepository
+} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
+import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
+import type { CrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
+import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
+import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { AuditStamp, ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
@@ -16,35 +32,13 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
-import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
-
-import {
-    createPSqlResourceInboxRepository,
-    type PSqlResourceInboxRepository
-} from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-
-import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
-import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-
-import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
-
-import type { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
-import type { CrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
-
-import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
-
 import { createApiCrdtDocumentAuthorizer } from '../../src/crdt/create-api-crdt-document-authorizer.ts';
 import { createApiCrdtInboxService } from '../../src/crdt/create-api-crdt-inbox-service.ts';
+import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../db/pglite-app-inbox-test-runtime.ts';
 import { toPersistedAuthSessionFixture, withPGliteSql } from '../db/pglite-auth-test-harness.ts';
+import { PGliteTestSocket } from '../db/pglite-test-socket.ts';
 
 const NOW = Date.now();
 const CLIENT_ID = 'client-42';
@@ -217,7 +211,7 @@ async function createCrdtWebSocketAuthorityFixture(
     const service = createCrdtAuthorityInbox({ sql, auth, clients, resourceInbox, inboxQueueReader });
     const queue = new InMemoryQueueBox();
     const socketServer = new JsonWebSocketServer();
-    const sockets = new Map<string, FakeSocket>();
+    const sockets = new Map<string, PGliteTestSocket>();
     const wsService = createDefaultWsQueueBoxServerService({
         inbox: queue,
         outbox: queue,
@@ -253,9 +247,9 @@ async function createCrdtWebSocketAuthorityFixture(
                 })
             );
             await clients.insertSession(clientSession(sessionId));
-            const socket = new FakeSocket();
+            const socket = new PGliteTestSocket();
             sockets.set(sessionId, socket);
-            socketServer.addConnection(new ConnectionContext(sessionId, socket));
+            socketServer.addConnection(new ConnectionContext({ id: sessionId, socket }));
         },
         revokeAuthSession: async (sessionId: string) => {
             const stored = await auth.findSessionBySessionIdEntry(sessionId);
@@ -422,31 +416,4 @@ function audit(): AuditStamp {
         traceId: null,
         requestId: null
     };
-}
-
-class FakeSocket extends EventTarget implements WebSocket {
-    readonly CONNECTING = WebSocket.CONNECTING;
-    readonly OPEN = WebSocket.OPEN;
-    readonly CLOSING = WebSocket.CLOSING;
-    readonly CLOSED = WebSocket.CLOSED;
-    readonly bufferedAmount = 0;
-    readonly extensions = '';
-    readonly protocol = '';
-    readonly readyState = WebSocket.OPEN;
-    readonly url = 'ws://test.invalid';
-    binaryType: BinaryType = 'blob';
-    onclose: ((this: WebSocket, event: CloseEvent) => void) | null = null;
-    onerror: ((this: WebSocket, event: Event) => void) | null = null;
-    onmessage: ((this: WebSocket, event: MessageEvent) => void) | null = null;
-    onopen: ((this: WebSocket, event: Event) => void) | null = null;
-
-    close(): void {}
-
-    send(_data: string): void {
-    }
-
-    async dispatchMessage(value: ALMessage): Promise<void> {
-        this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(value) }));
-        await Promise.resolve();
-    }
 }

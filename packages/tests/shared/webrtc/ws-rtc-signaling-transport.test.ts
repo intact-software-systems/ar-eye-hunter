@@ -25,8 +25,7 @@ import {
     type QRtcSignalingTransportCallbacks
 } from '@shared/webrtc/QRtcSignalingContracts.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signaling-transport-using-ws-q-box.ts';
-import { WsRtcSignalingTransport } from '@shared/webrtc/WsRtcSignalingTransport.ts';
-import { JsonWebSocketClient } from '@shared/websocket/JsonWebSocketClient.ts';
+import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
@@ -41,46 +40,6 @@ afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     TestWebSocket.instances.length = 0;
-});
-
-describe('WsRtcSignalingTransport', () => {
-    it('reports socket lifecycle and forwards only matching decoded messages', async () => {
-        const client = new JsonWebSocketClient('ws://test');
-        onTestFinished(() => client.close());
-        const observations = createSignalingObservations();
-        const transport = new WsRtcSignalingTransport(client, 'rtc');
-        const socket = await openSignalingConnection(transport, observations.callbacks);
-        const matching = createEnvelope('rtc', { hello: true });
-
-        socket.receive(JSON.stringify(createEnvelope('other', { ignored: true })));
-        socket.receive(JSON.stringify(matching));
-        socket.dispatchEvent(new Event('error'));
-        socket.disconnect(1006, 'network-lost');
-
-        await vi.waitFor(() => expect(observations.messages).toEqual([matching]));
-        expect(observations.lifecycle).toEqual([
-            'open:session-1:token-1',
-            'error:[object Event]',
-            'close:session-1:token-1'
-        ]);
-    });
-
-    it('sends a signaling payload inside an addressed AL envelope', async () => {
-        const client = new JsonWebSocketClient('ws://test');
-        onTestFinished(() => client.close());
-        const transport = new WsRtcSignalingTransport(client, 'rtc');
-        const socket = await openSignalingConnection(transport, createSignalingObservations().callbacks);
-        const payload = createSignalingPayload();
-
-        await transport.send(payload);
-
-        expect(socket.sent).toHaveLength(1);
-        const sent = decodePersistedALMessage(socket.sent[0]);
-        expect(sent.payload.typeId).toBe('rtc');
-        expect(sent.id.senderId).toBe(payload.fromId);
-        expect(sent.targets).toEqual({ mode: 'unicast', toPeerId: payload.toId });
-        expect(JSON.parse(sent.payload.resource)).toEqual(payload);
-    });
 });
 
 describe('WsRtcSignalingTransportUsingWsQBox', () => {
@@ -99,9 +58,9 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         const ignored = createEnvelope('other', { ignored: true });
 
         socket.receive(JSON.stringify(ignored));
+        await vi.waitFor(() => expect(ignoredMessages).toEqual([ignored]));
         socket.receive(JSON.stringify(matching));
         await vi.waitFor(() => expect(observations.messages).toEqual([matching]));
-        expect(ignoredMessages).toEqual([ignored]);
 
         socket.dispatchEvent(new Event('error'));
         socket.disconnect(1006, 'network-lost');

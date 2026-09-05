@@ -75,6 +75,31 @@ export class ALOutboundAdmissionEffectStore {
         );
     }
 
+    async writePreparedEffect<TPrepared>(
+        tx: ALAdmissionWriteContext,
+        effect:
+            & ALOutboundDurableEffectWrite<TPrepared>
+            & Readonly<{
+                expireAtTimestamp: number;
+                retryAtMs: number;
+            }>,
+        observedAtMs: number
+    ): Promise<void> {
+        await tx.set(
+            this.toEffectKey(effect.effectId),
+            encodeALOutboundEffect({
+                effectId: effect.effectId,
+                payload: effect.payload,
+                status: 'pending',
+                attempts: 0,
+                retryAtMs: effect.retryAtMs ?? observedAtMs,
+                updatedAtMs: observedAtMs,
+                expireAtTimestamp: effect.expireAtTimestamp
+            }),
+            effect.expireAtTimestamp
+        );
+    }
+
     async readEffect<TPrepared>(
         tx: ALAdmissionWriteContext,
         effectId: string,
