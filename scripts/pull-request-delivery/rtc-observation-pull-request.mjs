@@ -358,7 +358,11 @@ export class RtcObservationPublicationShell {
             base: parentCommit,
             head: input.publicationCommit
         });
-        if (!inspection.observationOnly || inspection.archivePath !== input.observation.archivePath) {
+        if (
+            !inspection.observationOnly ||
+            inspection.archivePaths.length !== 1 ||
+            inspection.archivePaths[0] !== input.observation.archivePath
+        ) {
             return false;
         }
         const parentIndex = this.#readRevisionFile(

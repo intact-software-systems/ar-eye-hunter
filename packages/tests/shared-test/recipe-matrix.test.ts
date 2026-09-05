@@ -57,7 +57,52 @@ function rtcProviders(recipe: Record<string, unknown>): string[] {
         .map((connection) => connection.provider ?? '');
 }
 
+const strictDebtPath = path.join(runnerRoot, 'preflight/strict-expectation-debt.json');
+
+/**
+ * Expectation keys the runner never compares. A recipe carrying one reads as
+ * though it asserts something and asserts nothing, which is the failure mode
+ * this ratchet exists to stop spreading: the debt file records what is already
+ * there, and a new finding fails.
+ */
+function readStrictExpectationFindings(recipeRelativePath: string): number {
+    // The runner prefixes its `-c` argument with './', so an absolute path
+    // becomes './/Users/...' and cannot be opened. Pass repo-relative paths.
+    const result = spawnSync('deno', [
+        'run',
+        '-A',
+        'packages/shared-test/black-box-runner/scenario-black-box.ts',
+        '-c',
+        path.posix.join('packages/shared-test/black-box-runner', recipeRelativePath),
+        '--validate',
+        '--strict'
+    ], { cwd: repoRoot, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+
+    expect(result.stdout, `strict preflight produced no output for ${recipeRelativePath}: ${result.stderr}`)
+        .not.toBe('');
+    const issues = (JSON.parse(result.stdout) as {
+        issues?: Array<{ code: string; }>;
+    }).issues ?? [];
+
+    return issues.filter((issue) => issue.code === 'STRICT_EXPECT_VACUOUS' || issue.code === 'STRICT_EXPECT_IGNORED').length;
+}
+
 describe('black-box runner recipe matrix', () => {
+    it('adds no expectation the runner would silently ignore', () => {
+        const debt = (JSON.parse(readFileSync(strictDebtPath, 'utf8')) as {
+            debtByRecipe: Record<string, number>;
+        }).debtByRecipe;
+        const recipes = listJsonRecipes(path.join(testsRoot, 'api-v1'), 'tests/api-v1/');
+
+        const worsened = recipes
+            .map((recipe) => {
+                const name = path.basename(recipe, '.json');
+                return { name, found: readStrictExpectationFindings(recipe), allowed: debt[name] ?? 0 };
+            })
+            .filter((entry) => entry.found > entry.allowed);
+
+        expect(worsened).toEqual([]);
+    }, 240_000);
     it('has unique entry ids and artifact names', () => {
         const { entries } = readMatrix();
         const ids = entries.map((entry) => entry.id);

@@ -4,9 +4,8 @@ import type { PrincipalId } from '../group-types.ts';
  * The stage registry. Every stage-keyed decision is a total function over this
  * array (product decision 41), and the runtime enum validators pass it
  * directly, so adding a stage is a compile error at every decision site and
- * never a silent fallthrough. `dormant`, `planned` and `reconnecting` are
- * unreachable until their producing transitions land; every current consumer
- * holds an explicit row for them.
+ * never a silent fallthrough. Every stage is produced by a delivered
+ * transition, and every current consumer holds an explicit row for each.
  */
 export const GROUP_LIFECYCLE_STATES = [
     'dormant',
