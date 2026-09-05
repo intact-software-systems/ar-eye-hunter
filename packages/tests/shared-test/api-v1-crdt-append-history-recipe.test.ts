@@ -115,6 +115,7 @@ describe('API-v1 CRDT append-history black-box evidence', () => {
         expect(step('verifyFinalHistoryIntegrity')).toMatchObject({
             type: 'http',
             expect: {
+                comparison: 'compatible-complete',
                 body: {
                     ok: true,
                     result: { valid: true, checkedUpdateCount: '{expectedFinalHistorySizeNumber}' }

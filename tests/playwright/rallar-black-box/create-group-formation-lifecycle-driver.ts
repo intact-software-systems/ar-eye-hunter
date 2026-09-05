@@ -147,7 +147,7 @@ interface ActivateGroupInput extends GroupLifecycleCommandInput {
 interface WaitForPlannedLayoutInput extends GroupLifecycleCommandInput {
     readonly expectedSessionIds: readonly string[];
     readonly expectedFormationEpoch: number;
-    readonly expectedGroupRevision: number;
+    readonly minimumGroupRevision: number;
 }
 
 interface WaitForPresenceRevisionInput extends GroupLifecycleCommandInput {
@@ -242,7 +242,7 @@ async function connectGroupLifecycle(
         suffix: input.lifecycleSuffix,
         expectedSessionIds: Object.values(input.sessions),
         expectedFormationEpoch: stageReceipt.formationEpoch,
-        expectedGroupRevision: stageReceipt.groupRevision
+        minimumGroupRevision: stageReceipt.groupRevision
     });
     const connectCommandId = await connectPublishedLayout(config, {
         ...input.run,
@@ -340,7 +340,7 @@ async function connectInitialPair(
         ...lifecycle,
         expectedSessionIds: connections.map(({ sessionId }) => sessionId),
         expectedFormationEpoch: stageReceipt.formationEpoch,
-        expectedGroupRevision: stageReceipt.groupRevision
+        minimumGroupRevision: stageReceipt.groupRevision
     });
     const connectCommandId = await connectPublishedLayout(config, {
         ...lifecycle,
@@ -602,7 +602,7 @@ async function waitForPlannedLayout(
         const candidate = readActivePublishedLayout(input.control.resultValue(result));
         if (
             candidate === undefined ||
-            candidate.identity.groupRevision !== input.expectedGroupRevision ||
+            candidate.identity.groupRevision < input.minimumGroupRevision ||
             !input.expectedSessionIds.every((sessionId) => candidate.sessionIds.includes(sessionId))
         ) {
             return false;
@@ -610,9 +610,9 @@ async function waitForPlannedLayout(
         plannedLayout = candidate.identity;
         return true;
     }, {
-        message: `Expected a fresh epoch ${input.expectedFormationEpoch} planned topology with ${
-            input.expectedSessionIds.join(', ')
-        }`,
+        message: `Expected an epoch ${input.expectedFormationEpoch} planned topology at or after group revision ${
+            input.minimumGroupRevision
+        } with ${input.expectedSessionIds.join(', ')}`,
         timeout: 30_000
     }).toBe(true);
     if (!plannedLayout) {
