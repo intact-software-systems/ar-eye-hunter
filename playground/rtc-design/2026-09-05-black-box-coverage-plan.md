@@ -41,17 +41,17 @@ Two findings are worth stating separately because they frame everything else:
 
 ## Implementation decisions
 
-| ID | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| -- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1 | **Runner work IS required first — this decision is superseded.** The original reading, that `ws.wait` already matches on payload/route/targets/id and captures for a later `assert`, is true as far as it goes. A framework audit then found three needs genuinely absent: no `expect.count` on a wait, no negative expectation on `ws.open` (which is _why_ the WS upgrade paths sit under Not in this plan), and `expect` on a `parallel` step is silently ignored. `poll-until` is also HTTP-only, and no comparison mode checks array order. The sequenced prerequisite list, with costs and the evidence behind each, is the **Black-box framework notes** section of `2026-09-05-browser-lifecycle-command-surface-implementation-plan.md`; items 1-5 there land before slice 3. The original instinct still holds where it matters: a slice discovering a further gap stops and re-plans rather than widening the runner opportunistically. |
-| D2 | **Sixty gaps is not sixty recipes.** A recipe costs CI wall-clock in two profiles and a login/create/join preamble. Gaps that share a preamble land as steps appended to one recipe. The slice tables below name the recipe, not the gap count.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| D3 | **Every new recipe is identity-audited against the whole corpus before it is registered.** `{runId}` is shared across every recipe in one profile run, so any identity-shaped string a clone did not rename is literally the same string in two recipes. The audit is: enumerate every `/requests/<id>` segment, `msgId`, `resourceId` and group/app/workspace id, diff against every other file, then run the profile **with and without** the new matrix entry. A green new recipe is not evidence the suite is unbroken.                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| D4 | **Profile placement is a per-recipe design decision, not a checkbox.** The base pair (`api-v1-black-box` + `api-v1-black-box-recipes`) runs on the memory backend in the fast loop and on Postgres in CI's base phase. `api-v1-black-box-cluster` runs against three nodes under one run id. A recipe in **both** replays its request ids with fresh login sessions and self-conflicts on idempotency, so each recipe picks one.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| D5 | **Two hand-maintained sorted id lists in `recipe-matrix.test.ts` must be updated with every new recipe** (the `api-v1-black-box` and `api-v1-black-box-recipes` membership assertions). They are the only thing that fails when a recipe is added to the matrix but not to a profile.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| D6 | **A lifecycle command inside a `parallel` block has no precedent in the corpus.** Slice 4 establishes the pattern and every later concurrency recipe follows it. Expect the first one to cost more than its size suggests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| D7 | **Not every race can be expressed as a `parallel` block.** Where one side is automation (a trigger latch, a deadline timer, a clock), that side has no HTTP surface to put in a parallel group. Those scenarios are sequenced by settle time instead, and the recipe must pin manual triggers so nothing else advances the stage. Mislabelling one of these as a race is how a recipe ends up asserting a timing coincidence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| D8 | **Assert the denial's code, not just its status.** The corpus has recipes asserting `403` without asserting which `GroupPolicyReasonCode` produced it. A denial recipe that does not name the code does not distinguish a correct denial from a differently-wrong one.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| D9 | **Cluster lifecycle coverage starts from one recipe.** `api-v1-black-box-cluster` has seven members and exactly one is a lifecycle recipe (`api-v1-group-lifecycle-stage-metrics`). Every other lifecycle behaviour is pinned single-node only. Slice 5 is therefore larger than its gap count implies — it is the first real cluster lifecycle work.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ID | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1 | **Runner work IS required first — this decision is superseded.** The original reading, that `ws.wait` already matches on payload/route/targets/id and captures for a later `assert`, is true as far as it goes. A framework audit then found three needs genuinely absent: no `expect.count` on a wait, no negative expectation on `ws.open` (which is _why_ the WS upgrade paths sit under Not in this plan), and `expect` on a `parallel` step is silently ignored. `poll-until` is also HTTP-only, and no comparison mode checks array order. The sequenced prerequisite list, with costs and the evidence behind each, is **Framework prerequisites** below; items 1-5 there land before slice 3. The original instinct still holds where it matters: a slice discovering a further gap stops and re-plans rather than widening the runner opportunistically. |
+| D2 | **Sixty gaps is not sixty recipes.** A recipe costs CI wall-clock in two profiles and a login/create/join preamble. Gaps that share a preamble land as steps appended to one recipe. The slice tables below name the recipe, not the gap count.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| D3 | **Every new recipe is identity-audited against the whole corpus before it is registered.** `{runId}` is shared across every recipe in one profile run, so any identity-shaped string a clone did not rename is literally the same string in two recipes. The audit is: enumerate every `/requests/<id>` segment, `msgId`, `resourceId` and group/app/workspace id, diff against every other file, then run the profile **with and without** the new matrix entry. A green new recipe is not evidence the suite is unbroken.                                                                                                                                                                                                                                                                                                                                       |
+| D4 | **Profile placement is a per-recipe design decision, not a checkbox.** The base pair (`api-v1-black-box` + `api-v1-black-box-recipes`) runs on the memory backend in the fast loop and on Postgres in CI's base phase. `api-v1-black-box-cluster` runs against three nodes under one run id. A recipe in **both** replays its request ids with fresh login sessions and self-conflicts on idempotency, so each recipe picks one.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| D5 | **Two hand-maintained sorted id lists in `recipe-matrix.test.ts` must be updated with every new recipe** (the `api-v1-black-box` and `api-v1-black-box-recipes` membership assertions). They are the only thing that fails when a recipe is added to the matrix but not to a profile.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| D6 | **A lifecycle command inside a `parallel` block has no precedent in the corpus.** Slice 4 establishes the pattern and every later concurrency recipe follows it. Expect the first one to cost more than its size suggests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| D7 | **Not every race can be expressed as a `parallel` block.** Where one side is automation (a trigger latch, a deadline timer, a clock), that side has no HTTP surface to put in a parallel group. Those scenarios are sequenced by settle time instead, and the recipe must pin manual triggers so nothing else advances the stage. Mislabelling one of these as a race is how a recipe ends up asserting a timing coincidence.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| D8 | **Assert the denial's code, not just its status.** The corpus has recipes asserting `403` without asserting which `GroupPolicyReasonCode` produced it. A denial recipe that does not name the code does not distinguish a correct denial from a differently-wrong one.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| D9 | **Cluster lifecycle coverage starts from one recipe.** `api-v1-black-box-cluster` has seven members and exactly one is a lifecycle recipe (`api-v1-group-lifecycle-stage-metrics`). Every other lifecycle behaviour is pinned single-node only. Slice 5 is therefore larger than its gap count implies — it is the first real cluster lifecycle work.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ## Slices
 
@@ -181,6 +181,178 @@ Lower product risk, real coverage debt. Batched last deliberately.
 | _(append to `api-v1-admin-operations`)_ | the six admin read/reset routes and the three unexercised explain routes                                       |
 
 **Gates:** baseline plus both black-box profiles.
+
+## Framework prerequisites (2026-09-05)
+
+Requested during planning, and recorded here rather than in the coverage plan because two of the four
+answers change what a _browser_ surface can be tested with. Every figure below was verified against
+the runner and the corpus, not inferred.
+
+### The identity discipline is a convention with no gate and no documentation
+
+`{runId}` is **per-profile-run, not per-recipe**. It resolves from one environment variable
+(`RALLAR_BB_RUN_ID`, set once in `api-v1-black-box-run.mts`) that every recipe binds under the same
+name, so it is byte-identical in all 46 recipes that reference it during a run. Recipes execute
+sequentially against **one server and one database for the whole run**, which is why a collision
+breaks the _other_ recipe rather than the one that introduced it.
+
+Nothing in the framework namespaces identifiers per recipe. The interpolation root carries no recipe
+identity at all, and the one place the framework already does namespace per entry — live preflight,
+which builds `bb-live-preflight-<entryId>-<runId>` — never passes that identity into the recipe
+process. `recipe-matrix.test.ts` enforces uniqueness of matrix entry ids and artifact names only;
+nothing inspects identifiers inside recipes.
+
+**And it is undocumented.** `grep -rn "runId" .agents/skills/` returns **zero matches**. There is no
+black-box authoring skill; `rallar-testing` covers only which commands to run. The runner's own
+1,236-line recipe guide has a 7-bullet authoring checklist with no identifier rule, and its
+`runnerRunId` section documents trace correlation without ever mentioning `{runId}` the variable — so
+an author reasonably reads `{runId}` as "unique per recipe". It is not.
+
+**Recommended, cheapest first.** A corpus collision preflight in `recipe-matrix.test.ts` (~120 lines,
+no runtime change) catches exactly the reported failure. A `{recipeId}` interpolation token seeded
+from the matrix entry id makes the convention mechanical. A `--strict` lint flagging any
+identifier-shaped literal containing neither `{runId}` nor `{recipeId}` catches it at authoring time.
+**Do not** auto-prefix request ids: it rewrites the wire, and it would break both the deliberate
+20-and-128-character boundary fixtures and the intentional same-requestId replay steps in
+`api-v1-idempotency-contract.json`. A scan of all four identifier dimensions found **zero
+cross-recipe collisions today** — clean by discipline alone, with nothing holding it there.
+
+### Re-runnability: achievable, and closer than it looks
+
+Recipes are re-runnable today **only because `{runId}` changes per run**, not because anything is
+idempotent-safe. Two mechanisms hide the question: the default run id is `local-<Date.now()>`, and
+`npm run test:api-v1:black-box:postgres` creates and drops a throwaway database per run
+(`rallar_bb_<runId>_<uuid>`). A re-run against a dirty database is only reachable via
+`--recipes-only` against an external base URL, the operator SPA, distributed runs, or a pinned
+`--run-id` — which is precisely where nobody is looking.
+
+**Nothing blocks full re-runnability in principle.** No recipe asserts a server-global absolute count
+and none requires a fresh server. Two concrete things block it in practice:
+
+- **Five of 51 recipes have no `runId` variable at all** — `api-v1-admin-support`, `api-v1-ice-config`,
+  `api-v1-admin-operations`, `api-v1-black-box-control-auth` and `api-v1-openapi-topology-auth` (the
+  last is stateless and genuinely fine). Re-run against the same database, the other four go **green
+  by AppInbox replay while executing no new server logic** — the worst failure mode, because it is
+  silent. Note `api-v1-admin-operations` already uses a fresh `{executionToken}` for its
+  evidence-bearing prune, so its author knew freshness mattered and left the login ids fixed anyway:
+  the signature of a convention nobody wrote down.
+- **A replayed request id is permanent.** AppInbox rows are written with `NEVER_EXPIRE_TS`, so a
+  replay returns the first receipt verbatim — success _or_ the original failure — and `prune-expired`
+  can never reclaim them. Group mutations replay through a second, session-independent key
+  (`commandId` = hash of operation, scope, group, target, caller, requestId — no session, no clock),
+  which is why a fresh login does not produce a fresh outcome.
+
+**So the answer to "must every test be self-contained and re-runnable without cleaning the DB" is
+yes, and the work is small**: give the four recipes a `{runId}`, then keep them that way with the
+lint above. That is worth doing before this plan's browser recipes exist, because a browser-driven
+recipe runs against a long-lived server far more often than a CI recipe does.
+
+### Lifecycle tracing: the evidence is durable and unreadable
+
+For convergence-style assertions — many groups and clients, no step-by-step determinism, assert the
+end state and trace failures — the current surface is **end state only**.
+
+`explainGroup` reports the current lifecycle plane well (13 facts) and history not at all: its
+timeline maps each event to `{atEpochMs, eventType, summary}` and **discards actor, requestId,
+reason, snapshotVersion, causalRevision and payload**, capped at 50 events. That is strictly _less_
+per-event information than the member-readable `/events` route.
+
+Four questions a convergence test needs, and today's answers:
+
+| Question                                | Today                                                                                                                                                                              |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Which stage transitions, in what order? | Order yes; **which transition, no** — all seven lifecycle transitions, both transport commands, `applyPlannedLayout` and plain metadata updates all write the same `group-updated` |
+| With what outcome and epoch?            | **No.** `GroupEvent` carries no `lifecycleState` and no `formationEpoch`, and the payload is `{}` for every lifecycle transition                                                   |
+| Command, automatic trigger, or clock?   | Only by string-matching an undocumented synthetic `requestId` prefix (`formation-criterion:v2:…`, `formation-automation:v2:…`) — no contract sanctions that                        |
+| Which node handled it?                  | Only for automatic transitions, and only implicitly via `actor.serviceId`. For a principal-commanded transition the handling node is recorded **nowhere**                          |
+
+**What is durable but exposed by nothing.** The `GroupMutationReceipt` is written into
+`resource_inbox_results` in the same transaction as the state write and carries `outcome`
+(`applied` / `no-op` / `rejected`), `attemptCount` and the typed `rejection` — _exactly_ "what
+happened to this transition and why it did not take" — and no API returns any of it. The receipt holds
+both `requestId` and `eventId` and the event row holds the same pair, so the command→event join
+exists in the data and is offered to no caller. Formation-timer rows (which clock, which epoch,
+firing when) and the connect-trigger latch are equally durable and equally unreadable.
+
+**Proposal: `POST /api/admin/support/explain/group-lifecycle`.** Group-scoped like every other explain
+route, returning `current` (the end state a convergence assertion compares against), an ordered
+`transitions[]` with `from`/`to`/`formationEpoch`/`origin`/`outcome`/`rejection`/`handledByServerId`,
+a compact `signature` string, and — because the runner has no array filter or count transform —
+scalar `transitionCount` and `rejectedTransitionCount` so a recipe can assert "nothing was rejected"
+at all.
+
+It needs one honest write-side change: the trace is **not** derivable from what exists today, so
+`toGroupEventPayload` must record `{lifecycleOperation, fromLifecycleState, toLifecycleState,
+formationEpoch, handledByServerId}` for lifecycle writes. `payload` is already `ApiJsonObject` inside
+a text column, so this is additive and needs no migration. The alternative — regexing the synthetic
+`requestId` prefixes — turns an internal dedup key into a public contract.
+
+Constraints on the surface: **no principal, session or client ids** in `transitions[]` (`actorKind`
+only, so it cannot become a roster read); no queue payloads or command bodies, keeping
+`explain/queue-item`'s redaction posture; no cross-group listing. The troubleshooting checklist's
+"never add tenant, group, session or request IDs as metric labels" constrains **metrics**, not scoped
+admin reads — an admin operations route already takes tenant scope in its path — so the trace may
+carry the `groupRef` it was asked about, but this work must add no counter dimensioned by group,
+request or session.
+
+### The framework itself — and a correction to the coverage plan
+
+**The coverage plan's D1 ("no runner work is required") is about two-thirds right.** The runner is far
+more capable than the corpus uses — unordered event sets, absence, bounded HTTP polling, latency
+bounds, WS-vs-HTTP comparison and durable queue-row evidence all work today, several of them
+undocumented. But three needs are genuinely absent, and one item the coverage plan lists under _Not
+in this plan_ is deferred **because** the runner cannot express it:
+
+1. **No cardinality on a wait.** There is no `expect.count`, so "exactly one decision event" needs a
+   consume-then-absent idiom nobody has written.
+2. **No negative expectation on `ws.open`.** A rejected upgrade is an unconditional step failure; the
+   only escape discards the assertion. This is why "WS upgrade negative paths" is deferred.
+3. **`expect` on a `parallel` step is silently ignored.** The executor never compares the parallel
+   result, so "at most K of 70 admitted" is unreachable — and any recipe that writes such an expect
+   gets a silent no-op.
+4. **No ordered array comparison in any mode**, including `exact`.
+5. **No rendezvous barrier for `parallel` groups** — workers start unsynchronised, which is precisely
+   the "timing coincidence" hazard the coverage plan's own D7 warns about.
+6. **`poll-until` is HTTP-only** — `assert`, `set` and `parallel` have no retry loop at all.
+
+**The dominant failure mode is undiscoverable capability, not missing capability.** Four working
+primitives (`missingActualValue`, `monotonicPaths`, `set.state-write-evidence`, `anyOfMatchedIndex`)
+appear nowhere in the recipe guide, which also still says "There is no separate poll step yet" 250
+lines after documenting the poll step. The measured consequences, verified independently:
+
+- **371.2 seconds of unconditional sleep** across 59 `delayMs` steps, concentrated in five recipes
+  (86.0s, 72.8s, 64.0s × 3) — hand-rolled polling with step names like
+  `delayBeforeConvergenceAttempt1..4`, each attempt marked `nonBlockingFailure` so it passes
+  regardless of outcome.
+- Essentially the whole corpus runs on the default `compatible` comparison, which the guide itself
+  calls the vacuous-assertion mode: `{events: []}` matches `{events: [{x:1},{y:2}]}`.
+- Because array comparison is unordered in **every** mode, five recipes enumerate both permutations of
+  a race outcome in `expect.anyOf` — the second alternative is dead code in all five.
+- A 70-iteration join storm accepts `[200, 429]` per attempt with **no follow-up assertion on how many
+  were admitted**, so the rate-limit contract is not asserted at all.
+
+`rallar-bb-test` is the best design reference here, because it already has three primitives the runner
+lacks: path-scoped `equals`/`notEquals`/`exists` operators, a `payloadPath` matcher, and a
+`stableForMs` stability wait. It also has a divergence worth fixing on its own: its wait scans
+**backward** (most-recent-first) while the runner scans **forward** (earliest-first) — two semantics
+for one conceptual operation, with the earliest-match behaviour already a known trap in this repo, and
+nothing testing the difference.
+
+**Recommended sequencing, and it revises the coverage plan's D1.** Items 1–5 below are prerequisites,
+not opportunistic widening; the coverage plan should adopt them rather than route around them.
+
+| Order | Change                                                                                     | Cost       | Why first                                                                                       |
+| ----- | ------------------------------------------------------------------------------------------ | ---------- | ----------------------------------------------------------------------------------------------- |
+| 1     | Document the four hidden primitives and the unordered-array semantics                      | doc only   | Highest value per hour; the sleeps and the dead permutations both trace to not knowing          |
+| 2     | Strict-profile vacuity lint (no `expect`, ignored `expect` key, empty expected array)      | ~80 lines  | The only mechanism that would have caught every item above; run it from `recipe-matrix.test.ts` |
+| 3     | Generalise `poll-until` to every step type, with `stableForMs`                             | ~130 lines | Unblocks the coverage plan's slices 4, 5 and 6, and retires most of the 371s sleep budget       |
+| 4     | `expect.count` on `ws.wait` / `rtc.wait`                                                   | ~60 lines  | "Exactly one event" assertions                                                                  |
+| 5     | Path comparators `equals` / `notEquals` / `exists`                                         | ~40 lines  | The coverage plan's D8 — assert the denial code, not just the status                            |
+| 6     | Honour `expect` on a `parallel` step                                                       | ~30 lines  | Closes a latent silent no-op                                                                    |
+| 7     | Negative expectation on `ws.open`; `exact-ordered` comparison; parallel rendezvous barrier | ~130 lines | Un-defers the WS upgrade paths and makes the race recipes real races                            |
+
+Items 1 and 2 should land regardless of whether any recipe is written: **they are what stops the next
+agent from adapting a test instead of fixing the framework.**
 
 ## Not in this plan
 
