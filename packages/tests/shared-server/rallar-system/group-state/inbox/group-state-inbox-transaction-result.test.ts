@@ -13,7 +13,7 @@ import type {
     AppInboxCompletionComputed,
     AppInboxCompletionFacts
 } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
-import type { GroupMutationPreparation } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import type { GroupMutationIngress } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
     GroupStateInboxHandler,
     type GroupStateInboxHandlerDependencies
@@ -101,13 +101,13 @@ describe('group-state AppInbox transaction result boundary', () => {
         expect(harness.formationMutationEvents).toEqual([{ operation: 'createGroup', outcome: 'write' }]);
     });
 
-    it('rejects predecessor fields in prepared facts before starting the mutation transaction', async () => {
+    it('rejects predecessor fields in ingress facts before starting the mutation transaction', async () => {
         const harness = await createGroupStateTransactionBoundaryHarness();
         const authority = requireJsonWireObject(
             harness.context.enqueue.authority,
-            'Prepared authority'
+            'Mutation ingress authority'
         );
-        const facts = requireJsonWireObject(authority.facts, 'Prepared facts');
+        const facts = requireJsonWireObject(authority.facts, 'Mutation ingress facts');
         const malformedContext = {
             ...harness.context,
             enqueue: {
@@ -121,18 +121,18 @@ describe('group-state AppInbox transaction result boundary', () => {
 
         await expect(
             harness.handler.processGroupStateMutation(malformedContext)
-        ).rejects.toThrow('App inbox prepared group mutation is malformed.');
+        ).rejects.toThrow('App inbox group mutation ingress is malformed.');
         expect(harness.reachedStages).toEqual([]);
         expect(await harness.repository.readSnapshot(harness.groupRef)).toBeUndefined();
     });
 
-    it('rejects prepared facts that omit current capacity policy', async () => {
+    it('rejects ingress facts that omit current capacity policy', async () => {
         const harness = await createGroupStateTransactionBoundaryHarness();
         const authority = requireJsonWireObject(
             harness.context.enqueue.authority,
-            'Prepared authority'
+            'Mutation ingress authority'
         );
-        const facts = requireJsonWireObject(authority.facts, 'Prepared facts');
+        const facts = requireJsonWireObject(authority.facts, 'Mutation ingress facts');
         const { capacity: _capacity, ...factsWithoutCapacity } = facts;
         const malformedContext = {
             ...harness.context,
@@ -144,7 +144,7 @@ describe('group-state AppInbox transaction result boundary', () => {
 
         await expect(
             harness.handler.processGroupStateMutation(malformedContext)
-        ).rejects.toThrow('App inbox prepared group mutation is malformed.');
+        ).rejects.toThrow('App inbox group mutation ingress is malformed.');
         expect(harness.reachedStages).toEqual([]);
         expect(await harness.repository.readSnapshot(harness.groupRef)).toBeUndefined();
     });
@@ -167,11 +167,11 @@ describe('group-state AppInbox transaction result boundary', () => {
             }
         };
         const handler = new GroupStateInboxHandler({
-            prepareAuthenticatedMutation: async () => {
+            captureAuthenticatedMutationIngress: async () => {
                 throw new Error('Inactive presence fixture must already be internal.');
             },
-            persistPreparedMutation: async () => {
-                throw new Error('Inactive presence fixture must not persist prepared authority.');
+            persistMutationIngress: async () => {
+                throw new Error('Inactive presence fixture must not persist mutation ingress.');
             },
             mutationService: {
                 read: async () => {
@@ -225,7 +225,7 @@ describe('group-state AppInbox transaction result boundary', () => {
 });
 
 function inactiveConnectContext(): AppInboxMessageContext<GroupStateInboxDurableResult> {
-    const authority: GroupMutationPreparation = {
+    const authority: GroupMutationIngress = {
         authorityProof: {
             version: 1,
             principalId: 'owner',

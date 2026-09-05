@@ -5,7 +5,7 @@ import type {
     AuthorizedGroupMutation,
     GroupMutationAuthorityProof,
     GroupMutationDescriptor,
-    GroupMutationPreparation
+    GroupMutationIngress
 } from '../group-state-service-contracts.ts';
 import { requireNonNegativeSafeInteger } from '../group-state-validation-primitives.ts';
 import { assertGroupMutationCommand } from '../mutation/command-validation/assert-group-mutation-command.ts';
@@ -15,7 +15,7 @@ import { assertGroupMutationFacts } from '../mutation/state-validation/assert-gr
 
 export type DecodedGroupStateInboxAuthority =
     | Readonly<{ kind: 'authorized'; mutation: AuthorizedGroupMutation; }>
-    | Readonly<{ kind: 'prepared'; mutation: GroupMutationPreparation; }>;
+    | Readonly<{ kind: 'ingress'; mutation: GroupMutationIngress; }>;
 
 const AUTHORIZED_MUTATION_KEYS = ['authorityProof', 'descriptor'] as const;
 const PREPARED_MUTATION_KEYS = [
@@ -39,8 +39,8 @@ export function decodeGroupStateInboxAuthority(
     }
     if (hasExactKeys(authority, PREPARED_MUTATION_KEYS)) {
         return {
-            kind: 'prepared',
-            mutation: decodeGroupMutationPreparation(authority)
+            kind: 'ingress',
+            mutation: decodeGroupMutationIngress(authority)
         };
     }
     throw malformedAuthority('authenticated group mutation intent');
@@ -58,18 +58,18 @@ function decodeAuthorizedGroupMutation(value: JsonWireObject): AuthorizedGroupMu
     }
 }
 
-function decodeGroupMutationPreparation(value: JsonWireObject): GroupMutationPreparation {
+function decodeGroupMutationIngress(value: JsonWireObject): GroupMutationIngress {
     try {
         const authorityProof = decodeNullableGroupMutationAuthorityProof(value.authorityProof);
         const descriptor = decodeNullableGroupMutationDescriptor(value.descriptor);
         if ((authorityProof === null) !== (descriptor === null)) {
-            throw new TypeError('Prepared authority proof and descriptor must both be present');
+            throw new TypeError('Ingress authority proof and descriptor must both be present');
         }
         assertGroupMutationCommand(value.command);
-        const facts = decodePreparedGroupMutationFacts(value.facts);
-        assertPreparedAuthorityFacts(authorityProof, facts);
-        requireString(value.causalToken, 'Prepared group mutation causal token');
-        requireString(value.queueResourceId, 'Prepared group mutation queue resource id');
+        const facts = decodeGroupMutationIngressFacts(value.facts);
+        assertIngressAuthorityFacts(authorityProof, facts);
+        requireString(value.causalToken, 'Group mutation ingress causal token');
+        requireString(value.queueResourceId, 'Group mutation ingress queue resource id');
         return {
             authorityProof,
             descriptor,
@@ -80,7 +80,7 @@ function decodeGroupMutationPreparation(value: JsonWireObject): GroupMutationPre
         };
     }
     catch {
-        throw malformedAuthority('prepared group mutation');
+        throw malformedAuthority('group mutation ingress');
     }
 }
 
@@ -183,10 +183,10 @@ export function decodeGroupMutationDescriptor(
     };
 }
 
-function decodePreparedGroupMutationFacts(
+function decodeGroupMutationIngressFacts(
     value: JsonWireValue | undefined
 ): Omit<GroupMutationFacts, 'attemptCount'> {
-    const facts = requireJsonWireObject(value, 'Prepared group mutation facts');
+    const facts = requireJsonWireObject(value, 'Group mutation ingress facts');
     requireExactKeys(
         facts,
         [
@@ -201,7 +201,7 @@ function decodePreparedGroupMutationFacts(
             'capacity',
             'authenticatedAuthority'
         ],
-        'Prepared group mutation facts'
+        'Group mutation ingress facts'
     );
     const withAttemptCount = { ...facts, attemptCount: 1 };
     const decodedFacts = withAttemptCount as GroupMutationFacts;
@@ -260,13 +260,13 @@ function decodeGroupMutationOperation(
     }
 }
 
-function assertPreparedAuthorityFacts(
+function assertIngressAuthorityFacts(
     authorityProof: GroupMutationAuthorityProof | null,
     facts: Omit<GroupMutationFacts, 'attemptCount'>
 ): void {
     if (authorityProof === null) {
         if (facts.internalAuthority === 'none' || facts.authenticatedAuthority !== null) {
-            throw new TypeError('Prepared internal group authority facts are invalid');
+            throw new TypeError('Internal group mutation ingress authority facts are invalid');
         }
         return;
     }
@@ -275,7 +275,7 @@ function assertPreparedAuthorityFacts(
         facts.authenticatedAuthority?.principalId !== authorityProof.principalId ||
         facts.authenticatedAuthority.sessionId !== authorityProof.sessionId
     ) {
-        throw new TypeError('Prepared authenticated group authority facts are invalid');
+        throw new TypeError('Authenticated group mutation ingress authority facts are invalid');
     }
 }
 

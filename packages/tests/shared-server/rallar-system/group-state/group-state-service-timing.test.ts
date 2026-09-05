@@ -49,7 +49,7 @@ describe('group-state service timing boundary', () => {
         });
         const snapshot = await createTimingSnapshot(runtime);
 
-        await invokePreparationOperations(runtime);
+        await invokeIngressCaptureOperations(runtime);
         await invokeStateReadOperations(runtime, snapshot);
         expectTimingInventory(timingEvents);
         expectTimingDetails(timingEvents);
@@ -65,7 +65,7 @@ describe('group-state service timing boundary', () => {
         });
 
         await expect(
-            runtime.durable.prepareSessionCleanupMutations({
+            runtime.durable.captureSessionCleanupMutationIngresses({
                 scope,
                 authSession: {
                     clientId: 'missing-owner',
@@ -81,7 +81,7 @@ describe('group-state service timing boundary', () => {
         expect(timingEvents).toEqual([
             expect.objectContaining({
                 component: 'group-state-service',
-                operation: 'prepareSessionCleanupMutations',
+                operation: 'captureSessionCleanupMutationIngresses',
                 serviceId: 'timing-service',
                 applicationId: undefined,
                 workspaceId: undefined,
@@ -139,10 +139,10 @@ async function createTimingSnapshot(runtime: ServiceTimingRuntime) {
     return snapshot;
 }
 
-async function invokePreparationOperations(runtime: ServiceTimingRuntime) {
-    await expect(runtime.durable.prepareExpiredPresenceMutations(1_000)).resolves.toEqual([]);
+async function invokeIngressCaptureOperations(runtime: ServiceTimingRuntime) {
+    await expect(runtime.durable.captureExpiredPresenceMutationIngresses(1_000)).resolves.toEqual([]);
     await expect(
-        runtime.durable.prepareSessionCleanupMutations({
+        runtime.durable.captureSessionCleanupMutationIngresses({
             scope,
             authSession: {
                 clientId: 'owner',
@@ -189,10 +189,10 @@ async function invokeStateReadOperations(
 function expectTimingInventory(timingEvents: readonly RallarTimingEvent[]): void {
     const operationCounts = Map.groupBy(timingEvents, (event) => event.operation);
     expect([...operationCounts.keys()]).toEqual([
-        'prepareMutation',
+        'captureMutationIngress',
         'read',
-        'prepareExpiredPresenceMutations',
-        'prepareSessionCleanupMutations',
+        'captureExpiredPresenceMutationIngresses',
+        'captureSessionCleanupMutationIngresses',
         'listSnapshots',
         'listSnapshotsPage',
         'readSnapshot',
@@ -212,11 +212,11 @@ function expectTimingInventory(timingEvents: readonly RallarTimingEvent[]): void
 
 function expectTimingDetails(timingEvents: readonly RallarTimingEvent[]): void {
     const operationCounts = Map.groupBy(timingEvents, (event) => event.operation);
-    expect(operationCounts.get('prepareMutation')?.[0]).toMatchObject({
+    expect(operationCounts.get('captureMutationIngress')?.[0]).toMatchObject({
         component: 'group-state-service',
-        operation: 'prepareMutation',
+        operation: 'captureMutationIngress',
         serviceId: 'timing-service',
-        ...expectedTimingIdentity('prepareMutation'),
+        ...expectedTimingIdentity('captureMutationIngress'),
         status: 'ok'
     });
     expect(operationCounts.get('listSnapshots')?.[0]).toMatchObject({
@@ -334,7 +334,7 @@ function expectedTimingIdentity(operation: TimedAsyncOperation) {
             groupId: 'timing-group'
         };
     }
-    if (operation === 'prepareSessionCleanupMutations') {
+    if (operation === 'captureSessionCleanupMutationIngresses') {
         return { ...empty, principalId: 'cleanup-principal' };
     }
     if (SCOPE_TIMING_OPERATIONS.has(operation)) {

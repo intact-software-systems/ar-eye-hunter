@@ -60,7 +60,7 @@ const PLANNED: GroupPlannedLayoutRow = {
 
 interface PlannedLayoutApplyHarness {
     readonly service: GroupStateTestService;
-    readonly prepare: (command: GroupMutationCommand) => Promise<GroupStateMutationCommand>;
+    readonly captureIngress: (command: GroupMutationCommand) => Promise<GroupStateMutationCommand>;
 }
 
 describe('computePlannedLayoutPromotion', () => {
@@ -217,28 +217,28 @@ describe('applyPlannedLayout through the durable service', () => {
                 requestId: 'apply-seed'
             }
         );
-        const prepare = async (command: GroupMutationCommand): Promise<GroupStateMutationCommand> => {
-            const preparation = await service.prepareTopologyPublicationMutation(command, 1_000);
+        const captureIngress = async (command: GroupMutationCommand): Promise<GroupStateMutationCommand> => {
+            const ingress = await service.captureTopologyPublicationMutationIngress(command, 1_000);
             return {
                 authorityProof: null,
                 descriptor: null,
-                command: preparation.command,
-                facts: { ...preparation.facts, attemptCount: 1 }
+                command: ingress.command,
+                facts: { ...ingress.facts, attemptCount: 1 }
             };
         };
-        return { service, prepare };
+        return { service, captureIngress };
     }
 
     it('promotes without touching stage, epoch or attempts', async () => {
-        const { service, prepare } = await createApplyHarness();
-        const prepared = await prepare(toApplyPlannedLayoutCommand({
+        const { service, captureIngress } = await createApplyHarness();
+        const ingress = await captureIngress(toApplyPlannedLayoutCommand({
             groupRef: GROUP_REF,
             formationEpoch: 0,
             expectedLayout: IDENTITY
         }));
 
-        const read = await service.read(prepared);
-        const computed = service.compute(prepared, read);
+        const read = await service.read(ingress);
+        const computed = service.compute(ingress, read);
 
         if (computed.outcome !== 'write') {
             throw new Error(`Expected a write, computed ${computed.outcome}`);
@@ -254,14 +254,14 @@ describe('applyPlannedLayout through the durable service', () => {
     });
 
     it('rejects a superseded fence as a typed value', async () => {
-        const { service, prepare } = await createApplyHarness();
-        const prepared = await prepare(toApplyPlannedLayoutCommand({
+        const { service, captureIngress } = await createApplyHarness();
+        const ingress = await captureIngress(toApplyPlannedLayoutCommand({
             groupRef: GROUP_REF,
             formationEpoch: 0,
             expectedLayout: { ...IDENTITY, version: IDENTITY.version + 1 }
         }));
 
-        const computed = service.compute(prepared, await service.read(prepared));
+        const computed = service.compute(ingress, await service.read(ingress));
 
         if (!('receipt' in computed) || computed.receipt.rejection === null) {
             throw new Error('Superseded fence must compute a rejection receipt');
@@ -270,13 +270,13 @@ describe('applyPlannedLayout through the durable service', () => {
     });
 
     it('answers an already-applied fence with a no-op success', async () => {
-        const { service, prepare } = await createApplyHarness();
-        const prepared = await prepare(toApplyPlannedLayoutCommand({
+        const { service, captureIngress } = await createApplyHarness();
+        const ingress = await captureIngress(toApplyPlannedLayoutCommand({
             groupRef: GROUP_REF,
             formationEpoch: 0,
             expectedLayout: IDENTITY
         }));
-        const read = await service.read(prepared);
+        const read = await service.read(ingress);
         if (read.group === null) {
             throw new Error('Seeded group must be readable');
         }
@@ -290,20 +290,20 @@ describe('applyPlannedLayout through the durable service', () => {
             acceptedLayoutRow: { snapshot: SNAPSHOT, revision: 1 }
         } as typeof read;
 
-        const computed = service.compute(prepared, applied);
+        const computed = service.compute(ingress, applied);
 
         expect(computed.outcome).toBe('no-op');
     });
 
     it('admits exactly applyPlannedLayout under topology-publication authority', async () => {
-        const { prepare } = await createApplyHarness();
-        const prepared = await prepare(toApplyPlannedLayoutCommand({
+        const { captureIngress } = await createApplyHarness();
+        const ingress = await captureIngress(toApplyPlannedLayoutCommand({
             groupRef: GROUP_REF,
             formationEpoch: 0,
             expectedLayout: IDENTITY
         }));
 
-        expect(() => assertGroupMutationAuthority(prepared.command, prepared.facts))
+        expect(() => assertGroupMutationAuthority(ingress.command, ingress.facts))
             .not.toThrow();
     });
 });

@@ -68,7 +68,7 @@ describe('convergent group and presence state', () => {
         });
     });
 
-    it('records durable preparation and read phases in the test-only driver', async () => {
+    it('records durable ingress capture and read phases in the test-only driver', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'group-phase-room');
         const timing: RallarTimingEvent[] = [];
@@ -87,14 +87,14 @@ describe('convergent group and presence state', () => {
 
         await service.updateGroup(SCOPE, 'group-phase-room', request);
         expect(timing.map((event) => event.operation)).toEqual(
-            expect.arrayContaining(['prepareMutation', 'read'])
+            expect.arrayContaining(['captureMutationIngress', 'read'])
         );
         expect(timing).toSatisfy((events: RallarTimingEvent[]) => events.every((event) => event.status === 'ok' && event.durationMs >= 0));
 
         timing.length = 0;
         await service.updateGroup(SCOPE, 'group-phase-room', request);
         expect(timing.map((event) => event.operation)).toEqual(
-            expect.arrayContaining(['prepareMutation', 'read'])
+            expect.arrayContaining(['captureMutationIngress', 'read'])
         );
     });
 });

@@ -63,12 +63,12 @@ export class GroupStateTestMutationExecutor {
         receiptOnly: boolean,
         attemptCount: number
     ): Promise<GroupStateTestMutationResult> {
-        const prepared = await this.dependencies.durableService.prepareMutation(descriptor, authority);
+        const ingress = await this.dependencies.durableService.captureMutationIngress(descriptor, authority);
         const command: GroupStateMutationCommand = {
-            authorityProof: prepared.authorityProof,
-            descriptor: prepared.descriptor,
-            command: prepared.command,
-            facts: { ...prepared.facts, attemptCount }
+            authorityProof: ingress.authorityProof,
+            descriptor: ingress.descriptor,
+            command: ingress.command,
+            facts: { ...ingress.facts, attemptCount }
         };
         const read = await this.dependencies.durableService.read(command);
         const computed = this.dependencies.durableService.compute(command, read);
@@ -88,7 +88,7 @@ export class GroupStateTestMutationExecutor {
         if (computed.outcome === 'write') {
             await this.writeComputed(computed);
         }
-        return await this.toMutationResult(prepared.command.operation, computed, receiptOnly);
+        return await this.toMutationResult(ingress.command.operation, computed, receiptOnly);
     }
 
     async executeInternal(

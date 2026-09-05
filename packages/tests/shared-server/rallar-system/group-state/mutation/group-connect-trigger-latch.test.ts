@@ -312,7 +312,7 @@ describe('retry handoff commit races and replay', () => {
         expect(harness.database.outboxEntries.size).toBe(outboxCount);
     });
 
-    it('publication wake discovers a latch created after publication preparation, surviving worker restart', async () => {
+    it('publication wake discovers a latch created after publication computation, surviving worker restart', async () => {
         const { harness, latches } = await connectWriteHarness();
         const commands: GroupMutationCommand[] = [];
         let visiblePlan: RallarOverlayTopologySnapshot | null = null;

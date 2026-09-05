@@ -119,12 +119,12 @@ export class GroupStateInboxService {
             transactionWriter: this.transactionWriter,
             wakeQueue: this.wakeQueue,
             formationMetrics: config.formationMetrics,
-            prepareAuthenticatedMutation: (descriptor, authority) =>
-                this.groupStateService.prepareAppInboxMutation(descriptor, authority),
-            persistPreparedMutation: (context, preparation) =>
+            captureAuthenticatedMutationIngress: (descriptor, authority) =>
+                this.groupStateService.captureAppInboxMutationIngress(descriptor, authority),
+            persistMutationIngress: (context, ingress) =>
                 this.reservationClient.persistAuthority(
                     context,
-                    encodeAppInboxCommand(preparation, 'Group mutation AppInbox authority')
+                    encodeAppInboxCommand(ingress, 'Group mutation AppInbox authority')
                 )
         });
         this.registerMessageHandlers();
@@ -132,39 +132,39 @@ export class GroupStateInboxService {
     }
 
     async enqueueExpiredPresenceSessions(atEpochMs: number): Promise<number> {
-        const preparations = await this.groupStateService.prepareExpiredPresenceMutations(atEpochMs);
-        for (const preparation of preparations) {
-            await this.queueEntryWriter.enqueue(toExpiredPresenceEnqueue(preparation));
+        const ingresses = await this.groupStateService.captureExpiredPresenceMutationIngresses(atEpochMs);
+        for (const ingress of ingresses) {
+            await this.queueEntryWriter.enqueue(toExpiredPresenceEnqueue(ingress));
         }
-        return preparations.length;
+        return ingresses.length;
     }
 
     async enqueueFormationCriterionCommand(
         command: GroupMutationCommand,
         atEpochMs: number
     ): Promise<void> {
-        const preparation = await this.groupStateService.prepareFormationCriterionMutation(
+        const ingress = await this.groupStateService.captureFormationCriterionMutationIngress(
             command,
             atEpochMs
         );
         await this.queueEntryWriter.enqueue({
             type: AppInboxType.GROUP_FORMATION_CRITERION,
-            resourceId: preparation.queueResourceId,
+            resourceId: ingress.queueResourceId,
             authority: decodeJsonWireValue(
-                preparation,
+                ingress,
                 'Group formation AppInbox authority'
             ),
-            data: { commandId: preparation.command.commandId }
+            data: { commandId: ingress.command.commandId }
         });
     }
 
     async enqueueFormationAutomationCommand(command: GroupMutationCommand, atEpochMs: number): Promise<void> {
-        const preparation = await this.groupStateService.prepareFormationAutomationMutation(command, atEpochMs);
+        const ingress = await this.groupStateService.captureFormationAutomationMutationIngress(command, atEpochMs);
         await this.queueEntryWriter.enqueue({
             type: AppInboxType.GROUP_FORMATION_AUTOMATION,
-            resourceId: preparation.queueResourceId,
-            authority: decodeJsonWireValue(preparation, 'Group formation automation authority'),
-            data: { commandId: preparation.command.commandId }
+            resourceId: ingress.queueResourceId,
+            authority: decodeJsonWireValue(ingress, 'Group formation automation authority'),
+            data: { commandId: ingress.command.commandId }
         });
     }
 
@@ -172,15 +172,15 @@ export class GroupStateInboxService {
         command: GroupMutationCommand,
         atEpochMs: number
     ): Promise<void> {
-        const preparation = await this.groupStateService.prepareTopologyPublicationMutation(
+        const ingress = await this.groupStateService.captureTopologyPublicationMutationIngress(
             command,
             atEpochMs
         );
         await this.queueEntryWriter.enqueue({
             type: AppInboxType.GROUP_TOPOLOGY_PUBLICATION,
-            resourceId: preparation.queueResourceId,
-            authority: decodeJsonWireValue(preparation, 'Group topology publication AppInbox authority'),
-            data: { commandId: preparation.command.commandId }
+            resourceId: ingress.queueResourceId,
+            authority: decodeJsonWireValue(ingress, 'Group topology publication AppInbox authority'),
+            data: { commandId: ingress.command.commandId }
         });
     }
 
@@ -188,15 +188,15 @@ export class GroupStateInboxService {
         command: GroupMutationCommand,
         atEpochMs: number
     ): Promise<void> {
-        const preparation = await this.groupStateService.prepareActivationStatusMutation(
+        const ingress = await this.groupStateService.captureActivationStatusMutationIngress(
             command,
             atEpochMs
         );
         await this.queueEntryWriter.enqueue({
             type: AppInboxType.GROUP_ACTIVATION_STATUS,
-            resourceId: preparation.queueResourceId,
-            authority: decodeJsonWireValue(preparation, 'Group activation status AppInbox authority'),
-            data: { commandId: preparation.command.commandId }
+            resourceId: ingress.queueResourceId,
+            authority: decodeJsonWireValue(ingress, 'Group activation status AppInbox authority'),
+            data: { commandId: ingress.command.commandId }
         });
     }
 

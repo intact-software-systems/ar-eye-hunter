@@ -10,9 +10,9 @@ import type {
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy, GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -641,7 +641,11 @@ function createRouteApp(options: {
         adminClientIds: options.adminClientIds ?? [],
         strictReadAuthorization: options.strictReadAuthorization ?? false,
         readLifecyclePolicy: options.readLifecyclePolicy ??
-            (() => Promise.resolve({ status: 'absent' as const })),
+            (() =>
+                Promise.resolve({
+                    status: 'present' as const,
+                    policy: resolveGroupLifecyclePolicyPreset('optimistic')
+                })),
         graphDiagnostics: {
             readScopedGlobalGraphDiagnostic: options.graphDiagnostics?.readScopedGlobalGraphDiagnostic ??
                 ((scope) => Either.ofRight(createGraphResponse({ ...scope, groupId: '__global__' }))),
@@ -984,7 +988,8 @@ async function authorityFingerprintFor(group: GroupSnapshot): Promise<string> {
     return await computeRtcTopologyInputFingerprint({
         group,
         effectiveConfig: createTopologyConfigView().effective,
-        kindHysteresisWidths: { meshExitWidth: 0, treeExitWidth: 0 }
+        kindHysteresisWidths: { meshExitWidth: 0, treeExitWidth: 0 },
+        rttReportingDegreeLimit: 5
     });
 }
 

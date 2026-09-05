@@ -31,6 +31,7 @@ import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/m
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { materializeRtcOverlayTopologyBroadcastMessage } from '@shared-server/rallar-system/topology/planning/materialize-rtc-overlay-topology-broadcast-message.ts';
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
@@ -306,7 +307,7 @@ async function planTopologyWorkPublication(
         snapshotSelection: 'prefer-current'
     });
     const topology = requirePlannedTopology(
-        topologyManagement.planning.computeTopologyFromAuthority(authority, undefined, {
+        computeGroupTopologyFromAuthority(authority, undefined, {
             intent: 'full-rebuild',
             origin: 'automatic'
         })

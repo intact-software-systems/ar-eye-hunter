@@ -16,7 +16,7 @@ import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-ses
 import type {
     AuthorizedGroupMutation,
     GroupMutationAuthority,
-    GroupMutationPreparation,
+    GroupMutationIngress,
     GroupStateMutationCommand,
     GroupStateMutationService
 } from '../group-state-service-contracts.ts';
@@ -49,13 +49,13 @@ export interface GroupStateInboxHandlerDependencies {
     >;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
-    readonly prepareAuthenticatedMutation: (
+    readonly captureAuthenticatedMutationIngress: (
         descriptor: AuthorizedGroupMutation['descriptor'],
         authority: GroupMutationAuthority
-    ) => Promise<GroupMutationPreparation>;
-    readonly persistPreparedMutation: (
+    ) => Promise<GroupMutationIngress>;
+    readonly persistMutationIngress: (
         context: AppInboxMessageContext<GroupStateInboxDurableResult>,
-        preparation: GroupMutationPreparation
+        ingress: GroupMutationIngress
     ) => Promise<void>;
 }
 
@@ -84,13 +84,13 @@ export class GroupStateInboxHandler {
     async processGroupStateMutation(
         context: AppInboxMessageContext<GroupStateInboxDurableResult>
     ): Promise<GroupStateInboxDurableResult | InactiveGroupPresenceResult> {
-        const prepared = await this.readOrPrepareGroupMutation(context);
+        const ingress = await this.loadOrCaptureGroupMutationIngress(context);
         const command: GroupStateMutationCommand = {
-            authorityProof: prepared.authorityProof,
-            descriptor: prepared.descriptor,
-            command: prepared.command,
+            authorityProof: ingress.authorityProof,
+            descriptor: ingress.descriptor,
+            command: ingress.command,
             facts: {
-                ...prepared.facts,
+                ...ingress.facts,
                 attemptCount: context.entry.dequeueAudit.attempts
             }
         };
@@ -179,19 +179,19 @@ export class GroupStateInboxHandler {
         return { mutationRead, currentSnapshot, recordedEvent };
     }
 
-    private async readOrPrepareGroupMutation(
+    private async loadOrCaptureGroupMutationIngress(
         context: AppInboxMessageContext<GroupStateInboxDurableResult>
-    ): Promise<GroupMutationPreparation> {
+    ): Promise<GroupMutationIngress> {
         const authority = decodeGroupStateInboxAuthority(context.enqueue.authority);
-        if (authority.kind === 'prepared') {
+        if (authority.kind === 'ingress') {
             return authority.mutation;
         }
-        const preparation = await this.dependencies.prepareAuthenticatedMutation(
+        const ingress = await this.dependencies.captureAuthenticatedMutationIngress(
             authority.mutation.descriptor,
             authority.mutation.authorityProof
         );
-        await this.dependencies.persistPreparedMutation(context, preparation);
-        return preparation;
+        await this.dependencies.persistMutationIngress(context, ingress);
+        return ingress;
     }
 
     private async commitMutation(

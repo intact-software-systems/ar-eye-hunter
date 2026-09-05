@@ -135,7 +135,7 @@ export interface GroupMutationDescriptor {
         | DisconnectGroupPresenceSessionRequest;
 }
 
-export interface GroupMutationPreparation {
+export interface GroupMutationIngress {
     readonly authorityProof: GroupMutationAuthorityProof | null;
     readonly descriptor: GroupMutationDescriptor | null;
     readonly command: GroupMutationCommand;
@@ -178,36 +178,36 @@ export type GroupStateService =
             descriptor: GroupMutationDescriptor,
             authority: IssuedAuthSession
         ): Promise<AuthorizedGroupMutation>;
-        prepareMutation(
+        captureMutationIngress(
             descriptor: GroupMutationDescriptor,
             authority: GroupMutationAuthority
-        ): Promise<GroupMutationPreparation>;
-        prepareAppInboxMutation(
+        ): Promise<GroupMutationIngress>;
+        captureAppInboxMutationIngress(
             descriptor: GroupMutationDescriptor,
             authority: GroupMutationAuthority
-        ): Promise<GroupMutationPreparation>;
-        prepareExpiredPresenceMutations(
+        ): Promise<GroupMutationIngress>;
+        captureExpiredPresenceMutationIngresses(
             atEpochMs: number
-        ): Promise<readonly GroupMutationPreparation[]>;
-        prepareSessionCleanupMutations(
+        ): Promise<readonly GroupMutationIngress[]>;
+        captureSessionCleanupMutationIngresses(
             input: GroupSessionCleanupInput
-        ): Promise<readonly GroupMutationPreparation[]>;
-        prepareFormationCriterionMutation(
+        ): Promise<readonly GroupMutationIngress[]>;
+        captureFormationCriterionMutationIngress(
             command: GroupMutationCommand,
             atEpochMs: number
-        ): Promise<GroupMutationPreparation>;
-        prepareFormationAutomationMutation(
+        ): Promise<GroupMutationIngress>;
+        captureFormationAutomationMutationIngress(
             command: GroupMutationCommand,
             atEpochMs: number
-        ): Promise<GroupMutationPreparation>;
-        prepareTopologyPublicationMutation(
+        ): Promise<GroupMutationIngress>;
+        captureTopologyPublicationMutationIngress(
             command: GroupMutationCommand,
             atEpochMs: number
-        ): Promise<GroupMutationPreparation>;
-        prepareActivationStatusMutation(
+        ): Promise<GroupMutationIngress>;
+        captureActivationStatusMutationIngress(
             command: GroupMutationCommand,
             atEpochMs: number
-        ): Promise<GroupMutationPreparation>;
+        ): Promise<GroupMutationIngress>;
         listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]>;
         listSnapshotsPage(
             scope: GroupScope,

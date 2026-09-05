@@ -37,20 +37,22 @@ export function createCachedGroupStateService(
         sessionGenerationLifecycle: options.durable.sessionGenerationLifecycle,
         authorizeMutation: async (descriptor, authority) =>
             await options.durable.authorizeMutation(descriptor, authority),
-        prepareMutation: async (descriptor, authority) => await options.durable.prepareMutation(descriptor, authority),
-        prepareAppInboxMutation: async (descriptor, authority) =>
-            await options.durable.prepareAppInboxMutation(descriptor, authority),
-        prepareExpiredPresenceMutations: async (atEpochMs) =>
-            await options.durable.prepareExpiredPresenceMutations(atEpochMs),
-        prepareSessionCleanupMutations: async (input) => await options.durable.prepareSessionCleanupMutations(input),
-        prepareFormationCriterionMutation: async (command, atEpochMs) =>
-            await options.durable.prepareFormationCriterionMutation(command, atEpochMs),
-        prepareFormationAutomationMutation: async (command, atEpochMs) =>
-            await options.durable.prepareFormationAutomationMutation(command, atEpochMs),
-        prepareTopologyPublicationMutation: async (command, atEpochMs) =>
-            await options.durable.prepareTopologyPublicationMutation(command, atEpochMs),
-        prepareActivationStatusMutation: async (command, atEpochMs) =>
-            await options.durable.prepareActivationStatusMutation(command, atEpochMs),
+        captureMutationIngress: async (descriptor, authority) =>
+            await options.durable.captureMutationIngress(descriptor, authority),
+        captureAppInboxMutationIngress: async (descriptor, authority) =>
+            await options.durable.captureAppInboxMutationIngress(descriptor, authority),
+        captureExpiredPresenceMutationIngresses: async (atEpochMs) =>
+            await options.durable.captureExpiredPresenceMutationIngresses(atEpochMs),
+        captureSessionCleanupMutationIngresses: async (input) =>
+            await options.durable.captureSessionCleanupMutationIngresses(input),
+        captureFormationCriterionMutationIngress: async (command, atEpochMs) =>
+            await options.durable.captureFormationCriterionMutationIngress(command, atEpochMs),
+        captureFormationAutomationMutationIngress: async (command, atEpochMs) =>
+            await options.durable.captureFormationAutomationMutationIngress(command, atEpochMs),
+        captureTopologyPublicationMutationIngress: async (command, atEpochMs) =>
+            await options.durable.captureTopologyPublicationMutationIngress(command, atEpochMs),
+        captureActivationStatusMutationIngress: async (command, atEpochMs) =>
+            await options.durable.captureActivationStatusMutationIngress(command, atEpochMs),
         read: async (command) => await options.durable.read(command),
         compute: (command, read) => options.durable.compute(command, read),
         validate: (command, read, computed) => options.durable.validate(command, read, computed),

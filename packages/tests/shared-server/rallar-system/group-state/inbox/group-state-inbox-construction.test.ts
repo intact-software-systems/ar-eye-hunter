@@ -16,7 +16,7 @@ import {
 import type {
     GroupMutationAuthority,
     GroupMutationDescriptor,
-    GroupMutationPreparation,
+    GroupMutationIngress,
     GroupStateMutationService
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService as createDurableGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -51,13 +51,13 @@ type ExpectedHandlerDependencies = {
     readonly transactionWriter: ExpectedTransactionWriter;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
-    readonly prepareAuthenticatedMutation: (
+    readonly captureAuthenticatedMutationIngress: (
         descriptor: GroupMutationDescriptor,
         authority: GroupMutationAuthority
-    ) => Promise<GroupMutationPreparation>;
-    readonly persistPreparedMutation: (
+    ) => Promise<GroupMutationIngress>;
+    readonly persistMutationIngress: (
         context: AppInboxMessageContext<GroupStateInboxDurableResult>,
-        preparation: GroupMutationPreparation
+        ingress: GroupMutationIngress
     ) => Promise<void>;
 };
 type ExpectedComputedWrite = (input: GroupMutationWriteInput) => GroupMutationComputed;

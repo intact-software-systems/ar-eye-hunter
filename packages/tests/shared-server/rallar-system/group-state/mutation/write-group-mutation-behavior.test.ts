@@ -33,7 +33,7 @@ describe('GroupStateService guarded batch write boundary', () => {
             requestId: 'write-boundary-create'
         });
 
-        const prepared = await group.durable.prepareMutation(
+        const ingress = await group.durable.captureMutationIngress(
             mutationDescriptor({
                 operation: 'updateGroup',
                 scope: SCOPE,
@@ -47,8 +47,8 @@ describe('GroupStateService guarded batch write boundary', () => {
             authority
         );
         const command = {
-            ...prepared,
-            facts: { ...prepared.facts, attemptCount: 1 }
+            ...ingress,
+            facts: { ...ingress.facts, attemptCount: 1 }
         };
         const read = await group.durable.read(command);
         const computed = group.durable.compute(command, read);
@@ -73,7 +73,7 @@ describe('GroupStateService guarded batch write boundary', () => {
         const outboxEntry = outboxWrite?.entry;
         expect(outboxEntry?.typeId).toBe('APP_OUTBOX');
         if (outboxWrite === undefined || outboxEntry === undefined) {
-            throw new TypeError('Expected a prepared group outbox entry');
+            throw new TypeError('Expected a computed group outbox entry');
         }
         const tampered = [
             {

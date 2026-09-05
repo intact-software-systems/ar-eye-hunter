@@ -53,7 +53,7 @@ interface FenceReadHarness {
     readonly service: GroupStateTestService;
     readonly readRefs: readonly GroupRef[];
     readonly acceptedReadRefs: readonly GroupRef[];
-    prepare(command: GroupMutationCommand): Promise<GroupStateMutationCommand>;
+    captureIngress(command: GroupMutationCommand): Promise<GroupStateMutationCommand>;
 }
 
 async function createFenceReadHarness(options: FenceReadHarnessOptions = {}): Promise<FenceReadHarness> {
@@ -84,24 +84,24 @@ async function createFenceReadHarness(options: FenceReadHarnessOptions = {}): Pr
         createdByPrincipalId: 'owner',
         requestId: 'fence-read-seed'
     });
-    const prepare = async (command: GroupMutationCommand): Promise<GroupStateMutationCommand> => {
-        const preparation = command.operation === 'planGroupLayout'
-            ? await service.prepareFormationAutomationMutation(command, 1_000)
-            : await service.prepareFormationCriterionMutation(command, 1_000);
+    const captureIngress = async (command: GroupMutationCommand): Promise<GroupStateMutationCommand> => {
+        const ingress = command.operation === 'planGroupLayout'
+            ? await service.captureFormationAutomationMutationIngress(command, 1_000)
+            : await service.captureFormationCriterionMutationIngress(command, 1_000);
         return {
             authorityProof: null,
             descriptor: null,
-            command: preparation.command,
-            facts: { ...preparation.facts, attemptCount: 1 }
+            command: ingress.command,
+            facts: { ...ingress.facts, attemptCount: 1 }
         };
     };
-    return { service, readRefs, acceptedReadRefs, prepare };
+    return { service, readRefs, acceptedReadRefs, captureIngress };
 }
 
 describe('formation fence through the durable service read', () => {
     it('reads and attaches the stored planned identity for a layout-fenced command', async () => {
-        const { service, readRefs, prepare } = await createFenceReadHarness();
-        const prepared = await prepare(toFormationActivateCommand({
+        const { service, readRefs, captureIngress } = await createFenceReadHarness();
+        const ingress = await captureIngress(toFormationActivateCommand({
             groupRef: GROUP_REF,
             formationEpoch: 0,
             observedRate: 0.95,
@@ -109,19 +109,19 @@ describe('formation fence through the durable service read', () => {
             expectedLayout: PLANNED_LAYOUT
         }));
 
-        const read = await service.read(prepared);
+        const read = await service.read(ingress);
 
         expect(readRefs).toEqual([GROUP_REF]);
         expect(read.plannedLayoutRow?.snapshot).toEqual(PLANNED_SNAPSHOT);
     });
 
     it('never invokes the reader for a automatic plan command without a layout fence', async () => {
-        const { service, readRefs, prepare } = await createFenceReadHarness();
-        const prepared = await prepare(
+        const { service, readRefs, captureIngress } = await createFenceReadHarness();
+        const ingress = await captureIngress(
             toFormationRetryPlanCommand({ groupRef: GROUP_REF, formationEpoch: 0 })
         );
 
-        const read = await service.read(prepared);
+        const read = await service.read(ingress);
 
         expect(readRefs).toEqual([]);
         expect(read.plannedLayoutRow).toBeNull();
@@ -132,12 +132,12 @@ describe('formation fence through the durable service read', () => {
             'accepted-layout-key',
             'Stored topology snapshot is malformed'
         );
-        const { service, acceptedReadRefs, prepare } = await createFenceReadHarness({
+        const { service, acceptedReadRefs, captureIngress } = await createFenceReadHarness({
             readAcceptedLayoutRow: async () => {
                 throw corruption;
             }
         });
-        const prepared = await prepare(toFormationActivateCommand({
+        const ingress = await captureIngress(toFormationActivateCommand({
             groupRef: GROUP_REF,
             formationEpoch: 0,
             observedRate: 0.95,
@@ -145,13 +145,13 @@ describe('formation fence through the durable service read', () => {
             expectedLayout: PLANNED_LAYOUT
         }));
 
-        await expect(service.read(prepared)).rejects.toBe(corruption);
+        await expect(service.read(ingress)).rejects.toBe(corruption);
         expect(acceptedReadRefs).toEqual([GROUP_REF]);
     });
 
     it('feeds compute the service-read identity: superseded fences reject, matches pass', async () => {
-        const { service, prepare } = await createFenceReadHarness();
-        const superseded = await prepare(toFormationActivateCommand({
+        const { service, captureIngress } = await createFenceReadHarness();
+        const superseded = await captureIngress(toFormationActivateCommand({
             groupRef: GROUP_REF,
             formationEpoch: 0,
             observedRate: 0.95,
@@ -164,7 +164,7 @@ describe('formation fence through the durable service read', () => {
         }
         expect(supersededComputed.receipt.rejection).toContain('planned-layout-superseded');
 
-        const matching = await prepare(toFormationActivateCommand({
+        const matching = await captureIngress(toFormationActivateCommand({
             groupRef: GROUP_REF,
             formationEpoch: 0,
             observedRate: 0.95,

@@ -20,7 +20,7 @@ import {
 } from '../../websocket/ws-session-generation-computation.ts';
 import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
 import type {
-    GroupMutationPreparation,
+    GroupMutationIngress,
     GroupStateMutationCommand,
     GroupStateMutationService,
     GroupStateService
@@ -85,16 +85,16 @@ export function toGroupSessionCleanupEnqueue(
 }
 
 export function toExpiredPresenceEnqueue(
-    preparation: GroupMutationPreparation
+    ingress: GroupMutationIngress
 ): AppInboxEnqueueInput {
     return {
         type: AppInboxType.GROUP_PRESENCE_EXPIRE,
-        resourceId: preparation.queueResourceId,
+        resourceId: ingress.queueResourceId,
         authority: decodeJsonWireValue(
-            preparation,
+            ingress,
             'Expired group presence AppInbox authority'
         ),
-        data: { commandId: preparation.command.commandId }
+        data: { commandId: ingress.command.commandId }
     };
 }
 
@@ -146,19 +146,19 @@ export async function processGroupSessionCleanup(
     const lifecycle = input.groupStateService.sessionGenerationLifecycle;
     const lifecycleRead = await lifecycle.read(closeFacts);
     const lifecycleComputed = lifecycle.computeClosed(closeFacts, lifecycleRead);
-    const preparations = await input.groupStateService.prepareSessionCleanupMutations({
+    const ingresses = await input.groupStateService.captureSessionCleanupMutationIngresses({
         scope: input.facts.connection.scope,
         authSession: input.facts.connection.authSession,
         principalId: input.facts.connection.principalId,
         disconnectedAtEpochMs: input.facts.disconnectedAtEpochMs
     });
     const mutations = await Promise.all(
-        preparations.map(async (prepared) => {
+        ingresses.map(async (ingress) => {
             const command: GroupStateMutationCommand = {
-                authorityProof: prepared.authorityProof,
-                descriptor: prepared.descriptor,
-                command: prepared.command,
-                facts: { ...prepared.facts, attemptCount: input.attemptCount }
+                authorityProof: ingress.authorityProof,
+                descriptor: ingress.descriptor,
+                command: ingress.command,
+                facts: { ...ingress.facts, attemptCount: input.attemptCount }
             };
             const read = await input.groupStateService.read(command);
             const computed = input.groupStateService.compute(command, read);

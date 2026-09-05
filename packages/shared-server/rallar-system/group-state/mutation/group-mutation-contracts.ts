@@ -476,7 +476,7 @@ export interface GroupMutationFacts {
     readonly resolvedJoinCode: string | null;
     readonly joinCodeVerifier: string | null;
     readonly internalAuthority: (typeof GROUP_MUTATION_INTERNAL_AUTHORITY_MODES)[number];
-    /** Operational capacity defaults captured completely at preparation time. */
+    /** Operational capacity defaults captured completely at ingress time. */
     readonly capacity: GroupPolicyCapacityConfig;
     readonly authenticatedAuthority:
         | Readonly<{

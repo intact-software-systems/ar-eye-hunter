@@ -65,7 +65,7 @@ describe('group mutation result adaptation', () => {
 
 async function computeCreateReplay(runtime: TestGroupStateRuntime, request: CreateGroupRequest) {
     const authority = createTestAuthSession('alice');
-    const prepared = await runtime.durable.prepareMutation(
+    const ingress = await runtime.durable.captureMutationIngress(
         mutationDescriptor({
             operation: 'createGroup',
             scope: SCOPE,
@@ -75,10 +75,10 @@ async function computeCreateReplay(runtime: TestGroupStateRuntime, request: Crea
         authority
     );
     const command: GroupStateMutationCommand = {
-        authorityProof: prepared.authorityProof,
-        descriptor: prepared.descriptor,
-        command: prepared.command,
-        facts: { ...prepared.facts, attemptCount: 1 }
+        authorityProof: ingress.authorityProof,
+        descriptor: ingress.descriptor,
+        command: ingress.command,
+        facts: { ...ingress.facts, attemptCount: 1 }
     };
     const read = await runtime.durable.read(command);
     const computed = runtime.durable.compute(command, read);

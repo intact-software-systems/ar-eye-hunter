@@ -15,7 +15,7 @@ import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC
 import { toPersistedAuthSessionFixture, withPGliteSql } from './pglite-auth-test-harness.ts';
 import {
     applyPGliteGroupMutation,
-    applyPreparedPGliteGroupMutation,
+    applyPGliteGroupMutationIngress,
     createClientStateEvent,
     createGroupStateEvent
 } from './pglite-state-mutation-test-runtime.ts';
@@ -354,10 +354,10 @@ Deno.test(
                     requestId: 'collision-request'
                 }
             });
-            const updatePreparation = await service.prepareMutation(updateDescriptor, authority);
+            const updateIngress = await service.captureMutationIngress(updateDescriptor, authority);
             await new PSqlGroupStateEventRepository(sql).appendGroupEvent(
                 createGroupStateEvent({
-                    eventId: updatePreparation.facts.eventId,
+                    eventId: updateIngress.facts.eventId,
                     occurredAtEpochMs: 9_000,
                     snapshotVersion: 99,
                     eventType: 'group-updated',
@@ -366,7 +366,7 @@ Deno.test(
             );
 
             await assert.rejects(
-                () => applyPreparedPGliteGroupMutation(sql, service, updatePreparation),
+                () => applyPGliteGroupMutationIngress(sql, service, updateIngress),
                 (error) =>
                     error instanceof Error &&
                     'code' in error &&
@@ -385,7 +385,7 @@ Deno.test(
       where application_id = ${ref.applicationId}
         and workspace_key = ${groupStateEventWorkspaceKey(ref.workspaceId)}
         and group_id = ${ref.groupId}
-        and event_id = ${updatePreparation.facts.eventId}
+        and event_id = ${updateIngress.facts.eventId}
     `;
             assert.equal(Number(collisionRows[0]?.count), 1);
             const [summaryRows] = await sql<NumericCountRow[]>`
@@ -448,7 +448,7 @@ Deno.test(
                 authority
             });
 
-            const preparation = await service.prepareMutation(
+            const ingress = await service.captureMutationIngress(
                 mutationDescriptor({
                     operation: 'updateGroup',
                     scope,
@@ -462,8 +462,8 @@ Deno.test(
                 authority
             );
             const command = {
-                ...preparation,
-                facts: { ...preparation.facts, attemptCount: 1 }
+                ...ingress,
+                facts: { ...ingress.facts, attemptCount: 1 }
             };
             const read = await service.read(command);
             const computed = service.compute(command, read);
@@ -499,7 +499,7 @@ Deno.test(
       where application_id = ${ref.applicationId}
         and workspace_key = ${groupStateEventWorkspaceKey(ref.workspaceId)}
         and group_id = ${ref.groupId}
-        and event_id = ${preparation.facts.eventId}
+        and event_id = ${ingress.facts.eventId}
     `;
             assert.equal(Number(eventRows?.count ?? 0), 0);
             const storedCollision = await createPSqlResourceInboxRepository(sql).entries.findAnyByKey(

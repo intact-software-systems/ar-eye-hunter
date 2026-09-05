@@ -37,7 +37,7 @@ interface RetryAttempt {
 
 describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, () => {
     it(
-        'restarts read/compute/validate with immutable prepared facts and current authority',
+        'restarts read/compute/validate with immutable ingress facts and current authority',
         async () => {
             const nowEpochMs = Date.now();
             const queue = new TestResourceInbox();
@@ -74,7 +74,7 @@ describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, 
             };
             const phaseService = {
                 authorizeMutation: async () => authorizedMutation,
-                prepareAppInboxMutation: async () => {
+                captureAppInboxMutationIngress: async () => {
                     authenticatedReadCount += 1;
                     return {
                         ...authorizedMutation,

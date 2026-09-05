@@ -15,6 +15,7 @@ import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topo
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-stream-service.ts';
 import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
@@ -58,7 +59,7 @@ Deno.test(
                 updatedAtEpochMs: 123
             });
 
-            const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
+            const result = requirePlannedTopology(computeGroupTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous,
                 { intent: 'full-rebuild', origin: 'automatic' }
@@ -82,7 +83,7 @@ Deno.test(
                 updatedAtEpochMs: 200
             });
 
-            const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
+            const result = requirePlannedTopology(computeGroupTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous,
                 { intent: 'full-rebuild', origin: 'automatic' }
@@ -109,7 +110,7 @@ Deno.test(
                 updatedAtEpochMs: 201
             });
 
-            const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
+            const result = requirePlannedTopology(computeGroupTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous,
                 { intent: 'full-rebuild', origin: 'automatic' }
@@ -136,7 +137,7 @@ Deno.test(
                 updatedAtEpochMs: 202
             });
 
-            const result = requirePlannedTopology(scenario.service.planning.computeTopologyFromAuthority(
+            const result = requirePlannedTopology(computeGroupTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous,
                 { intent: 'full-rebuild', origin: 'automatic' }
@@ -255,7 +256,7 @@ Deno.test(
             });
             assert.deepEqual(authority.rttMeasurements, [storedRtt]);
 
-            service.planning.computeTopologyFromAuthority(authority, previous, {
+            computeGroupTopologyFromAuthority(authority, previous, {
                 intent: 'full-rebuild',
                 origin: 'automatic'
             });

@@ -1,7 +1,7 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import {
     type GroupMutationDescriptor,
-    type GroupMutationPreparation,
+    type GroupMutationIngress,
     type GroupStateService
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
@@ -53,21 +53,21 @@ export async function applyPGliteGroupMutation(
     input: ApplyPGliteGroupMutationInput
 ): Promise<void> {
     const { sql, service, descriptor, authority } = input;
-    await applyPreparedPGliteGroupMutation(
+    await applyPGliteGroupMutationIngress(
         sql,
         service,
-        await service.prepareMutation(descriptor, authority)
+        await service.captureMutationIngress(descriptor, authority)
     );
 }
 
-export async function applyPreparedPGliteGroupMutation(
+export async function applyPGliteGroupMutationIngress(
     sql: PGliteSql,
     service: GroupStateService,
-    preparation: GroupMutationPreparation
+    ingress: GroupMutationIngress
 ): Promise<void> {
     const command = {
-        ...preparation,
-        facts: { ...preparation.facts, attemptCount: 1 }
+        ...ingress,
+        facts: { ...ingress.facts, attemptCount: 1 }
     };
     const read = await service.read(command);
     const computed = service.compute(command, read);

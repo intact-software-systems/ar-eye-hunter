@@ -12,14 +12,14 @@ type PromiseReturningTimedGroupStateServiceKey = Exclude<PromiseReturningGroupSt
 
 export const TIMED_ASYNC_OPERATIONS = [
     'authorizeMutation',
-    'prepareMutation',
-    'prepareAppInboxMutation',
-    'prepareExpiredPresenceMutations',
-    'prepareSessionCleanupMutations',
-    'prepareFormationCriterionMutation',
-    'prepareFormationAutomationMutation',
-    'prepareTopologyPublicationMutation',
-    'prepareActivationStatusMutation',
+    'captureMutationIngress',
+    'captureAppInboxMutationIngress',
+    'captureExpiredPresenceMutationIngresses',
+    'captureSessionCleanupMutationIngresses',
+    'captureFormationCriterionMutationIngress',
+    'captureFormationAutomationMutationIngress',
+    'captureTopologyPublicationMutationIngress',
+    'captureActivationStatusMutationIngress',
     'listSnapshots',
     'listSnapshotsPage',
     'readSnapshot',
@@ -123,7 +123,7 @@ export function createGroupStateServiceTimingFake(
     };
     const service: GroupStateService = {
         sessionGenerationLifecycle: Object.freeze({}) as never,
-        ...createPreparationFake(record),
+        ...createIngressCaptureFake(record),
         ...createQueryFake(record),
         ...createMutationFake(record, calls, sentinels.compute)
     };
@@ -139,35 +139,37 @@ function createTimingSentinels(): TimingSentinels {
     ) as TimingSentinels;
 }
 
-function createPreparationFake(
+function createIngressCaptureFake(
     record: RecordTimedOperation
 ): Pick<
     GroupStateService,
     | 'authorizeMutation'
-    | 'prepareMutation'
-    | 'prepareAppInboxMutation'
-    | 'prepareExpiredPresenceMutations'
-    | 'prepareSessionCleanupMutations'
-    | 'prepareFormationCriterionMutation'
-    | 'prepareFormationAutomationMutation'
-    | 'prepareTopologyPublicationMutation'
-    | 'prepareActivationStatusMutation'
+    | 'captureMutationIngress'
+    | 'captureAppInboxMutationIngress'
+    | 'captureExpiredPresenceMutationIngresses'
+    | 'captureSessionCleanupMutationIngresses'
+    | 'captureFormationCriterionMutationIngress'
+    | 'captureFormationAutomationMutationIngress'
+    | 'captureTopologyPublicationMutationIngress'
+    | 'captureActivationStatusMutationIngress'
 > {
     return {
         authorizeMutation: async (...arguments_) => (await record({ operation: 'authorizeMutation', arguments: arguments_ })) as never,
-        prepareMutation: async (...arguments_) => (await record({ operation: 'prepareMutation', arguments: arguments_ })) as never,
-        prepareAppInboxMutation: async (...arguments_) => (await record({ operation: 'prepareAppInboxMutation', arguments: arguments_ })) as never,
-        prepareExpiredPresenceMutations: async (...arguments_) =>
-            (await record({ operation: 'prepareExpiredPresenceMutations', arguments: arguments_ })) as never,
-        prepareFormationCriterionMutation: async (...arguments_) =>
-            (await record({ operation: 'prepareFormationCriterionMutation', arguments: arguments_ })) as never,
-        prepareFormationAutomationMutation: async (...arguments_) =>
-            (await record({ operation: 'prepareFormationAutomationMutation', arguments: arguments_ })) as never,
-        prepareTopologyPublicationMutation: async (...arguments_) =>
-            (await record({ operation: 'prepareTopologyPublicationMutation', arguments: arguments_ })) as never,
-        prepareActivationStatusMutation: async (...arguments_) =>
-            (await record({ operation: 'prepareActivationStatusMutation', arguments: arguments_ })) as never,
-        prepareSessionCleanupMutations: async (...arguments_) => (await record({ operation: 'prepareSessionCleanupMutations', arguments: arguments_ })) as never
+        captureMutationIngress: async (...arguments_) => (await record({ operation: 'captureMutationIngress', arguments: arguments_ })) as never,
+        captureAppInboxMutationIngress: async (...arguments_) =>
+            (await record({ operation: 'captureAppInboxMutationIngress', arguments: arguments_ })) as never,
+        captureExpiredPresenceMutationIngresses: async (...arguments_) =>
+            (await record({ operation: 'captureExpiredPresenceMutationIngresses', arguments: arguments_ })) as never,
+        captureFormationCriterionMutationIngress: async (...arguments_) =>
+            (await record({ operation: 'captureFormationCriterionMutationIngress', arguments: arguments_ })) as never,
+        captureFormationAutomationMutationIngress: async (...arguments_) =>
+            (await record({ operation: 'captureFormationAutomationMutationIngress', arguments: arguments_ })) as never,
+        captureTopologyPublicationMutationIngress: async (...arguments_) =>
+            (await record({ operation: 'captureTopologyPublicationMutationIngress', arguments: arguments_ })) as never,
+        captureActivationStatusMutationIngress: async (...arguments_) =>
+            (await record({ operation: 'captureActivationStatusMutationIngress', arguments: arguments_ })) as never,
+        captureSessionCleanupMutationIngresses: async (...arguments_) =>
+            (await record({ operation: 'captureSessionCleanupMutationIngresses', arguments: arguments_ })) as never
     };
 }
 
@@ -300,14 +302,14 @@ type TimedOperationArgumentsByOperation = {
 
 export const TIMED_OPERATION_ARGUMENTS: TimedOperationArgumentsByOperation = {
     authorizeMutation: [timingDescriptor, timingAuthority],
-    prepareMutation: [timingDescriptor, timingAuthority],
-    prepareAppInboxMutation: [timingDescriptor, timingAuthority],
-    prepareExpiredPresenceMutations: [1_000],
-    prepareSessionCleanupMutations: [timingCleanup],
-    prepareFormationCriterionMutation: [{} as never, 1_000],
-    prepareFormationAutomationMutation: [{} as never, 1_000],
-    prepareTopologyPublicationMutation: [{} as never, 1_000],
-    prepareActivationStatusMutation: [{} as never, 1_000],
+    captureMutationIngress: [timingDescriptor, timingAuthority],
+    captureAppInboxMutationIngress: [timingDescriptor, timingAuthority],
+    captureExpiredPresenceMutationIngresses: [1_000],
+    captureSessionCleanupMutationIngresses: [timingCleanup],
+    captureFormationCriterionMutationIngress: [{} as never, 1_000],
+    captureFormationAutomationMutationIngress: [{} as never, 1_000],
+    captureTopologyPublicationMutationIngress: [{} as never, 1_000],
+    captureActivationStatusMutationIngress: [{} as never, 1_000],
     listSnapshots: [timingScope],
     listSnapshotsPage: [timingScope, timingSnapshotPageOptions],
     readSnapshot: [timingGroupRef],
@@ -333,34 +335,34 @@ type TimedOperationInvocations = {
 
 const TIMED_OPERATION_INVOCATIONS: TimedOperationInvocations = {
     authorizeMutation: async (service) => await service.authorizeMutation(...TIMED_OPERATION_ARGUMENTS.authorizeMutation),
-    prepareMutation: async (service) => await service.prepareMutation(...TIMED_OPERATION_ARGUMENTS.prepareMutation),
-    prepareAppInboxMutation: async (service) =>
-        await service.prepareAppInboxMutation(
-            ...TIMED_OPERATION_ARGUMENTS.prepareAppInboxMutation
+    captureMutationIngress: async (service) => await service.captureMutationIngress(...TIMED_OPERATION_ARGUMENTS.captureMutationIngress),
+    captureAppInboxMutationIngress: async (service) =>
+        await service.captureAppInboxMutationIngress(
+            ...TIMED_OPERATION_ARGUMENTS.captureAppInboxMutationIngress
         ),
-    prepareExpiredPresenceMutations: async (service) =>
-        await service.prepareExpiredPresenceMutations(
-            ...TIMED_OPERATION_ARGUMENTS.prepareExpiredPresenceMutations
+    captureExpiredPresenceMutationIngresses: async (service) =>
+        await service.captureExpiredPresenceMutationIngresses(
+            ...TIMED_OPERATION_ARGUMENTS.captureExpiredPresenceMutationIngresses
         ),
-    prepareSessionCleanupMutations: async (service) =>
-        await service.prepareSessionCleanupMutations(
-            ...TIMED_OPERATION_ARGUMENTS.prepareSessionCleanupMutations
+    captureSessionCleanupMutationIngresses: async (service) =>
+        await service.captureSessionCleanupMutationIngresses(
+            ...TIMED_OPERATION_ARGUMENTS.captureSessionCleanupMutationIngresses
         ),
-    prepareFormationCriterionMutation: async (service) =>
-        await service.prepareFormationCriterionMutation(
-            ...TIMED_OPERATION_ARGUMENTS.prepareFormationCriterionMutation
+    captureFormationCriterionMutationIngress: async (service) =>
+        await service.captureFormationCriterionMutationIngress(
+            ...TIMED_OPERATION_ARGUMENTS.captureFormationCriterionMutationIngress
         ),
-    prepareFormationAutomationMutation: async (service) =>
-        await service.prepareFormationAutomationMutation(
-            ...TIMED_OPERATION_ARGUMENTS.prepareFormationAutomationMutation
+    captureFormationAutomationMutationIngress: async (service) =>
+        await service.captureFormationAutomationMutationIngress(
+            ...TIMED_OPERATION_ARGUMENTS.captureFormationAutomationMutationIngress
         ),
-    prepareTopologyPublicationMutation: async (service) =>
-        await service.prepareTopologyPublicationMutation(
-            ...TIMED_OPERATION_ARGUMENTS.prepareTopologyPublicationMutation
+    captureTopologyPublicationMutationIngress: async (service) =>
+        await service.captureTopologyPublicationMutationIngress(
+            ...TIMED_OPERATION_ARGUMENTS.captureTopologyPublicationMutationIngress
         ),
-    prepareActivationStatusMutation: async (service) =>
-        await service.prepareActivationStatusMutation(
-            ...TIMED_OPERATION_ARGUMENTS.prepareActivationStatusMutation
+    captureActivationStatusMutationIngress: async (service) =>
+        await service.captureActivationStatusMutationIngress(
+            ...TIMED_OPERATION_ARGUMENTS.captureActivationStatusMutationIngress
         ),
     listSnapshots: async (service) => await service.listSnapshots(...TIMED_OPERATION_ARGUMENTS.listSnapshots),
     listSnapshotsPage: async (service) => await service.listSnapshotsPage(...TIMED_OPERATION_ARGUMENTS.listSnapshotsPage),
