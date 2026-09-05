@@ -1,7 +1,8 @@
 import {
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 import type { LiveRtcControlPort } from '../../../tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts';
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
@@ -166,6 +167,82 @@ describe('live RTC delivery owner', () => {
         }
     });
 
+    it('revalidates every RTC route after each activation refresh before delivery', async () => {
+        const recording = RecordingLiveRtcControl.withDeferredReadiness();
+        const operations = createLiveRtcDeliveryOperations(config);
+        const formationPromise = operations.runGroupFormation({
+            control: recording,
+            runId: 'run',
+            agents: recording.agents,
+            transport: 'messages.rtc',
+            groupId: 'room',
+            suffix: 'post-activation',
+            readinessScope: 'all'
+        });
+
+        await waitForPendingReadiness(recording, ['A', 'B']);
+        expect(recording.milestones).not.toContain('activate:2');
+        recording.completeNextReadiness('A', 11);
+        await Promise.resolve();
+        expect(recording.milestones).not.toContain('activate:2');
+        recording.completeNextReadiness('B', 12);
+
+        await waitForPendingReadiness(recording, ['A', 'B']);
+        const initialPairActivationIndex = recording.milestones.lastIndexOf('activate:2');
+        for (const prefix of ['A', 'B'] as const) {
+            const refreshIndex = recording.milestones.lastIndexOf(`refresh:${prefix}`);
+            expect(refreshIndex).toBeGreaterThan(initialPairActivationIndex);
+            expect(recording.milestones.lastIndexOf(`ready-start:${prefix}`)).toBeGreaterThan(refreshIndex);
+        }
+        recording.completeNextReadiness('A', 21);
+        await Promise.resolve();
+        expect(recording.milestones).not.toContain('connect:C');
+        recording.completeNextReadiness('B', 22);
+
+        await waitForPendingReadiness(recording, ['A', 'B', 'C']);
+        expect(recording.milestones).not.toContain('activate:3');
+        recording.completeNextReadiness('A', 31);
+        recording.completeNextReadiness('B', 32);
+        await Promise.resolve();
+        expect(recording.milestones).not.toContain('activate:3');
+        recording.completeNextReadiness('C', 33);
+
+        await waitForPendingReadiness(recording, ['A', 'B', 'C']);
+        const activationIndex = recording.milestones.lastIndexOf('activate:3');
+        for (const prefix of ['A', 'B', 'C'] as const) {
+            const refreshIndex = recording.milestones.lastIndexOf(`refresh:${prefix}`);
+            expect(refreshIndex).toBeGreaterThan(activationIndex);
+            expect(recording.milestones.lastIndexOf(`ready-start:${prefix}`)).toBeGreaterThan(refreshIndex);
+        }
+        recording.completeNextReadiness('A', 41);
+        recording.completeNextReadiness('B', 42);
+        await Promise.resolve();
+        let formationResolved = false;
+        void formationPromise.then(() => {
+            formationResolved = true;
+        });
+        await Promise.resolve();
+        expect(formationResolved).toBe(false);
+        recording.completeNextReadiness('C', 43);
+        const formation = await formationPromise;
+
+        expect(formation.readinessDurations).toEqual({ A: 41, B: 42, C: 43 });
+        await operations.sendMatrixPayload({
+            control: recording,
+            runId: 'run',
+            sender: recording.agents[0],
+            transport: 'messages.rtc',
+            groupId: 'room',
+            suffix: 'post-activation',
+            deliveryMode: 'multicast',
+            targetSessionIds: ['session-B', 'session-C'],
+            matrixId: 'post-activation-delivery'
+        });
+        expect(recording.milestones.indexOf('send')).toBeGreaterThan(
+            recording.milestones.lastIndexOf('ready-complete:C')
+        );
+    });
+
     it('retires peers only after close/reset and survivor absence confirmation', async () => {
         const recording = new RecordingLiveRtcControl();
         await createLiveRtcDeliveryOperations(config).closeAndResetSettledAgentTrio({
@@ -230,6 +307,17 @@ namespace RecordingLiveRtcControl {
     }
 }
 
+async function waitForPendingReadiness(
+    recording: RecordingLiveRtcControl,
+    prefixes: readonly LiveRtcControlClient.FormationAgent['prefix'][]
+): Promise<void> {
+    await vi.waitFor(() => {
+        expect(prefixes.map((prefix) => recording.pendingReadinessCount(prefix))).toEqual(
+            prefixes.map(() => 1)
+        );
+    });
+}
+
 class RecordingLiveRtcControl implements LiveRtcControlPort {
     readonly commands: LiveRtcControlClient.ExecuteInput[] = [];
     readonly milestones: string[] = [];
@@ -238,15 +326,40 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
     private acceptedSessions: readonly string[];
     private formationEpoch = 0;
     private groupRevision = 0;
+    private readonly deferReadiness: boolean;
+    private readonly pendingReadiness = new Map<LiveRtcControlClient.FormationAgent['prefix'], Array<(durationMs: number) => void>>();
     readonly messageObservations: LiveRtcControlClient.WaitForMessageInput[] = [];
     readonly agents: readonly [LiveRtcControlClient.FormationAgent, LiveRtcControlClient.FormationAgent, LiveRtcControlClient.FormationAgent] = [
         this.createAgent('A'),
         this.createAgent('B'),
         this.createAgent('C')
     ];
-    constructor(initial: RecordingLiveRtcControl.InitialState = { lifecycleState: 'forming', acceptedSessions: [] }) {
+    constructor(
+        initial: RecordingLiveRtcControl.InitialState = { lifecycleState: 'forming', acceptedSessions: [] },
+        deferReadiness = false
+    ) {
         this.lifecycleState = initial.lifecycleState;
         this.acceptedSessions = initial.acceptedSessions;
+        this.deferReadiness = deferReadiness;
+    }
+
+    static withDeferredReadiness(): RecordingLiveRtcControl {
+        return new RecordingLiveRtcControl({ lifecycleState: 'forming', acceptedSessions: [] }, true);
+    }
+
+    pendingReadinessCount(prefix: LiveRtcControlClient.FormationAgent['prefix']): number {
+        return this.pendingReadiness.get(prefix)?.length ?? 0;
+    }
+
+    completeNextReadiness(
+        prefix: LiveRtcControlClient.FormationAgent['prefix'],
+        durationMs: number
+    ): void {
+        const pending = this.pendingReadiness.get(prefix)?.shift();
+        if (!pending) {
+            throw new Error(`No pending readiness observation for ${prefix}`);
+        }
+        pending(durationMs);
     }
 
     private createAgent(prefix: 'A' | 'B' | 'C'): LiveRtcControlClient.FormationAgent {
@@ -369,7 +482,19 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
             throw new Error('Readiness requested for a peer absent from the dialable layout');
         }
         this.milestones.push(`ready:${input.agent.prefix}`);
-        return 1;
+        this.milestones.push(`ready-start:${input.agent.prefix}`);
+        if (!this.deferReadiness) {
+            this.milestones.push(`ready-complete:${input.agent.prefix}`);
+            return 1;
+        }
+        return await new Promise<number>((resolve) => {
+            const pending = this.pendingReadiness.get(input.agent.prefix) ?? [];
+            pending.push((durationMs) => {
+                this.milestones.push(`ready-complete:${input.agent.prefix}`);
+                resolve(durationMs);
+            });
+            this.pendingReadiness.set(input.agent.prefix, pending);
+        });
     };
     waitForPeerAbsence = async (input: LiveRtcControlClient.WaitForPeerAbsenceInput): Promise<void> => {
         this.milestones.push(`absent:${input.agent.prefix}:${input.departedPeerIds.join(',')}`);
