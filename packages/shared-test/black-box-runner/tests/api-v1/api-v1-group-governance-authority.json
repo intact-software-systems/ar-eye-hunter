@@ -1,0 +1,526 @@
+{
+  "description": "Group governance authority over the wire (coverage plan slice 1): ban, unban, remove and role promotion had owner-happy-path coverage only, so every denial they raise was unobserved. A plain member is denied forbidden-role on all three governing routes; an admin may govern a regular member but not the owner, which is the distinction the role tier actually draws; and a removed member is denied by member-removed rather than the member-banned the ban recipe already pins.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_GOVAUTH_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-govauth"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_GOVAUTH_WORKSPACE_ID",
+      "default": "workspace-govauth-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_GOVAUTH_GROUP_ID",
+      "default": "govauth-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_GOVAUTH_PASSWORD",
+      "default": "api-v1-govauth-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/govauth-register-owner-{runId}",
+        "body": {
+          "username": "govauth-owner-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "owner client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/govauth-login-owner-{runId}",
+        "body": {
+          "username": "govauth-owner-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "ownerClientId": "body.clientId",
+          "ownerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOwnerAuthHeader",
+      "type": "set",
+      "output": "ownerAuthHeader",
+      "secret": true,
+      "redactAs": "ownerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.ownerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerDeputy",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/govauth-register-deputy-{runId}",
+        "body": {
+          "username": "govauth-deputy-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "deputy client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginDeputy",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/govauth-login-deputy-{runId}",
+        "body": {
+          "username": "govauth-deputy-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "deputyClientId": "body.clientId",
+          "deputyAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveDeputyAuthHeader",
+      "type": "set",
+      "output": "deputyAuthHeader",
+      "secret": true,
+      "redactAs": "deputyAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.deputyAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/govauth-register-member-{runId}",
+        "body": {
+          "username": "govauth-member-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "member client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/govauth-login-member-{runId}",
+        "body": {
+          "username": "govauth-member-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "memberClientId": "body.clientId",
+          "memberAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveMemberAuthHeader",
+      "type": "set",
+      "output": "memberAuthHeader",
+      "secret": true,
+      "redactAs": "memberAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.memberAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/govauth-create-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Governance authority group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "deputyJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{deputyClientId}/requests/govauth-join-deputy-{runId}",
+        "headers": {
+          "Authorization": "{deputyAuthHeader}",
+          "x-client-id": "{deputyClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "memberJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{memberClientId}/requests/govauth-join-member-{runId}",
+        "headers": {
+          "Authorization": "{memberAuthHeader}",
+          "x-client-id": "{memberClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "aPlainMemberCannotBan",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{deputyClientId}/ban/requests/govauth-member-ban-{runId}",
+        "headers": {
+          "Authorization": "{memberAuthHeader}",
+          "x-client-id": "{memberClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403
+        }
+      }
+    },
+    {
+      "name": "aPlainMemberCannotRemove",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{deputyClientId}/remove/requests/govauth-member-remove-{runId}",
+        "headers": {
+          "Authorization": "{memberAuthHeader}",
+          "x-client-id": "{memberClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403
+        }
+      }
+    },
+    {
+      "name": "aPlainMemberCannotSetARole",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{deputyClientId}/role/requests/govauth-member-role-{runId}",
+        "headers": {
+          "Authorization": "{memberAuthHeader}",
+          "x-client-id": "{memberClientId}"
+        },
+        "body": {
+          "role": "admin"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403
+        }
+      }
+    },
+    {
+      "name": "theOwnerPromotesTheDeputyToAdmin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{deputyClientId}/role/requests/govauth-promote-deputy-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "role": "admin"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "anAdminMayGovernARegularMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{memberClientId}/ban/requests/govauth-admin-bans-member-{runId}",
+        "headers": {
+          "Authorization": "{deputyAuthHeader}",
+          "x-client-id": "{deputyClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "anAdminCannotGovernTheOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{ownerClientId}/ban/requests/govauth-admin-bans-owner-{runId}",
+        "headers": {
+          "Authorization": "{deputyAuthHeader}",
+          "x-client-id": "{deputyClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403
+        }
+      }
+    },
+    {
+      "name": "theOwnerUnbansTheMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{memberClientId}/unban/requests/govauth-unban-member-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "theOwnerRemovesTheMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{memberClientId}/remove/requests/govauth-remove-member-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "theRemovedMemberIsDeniedByItsOwnCode",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{memberClientId}/requests/govauth-removed-rejoin-{runId}",
+        "headers": {
+          "Authorization": "{memberAuthHeader}",
+          "x-client-id": "{memberClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "member-removed",
+          "status": 403
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}
