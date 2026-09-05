@@ -7,31 +7,31 @@
 > `performance-analysis`, `rallar-realtime`, `rallar-code-writing`,
 > `rallar-testing`, and `publishing-plan-progress` workflows.
 
-**Goal:** Produce reproducible, correctness-gated RTC baseline evidence for the
-frozen `RTC-B01` through `RTC-B06` workloads without changing production RTC
-behavior, after every RTC/WebRTC performance tool has one visible private
-workspace owner and that owner has passed a complete code and legacy review.
+**Goal:** Produce reproducible, correctness-gated RTC evidence for the accepted
+`RTC-B01` through `RTC-B06` workloads without changing production RTC behavior.
+Browser and live-RTC observations are an append-only stream over the `main`
+snapshot selected by each run; they do not wait for a permanently stable head.
 
 **Architecture:** Preserve authoritative RTC implementations in `shared`,
 `shared-web`, and `shared-server`. Establish
 `packages/shared-rtc-bench/**` as the measurement-only owner in a three-layer
 stack: this exact design/plan layer, behavior-preserving Task 4A relocation,
-then Task 4B structural review and remediation. Resume B04 and later capture
-only after both organization layers merge and are revalidated. Keep the final
-unchanged, fully gated B01-B05 head and the later separately approved B06 head
-as distinct measurement anchors.
+then Task 4B structural review and remediation. B04 and both observation
+producers are now delivered. Each observation records its own source commit,
+tree, environment, workflow identity, and checksums so later analysis can
+select comparable evidence without freezing `main`.
 
 **Tech Stack:** TypeScript, Deno, Vitest, Node.js, Playwright Chromium, Git,
 GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 ## Global Constraints
 
-- PR #196's planning revision authorized no implementation by itself. The human
-  subsequently approved exact plan blob
-  `b78e00e982d186264bc5ba6b4b2a943f15a328f3` and explicitly authorized Task 4A
-  execution. Task 4A is now merged and revalidated through PRs #198 and #199;
-  this completion record does not authorize Task 4B, B04, capture, B06,
-  ontology implementation, or production RTC changes.
+- The current execution status and Task 9-12 current-semantics blocks
+  supersede historical hold, activation, fixed-write-set, immutable-anchor, and
+  exact-main capture instructions retained later in this document for
+  provenance. `main` is intentionally moving. A later commit does not
+  invalidate an already verified observation, and waiting for a quiet or final
+  `main` is not work.
 - Preserve the accepted `RTC-B01` through `RTC-B06` workloads, environments,
   correctness gates, sample counts, CLI grammar, identities, artifact schemas,
   timing boundaries, output confinement, failure accounting, reproducibility
@@ -40,17 +40,12 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
   constructs inputs and measures those implementations; it must never copy,
   simulate as evidence, replace, or become a runtime dependency of RTC product
   behavior.
-- Task 4/B03 is complete and published. B04, baseline capture, B06, B07,
-  production changes, optimization, raw-artifact publication, and Phase 2 stay
-  held until the organization stack reaches its explicit gates.
-- Use three review layers: PR #196 contains the design, this plan amendment, and
-  pending coordination only; a Task 4A follow-on PR performs relocation and
-  semantic parity; a Task 4B follow-on PR performs structural review and
-  remediation. Do not combine the latter two to save publication steps.
-- Do not edit production RTC/realtime or ontology implementation in Tasks 4A or
-  4B. Ontology metadata remains an operationally inert description/binding
-  track and retains its own build-time binding-resolution mechanism; package
-  catalog/navigation metadata is not ontology metadata.
+- Treat observation archives as append-only. A failed primary remains useful
+  diagnostic evidence but contributes no accepted metric, and a later run does
+  not overwrite or repair its identity.
+- Task 10 capture does not authorize a production change. When a failed
+  observation exposes a product defect, correct that defect in its own reviewed
+  slice and then dispatch a new observation from moving `main`.
 - Apply the current repository human-readability standard: visible ownership,
   dataflow, decisions, side effects, failure paths, cognitive-load tiers,
   responsibility review, and the post-discount navigation backstop. The old
@@ -58,19 +53,39 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 - Preserve public product exports and app import paths. The benchmark package is
   private, has no product barrel, and may be entered only by its documented
   package/root commands.
-- Roll back Task 4A as one complete relocation unit. Never leave duplicate
-  implementations, old-path wrappers, or two accepted catalog locations.
 
 ---
 
 **Created:** 2026-08-06
 
-**Status:** PR #196 is merged, its resulting-main workflow passed, and exact
-plan blob `b78e00e982d186264bc5ba6b4b2a943f15a328f3` received explicit human
-approval. Task 4A is complete at resulting-main commit
-`c96f46f2eba10c8103b29b052c0edfbc42c05a37`; Task 4B, B04, capture, B06,
-ontology implementation, and production RTC remain held pending their own
-activation gates.
+**Updated:** 2026-09-05
+
+**Status:** Tasks 4A/4B, B04, native-browser B05 capture, the continuous B05
+observation stream, and B06 E3-memory observation tooling are merged. Five
+distinct valid B05 archive PRs (#402, #405, #463, #474, and #494) are awaiting
+human review and chronological merge; they are independent time-series samples
+and must not be closed as duplicates. Four B06 observations are preserved as
+failed evidence with `acceptedMetrics: false`; there is not yet a valid B06 E3
+result. The latest failed observation is PR #498. It ran after the earlier room
+readiness/durable-delivery and setup-phase fixes and exposed a separate
+post-activation readiness-barrier defect. PR #499 contains the focused fix and
+regression proof. Main-wide typechecking is independently repaired by PR #496.
+B07 remains held, and evidence ranking cannot start until a valid B06 primary
+and any required repeat are archived.
+
+### Current execution horizon
+
+| Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                   |
+| ----- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Publish the pending evidence and prerequisite fixes | Merge B05 archives #402, #405, #463, #474, and #494 in chronological order; merge failed B06 archive #498; merge main typecheck repair #496 and post-activation readiness fix #499 with green relevant gates. Delete observation branches only after their PRs merge. |
+| 2     | Capture B06 E3-memory from moving `main`            | Manually dispatch `RTC-B06 Performance Observation` after #499 reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.                                |
+| 3     | Reconcile B05 and B06                               | Name the selected valid B05 observations or time window, compare them with the valid B06 observation without pooling unlike environments, decide whether E4-pg is required by the candidate call path, and rank at most one candidate—or `none`.                      |
+
+If the next B06 run fails, retain it as failed evidence and diagnose the first
+failed attempt from that run. Fix only the evidenced tooling or product defect,
+then dispatch a new observation from whatever `main` snapshot exists at that
+time. Do not pin, rebase, or wait for a quiet `main` merely to make performance
+evidence current.
 
 **Roadmap:**
 [Rallar Architecture Quality And RTC Program Roadmap](../../../plans/rallar-architecture-quality-and-rtc-program-roadmap.md)
@@ -3665,18 +3680,19 @@ performance-observations/rtc-b05/YYYY/MM/DD/<observation-id>.zip
 performance-observations/rtc-b05/index.jsonl
 ```
 
-- [ ] Merge the observation-stream tooling and configure the ordinary
+- [x] Merge the observation-stream tooling and configure the ordinary
       pull-request credential `RTC_OBSERVATION_PR_TOKEN`.
-- [ ] Manually dispatch `RTC-B05 Performance Observation` from `main` once.
-- [ ] Confirm that the capture artifact exists and its observation-only pull
+- [x] Manually dispatch `RTC-B05 Performance Observation` from `main` once.
+- [x] Confirm that the capture artifact exists and its observation-only pull
       request passes `Branch Release Gate result` through RTC integrity.
-- [ ] Confirm that the first stream ZIP and index row merge without launching
+- [x] Confirm that the first stream ZIP and index row merge without launching
       product deploy or supported distributed-manifest workflows.
 
 The first valid archived observation proves the stream works; it is not the
 final measurement. Later B06 or optimization decisions must name selected
-valid observations or an explicit time window. RTC-B06 remains a separate
-human activation decision after enough observations exist.
+valid observations or an explicit time window. RTC-B06 is active under Task
+10; its next requirement is valid E3-memory evidence, not another activation
+decision.
 
 **Superseded historical procedure (preserved for provenance; do not execute):**
 
@@ -3813,9 +3829,66 @@ publication path are merged, and at least one independently valid RTC-B05 ZIP
 and index row has been archived from `main`. The stream then continues; no
 single observation freezes or permanently completes performance measurement.
 
-### Task 10: B06 separate activation, head, gates, and capture
+### Task 10: Capture B06 as a manual E3-memory observation stream
 
-**State:** inactive. Task 10 requires a separate human exact-reservation
+**Current execution semantics (supersedes the historical procedure below):**
+
+Task 10 tooling is delivered by
+`.github/workflows/rtc-b06-performance-observation.yml`, the package-owned
+`observe-live-rtc` command, and the production-facing three-browser matrix. A
+manual run observes the `main` snapshot selected when it starts. It records
+that exact commit and tree, but neither the run nor later analysis requires a
+frozen B06 branch or an unchanged future `main`.
+
+The primary captures the predeclared default, all-scenarios, and retention-100
+E3-memory cases: three warmups and eleven retained attempts. The controller
+alone decides whether to run a linked repeat, which doubles retained attempts
+only. The workflow deliberately removes `DATABASE_URL` and ICE overrides. Its
+current conditional-environment record marks E4-pg not required because this
+stream does not itself select a database-backed candidate; Task 12 must revisit
+that decision if the eventual candidate crosses a database-backed admission,
+persistence, outbox, AppInbox, or cluster-transport path.
+
+Every initialized run, including a failed one, is finalized and published as a
+verified append-only ZIP and canonical row under:
+
+```text
+performance-observations/rtc-b06/YYYY/MM/DD/<observation-id>.zip
+performance-observations/rtc-b06/index.jsonl
+```
+
+Current evidence contains four failed B06 primaries and no accepted metrics.
+The fourth archive is PR #498. Its first retained default attempt timed out
+receiving `messages.rtc` multicast on agent C after the warmup passed. That run
+exposed a post-activation readiness gap: the lifecycle driver proved readiness
+before activation, refreshed the accepted room layout after activation, and
+returned without proving final delivery readiness. PR #499 adds that final
+barrier and direct ordering/timing regression coverage.
+
+- [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
+      publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
+- [x] Preserve all four unsuccessful primaries as failed evidence rather than
+      accepting their metrics or replacing their attempt identities.
+- [x] Diagnose the latest failure to the missing post-activation readiness
+      barrier and publish the focused correction in PR #499.
+- [ ] Merge PR #499 after relevant validation and human review.
+- [ ] Manually dispatch `RTC-B06 Performance Observation` from the then-current
+      `main` after the fix merges.
+- [ ] Verify that its observation-only pull request passes RTC observation
+      integrity and merge the ZIP/index row. A valid primary must report
+      `acceptedMetrics: true`; complete any controller-required repeat.
+- [ ] If it fails, diagnose the first failed attempt from that observation,
+      retain the failed archive, and create the smallest evidenced follow-up
+      before dispatching again.
+
+**Current exit:** at least one valid B06 E3-memory primary and any required
+repeat are archived. The stream remains available for later observations; no
+single capture freezes performance measurement. E4-pg and evidence ranking
+then proceed only under Task 12's current semantics.
+
+**Superseded historical procedure (preserved for provenance; do not execute):**
+
+**Historical state:** inactive. Task 10 required a separate human exact-reservation
 approval after Tasks 4A-9; neither this amendment nor Task 7 activates it.
 
 **Files:** exactly four B06 implementation/test paths after separate approval:
@@ -4038,7 +4111,7 @@ but leaves the reviewed benchmark package and B01-B05 anchor intact. Captured
 artifacts remain historical to their exact immutable head and are never reused
 on a replacement head.
 
-**Exit:** B06 has a distinct published/gated anchor, complete E3 evidence,
+**Historical exit (superseded):** B06 has a distinct published/gated anchor, complete E3 evidence,
 required E4 evidence or a valid hashed skip, exact required repeats, and a valid
 summary. B07, optimization, raw-artifact publication, and Phase 2 remain held.
 
@@ -4061,6 +4134,30 @@ restore `scripts/perf/**` wrappers.
 completion.
 
 ### Task 12: Rank and hand off at most one candidate
+
+**Current execution semantics (supersedes the historical procedure below):**
+
+Task 12 begins only after Task 10 archives a valid B06 primary and every repeat
+the controller requires. Select B05 evidence by explicit observation IDs or a
+declared time window, and select the B06 observation by ID. Verify each
+archive, keep E2-browser and E3-memory separate, and compare only compatible
+facts. The source commit and tree are provenance, not a requirement that the
+two streams share one immutable anchor or that `main` stop moving.
+
+- [ ] Reconcile the selected valid B05 evidence with the valid B06 primary and
+      required repeat; preserve failures and confounders in the analysis.
+- [ ] Decide whether a candidate crosses a database-backed path. Capture a
+      separate E4-pg observation before ranking that candidate when it does;
+      otherwise record why E4-pg is not required.
+- [ ] Apply the Section 9 rules and present at most one exact candidate—or
+      `none`—for the human completion decision. B07 remains optional and held
+      unless a separate human authorization names its remote cost and scope.
+
+**Current exit:** the human accepts one separately scoped optimization or
+structural follow-up, or accepts that the evidence justifies no optimization.
+The B05 and B06 streams continue independently after that decision.
+
+**Superseded historical procedure (preserved for provenance; do not execute):**
 
 **Files:** Analysis is read-only. A durable update may modify only this plan on a
 separately authorized plan-only branch/worktree; it may never add a seventh
@@ -4237,6 +4334,18 @@ Until every source/publication bullet above is evidenced, report only an
 incomplete evidence milestone and do not mark this written plan complete.
 
 ## 13. Progress Record
+
+**2026-09-05 reconciliation:** Task 4B, B04, B05, both observation producers,
+and B06 E3-memory tooling are merged. Five valid B05 observation PRs remain
+open because each is a distinct append-only sample; merge #402, #405, #463,
+#474, and #494 chronologically, then delete their branches. Four B06 primaries
+are archived as failed evidence with no accepted metrics. The newest archive,
+PR #498, exposed the post-activation readiness gap corrected by PR #499.
+PR #496 independently restores main-wide typechecking. After #499 merges, the
+next performance action is a fresh manual Task 10 dispatch from moving `main`,
+followed by integrity-gated archive publication or evidence-led diagnosis of
+its first failed attempt. B07 remains held; Task 12 remains blocked on valid
+B06 evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
