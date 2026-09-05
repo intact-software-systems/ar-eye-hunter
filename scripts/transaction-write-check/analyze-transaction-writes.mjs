@@ -1,5 +1,42 @@
 import { Node, SyntaxKind } from 'ts-morph';
 
+import {
+    appInboxWriteBoundary,
+    indexedDbRequestCallbacks,
+    indexedDbRequestListenerCallbacks,
+    indexedDbTransactionAnalysisEnd,
+    indexedDbUpgradeListener,
+    isCallbackReference,
+    isDirectDatabaseResultCall,
+    isDirectTransactionOperation,
+    isPersistedWriteOperation,
+    isReviewedCallableParameterInvocation,
+    isReviewedTransactionForwardingReference,
+    isSpecializedTransactionBoundary,
+    isSpecializedTransactionImplementation,
+    isTransactionParameter,
+    isTransactionWriteDeclaration,
+    isUnresolvedCallableParameterInvocation,
+    isUpgradeCallbackAssignment,
+    transactionBoundary,
+    transactionExecutedCallbackArguments
+} from './transaction-boundaries.mjs';
+import {
+    assignedOutputDeclarations,
+    declarationInitializer,
+    expressionIdentifiers,
+    functionBody,
+    identifierDependsOnDeclarations,
+    isAnalyzedSource,
+    isFunctionDeclaration,
+    isKnownTransactionType,
+    resolveCallableBodies,
+    resolveCallTargets,
+    resolvedDeclarations,
+    sourcePath,
+    unwrapValueExpression
+} from './typescript-provenance.mjs';
+
 const PRECOMPUTABLE_CALLS = new Set([
     'Date.now',
     'JSON.parse',
@@ -12,84 +49,6 @@ const PRECOMPUTABLE_CALLS = new Set([
 ]);
 
 const PRECOMPUTABLE_METHODS = new Set(['sort', 'toSorted']);
-const IMMEDIATE_CALLBACK_METHODS = new Set([
-    'every',
-    'filter',
-    'find',
-    'findIndex',
-    'flatMap',
-    'forEach',
-    'map',
-    'reduce',
-    'reduceRight',
-    'some'
-]);
-const TRANSACTION_TYPE_NAMES = ['PSqlSql', 'IDBTransaction'];
-const DATABASE_RECEIVER_TYPE = /(?:Sql|Database|Repository|Runtime|PGlite)/u;
-const INDEXED_DB_WRITE_METHODS = new Set(['add', 'clear', 'delete', 'put']);
-const TRANSACTION_CONTROL_METHODS = new Set(['begin', 'savepoint', 'transaction']);
-const APP_INBOX_TRANSACTION_WRITER_TYPE = /AppInbox(?:Mutation)?TransactionWriter/u;
-const APP_INBOX_WRITE_METHOD = 'writeComputedMutation';
-const SPECIALIZED_TRANSACTION_OWNERS = new Map([
-    [
-        'packages/shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts',
-        new Set(['transaction'])
-    ],
-    [
-        'packages/shared-server/queuebox/postgres/p-sql-queue-box.ts',
-        new Set([
-            'reserveEntries',
-            'reserveTimeoutEntries',
-            'reserveOverdueRetryEntries',
-            'reserveRetryExhaustionFinalizations',
-            'releaseEntries',
-            'enqueue',
-            'enqueueIf',
-            'enqueueOrUpdate',
-            'enqueueIfAbsent'
-        ])
-    ],
-    [
-        'packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts',
-        new Set([
-            'deleteByKey',
-            'replace',
-            'replacePendingIfMatch',
-            'tryWriteIfAbsentOrReplaceExpired',
-            'upsert',
-            'write',
-            'writeIfAbsentOrMatch',
-            'writeIfAbsentOrReplaceExpired',
-            'writeMaterializedIfAbsentOrReplaceExpired'
-        ])
-    ],
-    [
-        'packages/shared-server/queuebox/postgres/resource-inbox-finished-replacement.ts',
-        new Set(['replaceFinishedResourceEntryIfMatch'])
-    ],
-    [
-        'packages/shared-server/queuebox/postgres/resource-inbox-results-repository.ts',
-        new Set(['begin'])
-    ]
-]);
-const TRANSACTION_FORWARDING_CALLBACKS = new Map([
-    [
-        'packages/shared-server/postgres/run-in-p-sql-transaction.ts',
-        new Map([['runInPSqlTransaction', new Set(['write'])]])
-    ],
-    [
-        'apps/api-v1/src/db/pglite-sql-adapter.ts',
-        new Map([['attachPGliteBegin', new Set(['fn'])]])
-    ],
-    [
-        'packages/shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts',
-        new Map([['inTransaction', new Set(['write'])]])
-    ],
-    [
-        'packages/shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts',
-        new Map([['begin', new Set(['fn'])]])
-    ]
-]);
 
 export function analyzeTransactionWrites(project, sourceFiles = project.getSourceFiles()) {
     const findings = new Map();
@@ -102,18 +61,36 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
         }
         for (const declaration of sourceFile.getDescendants().filter(isFunctionDeclaration)) {
             if (isTransactionWriteDeclaration(declaration)) {
-                roots.push(analysisRoot(declaration));
+                roots.push(analysisRoot({ node: declaration }));
             }
         }
         for (const assignment of sourceFile.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
             if (isUpgradeCallbackAssignment(assignment)) {
                 const callback = assignment.getRight();
-                if (Node.isArrowFunction(callback) || Node.isFunctionExpression(callback)) {
-                    roots.push(analysisRoot(callback));
+                const callbacks = resolveCallableBodies(callback, project);
+                if (callbacks.length === 0 && isCallbackReference(callback)) {
+                    addFinding({
+                        findings,
+                        node: callback,
+                        rule: 'transaction.unresolved-provenance',
+                        operation: nodeOperation(callback),
+                        boundary: assignment
+                    });
+                }
+                for (const resolvedCallback of callbacks) {
+                    roots.push(analysisRoot({
+                        node: resolvedCallback,
+                        start: resolvedCallback.getStart(),
+                        boundary: assignment
+                    }));
                 }
             }
         }
         for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+            const upgradeCallback = indexedDbUpgradeListener(call);
+            if (upgradeCallback) {
+                addCallbackRoots({ callback: upgradeCallback, call, roots, findings, project });
+            }
             const appInboxCallback = appInboxWriteBoundary(call);
             if (appInboxCallback) {
                 addCallbackRoots({ callback: appInboxCallback, call, roots, findings, project });
@@ -122,14 +99,19 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
             if (!boundary) {
                 continue;
             }
-            reportTransactionLoop(call, findings);
+            reportTransactionLoop(call, findings, project);
             if (boundary.kind === 'readonly' || isSpecializedTransactionBoundary(call)) {
                 continue;
             }
             if (boundary.kind === 'indexed-db') {
                 const owner = call.getFirstAncestor(isFunctionDeclaration);
                 if (owner) {
-                    roots.push(analysisRoot(owner, call.getEnd(), call));
+                    roots.push(analysisRoot({
+                        node: owner,
+                        start: call.getEnd(),
+                        boundary: call,
+                        end: indexedDbTransactionAnalysisEnd(owner, call, project)
+                    }));
                 }
                 continue;
             }
@@ -142,6 +124,7 @@ export function analyzeTransactionWrites(project, sourceFiles = project.getSourc
         analyzeBody({
             root: root.node,
             start: root.start,
+            end: root.end,
             findings,
             visited,
             boundary: root.boundary,
@@ -168,15 +151,22 @@ function addCallbackRoots(input) {
         });
     }
     for (const resolvedCallback of callbacks) {
-        roots.push(analysisRoot(resolvedCallback, resolvedCallback.getStart(), call));
+        roots.push(analysisRoot({
+            node: resolvedCallback,
+            start: resolvedCallback.getStart(),
+            boundary: call
+        }));
     }
 }
 
 function analyzeBody(input) {
-    const { root, start, findings, visited, boundary, project } = input;
-    const callables = [analysisRoot(root, start)];
+    const { root, start, end, findings, visited, boundary, project } = input;
+    const callables = [analysisRoot({ node: root, start, boundary, end })];
     for (let index = 0; index < callables.length; index += 1) {
         const callable = callables[index];
+        if (isSpecializedTransactionImplementation(callable.node)) {
+            continue;
+        }
         const body = functionBody(callable.node);
         if (!body) {
             continue;
@@ -185,6 +175,7 @@ function analyzeBody(input) {
             body.getSourceFile().getFilePath(),
             body.getStart(),
             callable.start,
+            callable.end,
             boundaryLabel(boundary)
         ].join(':');
         if (visited.has(identity)) {
@@ -196,6 +187,7 @@ function analyzeBody(input) {
             root: callable.node,
             body,
             start: callable.start,
+            end: callable.end,
             findings,
             boundary,
             project,
@@ -205,20 +197,20 @@ function analyzeBody(input) {
 }
 
 function analyzeCallableBody(input) {
-    const { root, body, start, findings, boundary, project, callables } = input;
-    analyzeExecutionNode({ root, node: body, start, findings, boundary, project, callables });
+    const { root, body, start, end, findings, boundary, project, callables } = input;
+    analyzeExecutionNode({ root, node: body, start, end, findings, boundary, project, callables });
     body.forEachDescendant((node, traversal) => {
         if (isFunctionDeclaration(node)) {
             traversal.skip();
             return;
         }
-        analyzeExecutionNode({ root, node, start, findings, boundary, project, callables });
+        analyzeExecutionNode({ root, node, start, end, findings, boundary, project, callables });
     });
 }
 
 function analyzeExecutionNode(input) {
-    const { root, node, start, findings, boundary, project, callables } = input;
-    if (node.getStart() < start) {
+    const { root, node, start, end, findings, boundary, project, callables } = input;
+    if (node.getStart() < start || node.getStart() >= end) {
         return;
     }
     if (Node.isNewExpression(node)) {
@@ -234,6 +226,16 @@ function analyzeExecutionNode(input) {
         }
         return;
     }
+    if (Node.isTaggedTemplateExpression(node)) {
+        reportSqlInterpolationMaterialization({ node, root, findings, boundary, project });
+        return;
+    }
+    if (Node.isBinaryExpression(node)) {
+        for (const callback of indexedDbRequestCallbacks(node, project)) {
+            callables.push(analysisRoot({ node: callback }));
+        }
+        return;
+    }
     if (!Node.isCallExpression(node)) {
         return;
     }
@@ -246,7 +248,10 @@ function analyzeCall(input) {
     const operation = callOperation(call);
     reportProhibitedCall({ root, call, findings, boundary, project, operation });
     followCallTarget({ call, findings, boundary, project, callables, operation });
-    followTransactionCallbacks({ call, findings, boundary, project, callables, operation });
+    followTransactionCallbacks({ call, findings, boundary, project, callables });
+    for (const callback of indexedDbRequestListenerCallbacks(call, project)) {
+        callables.push(analysisRoot({ node: callback }));
+    }
 }
 
 function reportProhibitedCall(input) {
@@ -261,7 +266,7 @@ function reportProhibitedCall(input) {
             boundary
         });
     }
-    else if (hasParameterOnlyPersistedValueTransformation(call, root)) {
+    else if (hasParameterOnlyPersistedValueTransformation(call, root, project)) {
         addFinding({
             findings,
             node: call,
@@ -281,6 +286,51 @@ function reportProhibitedCall(input) {
     }
 }
 
+function reportSqlInterpolationMaterialization(input) {
+    const { node, root, findings, boundary, project } = input;
+    if (!isKnownTransactionType(node.getTag())) {
+        return;
+    }
+    const template = node.getTemplate();
+    if (!Node.isTemplateExpression(template)) {
+        return;
+    }
+    for (const span of template.getTemplateSpans()) {
+        const expression = span.getExpression();
+        const persistedValue = resolveConstructedPersistedValue(expression);
+        if (
+            persistedValue &&
+            referencesPreTransactionInput(persistedValue, root) &&
+            !referencesDatabaseResult(persistedValue, project) &&
+            !isAllowedSqlParameterNormalization(persistedValue, root)
+        ) {
+            addFinding({
+                findings,
+                node: expression,
+                rule: 'transaction.precomputable-work',
+                operation: `${nodeOperation(node.getTag())} interpolation`,
+                boundary
+            });
+        }
+    }
+}
+
+function isAllowedSqlParameterNormalization(expression, root) {
+    if (isDirectPreparedProjection(expression, root)) {
+        return true;
+    }
+    if (
+        Node.isBinaryExpression(expression) &&
+        expression.getOperatorToken().getKind() === SyntaxKind.QuestionQuestionToken
+    ) {
+        const left = expression.getLeft();
+        const right = expression.getRight();
+        return (isDirectPreparedProjection(left, root) && right.getKind() === SyntaxKind.NullKeyword) ||
+            (left.getKind() === SyntaxKind.NullKeyword && isDirectPreparedProjection(right, root));
+    }
+    return false;
+}
+
 function followCallTarget(input) {
     const { call, findings, boundary, project, callables, operation } = input;
     if (isReviewedCallableParameterInvocation(call)) {
@@ -298,7 +348,7 @@ function followCallTarget(input) {
     }
     const targets = resolveCallTargets(call, project);
     for (const callable of targets.bodies) {
-        callables.push(analysisRoot(callable));
+        callables.push(analysisRoot({ node: callable }));
     }
     if (targets.unresolved && !isDirectTransactionOperation(call)) {
         addFinding({
@@ -312,7 +362,7 @@ function followCallTarget(input) {
 }
 
 function followTransactionCallbacks(input) {
-    const { call, findings, boundary, project, callables, operation } = input;
+    const { call, findings, boundary, project, callables } = input;
     for (const callback of transactionExecutedCallbackArguments(call)) {
         const callbackBodies = resolveCallableBodies(callback, project);
         if (callbackBodies.length === 0) {
@@ -326,34 +376,63 @@ function followTransactionCallbacks(input) {
             continue;
         }
         for (const callbackBody of callbackBodies) {
-            callables.push(analysisRoot(callbackBody));
+            callables.push(analysisRoot({ node: callbackBody }));
         }
     }
 }
 
-function transactionExecutedCallbackArguments(call) {
-    const callbacks = call.getArguments().filter((argument) =>
-        isCallbackReference(argument) && !isTransactionArgument(argument)
-    );
-    const expression = call.getExpression();
-    if (
-        Node.isPropertyAccessExpression(expression) &&
-        IMMEDIATE_CALLBACK_METHODS.has(expression.getName())
-    ) {
-        return callbacks;
-    }
-    return call.getArguments().some(isTransactionArgument) ? callbacks : [];
-}
-
-function hasParameterOnlyPersistedValueTransformation(call, root) {
+function hasParameterOnlyPersistedValueTransformation(call, root, project) {
     if (!isPersistedWriteOperation(call)) {
         return false;
     }
     return call.getArguments().some((argument) => {
         const persistedValue = resolveConstructedPersistedValue(argument);
-        return persistedValue !== undefined &&
-            referencesPreTransactionInput(persistedValue, root) &&
-            !referencesDirectDatabaseResult(persistedValue, root);
+        if (!persistedValue || !referencesPreTransactionInput(persistedValue, root)) {
+            return false;
+        }
+        if (!referencesDatabaseResult(persistedValue, project)) {
+            return true;
+        }
+        return hasCandidateTransformationBesideDatabaseResult(persistedValue, root, project);
+    });
+}
+
+function hasCandidateTransformationBesideDatabaseResult(expression, root, project) {
+    if (isDirectPreparedProjection(expression, root)) {
+        return false;
+    }
+    if (
+        referencesPreTransactionInput(expression, root) &&
+        !referencesDatabaseResult(expression, project)
+    ) {
+        return true;
+    }
+    return directValueExpressions(expression).some((child) =>
+        hasCandidateTransformationBesideDatabaseResult(child, root, project)
+    );
+}
+
+function isDirectPreparedProjection(expression, root, visited = new Set()) {
+    let current = unwrapValueExpression(expression);
+    while (Node.isPropertyAccessExpression(current) || Node.isElementAccessExpression(current)) {
+        current = current.getExpression();
+    }
+    if (!Node.isIdentifier(current)) {
+        return false;
+    }
+    return resolvedDeclarations(current).some((declaration) => {
+        if (
+            Node.isParameterDeclaration(declaration) &&
+            declaration.getFirstAncestor(isFunctionDeclaration) === root
+        ) {
+            return !isTransactionParameter(declaration);
+        }
+        if (visited.has(declaration)) {
+            return false;
+        }
+        visited.add(declaration);
+        const initializer = declarationInitializer(declaration);
+        return initializer !== undefined && isDirectPreparedProjection(initializer, root, visited);
     });
 }
 
@@ -421,26 +500,183 @@ function referencesPreTransactionInputThroughDeclarations(expression, root, visi
     );
 }
 
-function referencesDirectDatabaseResult(expression, root) {
-    return expressionIdentifiers(expression).some((identifier) => {
-        return resolvedDeclarations(identifier).some((declaration) => {
-            if (
-                !Node.isVariableDeclaration(declaration) ||
-                declaration.getFirstAncestor(isFunctionDeclaration) !== root
-            ) {
+function referencesDatabaseResult(expression, project) {
+    return isDatabaseDerivedExpression({
+        expression,
+        project,
+        visited: new Set(),
+        visitedCallables: new Set(),
+        parameterValues: new Map()
+    });
+}
+
+function isDatabaseDerivedExpression(input) {
+    const { expression, project, visited, visitedCallables, parameterValues } = input;
+    const value = unwrapValueExpression(expression);
+    if (Node.isTaggedTemplateExpression(value)) {
+        return isKnownTransactionType(value.getTag());
+    }
+    if (Node.isIdentifier(value)) {
+        return resolvedDeclarations(value).some((declaration) => {
+            const parameterValue = parameterValues.get(declaration);
+            if (parameterValue) {
+                return isDatabaseDerivedExpression({
+                    expression: parameterValue,
+                    project,
+                    visited,
+                    visitedCallables,
+                    parameterValues
+                });
+            }
+            if (visited.has(declaration)) {
                 return false;
             }
-            const initializer = declaration.getInitializer();
+            const initializer = declarationInitializer(declaration);
             if (!initializer) {
                 return false;
             }
-            const calls = [
-                ...(Node.isCallExpression(initializer) ? [initializer] : []),
-                ...initializer.getDescendantsOfKind(SyntaxKind.CallExpression)
-            ];
-            return calls.some(isDirectDatabaseResultCall);
+            visited.add(declaration);
+            return isDatabaseDerivedExpression({
+                expression: initializer,
+                project,
+                visited,
+                visitedCallables,
+                parameterValues
+            });
         });
-    });
+    }
+    if (Node.isPropertyAccessExpression(value) || Node.isElementAccessExpression(value)) {
+        return isDatabaseDerivedExpression({
+            expression: value.getExpression(),
+            project,
+            visited,
+            visitedCallables,
+            parameterValues
+        });
+    }
+    if (Node.isCallExpression(value)) {
+        if (isDirectDatabaseResultCall(value)) {
+            return true;
+        }
+        const targets = resolveCallTargets(value, project);
+        if (targets.bodies.length > 0) {
+            return callReturnsDatabaseResult({
+                call: value,
+                targets: targets.bodies,
+                project,
+                visited,
+                visitedCallables,
+                parameterValues
+            });
+        }
+        if (targets.unresolved) {
+            return false;
+        }
+        return value.getArguments().some((argument) =>
+            !isCallbackReference(argument) &&
+            isDatabaseDerivedExpression({
+                expression: argument,
+                project,
+                visited,
+                visitedCallables,
+                parameterValues
+            })
+        );
+    }
+    return directValueExpressions(value).some((child) =>
+        isDatabaseDerivedExpression({
+            expression: child,
+            project,
+            visited,
+            visitedCallables,
+            parameterValues
+        })
+    );
+}
+
+function callReturnsDatabaseResult(input) {
+    const { call, targets, project, visited, visitedCallables, parameterValues } = input;
+    for (const target of targets) {
+        const identity = `${target.getSourceFile().getFilePath()}:${target.getStart()}`;
+        if (visitedCallables.has(identity)) {
+            continue;
+        }
+        const targetCallables = new Set(visitedCallables).add(identity);
+        const targetValues = new Map(parameterValues);
+        const arguments_ = call.getArguments();
+        target.getParameters().forEach((parameter, index) => {
+            const argument = arguments_[index];
+            if (argument) {
+                targetValues.set(parameter, argument);
+            }
+        });
+        if (
+            returnExpressions(target).some((returned) =>
+                isDatabaseDerivedExpression({
+                    expression: returned,
+                    project,
+                    visited: new Set(visited),
+                    visitedCallables: targetCallables,
+                    parameterValues: targetValues
+                })
+            )
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function directValueExpressions(value) {
+    if (Node.isCallExpression(value)) {
+        const expression = value.getExpression();
+        const receiver = Node.isPropertyAccessExpression(expression) ? [expression.getExpression()] : [];
+        return [...receiver, ...value.getArguments().filter((argument) => !isCallbackReference(argument))];
+    }
+    if (Node.isObjectLiteralExpression(value)) {
+        return value.getProperties().flatMap((property) => {
+            if (Node.isPropertyAssignment(property)) {
+                return property.getInitializer() ?? [];
+            }
+            if (Node.isShorthandPropertyAssignment(property)) {
+                return property.getNameNode();
+            }
+            if (Node.isSpreadAssignment(property)) {
+                return property.getExpression();
+            }
+            return [];
+        });
+    }
+    if (Node.isArrayLiteralExpression(value)) {
+        return value.getElements();
+    }
+    if (Node.isBinaryExpression(value)) {
+        return [value.getLeft(), value.getRight()];
+    }
+    if (Node.isConditionalExpression(value)) {
+        return [value.getCondition(), value.getWhenTrue(), value.getWhenFalse()];
+    }
+    if (Node.isTemplateExpression(value)) {
+        return value.getTemplateSpans().map((span) => span.getExpression());
+    }
+    if (Node.isPrefixUnaryExpression(value) || Node.isPostfixUnaryExpression(value)) {
+        return [value.getOperand()];
+    }
+    return [];
+}
+
+function returnExpressions(callable) {
+    const body = functionBody(callable);
+    if (!body) {
+        return [];
+    }
+    if (!Node.isBlock(body)) {
+        return [body];
+    }
+    return body.getDescendantsOfKind(SyntaxKind.ReturnStatement)
+        .filter((statement) => statement.getFirstAncestor(isFunctionDeclaration) === callable)
+        .map((statement) => statement.getExpression())
+        .filter((expression) => expression !== undefined);
 }
 
 function isPersistedAuthoredHelperResult(call, root, project) {
@@ -448,21 +684,133 @@ function isPersistedAuthoredHelperResult(call, root, project) {
     if (
         isPersistedWriteOperation(call) ||
         targets.bodies.length === 0 ||
-        callableClosureContainsExplicitPrecomputableWork(targets.bodies, project) ||
-        call.getArguments().some((argument) => referencesDirectDatabaseResult(argument, root))
+        callableClosureContainsExplicitPrecomputableWork(targets.bodies, project)
     ) {
         return false;
     }
-    if (isWithinPersistedWriteArgument(call)) {
+    if (
+        referencesDatabaseResult(call, project) &&
+        !authoredHelperContainsCandidateTransformation({
+            call,
+            targets: targets.bodies,
+            root,
+            project
+        })
+    ) {
+        return false;
+    }
+    if (isWithinPersistedValuePosition(call)) {
         return true;
     }
-    const declaration = initializedVariableDeclaration(call);
-    return declaration !== undefined &&
+    return assignedOutputDeclarations(call).some((declaration) =>
         root.getDescendantsOfKind(SyntaxKind.Identifier).some((identifier) =>
             identifier.getStart() > declaration.getStart() &&
             resolvedDeclarations(identifier).includes(declaration) &&
-            isWithinPersistedWriteArgument(identifier)
-        );
+            isWithinPersistedValuePosition(identifier)
+        )
+    );
+}
+
+function authoredHelperContainsCandidateTransformation(input) {
+    const { call, targets, root, project } = input;
+    for (const target of targets) {
+        const parameterValues = new Map();
+        target.getParameters().forEach((parameter, index) => {
+            const argument = call.getArguments()[index];
+            if (argument) {
+                parameterValues.set(parameter, argument);
+            }
+        });
+        if (
+            returnExpressions(target).some((expression) =>
+                hasMappedCandidateTransformation({ expression, root, project, parameterValues })
+            )
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function hasMappedCandidateTransformation(input) {
+    const { expression, root, project, parameterValues } = input;
+    if (isMappedDirectPreparedProjection(expression, root, parameterValues)) {
+        return false;
+    }
+    const referencesCandidate = referencesPreTransactionInputMapped({
+        expression,
+        root,
+        parameterValues,
+        visited: new Set()
+    });
+    const referencesDatabase = isDatabaseDerivedExpression({
+        expression,
+        project,
+        visited: new Set(),
+        visitedCallables: new Set(),
+        parameterValues
+    });
+    if (referencesCandidate && !referencesDatabase) {
+        return true;
+    }
+    return directValueExpressions(expression).some((child) =>
+        hasMappedCandidateTransformation({ expression: child, root, project, parameterValues })
+    );
+}
+
+function referencesPreTransactionInputMapped(input) {
+    const { expression, root, parameterValues, visited } = input;
+    const value = unwrapValueExpression(expression);
+    if (Node.isIdentifier(value)) {
+        return resolvedDeclarations(value).some((declaration) => {
+            const parameterValue = parameterValues.get(declaration);
+            if (parameterValue) {
+                return referencesPreTransactionInput(parameterValue, root);
+            }
+            if (visited.has(declaration)) {
+                return false;
+            }
+            visited.add(declaration);
+            const initializer = declarationInitializer(declaration);
+            return initializer !== undefined &&
+                referencesPreTransactionInputMapped({
+                    expression: initializer,
+                    root,
+                    parameterValues,
+                    visited
+                });
+        });
+    }
+    if (Node.isPropertyAccessExpression(value) || Node.isElementAccessExpression(value)) {
+        return referencesPreTransactionInputMapped({
+            expression: value.getExpression(),
+            root,
+            parameterValues,
+            visited
+        });
+    }
+    return directValueExpressions(value).some((child) =>
+        referencesPreTransactionInputMapped({
+            expression: child,
+            root,
+            parameterValues,
+            visited
+        })
+    );
+}
+
+function isMappedDirectPreparedProjection(expression, root, parameterValues) {
+    let current = unwrapValueExpression(expression);
+    while (Node.isPropertyAccessExpression(current) || Node.isElementAccessExpression(current)) {
+        current = current.getExpression();
+    }
+    if (!Node.isIdentifier(current)) {
+        return false;
+    }
+    return resolvedDeclarations(current).some((declaration) => {
+        const parameterValue = parameterValues.get(declaration);
+        return parameterValue !== undefined && isDirectPreparedProjection(parameterValue, root);
+    });
 }
 
 function callableClosureContainsExplicitPrecomputableWork(callables, project, visited = new Set()) {
@@ -476,7 +824,11 @@ function callableClosureContainsExplicitPrecomputableWork(callables, project, vi
         if (!body) {
             continue;
         }
-        for (const call of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+        const calls = [
+            ...(Node.isCallExpression(body) ? [body] : []),
+            ...body.getDescendantsOfKind(SyntaxKind.CallExpression)
+        ];
+        for (const call of calls) {
             if (call.getFirstAncestor(isFunctionDeclaration) !== callable) {
                 continue;
             }
@@ -497,80 +849,22 @@ function callableClosureContainsExplicitPrecomputableWork(callables, project, vi
     return false;
 }
 
-function initializedVariableDeclaration(expression) {
-    let current = expression;
-    while (current.getParent() && isTransparentExpression(current.getParent())) {
-        current = current.getParent();
-    }
-    const parent = current.getParent();
-    return Node.isVariableDeclaration(parent) && parent.getInitializer() === current
-        ? parent
-        : undefined;
+function isWithinPersistedValuePosition(node) {
+    return node.getAncestors().some((ancestor) => {
+        if (Node.isCallExpression(ancestor) && isPersistedWriteOperation(ancestor)) {
+            return ancestor.getArguments().some((argument) =>
+                argument.getStart() <= node.getStart() && argument.getEnd() >= node.getEnd()
+            );
+        }
+        return Node.isTaggedTemplateExpression(ancestor) &&
+            isKnownTransactionType(ancestor.getTag()) &&
+            ancestor.getTag().getEnd() <= node.getStart();
+    });
 }
 
-function isTransparentExpression(node) {
-    return Node.isAsExpression(node) ||
-        Node.isAwaitExpression(node) ||
-        Node.isNonNullExpression(node) ||
-        Node.isParenthesizedExpression(node) ||
-        Node.isSatisfiesExpression(node) ||
-        Node.isTypeAssertion(node);
-}
-
-function isWithinPersistedWriteArgument(node) {
-    return node.getAncestors().some((ancestor) =>
-        Node.isCallExpression(ancestor) &&
-        isPersistedWriteOperation(ancestor) &&
-        ancestor.getArguments().some((argument) =>
-            argument.getStart() <= node.getStart() && argument.getEnd() >= node.getEnd()
-        )
-    );
-}
-
-function resolvedDeclarations(identifier) {
-    const symbol = identifier.getSymbol();
-    const resolved = symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
-    return resolved?.getDeclarations() ?? [];
-}
-
-function expressionIdentifiers(expression) {
-    return [
-        ...(Node.isIdentifier(expression) ? [expression] : []),
-        ...expression.getDescendantsOfKind(SyntaxKind.Identifier)
-    ];
-}
-
-function isTransactionParameter(parameter) {
-    if (isKnownTransactionType(parameter)) {
-        return true;
-    }
-    if (
-        /^(?:transaction|tx|sql)$/iu.test(parameter.getName()) &&
-        hasDatabaseReceiverType(parameter)
-    ) {
-        return true;
-    }
-    const owner = parameter.getFirstAncestor(isFunctionDeclaration);
-    if (!owner || owner.getParameters()[0] !== parameter) {
-        return false;
-    }
-    const parent = owner.getParent();
-    if (!Node.isCallExpression(parent)) {
-        return false;
-    }
-    const boundary = transactionBoundary(parent);
-    return boundary?.kind === 'callback' && unwrapExpression(boundary.callback) === owner;
-}
-
-function hasDatabaseReceiverType(node) {
-    const type = node.getType();
-    const candidate = type.getAliasSymbol() ?? type.getSymbol();
-    const symbol = candidate?.isAlias() ? candidate.getAliasedSymbol() : candidate;
-    return symbol !== undefined && DATABASE_RECEIVER_TYPE.test(symbol.getName());
-}
-
-function analysisRoot(node, start = node.getStart(), boundary = node) {
-    return { node, start, boundary };
+function analysisRoot(input) {
+    const { node, start = node.getStart(), boundary = node, end = node.getEnd() } = input;
+    return { node, start, end, boundary };
 }
 
 function precomputableOperation(call, operation) {
@@ -597,72 +891,14 @@ function precomputableOperation(call, operation) {
     return undefined;
 }
 
-function appInboxWriteBoundary(call) {
-    const expression = call.getExpression();
-    if (!Node.isPropertyAccessExpression(expression) || expression.getName() !== APP_INBOX_WRITE_METHOD) {
-        return undefined;
-    }
-    const receiver = expression.getExpression();
-    if (!APP_INBOX_TRANSACTION_WRITER_TYPE.test(receiver.getType().getText(receiver))) {
-        return undefined;
-    }
-    return call.getArguments()[2];
-}
-
-function transactionBoundary(call) {
-    const expression = call.getExpression();
-    if (Node.isIdentifier(expression) && expression.getText() === 'runInPSqlTransaction') {
-        const database = call.getArguments()[0];
-        const callback = call.getArguments()[1];
-        return database && isCallbackReference(callback) && looksLikeDatabaseReceiver(database)
-            ? { kind: 'callback', callback }
-            : undefined;
-    }
-    if (!Node.isPropertyAccessExpression(expression)) {
-        return undefined;
-    }
-    const method = expression.getName();
-    if (method === 'transaction') {
-        const mode = call.getArguments()[1]?.getText().replaceAll(/["']/gu, '');
-        if (mode === 'readonly') {
-            return { kind: 'readonly' };
-        }
-        if (mode === 'readwrite') {
-            return { kind: 'indexed-db' };
-        }
-        const callback = call.getArguments()[0];
-        if (isCallbackReference(callback) && looksLikeDatabaseReceiver(expression.getExpression())) {
-            return { kind: 'callback', callback };
-        }
-        return undefined;
-    }
-    if (method !== 'begin') {
-        return undefined;
-    }
-    const callback = call.getArguments()[0];
-    if (!isCallbackReference(callback) || !looksLikeDatabaseReceiver(expression.getExpression())) {
-        return undefined;
-    }
-    return { kind: 'callback', callback };
-}
-
-function looksLikeDatabaseReceiver(receiver) {
-    const typeText = receiver.getType().getText(receiver);
-    if (DATABASE_RECEIVER_TYPE.test(typeText)) {
-        return true;
-    }
-    const name = receiver.getText();
-    return /(?:database|repository|runtime|sql|pglite)/iu.test(name);
-}
-
-function reportTransactionLoop(call, findings) {
-    const loop = call.getFirstAncestor((ancestor) =>
+function reportTransactionLoop(call, findings, project) {
+    const loops = call.getAncestors().filter((ancestor) =>
         Node.isForStatement(ancestor) ||
         Node.isForOfStatement(ancestor) ||
         Node.isWhileStatement(ancestor) ||
         Node.isDoStatement(ancestor)
     );
-    if (loop && (!Node.isForOfStatement(loop) || isRetryShapedForOfTransaction(call, loop))) {
+    if (loops.some((loop) => !Node.isForOfStatement(loop) || isRetryShapedForOfTransaction(call, loop, project))) {
         addFinding({
             findings,
             node: call,
@@ -673,326 +909,98 @@ function reportTransactionLoop(call, findings) {
     }
 }
 
-function isRetryShapedForOfTransaction(call, loop) {
+function isRetryShapedForOfTransaction(call, loop, project) {
     const initializer = loop.getInitializer();
     if (!Node.isVariableDeclarationList(initializer)) {
         return true;
     }
-    const declarations = initializer.getDeclarations();
-    if (declarations.some((declaration) => /(?:attempt|retries?|retry)/iu.test(declaration.getName()))) {
-        return true;
-    }
+    const declarations = initializer.getDeclarations().flatMap((declaration) => {
+        const name = declaration.getNameNode();
+        return Node.isIdentifier(name)
+            ? [declaration]
+            : name.getDescendantsOfKind(SyntaxKind.BindingElement);
+    });
     return !call.getDescendantsOfKind(SyntaxKind.Identifier).some((identifier) =>
-        resolvedDeclarations(identifier).some((declaration) => declarations.includes(declaration))
+        identifierDependsOnDeclarations(identifier, declarations, new Set()) &&
+        flowsIntoTransactionWork(identifier, call, project)
     );
 }
 
-function isTransactionWriteDeclaration(declaration) {
-    const name = declarationName(declaration);
-    if (!/^(?:write|commit|insert|update|delete|remove|put|finish)/u.test(name)) {
-        return false;
-    }
-    return declaration.getParameters().some((parameter) => {
-        const typeNode = parameter.getTypeNode();
-        return /^(?:transaction|tx|sql)$/iu.test(parameter.getName()) &&
-            (typeNode === undefined || !Node.isFunctionTypeNode(typeNode)) &&
-            isKnownTransactionType(parameter);
+function flowsIntoTransactionWork(identifier, transactionCall, project) {
+    return identifier.getAncestors().some((ancestor) => {
+        if (ancestor === transactionCall) {
+            return false;
+        }
+        if (Node.isTaggedTemplateExpression(ancestor)) {
+            return isKnownTransactionType(ancestor.getTag()) && ancestor.getTag().getEnd() <= identifier.getStart();
+        }
+        if (!Node.isCallExpression(ancestor)) {
+            return false;
+        }
+        if (isPersistedWriteOperation(ancestor)) {
+            return ancestor.getArguments().some((argument) => containsNode(argument, identifier));
+        }
+        const argumentIndexes = ancestor.getArguments().flatMap((argument, index) =>
+            containsNode(argument, identifier) ? [index] : []
+        );
+        return argumentIndexes.length > 0 &&
+            authoredHelperPersistsArguments({
+                call: ancestor,
+                argumentIndexes,
+                project,
+                visited: new Set()
+            });
     });
 }
 
-function isCallbackReference(node) {
-    return node !== undefined && (
-        Node.isArrowFunction(node) ||
-        Node.isFunctionExpression(node) ||
-        node.getType().getCallSignatures().length > 0
-    );
+function containsNode(container, node) {
+    return container.getStart() <= node.getStart() && container.getEnd() >= node.getEnd();
 }
 
-function isSpecializedTransactionBoundary(call) {
-    const allowedOwners = SPECIALIZED_TRANSACTION_OWNERS.get(sourcePath(call.getSourceFile()));
-    if (!allowedOwners) {
-        return false;
-    }
-    const owner = namedContainingFunction(call);
-    return owner !== undefined && allowedOwners.has(declarationName(owner));
-}
-
-function isUnresolvedCallableParameterInvocation(call) {
-    return callableParameterDeclarations(call.getExpression()).some((declaration) =>
-        !isPromiseSettlementParameter(declaration) &&
-        !isReviewedTransactionForwardingCallback(call, declaration.getName())
-    );
-}
-
-function isReviewedCallableParameterInvocation(call) {
-    const declarations = callableParameterDeclarations(call.getExpression());
-    return declarations.length > 0 && declarations.every((declaration) =>
-        isPromiseSettlementParameter(declaration) ||
-        isReviewedTransactionForwardingCallback(call, declaration.getName())
-    );
-}
-
-function isReviewedTransactionForwardingReference(call, callback) {
-    const declarations = callableParameterDeclarations(callback);
-    return declarations.length > 0 &&
-        declarations.every((declaration) => isReviewedTransactionForwardingCallback(call, declaration.getName()));
-}
-
-function callableParameterDeclarations(expression) {
-    const unwrapped = unwrapExpression(expression);
-    if (!Node.isIdentifier(unwrapped)) {
-        return [];
-    }
-    return resolvedDeclarations(unwrapped).filter(
-        (declaration) =>
-            Node.isParameterDeclaration(declaration) &&
-            declaration.getType().getCallSignatures().length > 0
-    );
-}
-
-function unwrapExpression(expression) {
-    if (
-        Node.isAsExpression(expression) ||
-        Node.isNonNullExpression(expression) ||
-        Node.isParenthesizedExpression(expression) ||
-        Node.isSatisfiesExpression(expression) ||
-        Node.isTypeAssertion(expression)
-    ) {
-        return unwrapExpression(expression.getExpression());
-    }
-    return expression;
-}
-
-function resolveCallTargets(call, project) {
-    const expression = call.getExpression();
-    const immediate = unwrapExpression(expression);
-    if (Node.isArrowFunction(immediate) || Node.isFunctionExpression(immediate)) {
-        return { bodies: [immediate], unresolved: false };
-    }
-    const symbol = Node.isPropertyAccessExpression(expression)
-        ? expression.getNameNode().getSymbol()
-        : expression.getSymbol();
-    const resolved = symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
-    const bodies = [];
-    let hasAuthoredDeclaration = false;
-    let hasExternalDeclaration = false;
-    for (const declaration of resolved?.getDeclarations() ?? []) {
-        const sourceFile = declaration.getSourceFile();
-        const source = sourcePath(sourceFile);
-        if (!isAuthoredSource(source) || !project.getSourceFile(sourceFile.getFilePath())) {
-            if (!isTypeScriptStandardLibraryDeclaration(sourceFile)) {
-                hasExternalDeclaration = true;
-            }
+function authoredHelperPersistsArguments(input) {
+    const { call, argumentIndexes, project, visited } = input;
+    for (const callable of resolveCallTargets(call, project).bodies) {
+        const identity = `${callable.getSourceFile().getFilePath()}:${callable.getStart()}`;
+        if (visited.has(identity)) {
             continue;
         }
-        hasAuthoredDeclaration = true;
-        if (isFunctionDeclaration(declaration) && functionBody(declaration)) {
-            bodies.push(declaration);
+        visited.add(identity);
+        const parameters = argumentIndexes
+            .map((index) => callable.getParameters()[index])
+            .filter((parameter) => parameter !== undefined);
+        const body = functionBody(callable);
+        if (!body || parameters.length === 0) {
             continue;
         }
-        if (
-            Node.isVariableDeclaration(declaration) ||
-            Node.isPropertyAssignment(declaration) ||
-            Node.isPropertyDeclaration(declaration)
-        ) {
-            const initializer = declaration.getInitializer();
-            if (initializer && (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer))) {
-                bodies.push(initializer);
-            }
-        }
-    }
-    return {
-        bodies,
-        unresolved: bodies.length === 0 && (
-            resolved === undefined || hasAuthoredDeclaration || hasExternalDeclaration
-        )
-    };
-}
-
-function isTypeScriptStandardLibraryDeclaration(sourceFile) {
-    const path = sourceFile.getFilePath().replaceAll('\\', '/');
-    return /\/typescript\/lib\/lib\.[^/]+\.d\.ts$/u.test(path);
-}
-
-function isDirectTransactionOperation(call) {
-    const expression = call.getExpression();
-    if (!Node.isPropertyAccessExpression(expression)) {
-        return false;
-    }
-    const receiver = expression.getExpression();
-    if (isKnownTransactionType(receiver)) {
-        return true;
-    }
-    return Node.isIdentifier(receiver) && resolvedDeclarations(receiver).some(
-        (declaration) => Node.isParameterDeclaration(declaration) && isTransactionParameter(declaration)
-    );
-}
-
-function isDirectDatabaseResultCall(call) {
-    if (!isDirectTransactionOperation(call)) {
-        return false;
-    }
-    const expression = call.getExpression();
-    if (!Node.isPropertyAccessExpression(expression)) {
-        return false;
-    }
-    return !isExactType(expression.getExpression(), 'IDBTransaction');
-}
-
-function isPersistedWriteOperation(call) {
-    if (isDirectTransactionOperation(call)) {
-        const expression = call.getExpression();
-        return !Node.isPropertyAccessExpression(expression) ||
-            !TRANSACTION_CONTROL_METHODS.has(expression.getName());
-    }
-    const expression = call.getExpression();
-    return Node.isPropertyAccessExpression(expression) &&
-        INDEXED_DB_WRITE_METHODS.has(expression.getName()) &&
-        isExactType(expression.getExpression(), 'IDBObjectStore');
-}
-
-function isKnownTransactionType(node) {
-    return TRANSACTION_TYPE_NAMES.some((name) => isExactType(node, name));
-}
-
-function isExactType(node, expectedName, visited = new Set()) {
-    const type = node.getType();
-    for (const candidate of [type.getAliasSymbol(), type.getSymbol()]) {
-        const symbol = candidate?.isAlias() ? candidate.getAliasedSymbol() : candidate;
-        if (!symbol || visited.has(symbol)) {
-            continue;
-        }
-        if (symbol.getName() === expectedName) {
-            return true;
-        }
-        visited.add(symbol);
-        for (const declaration of symbol.getDeclarations()) {
+        for (const identifier of body.getDescendantsOfKind(SyntaxKind.Identifier)) {
             if (
-                Node.isTypeAliasDeclaration(declaration) &&
-                declaration.getTypeNode() &&
-                isExactType(declaration.getTypeNode(), expectedName, visited)
+                identifier.getFirstAncestor(isFunctionDeclaration) !== callable ||
+                !identifierDependsOnDeclarations(identifier, parameters, new Set())
             ) {
+                continue;
+            }
+            if (isWithinPersistedValuePosition(identifier)) {
                 return true;
             }
-        }
-    }
-    const typeText = type.getText(node);
-    return new RegExp(`^(?:import\\("[^"]+"\\)\\.)?${expectedName}$`, 'u').test(typeText);
-}
-
-function isTransactionArgument(argument) {
-    if (isKnownTransactionType(argument)) {
-        return true;
-    }
-    return Node.isIdentifier(argument) && resolvedDeclarations(argument).some(
-        (declaration) => Node.isParameterDeclaration(declaration) && isTransactionParameter(declaration)
-    );
-}
-
-function isPromiseSettlementParameter(parameter) {
-    const owner = parameter.getFirstAncestor(isFunctionDeclaration);
-    if (!owner) {
-        return false;
-    }
-    const creation = owner.getParent();
-    return Node.isNewExpression(creation) && creation.getExpression().getText() === 'Promise';
-}
-
-function isReviewedTransactionForwardingCallback(call, parameterName) {
-    const owners = TRANSACTION_FORWARDING_CALLBACKS.get(sourcePath(call.getSourceFile()));
-    const owner = namedContainingFunction(call);
-    if (!owners || !owner) {
-        return false;
-    }
-    return owners.get(declarationName(owner))?.has(parameterName) ?? false;
-}
-
-function namedContainingFunction(node) {
-    return node.getAncestors().find((ancestor) =>
-        isFunctionDeclaration(ancestor) && declarationName(ancestor).length > 0
-    );
-}
-
-function isUpgradeCallbackAssignment(assignment) {
-    if (assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken) {
-        return false;
-    }
-    const left = assignment.getLeft();
-    return Node.isPropertyAccessExpression(left) && left.getName() === 'onupgradeneeded';
-}
-
-function resolveCallableBodies(node, project, visitedSymbols = new Set()) {
-    if (!node) {
-        return [];
-    }
-    if (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) {
-        return [node];
-    }
-    if (
-        Node.isAsExpression(node) ||
-        Node.isNonNullExpression(node) ||
-        Node.isParenthesizedExpression(node) ||
-        Node.isSatisfiesExpression(node) ||
-        Node.isTypeAssertion(node)
-    ) {
-        return resolveCallableBodies(node.getExpression(), project, visitedSymbols);
-    }
-    return resolveDeclarations(node.getSymbol(), project, visitedSymbols);
-}
-
-function resolveDeclarations(symbol, project, visitedSymbols) {
-    if (!symbol) {
-        return [];
-    }
-    const resolved = symbol.isAlias() ? symbol.getAliasedSymbol() : symbol;
-    if (!resolved || visitedSymbols.has(resolved)) {
-        return [];
-    }
-    visitedSymbols.add(resolved);
-
-    const bodies = [];
-    for (const declaration of resolved.getDeclarations()) {
-        const source = sourcePath(declaration.getSourceFile());
-        if (!isAnalyzedSource(source) || !project.getSourceFile(declaration.getSourceFile().getFilePath())) {
-            continue;
-        }
-        if (isFunctionDeclaration(declaration) && functionBody(declaration)) {
-            bodies.push(declaration);
-            continue;
-        }
-        if (
-            Node.isVariableDeclaration(declaration) ||
-            Node.isPropertyAssignment(declaration) ||
-            Node.isPropertyDeclaration(declaration)
-        ) {
-            const initializer = declaration.getInitializer();
-            if (initializer) {
-                bodies.push(...resolveCallableBodies(initializer, project, visitedSymbols));
+            for (const nested of identifier.getAncestors().filter(Node.isCallExpression)) {
+                const nestedIndexes = nested.getArguments().flatMap((argument, index) =>
+                    containsNode(argument, identifier) ? [index] : []
+                );
+                if (
+                    nestedIndexes.length > 0 &&
+                    authoredHelperPersistsArguments({
+                        call: nested,
+                        argumentIndexes: nestedIndexes,
+                        project,
+                        visited: new Set(visited)
+                    })
+                ) {
+                    return true;
+                }
             }
         }
     }
-    return bodies;
-}
-
-function isFunctionDeclaration(node) {
-    return Node.isFunctionDeclaration(node) ||
-        Node.isMethodDeclaration(node) ||
-        Node.isArrowFunction(node) ||
-        Node.isFunctionExpression(node);
-}
-
-function functionBody(node) {
-    return typeof node.getBody === 'function' ? node.getBody() : undefined;
-}
-
-function declarationName(declaration) {
-    if (Node.isFunctionDeclaration(declaration) || Node.isMethodDeclaration(declaration)) {
-        return declaration.getName() ?? '';
-    }
-    const parent = declaration.getParent();
-    return Node.isVariableDeclaration(parent) || Node.isPropertyAssignment(parent)
-        ? parent.getName()
-        : '';
+    return false;
 }
 
 function callOperation(call) {
@@ -1022,25 +1030,6 @@ function boundaryLabel(boundary) {
     const sourceFile = boundary.getSourceFile();
     const position = sourceFile.getLineAndColumnAtPos(boundary.getStart());
     return `${sourcePath(sourceFile)}:${position.line}`;
-}
-
-function sourcePath(sourceFile) {
-    return sourceFile.getFilePath()
-        .replaceAll('\\', '/')
-        .replace(/^.*\/(packages|apps\/api-v1\/src)\//u, '$1/');
-}
-
-function isAnalyzedSource(path) {
-    return isAuthoredSource(path) &&
-        !path.startsWith('packages/tests/') &&
-        !path.startsWith('packages/shared-test/') &&
-        !path.startsWith('packages/shared-rtc-bench/') &&
-        !/(?:^|\/)(?:generated|vendor|fixtures?|mocks?)(?:\/|$)/u.test(path) &&
-        !/\.(?:test|spec|d)\.ts$/u.test(path);
-}
-
-function isAuthoredSource(path) {
-    return path.startsWith('packages/') || path.startsWith('apps/api-v1/src/');
 }
 
 function compareFindings(left, right) {

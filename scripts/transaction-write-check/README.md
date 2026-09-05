@@ -7,7 +7,7 @@ before a write-capable transaction starts.
 The checker reports:
 
 - `transaction.precomputable-work` for clocks, randomness, serialization,
-  hashing, sorting/canonicalization, and named compute/prepare builders reached
+  hashing, sorting/canonicalization, and authored helper output reached
   through a resolved transaction callback, transaction-write function, or its
   transitive authored helper and invoked callback closure, plus parameter-only
   persisted-value construction passed directly to a write;
@@ -16,8 +16,9 @@ The checker reports:
   an inspectable local body;
 - `transaction.inner-retry` when a write transaction is opened from a
   `for`, `while`, `do`, or retry-shaped `for-of` loop. A `for-of` batch must
-  consume its distinct item in the transaction callback; iterating prepared
-  operations inside one already-open transaction also remains allowed.
+  carry its distinct item into persisted data, including through a resolved
+  transaction-bound helper; iterating computed operations inside one
+  already-open transaction also remains allowed.
 
 It recognizes PostgreSQL/PGlite `begin` and `transaction` callbacks, the
 `runInPSqlTransaction` wrapper, IndexedDB `readwrite` transactions, IndexedDB
@@ -28,6 +29,10 @@ function-valued declarations, transaction-bound callback arguments, and
 immediately executing collection callbacks to a fixed point while preserving
 the originating transaction boundary. Merely constructing a callback does not
 make its body transaction work.
+`typescript-provenance.mjs` owns source, symbol, callable, and resolved-type
+navigation so the rule analyzer can stay focused on transaction semantics.
+`transaction-boundaries.mjs` owns transaction API recognition, reviewed
+ResourceInbox operation ownership, and IndexedDB callback/lifetime discovery.
 
 Unknown dynamic or external callback provenance is reported for human review,
 but does not fail the gate without a proven prohibited operation. Direct
@@ -41,11 +46,10 @@ to a local variable. Readonly
 IndexedDB transactions, tests, fixtures, mocks, generated/vendor code,
 `packages/shared-test/**`, and `packages/shared-rtc-bench/**` are excluded.
 
-Only transactions opened by exact PostgreSQL ResourceInbox owner methods named
-in the analyzer are governed by their specialized SQL review and semantic tests.
-Whole files and directories are not exempt. Calling one of those methods from a
-different owner's transaction does not transfer the exemption: its body remains
-part of the caller's analyzed transaction closure.
+The exact PostgreSQL ResourceInbox operations listed in the boundary module are
+opaque to this generic check, including when another transaction owner calls them.
+Their specialized SQL review and semantic tests govern them instead. Neighboring
+methods and files receive no exemption.
 
 This is intentionally a narrow check. It does not attempt whole-program
 implementation resolution for injected interfaces, general dynamic dispatch,
