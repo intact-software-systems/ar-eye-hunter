@@ -20,17 +20,27 @@ export function inspectRtcObservationChange({ repoRoot, base, head }) {
         return rejected(changes.reason, true);
     }
     const observationTouched = changes.value.some(({ path }) => path.startsWith(observationRoot));
-    if (changes.value.length < 2) {
-        return rejected('rtc-observation-change-count', observationTouched);
+    return inspectChangedObservationFiles({
+        repoRoot,
+        base,
+        head,
+        changes: changes.value,
+        observationTouched
+    });
+}
+
+function inspectChangedObservationFiles(input) {
+    if (input.changes.length < 2) {
+        return rejected('rtc-observation-change-count', input.observationTouched);
     }
-    const archives = changes.value.filter(({ path }) => path.endsWith('.zip'));
-    if (archives.length !== changes.value.length - 1) {
-        return rejected('rtc-observation-change-shape', observationTouched);
+    const archives = input.changes.filter(({ path }) => path.endsWith('.zip'));
+    if (archives.length !== input.changes.length - 1) {
+        return rejected('rtc-observation-change-shape', input.observationTouched);
     }
     const streams = new Set(archives.map(({ path }) => canonicalArchiveStream(path)));
     const stream = streams.size === 1 ? [...streams][0] : null;
     const indexPath = stream === null ? null : streamConfiguration[stream].indexPath;
-    const index = changes.value.find(({ path }) => path === indexPath);
+    const index = input.changes.find(({ path }) => path === indexPath);
     if (
         archives.length === 0 ||
         archives.some(({ status }) => status !== 'A') ||
@@ -39,22 +49,26 @@ export function inspectRtcObservationChange({ repoRoot, base, head }) {
         !['A', 'M'].includes(index.status) ||
         stream === null
     ) {
-        return rejected('rtc-observation-change-shape', observationTouched);
+        return rejected('rtc-observation-change-shape', input.observationTouched);
     }
-    const oldIndex = readRevisionFile(repoRoot, base, indexPath);
-    const newIndex = readRevisionFile(repoRoot, head, indexPath);
+    return inspectObservationIndexAppend({ ...input, archives, index, indexPath });
+}
+
+function inspectObservationIndexAppend(input) {
+    const oldIndex = readRevisionFile(input.repoRoot, input.base, input.indexPath);
+    const newIndex = readRevisionFile(input.repoRoot, input.head, input.indexPath);
     if (
         newIndex === null ||
-        (oldIndex === null) !== (index.status === 'A') ||
-        (oldIndex !== null && index.status !== 'M')
+        (oldIndex === null) !== (input.index.status === 'A') ||
+        (oldIndex !== null && input.index.status !== 'M')
     ) {
-        return rejected('rtc-observation-index-status', observationTouched);
+        return rejected('rtc-observation-index-status', input.observationTouched);
     }
     const appended = readAppendedIndexEntries(oldIndex ?? '', newIndex);
     if (!appended.ok) {
-        return rejected(appended.reason, observationTouched);
+        return rejected(appended.reason, input.observationTouched);
     }
-    const archivePaths = archives.map(({ path }) => path).sort();
+    const archivePaths = input.archives.map(({ path }) => path).sort();
     const indexedArchivePaths = appended.value
         .map(({ archive }) => archive.path)
         .sort();
@@ -65,7 +79,7 @@ export function inspectRtcObservationChange({ repoRoot, base, head }) {
     ) {
         return rejected(
             'rtc-observation-index-archive-mismatch',
-            observationTouched
+            input.observationTouched
         );
     }
     return {
@@ -73,7 +87,7 @@ export function inspectRtcObservationChange({ repoRoot, base, head }) {
         observationTouched: true,
         reason: 'rtc-observation-only',
         archivePaths,
-        indexPath,
+        indexPath: input.indexPath,
         indexEntries: appended.value
     };
 }

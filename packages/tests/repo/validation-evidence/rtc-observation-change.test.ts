@@ -122,6 +122,45 @@ describe('RTC observation-only change', () => {
             })
         ],
         [
+            'duplicate rows in a batch',
+            (fixture: Fixture) => {
+                const secondArchivePath = archivePath.replace('20260827T031500Z', '20260827T031501Z');
+                return {
+                    [archivePath]: 'zip-bytes',
+                    [secondArchivePath]: 'zip-bytes',
+                    [indexPath]: fixture.oldIndex +
+                        indexLine(archivePath) +
+                        '\n' +
+                        indexLine(archivePath) +
+                        '\n'
+                };
+            }
+        ],
+        [
+            'archives from different streams',
+            (fixture: Fixture) => {
+                const b06ArchivePath = 'performance-observations/rtc-b06/2026/08/30/' +
+                    '20260830T100000Z-c0cadb8216cf-e3-memory-gh987654321-a3.zip';
+                return {
+                    [archivePath]: 'zip-bytes',
+                    [b06ArchivePath]: 'zip-bytes',
+                    [indexPath]: `${fixture.oldIndex}${indexLine(archivePath)}\n`,
+                    'performance-observations/rtc-b06/index.jsonl': `${indexLine(b06ArchivePath)}\n`
+                };
+            }
+        ],
+        [
+            'malformed row in a batch',
+            (fixture: Fixture) => {
+                const secondArchivePath = archivePath.replace('20260827T031500Z', '20260827T031501Z');
+                return {
+                    [archivePath]: 'zip-bytes',
+                    [secondArchivePath]: 'zip-bytes',
+                    [indexPath]: `${fixture.oldIndex}${indexLine(archivePath)}\n{\n`
+                };
+            }
+        ],
+        [
             'unrelated file',
             (fixture: Fixture) => ({
                 [archivePath]: 'zip-bytes',

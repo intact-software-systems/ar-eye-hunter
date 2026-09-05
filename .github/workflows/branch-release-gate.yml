@@ -179,8 +179,13 @@ jobs:
           RTC_OBSERVATION_INDEX: ${{ needs.validation-evidence.outputs.index_path }}
         run: |
           mkdir -p .artifacts/rtc-observation
-          node -e \
-            'for (const path of JSON.parse(process.argv[1])) console.log(path)' \
+          node -e '
+            const paths = JSON.parse(process.argv[1]);
+            if (!Array.isArray(paths) || paths.length === 0) {
+              throw new Error("RTC observation selection must contain at least one archive");
+            }
+            for (const path of paths) console.log(path);
+          ' \
             "$RTC_OBSERVATION_ARCHIVES_JSON" |
           while IFS= read -r archive_path; do
             RTC_OBSERVATION_ARCHIVE="$archive_path" node --input-type=module <<'NODE'
