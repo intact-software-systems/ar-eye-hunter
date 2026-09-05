@@ -524,12 +524,15 @@ Deno.test(
                 firstRead,
                 1
             );
-            mutation.validate({
-                command,
-                read: firstRead,
-                attemptCount: 1,
-                computed: firstComputed
-            });
+            assert.deepEqual(
+                mutation.validate({
+                    command,
+                    read: firstRead,
+                    attemptCount: 1,
+                    computed: firstComputed
+                }),
+                []
+            );
             assert.equal(firstComputed.outcome, 'write');
             if (firstComputed.outcome !== 'write') {
                 throw new Error('Expected topology write');
@@ -540,16 +543,17 @@ Deno.test(
             );
             const retryRead = await mutation.read(command);
             const retryComputed = mutation.compute(command, retryRead, 2);
-            assert.throws(
-                () =>
-                    mutation.validate({
-                        command,
-                        read: retryRead,
-                        attemptCount: 2,
-                        computed: retryComputed
-                    }),
-                (error) => error instanceof Error && 'status' in error && error.status === 403
-            );
+            const retryIssues = mutation.validate({
+                command,
+                read: retryRead,
+                attemptCount: 2,
+                computed: retryComputed
+            });
+            assert.equal(retryIssues.length, 1);
+            const retryCause = retryIssues[0]?.cause;
+            assert.ok(retryCause instanceof Error);
+            assert.match(retryCause.message, /archived/i);
+            assert.equal('status' in retryCause ? retryCause.status : undefined, 403);
             assert.equal(await topology.findConfig(groupRef), undefined);
             assert.equal(
                 await topology.findMutationRecord(groupRef, 'pglite-overlapping-archive'),
