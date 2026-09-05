@@ -12,6 +12,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { RallarRoomPresenceWaitOptions, RallarRoomPresenceWaitResult } from './rallar-room-contracts.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
+import { waitForRoomChange } from './wait-for-room-change.ts';
 
 export interface WaitForRoomPresenceInput {
     readonly room: string | GroupRef;
@@ -35,13 +36,6 @@ interface CreateRoomPresenceResultReaderInput {
     readonly expectation: RallarNormalizedReadinessExpectation;
 }
 
-interface WaitForRoomPresenceChangeInput {
-    readonly operationOptions: RallarOperationOptions;
-    readonly timeoutMs: number;
-    readonly readResult: RoomPresenceResultReader;
-    readonly onCacheChange: WaitForRoomPresenceInput['onCacheChange'];
-}
-
 type RoomPresenceResultReader = (
     statusOverride?: RallarReadinessStatus
 ) => RallarRoomPresenceWaitResult;
@@ -61,22 +55,14 @@ export async function waitForRoomPresence(
         roomRef,
         expectation
     });
-    const current = readResult();
-    if (isTerminalReadinessWaitResult(current)) {
-        return current;
-    }
-    if (operationOptions.signal?.aborted) {
-        return { ...current, status: 'aborted' };
-    }
-    const timeoutMs = normalizeWaitTimeoutMs(options.timeoutMs);
-    if (timeoutMs <= 0) {
-        return readResult('timeout');
-    }
-    return await waitForRoomPresenceChange({
-        operationOptions,
-        timeoutMs,
-        readResult,
-        onCacheChange: input.onCacheChange
+    return await waitForRoomChange({
+        readResult: () => readResult(),
+        isSettled: isTerminalReadinessWaitResult,
+        subscribe: input.onCacheChange,
+        signal: operationOptions.signal,
+        timeoutMs: normalizeWaitTimeoutMs(options.timeoutMs),
+        toTimedOut: () => readResult('timeout'),
+        toAborted: () => ({ ...readResult(), status: 'aborted' })
     });
 }
 
@@ -108,46 +94,6 @@ function createRoomPresenceResultReader(
             timedOut: statusOverride === 'timeout'
         };
     };
-}
-
-async function waitForRoomPresenceChange(
-    input: WaitForRoomPresenceChangeInput
-): Promise<RallarRoomPresenceWaitResult> {
-    return await new Promise<RallarRoomPresenceWaitResult>((resolve) => {
-        let settled = false;
-        let timeout: ReturnType<typeof setTimeout> | undefined;
-        let unsubscribe: RallarUnsubscribe = () => {};
-        const finish = (result: RallarRoomPresenceWaitResult): void => {
-            if (settled) {
-                return;
-            }
-            settled = true;
-            if (timeout !== undefined) {
-                clearTimeout(timeout);
-            }
-            input.operationOptions.signal?.removeEventListener('abort', onAbort);
-            unsubscribe();
-            resolve(result);
-        };
-        const onAbort = (): void => finish({ ...input.readResult(), status: 'aborted' });
-        unsubscribe = input.onCacheChange(() => {
-            const next = input.readResult();
-            if (isTerminalReadinessWaitResult(next)) {
-                finish(next);
-            }
-        });
-        input.operationOptions.signal?.addEventListener('abort', onAbort, { once: true });
-        const next = input.readResult();
-        if (isTerminalReadinessWaitResult(next)) {
-            finish(next);
-            return;
-        }
-        if (input.operationOptions.signal?.aborted) {
-            onAbort();
-            return;
-        }
-        timeout = setTimeout(() => finish(input.readResult('timeout')), input.timeoutMs);
-    });
 }
 
 function uniquePeerIds(peerIds: readonly string[]): readonly string[] {
