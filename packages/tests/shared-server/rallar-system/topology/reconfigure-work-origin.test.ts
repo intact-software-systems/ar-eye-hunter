@@ -7,13 +7,6 @@ import {
 
 const ACTIVE_LAYOUT = { state: 'active' } as ResolveTopologyPlanActionInput['previous'];
 
-/**
- * Product decision 4: commanded groups advance on application commands. The
- * `reconfigure` route exists to command a replan, so the work it enqueues must
- * carry a commanded origin -- it was stamped `automatic`, which is precisely
- * what `commanded` and `corrupt` replanning freeze, so the one mode that
- * exists to honour the command was the mode that discarded it.
- */
 describe('an application command is not frozen by the mode that honours it', () => {
     it('plans commanded work under every replanning mode', () => {
         for (const replanning of ['auto', 'debounced', 'commanded', 'corrupt'] as const) {
@@ -25,7 +18,6 @@ describe('an application command is not frozen by the mode that honours it', () 
         expect(planActionFor('auto', 'automatic')).toBe('plan');
         expect(planActionFor('debounced', 'automatic')).toBe('plan');
         expect(planActionFor('commanded', 'automatic')).toBe('freeze');
-        // A policy that cannot be read replans no more than `commanded` does.
         expect(planActionFor('corrupt', 'automatic')).toBe('freeze');
     });
 });
