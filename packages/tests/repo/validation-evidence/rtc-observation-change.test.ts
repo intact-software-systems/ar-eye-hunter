@@ -37,9 +37,40 @@ describe('RTC observation-only change', () => {
             observationOnly: true,
             observationTouched: true,
             reason: 'rtc-observation-only',
-            archivePath,
+            archivePaths: [archivePath],
             indexPath,
-            indexEntry: JSON.parse(indexLine(archivePath))
+            indexEntries: [JSON.parse(indexLine(archivePath))]
+        });
+    });
+
+    it('accepts several create-new ZIPs with one matching canonical row each', () => {
+        const fixture = createFixture(true);
+        const secondObservationId = '20260828T031500Z-eaf526518c71-e2-browser-gh123456790-a1';
+        const secondArchivePath = 'performance-observations/rtc-b05/2026/08/28/' + secondObservationId + '.zip';
+        const head = commit(fixture.root, 'observation batch', {
+            [archivePath]: 'first-zip-bytes',
+            [secondArchivePath]: 'second-zip-bytes',
+            [indexPath]: fixture.oldIndex +
+                indexLine(archivePath) +
+                '\n' +
+                indexLine(secondArchivePath) +
+                '\n'
+        });
+
+        expect(inspectRtcObservationChange({
+            repoRoot: fixture.root,
+            base: fixture.base,
+            head
+        })).toEqual({
+            observationOnly: true,
+            observationTouched: true,
+            reason: 'rtc-observation-only',
+            archivePaths: [archivePath, secondArchivePath],
+            indexPath,
+            indexEntries: [
+                JSON.parse(indexLine(archivePath)),
+                JSON.parse(indexLine(secondArchivePath))
+            ]
         });
     });
 
@@ -61,9 +92,9 @@ describe('RTC observation-only change', () => {
             observationOnly: true,
             observationTouched: true,
             reason: 'rtc-observation-only',
-            archivePath: b06ArchivePath,
+            archivePaths: [b06ArchivePath],
             indexPath: b06IndexPath,
-            indexEntry: JSON.parse(indexLine(b06ArchivePath))
+            indexEntries: [JSON.parse(indexLine(b06ArchivePath))]
         });
     });
 
@@ -83,7 +114,7 @@ describe('RTC observation-only change', () => {
             })
         ],
         [
-            'two archives',
+            'two archives with only one index row',
             (fixture: Fixture) => ({
                 [archivePath]: 'zip-bytes',
                 [archivePath.replace('.zip', '-other.zip')]: 'zip-bytes',

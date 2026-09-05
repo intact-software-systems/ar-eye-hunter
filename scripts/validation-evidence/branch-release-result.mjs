@@ -61,7 +61,7 @@ export function validateBranchReleaseConclusion({
         return issues;
     }
     if (mode === 'invalid-rtc-observation') {
-        issues.push('RTC observation store change is not one exact verified append');
+        issues.push('RTC observation store change is not an exact verified append');
         return issues;
     }
     if (mode !== 'broad') {

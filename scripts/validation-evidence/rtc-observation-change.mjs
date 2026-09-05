@@ -20,15 +20,20 @@ export function inspectRtcObservationChange({ repoRoot, base, head }) {
         return rejected(changes.reason, true);
     }
     const observationTouched = changes.value.some(({ path }) => path.startsWith(observationRoot));
-    if (changes.value.length !== 2) {
+    if (changes.value.length < 2) {
         return rejected('rtc-observation-change-count', observationTouched);
     }
-    const archive = changes.value.find(({ path }) => path.endsWith('.zip'));
-    const stream = archive === undefined ? null : canonicalArchiveStream(archive.path);
+    const archives = changes.value.filter(({ path }) => path.endsWith('.zip'));
+    if (archives.length !== changes.value.length - 1) {
+        return rejected('rtc-observation-change-shape', observationTouched);
+    }
+    const streams = new Set(archives.map(({ path }) => canonicalArchiveStream(path)));
+    const stream = streams.size === 1 ? [...streams][0] : null;
     const indexPath = stream === null ? null : streamConfiguration[stream].indexPath;
     const index = changes.value.find(({ path }) => path === indexPath);
     if (
-        archive?.status !== 'A' ||
+        archives.length === 0 ||
+        archives.some(({ status }) => status !== 'A') ||
         indexPath === null ||
         index === undefined ||
         !['A', 'M'].includes(index.status) ||
@@ -45,10 +50,21 @@ export function inspectRtcObservationChange({ repoRoot, base, head }) {
     ) {
         return rejected('rtc-observation-index-status', observationTouched);
     }
-    const appended = readAppendedIndexEntry(oldIndex ?? '', newIndex);
-    if (!appended.ok || appended.value.archive?.path !== archive.path) {
+    const appended = readAppendedIndexEntries(oldIndex ?? '', newIndex);
+    if (!appended.ok) {
+        return rejected(appended.reason, observationTouched);
+    }
+    const archivePaths = archives.map(({ path }) => path).sort();
+    const indexedArchivePaths = appended.value
+        .map(({ archive }) => archive.path)
+        .sort();
+    if (
+        indexedArchivePaths.some((path) => typeof path !== 'string') ||
+        new Set(indexedArchivePaths).size !== indexedArchivePaths.length ||
+        JSON.stringify(indexedArchivePaths) !== JSON.stringify(archivePaths)
+    ) {
         return rejected(
-            appended.ok ? 'rtc-observation-index-archive-mismatch' : appended.reason,
+            'rtc-observation-index-archive-mismatch',
             observationTouched
         );
     }
@@ -56,9 +72,9 @@ export function inspectRtcObservationChange({ repoRoot, base, head }) {
         observationOnly: true,
         observationTouched: true,
         reason: 'rtc-observation-only',
-        archivePath: archive.path,
+        archivePaths,
         indexPath,
-        indexEntry: appended.value
+        indexEntries: appended.value
     };
 }
 
@@ -106,7 +122,7 @@ function readRevisionFile(repoRoot, revision, path) {
     }
 }
 
-function readAppendedIndexEntry(oldIndex, newIndex) {
+function readAppendedIndexEntries(oldIndex, newIndex) {
     if (
         (oldIndex !== '' && !oldIndex.endsWith('\n')) ||
         !newIndex.startsWith(oldIndex) ||
@@ -115,19 +131,23 @@ function readAppendedIndexEntry(oldIndex, newIndex) {
         return { ok: false, reason: 'rtc-observation-index-not-append-only' };
     }
     const appended = newIndex.slice(oldIndex.length);
-    if (appended.length <= 1 || appended.slice(0, -1).includes('\n')) {
+    if (appended.length <= 1) {
         return { ok: false, reason: 'rtc-observation-index-row-count' };
     }
-    const line = appended.slice(0, -1);
-    try {
-        const value = JSON.parse(line);
-        return JSON.stringify(value) === line && isRecord(value) && isRecord(value.archive)
-            ? { ok: true, value }
-            : { ok: false, reason: 'rtc-observation-index-row-not-canonical' };
+    const entries = [];
+    for (const line of appended.slice(0, -1).split('\n')) {
+        try {
+            const value = JSON.parse(line);
+            if (JSON.stringify(value) !== line || !isRecord(value) || !isRecord(value.archive)) {
+                return { ok: false, reason: 'rtc-observation-index-row-not-canonical' };
+            }
+            entries.push(value);
+        }
+        catch {
+            return { ok: false, reason: 'rtc-observation-index-row-not-json' };
+        }
     }
-    catch {
-        return { ok: false, reason: 'rtc-observation-index-row-not-json' };
-    }
+    return { ok: true, value: entries };
 }
 
 function canonicalArchiveStream(value) {
