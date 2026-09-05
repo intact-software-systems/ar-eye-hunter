@@ -123,7 +123,7 @@ function toCitations(document: string): readonly string[] {
                 .map((match) => match[1])
                 .filter((token) =>
                     (SOURCE_ROOTS.test(token) && (token.endsWith('/') || SOURCE_FILENAME.test(path.basename(token)))) ||
-                    (!token.includes('/') && SOURCE_FILENAME.test(token))
+                    (!token.startsWith('@') && SOURCE_FILENAME.test(path.basename(token)))
                 )
         )
     ];
@@ -133,9 +133,17 @@ function isResolvedCitation(citation: string): boolean {
     if (citation.endsWith('/')) {
         return trackedPaths.some((tracked) => tracked.startsWith(citation));
     }
-    return citation.includes('/')
-        ? trackedPaths.includes(citation)
-        : trackedBasenames.has(citation);
+    if (!citation.includes('/')) {
+        return trackedBasenames.has(citation);
+    }
+    if (SOURCE_ROOTS.test(citation)) {
+        return trackedPaths.includes(citation);
+    }
+    // A relative fragment is cited under a root the prose established, so it
+    // resolves as a path suffix. These rot silently: a tree that gains a
+    // directory level leaves them naming nothing, and they are too long for
+    // the bare-filename check to see.
+    return trackedPaths.some((tracked) => tracked.endsWith(`/${citation}`));
 }
 
 function toBacktickedKebabTokens(section: string): readonly string[] {

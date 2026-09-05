@@ -3330,8 +3330,17 @@ one was a live defect:
   derivations) and two are server-side gaps a recipe could close.
 - **`start-establishment` and `reopen-establishment` are gone** from every `.ts`, `.mts`, `.json`,
   `.yaml` and `.md` outside `playground/` — verified, nothing to remove.
-- `RtcTopologySnapshotRepository.findEntryRevision` **still has its caller** and was left alone, as
-  this section instructs; 6c owns it.
+- `RtcTopologySnapshotRepository.findEntryRevision` was **already gone**, so slice 14 correctly left
+  it alone but for the wrong reason: this checkpoint recorded it as still having a caller, when 6c
+  had removed it on 2026-08-30 (recorded above at slice 6c's own checkpoint). A repo-wide grep now
+  returns nothing.
+- **`GROUP_RTC_SETUP_TIMEOUT_MS` is deleted.** Slice 1c settled it at 15 000 ms and named the browser
+  pacing slice as its applier; that slice landed without applying it, so the constant had zero
+  consumers repo-wide while the browser's live establishment timeout is
+  `DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY`'s 30 000 ms. An unreferenced constant whose
+  value disagrees with the live one is worse than dead — the next reader wires it up and halves the
+  timeout — so decision 14's no-retained-legacy rule applies. I24's claim that every settled constant
+  is "pinned by the policy and status matrices" was true of the other four and never of this one.
 
 **A correctness fix the slice's own review produced.** `resolveStoredCondition` on the formation view
 stated half the rule its comment describes: it compared the coverage basis but was never given the
