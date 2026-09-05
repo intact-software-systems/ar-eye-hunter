@@ -1,9 +1,9 @@
+import { createDefaultInMemoryALInboundRuntimeStores, createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import {
     configureALRuntimeStoreFactories,
     resolveALInboundRuntimeStores,
     resolveALOutboundRuntimeStores
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
-import { createDefaultInMemoryALInboundRuntimeStores, createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
     describe,

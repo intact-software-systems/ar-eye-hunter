@@ -46,7 +46,8 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             ...resources,
             inbox: new InMemoryQueueBox(new Map()),
-            planIncomingMessage: (plannedMessage, fromPeerId, stores) => planALMessageHandling(plannedMessage, { ...stores, selfPeerId: 'receiver', fromPeerId }),
+            planIncomingMessage: (plannedMessage, fromPeerId, stores) =>
+                planALMessageHandling(plannedMessage, { ...stores, selfPeerId: 'receiver', fromPeerId }),
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async (entry) => {
                 deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
@@ -168,8 +169,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime({
             ...resources,
             inbox: new InMemoryQueueBox(new Map()),
-            planIncomingMessage: (message, fromPeerId, stores) =>
-                planALMessageHandling(message, { ...stores, selfPeerId: 'receiver', fromPeerId }),
+            planIncomingMessage: (message, fromPeerId, stores) => planALMessageHandling(message, { ...stores, selfPeerId: 'receiver', fromPeerId }),
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: async () => {},
             sendControlMessage: async () => {}

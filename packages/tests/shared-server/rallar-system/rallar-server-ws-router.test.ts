@@ -437,7 +437,8 @@ describe('RallarServerWsRouter', () => {
             await Promise.all([firstIngress, duplicateIngress, alteredIngress]);
 
             expect(publishedSessionIds).toEqual([['session-1']]);
-        } finally {
+        }
+        finally {
             warn.mockRestore();
         }
     });
@@ -698,9 +699,10 @@ function createIngressRouter(
         inboundStores,
         targetResolver: {
             resolvePeerIdForConnection: () => 'peer-1',
-            resolvePeerRecipients: (peerId) => peerId === 'peer-1'
-                ? [{ peerId, connectionId: 'conn-1' }]
-                : [],
+            resolvePeerRecipients: (peerId) =>
+                peerId === 'peer-1'
+                    ? [{ peerId, connectionId: 'conn-1' }]
+                    : [],
             resolveBroadcastRecipients: () => []
         }
     });

@@ -9,8 +9,8 @@ import type {
     ALOutboundMessageReadDto
 } from './al-outbound-admission-store.ts';
 import type { ALOutboundDispatchPhase, ALOutboundEnqueueStatus } from './al-outbound-message-runtime.ts';
-import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
+import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
     toALOutboundPendingAckExpireAtTimestamp,
     trackALOutboundPendingAckSnapshot

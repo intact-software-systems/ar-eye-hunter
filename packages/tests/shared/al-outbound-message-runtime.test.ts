@@ -817,12 +817,13 @@ describe('ALOutboundMessageRuntime', () => {
             })
         });
         const msg = createOutboundMessage('msg-duplicate-retry-budget');
-        const nack = () => newALNackControlMessage(
-            'server-1',
-            'self',
-            msg.id.msgId,
-            'not-yet-in-sync'
-        );
+        const nack = () =>
+            newALNackControlMessage(
+                'server-1',
+                'self',
+                msg.id.msgId,
+                'not-yet-in-sync'
+            );
 
         await enqueueOutboundOrThrow(runtime, msg);
         await runtime.acceptControlMessage(nack());

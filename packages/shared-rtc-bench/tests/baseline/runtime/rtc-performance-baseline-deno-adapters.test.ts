@@ -179,8 +179,8 @@ describe('RTC baseline Deno adapters', () => {
             const stdout = executable === 'uname'
                 ? '24.6.0\n'
                 : executable === 'system_profiler'
-                    ? '      Processor Name: 8-Core Intel Core i9\n'
-                    : '\n';
+                ? '      Processor Name: 8-Core Intel Core i9\n'
+                : '\n';
             return {
                 code: 0,
                 stdout: new TextEncoder().encode(stdout),
