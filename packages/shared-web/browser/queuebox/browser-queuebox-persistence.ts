@@ -4,21 +4,21 @@ import { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-type
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 import { BROWSER_AL_RUNTIME_DB_NAME } from '../al-runtime/browser-al-runtime-identity.ts';
 
-export const BROWSER_QUEUEBOX_EXPIRY_EVICTION_INTERVAL_MS = 15_000;
-export const BROWSER_QUEUEBOX_STORE_NAME_PREFIX = 'queuebox:';
+const BROWSER_QUEUEBOX_EXPIRY_EVICTION_INTERVAL_MS = 15_000;
+const BROWSER_QUEUEBOX_STORE_NAME_PREFIX = 'queuebox:';
 
-export type BrowserQueueBoxCleanupStoreResult = Readonly<{
+type BrowserQueueBoxCleanupStoreResult = Readonly<{
     storeName: string;
     deleted: number;
 }>;
 
-export type BrowserQueueBoxCleanupResult = Readonly<{
+type BrowserQueueBoxCleanupResult = Readonly<{
     sessionId?: string;
     stores: readonly BrowserQueueBoxCleanupStoreResult[];
     deleted: number;
 }>;
 
-export type DeleteExpiredBrowserQueueBoxEntriesOptions = Readonly<{
+type DeleteExpiredBrowserQueueBoxEntriesOptions = Readonly<{
     storeNames?: readonly string[];
 }>;
 
@@ -36,15 +36,15 @@ export function createBrowserQueueBox(name: string): QueueBoxResourceEntryReposi
     return new InMemoryQueueBox();
 }
 
-export function toBrowserQueueBoxStoreName(name: string): string {
+function toBrowserQueueBoxStoreName(name: string): string {
     return `${BROWSER_QUEUEBOX_STORE_NAME_PREFIX}${name}`;
 }
 
-export function toBrowserQueueBoxDatabaseName(storeName: string): string {
+function toBrowserQueueBoxDatabaseName(storeName: string): string {
     return `${BROWSER_AL_RUNTIME_DB_NAME}:${storeName}`;
 }
 
-export function toBrowserSessionQueueBoxStoreNames(
+function toBrowserSessionQueueBoxStoreNames(
     sessionId: string
 ): readonly string[] {
     return [
@@ -55,16 +55,21 @@ export function toBrowserSessionQueueBoxStoreNames(
     ];
 }
 
-export async function deleteExpiredBrowserQueueBoxEntriesForSession(
+export async function deleteBrowserQueueBoxDatabasesForSession(
     sessionId: string
-): Promise<BrowserQueueBoxCleanupResult> {
-    return await deleteExpiredBrowserQueueBoxEntriesMatching(
-        toBrowserSessionQueueBoxStoreNames(sessionId),
-        sessionId
+): Promise<void> {
+    if (!IndexedDbQueueBox.isSupported()) {
+        return;
+    }
+    const existingStoreNames = new Set(await readBrowserQueueBoxStoreNames());
+    await Promise.all(
+        toBrowserSessionQueueBoxStoreNames(sessionId)
+            .filter((storeName) => existingStoreNames.has(storeName))
+            .map((storeName) => deleteIndexedDbDatabase(toBrowserQueueBoxDatabaseName(storeName)))
     );
 }
 
-export async function deleteExpiredBrowserQueueBoxEntries(
+async function deleteExpiredBrowserQueueBoxEntries(
     options: DeleteExpiredBrowserQueueBoxEntriesOptions = {}
 ): Promise<BrowserQueueBoxCleanupResult> {
     return await deleteExpiredBrowserQueueBoxEntriesMatching(options.storeNames);
@@ -107,20 +112,7 @@ async function deleteExpiredBrowserQueueBoxEntriesMatching(
     return toBrowserQueueBoxCleanupResult(stores, sessionId);
 }
 
-export async function evictExpiredBrowserQueueBoxEntriesForSession(
-    sessionId: string
-): Promise<BrowserQueueBoxCleanupResult> {
-    const result = await deleteExpiredBrowserQueueBoxEntriesForSession(sessionId);
-    if (result.deleted > 0) {
-        console.log(
-            `Evicted expired browser queuebox rows for session ${sessionId}: ${result.deleted}`
-        );
-    }
-
-    return result;
-}
-
-export async function evictExpiredBrowserQueueBoxEntries(): Promise<BrowserQueueBoxCleanupResult> {
+async function evictExpiredBrowserQueueBoxEntries(): Promise<BrowserQueueBoxCleanupResult> {
     const result = await deleteExpiredBrowserQueueBoxEntries();
     if (result.deleted > 0) {
         console.log(`Evicted expired browser queuebox rows: ${result.deleted}`);
@@ -175,4 +167,13 @@ async function readBrowserQueueBoxStoreNames(): Promise<readonly string[]> {
             return storeName.startsWith(BROWSER_QUEUEBOX_STORE_NAME_PREFIX) ? [storeName] : [];
         })
         .sort();
+}
+
+async function deleteIndexedDbDatabase(databaseName: string): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+        const request = indexedDB.deleteDatabase(databaseName);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error ?? new Error('Browser queuebox database deletion failed'));
+        request.onblocked = () => reject(new Error('Browser queuebox database deletion was blocked'));
+    });
 }

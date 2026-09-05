@@ -32,6 +32,7 @@ export interface CreateDefaultALRuntimeStoresInput {
 }
 
 const DEFAULT_NAMESPACE = 'al-runtime';
+const DEFAULT_INDEXED_DB_NAME = 'rallar-al-runtime';
 
 export function createInMemoryALInboundRuntimeStores(
     input: CreateInMemoryALRuntimeStoresInput
@@ -67,7 +68,7 @@ export function createIndexedDbALInboundRuntimeStores(
         admissionStore: createALInboundAdmissionStore({
             namespace: `${input.namespace}:inbound:admission`,
             backend: new IndexedDbAdmissionBackend(
-                input.dbName ?? IndexedDbStringPersistenceProvider.DEFAULT_DB_NAME,
+                input.dbName ?? DEFAULT_INDEXED_DB_NAME,
                 IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
                 Date.now
             ),
@@ -85,7 +86,7 @@ export function createIndexedDbALOutboundRuntimeStores(
         admissionStore: createALOutboundAdmissionStore({
             namespace: `${input.namespace}:outbound:admission`,
             backend: new IndexedDbAdmissionBackend(
-                input.dbName ?? IndexedDbStringPersistenceProvider.DEFAULT_DB_NAME,
+                input.dbName ?? DEFAULT_INDEXED_DB_NAME,
                 IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
                 Date.now
             ),

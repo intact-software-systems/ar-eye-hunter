@@ -77,9 +77,6 @@ export function withCompetingWrite(
         return await database.begin(write);
     };
     return new Proxy(database, {
-        apply(target, thisArgument, argumentList) {
-            return Reflect.apply(target, thisArgument, argumentList);
-        },
         get(target, property, receiver) {
             if (property === 'begin') {
                 return begin;

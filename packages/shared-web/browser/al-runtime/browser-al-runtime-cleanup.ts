@@ -144,7 +144,6 @@ async function deleteBrowserALRuntimeEntriesMatching(
     try {
         const read = await readBrowserALRuntimeCleanup(db, keyPrefixes, options.deletionPolicy);
         const computed = computeBrowserALRuntimeCleanup(read, options.deletionPolicy);
-        assertBrowserALRuntimeCleanup(read, options.deletionPolicy, computed);
         await writeBrowserALRuntimeCleanup(db, read.revision, computed);
         return toBrowserALRuntimeCleanupResult(
             keyPrefixes,
@@ -203,17 +202,6 @@ function computeBrowserALRuntimeCleanup(
             })),
         revisionWrite: computeIndexedDbAdmissionRevisionWrite(read.revision)
     };
-}
-
-function assertBrowserALRuntimeCleanup(
-    read: BrowserALRuntimeCleanupRead,
-    deletionPolicy: BrowserALRuntimeDeletionPolicy,
-    computed: BrowserALRuntimeCleanupComputed
-): void {
-    const expected = computeBrowserALRuntimeCleanup(read, deletionPolicy);
-    if (JSON.stringify(computed) !== JSON.stringify(expected)) {
-        throw new TypeError('Browser AL runtime cleanup differs from its canonical computation');
-    }
 }
 
 async function writeBrowserALRuntimeCleanup(

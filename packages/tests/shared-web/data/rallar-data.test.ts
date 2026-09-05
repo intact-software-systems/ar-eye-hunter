@@ -137,6 +137,20 @@ describe('Rallar data stores', () => {
         );
     });
 
+    it('rejects values outside the current persisted schema before writing', async () => {
+        const data = createRallarDataFacade({
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
+        });
+        const store = await data.open<Todo>(`todos-${crypto.randomUUID()}`, {
+            dbName: `rallar-data-${crypto.randomUUID()}`
+        });
+
+        await expect(store.set('invalid', undefined as never)).rejects.toThrow(
+            'Rallar data value does not match the current persisted schema'
+        );
+    });
+
     it.each([
         ['an unwrapped value', { text: 'Invalid todo' }],
         ['an envelope with surplus fields', {

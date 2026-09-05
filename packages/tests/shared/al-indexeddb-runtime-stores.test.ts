@@ -19,6 +19,7 @@ import {
     createDefaultIndexedDbALInboundRuntimeStores,
     createDefaultIndexedDbALOutboundRuntimeStores,
     IndexedDbQueueBox,
+    IndexedDbStringPersistenceProvider,
     InMemoryQueueBox,
     newALAckControlMessage,
     newALMulticastMessage,
@@ -44,6 +45,28 @@ import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbo
 describe('IndexedDB AL runtime stores', () => {
     afterEach(() => {
         vi.useRealTimers();
+    });
+
+    it('keeps the default AL schema separate from generic persistence', async () => {
+        const persistence = new IndexedDbStringPersistenceProvider<string>();
+        await persistence.setItem(
+            'generic-entry',
+            'generic-value',
+            { expireAtTimestamp: Date.now() + 60_000 }
+        );
+        const stores = createDefaultIndexedDbALInboundRuntimeStores();
+
+        await expect(
+            stores.admissionStore.commitMutations({
+                senderId: 'peer-default-schema',
+                expectedVersion: undefined,
+                mutations: [{
+                    kind: 'set-msg-owner',
+                    msgId: 'message-default-schema',
+                    senderId: 'peer-default-schema'
+                }]
+            })
+        ).resolves.toBe('committed');
     });
 
     it('keeps inbound dedup state across runtime instances', async () => {

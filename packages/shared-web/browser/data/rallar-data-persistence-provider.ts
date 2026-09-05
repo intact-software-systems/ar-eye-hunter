@@ -30,11 +30,12 @@ export class RallarDataPersistenceProvider<V> implements PersistenceProvider<str
         value: V,
         options: PersistenceSetItemOptions
     ): Promise<void> {
+        const persistedValue = toRallarDataStorageValue(value);
         await this.inner.setItem(
             key,
             {
                 kind: RALLAR_DATA_ENVELOPE_KIND,
-                value: value as RallarDataStorageValue
+                value: persistedValue
             } satisfies RallarDataPersistedEnvelope,
             options
         );
@@ -83,10 +84,17 @@ function decodeRallarDataEnvelope(
     };
 }
 
-function isRallarDataStorageValue(value: unknown): value is RallarDataStorageValue {
+function isRallarDataStorageValue<Value>(value: Value): value is Value & RallarDataStorageValue {
     return value === null ||
         typeof value === 'object' ||
         typeof value === 'string' ||
         typeof value === 'number' ||
         typeof value === 'boolean';
+}
+
+function toRallarDataStorageValue<Value>(value: Value): RallarDataStorageValue {
+    if (!isRallarDataStorageValue(value)) {
+        throw new TypeError('Rallar data value does not match the current persisted schema');
+    }
+    return value;
 }

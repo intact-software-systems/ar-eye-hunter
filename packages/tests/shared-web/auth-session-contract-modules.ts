@@ -6,6 +6,7 @@ export type RefreshStateSnapshots = typeof import('@shared-web/browser/state-rea
 export type BrowserMiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
 export type Auth = typeof import('@shared/api/auth.ts');
 export type BrowserALRuntimeCleanup = typeof import('@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts');
+export type BrowserQueueBoxPersistence = typeof import('@shared-web/browser/queuebox/browser-queuebox-persistence.ts');
 export type ClientStateSnapshotsRepository = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 export type StateCacheLifecycle = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
 export type GroupStateSnapshotsRepository = typeof import('@shared/repository/group-state-snapshots-repository.ts');

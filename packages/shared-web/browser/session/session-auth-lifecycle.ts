@@ -7,6 +7,7 @@ import type {
 } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
+import { deleteBrowserQueueBoxDatabasesForSession } from '@shared-web/browser/queuebox/browser-queuebox-persistence.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
@@ -280,6 +281,12 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         }
         catch {
             // Browser-local AL cleanup is best-effort.
+        }
+        try {
+            await deleteBrowserQueueBoxDatabasesForSession(session.sessionId);
+        }
+        catch {
+            // Browser-local queue cleanup is best-effort.
         }
         return dataCleanupError;
     }

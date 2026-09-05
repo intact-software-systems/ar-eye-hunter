@@ -266,9 +266,8 @@ function createApiV1MutationInboxFactories(
     input: CreateApiV1MutationRuntimeInput,
     resources: ApiV1MutationResources
 ): ApiMutationInboxFactories {
-    const readSession = (sessionId: string) => resources.authSessionRepository.findBySessionId(sessionId);
     const currentAuthority = {
-        readSession,
+        readSession: (sessionId: string) => resources.authSessionRepository.findBySessionId(sessionId),
         authorizeDocument: createApiCrdtDocumentAuthorizer({
             readGroupSnapshot: (ref) => resources.groupsRepository.readSnapshot(ref),
             readClientSnapshot: (ref) => resources.clientsRepository.readSnapshot(ref),
@@ -294,10 +293,7 @@ function createApiV1MutationInboxFactories(
         serviceId: input.serviceId,
         timing: input.timing,
         options: input.appInboxOptions,
-        currentAuthority: {
-            readSession,
-            adminClientIds: input.adminClientIds
-        }
+        currentAuthority
     });
 }
 
