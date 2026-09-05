@@ -72,19 +72,31 @@ describe('Browser queuebox expiry eviction', () => {
 
     it('removes every queue database when its browser session ends', async () => {
         const sessionId = `queue-empty-${crypto.randomUUID()}`;
-        const queue = createBrowserQueueBox(`ws-inbox-${sessionId}`);
-        await queue.enqueue(createEntry('retained-until-session-end', NEVER_EXPIRE_TS));
-        const databaseName = (await readBrowserQueueBoxDatabaseNames())
-            .find((name) => name.includes(sessionId));
-
-        expect(databaseName).toBeDefined();
-        if (!databaseName) {
-            throw new Error('Expected the session queue database to exist');
+        const otherSessionId = `queue-retained-${crypto.randomUUID()}`;
+        const queueNames = [
+            'ws-inbox',
+            'ws-outbox',
+            'rtc-inbox',
+            'rtc-overlay-outbox'
+        ];
+        for (const queueName of queueNames) {
+            await createBrowserQueueBox(`${queueName}-${sessionId}`).enqueue(
+                createEntry(`${queueName}-target`, NEVER_EXPIRE_TS)
+            );
         }
+        await createBrowserQueueBox(`ws-inbox-${otherSessionId}`).enqueue(
+            createEntry('other-session', NEVER_EXPIRE_TS)
+        );
+
+        const before = await readBrowserQueueBoxDatabaseNames();
+        expect(before.filter((name) => name.includes(sessionId))).toHaveLength(4);
+        expect(before.filter((name) => name.includes(otherSessionId))).toHaveLength(1);
 
         await deleteBrowserQueueBoxDatabasesForSession(sessionId);
 
-        expect(await readBrowserQueueBoxDatabaseNames()).not.toContain(databaseName);
+        const after = await readBrowserQueueBoxDatabaseNames();
+        expect(after.filter((name) => name.includes(sessionId))).toEqual([]);
+        expect(after.filter((name) => name.includes(otherSessionId))).toHaveLength(1);
     });
 });
 

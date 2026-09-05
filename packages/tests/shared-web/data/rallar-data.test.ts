@@ -149,6 +149,8 @@ describe('Rallar data stores', () => {
         await expect(store.set('invalid', undefined as never)).rejects.toThrow(
             'Rallar data value does not match the current persisted schema'
         );
+        expect(store.read('invalid')).toBeUndefined();
+        await expect(store.listKeys()).resolves.toEqual([]);
     });
 
     it.each([
@@ -166,7 +168,7 @@ describe('Rallar data stores', () => {
             keyPrefix: `custom:app:${encodeURIComponent(storeName)}`
         });
         await rawProvider.setItem(
-            'old',
+            'invalid',
             persisted,
             { expireAtTimestamp: Date.now() + 60_000 }
         );

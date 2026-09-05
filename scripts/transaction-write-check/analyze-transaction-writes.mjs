@@ -277,7 +277,7 @@ function analyzeCall(input) {
             for (const callable of targets.bodies) {
                 callables.push(analysisRoot(callable));
             }
-            if (targets.unresolved && !isAllowedTransactionOperation(call)) {
+            if (targets.unresolved && !isDirectTransactionOperation(call)) {
                 addFinding({
                     findings,
                     node: call,
@@ -322,7 +322,7 @@ function transactionExecutedCallbackArguments(call) {
 }
 
 function hasParameterOnlyPersistedValueTransformation(call, root) {
-    if (!isAllowedTransactionOperation(call)) {
+    if (!isDirectTransactionOperation(call)) {
         return false;
     }
     return call.getArguments().some((argument) => {
@@ -414,7 +414,7 @@ function referencesDirectDatabaseResult(expression, root) {
                 ...(Node.isCallExpression(initializer) ? [initializer] : []),
                 ...initializer.getDescendantsOfKind(SyntaxKind.CallExpression)
             ];
-            return calls.some(isAllowedTransactionOperation);
+            return calls.some(isDirectTransactionOperation);
         });
     });
 }
@@ -662,7 +662,9 @@ function resolveCallTargets(call, project) {
     }
     return {
         bodies,
-        unresolved: bodies.length === 0 && (hasAuthoredDeclaration || hasExternalDeclaration)
+        unresolved: bodies.length === 0 && (
+            resolved === undefined || hasAuthoredDeclaration || hasExternalDeclaration
+        )
     };
 }
 
@@ -671,23 +673,18 @@ function isTypeScriptStandardLibraryDeclaration(sourceFile) {
     return /\/typescript\/lib\/lib\.[^/]+\.d\.ts$/u.test(path);
 }
 
-function isAllowedTransactionOperation(call) {
+function isDirectTransactionOperation(call) {
     const expression = call.getExpression();
     if (!Node.isPropertyAccessExpression(expression)) {
         return false;
     }
-    const method = expression.getName();
-    if (
-        !/^(?:write|insert|update|upsert|delete|remove|put|finish|append|execute|query|savepoint|rollback)/u.test(
-            method
-        )
-    ) {
-        return false;
-    }
-    if (looksLikeDatabaseReceiver(expression.getExpression())) {
+    const receiver = expression.getExpression();
+    if (TRANSACTION_TYPE.test(receiver.getType().getText(receiver))) {
         return true;
     }
-    return call.getArguments().some(isTransactionArgument);
+    return Node.isIdentifier(receiver) && resolvedDeclarations(receiver).some(
+        (declaration) => Node.isParameterDeclaration(declaration) && isTransactionParameter(declaration)
+    );
 }
 
 function isTransactionArgument(argument) {

@@ -10,6 +10,7 @@ import {
     writeIndexedDbAdmissionMutations,
     type IndexedDbAdmissionMutation
 } from '@shared/alm/write-indexed-db-admission-mutations.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 
 import {
@@ -21,18 +22,18 @@ import {
 
 export const BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
 
-interface BrowserALRuntimeCleanupRead {
+export interface BrowserALRuntimeCleanupRead {
     readonly revision: number;
     readonly rows: readonly BrowserALRuntimeCleanupRow[];
 }
 
-interface BrowserALRuntimeCleanupRow {
+export interface BrowserALRuntimeCleanupRow {
     readonly key: string;
     readonly expireAtTimestamp: number;
     readonly writeToken: string;
 }
 
-interface BrowserALRuntimeCleanupComputed {
+export interface BrowserALRuntimeCleanupComputed {
     readonly mutations: readonly IndexedDbAdmissionMutation[];
     readonly revisionWrite: Readonly<{
         key: typeof AL_ADMISSION_REVISION_KEY;
@@ -41,22 +42,33 @@ interface BrowserALRuntimeCleanupComputed {
     }>;
 }
 
-type BrowserALRuntimeDeletionPolicy =
+export type BrowserALRuntimeDeletionPolicy =
     | Readonly<{ kind: 'all'; }>
     | Readonly<{ kind: 'expired'; nowMs: number; }>;
 
-export type BrowserALRuntimeCleanupResult = Readonly<{
-    dbName: string;
-    storeName: string;
-    keyPrefixes: readonly string[];
-    scanned: number;
-    deleted: number;
-}>;
+export interface BrowserALRuntimeCleanupValidationIssue {
+    readonly code:
+        | 'duplicate-mutation'
+        | 'missing-mutation'
+        | 'revision-write-mismatch'
+        | 'unexpected-mutation'
+        | 'unexpected-mutation-kind'
+        | 'write-token-mismatch';
+    readonly message: string;
+}
 
-export type DeleteExpiredBrowserALRuntimeEntriesOptions = Readonly<{
-    nowMs?: number;
-    keyPrefixes?: readonly string[];
-}>;
+export interface BrowserALRuntimeCleanupResult {
+    readonly dbName: string;
+    readonly storeName: string;
+    readonly keyPrefixes: readonly string[];
+    readonly scanned: number;
+    readonly deleted: number;
+}
+
+export interface DeleteExpiredBrowserALRuntimeEntriesOptions {
+    readonly nowMs?: number;
+    readonly keyPrefixes?: readonly string[];
+}
 
 let browserALRuntimeExpiryEvictionPromise: Promise<void> | undefined;
 
@@ -144,6 +156,10 @@ async function deleteBrowserALRuntimeEntriesMatching(
     try {
         const read = await readBrowserALRuntimeCleanup(db, keyPrefixes, options.deletionPolicy);
         const computed = computeBrowserALRuntimeCleanup(read, options.deletionPolicy);
+        const issues = validateBrowserALRuntimeCleanup(read, options.deletionPolicy, computed);
+        if (issues.length > 0) {
+            throw new TypeError(issues.map((issue) => issue.message).join('; '));
+        }
         await writeBrowserALRuntimeCleanup(db, read.revision, computed);
         return toBrowserALRuntimeCleanupResult(
             keyPrefixes,
@@ -202,6 +218,104 @@ function computeBrowserALRuntimeCleanup(
             })),
         revisionWrite: computeIndexedDbAdmissionRevisionWrite(read.revision)
     };
+}
+
+export function validateBrowserALRuntimeCleanup(
+    read: BrowserALRuntimeCleanupRead,
+    deletionPolicy: BrowserALRuntimeDeletionPolicy,
+    computed: BrowserALRuntimeCleanupComputed
+): readonly BrowserALRuntimeCleanupValidationIssue[] {
+    const eligibleRows = read.rows.filter((row) =>
+        deletionPolicy.kind === 'all' || row.expireAtTimestamp <= deletionPolicy.nowMs
+    );
+    return [
+        ...validateBrowserALRuntimeCleanupMutations(eligibleRows, computed.mutations),
+        ...validateBrowserALRuntimeCleanupRevision(read.revision, computed.revisionWrite)
+    ];
+}
+
+function validateBrowserALRuntimeCleanupMutations(
+    eligibleRows: readonly BrowserALRuntimeCleanupRow[],
+    mutations: readonly IndexedDbAdmissionMutation[]
+): readonly BrowserALRuntimeCleanupValidationIssue[] {
+    const issues: BrowserALRuntimeCleanupValidationIssue[] = [];
+    const eligibleRowsByKey = new Map(eligibleRows.map((row) => [row.key, row]));
+    const guardedMutationKeys = new Set<string>();
+
+    for (const mutation of mutations) {
+        const key = mutation.kind === 'set' ? mutation.stored.key : mutation.key;
+        issues.push(...validateBrowserALRuntimeCleanupMutation(
+            mutation,
+            eligibleRowsByKey.get(key),
+            guardedMutationKeys.has(key)
+        ));
+        if (mutation.kind === 'remove-if-write-token') {
+            guardedMutationKeys.add(key);
+        }
+    }
+
+    for (const eligibleRow of eligibleRows) {
+        if (!guardedMutationKeys.has(eligibleRow.key)) {
+            issues.push({
+                code: 'missing-mutation',
+                message: `Browser AL runtime cleanup is missing mutation "${eligibleRow.key}"`
+            });
+        }
+    }
+
+    return issues;
+}
+
+function validateBrowserALRuntimeCleanupMutation(
+    mutation: IndexedDbAdmissionMutation,
+    eligibleRow: BrowserALRuntimeCleanupRow | undefined,
+    duplicate: boolean
+): readonly BrowserALRuntimeCleanupValidationIssue[] {
+    const key = mutation.kind === 'set' ? mutation.stored.key : mutation.key;
+    if (mutation.kind !== 'remove-if-write-token') {
+        return [{
+            code: 'unexpected-mutation-kind',
+            message: `Browser AL runtime cleanup mutation for "${key}" is not guarded`
+        }];
+    }
+    const issues: BrowserALRuntimeCleanupValidationIssue[] = [];
+    if (duplicate) {
+        issues.push({
+            code: 'duplicate-mutation',
+            message: `Browser AL runtime cleanup contains duplicate mutation "${key}"`
+        });
+    }
+    if (!eligibleRow) {
+        issues.push({
+            code: 'unexpected-mutation',
+            message: `Browser AL runtime cleanup mutation "${key}" is not eligible`
+        });
+    }
+    else if (mutation.expectedWriteToken !== eligibleRow.writeToken) {
+        issues.push({
+            code: 'write-token-mismatch',
+            message: `Browser AL runtime cleanup mutation "${key}" has the wrong write token`
+        });
+    }
+    return issues;
+}
+
+function validateBrowserALRuntimeCleanupRevision(
+    expectedRevision: number,
+    revisionWrite: BrowserALRuntimeCleanupComputed['revisionWrite']
+): readonly BrowserALRuntimeCleanupValidationIssue[] {
+    if (
+        revisionWrite.key !== AL_ADMISSION_REVISION_KEY ||
+        revisionWrite.value !== expectedRevision + 1 ||
+        revisionWrite.expireAtTimestamp !== NEVER_EXPIRE_AT_TIMESTAMP
+    ) {
+        return [{
+            code: 'revision-write-mismatch',
+            message: 'Browser AL runtime cleanup revision write is invalid'
+        }];
+    }
+
+    return [];
 }
 
 async function writeBrowserALRuntimeCleanup(

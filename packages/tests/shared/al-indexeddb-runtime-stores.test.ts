@@ -54,10 +54,11 @@ describe('IndexedDB AL runtime stores', () => {
             'generic-value',
             { expireAtTimestamp: Date.now() + 60_000 }
         );
-        const stores = createDefaultIndexedDbALInboundRuntimeStores();
+        const inboundStores = createDefaultIndexedDbALInboundRuntimeStores();
+        const outboundStores = createDefaultIndexedDbALOutboundRuntimeStores();
 
         await expect(
-            stores.admissionStore.commitMutations({
+            inboundStores.admissionStore.commitMutations({
                 senderId: 'peer-default-schema',
                 expectedVersion: undefined,
                 mutations: [{
@@ -67,6 +68,15 @@ describe('IndexedDB AL runtime stores', () => {
                 }]
             })
         ).resolves.toBe('committed');
+        await expect(
+            outboundStores.admissionStore.commitBundle({
+                senderId: 'peer-default-schema',
+                expectedVersion: 1,
+                mutations: [],
+                durableEffects: []
+            }, decodeOutboundTestPayload)
+        ).resolves.toBe('committed');
+        await expect(persistence.getItem('generic-entry')).resolves.toBe('generic-value');
     });
 
     it('keeps inbound dedup state across runtime instances', async () => {

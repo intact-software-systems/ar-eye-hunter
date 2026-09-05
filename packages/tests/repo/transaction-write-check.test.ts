@@ -7,7 +7,7 @@ import {
 } from '../../../scripts/transaction-write-check/analyze-transaction-writes.mjs';
 
 describe('transaction write check', () => {
-    it('reports named precomputable helpers in transaction callbacks', () => {
+    it('reports governed deterministic helpers before following their implementation', () => {
         const findings = analyzeFixture(`
             interface Sql {
                 begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>;
@@ -25,6 +25,21 @@ describe('transaction write check', () => {
         `);
 
         expect(findings.map((finding) => finding.operation)).toEqual(['computeRow']);
+    });
+
+    it('reports authored no-argument deterministic helpers in transaction writes', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql { update(value: number): Promise<void>; }
+            function computeWinnerRevision(): number { return 7; }
+            export async function writeMutation(transaction: PSqlSql): Promise<void> {
+                await transaction.update(computeWinnerRevision());
+            }
+        `);
+
+        expect(findings).toMatchObject([{
+            rule: 'transaction.precomputable-work',
+            operation: 'computeWinnerRevision'
+        }]);
     });
 
     it('follows imported transaction callback aliases', () => {
@@ -150,7 +165,7 @@ describe('transaction write check', () => {
         }]);
     });
 
-    it('allows dispatching prepared subsets through transaction-bound write ports', () => {
+    it('reports unresolved transaction-bound write ports for review', () => {
         const findings = analyzeFixture(`
             interface PSqlSql {}
             interface ServiceA { write(transaction: PSqlSql, computed: string): Promise<void>; }
@@ -166,10 +181,19 @@ describe('transaction write check', () => {
             }
         `);
 
-        expect(findings).toEqual([]);
+        expect(findings).toMatchObject([
+            {
+                rule: 'transaction.unresolved-provenance',
+                operation: 'serviceA.write'
+            },
+            {
+                rule: 'transaction.unresolved-provenance',
+                operation: 'serviceB.finish'
+            }
+        ]);
     });
 
-    it('does not treat a callable SQL transaction argument as a callback', () => {
+    it('does not treat a callable SQL transaction argument as callback provenance', () => {
         const findings = analyzeFixture(`
             interface PSqlSql {
                 (strings: TemplateStringsArray, ...values: readonly unknown[]): Promise<unknown>;
@@ -184,7 +208,10 @@ describe('transaction write check', () => {
             }
         `);
 
-        expect(findings).toEqual([]);
+        expect(findings).toMatchObject([{
+            rule: 'transaction.unresolved-provenance',
+            operation: 'writer.write'
+        }]);
     });
 
     it('does not analyze a callback that is only constructed in the transaction', () => {
@@ -333,7 +360,10 @@ describe('transaction write check', () => {
             }
         `);
 
-        expect(findings.map((finding) => finding.operation)).toEqual(['JSON.stringify']);
+        expect(findings.map((finding) => finding.operation)).toEqual([
+            'JSON.stringify',
+            'writer.write'
+        ]);
     });
 
     it('terminates recursive local helper graphs at a fixed point', () => {
@@ -368,11 +398,18 @@ describe('transaction write check', () => {
             }
         `);
 
-        expect(findings).toMatchObject([{
-            rule: 'transaction.unresolved-provenance',
-            operation: 'callbacks.materialize',
-            boundary: 'packages/domain/mutation.ts:10'
-        }]);
+        expect(findings).toMatchObject([
+            {
+                rule: 'transaction.unresolved-provenance',
+                operation: 'writer.write',
+                boundary: 'packages/domain/mutation.ts:10'
+            },
+            {
+                rule: 'transaction.unresolved-provenance',
+                operation: 'callbacks.materialize',
+                boundary: 'packages/domain/mutation.ts:10'
+            }
+        ]);
     });
 
     it('fails closed when a transaction write invokes a callback parameter', () => {
@@ -611,6 +648,56 @@ describe('transaction write check', () => {
         }]);
     });
 
+    it('reports candidate-derived values only for proven direct transaction operations', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql { store(value: object): Promise<void>; }
+            interface Writer { persist(transaction: PSqlSql, value: object): Promise<void>; }
+            declare const writer: Writer;
+            export async function writeMutation(
+                transaction: PSqlSql,
+                validatedComputed: { readonly resource: string }
+            ): Promise<void> {
+                await transaction.store({ resource: validatedComputed.resource });
+                await writer.persist(transaction, { resource: validatedComputed.resource });
+            }
+        `);
+
+        expect(findings.filter(isBlockingTransactionWriteFinding)).toMatchObject([{
+            rule: 'transaction.precomputable-work',
+            operation: 'transaction.store argument'
+        }]);
+        expect(findings).toContainEqual(expect.objectContaining({
+            rule: 'transaction.unresolved-provenance',
+            operation: 'writer.persist'
+        }));
+    });
+
+    it('does not treat a transaction-bearing dependency bundle as persisted data', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql {}
+            interface Writer {
+                run(
+                    transaction: PSqlSql,
+                    input: { readonly computed: object; readonly outboxWriter: object }
+                ): Promise<void>;
+            }
+            declare const writer: Writer;
+            export async function writeMutation(
+                transaction: PSqlSql,
+                computed: object,
+                outboxWriter: object
+            ): Promise<void> {
+                await writer.run(transaction, { computed, outboxWriter });
+            }
+        `);
+
+        expect(findings.filter(isBlockingTransactionWriteFinding)).toEqual([]);
+        expect(findings).toContainEqual(expect.objectContaining({
+            rule: 'transaction.unresolved-provenance',
+            operation: 'writer.run'
+        }));
+    });
+
     it('reports candidate-derived row materialization while iterating prepared writes', () => {
         const findings = analyzeFixture(`
             interface PSqlSql { insert(value: object): Promise<void>; }
@@ -683,6 +770,23 @@ describe('transaction write check', () => {
         expect(findings).toMatchObject([{
             rule: 'transaction.unresolved-provenance',
             operation: '(callback as any)'
+        }]);
+    });
+
+    it('reports a symbol-less dynamic call in transaction work', () => {
+        const findings = analyzeFixture(`
+            interface PSqlSql { query(value: string): Promise<void>; }
+            export async function writeMutation(
+                transaction: PSqlSql,
+                callbacks: unknown
+            ): Promise<void> {
+                await transaction.query((callbacks as any).materialize());
+            }
+        `);
+
+        expect(findings).toMatchObject([{
+            rule: 'transaction.unresolved-provenance',
+            operation: '(callbacks as any).materialize'
         }]);
     });
 
@@ -763,6 +867,11 @@ describe('transaction write check', () => {
                     for (const write of computed) await transaction.query(write);
                 });
             }
+            export async function writeEach(computed: readonly string[]): Promise<void> {
+                for (const write of computed) {
+                    await database.begin(async (transaction) => transaction.query(write));
+                }
+            }
         `);
 
         expect(findings).toMatchObject([{
@@ -827,6 +936,24 @@ describe('transaction write check', () => {
             path: 'packages/shared/queuebox/write-computed-indexed-db-queue-mutations.ts',
             operation: 'JSON.stringify'
         });
+    });
+
+    it('allows for-of batches that open one transaction per prepared value', () => {
+        const project = new Project({ useInMemoryFileSystem: true });
+        const source = project.createSourceFile(
+            '/packages/domain/write-prepared-batch.ts',
+            `interface Sql { begin<T>(write: (transaction: Sql) => Promise<T>): Promise<T>; }
+             export class PreparedBatchWriter {
+                 constructor(private readonly sql: Sql) {}
+                 async writeAll(values: readonly string[]): Promise<void> {
+                     for (const value of values) {
+                         await this.sql.begin(async () => { void value; });
+                     }
+                 }
+             }`
+        );
+
+        expect(analyzeTransactionWrites(project, [source])).toEqual([]);
     });
 
     it('exempts exact conditional ResourceInbox owners and fails closed for neighboring methods', () => {
