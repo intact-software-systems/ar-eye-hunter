@@ -6,6 +6,7 @@ import type {
     CreateGroupInviteRequest,
     CreateGroupRequest,
     DisconnectGroupPresenceSessionRequest,
+    GroupConnectRequest,
     HeartbeatGroupPresenceSessionRequest,
     JoinGroupRequest,
     MutationActorInput,
@@ -20,7 +21,6 @@ import type {
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
 
-import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupTopologyReconfigureLanding } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
@@ -50,12 +50,7 @@ export interface GroupDirectorAppointAppInboxPayload {
 export interface GroupConnectAppInboxPayload {
     readonly scope: StateScope;
     readonly groupId: string;
-    readonly request:
-        & MutationActorInput
-        & Readonly<{
-            expectedFormationEpoch: number;
-            expectedLayout: GroupLayoutIdentity;
-        }>;
+    readonly request: GroupConnectRequest;
 }
 
 export interface GroupLifecycleTransitionAppInboxPayload {

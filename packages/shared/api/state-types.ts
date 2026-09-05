@@ -6,7 +6,11 @@ import type {
     ClientPrincipalStatus,
     ClientTransport
 } from './client-types.ts';
-import type { GroupLifecyclePolicyInput } from './group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupLayoutIdentity } from './group-lifecycle/group-layout-identity.ts';
+import type {
+    GroupLifecyclePolicyInput,
+    GroupTopologyReconfigureLanding
+} from './group-lifecycle/group-lifecycle-policy.ts';
 import type { Group, GroupJoinMode, GroupMemberStatus, GroupRole, GroupSnapshot, GroupStatus } from './group-types.ts';
 
 export const DEFAULT_STATE_APPLICATION_ID = 'rallar-server';
@@ -114,6 +118,21 @@ export type UpdateGroupRequest =
         expiresAtEpochMs?: number;
         emptySinceEpochMs?: number;
         purgeAfterEpochMs?: number;
+    }>;
+
+/** `connect` names the exact planned layout it dials (product decision 32). */
+export type GroupConnectRequest =
+    & MutationActorInput
+    & Readonly<{
+        expectedFormationEpoch: number;
+        expectedLayout: GroupLayoutIdentity;
+    }>;
+
+/** An omitted or null `landing` uses the stored policy's `reconfigureLanding`. */
+export type GroupReconfigureRequest =
+    & MutationActorInput
+    & Readonly<{
+        landing?: GroupTopologyReconfigureLanding | null;
     }>;
 
 export type AppointGroupDirectorRequest =

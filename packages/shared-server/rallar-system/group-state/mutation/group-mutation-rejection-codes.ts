@@ -1,10 +1,14 @@
+import {
+    GROUP_CONNECT_REJECTION_CODES,
+    type GroupConnectRejectionCode
+} from '@shared/api/group-lifecycle/group-connect-rejection-codes.ts';
+
 /** The registry the type and every runtime check derive from. */
 export const GROUP_MUTATION_REJECTION_CODES = [
     'group-already-exists',
     'group-mutation-rejected',
     'group-policy-denied',
-    'group-connect-no-planned-layout',
-    'group-connect-planned-layout-superseded'
+    ...GROUP_CONNECT_REJECTION_CODES
 ] as const;
 
 export type GroupMutationRejectionCode = typeof GROUP_MUTATION_REJECTION_CODES[number];
@@ -32,10 +36,10 @@ export function isGroupMutationRejectionCode(code: GroupMutationRejectionCode): 
  */
 export class GroupConnectDeniedError extends Error {
     readonly status = 409;
-    readonly code: Extract<GroupMutationRejectionCode, `group-connect-${string}`>;
+    readonly code: GroupConnectRejectionCode;
 
     constructor(
-        code: Extract<GroupMutationRejectionCode, `group-connect-${string}`>,
+        code: GroupConnectRejectionCode,
         message: string
     ) {
         super(message);
