@@ -6,7 +6,7 @@ import {
 } from './command-room-formation.ts';
 import type { RallarRoomFormation, RallarRoomFormationCommandOptions } from './rallar-room-formation-contracts.ts';
 import { readRoomFormationStatus } from './room-formation-observation.ts';
-import { waitForRoomCondition, waitForRoomStage } from './wait-for-room-formation.ts';
+import { waitForRoomCondition, waitForRoomLayout, waitForRoomStage } from './wait-for-room-formation.ts';
 
 export interface CreateRoomFormationInput extends RoomFormationCommandPorts {
     readonly roomRef: GroupRef;
@@ -33,7 +33,8 @@ export function createRoomFormation(input: CreateRoomFormationInput): RallarRoom
         waitForStage: async (stage, options = {}) =>
             await waitForRoomStage({ ...input, stages: toList(stage), options }),
         waitForCondition: async (condition, options = {}) =>
-            await waitForRoomCondition({ ...input, conditions: toList(condition), options })
+            await waitForRoomCondition({ ...input, conditions: toList(condition), options }),
+        waitForLayout: async (options = {}) => await waitForRoomLayout({ ...input, options })
     };
 }
 

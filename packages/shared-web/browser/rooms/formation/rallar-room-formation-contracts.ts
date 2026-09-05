@@ -13,7 +13,7 @@ import type {
 import type { GroupDialLayoutRoles } from '@shared/api/group-lifecycle/resolve-dial-layout-roles.ts';
 import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 
-import type { GroupRef, GroupSnapshot } from '../room-group-state-translation.ts';
+import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '../room-group-state-translation.ts';
 
 export type RallarRoomLayoutRole = 'planned' | 'accepted';
 
@@ -61,6 +61,20 @@ export interface RallarRoomFormationWaitResult {
     readonly formation: RallarRoomFormationStatus | undefined;
 }
 
+export interface RallarRoomLayoutWaitOptions extends RallarScopedOperationOptions {
+    /** The slot to wait on; the planned slot when omitted. */
+    readonly role?: RallarRoomLayoutRole;
+    /** Accept only a layout published at or after this revision; any layout when omitted. */
+    readonly after?: GroupStateCausalRevision;
+}
+
+export interface RallarRoomLayoutWaitResult {
+    readonly status: RallarRoomFormationWaitStatus;
+    readonly roomRef: GroupRef;
+    readonly layout: RallarRoomLayout | undefined;
+    readonly formation: RallarRoomFormationStatus | undefined;
+}
+
 export interface RallarRoomFormation {
     readonly roomRef: GroupRef;
     status(): RallarRoomFormationStatus | undefined;
@@ -80,6 +94,7 @@ export interface RallarRoomFormation {
         condition: GroupActivationCondition | readonly GroupActivationCondition[],
         options?: RallarScopedOperationOptions
     ): Promise<RallarRoomFormationWaitResult>;
+    waitForLayout(options?: RallarRoomLayoutWaitOptions): Promise<RallarRoomLayoutWaitResult>;
 }
 
 export type RallarRoomFormationDenial =
