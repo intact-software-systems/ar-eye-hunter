@@ -5,6 +5,7 @@ import type { StateEventListQuery } from './state-event-listing.ts';
 
 export interface GroupStateEventStore {
     appendGroupEvent(event: GroupEvent): Promise<void>;
+    readGroupEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined>;
     listGroupEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
     listRecentGroupEvents(
         ref: GroupRef,

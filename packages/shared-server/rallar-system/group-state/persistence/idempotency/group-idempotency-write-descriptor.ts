@@ -2,7 +2,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { RuntimeStateGuardedBatchInsert } from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { GroupMutationIdempotencyRecord } from '../../mutation/group-mutation-contracts.ts';
-import { assertGroupMutationIdempotencyRecord } from '../../mutation/result-validation/assert-group-mutation-result.ts';
+import { assertGroupMutationIdempotencyRecord } from '../../mutation/state-validation/assert-group-mutation-result.ts';
 import { IDEMPOTENT_NAMESPACE } from '../group-state-runtime-namespaces.ts';
 import { serializeGroupStateValue } from '../serialize-group-state-value.ts';
 import { groupStateIdempotencyStorageKey } from './group-idempotency-storage-key.ts';

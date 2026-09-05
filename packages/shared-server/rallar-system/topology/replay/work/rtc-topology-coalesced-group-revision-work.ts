@@ -18,16 +18,17 @@ import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIde
 import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
+    computeCoalescedAppOutboxWork,
     isMutableCoalescedStatus,
     tryReadCoalescedAppOutboxWorkEnvelope,
     type CoalescedAppOutboxWorkData,
     type CoalescedAppOutboxWorkEnvelope,
     type CoalescedAppOutboxWorkMetadata,
     type ComputedCoalescedAppOutboxWork
-} from '../../../app-outbox/coalesced-app-outbox-work-service.ts';
+} from '../../../app-outbox/coalesced-app-outbox-work.ts';
 import { groupStateGroupStorageKey } from '../../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../mutation/rtc-topology-outbox-entry.ts';
-import type { RtcTopologyGroupRevisionWork } from '../../mutation/rtc-topology-outbox-work.ts';
+import type { RtcTopologyGroupRevisionWork } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { TopologyWorkOrigin } from '../../planning/resolve-topology-plan-action.ts';
 import type { TopologyReplanWindow } from '../../planning/resolve-topology-replan-window.ts';
 import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
@@ -101,9 +102,9 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
         messageIdentity: null
     });
     if (input.previousEntry === null) {
-        return {
-            expectedEntry: null,
-            entry: toCoalescedGroupRevisionEntry({
+        return computeCoalescedAppOutboxWork(
+            null,
+            toCoalescedGroupRevisionEntry({
                 input,
                 resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(overlayId),
                 data: incoming,
@@ -112,13 +113,13 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
                 messageIdentity: null
             }),
             successorEntry
-        };
+        );
     }
-    return {
-        expectedEntry: input.previousEntry,
-        entry: toMergedCoalescedGroupRevisionEntry(input, input.previousEntry, incoming),
+    return computeCoalescedAppOutboxWork(
+        input.previousEntry,
+        toMergedCoalescedGroupRevisionEntry(input, input.previousEntry, incoming),
         successorEntry
-    };
+    );
 }
 
 function toFreshCoalescedGroupRevisionData(

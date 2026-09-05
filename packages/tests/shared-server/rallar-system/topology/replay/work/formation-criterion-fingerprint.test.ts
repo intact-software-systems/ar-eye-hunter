@@ -1,7 +1,6 @@
-import { describe, expect, it, vi, type MockInstance } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import type { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
@@ -40,10 +39,8 @@ interface CriterionFingerprintFixture {
     readonly submitted: CriterionSubmission[];
     readonly queue: InMemoryQueueBox;
     readonly snapshots: RtcTopologySnapshotRepository;
+    readonly topologyService: RallarRtcTopologyService;
     readonly handler: OnMessageCallback;
-    readonly computeTopology: MockInstance<GroupTopologyPlanningService['computeTopologyFromAuthority']>;
-    readonly skippedFingerprint: MockInstance<GroupTopologyPlanningService['recordTopologyRebuildSkippedFingerprint']>;
-    readonly recordPublication: MockInstance<GroupTopologyPlanningService['recordTopologyPublication']>;
     process(input: ProcessGroupRevisionInput): Promise<ResourceEntry>;
 }
 
@@ -58,14 +55,16 @@ describe('formation criterion after unchanged topology inputs', () => {
             expect(published).toMatchObject({ state: 'active', activeSessionIds: [], version: 1 });
             expect(fixture.submitted).toEqual([]);
             fixture.effects.length = 0;
-            fixture.computeTopology.mockClear();
-            fixture.recordPublication.mockClear();
+            const metricsBefore = fixture.topologyService.readMetrics();
 
             const entry = await fixture.process({ group: lifecycleSnapshot(stage, 2), origin: 'automatic' });
 
-            expect(fixture.skippedFingerprint).toHaveBeenCalledOnce();
-            expect(fixture.computeTopology).not.toHaveBeenCalled();
-            expect(fixture.recordPublication).not.toHaveBeenCalled();
+            const metricsAfter = fixture.topologyService.readMetrics();
+            expect(metricsAfter.topologyRebuildSkippedFingerprintCount)
+                .toBe(metricsBefore.topologyRebuildSkippedFingerprintCount + 1);
+            expect(metricsAfter.topologyUpdateCount).toBe(metricsBefore.topologyUpdateCount);
+            expect(metricsAfter.topologyPublishAttemptCount)
+                .toBe(metricsBefore.topologyPublishAttemptCount);
             expect(await fixture.snapshots.findSnapshot(fixture.current.group)).toEqual(published);
             expect((await fixture.queue.getItem(entry.key))?.status).toBe(EntityStatus.COMPLETED);
             expect(fixture.effects).toEqual(['reservation-finish', 'transaction-commit-return', 'petition']);
@@ -84,6 +83,35 @@ describe('formation criterion after unchanged topology inputs', () => {
         }
     );
 
+    it('applies computed planning metrics only after the topology transaction commits', async () => {
+        const times = [10, 17, 20, 28];
+        const fixture = createCriterionFingerprintFixture(() => times.shift() ?? 28);
+        fixture.failCommit = true;
+
+        await expect(fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded' }))
+            .rejects.toThrow('Injected commit failure');
+
+        expect(fixture.topologyService.readMetrics()).toMatchObject({
+            topologyUpdateCount: 0,
+            topologyWorkComputeDurationMs: 0
+        });
+        const reserved = await fixture.queue.getItem(toCoalescedGroupRevisionKey(fixture.current.group));
+        if (reserved === undefined) {
+            throw new Error('Retry requires the original reserved entry');
+        }
+
+        fixture.failCommit = false;
+        await fixture.handler.onMessage(decodePersistedALMessage(reserved.resource), reserved);
+
+        expect(fixture.topologyService.readMetrics()).toMatchObject({
+            topologyUpdateCount: 1,
+            topologyWorkComputeDurationMs: 8,
+            updatesWithoutRttMeasurementCount: 1,
+            starPlanCount: 1,
+            topologyChangedCount: 1
+        });
+    });
+
     it.each(['forming', 'planned', 'reconfiguring', 'active', 'dormant'] as const)(
         'does not petition a fingerprint-identical %s stage',
         async (stage) => {
@@ -92,7 +120,7 @@ describe('formation criterion after unchanged topology inputs', () => {
 
             await fixture.process({ group: lifecycleSnapshot(stage, 2), origin: 'automatic' });
 
-            expect(fixture.skippedFingerprint).toHaveBeenCalledOnce();
+            expect(fixture.topologyService.readMetrics().topologyRebuildSkippedFingerprintCount).toBe(1);
             expect(fixture.submitted).toEqual([]);
         }
     );
@@ -131,19 +159,18 @@ describe('formation criterion after unchanged topology inputs', () => {
             if (state === 'removed') {
                 await fixture.snapshots.commitSnapshot({ candidate: { ...published, state: 'removed' } });
             }
-            fixture.computeTopology.mockImplementationOnce(() => {
-                throw new Error('Rebuild must complete before criterion evaluation');
+            await fixture.process({ group: lifecycleSnapshot('connecting', 2), origin: 'automatic' });
+
+            expect(fixture.topologyService.readMetrics().topologyRebuildSkippedFingerprintCount).toBe(0);
+            expect(await fixture.snapshots.findSnapshot(fixture.current.group)).toMatchObject({
+                state: 'active',
+                sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 0 }
             });
-
-            await expect(fixture.process({ group: lifecycleSnapshot('connecting', 2), origin: 'automatic' }))
-                .rejects.toThrow('Rebuild must complete before criterion evaluation');
-
-            expect(fixture.skippedFingerprint).not.toHaveBeenCalled();
-            expect(fixture.submitted).toEqual([]);
+            expect(fixture.submitted).toHaveLength(1);
         }
     );
 
-    it('keeps replay identity and the observed epoch/layout fence when later work supersedes it', async () => {
+    it('keeps the observed epoch/layout fence stale when later work supersedes it', async () => {
         const fixture = createCriterionFingerprintFixture();
         await fixture.process({ group: lifecycleSnapshot('reconfiguring', 1), origin: 'commanded' });
         await fixture.process({ group: lifecycleSnapshot('connecting', 2), origin: 'automatic' });
@@ -151,10 +178,12 @@ describe('formation criterion after unchanged topology inputs', () => {
             group: lifecycleSnapshot('connecting', 2),
             origin: 'automatic'
         });
+        expect(fixture.submitted).toHaveLength(1);
+        fixture.submitted.length = 0;
         fixture.current = lifecycleSnapshot('reconfiguring', 3);
         await fixture.handler.onMessage(decodePersistedALMessage(delayed.resource), delayed);
-        expect(fixture.submitted).toHaveLength(2);
-        expect(fixture.submitted[0]).toEqual(fixture.submitted[1]);
+        expect(fixture.topologyService.readMetrics().topologyRebuildSkippedFingerprintCount).toBe(2);
+        expect(fixture.submitted).toHaveLength(1);
         const command = fixture.submitted[0]?.command;
         if (command?.operation !== 'activateGroup') {
             throw new Error('Expected an activation petition');
@@ -193,6 +222,7 @@ function lifecycleSnapshot(stage: GroupLifecycleState, revision: number): GroupS
             ...base.group,
             snapshotVersion: revision,
             metadataVersion: revision,
+            presenceVersion: 0,
             lifecycleState: stage,
             formationEpoch: revision,
             establishmentStartedAtEpochMs: stage === 'connecting' || stage === 'reconnecting' ? 500 : null
@@ -200,7 +230,9 @@ function lifecycleSnapshot(stage: GroupLifecycleState, revision: number): GroupS
     };
 }
 
-function createCriterionFingerprintFixture(): CriterionFingerprintFixture {
+function createCriterionFingerprintFixture(
+    durationNowMs: () => number = () => 0
+): CriterionFingerprintFixture {
     const queue = new InMemoryQueueBox();
     const repository = new FakeRuntimeStateRepository();
     const snapshots = new RtcTopologySnapshotRepository(repository);
@@ -210,17 +242,15 @@ function createCriterionFingerprintFixture(): CriterionFingerprintFixture {
         effects: [] as string[],
         submitted: [] as CriterionSubmission[]
     };
+    const topologyService = new RallarRtcTopologyService({ now: () => NOW, durationNowMs });
     const planning = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: () => state.current,
         readCurrentGroupSnapshot: async () => state.current,
         readRttMeasurements: () => [],
-        topologyService: new RallarRtcTopologyService({ now: () => NOW }),
+        topologyService,
         topologySnapshotRepository: snapshots
     }).planning;
-    const computeTopology = vi.spyOn(planning, 'computeTopologyFromAuthority');
-    const skippedFingerprint = vi.spyOn(planning, 'recordTopologyRebuildSkippedFingerprint');
-    const recordPublication = vi.spyOn(planning, 'recordTopologyPublication');
-    const runtime = createRtcTopologyOutboxPublisher({ outboxQueueReader: new OutboxQueueReader(queue) });
+    const outboxQueueReader = new OutboxQueueReader(queue);
     const database = createAppInboxTestDatabase(queue, { replace: async (entry) => entry }, {
         runtimeRepository: repository,
         onStage: (stage) => {
@@ -231,7 +261,7 @@ function createCriterionFingerprintFixture(): CriterionFingerprintFixture {
         }
     });
     const handler = createRtcTopologyWorkHandler({
-        runtime,
+        outboxQueueReader,
         database,
         topologyPlanning: planning,
         executionRepository: new RtcTopologyExecutionRepository(repository),
@@ -250,7 +280,13 @@ function createCriterionFingerprintFixture(): CriterionFingerprintFixture {
         await handler.onMessage(decodePersistedALMessage(entry.resource), entry);
         return entry;
     };
-    return Object.assign(state, { queue, snapshots, handler, computeTopology, skippedFingerprint, recordPublication, process });
+    return Object.assign(state, {
+        queue,
+        snapshots,
+        topologyService,
+        handler,
+        process
+    });
 }
 
 interface ProcessGroupRevisionInput {
@@ -269,7 +305,7 @@ async function reserveGroupRevision(queue: InMemoryQueueBox, input: ProcessGroup
         senderId: 'criterion-server',
         previousEntry: await queue.getItem(toCoalescedGroupRevisionKey(input.group.group)) ?? null
     });
-    const entry = { ...work.entry, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } };
+    const entry = { ...work.entryWrite.entry, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } };
     await queue.enqueue(entry);
     return entry;
 }

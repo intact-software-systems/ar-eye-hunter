@@ -17,7 +17,7 @@ import {
     type GroupMutationAuthority,
     type GroupMutationAuthorityProof,
     type GroupMutationDescriptor,
-    type GroupMutationPreparation,
+    type GroupMutationIngress,
     type GroupStateMutationCommand
 } from './group-state-service-contracts.ts';
 import { assertGroupMutationCommand } from './mutation/command-validation/assert-group-mutation-command.ts';
@@ -48,7 +48,7 @@ interface VerifyGroupMutationAuthorityInput {
     readonly nowEpochMs: number;
 }
 
-interface PrepareAuthorizedGroupMutationInput {
+interface CaptureAuthorizedGroupMutationIngressInput {
     readonly dependencies: GroupMutationAuthorityDependencies;
     readonly descriptor: GroupMutationDescriptor;
     readonly authority: GroupMutationAuthority;
@@ -65,12 +65,12 @@ export class GroupMutationAuthorizationError extends Error {
     }
 }
 
-export async function prepareGroupMutation(
+export async function captureGroupMutationIngress(
     dependencies: GroupMutationAuthorityDependencies,
     descriptor: GroupMutationDescriptor,
     authority: GroupMutationAuthority
-): Promise<GroupMutationPreparation> {
-    return await prepareAuthorizedGroupMutation({
+): Promise<GroupMutationIngress> {
+    return await captureAuthorizedGroupMutationIngress({
         dependencies,
         descriptor,
         authority,
@@ -78,12 +78,12 @@ export async function prepareGroupMutation(
     });
 }
 
-export async function prepareAppInboxGroupMutation(
+export async function captureAppInboxGroupMutationIngress(
     dependencies: GroupMutationAuthorityDependencies,
     descriptor: GroupMutationDescriptor,
     authority: GroupMutationAuthority
-): Promise<GroupMutationPreparation> {
-    return await prepareAuthorizedGroupMutation({
+): Promise<GroupMutationIngress> {
+    return await captureAuthorizedGroupMutationIngress({
         dependencies,
         descriptor,
         authority,
@@ -91,9 +91,9 @@ export async function prepareAppInboxGroupMutation(
     });
 }
 
-async function prepareAuthorizedGroupMutation(
-    input: PrepareAuthorizedGroupMutationInput
-): Promise<GroupMutationPreparation> {
+async function captureAuthorizedGroupMutationIngress(
+    input: CaptureAuthorizedGroupMutationIngressInput
+): Promise<GroupMutationIngress> {
     const { dependencies, descriptor, authority, useScopedCommandId } = input;
     const authorized = await authorizeGroupMutation(dependencies, descriptor, authority);
     const materialized = await materializeAuthenticatedGroupMutationCommand({
@@ -116,14 +116,18 @@ async function prepareAuthorizedGroupMutation(
         resolvedJoinCode,
         joinCodeVerifier: await toJoinCodeVerifier(resolvedJoinCode),
         internalAuthority: 'none',
-        ...(dependencies.capacity ? { capacity: dependencies.capacity } : {}),
+        capacity: dependencies.capacity ?? { defaultMaxMembers: null },
         authenticatedAuthority: {
             principalId: authorized.authorityProof.principalId,
             sessionId: authorized.authorityProof.sessionId
         }
     };
-    const preparationCausalRevision = (await dependencies.readCausalRevision(command.aggregateRef)) ?? null;
-    const causalToken = await sha256CanonicalJson({ command, facts, preparationCausalRevision });
+    const ingressCausalRevision = (await dependencies.readCausalRevision(command.aggregateRef)) ?? null;
+    const causalToken = await sha256CanonicalJson({
+        command,
+        facts,
+        ingressCausalRevision
+    });
     const queueResourceId = `g-${
         (
             await sha256CanonicalJson({
@@ -169,39 +173,39 @@ export async function authorizeGroupMutation(
     };
 }
 
-export async function verifyPreparedGroupMutationAuthority(
+export async function readAndVerifyGroupMutationIngressAuthority(
     dependencies: Pick<GroupMutationAuthorityDependencies, 'authSessionRepository' | 'now' | 'randomId'>,
-    prepared: GroupStateMutationCommand
+    ingress: GroupStateMutationCommand
 ): Promise<void> {
-    if (prepared.authorityProof === null || prepared.descriptor === null) {
+    if (ingress.authorityProof === null || ingress.descriptor === null) {
         throw new GroupMutationAuthorizationError('Authenticated group mutation authority is missing.');
     }
     const verified = await verifyGroupMutationAuthority({
         repository: dependencies.authSessionRepository,
-        descriptor: prepared.descriptor,
-        authority: prepared.authorityProof,
+        descriptor: ingress.descriptor,
+        authority: ingress.authorityProof,
         nowEpochMs: dependencies.now()
     });
-    if (serializeCanonicalJson(verified.descriptor) !== serializeCanonicalJson(prepared.descriptor)) {
+    if (serializeCanonicalJson(verified.descriptor) !== serializeCanonicalJson(ingress.descriptor)) {
         throw new GroupMutationAuthorizationError(
             'Authenticated mutation descriptor changed before execution.'
         );
     }
     const materialized = await materializeAuthenticatedGroupMutationCommand({
         descriptor: verified.descriptor,
-        authorityProof: prepared.authorityProof,
+        authorityProof: ingress.authorityProof,
         randomId: dependencies.randomId,
-        useScopedCommandId: isScopedGroupMutationCommandId(prepared.command.commandId)
+        useScopedCommandId: isScopedGroupMutationCommandId(ingress.command.commandId)
     });
     const { command } = materialized;
     const commandHash = await hashMutationCommand(
         decodeJsonWireValue(materialized.semanticCommand, 'Group semantic mutation command')
     );
     if (
-        serializeCanonicalJson(command) !== serializeCanonicalJson(prepared.command) ||
-        commandHash !== prepared.facts.commandHash ||
-        prepared.facts.authenticatedAuthority?.principalId !== verified.session.clientId ||
-        prepared.facts.authenticatedAuthority?.sessionId !== verified.session.sessionId
+        serializeCanonicalJson(command) !== serializeCanonicalJson(ingress.command) ||
+        commandHash !== ingress.facts.commandHash ||
+        ingress.facts.authenticatedAuthority?.principalId !== verified.session.clientId ||
+        ingress.facts.authenticatedAuthority?.sessionId !== verified.session.sessionId
     ) {
         throw new GroupMutationAuthorizationError(
             'Durable group mutation facts differ from authenticated command.'

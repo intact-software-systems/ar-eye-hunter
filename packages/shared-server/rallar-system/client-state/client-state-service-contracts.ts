@@ -37,6 +37,18 @@ export type RegisterAuthorisedWsClientInput = Readonly<{
     expiresAtEpochMs?: number;
 }>;
 
+export const CLIENT_EXPIRED_SESSION_PAGE_SIZE = 50;
+
+export interface ClientExpiredSessionPageInput {
+    readonly atEpochMs: number;
+    readonly afterKey: string | null;
+}
+
+export interface ClientExpiredSessionPage {
+    readonly candidates: readonly ClientSessionExpiryCandidate[];
+    readonly nextAfterKey: string | null;
+}
+
 export type ClientMutationWritten = Readonly<{
     snapshot: ClientSnapshot;
     event: ClientEvent | null;
@@ -62,23 +74,17 @@ export type ClientStateService = Readonly<{
         query: StateEventListQuery
     ): Promise<StateEventPage<ClientEvent>>;
     read(command: ClientMutationCommand): Promise<ClientMutationRead>;
-    compute(command: ClientMutationCommand, read: ClientMutationRead): ClientMutationComputed;
-    validate(
-        command: ClientMutationCommand,
-        read: ClientMutationRead,
-        computed: ClientMutationComputed
-    ): void;
     write(
         transaction: PSqlSql,
         computed: ClientMutationComputedWrite
     ): Promise<ClientMutationReceipt>;
-    listExpiredSessionCandidates(atEpochMs: number): Promise<readonly ClientSessionExpiryCandidate[]>;
+    readExpiredSessionPage(input: ClientExpiredSessionPageInput): Promise<ClientExpiredSessionPage>;
     findSessionBySessionId(sessionId: string): Promise<ClientSession | undefined>;
     readIssuedAuthSession(sessionId: string): Promise<PersistedAuthSession | undefined>;
     observeSnapshot(snapshot: ClientSnapshot): Promise<ClientSnapshot>;
 }>;
 
-export type ClientStateMutationService = Pick<ClientStateService, 'read' | 'compute' | 'validate' | 'write'>;
+export type ClientStateMutationService = Pick<ClientStateService, 'read' | 'write'>;
 
 export type ClientStateServiceDependencies = Readonly<{
     runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;

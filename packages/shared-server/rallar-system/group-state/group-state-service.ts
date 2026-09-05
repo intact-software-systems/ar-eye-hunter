@@ -3,16 +3,16 @@ import { decodeJsonWireValue, hashMutationCommand } from '../protocol/json-wire-
 import { createWsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
 import {
     authorizeGroupMutation,
+    captureAppInboxGroupMutationIngress,
+    captureGroupMutationIngress,
     GroupMutationAuthorizationError,
-    prepareAppInboxGroupMutation,
-    prepareGroupMutation,
-    verifyPreparedGroupMutationAuthority,
+    readAndVerifyGroupMutationIngressAuthority,
     type GroupMutationAuthorityDependencies
 } from './group-mutation-authority.ts';
 import { toExpiryCommand, toSessionCleanupCommand } from './group-presence-mutation-command.ts';
 import {
     GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS,
-    type GroupMutationPreparation,
+    type GroupMutationIngress,
     type GroupStateMutationCommand,
     type GroupStateRuntime,
     type GroupStateService,
@@ -29,7 +29,7 @@ import type {
 import { computeGroupMutation } from './mutation/orchestration/compute-group-mutation.ts';
 import { readsAcceptedLayoutRow, readsGroupLayoutRows } from './mutation/read/group-mutation-read-scope.ts';
 import { readGroupMutation } from './mutation/read/read-group-mutation.ts';
-import { assertGroupMutation } from './mutation/state-validation/assert-group-mutation.ts';
+import { validateGroupMutation } from './mutation/state-validation/validate-group-mutation.ts';
 import { writeGroupMutation } from './mutation/write/write-group-mutation.ts';
 import { GroupConnectTriggerLatchRepository } from './persistence/group-connect-trigger-latch-repository.ts';
 import { GroupStateRepository } from './persistence/group-state-repository.ts';
@@ -72,11 +72,11 @@ export function createGroupStateRuntime(
         dependencies,
         repositoryFor,
         authorityDependencies: createAuthorityDependencies({ dependencies, repositoryFor, now, randomId }),
-        prepareInternalMutation: createInternalMutationPreparer(dependencies)
+        captureInternalMutationIngress: createInternalMutationIngressCapture(dependencies)
     };
     const service: GroupStateService = {
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtime),
-        ...createPreparationOperations(owners),
+        ...createIngressCaptureOperations(owners),
         ...createQueryOperations(owners),
         ...createMutationOperations(owners)
     };
@@ -93,17 +93,17 @@ type GroupStateRepositoryFactory = (
     target: GroupStateServiceDependencies['runtimeRepository']
 ) => GroupStateRepository;
 
-type InternalMutationPreparer = (
+type InternalMutationIngressCapture = (
     command: GroupMutationCommand,
     authority: Exclude<GroupMutationFacts['internalAuthority'], 'none'>,
     atEpochMs: number
-) => Promise<GroupMutationPreparation>;
+) => Promise<GroupMutationIngress>;
 
 interface GroupStateRuntimeOwners {
     readonly dependencies: GroupStateServiceDependencies;
     readonly repositoryFor: GroupStateRepositoryFactory;
     readonly authorityDependencies: GroupMutationAuthorityDependencies;
-    readonly prepareInternalMutation: InternalMutationPreparer;
+    readonly captureInternalMutationIngress: InternalMutationIngressCapture;
 }
 
 interface CreateAuthorityDependenciesInput {
@@ -126,9 +126,9 @@ function createAuthorityDependencies(
     };
 }
 
-function createInternalMutationPreparer(
+function createInternalMutationIngressCapture(
     dependencies: GroupStateServiceDependencies
-): InternalMutationPreparer {
+): InternalMutationIngressCapture {
     return async (command, internalAuthority, atEpochMs) => {
         assertGroupMutationCommand(command);
         const commandHash = await hashMutationCommand(
@@ -143,10 +143,10 @@ function createInternalMutationPreparer(
             resolvedJoinCode: null,
             joinCodeVerifier: null,
             internalAuthority,
-            ...(dependencies.capacity ? { capacity: dependencies.capacity } : {}),
+            capacity: dependencies.capacity ?? { defaultMaxMembers: null },
             authenticatedAuthority: null
         };
-        // Run the capability matrix at prepare time: a command a mode cannot
+        // Run the capability matrix during ingress capture: a command a mode cannot
         // execute fails at the call site, never as a poison row the queue
         // retries into a terminal failure. attemptCount is a placeholder the
         // matrix never reads.
@@ -163,48 +163,48 @@ function createInternalMutationPreparer(
     };
 }
 
-function createPreparationOperations(
+function createIngressCaptureOperations(
     owners: GroupStateRuntimeOwners
 ): Pick<
     GroupStateService,
     | 'authorizeMutation'
-    | 'prepareMutation'
-    | 'prepareAppInboxMutation'
-    | 'prepareExpiredPresenceMutations'
-    | 'prepareSessionCleanupMutations'
-    | 'prepareFormationCriterionMutation'
-    | 'prepareFormationAutomationMutation'
-    | 'prepareTopologyPublicationMutation'
-    | 'prepareActivationStatusMutation'
+    | 'captureMutationIngress'
+    | 'captureAppInboxMutationIngress'
+    | 'captureExpiredPresenceMutationIngresses'
+    | 'captureSessionCleanupMutationIngresses'
+    | 'captureFormationCriterionMutationIngress'
+    | 'captureFormationAutomationMutationIngress'
+    | 'captureTopologyPublicationMutationIngress'
+    | 'captureActivationStatusMutationIngress'
 > {
-    const { dependencies, repositoryFor, authorityDependencies, prepareInternalMutation } = owners;
+    const { dependencies, repositoryFor, authorityDependencies, captureInternalMutationIngress } = owners;
     const runtime = dependencies.runtimeRepository;
     return {
         authorizeMutation: async (descriptor, authority) =>
             await authorizeGroupMutation(authorityDependencies, descriptor, authority),
-        prepareMutation: async (descriptor, authority) =>
-            await prepareGroupMutation(authorityDependencies, descriptor, authority),
-        prepareAppInboxMutation: async (descriptor, authority) =>
-            await prepareAppInboxGroupMutation(authorityDependencies, descriptor, authority),
-        prepareExpiredPresenceMutations: async (atEpochMs) => {
+        captureMutationIngress: async (descriptor, authority) =>
+            await captureGroupMutationIngress(authorityDependencies, descriptor, authority),
+        captureAppInboxMutationIngress: async (descriptor, authority) =>
+            await captureAppInboxGroupMutationIngress(authorityDependencies, descriptor, authority),
+        captureExpiredPresenceMutationIngresses: async (atEpochMs) => {
             const candidates = (await repositoryFor(runtime).listAllPresenceSessions()).filter(
                 (session) => session.disconnectedAtEpochMs === null && session.expiresAtEpochMs <= atEpochMs
             );
             return await Promise.all(
                 candidates.map((session) =>
-                    prepareInternalMutation(toExpiryCommand(session, atEpochMs), 'expiry', atEpochMs)
+                    captureInternalMutationIngress(toExpiryCommand(session, atEpochMs), 'expiry', atEpochMs)
                 )
             );
         },
-        prepareFormationCriterionMutation: async (command, atEpochMs) =>
-            await prepareInternalMutation(command, 'formation-criterion', atEpochMs),
-        prepareFormationAutomationMutation: async (command, atEpochMs) =>
-            await prepareInternalMutation(command, 'formation-automation', atEpochMs),
-        prepareTopologyPublicationMutation: async (command, atEpochMs) =>
-            await prepareInternalMutation(command, 'topology-publication', atEpochMs),
-        prepareActivationStatusMutation: async (command, atEpochMs) =>
-            await prepareInternalMutation(command, 'activation-status', atEpochMs),
-        prepareSessionCleanupMutations: async (input) => {
+        captureFormationCriterionMutationIngress: async (command, atEpochMs) =>
+            await captureInternalMutationIngress(command, 'formation-criterion', atEpochMs),
+        captureFormationAutomationMutationIngress: async (command, atEpochMs) =>
+            await captureInternalMutationIngress(command, 'formation-automation', atEpochMs),
+        captureTopologyPublicationMutationIngress: async (command, atEpochMs) =>
+            await captureInternalMutationIngress(command, 'topology-publication', atEpochMs),
+        captureActivationStatusMutationIngress: async (command, atEpochMs) =>
+            await captureInternalMutationIngress(command, 'activation-status', atEpochMs),
+        captureSessionCleanupMutationIngresses: async (input) => {
             const candidates = await readGroupSessionCleanupCandidates(
                 repositoryFor(runtime),
                 dependencies.authSessionRepository,
@@ -212,7 +212,7 @@ function createPreparationOperations(
             );
             return await Promise.all(
                 candidates.map((session) =>
-                    prepareInternalMutation(
+                    captureInternalMutationIngress(
                         toSessionCleanupCommand(session, input.disconnectedAtEpochMs),
                         'session-cleanup',
                         input.disconnectedAtEpochMs
@@ -256,23 +256,15 @@ function createMutationOperations(
     owners: GroupStateRuntimeOwners
 ): Pick<GroupStateService, 'read' | 'compute' | 'validate' | 'write'> {
     return {
-        read: async (prepared) => await readPreparedGroupMutation(owners, prepared),
-        compute: (prepared, read) => computeGroupMutation({ command: prepared.command, read, facts: prepared.facts }),
-        validate: (prepared, read, computed) => {
-            assertGroupMutation({
-                command: prepared.command,
+        read: async (ingress) => await readGroupMutationAttempt(owners, ingress),
+        compute: (ingress, read) => computeGroupMutation({ command: ingress.command, read, facts: ingress.facts }),
+        validate: (ingress, read, computed) =>
+            validateGroupMutation({
+                command: ingress.command,
                 read,
-                facts: prepared.facts,
+                facts: ingress.facts,
                 computed
-            });
-            if (computed.outcome === 'idempotency-conflict') {
-                throw new GroupMutationIdempotencyConflictError(
-                    prepared.command.commandId,
-                    computed.existingCommandHash,
-                    computed.receivedCommandHash
-                );
-            }
-        },
+            }),
         write: async (transaction, computed) => await writeGroupMutation(transaction, computed)
     };
 }
@@ -283,17 +275,17 @@ export function createGroupStateService(
     return createGroupStateRuntime(dependencies).service;
 }
 
-async function readPreparedGroupMutation(
+async function readGroupMutationAttempt(
     owners: GroupStateRuntimeOwners,
-    prepared: GroupStateMutationCommand
+    ingress: GroupStateMutationCommand
 ): Promise<GroupMutationRead> {
     const { dependencies, repositoryFor, authorityDependencies } = owners;
     const runtime = dependencies.runtimeRepository;
-    if (prepared.facts.internalAuthority !== 'none') {
+    if (ingress.facts.internalAuthority !== 'none') {
         if (
-            prepared.authorityProof !== null ||
-            prepared.descriptor !== null ||
-            prepared.facts.authenticatedAuthority !== null
+            ingress.authorityProof !== null ||
+            ingress.descriptor !== null ||
+            ingress.facts.authenticatedAuthority !== null
         ) {
             throw new GroupMutationAuthorizationError(
                 'Internal group mutation authority is malformed.'
@@ -301,10 +293,10 @@ async function readPreparedGroupMutation(
         }
     }
     else {
-        await verifyPreparedGroupMutationAuthority(authorityDependencies, prepared);
+        await readAndVerifyGroupMutationIngressAuthority(authorityDependencies, ingress);
     }
-    const initialRead = await readGroupMutation(repositoryFor(runtime), prepared.command);
-    const command = prepared.command;
+    const initialRead = await readGroupMutation(repositoryFor(runtime), ingress.command);
+    const command = ingress.command;
     const connectTriggerLatch = command.operation === 'connectGroup' && command.input.connectTriggerGeneration !== null
         ? await new GroupConnectTriggerLatchRepository(runtime).read({
             groupRef: command.aggregateRef,
@@ -313,7 +305,7 @@ async function readPreparedGroupMutation(
         })
         : null;
     const read = { ...initialRead, connectTriggerLatch };
-    if (!readsGroupLayoutRows(prepared.command)) {
+    if (!readsGroupLayoutRows(ingress.command)) {
         return read;
     }
     // Read after the group row so the fence's staleness window ends
@@ -322,9 +314,9 @@ async function readPreparedGroupMutation(
     // instead of committing against a stale plan. The accepted row
     // is read only by the commands that can promote.
     const [plannedLayoutRow, acceptedLayoutRow] = await Promise.all([
-        dependencies.readPlannedLayoutRow(prepared.command.aggregateRef),
-        readsAcceptedLayoutRow(prepared.command)
-            ? dependencies.readAcceptedLayoutRow(prepared.command.aggregateRef)
+        dependencies.readPlannedLayoutRow(ingress.command.aggregateRef),
+        readsAcceptedLayoutRow(ingress.command)
+            ? dependencies.readAcceptedLayoutRow(ingress.command.aggregateRef)
             : null
     ]);
     return { ...read, plannedLayoutRow, acceptedLayoutRow };

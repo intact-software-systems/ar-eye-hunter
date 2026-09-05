@@ -80,6 +80,10 @@ when their callback invokes a ResourceInbox repository. Calling ResourceInbox
 code from an AppInbox or domain-owned transaction does not transfer the
 specialized policy.
 
+The authoritative repository code standard exclusively owns browser IndexedDB
+transaction and current-schema policy; apply that policy without a
+service-specific variation here.
+
 Use `specialized-resource-inbox` only when type and API resolution prove an
 exact PostgreSQL ResourceInbox, Results, or QueueBox transaction owner. These
 transactions implement atomic middleware reservation, deduplication, result,

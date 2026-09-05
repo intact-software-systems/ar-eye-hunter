@@ -4,6 +4,7 @@ import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-type
 import type { StateScope } from '@shared/api/state-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 
 export function acceptClientStateSnapshots(
     snapshots: readonly ClientStateSnapshot[],
@@ -51,6 +52,52 @@ export async function acceptGroupStateSnapshotsOrRecompute(
             return true;
         }
         throw error;
+    }
+}
+
+export async function acceptAuthoritativeGroupStateSnapshot(
+    snapshot: GroupStateSnapshot,
+    scope: StateScope,
+    rereadGroupSnapshots?: (
+        scope: StateScope
+    ) => Promise<readonly GroupStateSnapshot[]>
+): Promise<boolean> {
+    if (!isGroupSnapshotInScope(snapshot, scope)) {
+        return false;
+    }
+    try {
+        return await acceptGroupStateSnapshotsOrRecompute(
+            [snapshot],
+            scope,
+            rereadGroupSnapshots
+        );
+    }
+    catch (error) {
+        if (!(error instanceof StateSnapshotRevisionConflictError)) {
+            throw error;
+        }
+        const current = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(
+            snapshot.group
+        );
+        if (
+            current === undefined ||
+            compareGroupCausalRevision(current.causalRevision, snapshot.causalRevision) !== 'equal'
+        ) {
+            throw error;
+        }
+        if (
+            groupStateSnapshotsRepository.replaceGroupStateSnapshotIfUnchanged(
+                current,
+                snapshot
+            )
+        ) {
+            return true;
+        }
+        return await acceptGroupStateSnapshotsOrRecompute(
+            [snapshot],
+            scope,
+            rereadGroupSnapshots
+        );
     }
 }
 

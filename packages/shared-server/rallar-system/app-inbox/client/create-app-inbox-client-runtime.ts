@@ -32,7 +32,10 @@ export function createAppInboxClientRuntime(
 ): AppInboxClientRuntime {
     const options = normalizeAppInboxOptions(input.options ?? {});
     const queueEntryWriter = new AppInboxQueueEntryWriter(
-        { inboxQueueReader: input.inboxQueueReader },
+        {
+            inboxQueueReader: input.inboxQueueReader,
+            repository: input.resourceInboxRepository
+        },
         {
             serviceId: input.serviceId,
             defaultTopicId: input.defaultTopicId,
@@ -52,10 +55,7 @@ export function createAppInboxClientRuntime(
         }
     );
     const reservationClient = new AppInboxReservationClient(
-        {
-            inboxQueueReader: input.inboxQueueReader,
-            repository: input.resourceInboxRepository
-        },
+        { repository: input.resourceInboxRepository },
         { serviceId: input.serviceId }
     );
     const commandClient = new AppInboxCommandClient(

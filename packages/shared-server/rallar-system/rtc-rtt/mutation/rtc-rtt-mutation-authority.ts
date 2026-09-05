@@ -8,7 +8,7 @@ import type {
     RtcRttStableRequest
 } from './rtc-rtt-mutation-contracts.ts';
 
-export function validateRtcRttMutationFacts(facts: RtcRttMutationFacts): void {
+export function assertRtcRttMutationFacts(facts: RtcRttMutationFacts): void {
     if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
         throw new TypeError('RTC RTT command hash fact is invalid');
     }

@@ -11,10 +11,7 @@ import type { AppInboxResultWaiter } from './app-inbox-result-waiter.ts';
 export namespace AppInboxCommandClient {
     export interface QueueEntryWriter {
         enqueue(enqueue: AppInboxEnqueueInput): Promise<ResourceEntry>;
-        enqueueReplacingWhen(
-            enqueue: AppInboxEnqueueInput,
-            replaceExistingWhen: (entry: ResourceEntry) => boolean
-        ): Promise<Key>;
+        enqueueReplacingTerminal(enqueue: AppInboxEnqueueInput): Promise<Key>;
     }
 
     export interface ResultWaiter {
@@ -74,19 +71,14 @@ export class AppInboxCommandClient {
         });
     }
 
-    async enqueueReplacingWhenAndWaitForResult<Result>(
+    async enqueueReplacingTerminalAndWaitForResult<Result>(
         enqueue: AppInboxEnqueueInput,
-        replaceExistingWhen: (entry: ResourceEntry) => boolean,
         decodeResult: AppInboxResultWaiter.ResultDecoder<Result>
     ): Promise<Either<AppInboxFailure, Result>> {
         return await this.timeCommand(enqueue, async () => {
             const key = await this.timeEnqueue(
                 enqueue,
-                async () =>
-                    await this.queueEntryWriter.enqueueReplacingWhen(
-                        enqueue,
-                        replaceExistingWhen
-                    )
+                async () => await this.queueEntryWriter.enqueueReplacingTerminal(enqueue)
             );
             return await this.resultWaiter.waitForResult(enqueue, key, decodeResult);
         });

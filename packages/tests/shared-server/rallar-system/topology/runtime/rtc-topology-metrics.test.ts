@@ -3,6 +3,48 @@ import { describe, expect, it } from 'vitest';
 import { RtcTopologyMetrics } from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
 
 describe('RtcTopologyMetrics', () => {
+    it('records the measured topology-work compute duration without inventing phase timings', () => {
+        const metrics = new RtcTopologyMetrics();
+
+        metrics.recordPlanningObservation({
+            relevantRttMeasurementCount: 3,
+            resultChanged: false,
+            starPlanCount: 1,
+            noRttTreePlanCount: 2,
+            noRttMeshPlanCount: 3,
+            weightedPlanCount: 4,
+            weightedRoomGraphBuildCount: 5,
+            weightedRoomGraphSparseFallbackCount: 6,
+            incrementalPlanCount: 7,
+            incrementalFallbackReasons: ['delta-too-large', 'invariant-violation'],
+            hysteresisHoldCount: 8
+        }, 9);
+
+        expect(metrics.read(0, 0)).toMatchObject({
+            topologyUpdateCount: 1,
+            topologyWorkComputeDurationMs: 9,
+            topologyChangedCount: 0,
+            topologyUnchangedCount: 1,
+            updatesWithRttMeasurementCount: 1,
+            updatesWithoutRttMeasurementCount: 0,
+            starPlanCount: 1,
+            starPlanDurationMs: 0,
+            noRttTreePlanCount: 2,
+            noRttTreePlanDurationMs: 0,
+            noRttMeshPlanCount: 3,
+            noRttMeshPlanDurationMs: 0,
+            weightedPlanCount: 4,
+            weightedPlanDurationMs: 0,
+            weightedRoomGraphBuildCount: 5,
+            weightedRoomGraphBuildDurationMs: 0,
+            weightedRoomGraphSparseFallbackCount: 6,
+            incrementalPlanCount: 7,
+            incrementalPlanFallbackFullCount: 2,
+            incrementalPlanInvariantFallbackCount: 1,
+            hysteresisHeldKindCount: 8
+        });
+    });
+
     it('records every metric category and resets recorded values', () => {
         const metrics = new RtcTopologyMetrics();
 
@@ -45,6 +87,7 @@ describe('RtcTopologyMetrics', () => {
 
         expect(metrics.read(7, 8)).toMatchObject({
             topologyUpdateCount: 3,
+            topologyWorkComputeDurationMs: 0,
             topologyChangedCount: 1,
             topologyUnchangedCount: 1,
             updatesWithRttMeasurementCount: 2,
@@ -87,6 +130,7 @@ describe('RtcTopologyMetrics', () => {
 
         expect(metrics.read(7, 8)).toEqual({
             topologyUpdateCount: 0,
+            topologyWorkComputeDurationMs: 0,
             topologyChangedCount: 0,
             topologyUnchangedCount: 0,
             updatesWithRttMeasurementCount: 0,

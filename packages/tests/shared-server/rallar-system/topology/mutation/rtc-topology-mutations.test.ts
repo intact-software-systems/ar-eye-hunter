@@ -111,11 +111,13 @@ describe('RTC topology publication mutation phases', () => {
                 }
             }
         };
-        expect(() => validateTopologyMutation({ ...input, computed: tampered })).toThrow(
-            'differs from canonical'
+        expect(validateTopologyMutation({ ...input, computed: tampered })[0]?.cause).toHaveProperty(
+            'message',
+            expect.stringMatching(/differs from the computed value/i)
         );
-        expect(() => validateTopologyMutation({ ...input, computed: tampered })).toThrow(
-            'differs from canonical'
+        expect(validateTopologyMutation({ ...input, computed: tampered })[0]?.cause).toHaveProperty(
+            'message',
+            expect.stringMatching(/differs from the computed value/i)
         );
     });
 
@@ -359,8 +361,9 @@ describe('RTC topology publication mutation phases', () => {
         });
         const computed = computeTopologyMutation(input);
 
-        expect(() => validateTopologyMutation({ ...input, computed })).toThrow(
-            /message|publication|envelope|identity/i
+        expect(validateTopologyMutation({ ...input, computed })[0]?.cause).toHaveProperty(
+            'message',
+            expect.stringMatching(/message|publication|envelope|identity|payload/i)
         );
     });
 
@@ -563,7 +566,7 @@ function computeAndValidateTopologyTwice(input: Parameters<typeof computeTopolog
     const first = computeTopologyMutation(input);
     const second = computeTopologyMutation(input);
     expect(second).toEqual(first);
-    expect(() => validateTopologyMutation({ ...input, computed: first })).not.toThrow();
-    expect(() => validateTopologyMutation({ ...input, computed: first })).not.toThrow();
+    expect(validateTopologyMutation({ ...input, computed: first })).toEqual([]);
+    expect(validateTopologyMutation({ ...input, computed: first })).toEqual([]);
     return first;
 }

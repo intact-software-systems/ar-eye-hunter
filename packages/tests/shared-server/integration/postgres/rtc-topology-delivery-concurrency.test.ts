@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type {
-    RtcTopologyDeliveryAppendInput,
+    RtcTopologyDeliveryAppend,
     RtcTopologyDeliveryAppendResult
 } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-contracts.ts';
 import { isRtcTopologyDeliveryRetryableConflict } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
@@ -218,7 +218,8 @@ describe('Postgres RTC topology delivery concurrency', () => {
                 async (transaction) =>
                     await repository.appendOrValidate(transaction, {
                         ...appendInput(streamId, 'expired-for-compaction'),
-                        retainUntilEpochMs: 0
+                        retainUntilEpochMs: 0,
+                        retainUntilIsoTimestamp: new Date(0).toISOString()
                     })
             );
 
@@ -283,7 +284,8 @@ async function registerStream(
 function appendInput(
     publisherStreamId: string,
     publicationName: string
-): RtcTopologyDeliveryAppendInput {
+): RtcTopologyDeliveryAppend {
+    const retainUntilEpochMs = Date.now() + 60_000;
     return {
         publisherStreamId,
         groupRef: {
@@ -297,7 +299,8 @@ function appendInput(
             resourceId: publicationName,
             contextId: 'postgres:room'
         },
-        retainUntilEpochMs: Date.now() + 60_000
+        retainUntilEpochMs,
+        retainUntilIsoTimestamp: new Date(retainUntilEpochMs).toISOString()
     };
 }
 

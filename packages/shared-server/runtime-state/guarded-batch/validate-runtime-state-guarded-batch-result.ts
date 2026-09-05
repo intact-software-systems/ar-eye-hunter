@@ -22,6 +22,13 @@ export function validateRuntimeStateGuardedBatchResult(
     input: RuntimeStateGuardedBatchResult | JsonWireValue
 ): RuntimeStateGuardedBatchResult {
     const batch = validateRuntimeStateGuardedBatch(expectedBatch);
+    return validateComputedRuntimeStateGuardedBatchResult(batch, input);
+}
+
+export function validateComputedRuntimeStateGuardedBatchResult(
+    batch: RuntimeStateGuardedBatch,
+    input: RuntimeStateGuardedBatchResult | JsonWireValue
+): RuntimeStateGuardedBatchResult {
     const result = requireResultRecord(
         input,
         'root'
@@ -265,11 +272,10 @@ function requireExactResultKeys(
     keys: readonly string[],
     label: string
 ): void {
-    const actual = Object.keys(value).sort();
-    const expected = [...keys].sort();
+    const actual = Object.keys(value);
     if (
-        actual.length !== expected.length ||
-        !actual.every((key, index) => key === expected[index])
+        actual.length !== keys.length ||
+        actual.some((key) => !keys.includes(key))
     ) {
         throw invalidResult(`${label} fields are invalid`);
     }

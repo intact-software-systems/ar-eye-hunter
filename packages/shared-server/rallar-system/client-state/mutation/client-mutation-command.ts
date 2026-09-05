@@ -6,7 +6,7 @@ import type {
     ClientMutationCommandInput,
     ClientMutationFacts
 } from './client-mutation-contracts.ts';
-import { validateClientMutationCommand } from './command-validation/validate-client-mutation-command.ts';
+import { assertClientMutationCommand } from './command-validation/assert-client-mutation-command.ts';
 
 export type ClientMutationPersistedFacts = Omit<ClientMutationFacts, 'commandHash'>;
 
@@ -28,6 +28,6 @@ export async function toClientMutationCommand(
             )
         }
     };
-    validateClientMutationCommand(command);
+    assertClientMutationCommand(command);
     return command;
 }

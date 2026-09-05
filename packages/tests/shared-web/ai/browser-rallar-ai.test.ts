@@ -335,7 +335,6 @@ describe('Rallar browser AI facade', () => {
 
         expect(rallar.data.open).toHaveBeenCalledWith('ai-results', {
             durability: 'write-behind',
-            schemaVersion: 1,
             scope: 'session'
         });
         expect(rallar.store.set).toHaveBeenCalledWith('result-1', result);

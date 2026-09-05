@@ -1,46 +1,80 @@
+import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { GroupFormationMutationOutcome } from '@shared/rtc/group-formation-metrics.ts';
 import { type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion,
+    type AppInboxCompletionComputed,
+    type AppInboxCompletionInput
+} from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import type { GroupFormationGroupMutationSink } from '../../observability/formation-metrics.ts';
 import type { WsSessionGenerationLifecycleComputed } from '../../websocket/ws-session-generation-computation.ts';
+import { validateWsSessionConnectGuard } from '../../websocket/ws-session-generation-computation.ts';
 import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
 import type {
     AuthorizedGroupMutation,
     GroupMutationAuthority,
-    GroupMutationPreparation,
+    GroupMutationIngress,
     GroupStateMutationCommand,
-    GroupStateMutationService,
-    GroupStateService
+    GroupStateMutationService
 } from '../group-state-service-contracts.ts';
-import type { GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
+import { GroupMutationIdempotencyConflictError } from '../group-state-service.ts';
+import type { GroupMutationComputed, GroupMutationRead } from '../mutation/group-mutation-contracts.ts';
 import { toGroupMutationRejectionError } from '../mutation/group-mutation-result.ts';
-import { createTransactionBoundGroupStateRepository } from '../persistence/group-state-repository.ts';
-import { processGroupPresenceConnect, type InactiveGroupPresenceResult } from '../presence/group-presence-service.ts';
+import {
+    readAndComputeGroupPresenceConnect,
+    type InactiveGroupPresenceResult
+} from '../presence/group-presence-service.ts';
 import { decodeGroupStateInboxAuthority } from './decode-group-state-inbox-authority.ts';
-import { readGroupStateInboxResult, type GroupStateInboxDurableResult } from './group-state-inbox-result.ts';
+import {
+    computeGroupStateInboxResult,
+    validateGroupStateInboxResult,
+    type ComputeGroupStateInboxResultInput,
+    type GroupStateInboxDurableResult,
+    type GroupStateInboxResultComputation,
+    type GroupStateInboxResultReadConflict
+} from './group-state-inbox-result.ts';
+
+export interface GroupStateInboxResultReader {
+    readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
+    readEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined>;
+}
 
 export interface GroupStateInboxHandlerDependencies {
     readonly mutationService: GroupStateMutationService;
     readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
-    readonly snapshotObserver: Pick<GroupStateService, 'observeSnapshot'>;
-    readonly transactionWriter: AppInboxMutationTransactionWriter;
+    readonly resultReader: GroupStateInboxResultReader;
+    readonly transactionWriter: Pick<
+        AppInboxMutationTransactionWriter,
+        'readCompletionFacts' | 'writeComputedMutation'
+    >;
     readonly wakeQueue?: () => void;
     readonly formationMetrics?: GroupFormationGroupMutationSink;
-    readonly prepareMutation: (
+    readonly captureAuthenticatedMutationIngress: (
         descriptor: AuthorizedGroupMutation['descriptor'],
         authority: GroupMutationAuthority
-    ) => Promise<GroupMutationPreparation>;
-    readonly persistPreparation: (
+    ) => Promise<GroupMutationIngress>;
+    readonly persistMutationIngress: (
         context: AppInboxMessageContext<GroupStateInboxDurableResult>,
-        preparation: GroupMutationPreparation
+        ingress: GroupMutationIngress
     ) => Promise<void>;
 }
 
 interface CommitGroupStateMutationInput {
     readonly context: AppInboxMessageContext<GroupStateInboxDurableResult>;
     readonly command: GroupStateMutationCommand;
-    readonly computed: GroupMutationComputed;
+    readonly computed: Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict' | 'rejected'; }>;
+    readonly durableResult: GroupStateInboxDurableResult;
+    readonly completion: AppInboxCompletionComputed<GroupStateInboxDurableResult>;
     readonly lifecycleGuard?: WsSessionGenerationLifecycleComputed;
+}
+
+interface GroupStateInboxResultRead {
+    readonly mutationRead: GroupMutationRead;
+    readonly currentSnapshot: GroupSnapshot | undefined;
+    readonly recordedEvent: GroupEvent | undefined;
 }
 
 export class GroupStateInboxHandler {
@@ -53,67 +87,130 @@ export class GroupStateInboxHandler {
     async processGroupStateMutation(
         context: AppInboxMessageContext<GroupStateInboxDurableResult>
     ): Promise<GroupStateInboxDurableResult | InactiveGroupPresenceResult> {
-        const prepared = await this.readOrPrepareGroupMutation(context);
+        const ingress = await this.loadOrCaptureGroupMutationIngress(context);
         const command: GroupStateMutationCommand = {
-            authorityProof: prepared.authorityProof,
-            descriptor: prepared.descriptor,
-            command: prepared.command,
+            authorityProof: ingress.authorityProof,
+            descriptor: ingress.descriptor,
+            command: ingress.command,
             facts: {
-                ...prepared.facts,
+                ...ingress.facts,
                 attemptCount: context.entry.dequeueAudit.attempts
             }
         };
         if (command.command.operation === 'connectPresence') {
-            const outcome = await processGroupPresenceConnect({
+            const outcome = await readAndComputeGroupPresenceConnect({
                 command,
                 mutationService: this.dependencies.mutationService,
                 sessionGenerationLifecycle: this.dependencies.sessionGenerationLifecycle
             });
             if (outcome.status === 'inactive') {
-                const durableResult = await this.dependencies.transactionWriter.writeMutation(
+                const completionInput = this.readCompletionInput(context, outcome);
+                const completion = computeAppInboxCompletion(completionInput);
+                this.validateCompletion(completionInput, completion);
+                const durableResult = await this.dependencies.transactionWriter.writeComputedMutation(
                     context,
-                    () => Promise.resolve(outcome)
+                    completion,
+                    async () => {}
                 );
                 this.recordGroupMutation(command, 'rejected');
                 return durableResult;
             }
+            if (!isCommittableMutation(outcome.computed)) {
+                this.validateMutation(command, outcome.read, outcome.computed);
+                validateWsSessionConnectGuard(
+                    outcome.lifecycleGuardFacts,
+                    outcome.lifecycleRead,
+                    outcome.lifecycleGuard
+                );
+                throwNonCommittableMutation(command, outcome.computed);
+            }
+            const computed = outcome.computed;
+            const durableResult = computed.receipt;
+            const completionInput = this.readCompletionInput(context, durableResult);
+            const completion = computeAppInboxCompletion(completionInput);
+            this.validateMutation(command, outcome.read, computed);
+            validateWsSessionConnectGuard(
+                outcome.lifecycleGuardFacts,
+                outcome.lifecycleRead,
+                outcome.lifecycleGuard
+            );
+            this.validateCompletion(completionInput, completion);
             return await this.commitMutation({
                 context,
                 command,
-                computed: outcome.computed,
+                computed,
+                durableResult,
+                completion,
                 lifecycleGuard: outcome.lifecycleGuard
             });
         }
-        const read = await this.dependencies.mutationService.read(command);
-        const computed = this.dependencies.mutationService.compute(command, read);
-        this.dependencies.mutationService.validate(command, read, computed);
-        return await this.commitMutation({ context, command, computed });
+        const resultRead = await this.readResultFacts(command);
+        const computed = this.dependencies.mutationService.compute(command, resultRead.mutationRead);
+        if (!isCommittableMutation(computed)) {
+            this.validateMutation(command, resultRead.mutationRead, computed);
+            throwNonCommittableMutation(command, computed);
+        }
+        const resultInput = {
+            command,
+            read: resultRead.mutationRead,
+            computed,
+            currentSnapshot: resultRead.currentSnapshot,
+            recordedEvent: resultRead.recordedEvent
+        } as const;
+        const result = computeGroupStateInboxResult(resultInput);
+        const computedResult = result.fold(
+            (conflict) => {
+                throw new GroupStateInboxResultReadConflictError(conflict);
+            },
+            (computed) => computed
+        );
+        const durableResult = computedResult.durableResult;
+        const completionInput = this.readCompletionInput(context, durableResult);
+        const completion = computeAppInboxCompletion(completionInput);
+        this.validateMutation(command, resultRead.mutationRead, computed);
+        this.validateInboxResult(resultInput, result);
+        this.validateCompletion(completionInput, completion);
+        return await this.commitMutation({ context, command, computed, durableResult, completion });
     }
 
-    private async readOrPrepareGroupMutation(
+    private async readResultFacts(command: GroupStateMutationCommand): Promise<GroupStateInboxResultRead> {
+        const readsSnapshot = !isPresenceOperation(command.command.operation);
+        const [mutationRead, currentSnapshot] = await Promise.all([
+            this.dependencies.mutationService.read(command),
+            readsSnapshot
+                ? this.dependencies.resultReader.readSnapshot(command.command.aggregateRef)
+                : Promise.resolve(undefined)
+        ]);
+        const receipt = mutationRead.idempotency?.value.receipt;
+        const recordedEvent =
+            readsSnapshot && receipt?.commandHash === command.facts.commandHash && receipt.eventId !== null
+                ? await this.dependencies.resultReader.readEvent(command.command.aggregateRef, receipt.eventId)
+                : undefined;
+        return { mutationRead, currentSnapshot, recordedEvent };
+    }
+
+    private async loadOrCaptureGroupMutationIngress(
         context: AppInboxMessageContext<GroupStateInboxDurableResult>
-    ): Promise<GroupMutationPreparation> {
+    ): Promise<GroupMutationIngress> {
         const authority = decodeGroupStateInboxAuthority(context.enqueue.authority);
-        if (authority.kind === 'prepared') {
+        if (authority.kind === 'ingress') {
             return authority.mutation;
         }
-        const materialized = await this.dependencies.prepareMutation(
+        const ingress = await this.dependencies.captureAuthenticatedMutationIngress(
             authority.mutation.descriptor,
             authority.mutation.authorityProof
         );
-        await this.dependencies.persistPreparation(context, materialized);
-        return materialized;
+        await this.dependencies.persistMutationIngress(context, ingress);
+        return ingress;
     }
 
     private async commitMutation(
         input: CommitGroupStateMutationInput
     ): Promise<GroupStateInboxDurableResult> {
-        if (input.computed.outcome === 'rejected') {
-            throw toGroupMutationRejectionError(input.computed);
-        }
-        const { durableResult, afterCommitResult } = await this.dependencies.transactionWriter
-            .writeMutationWithAfterCommitResult(
+        const durableResult = await this.dependencies.transactionWriter
+            .writeComputedMutation(
                 input.context,
+                input.completion,
                 async (transaction) => {
                     if (input.lifecycleGuard) {
                         await this.dependencies.sessionGenerationLifecycle.write(
@@ -121,27 +218,11 @@ export class GroupStateInboxHandler {
                             input.lifecycleGuard
                         );
                     }
-                    if (input.computed.outcome === 'idempotency-conflict') {
-                        throw new TypeError('Validated group idempotency conflict is unreachable');
-                    }
                     if (input.computed.outcome === 'write') {
                         await this.dependencies.mutationService.write(transaction, input.computed);
                     }
-                    const inboxResult = await readGroupStateInboxResult({
-                        repository: createTransactionBoundGroupStateRepository(transaction),
-                        command: input.command,
-                        receipt: input.computed.receipt
-                    });
-                    return {
-                        durableResult: inboxResult.durableResult,
-                        afterCommitResult: { committedSnapshot: inboxResult.committedSnapshot }
-                    };
                 }
             );
-        const { committedSnapshot } = afterCommitResult;
-        if (committedSnapshot) {
-            await this.dependencies.snapshotObserver.observeSnapshot(committedSnapshot);
-        }
         this.dependencies.wakeQueue?.();
         this.recordGroupMutation(
             input.command,
@@ -150,6 +231,48 @@ export class GroupStateInboxHandler {
                 : 'noOp'
         );
         return durableResult;
+    }
+
+    private readCompletionInput<Result>(
+        context: AppInboxMessageContext<Result>,
+        durableResult: Result
+    ): AppInboxCompletionInput<Result> {
+        return {
+            ...this.dependencies.transactionWriter.readCompletionFacts(context),
+            durableResult,
+            status: EntityStatus.COMPLETED
+        } as const;
+    }
+
+    private validateCompletion<Result>(
+        input: AppInboxCompletionInput<Result>,
+        computed: AppInboxCompletionComputed<Result>
+    ): void {
+        const issues = validateAppInboxCompletion(input, computed);
+        if (issues[0] !== undefined) {
+            throw issues[0].cause;
+        }
+    }
+
+    private validateMutation(
+        command: GroupStateMutationCommand,
+        read: GroupMutationRead,
+        computed: GroupMutationComputed
+    ): void {
+        const issue = this.dependencies.mutationService.validate(command, read, computed)[0];
+        if (issue !== undefined) {
+            throw issue.cause;
+        }
+    }
+
+    private validateInboxResult(
+        input: ComputeGroupStateInboxResultInput,
+        computed: GroupStateInboxResultComputation
+    ): void {
+        const issue = validateGroupStateInboxResult(input, computed)[0];
+        if (issue !== undefined) {
+            throw issue.cause;
+        }
     }
 
     private recordGroupMutation(
@@ -166,4 +289,37 @@ export class GroupStateInboxHandler {
             // Recording must never affect group mutation behavior.
         }
     }
+}
+
+class GroupStateInboxResultReadConflictError extends Error {
+    readonly code = 'runtime-state-write-conflict';
+
+    constructor(conflict: GroupStateInboxResultReadConflict) {
+        super(conflict.message);
+        this.name = 'GroupStateInboxResultReadConflictError';
+    }
+}
+
+function isCommittableMutation(
+    computed: GroupMutationComputed
+): computed is Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict' | 'rejected'; }> {
+    return computed.outcome !== 'idempotency-conflict' && computed.outcome !== 'rejected';
+}
+
+function throwNonCommittableMutation(
+    command: GroupStateMutationCommand,
+    computed: Extract<GroupMutationComputed, { outcome: 'idempotency-conflict' | 'rejected'; }>
+): never {
+    if (computed.outcome === 'idempotency-conflict') {
+        throw new GroupMutationIdempotencyConflictError(
+            command.command.commandId,
+            computed.existingCommandHash,
+            computed.receivedCommandHash
+        );
+    }
+    throw toGroupMutationRejectionError(computed);
+}
+
+function isPresenceOperation(operation: GroupStateMutationCommand['command']['operation']): boolean {
+    return operation === 'connectPresence' || operation === 'heartbeatPresence' || operation === 'disconnectPresence';
 }

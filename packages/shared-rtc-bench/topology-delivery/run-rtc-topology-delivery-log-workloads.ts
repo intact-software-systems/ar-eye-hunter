@@ -1,5 +1,5 @@
 import type {
-    RtcTopologyDeliveryAppendInput,
+    RtcTopologyDeliveryAppend,
     RtcTopologyDeliveryAppendResult
 } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-contracts.ts';
 import { isRtcTopologyDeliveryRetryableConflict } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
@@ -32,7 +32,7 @@ interface BuildResultInput {
 interface RetryDuplicateLoserInput {
     readonly database: BenchmarkSql;
     readonly repository: PSqlRtcTopologyDeliveryRepository;
-    readonly append: RtcTopologyDeliveryAppendInput;
+    readonly append: RtcTopologyDeliveryAppend;
     readonly firstAttempt: Promise<RtcTopologyDeliveryAppendResult>;
 }
 
@@ -71,7 +71,7 @@ async function runAppendWorkload(
                 return await appendWithRetry(
                     database,
                     repository,
-                    appendInput(streamId, applicationId, `${name}-${index}`)
+                    computeBenchmarkAppend(streamId, applicationId, `${name}-${index}`)
                 );
             }
         );
@@ -105,20 +105,20 @@ async function runDuplicatePublicationRace(database: BenchmarkSql): Promise<Work
             index < RTC_TOPOLOGY_DELIVERY_LOG_BENCHMARK_POLICY.duplicateRaceCount;
             index += 1
         ) {
-            const winnerInput = appendInput(streams[0]!, applicationId, `${name}-${index}`);
-            const loserInput = { ...winnerInput, publisherStreamId: streams[1]! };
+            const winnerAppend = computeBenchmarkAppend(streams[0]!, applicationId, `${name}-${index}`);
+            const loserAppend = { ...winnerAppend, publisherStreamId: streams[1]! };
             const winnerAppended = deferred<void>();
             const releaseWinner = deferred<void>();
             const operationStartedAt = performance.now();
             const winner = database.begin(async (transaction) => {
-                const result = await repository.appendOrValidate(transaction, winnerInput);
+                const result = await repository.appendOrValidate(transaction, winnerAppend);
                 winnerAppended.resolve();
                 await releaseWinner.promise;
                 return result;
             });
             await winnerAppended.promise;
             const loser = database.begin(
-                async (transaction) => await repository.appendOrValidate(transaction, loserInput)
+                async (transaction) => await repository.appendOrValidate(transaction, loserAppend)
             );
             await new Promise((resolve) => setTimeout(resolve, 2));
             releaseWinner.resolve();
@@ -126,7 +126,7 @@ async function runDuplicatePublicationRace(database: BenchmarkSql): Promise<Work
             const loserResult = await retryDuplicateLoser({
                 database,
                 repository,
-                append: loserInput,
+                append: loserAppend,
                 firstAttempt: loser
             });
             transactionRetries += loserResult.retries;
@@ -159,13 +159,15 @@ async function runRollbackWorkload(database: BenchmarkSql): Promise<WorkloadResu
             RTC_TOPOLOGY_DELIVERY_LOG_BENCHMARK_POLICY.rollbackCount,
             async (index) => {
                 const operationStartedAt = performance.now();
+                const computedAppend = computeBenchmarkAppend(
+                    streams[0]!,
+                    applicationId,
+                    `${name}-${index}`
+                );
                 try {
                     await database.begin(async (transaction) => {
                         requireAppended(
-                            await repository.appendOrValidate(
-                                transaction,
-                                appendInput(streams[0]!, applicationId, `${name}-${index}`)
-                            ),
+                            await repository.appendOrValidate(transaction, computedAppend),
                             name
                         );
                         throw new IntentionalRollbackError();
@@ -242,13 +244,13 @@ async function executeConcurrently(
 async function appendWithRetry(
     database: BenchmarkSql,
     repository: PSqlRtcTopologyDeliveryRepository,
-    input: RtcTopologyDeliveryAppendInput
+    computedAppend: RtcTopologyDeliveryAppend
 ): Promise<Readonly<{ latencyMs: number; retries: number; }>> {
     const startedAt = performance.now();
     let retries = 0;
     for (let attempt = 1; attempt <= MAX_TRANSACTION_ATTEMPTS; attempt += 1) {
         const result = await database.begin(
-            async (transaction) => await repository.appendOrValidate(transaction, input)
+            async (transaction) => await repository.appendOrValidate(transaction, computedAppend)
         );
         if (result.status === 'conflict') {
             retries += 1;
@@ -329,11 +331,12 @@ export async function registerRtcTopologyDeliveryBenchmarkStreams(
     }
 }
 
-function appendInput(
+function computeBenchmarkAppend(
     publisherStreamId: string,
     applicationId: string,
     publicationId: string
-): RtcTopologyDeliveryAppendInput {
+): RtcTopologyDeliveryAppend {
+    const retainUntilEpochMs = Date.now() + RTC_TOPOLOGY_DELIVERY_LOG_BENCHMARK_POLICY.retentionMs;
     return {
         publisherStreamId,
         groupRef: { applicationId, workspaceId: 'performance', groupId: 'room' },
@@ -343,7 +346,8 @@ function appendInput(
             resourceId: publicationId,
             contextId: 'performance:room'
         },
-        retainUntilEpochMs: Date.now() + RTC_TOPOLOGY_DELIVERY_LOG_BENCHMARK_POLICY.retentionMs
+        retainUntilEpochMs,
+        retainUntilIsoTimestamp: new Date(retainUntilEpochMs).toISOString()
     };
 }
 

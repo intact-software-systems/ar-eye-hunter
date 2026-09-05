@@ -4,8 +4,11 @@ import type {
     IssueAuthSessionCommand,
     RegisterAuthUserCommand
 } from '../auth-mutation-contracts.ts';
-import { AuthMutationRejectedError } from '../auth-mutation-rejected-error.ts';
-import { equalAuthJson } from './auth-mutation-validation.ts';
+import {
+    equalAuthJson,
+    toAuthMutationValidationIssue,
+    type AuthMutationValidationIssue
+} from './auth-mutation-validation.ts';
 
 type AuthUserMutationCommand = Extract<AuthMutationCommand, { kind: 'register-user' | 'issue-session'; }>;
 
@@ -15,7 +18,9 @@ interface ValidateAuthUserMutationInput {
     readonly read: AuthMutationRead;
 }
 
-export function validateAuthUserMutation(validation: ValidateAuthUserMutationInput): void {
+export function validateAuthUserMutation(
+    validation: ValidateAuthUserMutationInput
+): readonly AuthMutationValidationIssue[] {
     switch (validation.kind) {
         case 'register-user':
             return validateRegisterRead(
@@ -33,36 +38,42 @@ export function validateAuthUserMutation(validation: ValidateAuthUserMutationInp
 function validateRegisterRead(
     command: RegisterAuthUserCommand,
     read: Extract<AuthMutationRead, { kind: 'register-user'; }>
-): void {
+): readonly AuthMutationValidationIssue[] {
+    const issues: AuthMutationValidationIssue[] = [];
     if (read.byUsername && !equalAuthJson(read.byUsername.value, command.user)) {
-        throw new AuthMutationRejectedError('Auth username already exists', 409);
+        issues.push(toAuthMutationValidationIssue('read.byUsername', 'Auth username already exists', 409));
     }
     if (read.byClientId && !equalAuthJson(read.byClientId.value, command.user)) {
-        throw new AuthMutationRejectedError('Auth client identity already exists', 409);
+        issues.push(toAuthMutationValidationIssue('read.byClientId', 'Auth client identity already exists', 409));
     }
     if ((read.byUsername === null) !== (read.byClientId === null)) {
-        throw new AuthMutationRejectedError('Auth user indexes are inconsistent', 500);
+        issues.push(toAuthMutationValidationIssue('read', 'Auth user indexes are inconsistent', 500));
     }
+    return issues;
 }
 
 function validateIssueSessionUserAuthority(
     command: IssueAuthSessionCommand,
     read: Extract<AuthMutationRead, { kind: 'issue-session'; }>
-): void {
+): readonly AuthMutationValidationIssue[] {
+    const issues: AuthMutationValidationIssue[] = [];
     if (
         command.session.clientId !== command.authority.clientId ||
         command.session.username.trim().toLowerCase() !== command.authority.normalizedUsername
     ) {
-        throw new AuthMutationRejectedError('Auth session user authority differs', 403);
+        issues.push(toAuthMutationValidationIssue('command.authority', 'Auth session user authority differs', 403));
     }
     if (command.authority.kind === 'static-client') {
         if (read.userByUsername || read.userByClientId) {
-            throw new AuthMutationRejectedError(
-                'Static auth session authority conflicts with a registered user',
-                403
+            issues.push(
+                toAuthMutationValidationIssue(
+                    'read.user',
+                    'Static auth session authority conflicts with a registered user',
+                    403
+                )
             );
         }
-        return;
+        return issues;
     }
     if (
         !read.userByUsername ||
@@ -71,7 +82,12 @@ function validateIssueSessionUserAuthority(
         read.userByClientId.entry.revision !== command.authority.userRevision ||
         !equalAuthJson(read.userByUsername.value, read.userByClientId.value)
     ) {
-        throw new AuthMutationRejectedError('Registered auth user authority is unavailable', 403);
+        issues.push(
+            toAuthMutationValidationIssue('read.user', 'Registered auth user authority is unavailable', 403)
+        );
+    }
+    if (!read.userByUsername) {
+        return issues;
     }
     const user = read.userByUsername.value;
     if (
@@ -81,6 +97,7 @@ function validateIssueSessionUserAuthority(
         user.clientId !== command.session.clientId ||
         user.username !== command.session.username
     ) {
-        throw new AuthMutationRejectedError('Registered auth user authority differs', 403);
+        issues.push(toAuthMutationValidationIssue('read.user', 'Registered auth user authority differs', 403));
     }
+    return issues;
 }

@@ -26,8 +26,8 @@ describe('client mutation pure retry compute', () => {
 
         const first = computeClientMutation({ command, read });
         const second = computeClientMutation({ command, read });
-        validateClientMutation({ command, read, computed: first });
-        validateClientMutation({ command, read, computed: second });
+        expect(validateClientMutation({ command, read, computed: first })).toEqual([]);
+        expect(validateClientMutation({ command, read, computed: second })).toEqual([]);
 
         expect(second).toEqual(first);
         expect(command).toEqual(structuredClone(command));

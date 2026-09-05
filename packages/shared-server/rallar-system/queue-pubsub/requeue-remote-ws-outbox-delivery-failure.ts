@@ -38,24 +38,23 @@ export async function requeueRemoteWsOutboxDeliveryFailure(
     if (!(repository instanceof InMemoryQueueBox)) {
         throw new Error('Remote WS delivery requeue requires a CAS-capable queue repository');
     }
+    const current = await repository.getItem(observed.key);
+    if (current === undefined || !hasSameObservedDelivery(current, observed)) {
+        return undefined;
+    }
     const releasedAt = Temporal.Now.instant();
-    const result = await repository.enqueueOrUpdate(observed, (current) => {
-        if (!hasSameObservedDelivery(current, observed)) {
-            return undefined;
+    const replacement = {
+        ...current,
+        status: disposition.status,
+        dequeueAudit: {
+            ...current.dequeueAudit,
+            endTs: releasedAt,
+            nextTs: disposition.delayMs === null
+                ? undefined
+                : releasedAt.add({ milliseconds: disposition.delayMs })
         }
-        return {
-            ...current,
-            status: disposition.status,
-            dequeueAudit: {
-                ...current.dequeueAudit,
-                endTs: releasedAt,
-                nextTs: disposition.delayMs === null
-                    ? undefined
-                    : releasedAt.add({ milliseconds: disposition.delayMs })
-            }
-        };
-    });
-    return result.action === 'updated' ? result.entry : undefined;
+    };
+    return await repository.replaceIfObserved(current, replacement) ?? undefined;
 }
 
 function hasSameObservedDelivery(current: ResourceEntry, observed: ResourceEntry): boolean {

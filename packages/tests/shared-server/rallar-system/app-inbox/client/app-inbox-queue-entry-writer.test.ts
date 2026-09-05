@@ -96,30 +96,27 @@ describe('AppInbox durable enqueue', () => {
         expect(wakeSignals).toBe(2);
     });
 
-    it('replaces completed coalesced work and wakes only when work changes', async () => {
+    it('replaces terminal work and wakes only when the durable row changes', async () => {
         const queue = new DurableEnqueueQueue(new Map());
         let wakeSignals = 0;
         const service = createService(queue, () => {
             wakeSignals += 1;
         });
 
-        const firstKey = await service.enqueueReplacingWhen(
-            COMMAND,
-            (entry) => entry.status === EntityStatus.COMPLETED
-        );
-        const activeKey = await service.enqueueReplacingWhen(
-            { ...COMMAND, data: { ...COMMAND.data, principalId: 'replacement' } },
-            (entry) => entry.status === EntityStatus.COMPLETED
-        );
+        const firstKey = await service.enqueueReplacingTerminal(COMMAND);
+        const activeKey = await service.enqueueReplacingTerminal({
+            ...COMMAND,
+            data: { ...COMMAND.data, principalId: 'replacement' }
+        });
         const active = await queue.getItem(firstKey);
         if (active === undefined) {
             throw new Error('Expected coalesced AppInbox entry');
         }
         await queue.enqueue({ ...active, status: EntityStatus.COMPLETED });
-        const completedKey = await service.enqueueReplacingWhen(
-            { ...COMMAND, data: { ...COMMAND.data, principalId: 'replacement' } },
-            (entry) => entry.status === EntityStatus.COMPLETED
-        );
+        const completedKey = await service.enqueueReplacingTerminal({
+            ...COMMAND,
+            data: { ...COMMAND.data, principalId: 'replacement' }
+        });
 
         expect(activeKey).toEqual(firstKey);
         expect(completedKey).toEqual(firstKey);
@@ -130,12 +127,40 @@ describe('AppInbox durable enqueue', () => {
             }
         });
     });
+
+    it('preserves a concurrent winner and does not wake after a terminal replacement CAS loss', async () => {
+        const queue = new LosingTerminalReplacementQueue(new Map());
+        let wakeSignals = 0;
+        const service = createService(queue, () => {
+            wakeSignals += 1;
+        });
+        const key = await service.enqueueReplacingTerminal(COMMAND);
+        const current = await queue.getItem(key);
+        if (current === undefined) {
+            throw new Error('Expected terminal replacement fixture entry');
+        }
+        await queue.enqueue({ ...current, status: EntityStatus.COMPLETED });
+
+        await service.enqueueReplacingTerminal({
+            ...COMMAND,
+            data: { ...COMMAND.data, principalId: 'loser' }
+        });
+
+        expect((await queue.getItem(key))?.resource).toBe(
+            LosingTerminalReplacementQueue.WINNER_RESOURCE
+        );
+        expect(wakeSignals).toBe(1);
+    });
 });
 
-function createService(queue: DurableEnqueueQueue, wakeQueue?: () => void): AppInboxQueueEntryWriter {
+function createService(
+    queue: DurableEnqueueQueue,
+    wakeQueue?: () => void
+): AppInboxQueueEntryWriter {
     return new AppInboxQueueEntryWriter(
         {
-            inboxQueueReader: new InboxQueueReader(queue)
+            inboxQueueReader: new InboxQueueReader(queue),
+            repository: queue
         },
         {
             serviceId: 'server-12345678',
@@ -143,6 +168,21 @@ function createService(queue: DurableEnqueueQueue, wakeQueue?: () => void): AppI
             wakeOwningQueue: wakeQueue
         }
     );
+}
+
+class LosingTerminalReplacementQueue extends DurableEnqueueQueue {
+    static readonly WINNER_RESOURCE = JSON.stringify({ winner: true });
+
+    override async replaceIfObserved(
+        expected: ResourceEntry,
+        replacement: ResourceEntry
+    ): Promise<ResourceEntry | null> {
+        await this.enqueue({
+            ...replacement,
+            resource: LosingTerminalReplacementQueue.WINNER_RESOURCE
+        });
+        return await super.replaceIfObserved(expected, replacement);
+    }
 }
 
 class FailingQueueBox extends DurableEnqueueQueue {

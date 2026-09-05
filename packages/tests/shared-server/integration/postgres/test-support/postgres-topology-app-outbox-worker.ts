@@ -8,9 +8,9 @@ import {
     type PSqlResourceInboxRepository
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
-import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
@@ -80,11 +80,6 @@ function registerTopologyAppOutboxHandler(
     registration: RegisterTopologyAppOutboxHandlerInput
 ): void {
     const input = registration.input;
-    const runtime = createRtcTopologyOutboxPublisher({
-        outboxQueueReader: registration.outboxQueueReader,
-        senderId: `postgres-topology-outbox-${Deno.pid}`,
-        now: () => input.atEpochMs
-    });
     const transactionGate = createPostgresWorkerTransactionGate({
         sql: registration.sql,
         beforeMutationTransaction: async () => await waitAtBarrier(input.barrier, String(Deno.pid)),
@@ -102,9 +97,9 @@ function registerTopologyAppOutboxHandler(
         topologyService: new RallarRtcTopologyService({ now: () => input.atEpochMs })
     });
     registration.outboxQueueReader.onOutboxMessageDo(
-        runtime.workType,
+        AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
         createRtcTopologyWorkHandler({
-            runtime,
+            outboxQueueReader: registration.outboxQueueReader,
             database: transactionGate.sql,
             topologyPlanning: topologyManagement.planning,
             executionRepository: new RtcTopologyExecutionRepository(

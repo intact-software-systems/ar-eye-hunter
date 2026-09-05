@@ -1,6 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { PSqlResultsQueueBox } from '@shared-server/queuebox/postgres/p-sql-results-queue-box.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -69,67 +68,24 @@ describe('PSqlQueueBox', () => {
         expect(repo.entries.writeIfAbsentOrReplaceExpired).toHaveBeenCalledWith(entry);
     });
 
-    it('enqueueIf does not overwrite active entries when the predicate returns false', async () => {
+    it('delegates exact compare-and-replace without opening a callback transaction', async () => {
         const previous = createEntry('entry-1');
         const replacement = createEntry('entry-1', EntityStatus.NEW, {
             resource: JSON.stringify({ resourceId: 'entry-1', version: 2 })
         });
-        const enqueueIt = vi.fn(() => false);
-        let replacementWritten = false;
+        const replaceIfObserved = vi.fn(async () => replacement);
         const repo = createRepo({
-            findAnyByKey: vi.fn(async () => previous),
-            replace: async (entry) => {
-                replacementWritten = true;
-                return entry;
-            }
+            replaceIfObserved
         });
+        repo.transaction.mockRejectedValue(
+            new Error('Exact compare-and-replace must not open a callback transaction')
+        );
 
         const queue = new PSqlQueueBox(repo as never);
-        const returned = await queue.enqueueIf(replacement, enqueueIt);
+        const returned = await queue.replaceIfObserved(previous, replacement);
 
-        expect(returned).toBe(previous);
-        expect(enqueueIt).toHaveBeenCalledWith(previous);
-        expect(replacementWritten).toBe(false);
-    });
-
-    it('enqueueIf overwrites active entries when the predicate returns true', async () => {
-        const previous = createEntry('entry-1');
-        const replacement = createEntry('entry-1', EntityStatus.NEW, {
-            resource: JSON.stringify({ resourceId: 'entry-1', version: 2 })
-        });
-        const enqueueIt = vi.fn(() => true);
-        const repo = createRepo({
-            findAnyByKey: vi.fn(async () => previous)
-        });
-
-        const queue = new PSqlQueueBox(repo as never);
-        const returned = await queue.enqueueIf(replacement, enqueueIt);
-
-        expect(returned).toBe(previous);
-        expect(enqueueIt).toHaveBeenCalledWith(previous);
-        expect(repo.entries.replace).toHaveBeenCalledWith(replacement);
-    });
-
-    it('enqueueIf overwrites expired entries without calling the predicate', async () => {
-        const expired = createEntry('entry-1', EntityStatus.NEW, {
-            expiryTs: Temporal.Now.instant().subtract({ seconds: 1 })
-        });
-        const replacement = createEntry('entry-1');
-        let predicateVisited = false;
-        const enqueueIt = () => {
-            predicateVisited = true;
-            return false;
-        };
-        const repo = createRepo({
-            findAnyByKey: vi.fn(async () => expired)
-        });
-
-        const queue = new PSqlQueueBox(repo as never);
-        const returned = await queue.enqueueIf(replacement, enqueueIt);
-
-        expect(returned).toBeUndefined();
-        expect(predicateVisited).toBe(false);
-        expect(repo.entries.replace).toHaveBeenCalledWith(replacement);
+        expect(returned).toBe(replacement);
+        expect(replaceIfObserved).toHaveBeenCalledWith(previous, replacement);
     });
 
     it('skips entries that can no longer be reserved after selection', async () => {
@@ -535,71 +491,6 @@ describe('PSqlQueueBox', () => {
     });
 });
 
-describe('PSqlResultsQueueBox', () => {
-    it('enqueueIf does not overwrite active entries when the predicate returns false', async () => {
-        const previous = createEntry('entry-1');
-        const replacement = createEntry('entry-1', EntityStatus.NEW, {
-            resource: JSON.stringify({ resourceId: 'entry-1', version: 2 })
-        });
-        const enqueueIt = vi.fn(() => false);
-        let replacementWritten = false;
-        const repo = createResultsRepo({
-            findAnyByKey: vi.fn(async () => previous),
-            replace: async (entry) => {
-                replacementWritten = true;
-                return entry;
-            }
-        });
-
-        const queue = new PSqlResultsQueueBox(repo as never);
-        const returned = await queue.enqueueIf(replacement, enqueueIt);
-
-        expect(returned).toBe(previous);
-        expect(enqueueIt).toHaveBeenCalledWith(previous);
-        expect(replacementWritten).toBe(false);
-    });
-
-    it('enqueueIf overwrites active entries when the predicate returns true', async () => {
-        const previous = createEntry('entry-1');
-        const replacement = createEntry('entry-1', EntityStatus.NEW, {
-            resource: JSON.stringify({ resourceId: 'entry-1', version: 2 })
-        });
-        const enqueueIt = vi.fn(() => true);
-        const repo = createResultsRepo({
-            findAnyByKey: vi.fn(async () => previous)
-        });
-
-        const queue = new PSqlResultsQueueBox(repo as never);
-        const returned = await queue.enqueueIf(replacement, enqueueIt);
-
-        expect(returned).toBe(previous);
-        expect(enqueueIt).toHaveBeenCalledWith(previous);
-        expect(repo.replace).toHaveBeenCalledWith(replacement);
-    });
-
-    it('enqueueIf overwrites expired entries without calling the predicate', async () => {
-        const expired = createEntry('entry-1', EntityStatus.NEW, {
-            expiryTs: Temporal.Now.instant().subtract({ seconds: 1 })
-        });
-        const replacement = createEntry('entry-1');
-        let predicateVisited = false;
-        const enqueueIt = () => {
-            predicateVisited = true;
-            return false;
-        };
-        const repo = createResultsRepo({
-            findAnyByKey: vi.fn(async () => expired)
-        });
-
-        const queue = new PSqlResultsQueueBox(repo as never);
-        const returned = await queue.enqueueIf(replacement, enqueueIt);
-
-        expect(returned).toBeUndefined();
-        expect(predicateVisited).toBe(false);
-        expect(repo.replace).toHaveBeenCalledWith(replacement);
-    });
-});
-
 function createRepo(overrides: {
     isEntriesToLock?: (
         typeIds: ReadonlySet<string>,
@@ -618,6 +509,10 @@ function createRepo(overrides: {
     findRetryExhaustionFinalizationsSkipLocked?: () => Promise<Map<Key, ResourceEntry>>;
     findAnyByKey?: (key: Key) => Promise<ResourceEntry | null>;
     replace?: (entry: ResourceEntry) => Promise<ResourceEntry>;
+    replaceIfObserved?: (
+        expected: ResourceEntry,
+        replacement: ResourceEntry
+    ) => Promise<ResourceEntry | null>;
     writeIfAbsentOrReplaceExpired?: (entry: ResourceEntry) => Promise<ResourceEntry>;
     updateResourceEntry?: (key: Key, status: EntityStatus, delayMs: number | null) => Promise<number>;
     releaseReserved?: (
@@ -640,6 +535,7 @@ function createRepo(overrides: {
     const entries = {
         findAnyByKey: overrides.findAnyByKey ?? vi.fn(async () => null),
         replace: overrides.replace ?? vi.fn(async (entry: ResourceEntry) => entry),
+        replaceIfObserved: overrides.replaceIfObserved ?? vi.fn(async () => null),
         writeIfAbsentOrReplaceExpired: overrides.writeIfAbsentOrReplaceExpired ?? vi.fn(async (entry: ResourceEntry) => entry),
         upsert: vi.fn(async (entry: ResourceEntry) => entry),
         deleteByKey: vi.fn(async () => true),
@@ -679,21 +575,6 @@ function createRepo(overrides: {
             deleteExpired: vi.fn(async () => 0)
         },
         transaction: vi.fn(async (fn: (txRepo: unknown) => Promise<unknown>) => await fn(repo))
-    };
-
-    return repo;
-}
-
-function createResultsRepo(overrides: {
-    findAnyByKey?: (key: Key) => Promise<ResourceEntry | null>;
-    replace?: (entry: ResourceEntry) => Promise<ResourceEntry>;
-    writeIfAbsentOrReplaceExpired?: (entry: ResourceEntry) => Promise<ResourceEntry>;
-}) {
-    const repo = {
-        begin: vi.fn(async (fn: (txRepo: unknown) => Promise<unknown>) => await fn(repo)),
-        findAnyByKey: overrides.findAnyByKey ?? vi.fn(async () => null),
-        replace: overrides.replace ?? vi.fn(async (entry: ResourceEntry) => entry),
-        writeIfAbsentOrReplaceExpired: overrides.writeIfAbsentOrReplaceExpired ?? vi.fn(async (entry: ResourceEntry) => entry)
     };
 
     return repo;

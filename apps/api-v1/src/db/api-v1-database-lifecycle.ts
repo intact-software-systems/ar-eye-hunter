@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
 import { tryWith } from '@shared/resilience/TryWith.ts';
 import postgres from 'postgres';
 
@@ -246,7 +247,10 @@ const PRODUCTION_OPERATIONS: ApiV1DatabaseLifecycleOperations = {
     createPostgresClient: (input) =>
         toApiV1PostgresClient(postgres(input.connectionUrl, {
             max: input.max,
-            idle_timeout: input.idleTimeoutSeconds
+            idle_timeout: input.idleTimeoutSeconds,
+            types: {
+                timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType()
+            }
         })),
     readyPostgres: async (client) => {
         await client`select 1`;

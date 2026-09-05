@@ -1,6 +1,5 @@
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
-import { PSqlRuntimeStateRepository } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
@@ -73,23 +72,27 @@ export function createWsSessionGenerationLifecycleService(
             if (computed.outcome === 'none') {
                 return;
             }
-            const target = new PSqlRuntimeStateRepository(transaction);
-            const value = JSON.stringify(computed.state);
-            const result = computed.outcome === 'insert'
-                ? await target.insertIfAbsent(
-                    SESSION_CLOSE_HIGH_WATER_NAMESPACE,
-                    computed.key,
-                    value,
-                    computed.state.expireAtEpochMs
-                )
-                : await target.upsertIfRevision(
-                    SESSION_CLOSE_HIGH_WATER_NAMESPACE,
-                    computed.key,
-                    value,
-                    computed.state.expireAtEpochMs,
-                    requireExpectedRevision(computed)
-                );
-            if (result.status === 'conflict') {
+            const rows = computed.outcome === 'insert'
+                ? await transaction<Array<{ revision: number | string; }>>`
+                    insert into runtime_state_store (store_namespace, store_key, store_value,
+                                                     expire_at_ts, updated_ts, revision)
+                    values (${SESSION_CLOSE_HIGH_WATER_NAMESPACE}, ${computed.key},
+                            ${computed.value}, ${computed.expireAtIsoTimestamp}, now(), 0)
+                    on conflict (store_namespace, store_key) do nothing
+                    returning revision
+                `
+                : await transaction<Array<{ revision: number | string; }>>`
+                    update runtime_state_store
+                    set store_value = ${computed.value},
+                        expire_at_ts = ${computed.expireAtIsoTimestamp},
+                        updated_ts = now(),
+                        revision = revision + 1
+                    where store_namespace = ${SESSION_CLOSE_HIGH_WATER_NAMESPACE}
+                      and store_key = ${computed.key}
+                      and revision = ${computed.expectedRevision}
+                    returning revision
+                `;
+            if (rows.length === 0) {
                 throw new RuntimeStateWriteConflictError();
             }
         }
@@ -111,11 +114,4 @@ function decodeCurrentSessionGenerationRow(
         throw new TypeError('WebSocket session close high-water row expiry is invalid');
     }
     return state;
-}
-
-function requireExpectedRevision(computed: WsSessionGenerationLifecycleComputed): number {
-    if (computed.expectedRevision === null) {
-        throw new TypeError('WebSocket session close high-water update revision is missing');
-    }
-    return computed.expectedRevision;
 }

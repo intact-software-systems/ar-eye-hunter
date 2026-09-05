@@ -6,6 +6,7 @@ import {
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/presence/group-presence-storage-keys.ts';
+import { assertGroupPresenceSummaryRead } from '@shared-server/rallar-system/group-state/presence/assert-group-presence-summary-read.ts';
 import {
     computeGroupPresenceSummary,
     validateGroupPresenceSummary,
@@ -42,13 +43,12 @@ describe('group presence summary evaluation time', () => {
             evaluatedAtEpochMs: 2_000,
             summary: read.current?.value
         });
-        expect(() =>
-            validateGroupPresenceSummary({
-                ref: REF,
-                read,
-                computed
-            })
-        ).not.toThrow();
+        expect(validateGroupPresenceSummary({
+            ref: REF,
+            read,
+            nowEpochMs: 2_000,
+            computed
+        })).toEqual([]);
     });
 
     it('rebases stale presence-summary reads and validates dominating writes', () => {
@@ -103,13 +103,12 @@ describe('group presence summary evaluation time', () => {
             nowEpochMs: 2_000
         });
         expect(canonical).toEqual({ outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: base });
-        expect(() =>
-            validateGroupPresenceSummary({
-                ref: groupRef('pure-room'),
-                read,
-                computed: canonical
-            })
-        ).not.toThrow();
+        expect(validateGroupPresenceSummary({
+            ref: groupRef('pure-room'),
+            read,
+            nowEpochMs: 2_000,
+            computed: canonical
+        })).toEqual([]);
         const staleSession = presenceFor('alice', 'stale-session', 'stale-generation');
         const divergentValue = {
             ...base,
@@ -138,13 +137,12 @@ describe('group presence summary evaluation time', () => {
                 causalRevision: { groupRevision: 1, presenceRevision: 1 }
             }
         });
-        expect(() =>
-            validateGroupPresenceSummary({
-                ref: groupRef('pure-room'),
-                read: divergent,
-                computed: write
-            })
-        ).not.toThrow();
+        expect(validateGroupPresenceSummary({
+            ref: groupRef('pure-room'),
+            read: divergent,
+            nowEpochMs: 2_000,
+            computed: write
+        })).toEqual([]);
         const aheadValue = {
             ...divergentValue,
             causalRevision: { groupRevision: 2, presenceRevision: 1 }
@@ -167,26 +165,51 @@ describe('group presence summary evaluation time', () => {
             evaluatedAtEpochMs: 2_000,
             summary: aheadValue
         });
+        expect(validateGroupPresenceSummary({
+            ref: groupRef('pure-room'),
+            read: ahead,
+            nowEpochMs: 2_000,
+            computed: concurrent
+        })).toEqual([]);
         expect(() =>
-            validateGroupPresenceSummary({
-                ref: groupRef('pure-room'),
-                read: ahead,
-                computed: concurrent
-            })
-        ).not.toThrow();
-        expect(() =>
-            validateGroupPresenceSummary({
-                ref: groupRef('pure-room'),
-                read: {
-                    ...read,
-                    current: rekey(
-                        current,
-                        `${groupStatePresenceSummaryStorageKey(groupRef('pure-room'))}:wrong`
-                    )
-                },
-                computed: { outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: base }
+            assertGroupPresenceSummaryRead(groupRef('pure-room'), {
+                ...read,
+                current: rekey(
+                    current,
+                    `${groupStatePresenceSummaryStorageKey(groupRef('pure-room'))}:wrong`
+                )
             })
         ).toThrow(/canonical|key/i);
+    });
+
+    it('collects coordinated evaluation-time substitution and independent summary issues', () => {
+        const read = { ...createExpiryCrossingRead(), current: null };
+        const computed = computeGroupPresenceSummary({ ref: REF, read, nowEpochMs: 2_000 });
+        if (computed.outcome !== 'write') {
+            throw new Error('Expected a presence-summary write');
+        }
+        const substituted = {
+            ...computed,
+            evaluatedAtEpochMs: 3_000,
+            summary: {
+                ...computed.summary,
+                computedAtEpochMs: 3_000,
+                activeSessionCount: computed.summary.activeSessionCount + 1
+            }
+        };
+
+        expect(
+            validateGroupPresenceSummary({
+                ref: REF,
+                read,
+                nowEpochMs: 2_000,
+                computed: substituted
+            }).map((issue) => issue.path)
+        ).toEqual(expect.arrayContaining([
+            'computed.evaluatedAtEpochMs',
+            'computed.summary.computedAtEpochMs',
+            'computed.summary.activeSessionCount'
+        ]));
     });
 });
 

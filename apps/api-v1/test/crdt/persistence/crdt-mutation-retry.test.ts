@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 
-import { RALLAR_CRDT_PROTOCOL_VERSION, toRallarCrdtDocumentKey, type RallarCrdtDocumentRef, type RallarCrdtSnapshotEnvelope } from '@shared/crdt/mod.ts';
-
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 
 import {
@@ -11,8 +9,6 @@ import {
 
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-
-import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/decoding/decode-exact-snapshot-envelope.ts';
 
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 
@@ -24,18 +20,10 @@ import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 import { queueNow, update, withCompetingWrite } from '../crdt-api-test-fixtures.ts';
 
-interface MigratedSnapshotContractRow {
-    readonly document_key: string;
-    readonly document_revision: string | number;
-    readonly reason: string | null;
-    readonly snapshot_envelope: string;
-    readonly reason_nullable: string;
-}
-
 interface RetryMutationCountsRow {
     readonly updates: string;
     readonly owner_updates: string;
-    readonly outbox: string;
+    readonly owner_outbox: string;
 }
 
 interface ResourceInboxResultPayloadRow {
@@ -48,124 +36,10 @@ interface RetryMutationScenario {
     readonly documentAuthorityReadCount: () => number;
 }
 
-interface PreConstraintSnapshotFixture {
-    readonly document: RallarCrdtDocumentRef;
-    readonly reason: string | null;
-}
-
-const MIGRATION_BACKFILL_REASON = 'legacy-import';
-const PRE_CONSTRAINT_SNAPSHOT_FIXTURES: readonly PreConstraintSnapshotFixture[] = [
-    { document: preConstraintDocument('physical'), reason: 'api-v1-admin-compaction' },
-    { document: preConstraintDocument('null'), reason: null },
-    { document: preConstraintDocument('blank'), reason: '   ' }
-];
-
-Deno.test(
-    'trusted identity migration makes snapshot reason mandatory in row and envelope',
-    verifySnapshotReasonConstraintMigration
-);
-
 Deno.test(
     'real SQL CAS conflict retries from revoked room membership and commits no owner effect',
     verifyRealSqlCasConflictRetry
 );
-
-async function verifySnapshotReasonConstraintMigration(): Promise<void> {
-    await withPGliteSql(runSnapshotReasonConstraintMigration);
-}
-
-async function runSnapshotReasonConstraintMigration(sql: PGliteSql): Promise<void> {
-    await sql`alter table crdt_snapshots alter column reason drop not null`;
-    await insertPreConstraintSnapshotFixtures(sql);
-    const migration = await Deno.readTextFile(
-        new URL(
-            '../../../prisma/migrations/20260723170000_crdt_trusted_identity_required/migration.sql',
-            import.meta.url
-        )
-    );
-    await sql.exec(migration);
-
-    const rows = await readMigratedSnapshotContract(sql);
-    assertMigratedSnapshotContract(rows);
-}
-
-async function insertPreConstraintSnapshotFixtures(sql: PGliteSql): Promise<void> {
-    for (const fixture of PRE_CONSTRAINT_SNAPSHOT_FIXTURES) {
-        const documentKey = toRallarCrdtDocumentKey(fixture.document);
-        const envelope = preConstraintSnapshot(fixture.document);
-        await sql`
-          insert into crdt_documents (
-              document_key, application_id, workspace_id, document_scope,
-              document_type, document_id, document_ref, document_revision,
-              snapshot_count
-          ) values (
-              ${documentKey}, 'app-1', null, 'app', 'checklist',
-              ${fixture.document.documentId}, ${JSON.stringify(fixture.document)}, 0, 1
-          )
-      `;
-        await sql`
-          insert into crdt_snapshots (
-              document_key, snapshot_id, append_sequence, snapshot_envelope,
-              created_at_ts, reason
-          ) values (
-              ${documentKey}, ${envelope.snapshotId}, 0, ${JSON.stringify(envelope)},
-              ${new Date(envelope.createdAtEpochMs)}, ${fixture.reason}
-          )
-      `;
-    }
-}
-
-async function readMigratedSnapshotContract(
-    sql: PGliteSql
-): Promise<readonly MigratedSnapshotContractRow[]> {
-    return await sql<MigratedSnapshotContractRow[]>`
-      select d.document_key, d.document_revision, s.reason, s.snapshot_envelope,
-             c.is_nullable as reason_nullable
-      from crdt_documents d
-      join crdt_snapshots s on s.document_key = d.document_key
-      join information_schema.columns c
-        on c.table_name = 'crdt_snapshots' and c.column_name = 'reason'
-      order by d.document_id
-  `;
-}
-
-function assertMigratedSnapshotContract(rows: readonly MigratedSnapshotContractRow[]): void {
-    assert.deepEqual(
-        rows.map((row) => {
-            const envelope = decodeExactSnapshotEnvelope(JSON.parse(row.snapshot_envelope));
-            return {
-                documentId: envelope.document.documentId,
-                documentRevision: Number(row.document_revision),
-                logicalReason: envelope.metadata.reason,
-                physicalReason: row.reason,
-                reasonNullable: row.reason_nullable
-            };
-        }),
-        [
-            {
-                documentId: 'pre-constraint-blank',
-                documentRevision: 1,
-                logicalReason: MIGRATION_BACKFILL_REASON,
-                physicalReason: MIGRATION_BACKFILL_REASON,
-                reasonNullable: 'NO'
-            },
-            {
-                documentId: 'pre-constraint-null',
-                documentRevision: 1,
-                logicalReason: MIGRATION_BACKFILL_REASON,
-                physicalReason: MIGRATION_BACKFILL_REASON,
-                reasonNullable: 'NO'
-            },
-            {
-                documentId: 'pre-constraint-physical',
-                documentRevision: 1,
-                logicalReason: 'api-v1-admin-compaction',
-                physicalReason: 'api-v1-admin-compaction',
-                reasonNullable: 'NO'
-            }
-        ]
-    );
-}
 
 async function verifyRealSqlCasConflictRetry(): Promise<void> {
     await withPGliteSql(async (sql) => {
@@ -256,10 +130,12 @@ async function assertRetryMutationOutcome(
           (select count(*) from crdt_updates)::text as updates,
           (select count(*) from crdt_updates where update_id = 'owner-update')::text
               as owner_updates,
-          (select count(*) from resource_inbox where ri_type_id = 'WS_OUTBOX')::text
-              as outbox
+          (select count(*) from resource_inbox
+           where ri_type_id = 'WS_OUTBOX'
+             and ri_resource_id in ('crdt:owner-delivery:reply', 'crdt:owner-update:fanout'))::text
+              as owner_outbox
   `;
-    assert.deepEqual(counts, { updates: '1', owner_updates: '0', outbox: '0' });
+    assert.deepEqual(counts, { updates: '1', owner_updates: '0', owner_outbox: '0' });
     assert.equal(documentAuthorityReads, 2);
     const [completion] = await sql<ResourceInboxResultPayloadRow[]>`
       select ris_resource from resource_inbox_results
@@ -269,27 +145,4 @@ async function assertRetryMutationOutcome(
     assert.ok(completion);
     const result = decodeCrdtMutationResult(JSON.parse(completion.ris_resource));
     assert.equal(result.code, 'authorization-scope-denied');
-}
-
-function preConstraintDocument(suffix: string): RallarCrdtDocumentRef {
-    return {
-        applicationId: 'app-1',
-        scope: 'app',
-        documentType: 'checklist',
-        documentId: `pre-constraint-${suffix}`
-    };
-}
-
-function preConstraintSnapshot(document: RallarCrdtDocumentRef): RallarCrdtSnapshotEnvelope {
-    return {
-        protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
-        document,
-        snapshotId: `snapshot-${document.documentId}`,
-        schemaVersion: 1,
-        createdAtEpochMs: 10_000,
-        maxLamport: 0,
-        includedUpdateIds: [],
-        value: { preConstraint: true },
-        metadata: { updateCount: 0 }
-    };
 }

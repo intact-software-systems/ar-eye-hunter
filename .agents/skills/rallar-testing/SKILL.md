@@ -74,6 +74,10 @@ semantic tests. Maintain PostgreSQL and PGlite parity, and run the
 focused real PostgreSQL integration tests whenever specialized SQL or its
 transaction semantics change.
 
+Browser IndexedDB readwrite and initial versionchange schema-creation tests
+must prove persistence-ready-before-entry behavior; incompatible existing
+schemas fail closed without a schema rewrite.
+
 When authoritative mutation control flow changes, run
 `npm run check:repo-style:navigation-details` for the affected roots and perform
 the manual 5/5 cold probe from concrete registration through operation entry,

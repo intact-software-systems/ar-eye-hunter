@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
+import { assertGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/assert-topology-config-records.ts';
 import { computeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-mutation.ts';
 import { resultFromTopologyConfigReceipt } from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-receipt.ts';
-import { validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts';
-import { createTopologyConfigMutationTestInput, createTopologyTestGroupRef } from './group-topology-config-mutation-test-fixtures.ts';
+import { createDefaultTopologyConfigMutationTestInput, createTopologyTestGroupRef } from './group-topology-config-mutation-test-fixtures.ts';
 
 describe('topology config mutation result reconstruction', () => {
     it.each(['putConfig', 'putOverride'] as const)(
         'reconstructs the exact %s result from its durable receipt',
         (operation) => {
-            const mutation = createTopologyConfigMutationTestInput({ operation });
+            const mutation = createDefaultTopologyConfigMutationTestInput({ operation });
             const computed = computeTopologyConfigMutation(mutation);
             if (computed.outcome !== 'write') {
                 throw new Error('Expected topology config write');
@@ -22,7 +22,7 @@ describe('topology config mutation result reconstruction', () => {
     );
 
     it('preserves delete no-op reconstruction without an outbox', () => {
-        const mutation = createTopologyConfigMutationTestInput();
+        const mutation = createDefaultTopologyConfigMutationTestInput();
         const command = {
             ...mutation.command,
             operation: 'deleteConfig' as const,
@@ -44,7 +44,7 @@ describe('topology config mutation result reconstruction', () => {
             const requestId = `impossible-${operation}`;
             const commandHash = `sha256:${'7'.repeat(64)}`;
             expect(() =>
-                validateGroupTopologyConfigMutationRecord(
+                assertGroupTopologyConfigMutationRecord(
                     {
                         groupRef,
                         requestId,

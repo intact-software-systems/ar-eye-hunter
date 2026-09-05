@@ -21,7 +21,7 @@ import type {
     RtcTopologyReplayMetrics,
     RtcTopologyReplayWakeSource
 } from '../topology/replay/consumer/rtc-topology-replay-diagnostics.ts';
-import type { RtcTopologyDeliveryAppendPort } from '../topology/replay/delivery/rtc-topology-delivery-append-port.ts';
+import type { RtcTopologyDeliveryRuntime } from '../topology/replay/delivery/rtc-topology-delivery-runtime.ts';
 
 export interface RtcTopologyReplayRuntime {
     wake(source: RtcTopologyReplayWakeSource): void;
@@ -49,10 +49,7 @@ export interface RallarMiddlewareRuntime {
     readonly groupsRepository: GroupStateRepository;
     readonly rtcTopologyPublicationRepository?: RtcTopologyPublicationRepository;
     readonly rtcTopologyExecutionRepository?: RtcTopologyExecutionRepository;
-    readonly rtcTopologyDelivery?: Readonly<{
-        publisherStreamId: string;
-        append: RtcTopologyDeliveryAppendPort;
-    }>;
+    readonly rtcTopologyDelivery?: RtcTopologyDeliveryRuntime;
     readonly rtcTopologyReplay?: RtcTopologyReplayRuntime;
     readonly readiness: Promise<void>;
     readonly healthFailure?: Promise<never>;

@@ -6,6 +6,7 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { EffectiveGroupTopologyConfig, StoredGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 
 import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/persisted-auth-session.ts';
@@ -20,13 +21,14 @@ import type { GroupStateAuthorityGuard } from '@shared-server/rallar-system/grou
 
 import { AppInboxType, type AppInboxEnqueueInput, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
-import type { ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import {
+    computeRtcTopologyOutboxInsert,
+    type ComputedRtcTopologyOutbox
+} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
-
-import { toTopologyConfigMutationResult } from '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts';
 
 import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import {
@@ -36,24 +38,17 @@ import {
     type TopologyAppInboxResult
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 
+import { computeTopologyConfigRuntimeWrites } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-runtime-writes.ts';
 import type { GroupTopologyConfigMutationComputed } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 
-import type {
-    GroupTopologyConfigMutationAttemptRead,
-    GroupTopologyConfigMutationPreparation
-} from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
+import type { GroupTopologyConfigMutationAttemptRead } from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
 
 import type {
     GroupTopologyReconfigureComputed,
     GroupTopologyReconfigureRead
 } from '@shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-contracts.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
-
-vi.mock(
-    '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts',
-    () => ({ toTopologyConfigMutationResult: vi.fn() })
-);
 
 const NOW_EPOCH_MS = 1_000;
 const GROUP_REF: GroupRef = {
@@ -99,10 +94,6 @@ describe('TopologyAppInboxHandler', () => {
         const expected = { receipt: computed.receipt, config: computed.result.config };
         const owners = {
             configMutationService: {
-                prepare: vi.fn(async () => {
-                    phases.push('prepare');
-                    return configPreparation();
-                }),
                 read: vi.fn(async () => {
                     phases.push('read');
                     return configRead();
@@ -113,50 +104,91 @@ describe('TopologyAppInboxHandler', () => {
                 }),
                 validate: vi.fn(() => {
                     phases.push('validate');
+                    return [];
                 }),
                 write: vi.fn(async () => {
                     phases.push('write');
                     return computed.receipt;
-                })
+                }),
+                recordCommittedWrite: vi.fn(() => phases.push('observe'))
             },
             reconfigureMutation: unusedReconfigureMutation()
         } satisfies TopologyAppInboxMutationOwners;
-        vi.mocked(toTopologyConfigMutationResult).mockImplementationOnce(
-            () => (phases.push('result'), expected)
-        );
         const wakeQueue = vi.fn(() => phases.push('wake'));
         const handler = new TopologyAppInboxHandler({
             groupStateService: sessionReader(phases),
             nowEpochMs: () => NOW_EPOCH_MS,
             wakeQueue,
             transactionWriter: {
-                writeMutation: async (_context, write) => {
+                readCompletionFacts: (context) => {
+                    phases.push('completion');
+                    return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS };
+                },
+                writeComputedMutation: async (_context, computed, write) => {
                     phases.push('transaction');
-                    const result = await write({} as PSqlSql);
+                    await write({} as PSqlSql);
                     phases.push('commit');
-                    return result;
+                    return computed.durableResult;
                 }
             }
         });
-        await expect(handler.processMutation(context, owners)).resolves.toBe(expected);
+        await expect(handler.processMutation(context, owners)).resolves.toEqual(expected);
         expect(phases).toEqual([
             'verify-authority',
-            'prepare',
+            'completion',
             'read',
             'compute',
             'validate',
             'transaction',
             'write',
-            'result',
             'commit',
+            'observe',
             'wake'
         ]);
+    });
+
+    it('throws the first mutation validation cause before the transaction', async () => {
+        const context = await topologyContext([]);
+        const computed = configWriteComputed();
+        const policyCause = new Error('Topology config policy denied');
+        const handler = new TopologyAppInboxHandler({
+            groupStateService: sessionReader([]),
+            nowEpochMs: () => NOW_EPOCH_MS,
+            wakeQueue: vi.fn(),
+            transactionWriter: {
+                readCompletionFacts: (context) => ({
+                    entry: context.entry,
+                    completedAtEpochMs: NOW_EPOCH_MS
+                }),
+                writeComputedMutation: async () => {
+                    throw new Error('Validation failures must not open a transaction');
+                }
+            }
+        });
+
+        await expect(
+            handler.processMutation(context, {
+                configMutationService: {
+                    read: vi.fn(async () => configRead()),
+                    compute: vi.fn(() => computed),
+                    validate: vi.fn(() => [{
+                        code: 'policy-denied',
+                        path: ['command'],
+                        message: policyCause.message,
+                        cause: policyCause
+                    }]),
+                    write: vi.fn(),
+                    recordCommittedWrite: vi.fn()
+                },
+                reconfigureMutation: unusedReconfigureMutation()
+            })
+        ).rejects.toBe(policyCause);
     });
 
     it('rejects idempotency conflict before transaction or wake', async () => {
         const phases: string[] = [];
         const context = await topologyContext(phases);
-        const writeMutation = async () => {
+        const unreachableTransaction = (): never => {
             phases.push('transaction');
             throw new Error('Idempotency conflicts must not open a transaction');
         };
@@ -165,7 +197,6 @@ describe('TopologyAppInboxHandler', () => {
         };
         const owners = {
             configMutationService: {
-                prepare: vi.fn(async () => configPreparation()),
                 read: vi.fn(async () => configRead()),
                 compute: vi.fn(
                     () =>
@@ -175,22 +206,32 @@ describe('TopologyAppInboxHandler', () => {
                             receivedCommandHash: 'sha256:received'
                         }) as const
                 ),
-                validate: vi.fn(),
-                write: vi.fn(async () => await Promise.reject(new Error('Unexpected config write')))
+                validate: vi.fn(() => []),
+                write: vi.fn(async () => await Promise.reject(new Error('Unexpected config write'))),
+                recordCommittedWrite: vi.fn()
             },
             reconfigureMutation: unusedReconfigureMutation()
         } satisfies TopologyAppInboxMutationOwners;
         const handler = new TopologyAppInboxHandler({
             groupStateService: sessionReader(phases),
             nowEpochMs: () => NOW_EPOCH_MS,
-            transactionWriter: { writeMutation },
+            transactionWriter: {
+                readCompletionFacts: (messageContext) => {
+                    phases.push('completion');
+                    return {
+                        entry: messageContext.entry,
+                        completedAtEpochMs: NOW_EPOCH_MS
+                    };
+                },
+                writeComputedMutation: async () => unreachableTransaction()
+            },
             wakeQueue
         });
 
         await expect(handler.processMutation(context, owners)).rejects.toMatchObject({
             code: 'group-topology-config-idempotency-conflict'
         });
-        expect(phases).toEqual(['verify-authority']);
+        expect(phases).toEqual(['verify-authority', 'completion']);
     });
 
     it('keeps reconfigure read-compute-validate-write ordered and wakes after commit', async () => {
@@ -209,10 +250,12 @@ describe('TopologyAppInboxHandler', () => {
                 }),
                 validate: vi.fn(() => {
                     phases.push('validate');
+                    return [];
                 }),
                 write: vi.fn(async () => {
                     phases.push('write');
-                })
+                }),
+                recordCommittedWrite: vi.fn(() => phases.push('observe'))
             }
         } satisfies TopologyAppInboxMutationOwners;
         const wakeQueue = vi.fn(() => phases.push('wake'));
@@ -221,11 +264,15 @@ describe('TopologyAppInboxHandler', () => {
             nowEpochMs: () => NOW_EPOCH_MS,
             wakeQueue,
             transactionWriter: {
-                writeMutation: async (_context, write) => {
+                readCompletionFacts: (context) => {
+                    phases.push('completion');
+                    return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS };
+                },
+                writeComputedMutation: async (_context, computed, write) => {
                     phases.push('transaction');
-                    const result = await write({} as PSqlSql);
+                    await write({} as PSqlSql);
                     phases.push('commit');
-                    return result;
+                    return computed.durableResult;
                 }
             }
         });
@@ -236,12 +283,14 @@ describe('TopologyAppInboxHandler', () => {
         });
         expect(phases).toEqual([
             'verify-authority',
+            'completion',
             'read',
             'compute',
             'validate',
             'transaction',
             'write',
             'commit',
+            'observe',
             'wake'
         ]);
     });
@@ -336,6 +385,7 @@ function createMessageContext(
         encodeResult: (result) => encodeAppInboxResult(result, 'Topology handler test result'),
         entry: {
             ...entry,
+            status: EntityStatus.RESERVED,
             dequeueAudit: { ...entry.dequeueAudit, attempts: 7 }
         }
     };
@@ -359,28 +409,6 @@ async function persistedSession(): Promise<PersistedAuthSession> {
     };
 }
 
-function configPreparation(): GroupTopologyConfigMutationPreparation {
-    return {
-        command: {
-            operation: 'putConfig',
-            aggregateRef: GROUP_REF,
-            commandId: 'handler-request',
-            requestId: 'handler-request',
-            input: {
-                config: { topologyKind: 'tree' },
-                updatedByPrincipalId: 'owner',
-                ttlMs: null,
-                expiresAtEpochMs: null
-            }
-        },
-        stableFacts: {
-            requestedAtEpochMs: NOW_EPOCH_MS,
-            commandHash: `sha256:${'a'.repeat(64)}`,
-            resolvedOverrideExpiresAtEpochMs: null
-        }
-    };
-}
-
 function configRead(): GroupTopologyConfigMutationAttemptRead {
     return {
         state: {
@@ -393,14 +421,16 @@ function configRead(): GroupTopologyConfigMutationAttemptRead {
             groupSnapshot: groupSnapshot(),
             groupAuthorityGuard: groupAuthorityGuard()
         },
-        policyNowEpochMs: NOW_EPOCH_MS
+        policyNowEpochMs: NOW_EPOCH_MS,
+        isPlatformAdmin: false,
+        serverDefaults: {}
     };
 }
 
 function configWriteComputed(): Extract<GroupTopologyConfigMutationComputed, { outcome: 'write'; }> {
     const config = storedConfig();
     const receipt = configReceipt();
-    return {
+    const computed = {
         outcome: 'write',
         groupAuthorityGuard: groupAuthorityGuard(),
         guard: {
@@ -419,9 +449,12 @@ function configWriteComputed(): Extract<GroupTopologyConfigMutationComputed, { o
         },
         receipt,
         idempotency: null,
-        outbox: topologyOutbox('handler-request:config-outbox'),
+        outboxWrite: computeRtcTopologyOutboxInsert(
+            topologyOutbox('handler-request:config-outbox')
+        ),
         result: { kind: 'config', config }
-    };
+    } satisfies Omit<Extract<GroupTopologyConfigMutationComputed, { outcome: 'write'; }>, 'runtimeWrites'>;
+    return { ...computed, runtimeWrites: computeTopologyConfigRuntimeWrites(computed) };
 }
 
 function reconfigureRead(): GroupTopologyReconfigureRead {
@@ -437,24 +470,38 @@ function reconfigureRead(): GroupTopologyReconfigureRead {
                 effective
             },
             kindHysteresisWidths: { meshExitWidth: 1, treeExitWidth: 1 },
+            rttReportingDegreeLimit: effective.degreeLimit,
             rttMeasurements: [],
             replanning: 'auto',
             nowEpochMs: NOW_EPOCH_MS
         },
-        authorityGuard: groupAuthorityGuard()
+        authorityGuard: groupAuthorityGuard(),
+        actorIsPlatformAdmin: false
     };
 }
 
 function reconfigureComputed(): GroupTopologyReconfigureComputed {
+    const outbox = topologyOutbox('reconfigure-outbox');
+    const authorityGuard = groupAuthorityGuard();
     return {
-        ...topologyOutbox('reconfigure-outbox'),
-        authorityGuard: groupAuthorityGuard()
+        ...outbox,
+        authorityGuard,
+        authorityWrite: {
+            namespace: 'groups',
+            key: authorityGuard.entry.key,
+            value: authorityGuard.entry.value,
+            expireAtIsoTimestamp: new Date(
+                authorityGuard.entry.expireAtTimestamp
+            ).toISOString(),
+            expectedRevision: authorityGuard.entry.revision,
+            expectedResultRevision: authorityGuard.entry.revision + 1
+        },
+        outboxWrite: computeRtcTopologyOutboxInsert(outbox)
     };
 }
 
 function unusedConfigMutationService(): TopologyAppInboxMutationOwners['configMutationService'] {
     return {
-        prepare: async () => await Promise.reject(new Error('Unexpected config prepare')),
         read: async () => await Promise.reject(new Error('Unexpected config read')),
         compute: () => {
             throw new Error('Unexpected config compute');
@@ -462,7 +509,8 @@ function unusedConfigMutationService(): TopologyAppInboxMutationOwners['configMu
         validate: () => {
             throw new Error('Unexpected config validation');
         },
-        write: async () => await Promise.reject(new Error('Unexpected config write'))
+        write: async () => await Promise.reject(new Error('Unexpected config write')),
+        recordCommittedWrite: () => undefined
     };
 }
 
@@ -475,7 +523,8 @@ function unusedReconfigureMutation(): TopologyAppInboxMutationOwners['reconfigur
         validate: () => {
             throw new Error('Unexpected reconfigure validation');
         },
-        write: async () => await Promise.reject(new Error('Unexpected reconfigure write'))
+        write: async () => await Promise.reject(new Error('Unexpected reconfigure write')),
+        recordCommittedWrite: () => undefined
     };
 }
 

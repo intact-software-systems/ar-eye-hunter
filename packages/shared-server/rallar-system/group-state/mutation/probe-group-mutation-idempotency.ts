@@ -4,8 +4,8 @@ import type {
     GroupMutationIdempotencyProbe,
     GroupMutationRead
 } from './group-mutation-contracts.ts';
-import { assertCommandHash } from './result-validation/assert-group-mutation-result.ts';
 import { assertGroupMutationRead } from './state-validation/assert-group-mutation-read.ts';
+import { assertCommandHash } from './state-validation/assert-group-mutation-result.ts';
 
 export function probeGroupMutationIdempotency(
     command: GroupMutationCommand,

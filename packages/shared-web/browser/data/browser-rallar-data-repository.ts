@@ -17,7 +17,7 @@ import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 import { WriteBehindObservableLatestRepository } from '@shared/cache/WriteBehindObservableLatestRepository.ts';
 import { WriteThroughObservableLatestRepository } from '@shared/cache/WriteThroughObservableLatestRepository.ts';
-import { IndexedDbStringPersistenceProvider } from '@shared/persistence/IndexedDbStringPersistenceProvider.ts';
+import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
 
 const DEFAULT_CUSTOM_DATA_DB_NAME = 'rallar-custom-data';
 const DEFAULT_CUSTOM_DATA_STORE_NAME = 'entries';
@@ -32,7 +32,6 @@ export type NormalizedRallarDataOptions<V> =
             | 'keyPrefix'
             | 'durability'
             | 'hydrate'
-            | 'schemaVersion'
             | 'sync'
         >
     >
@@ -45,7 +44,6 @@ export type NormalizedRallarDataOptions<V> =
         | 'keyPrefix'
         | 'durability'
         | 'hydrate'
-        | 'schemaVersion'
         | 'sync'
     >;
 
@@ -109,10 +107,7 @@ export function createManagedRallarDataRepository<V>(
         storeName: options.storeName,
         keyPrefix: options.keyPrefix
     });
-    const persistence = new RallarDataPersistenceProvider<V>(rawPersistence, {
-        schemaVersion: options.schemaVersion,
-        migrate: options.migrate
-    });
+    const persistence = new RallarDataPersistenceProvider<V>(rawPersistence);
     const id = toRepositoryId(options);
     const repository = options.durability === 'write-behind'
         ? new WriteBehindObservableLatestRepository<string, V>({
@@ -198,12 +193,6 @@ function normalizeRallarDataStoreOptions<V>(
     const scopeKey = resolveScopeKey(scope);
     const keyPrefix = options.keyPrefix ??
         `custom:${encodeURIComponent(scopeKey)}:${encodeURIComponent(name)}`;
-    const schemaVersion = options.schemaVersion ?? 1;
-    if (!Number.isInteger(schemaVersion) || schemaVersion < 0) {
-        throw new Error(
-            'Rallar data schemaVersion must be a non-negative integer.'
-        );
-    }
     return {
         ...options,
         scope,
@@ -213,7 +202,6 @@ function normalizeRallarDataStoreOptions<V>(
         keyPrefix,
         durability: options.durability ?? 'write-through',
         hydrate: options.hydrate ?? 'eager',
-        schemaVersion,
         sync: options.sync ?? true
     };
 }
@@ -244,9 +232,7 @@ function toOptionsKey<V>(options: NormalizedRallarDataOptions<V>): string {
         repositoryId: toRepositoryId(options),
         durability: options.durability,
         ttlMs: options.ttlMs ?? null,
-        schemaVersion: options.schemaVersion,
         sync: options.sync,
-        hasMigrate: options.migrate !== undefined,
         hasIsValid: options.isValid !== undefined,
         hasEquals: options.equals !== undefined,
         hasExpireAtFor: options.expireAtFor !== undefined,

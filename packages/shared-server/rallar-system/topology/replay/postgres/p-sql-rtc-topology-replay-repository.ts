@@ -14,9 +14,9 @@ import type {
 import { RTC_TOPOLOGY_REPLAY_PAGE_SIZE } from '../consumer/rtc-topology-replay-policy.ts';
 import { RtcTopologyDeliveryLeaseLostError } from '../delivery/rtc-topology-delivery-stream-service.ts';
 import {
+    assertRtcTopologyDeliveryStreamId,
     readRtcTopologyDeliverySafeInteger,
     RtcTopologyDeliveryCorruptionError,
-    validateRtcTopologyDeliveryStreamId,
     type RtcTopologyDeliveryBoundaryNumber
 } from '../delivery/rtc-topology-delivery-validation.ts';
 import {
@@ -44,7 +44,7 @@ export class PSqlRtcTopologyReplayRepository {
     async initializeConsumer(
         input: RtcTopologyReplayConsumerInput
     ): Promise<readonly RtcTopologyReplayCursorSnapshot[]> {
-        validateRtcTopologyDeliveryStreamId(input.consumerStreamId);
+        assertRtcTopologyDeliveryStreamId(input.consumerStreamId);
         const rows = await this.sql<CursorSnapshotRow[]>`
       with database_clock as materialized (
         select clock_timestamp() as now
@@ -111,7 +111,7 @@ export class PSqlRtcTopologyReplayRepository {
     async discoverPublishers(
         input: RtcTopologyReplayConsumerInput
     ): Promise<readonly RtcTopologyReplayCursorSnapshot[]> {
-        validateRtcTopologyDeliveryStreamId(input.consumerStreamId);
+        assertRtcTopologyDeliveryStreamId(input.consumerStreamId);
         return await this.sql.begin(async (transaction) => {
             const activeConsumer = await transaction<Readonly<{ stream_id: string; }>[]>`
         select stream_id::text
@@ -156,9 +156,9 @@ export class PSqlRtcTopologyReplayRepository {
     async capturePage(
         input: RtcTopologyReplayPageInput
     ): Promise<RtcTopologyReplayPageResult> {
-        validateRtcTopologyDeliveryStreamId(input.consumerStreamId);
-        validateRtcTopologyDeliveryStreamId(input.publisherStreamId);
-        validatePageSize(input.pageSize, RTC_TOPOLOGY_REPLAY_PAGE_SIZE, 'replay');
+        assertRtcTopologyDeliveryStreamId(input.consumerStreamId);
+        assertRtcTopologyDeliveryStreamId(input.publisherStreamId);
+        assertPageSize(input.pageSize, RTC_TOPOLOGY_REPLAY_PAGE_SIZE, 'replay');
         return await this.sql.begin(async (transaction) => {
             const boundaries = await transaction<PageBoundaryRow[]>`
         with database_clock as materialized (
@@ -287,8 +287,8 @@ export class PSqlRtcTopologyReplayRepository {
     async compareAndSetCursor(
         input: RtcTopologyReplayCursorCasInput
     ): Promise<RtcTopologyReplayCursorCasResult> {
-        validateRtcTopologyDeliveryStreamId(input.consumerStreamId);
-        validateRtcTopologyDeliveryStreamId(input.publisherStreamId);
+        assertRtcTopologyDeliveryStreamId(input.consumerStreamId);
+        assertRtcTopologyDeliveryStreamId(input.publisherStreamId);
         const expectedSequence = readRtcTopologyDeliverySafeInteger(
             input.expectedSequence,
             'RTC topology replay expected cursor'
@@ -363,7 +363,7 @@ export class PSqlRtcTopologyReplayRepository {
     }
 }
 
-function validatePageSize(pageSize: number, maximum: number, label: string): void {
+function assertPageSize(pageSize: number, maximum: number, label: string): void {
     if (!Number.isSafeInteger(pageSize) || pageSize <= 0 || pageSize > maximum) {
         throw new TypeError(`RTC topology ${label} page size must be from 1 to ${maximum}`);
     }

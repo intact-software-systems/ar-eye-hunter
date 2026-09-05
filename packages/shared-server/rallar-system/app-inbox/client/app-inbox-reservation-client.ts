@@ -1,6 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
@@ -20,6 +19,10 @@ export namespace AppInboxReservationClient {
     }
 
     export interface Repository {
+        replaceIfObserved(
+            expected: ResourceEntry,
+            replacement: ResourceEntry
+        ): Promise<ResourceEntry | null>;
         writeMaterializedIfAbsentOrReplaceExpired(
             placeholder: ResourceEntry,
             materialize: () => Promise<ResourceEntry>
@@ -27,7 +30,6 @@ export namespace AppInboxReservationClient {
     }
 
     export interface Dependencies {
-        readonly inboxQueueReader: InboxQueueReader;
         readonly repository: Repository;
     }
 
@@ -37,7 +39,6 @@ export namespace AppInboxReservationClient {
 }
 
 export class AppInboxReservationClient {
-    private readonly inbox: InboxQueueReader;
     private readonly repository: AppInboxReservationClient.Repository;
     private readonly serviceId: string;
 
@@ -45,7 +46,6 @@ export class AppInboxReservationClient {
         dependencies: AppInboxReservationClient.Dependencies,
         config: AppInboxReservationClient.Config
     ) {
-        this.inbox = dependencies.inboxQueueReader;
         this.repository = dependencies.repository;
         this.serviceId = config.serviceId;
     }
@@ -66,16 +66,8 @@ export class AppInboxReservationClient {
             ...context.entry,
             resource: JSON.stringify(message)
         };
-        const result = await this.inbox.inbox.enqueueOrUpdate(
-            replacement,
-            (existing) =>
-                existing.status === EntityStatus.RESERVED &&
-                    existing.dequeueAudit.attempts === context.entry.dequeueAudit.attempts &&
-                    existing.resource === context.entry.resource
-                    ? replacement
-                    : undefined
-        );
-        if (result.action !== 'updated') {
+        const result = await this.repository.replaceIfObserved(context.entry, replacement);
+        if (result === null) {
             throw new AppInboxReservationConflictError(context.entry.key);
         }
     }

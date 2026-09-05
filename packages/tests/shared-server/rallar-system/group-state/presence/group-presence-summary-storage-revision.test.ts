@@ -8,6 +8,7 @@ import type {
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/membership/group-membership-storage-key.ts';
+import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { AuditStamp, Group, GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { decodeCanonicalGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { describe, expect, it } from 'vitest';
@@ -131,7 +132,7 @@ describe('group presence-summary causal identity', () => {
         }
         expect(computed.receipt.causalRevision).toEqual({ groupRevision: 2, presenceRevision: 0 });
         expect(computed.receipt.snapshotVersion).toBe(2);
-        const effect = decodeCanonicalGroupPresenceSummaryEntry(computed.outboxEntries[0]);
+        const effect = decodeCanonicalGroupPresenceSummaryEntry(computed.outboxWrites[0]?.entry);
         expect(effect.acceptedCausalRevision).toEqual(computed.receipt.causalRevision);
         expect(effect.event.snapshotVersion).toBe(computed.receipt.snapshotVersion);
     });
@@ -177,8 +178,10 @@ function mutationRead(storageRevision: number): GroupMutationRead {
         authorityPresenceSessions: [],
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
-        // upsertMember consults the admission policy; absent means open admission.
-        lifecyclePolicy: { status: 'absent' },
+        lifecyclePolicy: {
+            status: 'present',
+            policy: resolveGroupLifecyclePolicyPreset('optimistic')
+        },
         activeMemberPrincipalIds: null,
         plannedLayoutRow: null,
         connectTriggerLatch: null,
@@ -226,6 +229,7 @@ function mutationFacts(): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
+        capacity: { defaultMaxMembers: null },
         authenticatedAuthority: {
             principalId: 'member',
             sessionId: 'member-session'

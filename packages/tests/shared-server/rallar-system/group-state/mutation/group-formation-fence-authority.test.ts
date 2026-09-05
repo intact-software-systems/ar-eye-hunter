@@ -31,6 +31,7 @@ function internalFacts(mode: GroupMutationFacts['internalAuthority']): GroupMuta
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: mode,
+        capacity: { defaultMaxMembers: null },
         authenticatedAuthority: null
     };
 }

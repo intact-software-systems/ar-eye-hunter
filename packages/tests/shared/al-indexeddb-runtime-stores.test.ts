@@ -19,6 +19,7 @@ import {
     createDefaultIndexedDbALInboundRuntimeStores,
     createDefaultIndexedDbALOutboundRuntimeStores,
     IndexedDbQueueBox,
+    IndexedDbStringPersistenceProvider,
     InMemoryQueueBox,
     newALAckControlMessage,
     newALMulticastMessage,
@@ -44,6 +45,31 @@ import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbo
 describe('IndexedDB AL runtime stores', () => {
     afterEach(() => {
         vi.useRealTimers();
+    });
+
+    it('keeps the default AL schema separate from generic persistence', async () => {
+        const persistence = new IndexedDbStringPersistenceProvider<string>();
+        await persistence.setItem(
+            'generic-entry',
+            'generic-value',
+            { expireAtTimestamp: Date.now() + 60_000 }
+        );
+        const inboundStores = createDefaultIndexedDbALInboundRuntimeStores();
+        const outboundStores = createDefaultIndexedDbALOutboundRuntimeStores();
+
+        await expect(
+            inboundStores.admissionStore.commitMutations({
+                senderId: 'peer-default-schema',
+                expectedVersion: undefined,
+                mutations: [{
+                    kind: 'set-msg-owner',
+                    msgId: 'message-default-schema',
+                    senderId: 'peer-default-schema'
+                }]
+            })
+        ).resolves.toBe('committed');
+        await expect(outboundStores.admissionStore.ready()).resolves.toBeUndefined();
+        await expect(persistence.getItem('generic-entry')).resolves.toBe('generic-value');
     });
 
     it('keeps inbound dedup state across runtime instances', async () => {
@@ -97,12 +123,13 @@ describe('IndexedDB AL runtime stores', () => {
         expect(dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
     });
 
-    it('supports sharing one IndexedDB database between admission state and inbox queue stores', async () => {
+    it('keeps admission state and inbox queue data in owner-specific databases', async () => {
         const dbName = `al-runtime-${crypto.randomUUID()}`;
         const namespace = 'shared-browser-db';
+        const inboxStoreName = 'queuebox:inbox';
         const inbox = new IndexedDbQueueBox({
-            dbName,
-            storeName: 'queuebox:inbox'
+            dbName: `${dbName}:${inboxStoreName}`,
+            storeName: inboxStoreName
         });
         const dispatchedMsgIds: string[] = [];
         const runtime = createDefaultALInboundMessageRuntime({
@@ -778,8 +805,7 @@ function createFlakyOutboundAdmissionStore(
                 ? hooks.commitBundle(bundle, decode)
                 : inner.commitBundle(bundle, decode),
         acceptControlMessage: (msg, decode) => inner.acceptControlMessage(msg, decode),
-        scheduleNotYetInSyncRetry: (schedule, decode) =>
-            inner.scheduleNotYetInSyncRetry(schedule, decode),
+        scheduleNotYetInSyncRetry: (schedule, decode) => inner.scheduleNotYetInSyncRetry(schedule, decode),
         claimReadyEffects: <TPrepared>(input: ClaimALOutboundEffectsInput, decode: ALOutboundPreparedMessageDecoder<TPrepared>) =>
             hooks.claimReadyEffects
                 ? hooks.claimReadyEffects(input, decode)

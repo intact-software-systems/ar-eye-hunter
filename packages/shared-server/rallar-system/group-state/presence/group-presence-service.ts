@@ -1,27 +1,34 @@
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxCommand } from '../../app-inbox/app-inbox-registration-codecs.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion
+} from '../../app-inbox/handler/app-inbox-completion-computation.ts';
+import type { AppInboxMutationTransactionWriter } from '../../app-inbox/handler/app-inbox-transaction-writer.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
-import type {
-    WsSessionGenerationCloseFacts,
-    WsSessionGenerationLifecycleComputed,
-    WsSessionHighWaterIdentity
+import {
+    validateWsSessionConnectGuard,
+    validateWsSessionGenerationClosed,
+    type WsSessionGenerationCloseFacts,
+    type WsSessionGenerationGuardFacts,
+    type WsSessionGenerationLifecycleComputed,
+    type WsSessionGenerationLifecycleRead,
+    type WsSessionHighWaterIdentity
 } from '../../websocket/ws-session-generation-computation.ts';
 import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
 import type {
-    GroupMutationPreparation,
+    GroupMutationIngress,
     GroupStateMutationCommand,
     GroupStateMutationService,
     GroupStateService
 } from '../group-state-service-contracts.ts';
+import { GroupMutationIdempotencyConflictError } from '../group-state-service.ts';
 import type { GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
+import type { GroupMutationRead } from '../mutation/group-mutation-contracts.ts';
 import type { GroupPresenceSessionCleanupAppInboxPayload } from './group-presence-session-cleanup-app-inbox-payload.ts';
-
-type WriteMutation = <Result>(
-    write: (transaction: PSqlSql) => Promise<Result>
-) => Promise<Result>;
 
 export interface InactiveGroupPresenceResult {
     readonly status: 'inactive';
@@ -34,13 +41,23 @@ export type GroupPresenceConnectOutcome =
     | Readonly<{
         status: 'ready-to-commit';
         computed: GroupMutationComputed;
+        read: GroupMutationRead;
+        lifecycleGuardFacts: WsSessionGenerationGuardFacts;
+        lifecycleRead: WsSessionGenerationLifecycleRead;
         lifecycleGuard: WsSessionGenerationLifecycleComputed;
     }>;
 
-interface ProcessGroupPresenceConnectInput {
+interface ReadAndComputeGroupPresenceConnectInput {
     readonly command: GroupStateMutationCommand;
     readonly mutationService: GroupStateMutationService;
     readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
+}
+
+interface AssertGroupStateMutationValidInput {
+    readonly service: GroupStateMutationService;
+    readonly command: GroupStateMutationCommand;
+    readonly read: GroupMutationRead;
+    readonly computed: GroupMutationComputed;
 }
 
 interface GroupSessionCleanupResult extends InactiveGroupPresenceResult {
@@ -68,21 +85,21 @@ export function toGroupSessionCleanupEnqueue(
 }
 
 export function toExpiredPresenceEnqueue(
-    preparation: GroupMutationPreparation
+    ingress: GroupMutationIngress
 ): AppInboxEnqueueInput {
     return {
         type: AppInboxType.GROUP_PRESENCE_EXPIRE,
-        resourceId: preparation.queueResourceId,
+        resourceId: ingress.queueResourceId,
         authority: decodeJsonWireValue(
-            preparation,
+            ingress,
             'Expired group presence AppInbox authority'
         ),
-        data: { commandId: preparation.command.commandId }
+        data: { commandId: ingress.command.commandId }
     };
 }
 
-export async function processGroupPresenceConnect(
-    input: ProcessGroupPresenceConnectInput
+export async function readAndComputeGroupPresenceConnect(
+    input: ReadAndComputeGroupPresenceConnectInput
 ): Promise<GroupPresenceConnectOutcome> {
     const operation = input.command.command;
     if (operation.operation !== 'connectPresence') {
@@ -105,25 +122,23 @@ export async function processGroupPresenceConnect(
     }
     const read = await input.mutationService.read(input.command);
     const computed = input.mutationService.compute(input.command, read);
-    input.mutationService.validate(input.command, read, computed);
-    const lifecycleGuard = lifecycle.computeConnectGuard(
-        {
-            ...identity,
-            generationId: operation.input.generationId,
-            generationStartedAtEpochMs: observedAtEpochMs,
-            expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(observedAtEpochMs)
-        },
-        lifecycleRead
-    );
-    return { status: 'ready-to-commit', computed, lifecycleGuard };
+    const lifecycleGuardFacts = {
+        ...identity,
+        generationId: operation.input.generationId,
+        generationStartedAtEpochMs: observedAtEpochMs,
+        expireAtEpochMs: resourceInboxRetryExpiryAtEpochMs(observedAtEpochMs)
+    };
+    const lifecycleGuard = lifecycle.computeConnectGuard(lifecycleGuardFacts, lifecycleRead);
+    return { status: 'ready-to-commit', computed, read, lifecycleGuardFacts, lifecycleRead, lifecycleGuard };
 }
 
 export async function processGroupSessionCleanup(
     input: Readonly<{
         facts: GroupPresenceSessionCleanupAppInboxPayload;
         attemptCount: number;
+        context: AppInboxMessageContext<GroupSessionCleanupResult>;
         groupStateService: GroupStateService;
-        writeMutation: WriteMutation;
+        transactionWriter: Pick<AppInboxMutationTransactionWriter, 'readCompletionFacts' | 'writeComputedMutation'>;
         wakeQueue?: () => void;
     }>
 ): Promise<GroupSessionCleanupResult> {
@@ -131,42 +146,78 @@ export async function processGroupSessionCleanup(
     const lifecycle = input.groupStateService.sessionGenerationLifecycle;
     const lifecycleRead = await lifecycle.read(closeFacts);
     const lifecycleComputed = lifecycle.computeClosed(closeFacts, lifecycleRead);
-    const preparations = await input.groupStateService.prepareSessionCleanupMutations({
+    const ingresses = await input.groupStateService.captureSessionCleanupMutationIngresses({
         scope: input.facts.connection.scope,
         authSession: input.facts.connection.authSession,
         principalId: input.facts.connection.principalId,
         disconnectedAtEpochMs: input.facts.disconnectedAtEpochMs
     });
     const mutations = await Promise.all(
-        preparations.map(async (prepared) => {
+        ingresses.map(async (ingress) => {
             const command: GroupStateMutationCommand = {
-                authorityProof: prepared.authorityProof,
-                descriptor: prepared.descriptor,
-                command: prepared.command,
-                facts: { ...prepared.facts, attemptCount: input.attemptCount }
+                authorityProof: ingress.authorityProof,
+                descriptor: ingress.descriptor,
+                command: ingress.command,
+                facts: { ...ingress.facts, attemptCount: input.attemptCount }
             };
             const read = await input.groupStateService.read(command);
             const computed = input.groupStateService.compute(command, read);
-            input.groupStateService.validate(command, read, computed);
-            return computed;
+            return { command, read, computed };
         })
     );
-    const result = await input.writeMutation(async (transaction) => {
-        await lifecycle.write(transaction, lifecycleComputed);
-        for (const computed of mutations) {
-            if (computed.outcome === 'write') {
-                await input.groupStateService.write(transaction, computed);
+    const durableResult = {
+        status: 'inactive',
+        sessionId: input.facts.connection.authSession.sessionId,
+        generationId: input.facts.connection.generationId,
+        affectedGroups: mutations.length
+    } as const;
+    const completionInput = {
+        ...input.transactionWriter.readCompletionFacts(input.context),
+        durableResult,
+        status: EntityStatus.COMPLETED
+    } as const;
+    const completion = computeAppInboxCompletion(completionInput);
+    validateWsSessionGenerationClosed(closeFacts, lifecycleRead, lifecycleComputed);
+    for (const mutation of mutations) {
+        assertGroupStateMutationValid({
+            service: input.groupStateService,
+            command: mutation.command,
+            read: mutation.read,
+            computed: mutation.computed
+        });
+        if (mutation.computed.outcome === 'idempotency-conflict') {
+            throw new GroupMutationIdempotencyConflictError(
+                mutation.command.command.commandId,
+                mutation.computed.existingCommandHash,
+                mutation.computed.receivedCommandHash
+            );
+        }
+    }
+    const completionIssues = validateAppInboxCompletion(completionInput, completion);
+    if (completionIssues[0] !== undefined) {
+        throw completionIssues[0].cause;
+    }
+    const result = await input.transactionWriter.writeComputedMutation(
+        input.context,
+        completion,
+        async (transaction) => {
+            await lifecycle.write(transaction, lifecycleComputed);
+            for (const mutation of mutations) {
+                if (mutation.computed.outcome === 'write') {
+                    await input.groupStateService.write(transaction, mutation.computed);
+                }
             }
         }
-        return {
-            status: 'inactive',
-            sessionId: input.facts.connection.authSession.sessionId,
-            generationId: input.facts.connection.generationId,
-            affectedGroups: mutations.length
-        } as const;
-    });
+    );
     input.wakeQueue?.();
     return result;
+}
+
+function assertGroupStateMutationValid(input: AssertGroupStateMutationValidInput): void {
+    const issue = input.service.validate(input.command, input.read, input.computed)[0];
+    if (issue !== undefined) {
+        throw issue.cause;
+    }
 }
 
 function toGroupHighWaterIdentity(

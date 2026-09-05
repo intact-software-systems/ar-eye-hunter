@@ -37,13 +37,6 @@ export class OutboxQueueReader {
         return await this.reader.enqueueIfAbsent(message);
     }
 
-    async enqueueIf(
-        message: ALMessage,
-        enqueueIf: (entry: ResourceEntry) => boolean
-    ): Promise<ResourceEntry | undefined> {
-        return await this.reader.enqueueIf(message, enqueueIf);
-    }
-
     async dequeueOutbox(
         typesToDequeue: Set<string>,
         resilience: ResilienceDto

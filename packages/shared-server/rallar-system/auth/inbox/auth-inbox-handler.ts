@@ -1,11 +1,16 @@
 import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion
+} from '../../app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
 import type { AuthMutationIntent, AuthMutationResult } from '../mutation/auth-mutation-contracts.ts';
-import { materializeAuthMutationIntent } from '../mutation/materialize-auth-mutation-intent.ts';
+import { readAuthMutationAttempt } from '../mutation/read-auth-mutation-attempt.ts';
 import { toAuthAppInboxType, toAuthIntentContextId } from './auth-app-inbox-routing.ts';
 
 export interface AuthInboxHandlerDependencies {
@@ -39,17 +44,43 @@ export class AuthInboxHandler {
         ) {
             throw new TypeError('Auth AppInbox command identity differs from queue key');
         }
-        const materialized = await materializeAuthMutationIntent(intent, {
+        const read = await readAuthMutationAttempt(intent, {
             credentialIssuer: this.dependencies.credentialIssuer,
+            mutationService: this.dependencies.mutationService,
             nowEpochMs: this.dependencies.nowEpochMs
         });
-        const command = materialized.command;
-        const read = await this.dependencies.mutationService.read(command);
-        const computed = this.dependencies.mutationService.compute(command, read, materialized.facts);
-        this.dependencies.mutationService.validate(command, read, computed);
-        return await this.dependencies.transactionWriter.writeMutation(
+        const completionFacts = this.dependencies.transactionWriter.readCompletionFacts(context);
+        const computedMutation = this.dependencies.mutationService.compute(
+            read.command,
+            read.authoritativeState,
+            read.facts
+        );
+        const validationInput = {
+            command: read.command,
+            read: read.authoritativeState,
+            facts: read.facts,
+            computed: computedMutation
+        };
+        const completionInput = {
+            ...completionFacts,
+            durableResult: computedMutation.result,
+            status: EntityStatus.COMPLETED
+        } as const;
+        const computedCompletion = computeAppInboxCompletion(completionInput);
+        const mutationIssues = this.dependencies.mutationService.validate(validationInput);
+        if (mutationIssues[0] !== undefined) {
+            throw mutationIssues[0].cause;
+        }
+        const completionIssues = validateAppInboxCompletion(completionInput, computedCompletion);
+        if (completionIssues[0] !== undefined) {
+            throw completionIssues[0].cause;
+        }
+        return await this.dependencies.transactionWriter.writeComputedMutation(
             context,
-            async (transaction) => await this.dependencies.mutationService.write(transaction, computed)
+            computedCompletion,
+            async (transaction) => {
+                await this.dependencies.mutationService.write(transaction, computedMutation);
+            }
         );
     }
 }

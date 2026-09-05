@@ -143,6 +143,10 @@ export class GroupStateRepository extends GroupStateRepositoryReads {
         return await this.aggregate.listEvents(ref);
     }
 
+    async readEvent(ref: GroupRef, eventId: string): Promise<GroupEvent | undefined> {
+        return await this.aggregate.readEvent(ref, eventId);
+    }
+
     async listRecentEvents(
         ref: GroupRef,
         query: StateEventListQuery = {}

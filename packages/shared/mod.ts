@@ -37,7 +37,7 @@ export * from './queuebox/indexed-db-queue-box.ts';
 export * from './queuebox/queue-box-types.ts';
 export * from './queuebox/ResourceEntry.ts';
 
-export * from './persistence/IndexedDbStringPersistenceProvider.ts';
+export * from './persistence/indexed-db-string-persistence-provider.ts';
 export * from './persistence/PersistenceProvider.ts';
 
 export * from './resilience/circuit-breaker.ts';

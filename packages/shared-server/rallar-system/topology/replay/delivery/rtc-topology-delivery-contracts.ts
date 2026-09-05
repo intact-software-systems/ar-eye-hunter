@@ -9,6 +9,16 @@ export interface RtcTopologyDeliveryAppendInput {
     readonly retainUntilEpochMs: number;
 }
 
+/** Persistence-ready append computed before the transaction begins. */
+export interface RtcTopologyDeliveryAppend extends RtcTopologyDeliveryAppendInput {
+    readonly retainUntilIsoTimestamp: string;
+}
+
+export interface RtcTopologyDeliveryPublicationReadInput {
+    readonly groupRef: GroupRef;
+    readonly publicationId: string;
+}
+
 export interface RtcTopologyDeliveryStream {
     readonly streamId: string;
     readonly headSequence: number;

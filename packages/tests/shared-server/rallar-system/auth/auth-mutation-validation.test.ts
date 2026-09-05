@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AuthMutationCommand, AuthMutationComputed, AuthMutationRead } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
+import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import type {
+    AuthMutationCommand,
+    AuthMutationComputed,
+    AuthMutationDomainComputed,
+    AuthMutationRead
+} from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
 import { computeAuthMutation } from '@shared-server/rallar-system/auth/mutation/compute/compute-auth-mutation.ts';
+import { computeAuthPersistence } from '@shared-server/rallar-system/auth/mutation/compute/compute-auth-persistence.ts';
 import { validateAuthMutation } from '@shared-server/rallar-system/auth/mutation/validate/validate-auth-mutation.ts';
 
 const user = {
@@ -77,7 +84,14 @@ describe('auth mutation validation', () => {
         for (const { command, read } of authMutationCases()) {
             const computed = computeAuth(command, read);
 
-            expect(() => validateAuthMutation(command, read, computed), command.kind).not.toThrow();
+            const validationInput = {
+                command,
+                read,
+                facts: authFacts(command),
+                computed
+            };
+
+            expect(validateAuthMutation(validationInput), command.kind).toEqual([]);
             expect(computed.command).toBe(command);
             expect(computed.read).toBe(read);
         }
@@ -86,13 +100,135 @@ describe('auth mutation validation', () => {
     it.each(validationRejectionCases())(
         'preserves the $label rejection',
         ({ command, read, computed, message, status }) => {
-            const rejection = captureRejection(() => validateAuthMutation(command, read, computed));
+            const issues = validateAuthMutation({
+                command,
+                read,
+                facts: authFacts(command),
+                computed
+            });
+            const rejection = issues[0]?.cause;
 
             expect(rejection).toBeInstanceOf(AuthMutationRejectedError);
             expect(rejection).toMatchObject({ message, status, code: 'auth-mutation-rejected' });
         }
     );
+
+    it.each(computedTamperCases())(
+        'rejects a self-consistent $label tamper',
+        ({ command, read, computed }) => {
+            expect(validateAuthMutation({
+                command,
+                read,
+                facts: authFacts(command),
+                computed
+            })).not.toEqual([]);
+        }
+    );
 });
+
+function computedTamperCases() {
+    const issueSession = registrationAndSessionCases()[1];
+    const issueSessionComputed = computeAuth(issueSession.command, issueSession.read);
+    const computedSession = issueSessionComputed.sessions[0]?.session;
+    if (!computedSession) {
+        throw new Error('Missing computed session tamper fixture');
+    }
+    const issueAgentTickets = agentTicketCases()[0];
+    const issueAgentTicketsComputed = computeAuth(
+        issueAgentTickets.command,
+        issueAgentTickets.read
+    );
+    const computedAgentTicket = issueAgentTicketsComputed.agentTickets[0];
+    if (!computedAgentTicket) {
+        throw new Error('Missing computed agent ticket tamper fixture');
+    }
+    const logoutCommand = registrationAndSessionCases()[2].command as Extract<AuthMutationCommand, { kind: 'logout-session'; }>;
+    const logoutRead = {
+        kind: 'logout-session',
+        ...matchingSessionEntries(session)
+    } as const;
+    const logoutComputed = computeAuth(logoutCommand, logoutRead);
+    const logoutOutbox = logoutComputed.logoutOutbox;
+    const persistedLogoutOutbox = logoutComputed.persistence.logoutOutbox;
+    if (!logoutOutbox || !persistedLogoutOutbox) {
+        throw new Error('Missing logout outbox tamper fixture');
+    }
+    const alteredLogoutOutbox = {
+        ...logoutOutbox,
+        resource: '{"tampered":true}'
+    };
+
+    return [
+        {
+            label: 'result',
+            command: issueSession.command,
+            read: issueSession.read,
+            computed: {
+                ...issueSessionComputed,
+                result: { ...issueSessionComputed.result, requestId: 'forged-request' }
+            }
+        },
+        {
+            label: 'outcome',
+            command: issueSession.command,
+            read: issueSession.read,
+            computed: withRecomputedPersistence(issueSessionComputed, { outcome: 'no-op' })
+        },
+        {
+            label: 'session',
+            command: issueSession.command,
+            read: issueSession.read,
+            computed: withRecomputedPersistence(issueSessionComputed, {
+                sessions: [{ session: { ...computedSession, username: 'mallory' } }]
+            })
+        },
+        {
+            label: 'agent ticket',
+            command: issueAgentTickets.command,
+            read: issueAgentTickets.read,
+            computed: withRecomputedPersistence(issueAgentTicketsComputed, {
+                agentTickets: [{ ...computedAgentTicket, agentId: 'forged-agent' }]
+            })
+        },
+        {
+            label: 'raw logout outbox',
+            command: logoutCommand,
+            read: logoutRead,
+            computed: withRecomputedPersistence(logoutComputed, {
+                logoutOutbox: alteredLogoutOutbox
+            })
+        },
+        {
+            label: 'persistence conflict',
+            command: logoutCommand,
+            read: logoutRead,
+            computed: {
+                ...logoutComputed,
+                persistence: {
+                    ...logoutComputed.persistence,
+                    logoutOutbox: {
+                        ...persistedLogoutOutbox,
+                        conflict: new ResourceInboxInvariantCorruptionError(
+                            persistedLogoutOutbox.entry.key,
+                            'Forged persistence conflict'
+                        )
+                    }
+                }
+            }
+        }
+    ];
+}
+
+function withRecomputedPersistence(
+    computed: AuthMutationComputed,
+    changes: Partial<AuthMutationDomainComputed>
+): AuthMutationComputed {
+    const altered = { ...computed, ...changes };
+    return {
+        ...altered,
+        persistence: computeAuthPersistence(altered, altered.command.kind)
+    };
+}
 
 function authMutationCases(): readonly AuthMutationCase[] {
     return [...registrationAndSessionCases(), ...webSocketTicketCases(), ...agentTicketCases()];
@@ -352,19 +488,12 @@ function computeAuth(command: AuthMutationCommand, read: AuthMutationRead) {
     return computeAuthMutation({
         command,
         read,
-        facts: { kind: command.kind },
-        serviceId: 'auth-service'
+        facts: authFacts(command)
     });
 }
 
-function captureRejection(callback: () => void): unknown {
-    try {
-        callback();
-    }
-    catch (error) {
-        return error;
-    }
-    throw new Error('Expected auth validation rejection');
+function authFacts(command: AuthMutationCommand) {
+    return { kind: command.kind, serviceId: 'auth-service' } as const;
 }
 
 function matchingSessionEntries(value: typeof session) {

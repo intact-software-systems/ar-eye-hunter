@@ -83,6 +83,7 @@ export function createStateWriteServiceRuntime({
     const authSessionRepository = new AuthSessionRepository(runtimeRepository);
     const clientStateEventStore = new PSqlClientStateEventRepository(instrumentedSql);
     const groupStateEventStore = new PSqlGroupStateEventRepository(instrumentedSql);
+    const groupStateRepository = new GroupStateRepository(runtimeRepository, groupStateEventStore);
     const groupState = createGroupStateService({
         runtimeRepository,
         groupStateEventStore,
@@ -122,7 +123,8 @@ export function createStateWriteServiceRuntime({
             resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: results,
             database: instrumentedSql,
-            groupStateService: groupState
+            groupStateService: groupState,
+            resultReader: groupStateRepository
         },
         {
             serviceId,
@@ -130,17 +132,16 @@ export function createStateWriteServiceRuntime({
             options: STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.group
         }
     );
-    const topologyGroupStateRepository = new GroupStateRepository(runtimeRepository, groupStateEventStore);
     const topologyConfigRepository = new GroupTopologyConfigRepository(runtimeRepository);
     const topologyRuntimeOwners = createGroupTopologyRuntimeOwners({
         findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
-        readCurrentGroupSnapshot: async (ref) => await topologyGroupStateRepository.readSnapshot(ref),
+        readCurrentGroupSnapshot: async (ref) => await groupStateRepository.readSnapshot(ref),
         readRttMeasurements: () => [],
         configRepository: topologyConfigRepository,
         topologyService: new RallarRtcTopologyService()
     });
     const topologyMutationOwners = createGroupTopologyMutationOwners({
-        groupStateRepository: topologyGroupStateRepository,
+        groupStateRepository,
         configRepository: topologyConfigRepository,
         planning: topologyRuntimeOwners.planning,
         nowEpochMs: () => Date.now(),

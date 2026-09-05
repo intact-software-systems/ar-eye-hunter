@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     createInMemoryALAdmissionState,
@@ -9,10 +9,24 @@ import {
     type ALAdmissionBackend
 } from '@shared/alm/al-admission-backend.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
-import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
+import {
+    AL_ADMISSION_EXPIRY_INDEX_NAME,
+    AL_ADMISSION_REVISION_KEY,
+    openIndexedDbAdmissionDatabase
+} from '@shared/alm/open-indexed-db-admission-database.ts';
+import { readIndexedDbAdmissionSnapshot } from '@shared/alm/read-indexed-db-admission-snapshot.ts';
+import {
+    computeIndexedDbAdmissionRevisionWrite,
+    writeIndexedDbAdmissionMutations
+} from '@shared/alm/write-indexed-db-admission-mutations.ts';
+import { openIndexedDbWithStore } from '@shared/persistence/open-indexed-db.ts';
 import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
 
 import '../../setup-browser-indexeddb.ts';
+
+afterEach(() => {
+    vi.restoreAllMocks();
+});
 
 interface BackendCase {
     readonly name: string;
@@ -94,6 +108,71 @@ describe.each(backends)('$name admission reads', ({ create }) => {
 });
 
 describe('admission storage envelopes', () => {
+    it('rejects an existing store without the required revision metadata', async () => {
+        const databaseName = `admission-missing-revision-${crypto.randomUUID()}`;
+        const existing = await openIndexedDbWithStore(databaseName, {
+            name: 'entries',
+            keyPath: 'key',
+            indexes: [{
+                name: AL_ADMISSION_EXPIRY_INDEX_NAME,
+                keyPath: 'expireAtTimestamp'
+            }]
+        });
+        existing.close();
+
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        try {
+            await expect(readIndexedDbAdmissionSnapshot(
+                database,
+                'entries',
+                { kind: 'revision' }
+            )).rejects.toThrow('IndexedDB admission revision row is required');
+        }
+        finally {
+            database.close();
+        }
+    });
+
+    it('persists a write token on every IndexedDB admission data row', async () => {
+        const databaseName = `admission-write-token-${crypto.randomUUID()}`;
+        const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
+        await backend.write((transaction) => transaction.set('version:peer-a', '7'));
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        try {
+            const snapshot = await readIndexedDbAdmissionSnapshot(
+                database,
+                'entries',
+                { kind: 'key', key: 'version:peer-a' }
+            );
+            expect(snapshot.stored[0]?.writeToken).toEqual(expect.any(String));
+            expect(await backend.read('version:peer-a', decodeVersion)).toBe(7);
+        }
+        finally {
+            database.close();
+        }
+    });
+
+    it('rejects a persisted data row without the required write token', async () => {
+        const databaseName = `admission-missing-write-token-${crypto.randomUUID()}`;
+        const seeded = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        try {
+            await putIndexedDbRows(seeded, 'entries', [{
+                key: 'version:missing-token',
+                value: '7',
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER
+            }]);
+        }
+        finally {
+            seeded.close();
+        }
+
+        const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
+        await expect(backend.read('version:missing-token', decodeVersion)).rejects.toMatchObject({
+            name: 'ALAdmissionCorruptionError',
+            key: 'version:missing-token'
+        });
+    });
+
     it('uses the supplied clock for memory and IndexedDB expiry decisions', async () => {
         let nowMs = 10;
         const clock = () => nowMs;
@@ -172,17 +251,70 @@ describe('admission storage envelopes', () => {
         await expect(backend.list('version:', decodeVersion)).rejects.toMatchObject(corruption);
     });
 
+    it.each(['read', 'list'] as const)(
+        'does not let %s expiry cleanup delete a concurrent refresh',
+        async (operation) => {
+            const databaseName = `admission-expiry-race-${operation}-${crypto.randomUUID()}`;
+            const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', () => 10);
+            await backend.write((transaction) => transaction.set('version:refreshed', '7', 1));
+            const transactionImplementation = IDBDatabase.prototype.transaction;
+            let refreshWritten = false;
+            vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(function (
+                this: IDBDatabase,
+                ...args: Parameters<IDBDatabase['transaction']>
+            ) {
+                if (args[1] === 'readwrite' && !refreshWritten) {
+                    refreshWritten = true;
+                    const refresh = Reflect.apply(transactionImplementation, this, args);
+                    refresh.objectStore('entries').put({
+                        key: 'version:refreshed',
+                        value: '8',
+                        expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                        writeToken: 'replacement'
+                    });
+                }
+                return Reflect.apply(transactionImplementation, this, args);
+            });
+
+            const operationResult = operation === 'read'
+                ? backend.read('version:refreshed', decodeVersion)
+                : backend.list('version:', decodeVersion);
+
+            await expect(operationResult).rejects.toMatchObject({
+                name: 'ALAdmissionBackendConflictError'
+            });
+            expect(refreshWritten).toBe(true);
+            const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+            try {
+                const snapshot = await readIndexedDbAdmissionSnapshot(
+                    database,
+                    'entries',
+                    { kind: 'key', key: 'version:refreshed' }
+                );
+                expect(snapshot.stored).toEqual([{
+                    key: 'version:refreshed',
+                    value: '8',
+                    expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                    writeToken: 'replacement'
+                }]);
+            }
+            finally {
+                database.close();
+            }
+        }
+    );
+
     it('rejects malformed IndexedDB envelopes on direct and listed reads', async () => {
         const databaseName = `admission-corrupt-${crypto.randomUUID()}`;
         const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
-        const database = await openIndexedDbWithStore(databaseName, { name: 'entries', keyPath: 'key' });
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
         try {
-            const transaction = database.transaction('entries', 'readwrite');
-            transaction.objectStore('entries').put({ key: 'version:bad', value: '7', expireAtTimestamp: NaN });
-            await new Promise<void>((resolve, reject) => {
-                transaction.oncomplete = () => resolve();
-                transaction.onabort = () => reject(transaction.error);
-            });
+            await putIndexedDbRows(database, 'entries', [{
+                key: 'version:bad',
+                value: '7',
+                expireAtTimestamp: NaN,
+                writeToken: 'write-token'
+            }]);
             const corruption = { name: 'ALAdmissionCorruptionError', key: 'version:bad' };
             await expect(backend.read('version:bad', decodeVersion)).rejects.toMatchObject(corruption);
             await expect(backend.list('version:', decodeVersion)).rejects.toMatchObject(corruption);
@@ -196,7 +328,129 @@ describe('admission storage envelopes', () => {
             database.close();
         }
     });
+
+    it('rejects malformed IndexedDB metadata when reading cleanup rows', async () => {
+        const databaseName = `admission-custom-read-corrupt-${crypto.randomUUID()}`;
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        try {
+            await putIndexedDbRows(database, 'entries', [{
+                key: 'version:bad',
+                value: '7',
+                expireAtTimestamp: NaN,
+                writeToken: 'write-token'
+            }]);
+
+            await expect(readIndexedDbAdmissionSnapshot(
+                database,
+                'entries',
+                { kind: 'key', key: 'version:bad' }
+            )).rejects.toMatchObject({ name: 'ALAdmissionCorruptionError', key: 'version:bad' });
+        }
+        finally {
+            database.close();
+        }
+    });
+
+    it('rejects a malformed guarded-removal row instead of reporting a write conflict', async () => {
+        const databaseName = `admission-guarded-remove-corrupt-${crypto.randomUUID()}`;
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        try {
+            await putIndexedDbRows(database, 'entries', [{
+                key: 'version:bad',
+                value: '7',
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                writeToken: 7
+            }]);
+
+            await expect(writeIndexedDbAdmissionMutations({
+                db: database,
+                storeName: 'entries',
+                expectedRevision: 0,
+                mutations: [{
+                    kind: 'remove-if-write-token',
+                    key: 'version:bad',
+                    expectedWriteToken: 'write-token'
+                }],
+                revisionWrite: computeIndexedDbAdmissionRevisionWrite(0)
+            })).rejects.toMatchObject({ name: 'ALAdmissionCorruptionError', key: 'version:bad' });
+        }
+        finally {
+            database.close();
+        }
+    });
+
+    it('rejects a revision row that does not match the current stored shape', async () => {
+        const databaseName = `admission-invalid-revision-${crypto.randomUUID()}`;
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        try {
+            await putIndexedDbRows(database, 'entries', [{
+                key: AL_ADMISSION_REVISION_KEY,
+                value: 0,
+                expireAtTimestamp: 'invalid-expiry'
+            }]);
+
+            await expect(writeIndexedDbAdmissionMutations({
+                db: database,
+                storeName: 'entries',
+                expectedRevision: 0,
+                mutations: [],
+                revisionWrite: computeIndexedDbAdmissionRevisionWrite(0)
+            })).rejects.toMatchObject({
+                name: 'ALAdmissionCorruptionError',
+                key: AL_ADMISSION_REVISION_KEY
+            });
+        }
+        finally {
+            database.close();
+        }
+    });
+
+    it('lists a matching key whose suffix starts with the maximum UTF-16 code unit', async () => {
+        const databaseName = `admission-prefix-bound-${crypto.randomUUID()}`;
+        const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
+        const key = `version:\ufffftail`;
+        await backend.write((transaction) => transaction.set(key, '7'));
+
+        await expect(backend.list('version:', decodeVersion)).resolves.toEqual([
+            { key, value: 7 }
+        ]);
+    });
+
+    it('returns one row when requested prefixes overlap', async () => {
+        const databaseName = `admission-overlapping-prefixes-${crypto.randomUUID()}`;
+        const backend = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
+        await backend.write((transaction) => transaction.set('version:peer-a', '7'));
+        const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
+        try {
+            const snapshot = await readIndexedDbAdmissionSnapshot(
+                database,
+                'entries',
+                { kind: 'prefixes', prefixes: ['version:', 'version:peer'] }
+            );
+            expect(snapshot.stored).toHaveLength(1);
+            expect(snapshot.stored[0]?.key).toBe('version:peer-a');
+        }
+        finally {
+            database.close();
+        }
+    });
 });
+
+async function putIndexedDbRows(
+    database: IDBDatabase,
+    storeName: string,
+    rows: readonly object[]
+): Promise<void> {
+    const transaction = database.transaction(storeName, 'readwrite');
+    const store = transaction.objectStore(storeName);
+    for (const row of rows) {
+        store.put(row);
+    }
+    await new Promise<void>((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onabort = () => reject(transaction.error);
+    });
+}
 
 function decodeVersion(value: unknown): number {
     if (typeof value !== 'string' || !/^\d+$/.test(value)) {

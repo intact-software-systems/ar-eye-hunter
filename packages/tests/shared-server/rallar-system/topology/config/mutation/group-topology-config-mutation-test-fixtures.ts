@@ -5,24 +5,42 @@ import type {
 } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { createTestGroup } from '../../../../../create-test-group.ts';
 
 export interface CreateTopologyConfigMutationTestInput {
-    readonly operation?: 'putConfig' | 'putOverride';
-    readonly commandId?: string | null;
-    readonly config?: GroupTopologyConfigPatch;
-    readonly durableDegreeLimit?: number;
-    readonly overrideDegreeLimit?: number | null;
-    readonly requestId?: string | null;
+    readonly operation: 'putConfig' | 'putOverride';
+    readonly commandId: string | null;
+    readonly config: GroupTopologyConfigPatch;
+    readonly durableDegreeLimit: number | undefined;
+    readonly overrideDegreeLimit: number | null | undefined;
+    readonly requestId: string | null;
 }
 
-export function createTopologyConfigMutationTestInput(
-    settings: CreateTopologyConfigMutationTestInput = {}
+export function createDefaultTopologyConfigMutationTestInput(
+    overrides: Partial<CreateTopologyConfigMutationTestInput> = {}
 ) {
-    const operation = settings.operation ?? 'putConfig';
+    const operation = overrides.operation ?? 'putConfig';
+    const requestId = overrides.requestId === undefined ? `request-${operation}` : overrides.requestId;
+    return createTopologyConfigMutationTestInput({
+        operation,
+        requestId,
+        commandId: overrides.commandId === undefined
+            ? (requestId ?? `command-${operation}`)
+            : overrides.commandId,
+        config: overrides.config ?? { topologyKind: 'tree' },
+        durableDegreeLimit: overrides.durableDegreeLimit,
+        overrideDegreeLimit: overrides.overrideDegreeLimit
+    });
+}
+
+function createTopologyConfigMutationTestInput(
+    settings: CreateTopologyConfigMutationTestInput
+) {
+    const operation = settings.operation;
     const groupRef = createTopologyTestGroupRef();
-    const requestId = settings.requestId === undefined ? `request-${operation}` : settings.requestId;
-    const commandId = settings.commandId === undefined ? (requestId ?? `command-${operation}`) : settings.commandId;
+    const requestId = settings.requestId;
+    const commandId = settings.commandId;
     const read = createTopologyConfigMutationRead({
         durableDegreeLimit: settings.durableDegreeLimit,
         overrideDegreeLimit: settings.overrideDegreeLimit
@@ -32,17 +50,17 @@ export function createTopologyConfigMutationTestInput(
         aggregateRef: groupRef,
         commandId: commandId ?? `command-${operation}`,
         requestId,
+        commandHash: `sha256:${'c'.repeat(64)}`,
+        capturedAtEpochMs: 1_000,
         input: {
-            config: settings.config ?? { topologyKind: 'tree' },
+            config: settings.config,
             updatedByPrincipalId: 'owner',
             ttlMs: operation === 'putOverride' ? 5_000 : null,
             expiresAtEpochMs: null
         }
     };
     const facts: GroupTopologyConfigMutationFacts = {
-        requestedAtEpochMs: 1_000,
         policyNowEpochMs: 1_000,
-        commandHash: `sha256:${'c'.repeat(64)}`,
         attemptCount: 1,
         isPlatformAdmin: false,
         resolvedOverrideExpiresAtEpochMs: operation === 'putOverride' ? 6_000 : null
@@ -61,14 +79,14 @@ export function createTopologyTestGroupRef() {
 export function createTopologyTestGroupSnapshot(): GroupSnapshot {
     const groupRef = createTopologyTestGroupRef();
     return {
-        causalRevision: { groupRevision: 1, presenceRevision: 0 },
+        causalRevision: { groupRevision: 1, presenceRevision: 1 },
         group: createTestGroup({
             ...groupRef,
             displayName: 'Room 1',
             snapshotVersion: 1,
-            metadataVersion: 0,
+            metadataVersion: 1,
             rosterVersion: 1,
-            presenceVersion: 0,
+            presenceVersion: 1,
             activeMemberCount: 1,
             ownerPrincipalId: 'owner',
             created: topologyTestAuditStamp(),
@@ -103,7 +121,7 @@ export function createTopologyTestAuthorityGuard(revision = 0) {
         entry: {
             key: 'group-authority',
             value: JSON.stringify(group),
-            expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+            expireAtTimestamp: group.purgeAfterEpochMs ?? NEVER_EXPIRE_AT_TIMESTAMP,
             updatedTimestamp: new Date(0).toISOString(),
             revision
         }

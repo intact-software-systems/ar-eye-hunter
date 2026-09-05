@@ -10,10 +10,16 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
+import {
+    readAuthenticatedClientMutationIngress,
+    toAuthenticatedClientMutationContextId,
+    validateIssuedClientMutationIngress
+} from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
+import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
 import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -33,6 +39,110 @@ import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-
 import { createClientStateServiceFixture } from './create-client-state-service-fixture.ts';
 
 describe('AppClientInbox authentication', () => {
+    it('validates issued authority from an explicit observation time without reading the clock', () => {
+        const authority = issuedSession('alice', 'alice-session');
+        const ingress = readAuthenticatedClientMutationIngress({
+            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            resourceId: 'explicit-validation-time',
+            contextId: toAuthenticatedClientMutationContextId({
+                scope: SCOPE,
+                principalId: 'alice',
+                callerClientId: authority.clientId,
+                callerSessionId: authority.sessionId
+            }),
+            senderId: authority.clientId,
+            data: {
+                scope: SCOPE,
+                principalId: 'alice',
+                request: {
+                    requestId: 'explicit-validation-time',
+                    actorPrincipalId: authority.clientId,
+                    actorSessionId: authority.sessionId
+                }
+            }
+        });
+        const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => {
+            throw new Error('validation read the clock');
+        });
+
+        try {
+            expect(
+                validateIssuedClientMutationIngress(
+                    authority,
+                    ingress,
+                    authority.issuedAtEpochMs + 1
+                )
+            ).toEqual([]);
+        }
+        finally {
+            dateNow.mockRestore();
+        }
+    });
+
+    it('returns every independent issued-authority ingress issue without throwing', () => {
+        const authority = issuedSession('alice', 'alice-session');
+        const ingress = readAuthenticatedClientMutationIngress({
+            type: AppInboxType.CLIENT_SESSION_DISCONNECT,
+            topicId: AppInboxType.CLIENT_SESSION_DISCONNECT,
+            resourceId: 'aggregate-ingress-issues',
+            contextId: 'wrong-context',
+            senderId: 'mallory',
+            data: {
+                scope: SCOPE,
+                principalId: 'mallory',
+                clientInstanceId: 'browser',
+                sessionId: 'mallory-session',
+                request: {
+                    requestId: 'aggregate-ingress-issues',
+                    actorPrincipalId: 'mallory',
+                    actorSessionId: 'mallory-session'
+                }
+            }
+        });
+
+        expect(
+            validateIssuedClientMutationIngress(
+                { ...authority, expiresAtEpochMs: authority.issuedAtEpochMs },
+                ingress,
+                authority.issuedAtEpochMs + 1
+            ).map(({ path, message }) => ({ path, message }))
+        ).toEqual([
+            {
+                path: 'authority.expiresAtEpochMs',
+                message: 'Authenticated client mutation session expiry must follow issuance.'
+            },
+            {
+                path: 'authority.expiresAtEpochMs',
+                message: 'Authenticated client mutation session is expired.'
+            },
+            {
+                path: 'ingress.principalId',
+                message: 'Authenticated client mutation principal differs from issued authority.'
+            },
+            {
+                path: 'ingress.senderId',
+                message: 'Authenticated client mutation sender differs from issued authority.'
+            },
+            {
+                path: 'ingress.actorPrincipalId',
+                message: 'Authenticated client mutation actor principal differs from issued authority.'
+            },
+            {
+                path: 'ingress.actorSessionId',
+                message: 'Authenticated client mutation actor session differs from issued authority.'
+            },
+            {
+                path: 'ingress.sessionId',
+                message: 'Authenticated client mutation session differs from issued authority.'
+            },
+            {
+                path: 'ingress.contextId',
+                message: 'Authenticated client mutation AppInbox context differs.'
+            }
+        ]);
+    });
+
     it('returns the exact terminal left for a malformed completed client result', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
@@ -170,11 +280,11 @@ describe('AppClientInbox authentication', () => {
             toClientMutationIssuedSessionAuthority(mallory, SCOPE, 'upsertPrincipal')
         );
         const read = await service.read(command);
-        const computed = service.compute(command, read);
+        const computed = computeClientMutation({ command, read });
 
-        expect(() => service.validate(command, read, computed)).toThrow(
-            /authority|authenticated|principal/i
-        );
+        expect(
+            validateClientMutation({ command, read, computed }).map(({ path }) => path)
+        ).toContain('command.authority.principalId');
     });
 
     it('rejects a durable Mallory authority targeting Alice before any domain write', async () => {

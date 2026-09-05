@@ -122,6 +122,16 @@ describe('RTC topology input fingerprint inputs', () => {
 
         expect(wide).not.toBe(narrow);
     });
+
+    it('changes when the RTT reporting limit changes', async () => {
+        const narrow = await computeRtcTopologyInputFingerprint(fingerprintFacts({}));
+        const wide = await computeRtcTopologyInputFingerprint({
+            ...fingerprintFacts({}),
+            rttReportingDegreeLimit: 6
+        });
+
+        expect(wide).not.toBe(narrow);
+    });
 });
 
 const EFFECTIVE_CONFIG: EffectiveGroupTopologyConfig = {
@@ -143,6 +153,7 @@ function fingerprintFacts(groupOverrides: Partial<Group>): RtcTopologyInputFinge
             onlineMemberCount: 0
         },
         effectiveConfig: EFFECTIVE_CONFIG,
-        kindHysteresisWidths: { meshExitWidth: 1, treeExitWidth: 1 }
+        kindHysteresisWidths: { meshExitWidth: 1, treeExitWidth: 1 },
+        rttReportingDegreeLimit: 5
     };
 }

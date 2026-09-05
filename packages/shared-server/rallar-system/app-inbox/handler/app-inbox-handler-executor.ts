@@ -16,18 +16,18 @@ import {
 import { AppInboxCommandIdentityError, validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
 import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../app-inbox-contracts.ts';
 import { classifyAppInboxError, type AppInboxErrorClassification } from '../app-inbox-error-classification.ts';
-import { encodeAppInboxFailure } from '../app-inbox-failure.ts';
 import type { AppInboxOptions } from '../app-inbox-options.ts';
 import type { AppInboxResultRepository } from '../app-inbox-persistence-ports.ts';
 import { toAppInboxAttemptTimingDetails, toAppInboxTimingDetails } from './app-inbox-attempt-timing.ts';
+import { computeAppInboxCompletion, validateAppInboxCompletion } from './app-inbox-completion-computation.ts';
 import type { AppInboxHandlerRegistration } from './app-inbox-handler-registration.ts';
-import { AppInboxTransactionWriter, toFinalizedResourceEntry } from './app-inbox-transaction-writer.ts';
+import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
 
 interface AppInboxExecutionAttempt<Command, Result> {
     readonly registration: AppInboxHandlerRegistration<Command, Result>;
     readonly message: ALMessage;
     readonly entry: ResourceEntry;
-    readonly fallbackEnqueue: AppInboxEnqueueInput;
+    readonly undecodedEnqueue: AppInboxEnqueueInput;
 }
 
 interface BegunAppInboxExecution<Command, Result> {
@@ -77,7 +77,7 @@ export class AppInboxHandlerExecutor {
         message: ALMessage,
         entry: ResourceEntry
     ): Promise<void> {
-        const fallbackEnqueue: AppInboxEnqueueInput = {
+        const undecodedEnqueue: AppInboxEnqueueInput = {
             type: registration.type,
             resourceId: entry.key.resourceId,
             contextId: entry.key.contextId,
@@ -97,7 +97,7 @@ export class AppInboxHandlerExecutor {
                     resourceId: entry.key.resourceId
                 }
             },
-            async () => await this.executeAttempt({ registration, message, entry, fallbackEnqueue })
+            async () => await this.executeAttempt({ registration, message, entry, undecodedEnqueue })
         );
     }
 
@@ -187,7 +187,7 @@ export class AppInboxHandlerExecutor {
         }
         if (input.classification.kind === 'retryable') {
             this.recordQueueRetryTiming(
-                input.context?.enqueue ?? input.fallbackEnqueue,
+                input.context?.enqueue ?? input.undecodedEnqueue,
                 input.entry,
                 input.classification,
                 input.error
@@ -195,21 +195,24 @@ export class AppInboxHandlerExecutor {
             throw input.error;
         }
         const terminalContext = input.context ?? {
-            enqueue: input.fallbackEnqueue,
+            enqueue: input.undecodedEnqueue,
             message: input.message,
             entry: input.entry,
             encodeResult: input.registration.encodeResult
         };
-        await this.transactionWriter.writeTerminalFailure(
-            terminalContext,
-            encodeAppInboxFailure(input.classification.result)
-        );
+        const completionInput = {
+            ...this.transactionWriter.readCompletionFacts(terminalContext),
+            durableResult: input.classification.result,
+            status: EntityStatus.FAILED
+        } as const;
+        const computed = computeAppInboxCompletion(completionInput);
+        const issues = validateAppInboxCompletion(completionInput, computed);
+        if (issues[0] !== undefined) {
+            throw issues[0].cause;
+        }
+        await this.transactionWriter.writeComputedTerminalFailure(terminalContext, computed);
         throw new ResourceInboxFinalizedByHandlerError(
-            toFinalizedResourceEntry(
-                terminalContext,
-                EntityStatus.FAILED,
-                this.nowEpochMs()
-            ),
+            computed.finalizedEntry,
             input.error
         );
     }
@@ -264,10 +267,6 @@ export class AppInboxHandlerExecutor {
             },
             action
         );
-    }
-
-    private nowEpochMs(): number {
-        return this.options.nowEpochMs?.() ?? Date.now();
     }
 
     private timingNowEpochMs(): number {

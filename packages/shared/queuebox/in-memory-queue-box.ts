@@ -4,6 +4,7 @@ import { EnqueuedType } from '../api/api-config.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { ResilienceDto } from './DequeueResourceEntryController.ts';
+import { hasSameResourceEntryValue } from './has-same-resource-entry-value.ts';
 import {
     isIdempotentHandlerFinalizedRelease,
     QueueBoxResourceEntryRepository,
@@ -86,60 +87,25 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         return prev;
     }
 
-    async enqueueIf(
-        resourceEntry: ResourceEntry,
-        enqueueIt: (existing: ResourceEntry) => boolean
-    ): Promise<ResourceEntry | undefined> {
-        const key = toKeyAsString(resourceEntry.key);
-        const prev = this.data.get(key);
-
-        if (!prev || isExpiredResourceEntry(prev)) {
-            this.data.set(key, resourceEntry);
-            return undefined;
+    async replaceIfObserved(
+        expected: ResourceEntry,
+        replacement: ResourceEntry
+    ): Promise<ResourceEntry | null> {
+        const key = toKeyAsString(expected.key);
+        if (key !== toKeyAsString(replacement.key)) {
+            throw new TypeError('Queue replacement key differs from its observation');
+        }
+        const current = this.data.get(key);
+        if (
+            current === undefined ||
+            isExpiredResourceEntry(current) ||
+            !hasSameResourceEntryValue(current, expected)
+        ) {
+            return null;
         }
 
-        if (enqueueIt(prev)) {
-            this.data.set(key, resourceEntry);
-        }
-        else {
-            console.log('Entry already exists: ', resourceEntry.key);
-        }
-
-        return prev;
-    }
-
-    async enqueueOrUpdate(
-        resourceEntry: ResourceEntry,
-        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined
-    ) {
-        const key = toKeyAsString(resourceEntry.key);
-        const previous = this.data.get(key);
-
-        if (!previous || isExpiredResourceEntry(previous)) {
-            this.data.set(key, resourceEntry);
-            return {
-                action: 'inserted' as const,
-                entry: resourceEntry,
-                previous: undefined
-            };
-        }
-
-        const updated = updateExisting(previous);
-        if (!updated) {
-            console.log('Entry already exists: ', resourceEntry.key);
-            return {
-                action: 'unchanged' as const,
-                entry: previous,
-                previous
-            };
-        }
-
-        this.data.set(key, updated);
-        return {
-            action: 'updated' as const,
-            entry: updated,
-            previous
-        };
+        this.data.set(key, replacement);
+        return replacement;
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
@@ -154,6 +120,19 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         }
 
         return prev;
+    }
+
+    async tryWriteIfAbsentOrReplaceExpired(
+        resourceEntry: ResourceEntry
+    ): Promise<ResourceEntry | null> {
+        const key = toKeyAsString(resourceEntry.key);
+        const current = this.data.get(key);
+        if (current !== undefined && !isExpiredResourceEntry(current)) {
+            return null;
+        }
+
+        this.data.set(key, resourceEntry);
+        return resourceEntry;
     }
 
     async releaseEntries(

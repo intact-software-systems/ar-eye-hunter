@@ -3,11 +3,21 @@ import { describe, expect, it } from 'vitest';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { decodeAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts';
-import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import {
+    AppInboxType,
+    type AppInboxExecutionMetadata,
+    type AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
-import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
-import type { GroupMutationPreparation } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
-import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
+import type {
+    AppInboxCompletionComputed,
+    AppInboxCompletionFacts
+} from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
+import type { GroupMutationIngress } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import {
+    GroupStateInboxHandler,
+    type GroupStateInboxHandlerDependencies
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import { decodeGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -53,7 +63,7 @@ const EXPECTED_CREATE_GROUP_DURABLE_JSON = '{"status":"created","result":{"snaps
     '"traceId":null,"requestId":"create-transaction-boundary-room","payload":{}}}}';
 
 describe('group-state AppInbox transaction result boundary', () => {
-    it('persists the real durable result before exposing the committed snapshot', async () => {
+    it('persists the exact durable result without a handler-owned cache effect', async () => {
         const harness = await createGroupStateTransactionBoundaryHarness();
 
         const created = await harness.handler.processGroupStateMutation(harness.context);
@@ -77,9 +87,7 @@ describe('group-state AppInbox transaction result boundary', () => {
             status: EntityStatus.COMPLETED,
             result: created
         });
-        expect(harness.observedSnapshots).toHaveLength(1);
-        expect(harness.observedSnapshots[0]).toEqual(created.result.snapshot);
-        expect(harness.observedSnapshots[0]).toBe(created.result.snapshot);
+        expect(harness.observedSnapshots).toEqual([]);
         expect(harness.readWakeCount()).toBe(1);
         expect(harness.outboxEntries.size).toBe(1);
     });
@@ -93,13 +101,13 @@ describe('group-state AppInbox transaction result boundary', () => {
         expect(harness.formationMutationEvents).toEqual([{ operation: 'createGroup', outcome: 'write' }]);
     });
 
-    it('rejects predecessor fields in prepared facts before starting the mutation transaction', async () => {
+    it('rejects predecessor fields in ingress facts before starting the mutation transaction', async () => {
         const harness = await createGroupStateTransactionBoundaryHarness();
         const authority = requireJsonWireObject(
             harness.context.enqueue.authority,
-            'Prepared authority'
+            'Mutation ingress authority'
         );
-        const facts = requireJsonWireObject(authority.facts, 'Prepared facts');
+        const facts = requireJsonWireObject(authority.facts, 'Mutation ingress facts');
         const malformedContext = {
             ...harness.context,
             enqueue: {
@@ -113,29 +121,57 @@ describe('group-state AppInbox transaction result boundary', () => {
 
         await expect(
             harness.handler.processGroupStateMutation(malformedContext)
-        ).rejects.toThrow('App inbox prepared group mutation is malformed.');
+        ).rejects.toThrow('App inbox group mutation ingress is malformed.');
+        expect(harness.reachedStages).toEqual([]);
+        expect(await harness.repository.readSnapshot(harness.groupRef)).toBeUndefined();
+    });
+
+    it('rejects ingress facts that omit current capacity policy', async () => {
+        const harness = await createGroupStateTransactionBoundaryHarness();
+        const authority = requireJsonWireObject(
+            harness.context.enqueue.authority,
+            'Mutation ingress authority'
+        );
+        const facts = requireJsonWireObject(authority.facts, 'Mutation ingress facts');
+        const { capacity: _capacity, ...factsWithoutCapacity } = facts;
+        const malformedContext = {
+            ...harness.context,
+            enqueue: {
+                ...harness.context.enqueue,
+                authority: { ...authority, facts: factsWithoutCapacity }
+            }
+        };
+
+        await expect(
+            harness.handler.processGroupStateMutation(malformedContext)
+        ).rejects.toThrow('App inbox group mutation ingress is malformed.');
         expect(harness.reachedStages).toEqual([]);
         expect(await harness.repository.readSnapshot(harness.groupRef)).toBeUndefined();
     });
 
     it('persists an inactive presence result once without active mutation effects', async () => {
         const actions: string[] = [];
-        const transactionWriter: AppInboxMutationTransactionWriter = {
-            writeMutation: async (_context, write) => {
-                actions.push('inactive-transaction');
-                return await write(createUnusedTransaction());
+        const transactionWriter: GroupStateInboxHandlerDependencies['transactionWriter'] = {
+            readCompletionFacts: (context: AppInboxExecutionMetadata): AppInboxCompletionFacts => {
+                actions.push('completion');
+                return { entry: context.entry, completedAtEpochMs: context.message.id.ts };
             },
-            writeMutationWithAfterCommitResult: () =>
-                Promise.reject(
-                    new Error('Inactive presence must not enter the active mutation transaction')
-                )
+            writeComputedMutation: async <Result>(
+                _context: AppInboxExecutionMetadata,
+                computed: AppInboxCompletionComputed<Result>,
+                write: (transaction: PSqlSql) => Promise<void>
+            ): Promise<Result> => {
+                actions.push('inactive-transaction');
+                await write(createUnusedTransaction());
+                return computed.durableResult;
+            }
         };
         const handler = new GroupStateInboxHandler({
-            prepareMutation: async () => {
-                throw new Error('Inactive presence fixture must already be prepared.');
+            captureAuthenticatedMutationIngress: async () => {
+                throw new Error('Inactive presence fixture must already be internal.');
             },
-            persistPreparation: async () => {
-                throw new Error('Inactive presence fixture must not persist preparation.');
+            persistMutationIngress: async () => {
+                throw new Error('Inactive presence fixture must not persist mutation ingress.');
             },
             mutationService: {
                 read: async () => {
@@ -171,9 +207,12 @@ describe('group-state AppInbox transaction result boundary', () => {
                     throw new Error('Inactive presence must not write lifecycle state');
                 }
             },
-            snapshotObserver: {
-                observeSnapshot: async () => {
-                    throw new Error('Inactive presence must not observe a snapshot');
+            resultReader: {
+                readSnapshot: async () => {
+                    throw new Error('Inactive presence must not read a snapshot');
+                },
+                readEvent: async () => {
+                    throw new Error('Inactive presence must not read an event');
                 }
             },
             transactionWriter,
@@ -181,38 +220,12 @@ describe('group-state AppInbox transaction result boundary', () => {
         });
         const result = await handler.processGroupStateMutation(inactiveConnectContext());
         expect(JSON.stringify(result)).toBe('{"status":"inactive","sessionId":"inactive-session","generationId":"inactive-generation"}');
-        expect(actions).toEqual(['inactive-transaction']);
-    });
-
-    it('keeps the existing durable-only writer result and serialization unchanged', async () => {
-        const harness = await createGroupStateTransactionBoundaryHarness();
-        const durableResult = {
-            status: 'durable-only',
-            result: { value: 0, omitted: null }
-        } as const;
-        const durableContext = {
-            ...harness.context,
-            encodeResult: (result: typeof durableResult) => encodeAppInboxResult(result, 'Durable-only transaction test result')
-        };
-
-        const returned = await harness.transactionWriter.writeMutation(
-            durableContext,
-            async () => durableResult
-        );
-        const persisted = await harness.results.findByKey(harness.context.entry.key);
-
-        expect(returned).toBe(durableResult);
-        expect(persisted?.resource).toBe('{"status":"durable-only","result":{"value":0,"omitted":null}}');
-        expect(harness.transactionWriter.read(durableContext)).toEqual({
-            state: 'transaction-finalized',
-            status: EntityStatus.COMPLETED,
-            result: durableResult
-        });
+        expect(actions).toEqual(['completion', 'inactive-transaction']);
     });
 });
 
 function inactiveConnectContext(): AppInboxMessageContext<GroupStateInboxDurableResult> {
-    const authority: GroupMutationPreparation = {
+    const authority: GroupMutationIngress = {
         authorityProof: {
             version: 1,
             principalId: 'owner',
@@ -272,6 +285,7 @@ function inactiveConnectContext(): AppInboxMessageContext<GroupStateInboxDurable
             resolvedJoinCode: null,
             joinCodeVerifier: null,
             internalAuthority: 'none',
+            capacity: { defaultMaxMembers: null },
             authenticatedAuthority: { principalId: 'owner', sessionId: 'inactive-session' }
         },
         causalToken: 'causal-token',

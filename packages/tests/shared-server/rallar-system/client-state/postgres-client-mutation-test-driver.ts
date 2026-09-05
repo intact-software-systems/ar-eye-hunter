@@ -8,9 +8,18 @@ import {
     toClientMutationSystemAuthority
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
-import type { ClientMutationCommandInput, ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import type {
+    ClientMutationCommandInput,
+    ClientMutationComputed,
+    ClientMutationComputedWrite
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toConnectClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-connect-client-session-mutation-input.ts';
 import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
+import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import {
+    ClientMutationIdempotencyConflictError,
+    validateClientMutation
+} from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import type { ClientStateEventStore } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
@@ -34,7 +43,7 @@ export interface PostgresClientPhaseDriverOptions {
     readonly atEpochMs: number;
     readonly serviceId: string;
     readonly clientStateEventStore?: ClientStateEventStore;
-    readonly writeComputed?: (computed: ClientMutationComputed) => Promise<void>;
+    readonly writeComputed?: (computed: ClientMutationComputedWrite) => Promise<void>;
 }
 
 type PostgresClientMutationExecutor = (
@@ -74,7 +83,11 @@ export function createPostgresClientPhaseDriver(
             }),
         expireExpiredSessions: async (atEpochMs) => {
             const written: ClientMutationComputed[] = [];
-            for (const candidate of await service.listExpiredSessionCandidates(atEpochMs)) {
+            const page = await service.readExpiredSessionPage({ atEpochMs, afterKey: null });
+            if (page.nextAfterKey !== null) {
+                throw new Error('Postgres client test expiry exceeds one bounded page');
+            }
+            for (const candidate of page.candidates) {
                 const computed = await execute(toExpireClientSessionMutationInput(candidate), null);
                 if (computed.outcome === 'write') {
                     written.push(computed);
@@ -89,8 +102,11 @@ function createPostgresClientMutationExecutor(
     options: PostgresClientPhaseDriverOptions,
     service: ReturnType<typeof createClientStateService>
 ): PostgresClientMutationExecutor {
+    const attemptsByCommandId = new Map<string, number>();
     return async (commandInput, authority) => {
-        for (let attempt = 1; attempt <= 8; attempt += 1) {
+        const attempt = (attemptsByCommandId.get(commandInput.commandId) ?? 0) + 1;
+        attemptsByCommandId.set(commandInput.commandId, attempt);
+        try {
             const command = await toClientMutationCommand(
                 commandInput,
                 {
@@ -111,20 +127,28 @@ function createPostgresClientMutationExecutor(
                     : missingPostgresClientAuthority()
             );
             const read = await service.read(command);
-            const computed = service.compute(command, read);
-            service.validate(command, read, computed);
-            try {
-                await writePostgresClientMutation(options, service, computed);
-                return computed;
+            const computed = computeClientMutation({ command, read });
+            const issue = validateClientMutation({ command, read, computed })[0];
+            if (issue !== undefined) {
+                throw issue.cause;
             }
-            catch (error) {
-                if (!(error instanceof RuntimeStateWriteConflictError) || attempt === 8) {
-                    throw error;
-                }
-                await new Promise((resolve) => setTimeout(resolve, Math.min(16, 2 ** (attempt - 1))));
+            if (computed.outcome === 'idempotency-conflict') {
+                throw new ClientMutationIdempotencyConflictError(
+                    command.commandId,
+                    computed.existingCommandHash,
+                    computed.receivedCommandHash
+                );
             }
+            await writePostgresClientMutation(options, service, computed);
+            attemptsByCommandId.delete(commandInput.commandId);
+            return computed;
         }
-        throw new Error('Postgres client AppInbox-equivalent attempts exhausted');
+        catch (error) {
+            if (!(error instanceof RuntimeStateWriteConflictError)) {
+                attemptsByCommandId.delete(commandInput.commandId);
+            }
+            throw error;
+        }
     };
 }
 

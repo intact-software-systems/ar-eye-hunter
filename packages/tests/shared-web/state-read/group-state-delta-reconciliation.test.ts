@@ -132,6 +132,68 @@ describe('browser group-state delta reconciliation', () => {
         expect(deltaApplyResults()).toEqual(['no-op', 'no-op']);
     });
 
+    it.each(
+        [
+            ['newer event first', ['group-updated', 'member-role-changed']],
+            ['older event first', ['member-role-changed', 'group-updated']]
+        ] as const
+    )(
+        'converges when delayed summary envelopes share a resulting revision: %s',
+        async (_description, deliveryOrder) => {
+            const runtime = new StateCacheRuntime();
+            const predecessor = createDeltaGroupSnapshot({
+                groupId: 'room-delayed-summary',
+                memberPrincipalIds: ['m-alpha', 'm-bravo'],
+                activePrincipalIds: ['m-alpha', 'm-bravo'],
+                causalRevision: { groupRevision: 2, presenceRevision: 3 }
+            });
+            const resultingWithoutRole = createDeltaGroupSnapshot({
+                groupId: 'room-delayed-summary',
+                memberPrincipalIds: ['m-alpha', 'm-bravo'],
+                activePrincipalIds: ['m-alpha', 'm-bravo'],
+                causalRevision: { groupRevision: 4, presenceRevision: 4 }
+            });
+            const adminMember = {
+                ...resultingWithoutRole.members[1]!,
+                role: 'admin' as const
+            };
+            const resulting = {
+                ...resultingWithoutRole,
+                members: [resultingWithoutRole.members[0]!, adminMember]
+            };
+            const envelopes = {
+                'group-updated': createDeltaEnvelope({
+                    resulting,
+                    predecessorCausalRevision: predecessor.causalRevision,
+                    eventCausalRevision: { groupRevision: 4, presenceRevision: 3 },
+                    eventType: 'group-updated'
+                }),
+                'member-role-changed': createDeltaEnvelope({
+                    resulting,
+                    predecessorCausalRevision: resulting.causalRevision,
+                    eventCausalRevision: { groupRevision: 3, presenceRevision: 3 },
+                    eventType: 'member-role-changed',
+                    members: [adminMember]
+                })
+            } as const;
+            await runtime.hydrate([predecessor]);
+            const fetchMock = vi.fn<typeof fetch>(
+                async () => groupSnapshotResponse(resulting)
+            );
+            vi.stubGlobal('fetch', fetchMock);
+
+            for (const eventType of deliveryOrder) {
+                await runtime.receiveDeltaMessage(envelopes[eventType]);
+            }
+
+            expect(
+                groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group)
+            ).toEqual(resulting);
+            expect(fetchMock).toHaveBeenCalledOnce();
+            expect(deltaApplyResults()).toContain('gap-pull');
+        }
+    );
+
     it('pulls at the resulting floor when the cached snapshot is dominated but not the predecessor', async () => {
         const runtime = new StateCacheRuntime();
         const stale = createDeltaGroupSnapshot({
@@ -403,6 +465,7 @@ function createDeltaGroupSnapshot(input: DeltaGroupSnapshotInput): GroupSnapshot
 interface DeltaEnvelopeInput {
     readonly resulting: GroupSnapshot;
     readonly predecessorCausalRevision: GroupStateCausalRevision;
+    readonly eventCausalRevision?: GroupStateCausalRevision;
     readonly eventType?: GroupEvent['eventType'];
     readonly members?: readonly GroupMember[];
     readonly sessions?: readonly GroupPresenceSession[];
@@ -419,7 +482,7 @@ function createDeltaEnvelope(input: DeltaEnvelopeInput): GroupStateDeltaEnvelope
             eventId: `event-${resulting.group.groupId}-g${resulting.causalRevision.groupRevision}-p${resulting.causalRevision.presenceRevision}`,
             eventType: input.eventType ?? 'member-joined',
             snapshotVersion: resulting.group.snapshotVersion,
-            causalRevision: resulting.causalRevision,
+            causalRevision: input.eventCausalRevision ?? resulting.causalRevision,
             occurredAtEpochMs: 1,
             actor: { kind: 'service', serviceId: 'summary-worker' },
             reason: null,

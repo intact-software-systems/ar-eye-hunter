@@ -9,10 +9,8 @@ import {
     type ClientMutationRead
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { toExpireClientSessionMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-expire-client-session-mutation-input.ts';
-import { validateClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts';
+import { assertClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/assert-client-mutation-command.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
-import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
-import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { clientStateInstanceStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-instance-storage-key.ts';
 import { ClientStateRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
 import {
@@ -112,7 +110,7 @@ describe('client mutation transaction convergence', () => {
         expect(timing.filter((event) => event.operation === 'mutation.read')).toHaveLength(1);
     });
 
-    it('exhausts conflicting client writes and keeps failed attempts atomic', async () => {
+    it('returns each client conflict to an explicit outer attempt and keeps it atomic', async () => {
         const runtime = new AlwaysConflictingPrincipalRepository();
         const timing: RallarTimingEvent[] = [];
         const service = createClientStateService({
@@ -122,18 +120,28 @@ describe('client mutation transaction convergence', () => {
             timing: (event) => timing.push(event)
         });
 
-        const error = await service
-            .upsertInstance(SCOPE, 'alice', 'browser', {
-                platform: 'web',
-                requestId: 'three-conflicts'
-            })
-            .catch((caught) => caught);
+        for (let attempt = 1; attempt <= 8; attempt += 1) {
+            const error = await service
+                .upsertInstance(SCOPE, 'alice', 'browser', {
+                    platform: 'web',
+                    requestId: 'three-conflicts'
+                })
+                .catch((caught) => caught);
 
-        expect(error).toBeInstanceOf(RuntimeStateWriteConflictError);
+            expect(error).toBeInstanceOf(RuntimeStateWriteConflictError);
+            expect(runtime.principalGuardCount).toBe(attempt);
+            expect(runtime.transactionBeginCount).toBe(attempt);
+        }
+
         expect(runtime.principalGuardCount).toBe(8);
         expect(runtime.transactionBeginCount).toBe(8);
         expect([...runtime.data.keys()].filter((key) => key.startsWith('client-state:'))).toEqual([]);
         expect(timing.filter((event) => event.operation === 'mutation.write')).toHaveLength(8);
+        expect(
+            timing
+                .filter((event) => event.operation === 'mutation.compute')
+                .map((event) => event.details?.attempt)
+        ).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
         expect(timing.map((event) => event.operation)).not.toContain('mutation.conflict');
     });
 

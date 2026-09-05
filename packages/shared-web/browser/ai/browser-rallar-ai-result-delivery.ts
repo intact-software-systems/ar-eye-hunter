@@ -83,8 +83,7 @@ export function createBrowserRallarAiPersistence(
                 input.storeName ?? DEFAULT_AI_RESULT_STORE_NAME,
                 {
                     scope: input.scope ?? 'session',
-                    durability: input.durability ?? 'write-behind',
-                    schemaVersion: 1
+                    durability: input.durability ?? 'write-behind'
                 }
             );
             await store.set(

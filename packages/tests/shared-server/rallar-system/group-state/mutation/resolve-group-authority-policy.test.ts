@@ -17,12 +17,12 @@ import { groupRef, groupStorageKey, storedEntry } from './group-mutation-test-ru
 // The three group-authority computes share this reader, so its arms are
 // pinned here rather than only through whichever compute happens to call it.
 describe('group authority policy resolution', () => {
-    it('resolves an absent stored policy to the default preset', () => {
+    it('fails closed when the current policy row is missing', () => {
         const resolution = resolveGroupAuthorityPolicy(policyRead({ status: 'absent' }));
 
         expect(resolution).toEqual({
-            status: 'resolved',
-            policy: resolveGroupLifecyclePolicyPreset('optimistic')
+            status: 'corrupt',
+            reason: 'Group lifecycle policy is missing'
         });
     });
 
@@ -105,6 +105,7 @@ function policyFacts(): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
+        capacity: { defaultMaxMembers: null },
         authenticatedAuthority: { principalId: 'alice', sessionId: 'alice-session' }
     };
 }

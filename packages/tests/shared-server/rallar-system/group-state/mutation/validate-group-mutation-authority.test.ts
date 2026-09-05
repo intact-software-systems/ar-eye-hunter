@@ -61,6 +61,7 @@ function authenticatedFacts(): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
+        capacity: { defaultMaxMembers: null },
         authenticatedAuthority: {
             principalId: 'alice',
             sessionId: 'alice-session'

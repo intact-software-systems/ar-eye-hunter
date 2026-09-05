@@ -165,6 +165,7 @@ export function computeUpdateGroupActivationStatus(
         initialPresenceSummary: null,
         presenceAdmission: null,
         eventType: 'group-activation-status-changed',
+        lifecyclePolicy: null,
         presenceSummaryWork: 'enqueue'
     });
 }

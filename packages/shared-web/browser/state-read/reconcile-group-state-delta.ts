@@ -6,7 +6,10 @@ import {
     acceptGroupStateDeltaEnvelope,
     type GroupStateDeltaAcceptance
 } from '../state-cache/group-state-delta-application.ts';
-import { acceptGroupStateSnapshotsOrRecompute } from '../state-cache/state-cache-snapshot-adoption.ts';
+import {
+    acceptAuthoritativeGroupStateSnapshot,
+    acceptGroupStateSnapshotsOrRecompute
+} from '../state-cache/state-cache-snapshot-adoption.ts';
 import { emitBrowserStateReadDiagnostic } from './diagnostics.ts';
 import { readStateGroupSnapshot } from './point-read.ts';
 
@@ -55,8 +58,8 @@ async function refreshGroupStateAtDeltaFloor(
             input.scope,
             { minCausalRevision: input.envelope.resultingCausalRevision }
         );
-        await acceptGroupStateSnapshotsOrRecompute(
-            [pulled.snapshot],
+        await acceptAuthoritativeGroupStateSnapshot(
+            pulled.snapshot,
             input.scope,
             input.rereadGroupSnapshots
         );

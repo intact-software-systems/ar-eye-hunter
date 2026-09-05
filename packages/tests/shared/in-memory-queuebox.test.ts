@@ -3,7 +3,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';
 
 describe('InMemoryQueueBox', () => {
@@ -50,32 +50,38 @@ describe('InMemoryQueueBox', () => {
         expect(firstValue(reserved).resource).toBe(original.resource);
     });
 
-    it('uses enqueueIf predicate to decide whether active entries are overwritten', async () => {
+    it('replaces an entry only while its complete observed value is current', async () => {
         const queue = new InMemoryQueueBox();
         const original = createEntry('presence.state.v1', 'resource-1', {
             resource: JSON.stringify({ version: 1 })
         });
-        const skippedReplacement = createEntry('presence.state.v1', 'resource-1', {
+        const replacement = createEntry('presence.state.v1', 'resource-1', {
             resource: JSON.stringify({ version: 2 })
         });
-        const acceptedReplacement = createEntry('presence.state.v1', 'resource-1', {
+        const staleReplacement = createEntry('presence.state.v1', 'resource-1', {
             resource: JSON.stringify({ version: 3 })
         });
 
         await queue.enqueueIfAbsent(original);
+        const observed = await queue.getItem(original.key);
+        if (observed === undefined) {
+            throw new Error('Expected the queue entry to be observable');
+        }
 
-        const skip = vi.fn(() => false);
-        expect(await queue.enqueueIf(skippedReplacement, skip)).toBe(original);
-        expect(skip).toHaveBeenCalledWith(original);
-        expect((await queue.getItem(original.key))?.resource).toBe(original.resource);
+        expect(
+            await queue.replaceIfObserved({
+                ...observed,
+                audit: { ...observed.audit },
+                dequeueAudit: { ...observed.dequeueAudit }
+            }, replacement)
+        ).toBe(replacement);
+        expect((await queue.getItem(original.key))?.resource).toBe(replacement.resource);
 
-        const overwrite = vi.fn(() => true);
-        expect(await queue.enqueueIf(acceptedReplacement, overwrite)).toBe(original);
-        expect(overwrite).toHaveBeenCalledWith(original);
-        expect((await queue.getItem(original.key))?.resource).toBe(acceptedReplacement.resource);
+        expect(await queue.replaceIfObserved(observed, staleReplacement)).toBeNull();
+        expect((await queue.getItem(original.key))?.resource).toBe(replacement.resource);
     });
 
-    it('overwrites expired entries with enqueueIf without calling the predicate', async () => {
+    it('does not replace an expired observation', async () => {
         const queue = new InMemoryQueueBox();
         const expired = createEntry('presence.state.v1', 'resource-1', {
             resource: JSON.stringify({ version: 1 }),
@@ -84,17 +90,11 @@ describe('InMemoryQueueBox', () => {
         const replacement = createEntry('presence.state.v1', 'resource-1', {
             resource: JSON.stringify({ version: 2 })
         });
-        let predicateVisited = false;
-        const enqueueIt = () => {
-            predicateVisited = true;
-            return false;
-        };
 
         await queue.enqueue(expired);
 
-        expect(await queue.enqueueIf(replacement, enqueueIt)).toBeUndefined();
-        expect(predicateVisited).toBe(false);
-        expect((await queue.getItem(expired.key))?.resource).toBe(replacement.resource);
+        expect(await queue.replaceIfObserved(expired, replacement)).toBeNull();
+        expect(await queue.getItem(expired.key)).toBeUndefined();
     });
 
     it('removes completed entries during cleanup while keeping active work', async () => {

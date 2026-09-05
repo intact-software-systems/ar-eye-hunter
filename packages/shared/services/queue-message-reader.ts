@@ -38,16 +38,6 @@ export class QueueMessageReader {
         );
     }
 
-    async enqueueIf(
-        message: ALMessage,
-        enqueueIf: (entry: ResourceEntry) => boolean
-    ): Promise<ResourceEntry | undefined> {
-        return await this.repository.enqueueIf(
-            QueueBoxUtilities.toResourceEntryFromMsg(message, this.config.enqueueType),
-            enqueueIf
-        );
-    }
-
     async dequeue(typesToDequeue: Set<string>, resilience: ResilienceDto): Promise<void> {
         await QueueBoxUtilities.defaultDequeue(
             this.repository,

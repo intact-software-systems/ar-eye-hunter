@@ -6,10 +6,10 @@ import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import type { GroupMutationCommand } from '../../group-state/mutation/group-mutation-contracts.ts';
 import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { RtcRttRefinementService } from '../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
-import { createRtcTopologyOutboxPublisher } from '../mutation/rtc-topology-outbox-work.ts';
 import type { RtcTopologyExecutionRepository } from '../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyGroupSnapshotReader } from '../planning/group-topology-planning-contracts.ts';
 import type { GroupTopologyPlanningService } from '../planning/group-topology-planning-service.ts';
+import type { RtcTopologyDeliveryRuntime } from '../replay/delivery/rtc-topology-delivery-runtime.ts';
 import { createActivationStatusClockWorkHandler } from '../replay/work/create-activation-status-clock-work-handler.ts';
 import { createFormationTimerWorkHandler } from '../replay/work/create-formation-timer-work-handler.ts';
 import {
@@ -20,13 +20,11 @@ import { createRtcTopologyWorkHandler } from '../replay/work/create-rtc-topology
 import { createTopologyPromotionWorkHandler } from '../replay/work/create-topology-promotion-work-handler.ts';
 import type { FormationCriterionPort } from '../replay/work/formation-criterion-observer.ts';
 import type { GroupActivationStatusPort } from '../replay/work/group-activation-status-observer.ts';
-import type { RtcTopologyDeliveryOptions } from '../replay/work/write-rtc-topology-publication-transaction.ts';
 
 export interface InstallTopologyAppOutboxOptions {
     readonly database: PSqlSql;
     readonly outboxQueueReader: OutboxQueueReader;
     readonly senderId: string;
-    readonly topicId?: string;
     readonly wake?: () => void;
     readonly wakeReplay?: () => void;
     readonly findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
@@ -37,7 +35,7 @@ export interface InstallTopologyAppOutboxOptions {
     ) => Promise<RallarOverlayTopologySnapshot | undefined>;
     readonly topologyPlanning: GroupTopologyPlanningService;
     readonly rttRefinementService?: RtcRttRefinementService;
-    readonly topologyDelivery?: RtcTopologyDeliveryOptions;
+    readonly topologyDelivery?: RtcTopologyDeliveryRuntime;
     readonly nowEpochMs: () => number;
     readonly formationAutomation: GroupFormationAutomationPort;
     readonly formationCriterion?: FormationCriterionPort;
@@ -54,13 +52,6 @@ export interface InstallTopologyAppOutboxOptions {
 export function installTopologyAppOutbox(
     options: InstallTopologyAppOutboxOptions
 ): void {
-    const runtime = createRtcTopologyOutboxPublisher({
-        outboxQueueReader: options.outboxQueueReader,
-        senderId: options.senderId,
-        topicId: options.topicId,
-        wake: options.wake,
-        now: options.nowEpochMs
-    });
     options.outboxQueueReader.onOutboxMessageDo(
         AppOutboxType.GROUP_CONNECT_TRIGGER,
         createGroupConnectTriggerWorkHandler(options.formationAutomation)
@@ -101,9 +92,9 @@ export function installTopologyAppOutbox(
         );
     }
     options.outboxQueueReader.onOutboxMessageDo(
-        runtime.workType,
+        AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
         createRtcTopologyWorkHandler({
-            runtime,
+            outboxQueueReader: options.outboxQueueReader,
             database: options.database,
             topologyPlanning: options.topologyPlanning,
             executionRepository: options.executionRepository,

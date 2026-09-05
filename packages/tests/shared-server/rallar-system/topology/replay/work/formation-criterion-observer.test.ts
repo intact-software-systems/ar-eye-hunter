@@ -108,6 +108,7 @@ class ObserverHarness {
             group,
             config: resolveGroupTopologyConfig({}),
             kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+            rttReportingDegreeLimit: 5,
             rttMeasurements: [],
             replanning: 'auto' as const,
             nowEpochMs: this.nowEpochMs
@@ -266,6 +267,7 @@ async function createStageTriggerHarness(
             group: snapshot,
             config: resolveGroupTopologyConfig({}),
             kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+            rttReportingDegreeLimit: 5,
             rttMeasurements: [],
             replanning: 'auto',
             nowEpochMs: 4_000

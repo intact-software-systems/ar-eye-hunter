@@ -2,10 +2,11 @@ import type { PutGroupTopologyConfigRequest, PutGroupTopologyOverrideRequest } f
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
+    computeOverrideExpiresAtEpochMs,
     DEFAULT_GROUP_TOPOLOGY_OVERRIDE_TTL_MS,
     GroupTopologyConfigValidationError,
     MAX_GROUP_TOPOLOGY_OVERRIDE_TTL_MS,
-    readDefaultGroupTopologyConfig,
+    resolveDefaultGroupTopologyConfig,
     resolveGroupTopologyConfig,
     resolveOverrideExpiresAtEpochMs,
     validateEffectiveGroupTopologyConfig,
@@ -52,43 +53,45 @@ describe('group topology config resolution', () => {
     });
 
     it('preserves default values and rejects invalid patches and effective combinations', () => {
-        expect(readDefaultGroupTopologyConfig({})).toEqual({
+        expect(resolveDefaultGroupTopologyConfig({})).toEqual({
             topologyKind: 'auto',
             degreeLimit: 5,
             treeMinSize: 5,
             meshMinSize: 16,
             meshParamK: 2
         });
-        expect(() => validateGroupTopologyConfigPatch({ degreeLimit: 0 })).toThrow(
-            GroupTopologyConfigValidationError
-        );
-        expect(() => validateGroupTopologyConfigPatch({ treeMinSize: -1 })).toThrow(
-            GroupTopologyConfigValidationError
-        );
-        expect(() => validateGroupTopologyConfigPatch({ meshMinSize: 1.5 })).toThrow(
-            GroupTopologyConfigValidationError
-        );
-        expect(() =>
+        expect(validateGroupTopologyConfigPatch({ degreeLimit: 0 })).toEqual([
+            expect.objectContaining({ code: 'invalid-positive-integer', path: ['degreeLimit'] })
+        ]);
+        expect(validateGroupTopologyConfigPatch({ treeMinSize: -1 })).toEqual([
+            expect.objectContaining({ code: 'invalid-positive-integer', path: ['treeMinSize'] })
+        ]);
+        expect(validateGroupTopologyConfigPatch({ meshMinSize: 1.5 })).toEqual([
+            expect.objectContaining({ code: 'invalid-positive-integer', path: ['meshMinSize'] })
+        ]);
+        expect(
             validateEffectiveGroupTopologyConfig({
                 topologyKind: 'auto',
-                degreeLimit: 5,
+                degreeLimit: 0,
                 treeMinSize: 10,
                 meshMinSize: 9,
-                meshParamK: 2
+                meshParamK: 11
             })
-        ).toThrow(GroupTopologyConfigValidationError);
-        expect(() =>
-            validateEffectiveGroupTopologyConfig({
-                topologyKind: 'auto',
-                degreeLimit: 3,
-                treeMinSize: 5,
-                meshMinSize: 16,
-                meshParamK: 4
+        ).toEqual([
+            expect.objectContaining({ code: 'invalid-positive-integer', path: ['degreeLimit'] }),
+            expect.objectContaining({
+                code: 'mesh-min-size-before-tree-min-size',
+                path: ['meshMinSize']
+            }),
+            expect.objectContaining({
+                code: 'mesh-param-k-exceeds-degree-limit',
+                path: ['meshParamK']
             })
-        ).toThrow(GroupTopologyConfigValidationError);
+        ]);
     });
 
     it('defaults override expiry to 15 minutes, caps it at 24 hours, and rejects elapsed values', () => {
+        expect(computeOverrideExpiresAtEpochMs({ nowEpochMs: 1_000, ttlMs: 0 })).toBe(1_000);
         expect(resolveOverrideExpiresAtEpochMs({ nowEpochMs: 1_000 })).toBe(
             1_000 + DEFAULT_GROUP_TOPOLOGY_OVERRIDE_TTL_MS
         );

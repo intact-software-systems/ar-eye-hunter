@@ -5,20 +5,20 @@ import type {
     StoredGroupTopologyOverride
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { assertTopologyConfigReceipt } from './assert-topology-config-receipt.ts';
+import {
+    assertGroupTopologyConfigGeneration,
+    assertGroupTopologyConfigInvariantGeneration,
+    assertGroupTopologyConfigMutationRecord,
+    assertStoredGroupTopologyConfig,
+    assertStoredGroupTopologyOverride
+} from './assert-topology-config-records.ts';
 import type {
     GroupTopologyConfigGeneration,
     GroupTopologyConfigGenerationTarget,
     GroupTopologyConfigInvariantGeneration,
     GroupTopologyConfigMutationRecord
 } from './group-topology-config-mutation-contracts.ts';
-import { validateTopologyConfigReceipt } from './validate-topology-config-receipt.ts';
-import {
-    validateGroupTopologyConfigGeneration,
-    validateGroupTopologyConfigInvariantGeneration,
-    validateGroupTopologyConfigMutationRecord,
-    validateStoredGroupTopologyConfig,
-    validateStoredGroupTopologyOverride
-} from './validate-topology-config-records.ts';
 
 export function readTopologyConfigGenerationBoundary(
     value: unknown,
@@ -28,7 +28,7 @@ export function readTopologyConfigGenerationBoundary(
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError('Topology config generation is invalid');
     }
-    return validateGroupTopologyConfigGeneration(
+    return assertGroupTopologyConfigGeneration(
         value as GroupTopologyConfigGeneration,
         expectedRef,
         expectedTarget
@@ -42,7 +42,7 @@ export function readTopologyConfigInvariantGenerationBoundary(
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError('Topology config invariant generation is invalid');
     }
-    return validateGroupTopologyConfigInvariantGeneration(
+    return assertGroupTopologyConfigInvariantGeneration(
         value as GroupTopologyConfigInvariantGeneration,
         expectedRef
     );
@@ -55,7 +55,7 @@ export function readStoredTopologyConfigBoundary(
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError('Stored topology config is invalid');
     }
-    return validateStoredGroupTopologyConfig(value as StoredGroupTopologyConfig, expectedRef);
+    return assertStoredGroupTopologyConfig(value as StoredGroupTopologyConfig, expectedRef);
 }
 
 export function readStoredTopologyOverrideBoundary(
@@ -65,7 +65,7 @@ export function readStoredTopologyOverrideBoundary(
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError('Stored topology override is invalid');
     }
-    return validateStoredGroupTopologyOverride(value as StoredGroupTopologyOverride, expectedRef);
+    return assertStoredGroupTopologyOverride(value as StoredGroupTopologyOverride, expectedRef);
 }
 
 export function readTopologyConfigMutationRecordBoundary(
@@ -75,7 +75,7 @@ export function readTopologyConfigMutationRecordBoundary(
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError('Topology config mutation record is invalid');
     }
-    return validateGroupTopologyConfigMutationRecord(
+    return assertGroupTopologyConfigMutationRecord(
         value as GroupTopologyConfigMutationRecord,
         expected
     );
@@ -88,5 +88,5 @@ export function readTopologyConfigReceiptBoundary(
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError('Topology config receipt is invalid');
     }
-    return validateTopologyConfigReceipt(value as GroupTopologyConfigMutationReceipt, expectedRef);
+    return assertTopologyConfigReceipt(value as GroupTopologyConfigMutationReceipt, expectedRef);
 }

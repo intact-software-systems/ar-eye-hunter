@@ -4,12 +4,17 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
-import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { advanceGroupStateAuthorityFence } from '../../group-state/persistence/aggregate/group-aggregate-repository.ts';
+import { decodeRuntimeStateRevision } from '../../../runtime-state/postgres/runtime-state-row-codec.ts';
+import { validateComputedProjection } from '../../computed-data-validation.ts';
 import type { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
+import { GROUPS_NAMESPACE } from '../../group-state/persistence/group-state-runtime-namespaces.ts';
 import { canUpdateGroupSnapshot } from '../../group-state/policy/group-governance-policy.ts';
 import { canMutateActiveGroup } from '../../group-state/policy/group-lifecycle-policy.ts';
 import { GroupPolicyDeniedError } from '../../group-state/policy/group-policy-result.ts';
+import {
+    computeRtcTopologyOutboxInsert,
+    type ComputedRtcTopologyOutbox
+} from '../mutation/rtc-topology-outbox-entry.ts';
 import type { RtcTopologyOutboxWriter } from '../mutation/rtc-topology-outbox-writer.ts';
 import type {
     GroupTopologyPlanningAuthority,
@@ -18,7 +23,8 @@ import type {
 import type {
     GroupTopologyReconfigureCommand,
     GroupTopologyReconfigureComputed,
-    GroupTopologyReconfigureRead
+    GroupTopologyReconfigureRead,
+    GroupTopologyReconfigureValidationIssue
 } from './group-topology-reconfigure-contracts.ts';
 
 export interface GroupTopologyReconfigureMutationDependencies {
@@ -58,7 +64,11 @@ export class GroupTopologyReconfigureMutation {
         ) {
             throw new RuntimeStateWriteConflictError();
         }
-        return { authority, authorityGuard: guarded.authorityGuard };
+        return {
+            authority,
+            authorityGuard: guarded.authorityGuard,
+            actorIsPlatformAdmin: this.dependencies.isPlatformAdmin(command.actorPrincipalId)
+        };
     }
 
     compute(
@@ -66,8 +76,7 @@ export class GroupTopologyReconfigureMutation {
         read: GroupTopologyReconfigureRead
     ): GroupTopologyReconfigureComputed {
         const snapshot = read.authority.group;
-        return {
-            authorityGuard: read.authorityGuard,
+        const outbox: ComputedRtcTopologyOutbox = {
             commandId: command.commandId,
             resourceId: `${command.commandId}:rtc-topology-recompute:explicit`,
             aggregateRef: command.groupRef,
@@ -84,70 +93,93 @@ export class GroupTopologyReconfigureMutation {
             requestOptions: toCanonicalGroupTopologyConfigPatch(command.requestOptions),
             publish: command.publish
         };
+        return {
+            ...outbox,
+            authorityGuard: read.authorityGuard,
+            authorityWrite: {
+                namespace: GROUPS_NAMESPACE,
+                key: read.authorityGuard.entry.key,
+                value: read.authorityGuard.entry.value,
+                expireAtIsoTimestamp: new Date(
+                    read.authorityGuard.entry.expireAtTimestamp
+                ).toISOString(),
+                expectedRevision: read.authorityGuard.entry.revision,
+                expectedResultRevision: read.authorityGuard.entry.revision + 1
+            },
+            outboxWrite: computeRtcTopologyOutboxInsert(outbox)
+        };
     }
 
     validate(
         command: GroupTopologyReconfigureCommand,
         read: GroupTopologyReconfigureRead,
         computed: GroupTopologyReconfigureComputed
-    ): void {
+    ): readonly GroupTopologyReconfigureValidationIssue[] {
+        const issues: GroupTopologyReconfigureValidationIssue[] = [];
         const lifecycle = canMutateActiveGroup({
             group: read.authority.group.group,
             nowEpochMs: read.authority.nowEpochMs
         });
         if (!lifecycle.allowed) {
-            throw new GroupPolicyDeniedError(lifecycle);
+            issues.push({
+                code: lifecycle.code,
+                path: ['read', 'authority', 'group', 'group'],
+                message: lifecycle.message,
+                cause: new GroupPolicyDeniedError(lifecycle)
+            });
         }
-        this.validateActor(command, read);
-        if (!isValidReconfigureComputation(command, read, computed)) {
-            throw new TypeError('Topology reconfigure computation is invalid');
+        if (lifecycle.allowed && !read.actorIsPlatformAdmin) {
+            const actorPolicy = canUpdateGroupSnapshot({
+                snapshot: read.authority.group,
+                actor: { principalId: command.actorPrincipalId },
+                nowEpochMs: read.authority.nowEpochMs
+            });
+            if (!actorPolicy.allowed) {
+                issues.push({
+                    code: actorPolicy.code,
+                    path: ['command', 'actorPrincipalId'],
+                    message: actorPolicy.message,
+                    cause: new GroupPolicyDeniedError(actorPolicy)
+                });
+            }
         }
+        for (const issue of validateComputedProjection(this.compute(command, read), computed, 'computed')) {
+            issues.push({
+                code: 'computed-projection-invalid',
+                path: [issue.path],
+                message: issue.message,
+                cause: issue.cause
+            });
+        }
+        return issues;
     }
 
     async write(
         transaction: PSqlSql,
         computed: GroupTopologyReconfigureComputed
     ): Promise<void> {
-        const runtime = new PSqlRuntimeStateRepository(transaction);
-        const authority = await advanceGroupStateAuthorityFence(runtime, computed.authorityGuard);
+        const write = computed.authorityWrite;
+        const rows = await transaction<readonly { revision: number | string; }[]>`
+            update runtime_state_store
+            set store_value = ${write.value},
+                expire_at_ts = ${write.expireAtIsoTimestamp},
+                updated_ts = now(),
+                revision = revision + 1
+            where store_namespace = ${write.namespace}
+              and store_key = ${write.key}
+              and revision = ${write.expectedRevision}
+            returning revision
+        `;
         if (
-            authority.status === 'conflict' ||
-            authority.revision !== computed.authorityGuard.entry.revision + 1
+            !rows[0] ||
+            decodeRuntimeStateRevision(rows[0].revision) !== write.expectedResultRevision
         ) {
             throw new RuntimeStateWriteConflictError();
         }
-        await this.dependencies.outboxWriter.write(transaction, computed);
+        await this.dependencies.outboxWriter.write(transaction, computed.outboxWrite);
     }
 
-    private validateActor(
-        command: GroupTopologyReconfigureCommand,
-        read: GroupTopologyReconfigureRead
-    ): void {
-        if (this.dependencies.isPlatformAdmin(command.actorPrincipalId)) {
-            return;
-        }
-        const policy = canUpdateGroupSnapshot({
-            snapshot: read.authority.group,
-            actor: { principalId: command.actorPrincipalId },
-            nowEpochMs: read.authority.nowEpochMs
-        });
-        if (!policy.allowed) {
-            throw new GroupPolicyDeniedError(policy);
-        }
+    recordCommittedWrite(): void {
+        this.dependencies.outboxWriter.recordCommittedWrites(1);
     }
-}
-
-function isValidReconfigureComputation(
-    command: GroupTopologyReconfigureCommand,
-    read: GroupTopologyReconfigureRead,
-    computed: GroupTopologyReconfigureComputed
-): boolean {
-    return (
-        computed.commandId === command.commandId &&
-        computed.groupSnapshot === read.authority.group &&
-        computed.authorityGuard === read.authorityGuard &&
-        JSON.stringify(computed.requestOptions) ===
-            JSON.stringify(toCanonicalGroupTopologyConfigPatch(command.requestOptions)) &&
-        computed.publish === command.publish
-    );
 }

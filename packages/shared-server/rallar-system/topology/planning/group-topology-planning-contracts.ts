@@ -3,6 +3,8 @@ import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-manage
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
+import type { RtcTopologyPlanningObservation } from '../runtime/rtc-topology-metrics.ts';
+
 export type GroupTopologyPublisher = (
     message: ALMessage,
     snapshot: RallarOverlayTopologySnapshot
@@ -36,6 +38,7 @@ export type ReconcileGroupTopologyResult =
         snapshot: RallarOverlayTopologySnapshot;
         previous: RallarOverlayTopologySnapshot | null;
         changed: boolean;
+        planningObservation: RtcTopologyPlanningObservation | null;
     }>
     | Readonly<{
         action: 'frozen';

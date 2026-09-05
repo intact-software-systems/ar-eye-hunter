@@ -5,7 +5,6 @@ import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/aut
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import type { IssueAuthWsTicketCommand } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
-import { captureAuthMutationFacts } from '@shared-server/rallar-system/auth/mutation/read/capture-auth-mutation-facts.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -28,7 +27,7 @@ interface LogoutRoutedSessionInput {
     readonly session: IssuedAuthSession;
 }
 
-const LEGACY_AUTH_INBOX_POLLING_DEADLINE_MS = 50;
+const MATERIALIZATION_PENDING_OBSERVATION_MS = 50;
 
 it(
     'routes registration, ticket issuance, agent batches, and logout through durable commands',
@@ -56,7 +55,7 @@ it('waits for delayed auth intent materialization before dequeuing', async () =>
             }
         );
 
-        await vi.advanceTimersByTimeAsync(LEGACY_AUTH_INBOX_POLLING_DEADLINE_MS);
+        await vi.advanceTimersByTimeAsync(MATERIALIZATION_PENDING_OBSERVATION_MS);
         expect(settled).toBe(false);
 
         materialization.resolve();
@@ -395,11 +394,10 @@ it('rejects websocket ticket issuance when the presented session token differs',
         serviceId: 'auth-test-service'
     });
     const read = await service.read(command);
-    const computed = service.compute(
-        command,
-        read,
-        await captureAuthMutationFacts(command, credentialIssuer)
-    );
+    const facts = { kind: command.kind, serviceId: service.serviceId } as const;
+    const computed = service.compute(command, read, facts);
 
-    expect(() => service.validate(command, read, computed)).toThrow(/authority|token/u);
+    const issues = service.validate({ command, read, facts, computed });
+
+    expect(issues[0]?.cause.message).toMatch(/authority|token/u);
 });

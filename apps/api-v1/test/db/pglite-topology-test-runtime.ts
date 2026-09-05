@@ -10,6 +10,7 @@ import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     decodeJsonWireText,
+    hashMutationCommand,
     type JsonWireObject,
     type JsonWireValue
 } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -22,13 +23,12 @@ import {
 import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import type { GroupTopologyMutationOwners } from '@shared-server/rallar-system/topology/mutation/create-group-topology-mutation-owners.ts';
-import {
-    createRtcTopologyOutboxPublisher
-} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
+import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { materializeRtcOverlayTopologyBroadcastMessage } from '@shared-server/rallar-system/topology/planning/materialize-rtc-overlay-topology-broadcast-message.ts';
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
@@ -114,12 +114,12 @@ export function requireTopologyMutationOwners(
     };
 }
 
-export function topologyConfigCommand(
+export async function topologyConfigCommand(
     groupRef: GroupRef,
     requestId: string,
     topologyKind: 'tree' | 'mesh'
-): GroupTopologyConfigMutationCommand {
-    return {
+): Promise<GroupTopologyConfigMutationCommand> {
+    const command = {
         operation: 'putConfig',
         aggregateRef: groupRef,
         commandId: requestId,
@@ -130,15 +130,20 @@ export function topologyConfigCommand(
             ttlMs: null,
             expiresAtEpochMs: null
         }
+    } as const;
+    return {
+        ...command,
+        commandHash: await hashMutationCommand(command),
+        capturedAtEpochMs: 1_000
     };
 }
 
-export function topologyOverrideCommand(
+export async function topologyOverrideCommand(
     groupRef: GroupRef,
     requestId: string,
     topologyKind: 'tree' | 'mesh'
-): GroupTopologyConfigMutationCommand {
-    return {
+): Promise<GroupTopologyConfigMutationCommand> {
+    const command = {
         operation: 'putOverride',
         aggregateRef: groupRef,
         commandId: requestId,
@@ -149,6 +154,11 @@ export function topologyOverrideCommand(
             ttlMs: 60_000,
             expiresAtEpochMs: null
         }
+    } as const;
+    return {
+        ...command,
+        commandHash: await hashMutationCommand(command),
+        capturedAtEpochMs: 1_000
     };
 }
 
@@ -179,6 +189,7 @@ interface PGliteTopologyWorkDelivery {
     readonly handler: OnMessageCallback;
     readonly publisherStreamId: string;
     readAppendCount(): number;
+    readDeliveryState(): Promise<RtcTopologyDeliveryState>;
     readReplayWakeCount(): number;
 }
 
@@ -240,24 +251,26 @@ async function persistAndReserveTopologyWork(
     commandId: string
 ): Promise<ReservedPGliteTopologyWork> {
     const { sql, groupRef, groupSnapshot, nowEpochMs, resourceInbox } = setup;
-    const workEntry = await sql.begin((transaction) =>
-        new RtcTopologyOutboxWriter({ recordWrite: () => undefined }).write(transaction, {
-            commandId,
-            resourceId: `${commandId}:rtc-topology-recompute:explicit`,
-            aggregateRef: groupRef,
-            acceptedCausalRevision: groupSnapshot.causalRevision,
-            groupSnapshot,
-            effectKind: 'rtc-topology-recompute',
-            payloadKind: 'group-revision',
-            // A plain recompute, not a commanded reconfigure.
-            origin: 'automatic',
-            createdAtEpochMs: nowEpochMs,
-            expireAtEpochMs: FUTURE_MS,
-            senderId: 'owner',
-            requestOptions: toCanonicalGroupTopologyConfigPatch({}),
-            publish: true
-        })
+    const outboxWrite = computeRtcTopologyOutboxInsert({
+        commandId,
+        resourceId: `${commandId}:rtc-topology-recompute:explicit`,
+        aggregateRef: groupRef,
+        acceptedCausalRevision: groupSnapshot.causalRevision,
+        groupSnapshot,
+        effectKind: 'rtc-topology-recompute',
+        payloadKind: 'group-revision',
+        // A plain recompute, not a commanded reconfigure.
+        origin: 'automatic',
+        createdAtEpochMs: nowEpochMs,
+        expireAtEpochMs: FUTURE_MS,
+        senderId: 'owner',
+        requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+        publish: true
+    });
+    await sql.begin((transaction) =>
+        new RtcTopologyOutboxWriter({ recordWrite: () => undefined }).write(transaction, outboxWrite)
     );
+    const workEntry = outboxWrite.entry;
     await sql`
     update resource_inbox
     set ri_status = 'RESERVED', ri_attempts = 1,
@@ -291,7 +304,7 @@ async function planTopologyWorkPublication(
         snapshotSelection: 'prefer-current'
     });
     const topology = requirePlannedTopology(
-        topologyManagement.planning.computeTopologyFromAuthority(authority, undefined, {
+        computeGroupTopologyFromAuthority(authority, undefined, {
             intent: 'full-rebuild',
             origin: 'automatic'
         })
@@ -334,18 +347,15 @@ async function registerTopologyWorkDelivery(setup: PGliteTopologyWorkSetup): Pro
         })).status,
         'registered'
     );
-    const runtime = createRtcTopologyOutboxPublisher({
-        outboxQueueReader: new OutboxQueueReader(queue),
-        senderId: 'pglite-topology-worker',
-        now: () => nowEpochMs
-    });
+    const outboxQueueReader = new OutboxQueueReader(queue);
     const handler = createRtcTopologyWorkHandler({
-        runtime,
+        outboxQueueReader,
         database: sql,
         topologyPlanning: topologyManagement.planning,
         executionRepository,
         topologyDelivery: {
             publisherStreamId,
+            reader: topologyDelivery,
             append: {
                 appendOrValidate: async (transaction, input) => {
                     appendCount += 1;
@@ -361,11 +371,12 @@ async function registerTopologyWorkDelivery(setup: PGliteTopologyWorkSetup): Pro
         handler,
         publisherStreamId,
         readAppendCount: () => appendCount,
+        readDeliveryState: () => readRtcTopologyDeliveryState(sql, publisherStreamId),
         readReplayWakeCount: () => replayWakeCount
     };
 }
 
-export async function readRtcTopologyDeliveryState(
+async function readRtcTopologyDeliveryState(
     sql: PGliteSql,
     publisherStreamId: string
 ): Promise<RtcTopologyDeliveryState> {

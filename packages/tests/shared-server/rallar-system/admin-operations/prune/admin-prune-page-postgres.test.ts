@@ -4,6 +4,11 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { AdminPruneAppData } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import { PSqlAdminPruneRepository } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-prune-repository.ts';
 import type { AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
+import {
+    toAdminPrunePageDelete,
+    type AdminPruneCandidate
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
+import { toPSqlSql } from '../../../integration/postgres/test-support/postgres-sql-adapter.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
@@ -23,9 +28,12 @@ describe('Postgres admin-prune page deletion', () => {
           (${namespace}, ${keys[0]}, '{}', now() - interval '1 second', 1),
           (${namespace}, ${keys[1]}, '{}', now() - interval '1 second', 1)
       `;
-            const rowIds = keys.map((key) => JSON.stringify([namespace, key]));
+            const candidates = keys.map((key) => ({
+                rowId: JSON.stringify([namespace, key]),
+                revisionToken: '1'
+            }));
 
-            expect(await deletePage(sql, createPageWork('runtime-state'), rowIds)).toBe(2);
+            expect(await deletePage(sql, createPageWork('runtime-state'), candidates)).toBe(2);
         }
         finally {
             await sql`delete from runtime_state_store where store_namespace = ${namespace}`;
@@ -41,7 +49,7 @@ describe('Postgres admin-prune page deletion', () => {
         ];
 
         try {
-            const rows = await sql<{ ri_row_id: number | string; }[]>`
+            const rows = await sql<{ ri_row_id: number | string; revision_token: number | string; }[]>`
         insert into resource_inbox (
           ri_resource_id,
           ri_topic_id,
@@ -64,11 +72,14 @@ describe('Postgres admin-prune page deletion', () => {
             'admin-prune-test', current_date, 'test', now() - interval '1 second',
             now() - interval '1 second'
           )
-        returning ri_row_id
+        returning ri_row_id, xmin::text as revision_token
       `;
-            const rowIds = rows.map((row) => String(row.ri_row_id));
+            const candidates = rows.map((row) => ({
+                rowId: String(row.ri_row_id),
+                revisionToken: String(row.revision_token)
+            }));
 
-            expect(await deletePage(sql, createPageWork('resource-inbox'), rowIds)).toBe(2);
+            expect(await deletePage(sql, createPageWork('resource-inbox'), candidates)).toBe(2);
         }
         finally {
             await sql`delete from resource_inbox where ri_resource_id in ${sql(resourceIds)}`;
@@ -84,7 +95,7 @@ describe('Postgres admin-prune page deletion', () => {
         ];
 
         try {
-            const rows = await sql<{ ris_row_id: number | string; }[]>`
+            const rows = await sql<{ ris_row_id: number | string; revision_token: number | string; }[]>`
         insert into resource_inbox_results (
           ris_resource_id,
           ris_topic_id,
@@ -121,11 +132,14 @@ describe('Postgres admin-prune page deletion', () => {
             now() - interval '1 second',
             now() - interval '1 second'
           )
-        returning ris_row_id
+        returning ris_row_id, xmin::text as revision_token
       `;
-            const rowIds = rows.map((row) => String(row.ris_row_id));
+            const candidates = rows.map((row) => ({
+                rowId: String(row.ris_row_id),
+                revisionToken: String(row.revision_token)
+            }));
 
-            expect(await deletePage(sql, createPageWork('resource-inbox-results'), rowIds)).toBe(2);
+            expect(await deletePage(sql, createPageWork('resource-inbox-results'), candidates)).toBe(2);
         }
         finally {
             await sql`
@@ -150,10 +164,13 @@ describe('Postgres admin-prune page deletion', () => {
           (${namespace}, ${storeName}, ${keys[0]}, '{}', now() - interval '1 second'),
           (${namespace}, ${storeName}, ${keys[1]}, '{}', now() - interval '1 second')
       `;
-            const rowIds = keys.map((key) => JSON.stringify([storeName, key]));
+            const candidates = keys.map((key) => ({
+                rowId: JSON.stringify([storeName, key]),
+                revisionToken: '0'
+            }));
             const appData = { namespace, storeName: null } as const;
 
-            expect(await deletePage(sql, createPageWork('app-data', appData), rowIds)).toBe(2);
+            expect(await deletePage(sql, createPageWork('app-data', appData), candidates)).toBe(2);
         }
         finally {
             await sql`delete from app_data_store where app_namespace = ${namespace}`;
@@ -165,11 +182,11 @@ describe('Postgres admin-prune page deletion', () => {
 async function deletePage(
     sql: PostgresSql,
     work: AdminPrunePageWork,
-    rowIds: readonly string[]
+    candidates: readonly AdminPruneCandidate[]
 ): Promise<number> {
     const repository = new PSqlAdminPruneRepository(sql);
     return await sql.begin(async (transaction) => {
-        return await repository.deletePage(transaction, work, rowIds);
+        return await repository.deletePage(transaction, toAdminPrunePageDelete(work, candidates));
     });
 }
 
@@ -195,10 +212,11 @@ function createPageWork(
 
 async function createSql(databaseUrl: string): Promise<PostgresSql> {
     const postgres = await import('postgres');
-    return postgres.default(databaseUrl, {
+    const driver = postgres.default(databaseUrl, {
         max: 1,
         idle_timeout: 1
-    }) as unknown as PostgresSql;
+    });
+    return Object.assign(toPSqlSql(driver), { end: () => driver.end() });
 }
 
 function requireDatabaseUrl(): string {

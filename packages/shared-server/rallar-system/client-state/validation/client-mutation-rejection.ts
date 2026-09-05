@@ -8,6 +8,19 @@ export class ClientMutationRejectedError extends Error {
     }
 }
 
+export interface ClientMutationValidationIssue {
+    readonly path: string;
+    readonly message: string;
+    readonly cause: ClientMutationRejectedError;
+}
+
+export function toClientMutationValidationIssue(
+    path: string,
+    message: string
+): ClientMutationValidationIssue {
+    return { path, message, cause: new ClientMutationRejectedError(message) };
+}
+
 export function rejectClientMutation(message: string): never {
     throw new ClientMutationRejectedError(message);
 }

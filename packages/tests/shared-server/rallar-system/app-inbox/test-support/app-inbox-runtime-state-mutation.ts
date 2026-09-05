@@ -1,4 +1,5 @@
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { computeRuntimeStateGuardedBatchWrite } from '@shared-server/runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import { type RuntimeStateGuardedBatch, type RuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import type { RuntimeStateGuardedBatchDatabaseRow } from '@shared-server/runtime-state/postgres/decode-runtime-state-guarded-batch-rows.ts';
@@ -15,7 +16,8 @@ export async function tryExecuteRuntimeStateGuardedBatch(
         throw new Error('Guarded runtime-state SQL requires a transaction runtime');
     }
     const batch = decodeRuntimeStateGuardedBatchSqlValues(values);
-    return toRuntimeStateGuardedBatchRows(await runtime.executeGuardedBatch(batch));
+    const computed = computeRuntimeStateGuardedBatchWrite(batch);
+    return toRuntimeStateGuardedBatchRows(await runtime.writeGuardedBatch(computed));
 }
 
 export async function tryExecuteRuntimeStateConditionalMutation(
@@ -154,10 +156,11 @@ function readDate(
     value: AppInboxTestSqlExecution['values'][number],
     label: string
 ): Date {
-    if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
+    const date = typeof value === 'string' ? new Date(value) : value;
+    if (!(date instanceof Date) || !Number.isFinite(date.getTime())) {
         throw new TypeError(`${label} must be a valid Date`);
     }
-    return value;
+    return date;
 }
 
 function readRevision(

@@ -29,7 +29,7 @@ import { createClientMutationTransactionBoundaryFixture } from './create-client-
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
 
 describe('client mutation transaction and outbox', () => {
-    it('persists durable JSON bytes before observing the exact committed snapshot', async () => {
+    it('serializes durable completion before the transaction and observes after commit', async () => {
         const harness = await createClientMutationTransactionBoundaryFixture();
 
         const result = await harness.handler.processCommand(
@@ -62,10 +62,10 @@ describe('client mutation transaction and outbox', () => {
             'status',
             'result'
         ]);
-        expect(harness.actions).toEqual(['write', 'commit', 'observe']);
+        expect(harness.actions).toEqual(['completion', 'write', 'commit', 'observe']);
         expect(harness.observedSnapshots).toHaveLength(1);
-        expect(harness.observedSnapshots[0]).toBe(harness.computedSnapshots[0]);
-        expect(result.result?.snapshot).toBe(harness.computedSnapshots[0]);
+        expect(harness.observedSnapshots[0]).toEqual(harness.computedSnapshots[0]);
+        expect(result.result?.snapshot).toEqual(harness.computedSnapshots[0]);
     });
 
     it('does not observe a snapshot when transaction finalization rejects', async () => {
@@ -88,7 +88,7 @@ describe('client mutation transaction and outbox', () => {
             )
         ).rejects.toThrow('injected transaction failure');
 
-        expect(harness.actions).toEqual([]);
+        expect(harness.actions).toEqual(['completion']);
         expect(harness.observedSnapshots).toEqual([]);
         expect(await harness.results.findByKey(harness.context.entry.key)).toBeUndefined();
     });
@@ -191,7 +191,15 @@ function createRetryHarness(): RetryHarness {
                 clientStateService: createRetryClientState(state, durable)
             },
             {
-                serviceId: 'server-12345678'
+                serviceId: 'server-12345678',
+                timing: (event) => {
+                    if (
+                        event.operation === 'mutation.compute' ||
+                        event.operation === 'mutation.validate'
+                    ) {
+                        state.phases.push(event.operation === 'mutation.compute' ? 'compute' : 'validate');
+                    }
+                }
             }
         )
     };
@@ -203,14 +211,6 @@ function createRetryClientState(state: RetryHarnessState, durable: ClientStateSe
         read: async (command) => {
             state.phases.push('read');
             return await durable.read(command);
-        },
-        compute: (command, read) => {
-            state.phases.push('compute');
-            return durable.compute(command, read);
-        },
-        validate: (command, read, computed) => {
-            state.phases.push('validate');
-            durable.validate(command, read, computed);
         },
         write: async (transaction, computed) => {
             state.writeAttempt += 1;

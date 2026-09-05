@@ -1,3 +1,6 @@
+import type {
+    GroupLifecyclePolicy
+} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 import type {
     AuditStamp,
@@ -14,6 +17,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { RuntimeStateGuardedBatchEffect } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import { computeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import { GroupPolicyDeniedError } from '../policy/group-policy-result.ts';
 
 import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
@@ -23,6 +27,7 @@ import type {
     GroupLayoutTombstones,
     GroupMutationCommand,
     GroupMutationComputed,
+    GroupMutationDomainWrite,
     GroupMutationFacts,
     GroupMutationIdempotencyRecord,
     GroupMutationRead,
@@ -33,6 +38,7 @@ import type {
 import { GroupAlreadyExistsError, GroupMutationRejectedError } from './group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from './group-mutation-idempotency-key.ts';
 import { GroupConnectDeniedError, type GroupMutationRejectionCode } from './group-mutation-rejection-codes.ts';
+import { computeGroupMutationPersistence } from './orchestration/compute-group-mutation-persistence.ts';
 
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
@@ -53,6 +59,7 @@ export interface GroupMutationWriteInput {
     readonly plannedLayoutFence?: GroupPlannedLayoutRow | null;
     readonly connectTriggerLatchEffect?: RuntimeStateGuardedBatchEffect | null;
     readonly layoutTombstones?: GroupLayoutTombstones | null;
+    readonly lifecyclePolicy: GroupLifecyclePolicy | null;
 }
 
 export interface RejectedGroupMutationInput {
@@ -135,7 +142,7 @@ export function computeGroupMutationWriteResult(
         outboxIds: outboxEntries.map((outboxEntry) => outboxEntry.key.resourceId),
         rejection: null
     });
-    return {
+    const computed: GroupMutationDomainWrite = {
         outcome: 'write',
         guard: input.guard,
         members: input.members,
@@ -144,13 +151,14 @@ export function computeGroupMutationWriteResult(
         event,
         receipt,
         idempotency: toGroupMutationIdempotency(command, facts, receipt),
-        outboxEntries,
-        lifecyclePolicy: command.operation === 'createGroup' ? (command.input.lifecyclePolicy ?? null) : null,
+        outboxWrites: outboxEntries.map(computeAppOutboxInsert),
+        lifecyclePolicy: input.lifecyclePolicy,
         acceptedLayoutPromotion,
         plannedLayoutFence,
         layoutTombstones,
         connectTriggerLatchEffect: input.connectTriggerLatchEffect ?? null
     };
+    return { ...computed, persistence: computeGroupMutationPersistence(computed) };
 }
 
 function toGroupMutationIdempotency(

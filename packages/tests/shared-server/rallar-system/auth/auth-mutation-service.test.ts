@@ -26,7 +26,8 @@ describe('auth mutation service phases', () => {
         } as const;
 
         const read = await service.read(command);
-        const computed = service.compute(command, read, { kind: command.kind });
+        const facts = { kind: command.kind, serviceId: service.serviceId } as const;
+        const computed = service.compute(command, read, facts);
 
         expect(read).toEqual({
             kind: 'logout-session',
@@ -38,7 +39,7 @@ describe('auth mutation service phases', () => {
         expect(computed.command).toBe(command);
         expect(computed.read).toBe(read);
         expect(computed.outcome).toBe('no-op');
-        expect(service.validate(command, read, computed)).toBeUndefined();
+        expect(service.validate({ command, read, facts, computed })).toEqual([]);
         await expect(service.write(undefined as never, computed)).resolves.toBe(computed.result);
     });
 });

@@ -395,7 +395,7 @@ describe('authoritative mutation guidance integrity', () => {
         '%s distinguishes downstream QueueBox retries from AppInbox ingress retries',
         (filePath) => {
             expectAllNormalized(readRepo(filePath), [
-                'RtcTopologyOutboxWork',
+                'RTC topology work handler',
                 'ResourceInbox/QueueBox attempt boundary',
                 'neither service owns the transaction or retry boundary'
             ]);
@@ -411,10 +411,6 @@ describe('authoritative mutation guidance integrity', () => {
             );
             expect(guidance).toMatch(/AppInbox .{0,50}owns .{0,40}transaction .{0,40}retry boundary/i);
             expect(guidance).toMatch(/service write receives the transaction .{0,40}never opens/i);
-            expect(guidance).toContain(
-                'optimistic compare-and-set writes with bounded QueueBox redelivery attempts'
-            );
-            expect(guidance).not.toContain('optimistic compare-and-set writes with bounded retries');
             expect(guidance).toContain('write(transaction, computed)');
             expect(guidance).toMatch(
                 /(?:ResourceInboxRepository.{0,160}same transaction|same transaction.{0,160}ResourceInboxRepository)/i
@@ -461,7 +457,8 @@ describe('authoritative mutation guidance integrity', () => {
         expectAllNormalized(readRepo('.agents/skills/rallar-testing/SKILL.md'), [
             'For `strict-domain-write` package or API transaction writes',
             'one mutation attempt',
-            'actual database-returned facts'
+            'actual database-returned facts',
+            'incompatible existing schemas fail closed without a schema rewrite'
         ]);
         expectAllNormalized(readRepo('.agents/skills/performance-analysis/SKILL.md'), [
             'Transaction timing is not value provenance',

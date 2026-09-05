@@ -52,6 +52,7 @@ export function computeGroupMembershipWrite({
         initialPresenceSummary: null,
         presenceAdmission: computeMemberPresenceAdmission({ read, members, facts }),
         eventType,
+        lifecyclePolicy: null,
         presenceSummaryWork: 'enqueue'
     });
 }

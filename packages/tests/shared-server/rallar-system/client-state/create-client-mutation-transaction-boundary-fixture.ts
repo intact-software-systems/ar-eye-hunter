@@ -32,6 +32,7 @@ const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'defaul
 
 interface ClientMutationTransactionBoundaryOptions {
     readonly failTransaction?: boolean;
+    readonly recordMutationTiming?: boolean;
 }
 
 interface ClientMutationTransactionBoundaryFixture {
@@ -67,9 +68,13 @@ export async function createClientMutationTransactionBoundaryFixture(
     });
     const durable = createAutoAuthorizingClientStateService(runtimeRepository, database);
     const handler = new ClientStateInboxHandler({
-        mutationService: observeMutationWrites(durable, { actions, computedSnapshots }),
+        mutationService: observeMutationWrites(durable, {
+            actions,
+            computedSnapshots
+        }),
         sessionGenerationLifecycle: durable.sessionGenerationLifecycle,
         expiryCandidates: durable,
+        expiryContinuationWriter: { write: async () => undefined },
         snapshotObserver: {
             observeSnapshot: async (snapshot) => {
                 actions.push('observe');
@@ -79,11 +84,27 @@ export async function createClientMutationTransactionBoundaryFixture(
         },
         transactionWriter: new AppInboxTransactionWriter({ database }, {
             serviceId: 'client-inbox-service',
-            nowEpochMs: () => context.message.id.ts
+            nowEpochMs: () => {
+                actions.push('completion');
+                return context.message.id.ts;
+            }
         }),
+        mutationTiming: {
+            serviceId: 'client-inbox-service',
+            sink: options.recordMutationTiming
+                ? (event) => actions.push(event.operation)
+                : undefined
+        },
         serviceId: 'client-inbox-service'
     });
-    return { actions, computedSnapshots, context, handler, observedSnapshots, results };
+    return {
+        actions,
+        computedSnapshots,
+        context,
+        handler,
+        observedSnapshots,
+        results
+    };
 }
 
 interface ObservedMutationEffects {
@@ -96,16 +117,10 @@ function observeMutationWrites(
     effects: ObservedMutationEffects
 ): ClientStateMutationService {
     return {
-        ...durable,
-        compute: (command, read) => {
-            const computed = durable.compute(command, read);
-            if (computed.outcome !== 'idempotency-conflict') {
-                effects.computedSnapshots.push(computed.snapshot);
-            }
-            return computed;
-        },
+        read: durable.read,
         write: async (transaction, computed) => {
             effects.actions.push('write');
+            effects.computedSnapshots.push(computed.snapshot);
             return await durable.write(transaction, computed);
         }
     };

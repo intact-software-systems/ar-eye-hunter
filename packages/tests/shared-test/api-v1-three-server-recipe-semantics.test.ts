@@ -188,11 +188,11 @@ describe('API-v1 three-server recipe semantics', () => {
             const [assertName, firstActual] of [
                 [
                     'assertPrimaryExactRevisions',
-                    '{primaryFirstEnvelope.resultingCausalRevision.groupRevision}'
+                    '{primaryFirstEnvelope.event.causalRevision.groupRevision}'
                 ],
                 [
                     'assertTertiaryExactRevisions',
-                    '{tertiaryFirstEnvelope.resultingCausalRevision.groupRevision}'
+                    '{tertiaryFirstEnvelope.event.causalRevision.groupRevision}'
                 ]
             ] as const
         ) {

@@ -10,7 +10,10 @@ import {
 
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 
-import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
+import {
+    PSqlCrdtMutationRepository,
+    writePSqlCrdtMutation
+} from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
 
@@ -129,7 +132,7 @@ Deno.test('public and mutation CRDT reads reject an omitted snapshot reason', as
         await sql`
       update crdt_snapshots
       set snapshot_envelope = ${JSON.stringify(snapshotEnvelope(undefined))},
-          reason = 'legacy-import'
+          reason = 'omitted-envelope-reason'
     `;
         const repository = new PSqlCrdtLogRepository(sql);
 
@@ -166,7 +169,7 @@ Deno.test('mutation write persists one canonical snapshot reason in row and enve
         const read = await service.read(compact);
         const computed = service.compute({ command: compact, read });
         assert.deepEqual(service.validate({ command: compact, read, computed }), []);
-        await sql.begin(async (transaction) => await service.write(transaction, computed));
+        await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, computed));
         const [stored] = await sql<PersistedSnapshotReasonRow[]>`
       select snapshot_envelope, reason from crdt_snapshots
     `;
@@ -206,11 +209,6 @@ async function append(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
     );
     const service = createCrdtMutationService({
         repository,
-        createWriter: (transaction) =>
-            new PSqlCrdtMutationRepository(
-                { sql: transaction, authorize: () => Promise.resolve(true) },
-                { policies: [{ documentType: 'checklist', rollout: 'production' }] }
-            ),
         serviceId: 'server-1'
     });
     const command = await createCrdtMutationCommand({
@@ -237,7 +235,7 @@ async function append(sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]) {
     const read = await service.read(command);
     const computed = service.compute({ command, read });
     assert.deepEqual(service.validate({ command, read, computed }), []);
-    await sql.begin(async (transaction) => await service.write(transaction, computed));
+    await sql.begin(async (transaction) => await writePSqlCrdtMutation(transaction, computed));
     return { command, service };
 }
 

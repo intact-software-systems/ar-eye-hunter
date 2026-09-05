@@ -2,6 +2,7 @@ import type { EvolvePlannedTopologyFullRebuildReason } from '../planning/evolve-
 
 export interface RallarRtcTopologyMetrics {
     readonly topologyUpdateCount: number;
+    readonly topologyWorkComputeDurationMs: number;
     readonly topologyChangedCount: number;
     readonly topologyUnchangedCount: number;
     readonly updatesWithRttMeasurementCount: number;
@@ -40,8 +41,23 @@ export interface RallarRtcTopologyMetrics {
     readonly pendingRttUpdateCount: number;
 }
 
+export interface RtcTopologyPlanningObservation {
+    readonly relevantRttMeasurementCount: number;
+    readonly resultChanged: boolean;
+    readonly starPlanCount: number;
+    readonly noRttTreePlanCount: number;
+    readonly noRttMeshPlanCount: number;
+    readonly weightedPlanCount: number;
+    readonly weightedRoomGraphBuildCount: number;
+    readonly weightedRoomGraphSparseFallbackCount: number;
+    readonly incrementalPlanCount: number;
+    readonly incrementalFallbackReasons: readonly EvolvePlannedTopologyFullRebuildReason[];
+    readonly hysteresisHoldCount: number;
+}
+
 interface RtcTopologyMetricsState {
     topologyUpdateCount: number;
+    topologyWorkComputeDurationMs: number;
     topologyChangedCount: number;
     topologyUnchangedCount: number;
     updatesWithRttMeasurementCount: number;
@@ -104,6 +120,29 @@ export class RtcTopologyMetrics {
             return;
         }
         this.state.topologyUnchangedCount += 1;
+    }
+
+    recordPlanningObservation(
+        observation: RtcTopologyPlanningObservation,
+        topologyWorkComputeDurationMs: number
+    ): void {
+        this.recordTopologyUpdate(observation.relevantRttMeasurementCount);
+        this.state.topologyWorkComputeDurationMs += nonNegativeDurationMs(
+            topologyWorkComputeDurationMs
+        );
+        this.recordTopologyResult(observation.resultChanged);
+        this.state.starPlanCount += observation.starPlanCount;
+        this.state.noRttTreePlanCount += observation.noRttTreePlanCount;
+        this.state.noRttMeshPlanCount += observation.noRttMeshPlanCount;
+        this.state.weightedPlanCount += observation.weightedPlanCount;
+        this.state.weightedRoomGraphBuildCount += observation.weightedRoomGraphBuildCount;
+        this.state.weightedRoomGraphSparseFallbackCount += observation.weightedRoomGraphSparseFallbackCount;
+        this.state.incrementalPlanCount += observation.incrementalPlanCount;
+        this.state.incrementalPlanFallbackFullCount += observation.incrementalFallbackReasons.length;
+        this.state.incrementalPlanInvariantFallbackCount += observation.incrementalFallbackReasons.filter(
+            (reason) => reason === 'invariant-violation'
+        ).length;
+        this.state.hysteresisHeldKindCount += observation.hysteresisHoldCount;
     }
 
     recordStarPlan(durationMs: number): void {
@@ -241,6 +280,7 @@ export class RtcTopologyMetrics {
 function createRtcTopologyMetricsState(): RtcTopologyMetricsState {
     return {
         topologyUpdateCount: 0,
+        topologyWorkComputeDurationMs: 0,
         topologyChangedCount: 0,
         topologyUnchangedCount: 0,
         updatesWithRttMeasurementCount: 0,

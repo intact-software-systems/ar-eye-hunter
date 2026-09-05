@@ -8,6 +8,7 @@ import type {
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { canGovernGroupMember } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
 import { canConnectGroupPresenceSession, canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
+import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { GROUP_LIFECYCLE_STATES, type GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
@@ -157,13 +158,14 @@ function baseRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
 }
 
 function joinRead(lifecycleState: GroupLifecycleState): GroupMutationRead {
-    // Joining consults the admission policy, so its read carries one; absent is
-    // the open admission this baseline asserts survives a group stuck in FORMING.
     return {
         ...baseRead(lifecycleState),
         actorMember: null,
         actorMemberEntry: null,
-        lifecyclePolicy: { status: 'absent' }
+        lifecyclePolicy: {
+            status: 'present',
+            policy: resolveGroupLifecyclePolicyPreset('optimistic')
+        }
     };
 }
 
@@ -226,6 +228,7 @@ function mutationFacts(principalId: string): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
+        capacity: { defaultMaxMembers: null },
         authenticatedAuthority: {
             principalId,
             sessionId: `${principalId}-session`

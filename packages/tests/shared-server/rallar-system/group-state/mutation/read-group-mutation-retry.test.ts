@@ -19,7 +19,7 @@ describe('GroupStateService retry ownership', () => {
             compute: expect.any(Function),
             validate: expect.any(Function),
             write: expect.any(Function),
-            prepareMutation: expect.any(Function)
+            captureMutationIngress: expect.any(Function)
         });
         for (
             const directMutation of [

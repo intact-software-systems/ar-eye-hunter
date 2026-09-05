@@ -1,23 +1,35 @@
 import { PGlite } from '@electric-sql/pglite';
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    PSqlResourceInboxEntryRepository,
+    ResourceInboxInvariantCorruptionError
+} from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    computeAppOutboxInsert,
+    writeAppOutboxInsert
+} from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { computeGroupConnectTriggerEntry } from '@shared-server/rallar-system/group-state/group-connect-trigger-outbox-entry.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { materializeGroupStateGuardedBatch, writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
+import { writeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { GroupConnectTriggerLatchRepository } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
-import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
+import {
+    toRtcRttMutationReceiptId,
+    toRtcRttTopologyOutboxId
+} from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
+import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { toAutomaticGroupConnectCommand } from '@shared-server/rallar-system/topology/replay/work/create-group-connect-trigger-work-handler.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
-import { writeGroupConnectTriggerRequests } from '@shared-server/rallar-system/topology/replay/work/write-group-connect-trigger-requests.ts';
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
@@ -37,12 +49,16 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
         await withConnectSql(backend, async (sql, applicationId) => {
             const { computed, runtime, identity } = await seedConnectWrite(sql, applicationId);
             const outbox = new PSqlResourceInboxEntryRepository(sql);
-            const entry = computed.outboxEntries[0]!;
+            const entry = computed.outboxWrites[0]!.entry;
             await outbox.writeIfAbsentOrMatch({ ...entry, resource: 'collision' });
             const latches = new GroupConnectTriggerLatchRepository(runtime);
-            await expect(sql.begin((tx) => writeGroupMutation(tx, computed))).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
+            const statements: string[] = [];
+            await expect(
+                sql.begin((tx) => writeGroupMutation(observeStatements(tx, statements), computed))
+            ).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
+            expect(statements.filter((statement) => statement.includes('from resource_inbox'))).toEqual([]);
             expect((await latches.read(identity))?.latch.state).toBe('awaiting-publication');
-            const batch = materializeGroupStateGuardedBatch(computed);
+            const batch = computed.persistence.guardedBatch;
             expect(JSON.parse((await runtime.findEntry(batch.guard.namespace, batch.guard.key))!.value).lifecycleState).toBe('planned');
             await sql`delete from resource_inbox where fk_ext_bank_id = ${entry.key.contextId} and ri_resource_id = ${entry.key.resourceId}`;
             await sql.begin((tx) => writeGroupMutation(tx, computed));
@@ -54,7 +70,7 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
     sqlIt('production publication and unchanged handlers durably wake retry intent, with atomic rollback', async () => {
         await withConnectSql(backend, async (sql, applicationId) => {
             const h = createPublicationHandlerHarness(sql, applicationId);
-            await h.runtime.publisher.enqueueForGroupSnapshot(h.group);
+            await enqueueTopologyWork(h, 'group-revision');
             const first = await reserveTopologyWork(h);
             const originalBegin = sql.begin.bind(sql);
             const fault = vi.spyOn(sql, 'begin').mockImplementation(async (write) => {
@@ -71,7 +87,7 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
             const planned = await h.snapshots.findSnapshot(h.group.group);
             expect(planned?.state).toBe('active');
             expect(await readPublicationWakes(sql, h.group)).toHaveLength(1);
-            await h.runtime.publisher.enqueueForRtt(h.group, { sessionIdFrom: 'a', sessionIdTo: 'b', rttMs: 1, version: 1, createdAtEpochMs: Date.now() }, 0);
+            await enqueueTopologyWork(h, 'rtt-refresh');
             const unchanged = await reserveTopologyWork(h);
             await h.handler.onMessage(JSON.parse(unchanged.resource), unchanged);
             expect(await h.snapshots.findSnapshot(h.group.group)).toEqual(planned);
@@ -89,9 +105,10 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
                 expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
             });
             const key = groupStateGroupStorageKey(groupRef);
+            const workWrite = computeAppOutboxInsert(work);
             const writePublication = async (tx: PSqlSql) => {
                 await new PSqlRuntimeStateRepository(tx).insertIfAbsent('connect-test-publication', key, 'candidate-v1', NEVER_EXPIRE_AT_TIMESTAMP);
-                await writeGroupConnectTriggerRequests(tx, [work]);
+                await writeAppOutboxInsert(tx, workWrite);
             };
             await expect(sql.begin(async (tx) => {
                 await writePublication(tx);
@@ -101,11 +118,28 @@ describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%
             expect(await runtime.findEntry('connect-test-publication', key)).toBeUndefined();
             expect(await sql`select ri_resource_id from resource_inbox where fk_ext_bank_id = ${work.key.contextId}`).toHaveLength(0);
             await sql.begin(writePublication);
-            await sql.begin((tx) => writeGroupConnectTriggerRequests(tx, [work]));
+            await expect(sql.begin((tx) => writeAppOutboxInsert(tx, workWrite))).rejects.toBeInstanceOf(
+                ResourceInboxInvariantCorruptionError
+            );
             expect(await sql`select ri_resource_id from resource_inbox where fk_ext_bank_id = ${work.key.contextId}`).toHaveLength(1);
         });
     }, 30_000);
 });
+
+function observeStatements(transaction: PSqlSql, statements: string[]): PSqlSql {
+    const observed = (<Result>(
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: readonly PSqlParameter[]
+    ): Promise<Result> | object => {
+        if ('raw' in stringsOrValues) {
+            statements.push(stringsOrValues.join(' ').toLowerCase());
+            return transaction<Result>(stringsOrValues, ...values);
+        }
+        return transaction(stringsOrValues);
+    }) as PSqlSql;
+    observed.begin = transaction.begin.bind(transaction);
+    return observed;
+}
 
 async function seedConnectWrite(sql: PSqlSql, applicationId: string) {
     const groupRef = { applicationId, workspaceId: 'ws', groupId: 'connect' };
@@ -146,7 +180,7 @@ async function seedConnectWrite(sql: PSqlSql, applicationId: string) {
         throw new Error('Expected connect write');
     }
     const runtime = new PSqlRuntimeStateRepository(sql);
-    const batch = materializeGroupStateGuardedBatch(computed);
+    const batch = computed.persistence.guardedBatch;
     await runtime.upsert(batch.guard.namespace, batch.guard.key, JSON.stringify(group.value), NEVER_EXPIRE_AT_TIMESTAMP);
     for (const effect of batch.effects) {
         if (effect.effectId === 'planned-layout-fence' || effect.effectId === 'connect-trigger-latch') {
@@ -197,7 +231,7 @@ function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string) {
     const runtimeRepository = new PSqlRuntimeStateRepository(sql);
     const resources = createPSqlResourceInboxRepository(sql);
     const queue = new PSqlQueueBox(resources);
-    const runtime = createRtcTopologyOutboxPublisher({ outboxQueueReader: new OutboxQueueReader(queue), senderId: 'publication-test' });
+    const outboxQueueReader = new OutboxQueueReader(queue);
     const read = createGroupAuthorityRead({ applicationId, lifecycleState: 'planned', formationEpoch: 3 });
     const value = read.group!.value;
     const member = { ...read.actorMember!, applicationId, principalId: value.ownerPrincipalId, role: 'owner' as const };
@@ -218,7 +252,7 @@ function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string) {
         topologySnapshotRepository: snapshots
     });
     const handler = createRtcTopologyWorkHandler({
-        runtime,
+        outboxQueueReader,
         database: sql,
         topologyPlanning: topology.planning,
         executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
@@ -232,12 +266,15 @@ function createPublicationHandlerHarness(sql: PSqlSql, applicationId: string) {
             }
         }
     });
-    return { resources, queue, runtime, group, snapshots, handler };
+    return { resources, queue, outboxQueueReader, group, snapshots, handler };
 }
 
 async function reserveTopologyWork(h: ReturnType<typeof createPublicationHandlerHarness>) {
     const entries = await Promise.all((await h.queue.getAllKeys()).map((key) => h.queue.getItem(key)));
-    const entry = entries.find((candidate) => candidate?.status === EntityStatus.NEW && JSON.parse(candidate.resource).payload.typeId === h.runtime.workType);
+    const entry = entries.find((candidate) =>
+        candidate?.status === EntityStatus.NEW &&
+        JSON.parse(candidate.resource).payload.typeId === AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
+    );
     if (!entry) {
         throw new Error('Missing topology work');
     }
@@ -246,6 +283,51 @@ async function reserveTopologyWork(h: ReturnType<typeof createPublicationHandler
         throw new Error('Topology reservation rejected');
     }
     return reserved.right;
+}
+
+async function enqueueTopologyWork(
+    h: ReturnType<typeof createPublicationHandlerHarness>,
+    payloadKind: 'group-revision' | 'rtt-refresh'
+): Promise<void> {
+    const nowEpochMs = Date.now();
+    const common = {
+        commandId: `publication-${payloadKind}-${nowEpochMs}`,
+        aggregateRef: h.group.group,
+        acceptedCausalRevision: h.group.causalRevision,
+        groupSnapshot: h.group,
+        effectKind: 'rtc-topology-recompute' as const,
+        createdAtEpochMs: nowEpochMs,
+        expireAtEpochMs: nowEpochMs + 60_000,
+        senderId: 'publication-test',
+        resourceId: `publication-${payloadKind}-${nowEpochMs}`,
+        requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+        publish: true
+    };
+    const measurement = {
+        sessionIdFrom: 'a',
+        sessionIdTo: 'b',
+        rttMs: 1,
+        version: 1,
+        createdAtEpochMs: nowEpochMs
+    };
+    const receiptId = toRtcRttMutationReceiptId(measurement);
+    const computed = payloadKind === 'group-revision'
+        ? { ...common, payloadKind, origin: 'automatic' as const }
+        : {
+            ...common,
+            commandId: receiptId,
+            resourceId: toRtcRttTopologyOutboxId(
+                receiptId,
+                h.group.group,
+                `sha256:${'a'.repeat(64)}`
+            ),
+            payloadKind,
+            rtt: measurement,
+            refinementObservationId: receiptId
+        };
+    await h.outboxQueueReader.outbox.enqueueIfAbsent(
+        computeRtcTopologyOutboxInsert(computed).entry
+    );
 }
 
 async function readPublicationWakes(sql: PSqlSql, group: GroupSnapshot) {

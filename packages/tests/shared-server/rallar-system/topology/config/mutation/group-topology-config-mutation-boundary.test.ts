@@ -1,5 +1,13 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
+import { assertTopologyConfigReceipt } from '@shared-server/rallar-system/topology/config/mutation/assert-topology-config-receipt.ts';
+import {
+    assertGroupTopologyConfigGeneration,
+    assertGroupTopologyConfigInvariantGeneration,
+    assertGroupTopologyConfigMutationRecord,
+    assertStoredGroupTopologyConfig,
+    assertStoredGroupTopologyOverride
+} from '@shared-server/rallar-system/topology/config/mutation/assert-topology-config-records.ts';
 import { computeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-mutation.ts';
 import type {
     GroupTopologyConfigGeneration,
@@ -14,21 +22,13 @@ import {
     readTopologyConfigMutationRecordBoundary,
     readTopologyConfigReceiptBoundary
 } from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
-import { validateTopologyConfigReceipt } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-receipt.ts';
-import {
-    validateGroupTopologyConfigGeneration,
-    validateGroupTopologyConfigInvariantGeneration,
-    validateGroupTopologyConfigMutationRecord,
-    validateStoredGroupTopologyConfig,
-    validateStoredGroupTopologyOverride
-} from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts';
 import type {
     GroupTopologyConfigMutationReceipt,
     StoredGroupTopologyConfig,
     StoredGroupTopologyOverride
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { createTopologyConfigMutationTestInput } from './group-topology-config-mutation-test-fixtures.ts';
+import { createDefaultTopologyConfigMutationTestInput } from './group-topology-config-mutation-test-fixtures.ts';
 
 describe('topology config mutation raw boundaries', () => {
     it('owns complete operation validation before returning named domain contracts', () => {
@@ -116,12 +116,12 @@ describe('topology config mutation raw boundaries', () => {
         expectTypeOf<ReturnType<typeof readStoredTopologyOverrideBoundary>>().toEqualTypeOf<StoredGroupTopologyOverride>();
         expectTypeOf<ReturnType<typeof readTopologyConfigMutationRecordBoundary>>().toEqualTypeOf<GroupTopologyConfigMutationRecord>();
         expectTypeOf<ReturnType<typeof readTopologyConfigReceiptBoundary>>().toEqualTypeOf<GroupTopologyConfigMutationReceipt>();
-        expectTypeOf<Parameters<typeof validateGroupTopologyConfigGeneration>[0]>().toEqualTypeOf<GroupTopologyConfigGeneration>();
-        expectTypeOf<Parameters<typeof validateGroupTopologyConfigInvariantGeneration>[0]>().toEqualTypeOf<GroupTopologyConfigInvariantGeneration>();
-        expectTypeOf<Parameters<typeof validateStoredGroupTopologyConfig>[0]>().toEqualTypeOf<StoredGroupTopologyConfig>();
-        expectTypeOf<Parameters<typeof validateStoredGroupTopologyOverride>[0]>().toEqualTypeOf<StoredGroupTopologyOverride>();
-        expectTypeOf<Parameters<typeof validateGroupTopologyConfigMutationRecord>[0]>().toEqualTypeOf<GroupTopologyConfigMutationRecord>();
-        expectTypeOf<Parameters<typeof validateTopologyConfigReceipt>[0]>().toEqualTypeOf<GroupTopologyConfigMutationReceipt>();
+        expectTypeOf<Parameters<typeof assertGroupTopologyConfigGeneration>[0]>().toEqualTypeOf<GroupTopologyConfigGeneration>();
+        expectTypeOf<Parameters<typeof assertGroupTopologyConfigInvariantGeneration>[0]>().toEqualTypeOf<GroupTopologyConfigInvariantGeneration>();
+        expectTypeOf<Parameters<typeof assertStoredGroupTopologyConfig>[0]>().toEqualTypeOf<StoredGroupTopologyConfig>();
+        expectTypeOf<Parameters<typeof assertStoredGroupTopologyOverride>[0]>().toEqualTypeOf<StoredGroupTopologyOverride>();
+        expectTypeOf<Parameters<typeof assertGroupTopologyConfigMutationRecord>[0]>().toEqualTypeOf<GroupTopologyConfigMutationRecord>();
+        expectTypeOf<Parameters<typeof assertTopologyConfigReceipt>[0]>().toEqualTypeOf<GroupTopologyConfigMutationReceipt>();
     });
 });
 
@@ -148,7 +148,7 @@ function expectGenericBoundaryRecordsRejected(groupRef: GroupRef, requestId: str
 }
 
 function boundaryFixtures() {
-    const mutation = createTopologyConfigMutationTestInput({
+    const mutation = createDefaultTopologyConfigMutationTestInput({
         durableDegreeLimit: 5,
         overrideDegreeLimit: 4
     });

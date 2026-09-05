@@ -1,5 +1,4 @@
 import { computeGroupAdmissionDecision } from '@shared/api/group-lifecycle/compute-group-admission-decision.ts';
-import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupMember } from '@shared/api/group-types.ts';
 import { canActivateGroupMember, canDecideGroupAdmission } from '../../policy/group-membership-admission-policy.ts';
@@ -161,15 +160,17 @@ function requireReadableLifecyclePolicy(read: GroupMutationRead): GroupLifecycle
     if (read.lifecyclePolicy === null) {
         throw new TypeError('Admission compute requires the lifecycle policy read');
     }
-    if (read.lifecyclePolicy.status === 'corrupt') {
+    if (read.lifecyclePolicy.status !== 'present') {
         // Fail closed: an unreadable stored policy must not read as permissive.
         throw new GroupMutationRejectedError(
-            `Group lifecycle policy is unreadable: ${read.lifecyclePolicy.reason}`
+            `Group lifecycle policy is unreadable: ${
+                read.lifecyclePolicy.status === 'corrupt'
+                    ? read.lifecyclePolicy.reason
+                    : 'Group lifecycle policy is missing'
+            }`
         );
     }
-    return read.lifecyclePolicy.status === 'present'
-        ? read.lifecyclePolicy.policy
-        : createDefaultGroupLifecyclePolicy();
+    return read.lifecyclePolicy.policy;
 }
 
 function requireAdmissionRoster(read: GroupMutationRead): readonly string[] {

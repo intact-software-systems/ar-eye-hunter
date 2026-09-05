@@ -1,7 +1,7 @@
 import type {
-    RuntimeStateGuardedBatch,
     RuntimeStateGuardedBatchResult,
-    RuntimeStateGuardedBatchTransaction
+    RuntimeStateGuardedBatchTransaction,
+    RuntimeStateGuardedBatchWrite
 } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
@@ -19,7 +19,6 @@ import type {
     RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector
 } from '../read-batch/runtime-state-read-batch.ts';
-import { executeRuntimeStateGuardedBatch } from './execute-runtime-state-guarded-batch.ts';
 import { readRuntimeStateBatch } from './read-runtime-state-batch.ts';
 import {
     decodeRuntimeStateRevision,
@@ -27,6 +26,7 @@ import {
     type RuntimeStateDatabaseRow
 } from './runtime-state-row-codec.ts';
 import { toExclusivePrefixEnd, toPgDate } from './runtime-state-sql-values.ts';
+import { writeRuntimeStateGuardedBatch } from './write-runtime-state-guarded-batch.ts';
 
 interface RuntimeStateSavepointSql extends PSqlSql {
     savepoint<T>(fn: (sql: PSqlSql) => Promise<T>): Promise<T>;
@@ -89,15 +89,15 @@ export class PSqlRuntimeStateRepository
         });
     }
 
-    async executeGuardedBatch(
-        input: RuntimeStateGuardedBatch
+    async writeGuardedBatch(
+        computed: RuntimeStateGuardedBatchWrite
     ): Promise<RuntimeStateGuardedBatchResult> {
         if (this.sqlState.kind !== 'transaction') {
             throw new Error(
                 'Guarded runtime state batches require a transaction-scoped repository.'
             );
         }
-        return await executeRuntimeStateGuardedBatch(this.sql, input);
+        return await writeRuntimeStateGuardedBatch(this.sql, computed);
     }
 
     async findEntry(

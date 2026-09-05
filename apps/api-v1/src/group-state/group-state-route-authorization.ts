@@ -8,7 +8,8 @@ import type { UpsertGroupMemberRequest } from '@shared/api/state-types.ts';
 import type {
     GroupStateRouteAuthSession,
     GroupStateRouteDependencies,
-    GroupStateRouteRequest
+    GroupStateRouteRequest,
+    GroupStateRouteService
 } from './group-state-route-contracts.ts';
 
 export interface GroupStateRouteAuthorization {
@@ -38,6 +39,12 @@ export interface GroupStateRouteAuthorization {
     ): void;
 }
 
+interface GroupStateRouteAuthorizationDependencies {
+    readonly groupStateService: Pick<GroupStateRouteService, 'readCurrentSnapshot'>;
+    readonly requireApiAuthSession: GroupStateRouteDependencies['requireApiAuthSession'];
+    readonly strictReadAuthorization: boolean;
+}
+
 export function isGroupStateRouteSnapshotReadable(
     snapshot: GroupSnapshot,
     principalId: string
@@ -49,7 +56,7 @@ export function isGroupStateRouteSnapshotReadable(
 }
 
 export function createGroupStateRouteAuthorization(
-    dependencies: GroupStateRouteDependencies
+    dependencies: GroupStateRouteAuthorizationDependencies
 ): GroupStateRouteAuthorization {
     return {
         readStrictAuthSession: (request) => readStrictAuthSession(request, dependencies),
@@ -70,7 +77,7 @@ export function createGroupStateRouteAuthorization(
 async function assertCanReadGroupRef(
     request: GroupStateRouteRequest,
     ref: GroupRef,
-    dependencies: GroupStateRouteDependencies
+    dependencies: GroupStateRouteAuthorizationDependencies
 ): Promise<void> {
     const authSession = await readStrictAuthSession(request, dependencies);
     if (!authSession) {
@@ -88,7 +95,7 @@ async function assertCanReadGroupRef(
 async function assertCanReadGroupState(
     request: GroupStateRouteRequest,
     snapshot: GroupSnapshot,
-    dependencies: GroupStateRouteDependencies
+    dependencies: GroupStateRouteAuthorizationDependencies
 ): Promise<void> {
     const authSession = await readStrictAuthSession(request, dependencies);
     if (!authSession) {
@@ -111,9 +118,9 @@ function assertCanReadGroupSnapshot(principalId: string, snapshot: GroupSnapshot
 async function assertCanUpdateGroup(
     principalId: string,
     ref: GroupRef,
-    dependencies: GroupStateRouteDependencies
+    dependencies: GroupStateRouteAuthorizationDependencies
 ): Promise<void> {
-    const snapshot = await dependencies.groupStateService.readSnapshot(ref);
+    const snapshot = await dependencies.groupStateService.readCurrentSnapshot(ref);
     if (!snapshot) {
         throw new Error(`Group not found: ${ref.groupId}`);
     }
@@ -164,7 +171,7 @@ function assertSelfServiceMemberStatus(
 
 async function readStrictAuthSession(
     request: GroupStateRouteRequest,
-    dependencies: GroupStateRouteDependencies
+    dependencies: GroupStateRouteAuthorizationDependencies
 ): Promise<GroupStateRouteAuthSession | undefined> {
     return dependencies.strictReadAuthorization
         ? await dependencies.requireApiAuthSession(request)

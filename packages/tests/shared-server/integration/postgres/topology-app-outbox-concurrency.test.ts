@@ -8,7 +8,7 @@ import {
     createPSqlResourceInboxRepository,
     type PSqlResourceInboxRepository
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-import { computeRtcTopologyEntry } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -43,7 +43,7 @@ describe('Postgres topology APP_OUTBOX concurrency', () => {
             const readyDirectoryPath = path.join(tmpDirPath, 'ready');
             const atEpochMs = Date.now();
             const entries = ['first', 'second'].map((name, index) =>
-                computeRtcTopologyEntry({
+                computeRtcTopologyOutboxInsert({
                     commandId: `${applicationId}-${name}`,
                     aggregateRef: groupRef,
                     acceptedCausalRevision: groupSnapshot.causalRevision,
@@ -57,7 +57,7 @@ describe('Postgres topology APP_OUTBOX concurrency', () => {
                     resourceId: `${applicationId}-${name}-topology`,
                     requestOptions: toCanonicalGroupTopologyConfigPatch({}),
                     publish: true
-                })
+                }).entry
             );
             const inputs: readonly TopologyAppOutboxWorkerInput[] = entries.map((entry, index) => ({
                 groupSnapshot,

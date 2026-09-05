@@ -1,20 +1,27 @@
+import {
+    computeAppOutboxInsert,
+    isExactAppOutboxInsert
+} from '../../../app-outbox/app-outbox-insert.ts';
+import { validateComputedProjection } from '../../../computed-data-validation.ts';
 import { computeClientStateSyncEntries } from '../../../state-sync/state-sync-entry-computation.ts';
-import { ClientMutationRejectedError } from '../../validation/client-mutation-rejection.ts';
+import {
+    ClientMutationRejectedError,
+    type ClientMutationValidationIssue
+} from '../../validation/client-mutation-rejection.ts';
 import type {
     ClientMutationCommand,
     ClientMutationComputed,
     ClientMutationRead
 } from '../client-mutation-contracts.ts';
 import {
-    validateClientMutationCommand,
-    validateClientMutationFacts
-} from '../command-validation/validate-client-mutation-command.ts';
-import {
-    // Authority policy remains a direct dependency on its canonical owner.
-    validateClientMutationAuthorityPolicy
-} from './validate-client-mutation-authority-policy.ts';
-import { validateClientMutationRead } from './validate-client-mutation-read.ts';
-import { validateClientMutationResult } from './validate-client-mutation-result.ts';
+    assertClientMutationCommand,
+    assertClientMutationFacts
+} from '../command-validation/assert-client-mutation-command.ts';
+import { computeClientMutation } from '../compute/compute-client-mutation.ts';
+import { assertClientMutationRead } from './assert-client-mutation-read.ts';
+import { assertClientMutationResult } from './assert-client-mutation-result.ts';
+import { assertExactClientPersistence } from './assert-client-persistence.ts';
+import { validateClientMutationAuthorityPolicy } from './validate-client-mutation-authority-policy.ts';
 
 export class ClientMutationIdempotencyConflictError extends Error {
     readonly code = 'client-mutation-idempotency-conflict';
@@ -37,36 +44,50 @@ export class ClientMutationIdempotencyConflictError extends Error {
     }
 }
 
-export function validateClientMutation(
-    input: Readonly<{
-        command: ClientMutationCommand;
-        read: ClientMutationRead;
-        computed: ClientMutationComputed;
-    }>
-): void {
-    const { command, read, computed } = input;
-    validateClientMutationCommand(command);
-    validateClientMutationFacts(command.facts);
-    validateClientMutationResult(computed);
-    validateClientMutationIdentity(command);
-    validateClientMutationRead(command, read);
-    validateClientMutationAuthorityPolicy(command, read);
-    validateClientSessionIdentity(command);
-    if (computed.outcome === 'idempotency-conflict') {
-        throw new ClientMutationIdempotencyConflictError(
-            command.commandId,
-            computed.existingCommandHash,
-            computed.receivedCommandHash
-        );
-    }
-    validateClientMutationReceiptIdentity(command, computed);
-    if (computed.outcome !== 'write') {
-        return;
-    }
-    validateEffectfulClientMutation(command, read, computed);
+export interface ClientMutationValidationInput {
+    readonly command: ClientMutationCommand;
+    readonly read: ClientMutationRead;
+    readonly computed: ClientMutationComputed;
 }
 
-function validateClientMutationIdentity(command: ClientMutationCommand): void {
+export function validateClientMutation(
+    input: ClientMutationValidationInput
+): readonly ClientMutationValidationIssue[] {
+    const { command, read, computed } = input;
+    assertClientMutationCommand(command);
+    assertClientMutationFacts(command.facts);
+    assertExactClientMutationComputation(command, read, computed);
+    assertClientMutationResult(computed);
+    assertClientMutationIdentity(command);
+    assertClientMutationRead(command, read);
+    assertClientSessionIdentity(command);
+    if (computed.outcome !== 'idempotency-conflict') {
+        assertClientMutationReceiptIdentity(command, computed);
+        assertExactClientPersistence(computed);
+        if (computed.outcome === 'write') {
+            assertEffectfulClientMutation(command, read, computed);
+        }
+    }
+    return validateClientMutationAuthorityPolicy(command, read);
+}
+
+function assertExactClientMutationComputation(
+    command: ClientMutationCommand,
+    read: ClientMutationRead,
+    computed: ClientMutationComputed
+): void {
+    const expected = computeClientMutation({ command, read });
+    const issue = validateComputedProjection(
+        expected,
+        computed,
+        'Client mutation computed'
+    )[0];
+    if (issue) {
+        throw new ClientMutationRejectedError(issue.message);
+    }
+}
+
+function assertClientMutationIdentity(command: ClientMutationCommand): void {
     if (!/^sha256:[0-9a-f]{64}$/.test(command.facts.commandHash)) {
         throw new ClientMutationRejectedError('Invalid canonical client command hash');
     }
@@ -82,7 +103,7 @@ function validateClientMutationIdentity(command: ClientMutationCommand): void {
     }
 }
 
-function validateClientSessionIdentity(command: ClientMutationCommand): void {
+function assertClientSessionIdentity(command: ClientMutationCommand): void {
     if (!('sessionId' in command)) {
         return;
     }
@@ -100,7 +121,7 @@ function validateClientSessionIdentity(command: ClientMutationCommand): void {
     }
 }
 
-function validateClientMutationReceiptIdentity(
+function assertClientMutationReceiptIdentity(
     command: ClientMutationCommand,
     computed: Exclude<ClientMutationComputed, { outcome: 'idempotency-conflict'; }>
 ): void {
@@ -114,7 +135,7 @@ function validateClientMutationReceiptIdentity(
     }
 }
 
-function validateEffectfulClientMutation(
+function assertEffectfulClientMutation(
     command: ClientMutationCommand,
     read: ClientMutationRead,
     computed: Extract<ClientMutationComputed, { outcome: 'write'; }>
@@ -127,29 +148,32 @@ function validateEffectfulClientMutation(
     ) {
         throw new ClientMutationRejectedError('Invalid effectful client mutation');
     }
-    validateClientMutationOutbox(command, computed);
-    validateClientPrincipalGuard(read, computed);
-    validateClientSessionGuard(read, computed);
-    validateClientInstanceGuard(read, computed);
+    assertClientMutationOutbox(command, computed);
+    assertClientPrincipalGuard(read, computed);
+    assertClientSessionGuard(read, computed);
+    assertClientInstanceGuard(read, computed);
 }
 
-function validateClientMutationOutbox(
+function assertClientMutationOutbox(
     command: ClientMutationCommand,
     computed: Extract<ClientMutationComputed, { outcome: 'write'; }>
 ): void {
-    const expectedOutboxEntries = computed.stateSync.flatMap((stateSync) =>
-        computeClientStateSyncEntries(stateSync, command.facts.serviceId)
-    );
+    const expectedOutboxWrites = computed.stateSync
+        .flatMap((stateSync) => computeClientStateSyncEntries(stateSync, command.facts.serviceId))
+        .map(computeAppOutboxInsert);
     if (
-        JSON.stringify(expectedOutboxEntries) !== JSON.stringify(computed.outboxEntries) ||
+        expectedOutboxWrites.length !== computed.outboxWrites.length ||
+        expectedOutboxWrites.some((expected, index) =>
+            !isExactAppOutboxInsert(expected.entry, computed.outboxWrites[index]!)
+        ) ||
         JSON.stringify(computed.receipt.outboxIds) !==
-            JSON.stringify(expectedOutboxEntries.map((entry) => entry.key.resourceId))
+            JSON.stringify(expectedOutboxWrites.map((write) => write.entry.key.resourceId))
     ) {
         throw new ClientMutationRejectedError('Client mutation WS outbox differs');
     }
 }
 
-function validateClientPrincipalGuard(
+function assertClientPrincipalGuard(
     read: ClientMutationRead,
     computed: Extract<ClientMutationComputed, { outcome: 'write'; }>
 ): void {
@@ -167,7 +191,7 @@ function validateClientPrincipalGuard(
     }
 }
 
-function validateClientSessionGuard(
+function assertClientSessionGuard(
     read: ClientMutationRead,
     computed: Extract<ClientMutationComputed, { outcome: 'write'; }>
 ): void {
@@ -200,7 +224,7 @@ function validateClientSessionGuard(
     }
 }
 
-function validateClientInstanceGuard(
+function assertClientInstanceGuard(
     read: ClientMutationRead,
     computed: Extract<ClientMutationComputed, { outcome: 'write'; }>
 ): void {

@@ -11,7 +11,8 @@ import {
     type RuntimeStateGuardedBatchEffectResult,
     type RuntimeStateGuardedBatchGuard,
     type RuntimeStateGuardedBatchGuardResult,
-    type RuntimeStateGuardedBatchResult
+    type RuntimeStateGuardedBatchResult,
+    type RuntimeStateGuardedBatchWrite
 } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
 import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
@@ -126,7 +127,7 @@ export function createGroupAuthorityRead(
         authorityPresenceSessions: [],
         authorityPresenceSessionEntries: [],
         presenceSummary: null,
-        lifecyclePolicy: toLifecyclePolicyRead(options.policy ?? 'absent'),
+        lifecyclePolicy: toLifecyclePolicyRead(options.policy ?? 'optimistic'),
         activeMemberPrincipalIds: options.activeMemberPrincipalIds ??
             (options.actorIsMember === false ? [] : [actorPrincipalId]),
         connectTriggerLatch: null,
@@ -185,6 +186,7 @@ export function createGroupAuthorityFacts(principalId = 'alice'): GroupMutationF
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
+        capacity: { defaultMaxMembers: null },
         authenticatedAuthority: {
             principalId,
             sessionId: `${principalId}-session`
@@ -336,13 +338,16 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
         return result;
     }
 
-    override async executeGuardedBatch(
-        input: RuntimeStateGuardedBatch
+    override async writeGuardedBatch(
+        input: RuntimeStateGuardedBatchWrite
     ): Promise<RuntimeStateGuardedBatchResult> {
         if (this.transactionDepth === 0) {
             throw new Error('Guarded batch requires an active transaction');
         }
-        const batch = validateRuntimeStateGuardedBatch(input);
+        const batch = validateRuntimeStateGuardedBatch({
+            guard: input.guard,
+            effects: input.effects
+        });
         this.batches.push(batch);
         this.readCountsBeforeBatch.push(this.outsideTransactionReadCount);
         this.transactionOrder.push('batch');

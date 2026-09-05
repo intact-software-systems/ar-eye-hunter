@@ -8,7 +8,7 @@ import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbo
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
-import type { GroupMutationPreparation, GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import type { GroupMutationIngress, GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
@@ -70,11 +70,11 @@ export async function createGroupStateTransactionBoundaryHarness(
 ): Promise<GroupStateTransactionBoundaryHarness> {
     const storage = createTransactionBoundaryStorage(failurePhase);
     const groupState = await createTransactionBoundaryGroupStateService(storage);
-    const prepared = await groupState.service.prepareMutation(
+    const ingress = await groupState.service.captureMutationIngress(
         mutationDescriptor({ operation: 'createGroup', scope: SCOPE, groupId: GROUP_ID, request: createGroupRequest() }),
         createOwnerAuthority()
     );
-    const context = await createReservedContext(storage.queue, prepared);
+    const context = await createReservedContext(storage.queue, ingress);
     const execution = createTransactionBoundaryExecution(storage, groupState);
     execution.transactionWriter.begin(context);
     return {
@@ -100,7 +100,7 @@ export async function createReconfigureGroupStateTransactionBoundaryHarness(
     const groupState = await createTransactionBoundaryGroupStateService(storage);
     const execution = createTransactionBoundaryExecution(storage, groupState);
     const { handler, transactionWriter } = execution;
-    const seedPrepared = await groupState.service.prepareMutation(
+    const seedIngress = await groupState.service.captureMutationIngress(
         mutationDescriptor({
             operation: 'createGroup',
             scope: SCOPE,
@@ -109,12 +109,12 @@ export async function createReconfigureGroupStateTransactionBoundaryHarness(
         }),
         createOwnerAuthority()
     );
-    const seedContext = await createReservedContext(storage.queue, seedPrepared);
+    const seedContext = await createReservedContext(storage.queue, seedIngress);
     transactionWriter.begin(seedContext);
     await handler.processGroupStateMutation(seedContext);
     storage.reachedStages.length = 0;
 
-    const prepared = await groupState.service.prepareMutation(
+    const ingress = await groupState.service.captureMutationIngress(
         mutationDescriptor({
             operation: 'reconfigureGroup',
             scope: SCOPE,
@@ -123,7 +123,7 @@ export async function createReconfigureGroupStateTransactionBoundaryHarness(
         }),
         createOwnerAuthority()
     );
-    const context = await createReconfigureReservedContext(storage.queue, prepared);
+    const context = await createReconfigureReservedContext(storage.queue, ingress);
     transactionWriter.begin(context);
     storage.enableFailures();
     return {
@@ -161,12 +161,17 @@ function createTransactionBoundaryExecution(
     const formationMutationEvents: GroupFormationGroupMutationEvent[] = [];
     const handler = new GroupStateInboxHandler({
         mutationService: groupState.service,
-        prepareMutation: groupState.service.prepareMutation,
-        persistPreparation: async () => {
-            throw new Error('A reserved transaction-boundary command must already be prepared.');
+        captureAuthenticatedMutationIngress: async () => {
+            throw new Error('A reserved transaction-boundary command must already be internal.');
+        },
+        persistMutationIngress: async () => {
+            throw new Error('A reserved transaction-boundary command must not persist mutation ingress.');
         },
         sessionGenerationLifecycle: groupState.service.sessionGenerationLifecycle,
-        snapshotObserver: groupState.service,
+        resultReader: createTestGroupStateRepository(
+            storage.runtimeRepository,
+            storage.database.groupEventStore
+        ),
         transactionWriter,
         wakeQueue: () => {
             wakeCount += 1;
@@ -294,7 +299,7 @@ function reconfigureGroupRequest(): ReconfigureBoundaryRequest {
 
 async function createReservedContext(
     queue: TestResourceInbox,
-    authority: GroupMutationPreparation
+    authority: GroupMutationIngress
 ): Promise<AppInboxMessageContext<GroupStateInboxDurableResult>> {
     const enqueue = decodeAppInboxEnqueue({
         type: AppInboxType.GROUP_CREATE,
@@ -337,7 +342,7 @@ async function createReservedContext(
 
 async function createReconfigureReservedContext(
     queue: TestResourceInbox,
-    authority: GroupMutationPreparation
+    authority: GroupMutationIngress
 ): Promise<AppInboxMessageContext<GroupStateInboxDurableResult>> {
     const enqueue = decodeAppInboxEnqueue({
         type: AppInboxType.GROUP_RECONFIGURE,

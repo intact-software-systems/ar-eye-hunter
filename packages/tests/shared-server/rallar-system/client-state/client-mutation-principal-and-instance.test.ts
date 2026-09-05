@@ -4,6 +4,7 @@ import type { ClientMutationCommand } from '@shared-server/rallar-system/client-
 import { computeClientInstanceMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-instance-mutation.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { computeClientPrincipalMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-principal-mutation.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 
 import {
     emptyRead,
@@ -181,19 +182,28 @@ describe('client principal and instance persistence convergence', () => {
         const before = await snapshot(runtime, 'alice');
         runtime.armPrincipalReadBarrier(2);
 
-        const [profile, instance] = await Promise.all([
+        const profileAttempt = () =>
             createService(runtime, 2_000).upsertPrincipal(SCOPE, 'alice', {
                 username: 'alice',
                 displayName: 'After',
                 metadata: { theme: 'dark' },
                 requestId: 'profile-race'
-            }),
+            });
+        const instanceAttempt = () =>
             createService(runtime, 2_001).upsertInstance(SCOPE, 'alice', 'browser', {
                 platform: 'web',
                 deviceLabel: 'Laptop',
                 requestId: 'instance-race'
-            })
+            });
+        const [profileFirst, instanceFirst] = await Promise.allSettled([
+            profileAttempt(),
+            instanceAttempt()
         ]);
+        const rejected = [profileFirst, instanceFirst].filter((result) => result.status === 'rejected');
+        expect(rejected).toHaveLength(1);
+        expect(rejected[0]).toMatchObject({ reason: expect.any(RuntimeStateWriteConflictError) });
+        const profile = profileFirst.status === 'fulfilled' ? profileFirst.value : await profileAttempt();
+        const instance = instanceFirst.status === 'fulfilled' ? instanceFirst.value : await instanceAttempt();
 
         expect(profile.result?.event?.eventType).toBe('principal-updated');
         expect(instance.result?.event?.eventType).toBe('instance-registered');

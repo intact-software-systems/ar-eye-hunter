@@ -1,4 +1,3 @@
-import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 import type {
@@ -16,8 +15,8 @@ export type GroupAuthorityPolicyResolution =
 /**
  * The one reader of the stored lifecycle policy for the group-authority
  * commands. An unreadable document must never read as permissive, so it is
- * surfaced as a value rather than a policy; an absent one resolves to the
- * default preset. A missing read is a programmer invariant — the read path
+ * surfaced as a value rather than a policy. An absent row is equally invalid
+ * for an existing current group. A missing read is a programmer invariant — the read path
  * and its validator both key on the read scope's policy rule.
  */
 export function resolveGroupAuthorityPolicy(
@@ -26,14 +25,17 @@ export function resolveGroupAuthorityPolicy(
     if (read.lifecyclePolicy === null) {
         throw new TypeError('Group authority compute requires the policy read');
     }
-    if (read.lifecyclePolicy.status === 'corrupt') {
-        return { status: 'corrupt', reason: read.lifecyclePolicy.reason };
+    if (read.lifecyclePolicy.status !== 'present') {
+        return {
+            status: 'corrupt',
+            reason: read.lifecyclePolicy.status === 'corrupt'
+                ? read.lifecyclePolicy.reason
+                : 'Group lifecycle policy is missing'
+        };
     }
     return {
         status: 'resolved',
-        policy: read.lifecyclePolicy.status === 'present'
-            ? read.lifecyclePolicy.policy
-            : createDefaultGroupLifecyclePolicy()
+        policy: read.lifecyclePolicy.policy
     };
 }
 

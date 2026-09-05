@@ -42,7 +42,7 @@ export function createTimedGroupStateService(
     const timedInput = { timing, serviceId: input.serviceId };
     return {
         sessionGenerationLifecycle: service.sessionGenerationLifecycle,
-        ...createTimedPreparationOperations(service, timedInput),
+        ...createTimedIngressCaptureOperations(service, timedInput),
         ...createTimedSnapshotOperations(service, timedInput),
         ...createTimedEventOperations(service, timedInput),
         ...createTimedObservationOperations(service, timedInput),
@@ -55,20 +55,20 @@ interface TimedGroupStateServiceInput {
     readonly serviceId: string;
 }
 
-type InternalCommandPreparation =
-    | 'prepareFormationCriterionMutation'
-    | 'prepareFormationAutomationMutation'
-    | 'prepareTopologyPublicationMutation'
-    | 'prepareActivationStatusMutation';
+type InternalCommandIngressCapture =
+    | 'captureFormationCriterionMutationIngress'
+    | 'captureFormationAutomationMutationIngress'
+    | 'captureTopologyPublicationMutationIngress'
+    | 'captureActivationStatusMutationIngress';
 
-// The four internal command preparers share one signature, so one factory
+// The four internal ingress captures share one signature, so one factory
 // times them all; the operation string doubles as the method name, which
 // keeps the timing label and the forwarded call from drifting apart.
-function createTimedInternalCommandPreparation(
+function createTimedInternalCommandIngressCapture(
     service: GroupStateService,
     input: TimedGroupStateServiceInput,
-    operation: InternalCommandPreparation
-): GroupStateService[InternalCommandPreparation] {
+    operation: InternalCommandIngressCapture
+): GroupStateService[InternalCommandIngressCapture] {
     return async (command, atEpochMs) =>
         await timeGroupStateOperation({
             ...input,
@@ -78,20 +78,20 @@ function createTimedInternalCommandPreparation(
         });
 }
 
-function createTimedPreparationOperations(
+function createTimedIngressCaptureOperations(
     service: GroupStateService,
     input: TimedGroupStateServiceInput
 ): Pick<
     GroupStateService,
     | 'authorizeMutation'
-    | 'prepareMutation'
-    | 'prepareAppInboxMutation'
-    | InternalCommandPreparation
-    | 'prepareExpiredPresenceMutations'
-    | 'prepareSessionCleanupMutations'
+    | 'captureMutationIngress'
+    | 'captureAppInboxMutationIngress'
+    | InternalCommandIngressCapture
+    | 'captureExpiredPresenceMutationIngresses'
+    | 'captureSessionCleanupMutationIngresses'
 > {
-    const timedCommand = (operation: InternalCommandPreparation) =>
-        createTimedInternalCommandPreparation(service, input, operation);
+    const timedCommand = (operation: InternalCommandIngressCapture) =>
+        createTimedInternalCommandIngressCapture(service, input, operation);
     return {
         authorizeMutation: async (descriptor, authority) =>
             await timeGroupStateOperation({
@@ -100,37 +100,37 @@ function createTimedPreparationOperations(
                 details: {},
                 action: async () => await service.authorizeMutation(descriptor, authority)
             }),
-        prepareMutation: async (descriptor, authority) =>
+        captureMutationIngress: async (descriptor, authority) =>
             await timeGroupStateOperation({
                 ...input,
-                operation: 'prepareMutation',
+                operation: 'captureMutationIngress',
                 details: {},
-                action: async () => await service.prepareMutation(descriptor, authority)
+                action: async () => await service.captureMutationIngress(descriptor, authority)
             }),
-        prepareAppInboxMutation: async (descriptor, authority) =>
+        captureAppInboxMutationIngress: async (descriptor, authority) =>
             await timeGroupStateOperation({
                 ...input,
-                operation: 'prepareAppInboxMutation',
+                operation: 'captureAppInboxMutationIngress',
                 details: {},
-                action: async () => await service.prepareAppInboxMutation(descriptor, authority)
+                action: async () => await service.captureAppInboxMutationIngress(descriptor, authority)
             }),
-        prepareFormationCriterionMutation: timedCommand('prepareFormationCriterionMutation'),
-        prepareFormationAutomationMutation: timedCommand('prepareFormationAutomationMutation'),
-        prepareTopologyPublicationMutation: timedCommand('prepareTopologyPublicationMutation'),
-        prepareActivationStatusMutation: timedCommand('prepareActivationStatusMutation'),
-        prepareExpiredPresenceMutations: async (atEpochMs) =>
+        captureFormationCriterionMutationIngress: timedCommand('captureFormationCriterionMutationIngress'),
+        captureFormationAutomationMutationIngress: timedCommand('captureFormationAutomationMutationIngress'),
+        captureTopologyPublicationMutationIngress: timedCommand('captureTopologyPublicationMutationIngress'),
+        captureActivationStatusMutationIngress: timedCommand('captureActivationStatusMutationIngress'),
+        captureExpiredPresenceMutationIngresses: async (atEpochMs) =>
             await timeGroupStateOperation({
                 ...input,
-                operation: 'prepareExpiredPresenceMutations',
+                operation: 'captureExpiredPresenceMutationIngresses',
                 details: {},
-                action: async () => await service.prepareExpiredPresenceMutations(atEpochMs)
+                action: async () => await service.captureExpiredPresenceMutationIngresses(atEpochMs)
             }),
-        prepareSessionCleanupMutations: async (cleanup) =>
+        captureSessionCleanupMutationIngresses: async (cleanup) =>
             await timeGroupStateOperation({
                 ...input,
-                operation: 'prepareSessionCleanupMutations',
+                operation: 'captureSessionCleanupMutationIngresses',
                 details: { principalId: cleanup.principalId },
-                action: async () => await service.prepareSessionCleanupMutations(cleanup)
+                action: async () => await service.captureSessionCleanupMutationIngresses(cleanup)
             })
     };
 }
@@ -242,13 +242,7 @@ function createTimedMutationOperations(
             }),
         compute: service.compute,
         validate: service.validate,
-        write: async (transaction, computed) =>
-            await timeGroupStateOperation({
-                ...input,
-                operation: 'write',
-                details: {},
-                action: async () => await service.write(transaction, computed)
-            })
+        write: async (transaction, computed) => await service.write(transaction, computed)
     };
 }
 

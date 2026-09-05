@@ -17,10 +17,10 @@ import { validateGroupExpiredStateAuthority } from '../../presence/group-expired
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import { groupMutationIdempotencyKey } from '../group-mutation-idempotency-key.ts';
 import { resolveGroupMutationReadIdentities } from '../read/resolve-group-mutation-read-identities.ts';
-import { assertGroupMutationIdempotencyRecord } from '../result-validation/assert-group-mutation-result.ts';
 import { assertGroupMutationAuthorityReads } from './assert-group-mutation-authority-reads.ts';
 import { assertGroupMutationMemberReads } from './assert-group-mutation-member-reads.ts';
 import { assertGroupMutationOperationReads } from './assert-group-mutation-operation-reads.ts';
+import { assertGroupMutationIdempotencyRecord } from './assert-group-mutation-result.ts';
 
 const GROUP_MUTATION_READ_KEYS = [
     'idempotency',

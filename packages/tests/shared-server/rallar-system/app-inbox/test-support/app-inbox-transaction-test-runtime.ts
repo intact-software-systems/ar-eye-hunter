@@ -14,6 +14,10 @@ import type { AppInboxEntryRepository, AppInboxResultRepository } from '@shared-
 import type { AppInboxCommandClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts';
 import type { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import { createAppInboxClientRuntime } from '@shared-server/rallar-system/app-inbox/client/create-app-inbox-client-runtime.ts';
+import {
+    computeAppInboxCompletion,
+    validateAppInboxCompletion
+} from '@shared-server/rallar-system/app-inbox/handler/app-inbox-completion-computation.ts';
 import type { AppInboxHandlerRegistration } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-registration.ts';
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-handler-runtime.ts';
@@ -136,13 +140,34 @@ class AtomicAppInboxService {
 
     async commit<R>(
         context: AppInboxMessageContext<R>,
-        write: (transaction: PSqlSql) => Promise<R>
+        durableResult: R,
+        write: (transaction: PSqlSql) => Promise<void>
     ): Promise<R> {
-        return await this.transactionWriter.writeMutation(context, write);
+        const completionInput = {
+            ...this.transactionWriter.readCompletionFacts(context),
+            status: EntityStatus.COMPLETED,
+            durableResult
+        } as const;
+        const completion = computeAppInboxCompletion(completionInput);
+        const issues = validateAppInboxCompletion(completionInput, completion);
+        if (issues[0] !== undefined) {
+            throw issues[0].cause;
+        }
+        return await this.transactionWriter.writeComputedMutation(context, completion, write);
     }
 
     async fail(context: AppInboxMessageContext<JsonWireValue>, error: JsonWireValue): Promise<void> {
-        await this.transactionWriter.writeTerminalFailure(context, error);
+        const completionInput = {
+            ...this.transactionWriter.readCompletionFacts(context),
+            status: EntityStatus.FAILED,
+            durableResult: error
+        } as const;
+        const completion = computeAppInboxCompletion(completionInput);
+        const issues = validateAppInboxCompletion(completionInput, completion);
+        if (issues[0] !== undefined) {
+            throw issues[0].cause;
+        }
+        await this.transactionWriter.writeComputedTerminalFailure(context, completion);
     }
 
     onStateMessage<Result>(

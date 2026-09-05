@@ -24,6 +24,10 @@ try {
     assert.equal(row?.dateValue.toISOString(), directInstant.toISOString());
     assert.equal(row?.stringValue.toISOString(), directInstant.toISOString());
     assert.equal(row?.ordinary, 'ordinary-text:2026-08-01T02:03:04.567Z');
+    const [timestampRow] = await sql<{ value: string; }[]>`
+    select ${'2026-08-01T02:03:04.567890'}::timestamp as value
+  `;
+    assert.equal(timestampRow?.value, '2026-08-01 02:03:04.56789');
     const rows = await sql<{ value: Date; }[]>`
     select value::timestamp at time zone 'UTC' as value
     from (values (${arrayInstants[0].toISOString()}), (${arrayInstants[1].toISOString()})) as values(value)

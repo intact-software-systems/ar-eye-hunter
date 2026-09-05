@@ -1,5 +1,5 @@
 import { APP_OUTBOX_FORMATION_TIMER_TOPIC } from '@shared-server/rallar-system/group-state/formation-timer-outbox-entry.ts';
-import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
@@ -86,13 +86,13 @@ describe('group lifecycle transition computation', () => {
         expect(computed.outcome).toBe('write');
         const written = writtenMutation(computed);
         expect((written.guard.value as Group).lifecycleState).toBe('reconfiguring');
-        const summaryMessage = JSON.parse(written.outboxEntries[0]!.resource);
+        const summaryMessage = JSON.parse(written.outboxWrites[0]!.entry.resource);
         expect(JSON.parse(summaryMessage.payload.resource)).toMatchObject({
             data: { event: { payload: { topologyReplanOrigin: 'commanded' } } }
         });
     });
 
-    it('keeps an absent-policy group active for the apply landing while commanding its replan', () => {
+    it('keeps an optimistic-policy group active for the apply landing while commanding its replan', () => {
         const computed = computeGroupMutation({
             command: transitionCommand('reconfigureGroup'),
             read: createGroupAuthorityRead({ lifecycleState: 'active', formationEpoch: 4 }),
@@ -103,13 +103,13 @@ describe('group lifecycle transition computation', () => {
         const written = writtenMutation(computed);
         expect((written.guard.value as Group).lifecycleState).toBe('active');
         expect((written.guard.value as Group).formationEpoch).toBe(4);
-        expect(written.outboxEntries).toHaveLength(1);
+        expect(written.outboxWrites).toHaveLength(1);
     });
 
     it.each(
         [
             { description: 'hold policy to apply', policy: resolveGroupLifecyclePolicyPreset('match'), landing: 'apply', lifecycleState: 'active' },
-            { description: 'absent default to hold', policy: null, landing: 'hold', lifecycleState: 'reconfiguring' }
+            { description: 'optimistic default to hold', policy: null, landing: 'hold', lifecycleState: 'reconfiguring' }
         ] as const
     )(
         'lets a reconfigure landing override $description',
@@ -366,18 +366,18 @@ describe('group lifecycle transition computation', () => {
         const computed = computeGroupMutation({ command, read, facts });
         expect(computed).toMatchObject({ outcome: 'rejected', rejectionCode: 'group-policy-denied' });
         const serialized: GroupMutationComputed = JSON.parse(JSON.stringify(computed));
-        expect(() => assertGroupMutation({ command, read, facts, computed: serialized })).not.toThrow();
+        expect(validateGroupMutation({ command, read, facts, computed: serialized })).toEqual([]);
         if (computed.outcome !== 'rejected' || computed.rejectionCode !== 'group-policy-denied') {
             throw new Error('Expected a policy rejection');
         }
-        expect(() =>
-            assertGroupMutation({
+        expect(
+            validateGroupMutation({
                 command,
                 read,
                 facts,
                 computed: { ...computed, policyDenial: { ...computed.policyDenial, message: 'forged denial' } }
-            })
-        ).toThrow(/canonical deterministic projection/);
+            }).map((issue) => issue.path)
+        ).toContain('computed.policyDenial.message');
     });
 
     it('denies a non-manager under the managed policy', () => {
@@ -480,7 +480,9 @@ describe('group lifecycle transition computation', () => {
         }
         expect((computed.guard.value as Group).lifecycleState).toBe(row.landing);
         expect(
-            computed.outboxEntries.filter((entry) => entry.key.topicId === APP_OUTBOX_FORMATION_TIMER_TOPIC)
+            computed.outboxWrites.filter(
+                (write) => write.entry.key.topicId === APP_OUTBOX_FORMATION_TIMER_TOPIC
+            )
         ).toHaveLength(row.timers);
     });
 
@@ -604,14 +606,16 @@ describe('group lifecycle transition computation', () => {
         expect((computed.guard.value as Group).lastFormationOutcome).toBe(null);
     });
 
-    it('treats an absent policy as the optimistic preset', () => {
-        // optimistic is any-member initiated, so a plain member may command.
+    it('fails closed when a current group has no lifecycle policy row', () => {
         const computed = computeGroupMutation({
             command: transitionCommand('planGroupLayout'),
             read: createGroupAuthorityRead({ lifecycleState: 'forming', formationEpoch: 0 }, { policy: 'absent' }),
             facts: createGroupAuthorityFacts()
         });
-        expect(computed.outcome).toBe('write');
+        expect(computed).toMatchObject({
+            outcome: 'rejected',
+            receipt: { rejection: 'Group lifecycle policy is unreadable: Group lifecycle policy is missing' }
+        });
     });
 });
 

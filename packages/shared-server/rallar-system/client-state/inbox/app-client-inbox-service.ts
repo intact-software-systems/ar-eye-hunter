@@ -1,6 +1,4 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
@@ -15,8 +13,13 @@ import type { AppInboxQueueEntryWriter } from '../../app-inbox/client/app-inbox-
 import { createAppInboxClientRuntime } from '../../app-inbox/client/create-app-inbox-client-runtime.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/handler/app-inbox-handler-registry.ts';
 import { createAppInboxHandlerRuntime } from '../../app-inbox/handler/app-inbox-handler-runtime.ts';
+import { writeAppOutboxInsert } from '../../app-outbox/app-outbox-insert.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
-import type { ClientStateService, ClientStateWritten } from '../client-state-service-contracts.ts';
+import type {
+    ClientExpiredSessionPageInput,
+    ClientStateService,
+    ClientStateWritten
+} from '../client-state-service-contracts.ts';
 import {
     toClientMutationIssuedSessionAuthority,
     toClientMutationSystemAuthority
@@ -30,7 +33,6 @@ import {
     CLIENT_STATE_INBOX_REGISTRATION_TYPES,
     type ClientAuthorisedWsSessionConnectAppInboxPayload,
     type ClientAuthorisedWsSessionDisconnectAppInboxPayload,
-    type ClientExpiredSessionsAppInboxPayload,
     type ClientInstanceUpsertAppInboxPayload,
     type ClientPrincipalUpsertAppInboxPayload,
     type ClientSessionConnectAppInboxPayload,
@@ -122,8 +124,13 @@ export class AppClientInboxService {
             mutationService: dependencies.clientStateService,
             sessionGenerationLifecycle: dependencies.clientStateService.sessionGenerationLifecycle,
             expiryCandidates: dependencies.clientStateService,
+            expiryContinuationWriter: {
+                write: writeAppOutboxInsert
+            },
             snapshotObserver: dependencies.clientStateService,
             transactionWriter: handlerRuntime.transactionWriter,
+            mutationTiming: { sink: config.timing, serviceId: config.serviceId },
+            wakeQueue: config.wakeOwningQueue,
             serviceId: config.serviceId
         });
         this.registerClientStateMessages();
@@ -135,7 +142,10 @@ export class AppClientInboxService {
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, ClientStateWritten>> {
         const ingress = readAuthenticatedClientMutationIngress(enqueue);
-        validateIssuedClientMutationIngress(authority, ingress);
+        const ingressIssue = validateIssuedClientMutationIngress(authority, ingress, Date.now())[0];
+        if (ingressIssue !== undefined) {
+            throw ingressIssue.cause;
+        }
         const result = await this.commandClient.enqueueAndWaitForResult(
             {
                 ...enqueue,
@@ -181,16 +191,18 @@ export class AppClientInboxService {
     public async processExpiredSessions(
         atEpochMs: number = Date.now()
     ): Promise<Either<AppInboxFailure, readonly ClientStateWritten[]>> {
-        return await this.commandClient.enqueueReplacingWhenAndWaitForResult(
-            this.toExpiredSessionsEnqueue(atEpochMs),
-            (entry) => isCompletedOrFailed(entry.status),
+        return await this.commandClient.enqueueReplacingTerminalAndWaitForResult(
+            this.toExpiredSessionsEnqueue({ atEpochMs, afterKey: null }),
             decodeExpiredClientSessionsResult
         );
     }
 
     public async enqueueExpiredSessions(atEpochMs: number = Date.now()) {
         return await this.queueEntryWriter.enqueue(
-            this.toExpiredSessionsEnqueue(atEpochMs, `expire-client-sessions-${atEpochMs}`)
+            this.toExpiredSessionsEnqueue(
+                { atEpochMs, afterKey: null },
+                `expire-client-sessions-${atEpochMs}`
+            )
         );
     }
 
@@ -328,12 +340,12 @@ export class AppClientInboxService {
             type: AppInboxType.CLIENT_EXPIRED_SESSIONS,
             decodeCommand: decodeClientExpiredSessionsAppInboxPayload,
             encodeResult: (result) => encodeAppInboxResult(result, 'Client expiry AppInbox result'),
-            handle: async (input, context) => await this.handler.processExpiredSessionCommands(context, input.atEpochMs)
+            handle: async (input, context) => await this.handler.processExpiredSessionCommands(context, input)
         });
     }
 
     private toExpiredSessionsEnqueue(
-        atEpochMs: number,
+        input: ClientExpiredSessionPageInput,
         resourceId: string = 'expire-client-sessions'
     ): AppInboxEnqueueInput {
         return {
@@ -344,7 +356,7 @@ export class AppClientInboxService {
             senderId: this.serviceId,
             authority: toClientMutationSystemAuthority(this.serviceId),
             data: encodeAppInboxCommand(
-                { atEpochMs } satisfies ClientExpiredSessionsAppInboxPayload,
+                input,
                 'Expired client sessions AppInbox command'
             )
         };

@@ -229,8 +229,7 @@ describe('auth mutation compute operation matrix', () => {
             const computed = computeAuthMutation({
                 command,
                 read,
-                facts: { kind: command.kind },
-                serviceId: 'auth-service'
+                facts: { kind: command.kind, serviceId: 'auth-service' }
             });
 
             expect(computed.command).toBe(command);
@@ -245,7 +244,8 @@ describe('auth mutation compute operation matrix', () => {
                 'agentTickets',
                 'logoutOutbox',
                 'result',
-                'outcome'
+                'outcome',
+                'persistence'
             ]);
         }
     });
@@ -257,8 +257,7 @@ describe('auth mutation compute operation matrix', () => {
             const computed = computeAuthMutation({
                 command,
                 read,
-                facts: { kind: command.kind },
-                serviceId: 'auth-service'
+                facts: { kind: command.kind, serviceId: 'auth-service' }
             });
 
             expect(computed.outcome).toBe('replay');
@@ -274,16 +273,14 @@ describe('auth mutation compute rejections', () => {
             computeAuthMutation({
                 command: register.command,
                 read: operationMatrix[1].read,
-                facts: { kind: register.command.kind },
-                serviceId: 'auth-service'
+                facts: { kind: register.command.kind, serviceId: 'auth-service' }
             })
         ).toThrow('Auth command/read operation differs');
         expect(() =>
             computeAuthMutation({
                 command: register.command,
                 read: register.read,
-                facts: { kind: 'logout-session' },
-                serviceId: 'auth-service'
+                facts: { kind: 'logout-session', serviceId: 'auth-service' }
             })
         ).toThrow('Auth command/facts operation differs');
 
@@ -310,17 +307,19 @@ describe('auth mutation compute rejections', () => {
     });
 });
 
-function catchComputeRejection(command: AuthMutationCommand, read: AuthMutationRead): unknown {
+function catchComputeRejection(command: AuthMutationCommand, read: AuthMutationRead): Error {
     try {
         computeAuthMutation({
             command,
             read,
-            facts: { kind: command.kind },
-            serviceId: 'auth-service'
+            facts: { kind: command.kind, serviceId: 'auth-service' }
         });
     }
     catch (error) {
-        return error;
+        if (error instanceof Error) {
+            return error;
+        }
+        throw new TypeError('Auth compute rejected with a non-Error value');
     }
     throw new Error('Expected auth compute rejection');
 }

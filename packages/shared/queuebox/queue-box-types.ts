@@ -367,28 +367,15 @@ export interface DequeueResourceEntryRepository {
 export interface EnqueueResourceEntryController {
     enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry>;
 
-    enqueueOrUpdate(
-        resourceEntry: ResourceEntry,
-        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined
-    ): Promise<EnqueueOrUpdateResult>;
-
-    enqueueIf(
-        resourceEntry: ResourceEntry,
-        enqueueIt: (existing: ResourceEntry) => boolean
-    ): Promise<ResourceEntry | undefined>;
+    replaceIfObserved(
+        expected: ResourceEntry,
+        replacement: ResourceEntry
+    ): Promise<ResourceEntry | null>;
 
     enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined>;
 
     cleanup(): void;
 }
-
-export type EnqueueOrUpdateAction = 'inserted' | 'updated' | 'unchanged';
-
-export type EnqueueOrUpdateResult = Readonly<{
-    action: EnqueueOrUpdateAction;
-    entry: ResourceEntry;
-    previous?: ResourceEntry;
-}>;
 
 export interface EnqueueBoxResourceEntryRepository extends EnqueueResourceEntryController {
     findByKey(key: Key): Promise<ResourceEntry | undefined>;

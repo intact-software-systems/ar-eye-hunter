@@ -1,13 +1,10 @@
-import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
-import { writeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/write-rtc-rtt-mutation.ts';
-import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-writer.ts';
+import { RTC_RTT_MUTATION_RETENTION_MS } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation-primitives.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
 
@@ -15,38 +12,6 @@ const RTT_COMMAND_HASH = `sha256:${'a'.repeat(64)}`;
 const OTHER_RTT_COMMAND_HASH = `sha256:${'b'.repeat(64)}`;
 
 describe('RTC RTT mutation phases', () => {
-    it('keeps phases explicit while AppInbox exclusively owns retries and transactions', () => {
-        const executeUrl = new URL(
-            '../../../../shared-server/rallar-system/rtc-rtt/mutation/execute-rtc-rtt-mutation.ts',
-            import.meta.url
-        );
-        const writeUrl = new URL(
-            '../../../../shared-server/rallar-system/rtc-rtt/mutation/write-rtc-rtt-mutation.ts',
-            import.meta.url
-        );
-
-        expect(existsSync(executeUrl)).toBe(true);
-        expect(existsSync(writeUrl)).toBe(true);
-        if (!existsSync(executeUrl) || !existsSync(writeUrl)) {
-            return;
-        }
-        const executeSource = readFileSync(executeUrl, 'utf8');
-        const phases = [
-            executeSource.indexOf('await readRtcRttMutation('),
-            executeSource.indexOf('computeRtcRttMutation('),
-            executeSource.indexOf('validateRtcRttMutation('),
-            executeSource.indexOf('await writeRtcRttMutation(')
-        ];
-        expect(phases).toEqual([...new Set(phases)].toSorted((left, right) => left - right));
-        expect(phases[0]).toBeGreaterThanOrEqual(0);
-        expect(executeSource).not.toMatch(/\.begin\s*\(/);
-        expect(executeSource).not.toMatch(/waitForRuntimeStateWriteRetry|\bfor\s*\([^)]*attempt/);
-        expect(executeSource).not.toMatch(/\bsleep\??\s*:/);
-
-        const writeSource = readFileSync(writeUrl, 'utf8');
-        expect(writeSource).toMatch(/transaction:\s*PSqlSql/);
-        expect(writeSource).not.toMatch(/RuntimeStateOptimisticTransactionalRepositoryLike/);
-    });
     it('computes stale RTT rejection deterministically without mutating frozen reads', () => {
         const incoming = {
             sessionIdFrom: 'session-a',
@@ -217,6 +182,9 @@ describe('RTC RTT mutation phases', () => {
             'session-a',
             'session-b'
         ]);
+        expect(accepted.outboxWrites[0]?.entry.audit.expiryTs.epochMilliseconds).toBe(
+            accepted.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS
+        );
         const tampered = {
             ...accepted,
             endpointGuards: [...accepted.endpointGuards].reverse()
@@ -315,7 +283,7 @@ describe('RTC RTT mutation phases', () => {
         });
     });
 
-    it('rejects a malformed complete RTT write candidate before opening a transaction', async () => {
+    it('rejects a malformed complete RTT write candidate at the pure validation boundary', () => {
         const rtt = {
             sessionIdFrom: 'session-a',
             sessionIdTo: 'session-b',
@@ -324,7 +292,7 @@ describe('RTC RTT mutation phases', () => {
             version: 1
         };
         const group = rttGroupSnapshot(['session-a', 'session-b']);
-        const computed = computeRtcRttMutation({
+        const input = {
             command: {
                 rtt,
                 alSenderId: 'session-a',
@@ -346,7 +314,8 @@ describe('RTC RTT mutation phases', () => {
                 commandHash: RTT_COMMAND_HASH,
                 attemptCount: 1
             }
-        });
+        } as const;
+        const computed = computeRtcRttMutation(input);
         if (computed.outcome !== 'write') {
             throw new Error('Expected RTT write');
         }
@@ -356,18 +325,9 @@ describe('RTC RTT mutation phases', () => {
                 causalRevision?: unknown;
             }
         ).causalRevision;
-        const queries: string[] = [];
-        const transaction = createUnopenedTransactionSql(queries);
-
-        await expect(
-            writeRtcRttMutation({
-                transaction,
-                repositoryOptions: { ttlMs: 60_000, now: () => 1 },
-                computed: malformed,
-                outboxWriter: new RtcTopologyOutboxWriter({ recordWrite: () => undefined })
-            })
-        ).rejects.toThrow('Stored group snapshot has invalid keys');
-        expect(queries).toEqual([]);
+        expect(() => validateRtcRttMutation({ ...input, computed: malformed })).toThrow(
+            'RTC RTT mutation differs from canonical computation'
+        );
     });
 
     it('requires both RTT endpoint sessions to cover the full active interval at acceptance time', () => {
@@ -890,18 +850,4 @@ function rttGroupSnapshot(
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length
     };
-}
-
-function createUnopenedTransactionSql(queries: string[]): PSqlSql {
-    return Object.assign(
-        () => {
-            queries.push('query');
-            throw new Error('RTT write must not query the transaction');
-        },
-        {
-            begin: () => {
-                throw new Error('RTT write must not open a transaction');
-            }
-        }
-    );
 }

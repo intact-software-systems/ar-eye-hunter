@@ -26,7 +26,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { createService } from './group-presence-test-runtime.ts';
+import { createService, summaryReservationRead } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 const PLANNED_IDENTITY: GroupLayoutIdentity = { groupRevision: 1, presenceRevision: 1, version: 1, state: 'active' };
@@ -102,7 +102,7 @@ describe('group presence summary replan hold', () => {
             origin: 'commanded',
             previousEntry: null
         });
-        await seeded.queueBox.enqueue(commandedHead.entry);
+        await seeded.queueBox.enqueue(commandedHead.entryWrite.entry);
 
         const merged = await readComputedSummary(seeded);
 
@@ -110,7 +110,7 @@ describe('group presence summary replan hold', () => {
         if (merged.topologyReplan.decision !== 'enqueue') {
             throw new Error('unreachable');
         }
-        expect(merged.topologyReplan.work.expectedEntry?.key).toEqual(commandedHead.entry.key);
+        expect(merged.topologyReplan.work.expectedEntry?.key).toEqual(commandedHead.entryWrite.entry.key);
     });
 });
 
@@ -201,9 +201,13 @@ async function readComputedSummary(seeded: SeededScenario): Promise<GroupPresenc
         now: () => BASE_EPOCH_MS + 1_000,
         serviceId: 'summary-worker'
     });
-    const read = await work.read(seeded.command);
+    const read = await work.read(
+        seeded.command,
+        summaryReservationRead(seeded.command.commandId),
+        BASE_EPOCH_MS + 1_000
+    );
     const computed = work.compute(seeded.command, read);
-    work.validate(seeded.command, read, computed);
+    expect(work.validate(seeded.command, read, computed)).toEqual([]);
     return computed;
 }
 

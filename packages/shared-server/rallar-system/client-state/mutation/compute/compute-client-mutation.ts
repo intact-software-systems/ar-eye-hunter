@@ -4,10 +4,10 @@ import type {
     ClientMutationRead
 } from '../client-mutation-contracts.ts';
 import {
-    validateClientMutationCommand,
-    validateClientMutationFacts
-} from '../command-validation/validate-client-mutation-command.ts';
-import { validateClientMutationRead } from '../result-validation/validate-client-mutation-read.ts';
+    assertClientMutationCommand,
+    assertClientMutationFacts
+} from '../command-validation/assert-client-mutation-command.ts';
+import { assertClientMutationRead } from '../result-validation/assert-client-mutation-read.ts';
 import { computeClientInstanceMutation } from './compute-client-instance-mutation.ts';
 import { requireClientMutationReadSnapshot } from './compute-client-mutation-result.ts';
 import { computeClientPrincipalMutation } from './compute-client-principal-mutation.ts';
@@ -20,9 +20,9 @@ export function computeClientMutation(
     input: Readonly<{ command: ClientMutationCommand; read: ClientMutationRead; }>
 ): ClientMutationComputed {
     const { command, read } = input;
-    validateClientMutationCommand(command);
-    validateClientMutationFacts(command.facts);
-    validateClientMutationRead(command, read);
+    assertClientMutationCommand(command);
+    assertClientMutationFacts(command.facts);
+    assertClientMutationRead(command, read);
     if (read.idempotency) {
         return read.idempotency.value.commandHash === command.facts.commandHash
             ? {

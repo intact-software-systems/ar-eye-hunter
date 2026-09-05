@@ -17,6 +17,7 @@ import {
     RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE,
     RtcTopologySnapshotRepository
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { computeRuntimeStateGuardedBatchWrite } from '@shared-server/runtime-state/guarded-batch/compute-runtime-state-guarded-batch-write.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -51,28 +52,27 @@ describe('Postgres runtime-state guarded batches', () => {
             const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
             const repository = new PSqlRuntimeStateRepository(sql);
             const namespace = `guarded-batch-${crypto.randomUUID()}`;
+            const computed = computeRuntimeStateGuardedBatchWrite({
+                guard: {
+                    operation: 'insert',
+                    namespace,
+                    key: 'guard',
+                    value: 'guard-value',
+                    expireAtTimestamp: FUTURE_MS
+                },
+                effects: [{
+                    effectId: 'insert-effect',
+                    operation: 'insert',
+                    namespace,
+                    key: 'effect',
+                    value: 'effect-value',
+                    expireAtTimestamp: FUTURE_MS
+                }]
+            });
 
             try {
                 const result = await repository.begin(async (transactionRepository) => {
-                    return await transactionRepository.executeGuardedBatch({
-                        guard: {
-                            operation: 'insert',
-                            namespace,
-                            key: 'guard',
-                            value: 'guard-value',
-                            expireAtTimestamp: FUTURE_MS
-                        },
-                        effects: [
-                            {
-                                effectId: 'insert-effect',
-                                operation: 'insert',
-                                namespace,
-                                key: 'effect',
-                                value: 'effect-value',
-                                expireAtTimestamp: FUTURE_MS
-                            }
-                        ]
-                    });
+                    return await transactionRepository.writeGuardedBatch(computed);
                 });
 
                 expect(result).toEqual({
@@ -126,28 +126,30 @@ describe('Postgres runtime-state guarded batches', () => {
             if (computed.outcome !== 'write' || computed.guard.kind !== 'group') {
                 throw new Error('Reset must produce a group guarded write');
             }
-            const [outboxEntry] = computed.outboxEntries;
-            if (computed.outboxEntries.length !== 1 || outboxEntry === undefined || computed.idempotency === null) {
+            const [outboxWrite] = computed.outboxWrites;
+            if (computed.outboxWrites.length !== 1 || outboxWrite === undefined || computed.idempotency === null) {
                 throw new Error('Reset must produce an idempotency receipt and presence-summary outbox entry');
             }
+            const outboxEntry = outboxWrite.entry;
             const mismatchingOutboxEntry = {
                 ...outboxEntry,
                 resource: `${outboxEntry.resource}mismatch`
             };
+            const seedWrite = computeRuntimeStateGuardedBatchWrite({
+                guard: groupStateInsertGroupDescriptor(read.group!.value),
+                effects: [{
+                    effectId: 'reset-rollback-seed',
+                    operation: 'insert',
+                    namespace: seedNamespace,
+                    key: 'seed',
+                    value: 'seed',
+                    expireAtTimestamp: FUTURE_MS
+                }]
+            });
 
             try {
                 await runtime.begin(async (transactionRuntime) => {
-                    await transactionRuntime.executeGuardedBatch({
-                        guard: groupStateInsertGroupDescriptor(read.group!.value),
-                        effects: [{
-                            effectId: 'reset-rollback-seed',
-                            operation: 'insert',
-                            namespace: seedNamespace,
-                            key: 'seed',
-                            value: 'seed',
-                            expireAtTimestamp: FUTURE_MS
-                        }]
-                    });
+                    await transactionRuntime.writeGuardedBatch(seedWrite);
                     await new RtcTopologySnapshotRepository(transactionRuntime).commitSnapshotGuard(snapshot, null);
                     await new RtcTopologySnapshotRepository(
                         transactionRuntime,

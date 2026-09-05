@@ -110,7 +110,8 @@ export function createRallarMiddlewareTestRuntime(
                     resourceInboxRepository: inbox,
                     resourceInboxResultsRepository: results,
                     database,
-                    groupStateService
+                    groupStateService,
+                    resultReader: groupsRepository
                 },
                 {
                     serviceId: TEST_SERVICE_ID,

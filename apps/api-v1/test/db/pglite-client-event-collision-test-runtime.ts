@@ -6,6 +6,8 @@ import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-sy
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { toUpsertClientInstanceMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-instance-mutation-input.ts';
 import { toUpsertClientPrincipalMutationInput } from '@shared-server/rallar-system/client-state/mutation/command-input/to-upsert-client-principal-mutation-input.ts';
+import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
@@ -177,8 +179,8 @@ export async function createPGliteClientEventCollisionFixture(
             toClientMutationIssuedSessionAuthority(authority, scope, operation)
         );
         const read = await service.read(command);
-        const computed = service.compute(command, read);
-        service.validate(command, read, computed);
+        const computed = computeClientMutation({ command, read });
+        validateClientMutation({ command, read, computed });
         assert.equal(computed.outcome, 'write');
         if (computed.outcome !== 'write') {
             throw new Error('Expected applied client write');

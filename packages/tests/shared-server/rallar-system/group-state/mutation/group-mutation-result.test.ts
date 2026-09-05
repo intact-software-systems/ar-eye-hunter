@@ -1,3 +1,4 @@
+import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import type {
     GroupMutationCommand,
     GroupMutationFacts,
@@ -5,8 +6,9 @@ import type {
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
-import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/assert-group-mutation-result.ts';
-import { assertGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation.ts';
+import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation-result.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
+import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type {
     AuditStamp,
@@ -109,6 +111,20 @@ describe('group mutation receipt causal invariants', () => {
     const groupRef = runtimeGroupRef;
 
     describe('group mutation rejected-result persistence', () => {
+        it('persists the resolved current lifecycle policy when create omits a preset', async () => {
+            const runtime = new FakeRuntimeStateRepository();
+            await seedOpenGroup(runtime, 'default-policy-room');
+
+            expect(
+                await new GroupLifecyclePolicyRepository(runtime).readPolicy(
+                    groupRef('default-policy-room')
+                )
+            ).toMatchObject({
+                status: 'present',
+                policy: { admission: { mode: 'open' } }
+            });
+        });
+
         it('does not persist a rejected receipt, event, or outbox effect', async () => {
             const runtime = new FakeRuntimeStateRepository();
             await seedOpenGroup(runtime, 'ephemeral-rejection-room');
@@ -163,14 +179,12 @@ describe('group mutation receipt causal invariants', () => {
                     causalRevision: { groupRevision: 1 }
                 }
             });
-            expect(() =>
-                assertGroupMutation({
-                    command,
-                    read: fencedRead,
-                    facts,
-                    computed
-                })
-            ).not.toThrow();
+            expect(validateGroupMutation({
+                command,
+                read: fencedRead,
+                facts,
+                computed
+            })).toEqual([]);
         });
 
         it('rejects malformed computed guards, receipts, and outbox projections', () => {
@@ -195,16 +209,19 @@ describe('group mutation receipt causal invariants', () => {
                 },
                 {
                     ...computed,
-                    outboxEntries: []
+                    outboxWrites: []
                 },
                 {
                     ...computed,
-                    outboxEntries: [
+                    outboxWrites: [
                         {
-                            ...computed.outboxEntries[0],
-                            key: {
-                                ...computed.outboxEntries[0].key,
-                                resourceId: 'non-canonical-summary-entry'
+                            ...computed.outboxWrites[0],
+                            entry: {
+                                ...computed.outboxWrites[0]!.entry,
+                                key: {
+                                    ...computed.outboxWrites[0]!.entry.key,
+                                    resourceId: 'non-canonical-summary-entry'
+                                }
                             }
                         }
                     ]
@@ -212,14 +229,14 @@ describe('group mutation receipt causal invariants', () => {
             ] as const;
 
             for (const malformed of cases) {
-                expect(() =>
-                    assertGroupMutation({
+                expect(
+                    validateGroupMutation({
                         command,
                         read,
                         facts,
                         computed: malformed as never
                     })
-                ).toThrow(/scope|revision|snapshot|effect|outbox|receipt/i);
+                ).not.toEqual([]);
             }
         });
 
@@ -238,8 +255,8 @@ describe('group mutation receipt causal invariants', () => {
             const consistentlyWrongEvent = {
                 ...computed,
                 event: sessionEvent,
-                outboxEntries: [
-                    computeGroupPresenceSummaryEntry(
+                outboxWrites: [
+                    computeAppOutboxInsert(computeGroupPresenceSummaryEntry(
                         {
                             effectKind: 'group-presence-summary',
                             aggregateRef: command.aggregateRef,
@@ -250,7 +267,7 @@ describe('group mutation receipt causal invariants', () => {
                             event: sessionEvent
                         },
                         facts.serviceId
-                    )
+                    ))
                 ]
             };
             const injectedSummary: GroupPresenceSummary = {
@@ -278,18 +295,15 @@ describe('group mutation receipt causal invariants', () => {
                     ['dependent admission', wrongDependent]
                 ] as const
             ) {
-                expect
-                    .soft(
-                        () =>
-                            assertGroupMutation({
-                                command,
-                                read,
-                                facts,
-                                computed: malformed as never
-                            }),
-                        label
-                    )
-                    .toThrow(/canonical|deterministic|projection|operation|unexpected key/i);
+                expect.soft(
+                    validateGroupMutation({
+                        command,
+                        read,
+                        facts,
+                        computed: malformed as never
+                    }),
+                    label
+                ).not.toEqual([]);
             }
         });
     });
@@ -398,6 +412,7 @@ function createMutationFacts(): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
+        capacity: { defaultMaxMembers: null },
         authenticatedAuthority: {
             principalId: 'alice',
             sessionId: 'alice-session'

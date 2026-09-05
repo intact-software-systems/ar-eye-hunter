@@ -24,8 +24,7 @@ const EXACT_RESOLVED_HANDOFFS = new Set([
     'packages/shared-server/rallar-system/app-inbox/client/app-inbox-command-client.ts',
     'packages/shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts',
     'packages/shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts',
-    'packages/shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts',
-    'packages/shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts'
+    'packages/shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts'
 ]);
 
 interface TraversalInput {

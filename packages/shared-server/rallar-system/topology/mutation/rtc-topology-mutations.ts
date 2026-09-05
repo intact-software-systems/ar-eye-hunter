@@ -1,6 +1,7 @@
 import { type RtcTopologyPublicationWorkClaim } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import { validateComputedProjection } from '../../computed-data-validation.ts';
 import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { decodeRtcTopologySnapshot } from '../persistence/decode-rtc-topology-snapshot.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../persistence/rtc-topology-errors.ts';
@@ -8,6 +9,10 @@ import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-e
 import { compareTopologyTuple, decideTopologySnapshot } from '../persistence/rtc-topology-snapshot-contract.ts';
 import type { RtcTopologyPublication } from '../publication/rtc-topology-publication.ts';
 import { validateRtcTopologyPublication } from '../publication/validate-rtc-topology-publication.ts';
+import {
+    computeRtcTopologyPersistence,
+    type RtcTopologyPersistenceComputed
+} from './compute-rtc-topology-persistence.ts';
 import { computeStaleTopologyPublication } from './rtc-topology-stale-publication.ts';
 import type { RtcTopologyStaleMutationComputed } from './rtc-topology-stale-publication.ts';
 
@@ -51,6 +56,7 @@ export type RtcTopologyMutationComputed =
         & Readonly<{
             outcome: 'write';
             observation: 'inserted' | 'advanced' | 'duplicate';
+            persistence: RtcTopologyPersistenceComputed;
             snapshotGuard: Readonly<{
                 expectedRevision: number | null;
                 candidate: RallarOverlayTopologySnapshot;
@@ -69,6 +75,12 @@ export type RtcTopologyMutationComputed =
             }>
         )
     );
+export interface RtcTopologyMutationValidationIssue {
+    readonly path: string;
+    readonly message: string;
+    readonly cause: Error;
+}
+
 export function computeTopologyMutation(
     input: RtcTopologyMutationInput
 ): RtcTopologyMutationComputed {
@@ -89,7 +101,11 @@ export function computeTopologyMutation(
         }
         const storedPublication = input.read.publicationClaim.publication;
         const storedSnapshot = input.read.snapshot.value;
-        const publicationSnapshot = assertPublicationSelfConsistent(storedPublication);
+        const publicationValidation = validatePublicationSelfConsistent(storedPublication);
+        if ('issue' in publicationValidation) {
+            throw publicationValidation.issue.cause;
+        }
+        const publicationSnapshot = publicationValidation.snapshot;
         const relation = compareTopologyTuple(publicationSnapshot, storedSnapshot);
         if (relation === 'dominates') {
             return {
@@ -134,10 +150,16 @@ export function computeTopologyMutation(
             reason: 'incomparable-causal-revision'
         };
     }
-    validatePublicationExpiryFact(input.publication, input.facts);
+    assertPublicationExpiryFact(input.publication, input.facts);
     const write = {
         outcome: 'write',
         observation,
+        persistence: computeRtcTopologyPersistence({
+            snapshot: input.candidate,
+            expectedRevision: input.read.snapshot?.entry.revision ?? null,
+            publication: input.publication,
+            ...input.facts
+        }),
         snapshotGuard: {
             expectedRevision: input.read.snapshot?.entry.revision ?? null,
             candidate: input.candidate
@@ -166,37 +188,43 @@ export function computeTopologyMutation(
     };
 }
 
-function assertPublicationSelfConsistent(
+function validatePublicationSelfConsistent(
     publication: RtcTopologyPublication
-): RallarOverlayTopologySnapshot {
-    validateRtcTopologyPublication(publication, publication.groupRef);
-    let payload: RallarOverlayTopologySnapshot;
+): Readonly<{ snapshot: RallarOverlayTopologySnapshot; }> | Readonly<{ issue: RtcTopologyMutationValidationIssue; }> {
     try {
-        payload = decodeRtcTopologySnapshot(
+        validateRtcTopologyPublication(publication, publication.groupRef);
+        const snapshot = decodeRtcTopologySnapshot(
             decodeJsonWireValue(
                 JSON.parse(publication.message.payload.resource),
                 'RTC topology publication snapshot'
             ),
             publication.groupRef
         );
+        if (
+            !snapshot.groupRef ||
+            !sameGroupRef(publication.groupRef, snapshot.groupRef) ||
+            !rtcTopologySemanticEqual(
+                publication.sourceGroupStateCausalRevision,
+                snapshot.sourceGroupStateCausalRevision
+            ) ||
+            publication.overlayVersion !== snapshot.version ||
+            !rtcTopologySemanticEqual(publication.recipientSessionIds, snapshot.activeSessionIds)
+        ) {
+            const message = 'RTC topology publication winner is internally inconsistent';
+            return {
+                issue: { path: 'publication', message, cause: new TypeError(message) }
+            };
+        }
+        return { snapshot };
     }
-    catch {
-        throw new TypeError('RTC topology publication payload snapshot is invalid');
+    catch (error) {
+        const cause = error instanceof Error
+            ? error
+            : new TypeError('RTC topology publication payload snapshot is invalid');
+        return {
+            issue: { path: 'publication', message: cause.message, cause }
+        };
     }
-    const snapshot = payload;
-    if (
-        !snapshot.groupRef ||
-        !sameGroupRef(publication.groupRef, snapshot.groupRef) ||
-        !rtcTopologySemanticEqual(
-            publication.sourceGroupStateCausalRevision,
-            snapshot.sourceGroupStateCausalRevision
-        ) ||
-        publication.overlayVersion !== snapshot.version ||
-        !rtcTopologySemanticEqual(publication.recipientSessionIds, snapshot.activeSessionIds)
-    ) {
-        throw new TypeError('RTC topology publication winner is internally inconsistent');
-    }
-    return snapshot;
 }
 
 export function validateTopologyMutation(
@@ -205,13 +233,13 @@ export function validateTopologyMutation(
         & Readonly<{
             computed: RtcTopologyMutationComputed;
         }>
-): void {
+): readonly RtcTopologyMutationValidationIssue[] {
     const recomputed = computeTopologyMutation(input);
-    if (!rtcTopologySemanticEqual(recomputed, input.computed)) {
-        throw new TypeError('RTC topology mutation differs from canonical computation');
-    }
+    const issues: RtcTopologyMutationValidationIssue[] = [
+        ...validateComputedProjection(recomputed, input.computed, 'computed')
+    ];
     if (input.candidate === null) {
-        return;
+        return issues;
     }
     if (
         input.publication &&
@@ -222,14 +250,20 @@ export function validateTopologyMutation(
             ) ||
             input.publication.overlayVersion !== input.candidate.version)
     ) {
-        throw new TypeError('RTC topology publication differs from candidate identity');
+        const message = 'RTC topology publication differs from candidate identity';
+        issues.push({ path: 'publication', message, cause: new TypeError(message) });
     }
     if (input.publication && ['write', 'publish-superseded'].includes(input.computed.outcome)) {
-        const publicationSnapshot = assertPublicationSelfConsistent(input.publication);
-        if (!rtcTopologySemanticEqual(publicationSnapshot, input.candidate)) {
-            throw new TypeError('RTC topology publication payload differs from candidate');
+        const publicationValidation = validatePublicationSelfConsistent(input.publication);
+        if ('issue' in publicationValidation) {
+            issues.push(publicationValidation.issue);
+        }
+        else if (!rtcTopologySemanticEqual(publicationValidation.snapshot, input.candidate)) {
+            const message = 'RTC topology publication payload differs from candidate';
+            issues.push({ path: 'publication.message.payload', message, cause: new TypeError(message) });
         }
     }
+    return issues;
 }
 
 function sameGroupRef(
@@ -243,7 +277,7 @@ function sameGroupRef(
     );
 }
 
-function validatePublicationExpiryFact(
+function assertPublicationExpiryFact(
     publication: RtcTopologyPublication | null,
     facts: RtcTopologyMutationFacts
 ): void {

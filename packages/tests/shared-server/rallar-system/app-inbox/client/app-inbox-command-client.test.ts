@@ -27,7 +27,7 @@ describe('AppInboxCommandClient', () => {
                             enqueue,
                             'server-12345678'
                         ),
-                    enqueueReplacingWhen: async () => entry.key
+                    enqueueReplacingTerminal: async () => entry.key
                 },
                 resultWaiter: {
                     waitForResult: async <Result>(

@@ -217,6 +217,13 @@ function executeResourceInboxRead(input: ResourceInboxQueryExecution): PSqlRows 
 
 function executeResourceInboxUpdate(input: ResourceInboxQueryExecution): PSqlRows {
     if (
+        input.query.includes('set ri_resource =') &&
+        input.query.includes('where ri_row_id =') &&
+        input.query.includes('returning *')
+    ) {
+        return executeObservedReplacement(input);
+    }
+    if (
         input.query.includes('set ri_status = , end_ts') &&
         input.query.includes('returning *')
     ) {
@@ -235,6 +242,62 @@ function executeResourceInboxUpdate(input: ResourceInboxQueryExecution): PSqlRow
         return executeReservationUpdate(input);
     }
     throw new Error(`Unhandled resource inbox update in test harness: ${input.query}`);
+}
+
+function executeObservedReplacement(input: ResourceInboxQueryExecution): PSqlRows {
+    const replacement = {
+        resource: requireStringParameter(input.values[0], 'replacement resource'),
+        typeId: requireStringParameter(input.values[1], 'replacement type id'),
+        status: requireStringParameter(input.values[2], 'replacement status'),
+        systemDate: requireStringParameter(input.values[3], 'replacement system date'),
+        createdBy: requireStringParameter(input.values[4], 'replacement creator'),
+        createdTs: toStoredResourceInboxTimestamp(input.values[5]),
+        expiryTs: toStoredResourceInboxTimestamp(input.values[6]),
+        startTs: toOptionalString(input.values[7]),
+        endTs: toOptionalString(input.values[8]),
+        nextTs: toOptionalString(input.values[9]),
+        attempts: BigInt(requireIntegerParameter(input.values[10], 'replacement attempts'))
+    };
+    const expectedRowId = requireBigIntParameter(input.values[11], 'observed row id');
+    const topicId = requireStringParameter(input.values[12], 'observed topic id');
+    const resourceId = requireStringParameter(input.values[13], 'observed resource id');
+    const contextId = requireStringParameter(input.values[14], 'observed context id');
+    const row = input.state.rows.get(`${contextId}::${topicId}::${resourceId}`);
+    if (
+        !row ||
+        isExpired(row.expire_ts) ||
+        row.ri_row_id !== expectedRowId ||
+        row.ri_type_id !== input.values[15] ||
+        row.ri_resource !== input.values[16] ||
+        row.ri_status !== input.values[17] ||
+        row.system_date !== input.values[18] ||
+        row.created_by !== input.values[19] ||
+        row.created_ts !== toStoredResourceInboxTimestamp(input.values[20]) ||
+        row.expire_ts !== toStoredResourceInboxTimestamp(input.values[21]) ||
+        row.start_ts !== toOptionalString(input.values[22]) ||
+        row.end_ts !== toOptionalString(input.values[23]) ||
+        row.next_ts !== toOptionalString(input.values[24]) ||
+        row.ri_attempts !== BigInt(requireIntegerParameter(input.values[25], 'observed attempts'))
+    ) {
+        return [];
+    }
+
+    const updated: ResourceInboxRow = {
+        ...row,
+        ri_resource: replacement.resource,
+        ri_type_id: replacement.typeId,
+        ri_status: replacement.status,
+        system_date: replacement.systemDate,
+        created_by: replacement.createdBy,
+        created_ts: replacement.createdTs,
+        expire_ts: replacement.expiryTs,
+        start_ts: replacement.startTs,
+        end_ts: replacement.endTs,
+        next_ts: replacement.nextTs,
+        ri_attempts: replacement.attempts
+    };
+    input.state.rows.set(toCompositeKey(updated), updated);
+    return [cloneRow(updated)];
 }
 
 function executeRetryUpdate(input: ResourceInboxQueryExecution): PSqlRows {
@@ -425,6 +488,13 @@ function requireStringParameter(value: PSqlParameter, label: string): string {
 function requireIntegerParameter(value: PSqlParameter, label: string): number {
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
         throw new TypeError(`${label} must be a non-negative safe integer`);
+    }
+    return value;
+}
+
+function requireBigIntParameter(value: PSqlParameter, label: string): bigint {
+    if (typeof value !== 'bigint' || value < 1n) {
+        throw new TypeError(`${label} must be a positive bigint`);
     }
     return value;
 }

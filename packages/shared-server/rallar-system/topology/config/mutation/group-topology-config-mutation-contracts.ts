@@ -7,22 +7,26 @@ import type {
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
+import type { AppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import type * as persistence from '../../../group-state/persistence/group-state-persistence-contracts.ts';
-import type { ComputedRtcTopologyOutbox } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { GroupTopologyServerOptions } from '../group-topology-config.ts';
 
-export type GroupTopologyConfigMutationCommand = Readonly<{
-    operation: GroupTopologyConfigMutationOperation;
-    aggregateRef: GroupRef;
-    commandId: string;
-    requestId: string | null;
-    input: Readonly<{
-        config: GroupTopologyConfigPatch | null;
-        updatedByPrincipalId: string;
-        ttlMs: number | null;
-        expiresAtEpochMs: number | null;
-    }>;
-}>;
+export interface GroupTopologyConfigMutationCommandInput {
+    readonly config: GroupTopologyConfigPatch | null;
+    readonly updatedByPrincipalId: string;
+    readonly ttlMs: number | null;
+    readonly expiresAtEpochMs: number | null;
+}
+
+export interface GroupTopologyConfigMutationCommand {
+    readonly operation: GroupTopologyConfigMutationOperation;
+    readonly aggregateRef: GroupRef;
+    readonly commandId: string;
+    readonly requestId: string | null;
+    readonly commandHash: string;
+    readonly capturedAtEpochMs: number;
+    readonly input: GroupTopologyConfigMutationCommandInput;
+}
 
 export interface GroupTopologyConfigMutationRecord {
     readonly groupRef: GroupRef;
@@ -62,16 +66,18 @@ export interface GroupTopologyConfigMutationRead {
 
 type TopologyConfigInvariantGenerationEntry = RuntimeStateEntryValue<GroupTopologyConfigInvariantGeneration>;
 
-export interface GroupTopologyConfigMutationStableFacts {
-    readonly requestedAtEpochMs: number;
-    readonly commandHash: string;
+export interface GroupTopologyConfigMutationFacts {
     readonly resolvedOverrideExpiresAtEpochMs: number | null;
-}
-
-export interface GroupTopologyConfigMutationFacts extends GroupTopologyConfigMutationStableFacts {
     readonly isPlatformAdmin: boolean;
     readonly policyNowEpochMs: number;
     readonly attemptCount: number;
+}
+
+export interface TopologyConfigMutationValidationIssue {
+    readonly code: string;
+    readonly path: readonly (string | number)[];
+    readonly message: string;
+    readonly cause: Error;
 }
 
 export type TopologyConfigWriteGuard =
@@ -110,6 +116,31 @@ export interface TopologyConfigInvariantGenerationGuard {
     readonly value: GroupTopologyConfigInvariantGeneration;
 }
 
+export type TopologyConfigRuntimeWrite =
+    | Readonly<{
+        operation: 'insert';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedResultRevision: number;
+    }>
+    | Readonly<{
+        operation: 'update';
+        namespace: string;
+        key: string;
+        value: string;
+        expireAtIsoTimestamp: string;
+        expectedRevision: number;
+        expectedResultRevision: number;
+    }>
+    | Readonly<{
+        operation: 'delete';
+        namespace: string;
+        key: string;
+        expectedRevision: number;
+    }>;
+
 export interface GroupTopologyConfigMutationWriteComputed {
     readonly outcome: 'write';
     readonly groupAuthorityGuard: persistence.GroupStateAuthorityGuard;
@@ -118,7 +149,8 @@ export interface GroupTopologyConfigMutationWriteComputed {
     readonly generationGuard: TopologyConfigGenerationGuard;
     readonly receipt: GroupTopologyConfigMutationReceipt;
     readonly idempotency: GroupTopologyConfigMutationRecord | null;
-    readonly outbox: ComputedRtcTopologyOutbox;
+    readonly runtimeWrites: readonly TopologyConfigRuntimeWrite[];
+    readonly outboxWrite: AppOutboxInsert;
     readonly result: GroupTopologyConfigMutationAcceptedResult;
 }
 
@@ -129,6 +161,7 @@ export type GroupTopologyConfigMutationComputed =
         groupAuthorityGuard: persistence.GroupStateAuthorityGuard;
         receipt: GroupTopologyConfigMutationReceipt;
         idempotency: GroupTopologyConfigMutationRecord;
+        runtimeWrites: readonly TopologyConfigRuntimeWrite[];
         result: GroupTopologyConfigMutationAcceptedResult;
     }>
     | Readonly<{

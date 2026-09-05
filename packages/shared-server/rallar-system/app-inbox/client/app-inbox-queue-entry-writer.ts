@@ -1,10 +1,12 @@
 import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
-import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { isCompletedOrFailed, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 
 import { serializeCanonicalMutationCommand } from '../../protocol/json-wire-identity.ts';
 import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
+import type { AppInboxEntryRepository } from '../app-inbox-persistence-ports.ts';
 import { toPhysicalAppInboxQueueKey } from '../app-inbox-queue-entry.ts';
 import { assertMatchingAppInboxCommand } from '../assert-matching-app-inbox-command.ts';
 import { toLogicalAppInboxCommand } from '../logical-app-inbox-command.ts';
@@ -12,6 +14,7 @@ import { toLogicalAppInboxCommand } from '../logical-app-inbox-command.ts';
 export namespace AppInboxQueueEntryWriter {
     export interface Dependencies {
         readonly inboxQueueReader: InboxQueueReader;
+        readonly repository: AppInboxEntryRepository;
     }
 
     export interface Config {
@@ -23,6 +26,7 @@ export namespace AppInboxQueueEntryWriter {
 
 export class AppInboxQueueEntryWriter {
     private readonly inboxQueueReader: InboxQueueReader;
+    private readonly repository: AppInboxEntryRepository;
     private readonly serviceId: string;
     private readonly defaultTopicId: string;
     private readonly wakeOwningQueue: (() => void) | undefined;
@@ -32,6 +36,7 @@ export class AppInboxQueueEntryWriter {
         config: AppInboxQueueEntryWriter.Config
     ) {
         this.inboxQueueReader = dependencies.inboxQueueReader;
+        this.repository = dependencies.repository;
         this.serviceId = config.serviceId;
         this.defaultTopicId = config.defaultTopicId;
         this.wakeOwningQueue = config.wakeOwningQueue;
@@ -50,20 +55,25 @@ export class AppInboxQueueEntryWriter {
         return entry;
     }
 
-    async enqueueReplacingWhen(
-        enqueue: AppInboxEnqueueInput,
-        replaceExistingWhen: (entry: ResourceEntry) => boolean
-    ): Promise<Key> {
+    async enqueueReplacingTerminal(enqueue: AppInboxEnqueueInput): Promise<Key> {
         const key = this.toKey(enqueue);
-        let replacedExistingEntry = false;
-        const existing = await this.inboxQueueReader.enqueueIf(
+        const replacement = QueueBoxUtilities.toResourceEntryFromMsg(
             this.toMessage(key, enqueue),
-            (entry) => {
-                replacedExistingEntry = replaceExistingWhen(entry);
-                return replacedExistingEntry;
-            }
+            InboxQueueReader.INBOX_ENQUEUE_TYPE
         );
-        if (existing === undefined || replacedExistingEntry) {
+        const observed = await this.inboxQueueReader.inbox.getItem(key);
+        if (observed === undefined) {
+            const inserted = await this.repository.tryWriteIfAbsentOrReplaceExpired(replacement);
+            if (inserted !== null) {
+                this.wakeOwningQueue?.();
+            }
+            return key;
+        }
+        if (!isCompletedOrFailed(observed.status)) {
+            return key;
+        }
+        const replaced = await this.repository.replaceIfObserved(observed, replacement);
+        if (replaced !== null) {
             this.wakeOwningQueue?.();
         }
         return key;

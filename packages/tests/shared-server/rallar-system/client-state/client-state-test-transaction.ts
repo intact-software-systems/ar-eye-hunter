@@ -126,14 +126,14 @@ async function insertRuntimeState(input: ClientStateTestSqlInput): Promise<PSqlR
     const namespace = requireStringParameter(input.values[0], 'runtime-state namespace');
     const key = requireStringParameter(input.values[1], 'runtime-state key');
     const value = requireStringParameter(input.values[2], 'runtime-state value');
-    const expireAt = requireDateParameter(input.values[3], 'runtime-state expiry');
+    const expireAt = requireTimestampParameter(input.values[3], 'runtime-state expiry');
     const result = await input.runtime.insertIfAbsent(namespace, key, value, expireAt.getTime());
     return result.status === 'applied' ? [{ revision: result.revision }] : [];
 }
 
 async function updateRuntimeState(input: ClientStateTestSqlInput): Promise<PSqlRows> {
     const value = requireStringParameter(input.values[0], 'runtime-state value');
-    const expireAt = requireDateParameter(input.values[1], 'runtime-state expiry');
+    const expireAt = requireTimestampParameter(input.values[1], 'runtime-state expiry');
     const namespace = requireStringParameter(input.values[2], 'runtime-state namespace');
     const key = requireStringParameter(input.values[3], 'runtime-state key');
     const expectedRevision = requireIntegerParameter(
@@ -279,11 +279,16 @@ function requireStringParameter(value: PSqlParameter, label: string): string {
     return value;
 }
 
-function requireDateParameter(value: PSqlParameter, label: string): Date {
-    if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
+function requireTimestampParameter(value: PSqlParameter, label: string): Date {
+    const date = value instanceof Date
+        ? value
+        : typeof value === 'string'
+        ? new Date(value)
+        : null;
+    if (date === null || !Number.isFinite(date.getTime())) {
         throw new TypeError(`${label} must be a valid Date`);
     }
-    return value;
+    return date;
 }
 
 function requireIntegerParameter(value: PSqlParameter, label: string): number {
