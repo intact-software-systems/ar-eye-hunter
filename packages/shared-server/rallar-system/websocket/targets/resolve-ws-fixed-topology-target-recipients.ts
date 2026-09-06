@@ -1,5 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -16,7 +17,11 @@ export function resolveWsFixedTopologyTargetRecipients(
     ) {
         return undefined;
     }
-    if (targets.scope !== 'room' || !targets.groupRef || targets.groupRef.groupId !== message.route.contextId) {
+    if (targets.scope !== 'room' || !targets.groupRef) {
+        return [];
+    }
+    const expectedRoute = toAppQueueKey({ ...message.route, contextId: targets.groupRef.groupId });
+    if (expectedRoute.contextId !== message.route.contextId) {
         return [];
     }
     return targets.recipientPeerIds.flatMap((peerId) => {
