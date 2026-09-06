@@ -1,0 +1,389 @@
+{
+  "description": "No-browser API-v1 admission decision race: grant and decline are covered sequentially and never raced. Both are issued against the same pending principal at once behind a barrier. Neither group asserts a status, because which decision wins is the server's to decide -- and both answer 200, so the losing decision is a silent no-op its caller cannot distinguish from success. The seat is then required to hold exactly one outcome, active or left.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_ADMRACE_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-admrace"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_ADMRACE_WORKSPACE_ID",
+      "default": "workspace-admrace-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_ADMRACE_GROUP_ID",
+      "default": "admrace-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_ADMRACE_PASSWORD",
+      "default": "api-v1-admrace-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/admrace-register-owner-{runId}",
+        "body": {
+          "username": "admrace-owner-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "owner client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/admrace-login-owner-{runId}",
+        "body": {
+          "username": "admrace-owner-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "ownerClientId": "body.clientId",
+          "ownerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOwnerAuthHeader",
+      "type": "set",
+      "output": "ownerAuthHeader",
+      "secret": true,
+      "redactAs": "ownerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.ownerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerCandidate",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/admrace-register-candidate-{runId}",
+        "body": {
+          "username": "admrace-candidate-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "candidate client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginCandidate",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/admrace-login-candidate-{runId}",
+        "body": {
+          "username": "admrace-candidate-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "candidateClientId": "body.clientId",
+          "candidateAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveCandidateAuthHeader",
+      "type": "set",
+      "output": "candidateAuthHeader",
+      "secret": true,
+      "redactAs": "candidateAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.candidateAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheApprovalGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/admrace-create-group-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Admission decision race {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{ownerClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "admission": {
+              "mode": "manager-approval"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "theCandidateParksPending",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/admrace-candidate-joins-{runId}",
+        "headers": {
+          "Authorization": "{candidateAuthHeader}",
+          "x-client-id": "{candidateClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{candidateClientId}",
+              "status": "pending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "grantAndDeclineRaceForTheSameSeat",
+      "type": "parallel",
+      "request": {
+        "barrier": true,
+        "failFast": false,
+        "timeoutMs": 60000
+      },
+      "groups": [
+        {
+          "name": "granting",
+          "steps": [
+            {
+              "name": "ownerGrantsTheCandidate",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "POST",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/admissions/{candidateClientId}/grant/requests/admrace-grant-candidate-{runId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "body": {},
+                "outputs": {
+                  "grantStatus": "statusCode"
+                }
+              },
+              "expect": {
+                "anyOf": [
+                  {
+                    "status": 200
+                  },
+                  {
+                    "status": 400
+                  },
+                  {
+                    "status": 403
+                  },
+                  {
+                    "status": 409
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "declining",
+          "steps": [
+            {
+              "name": "ownerDeclinesTheCandidate",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "POST",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/admissions/{candidateClientId}/decline/requests/admrace-decline-candidate-{runId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "body": {},
+                "outputs": {
+                  "declineStatus": "statusCode"
+                }
+              },
+              "expect": {
+                "anyOf": [
+                  {
+                    "status": 200
+                  },
+                  {
+                    "status": 400
+                  },
+                  {
+                    "status": 403
+                  },
+                  {
+                    "status": 409
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "body": {
+          "groupCount": 2
+        }
+      }
+    },
+    {
+      "name": "theSeatSettledOnOneDecision",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "poll": {
+          "maxAttempts": 15,
+          "maxDurationMs": 10000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.3
+        },
+        "outputs": {
+          "candidateStatus": "body.members.1.status"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "bothDecisionsAnsweredSuccessfully",
+      "type": "assert",
+      "actual": {
+        "grant": "{grantStatus}",
+        "decline": "{declineStatus}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparison": "compatible-complete",
+        "body": {
+          "grant": 200,
+          "decline": 200
+        }
+      }
+    },
+    {
+      "name": "theSeatHoldsExactlyOneOutcome",
+      "type": "assert",
+      "actual": {
+        "status": "{candidateStatus}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "anyOf": [
+          {
+            "status": "active"
+          },
+          {
+            "status": "left"
+          }
+        ]
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}
