@@ -31,8 +31,8 @@ drives is `docs/rallar-api-reference.md` ("Room formation") as delivered by
 `2026-09-05-browser-lifecycle-command-surface-implementation-plan.md`; that plan's settled question
 Q8 is the mandate for this one.
 
-Status: **planned, not started; the five review questions were settled with the maintainer on
-2026-09-06.** Written 2026-09-06 against `main` @ `9b3bea7e0`, with the stale-epoch conflict PR #533
+Status: **slice 1 delivered on `codex/browser-acceptance-pins`; slice 2 not started. The five
+review questions were settled with the maintainer on 2026-09-06.** Written 2026-09-06 against `main` @ `9b3bea7e0`, with the stale-epoch conflict PR #533
 and the connect-fence recipe PR #535 open; nothing here depends on either. Amended the same day after
 a max-effort review of the first draft (the review moved the read side onto the runtime's evidence
 roots, corrected the RTC status source to `rtc.roomStatus`, rewrote the scenario windows, and took the
@@ -212,7 +212,7 @@ scenario yet. Slice 2 consumes it unchanged.
   `rallar.browser.formation.changed`, `rallar.browser.formation.layout`,
   `rallar.browser.formation.room-status`, `rallar.browser.formation.ready`.
 
-- [ ] **Step 1: Declare the contracts** in `black-box-rallar-operation-contracts.ts`:
+- [x] **Step 1: Declare the contracts** in `black-box-rallar-operation-contracts.ts`:
 
 ```ts
 export interface BlackBoxRallarFormationRoomInput {
@@ -276,7 +276,7 @@ absence with `exists`. `BlackBoxRallarHealthDiagnostics` gains
 room configured and the room is held in the state cache; absent otherwise, which is the same
 "no room" meaning `roomRef?` on that record already carries.
 
-- [ ] **Step 2: Write the failing decoder test** in `formation.test.ts`:
+- [x] **Step 2: Write the failing decoder test** in `formation.test.ts`:
 
 ```ts
 it.each([
@@ -307,9 +307,9 @@ it.each([
 `packages/shared/resilience/Either.ts`; read its accessor names (`isLeft`, `fold`, or the
 repository's equivalent) before writing the assertion.
 
-- [ ] **Step 3: Run the test** — `npx vitest run packages/tests/shared-test/rallar-browser-runtime/formation.test.ts`. Expected: FAIL, the decoder does not exist.
+- [x] **Step 3: Run the test** — `npx vitest run packages/tests/shared-test/rallar-browser-runtime/formation.test.ts`. Expected: FAIL, the decoder does not exist.
 
-- [ ] **Step 4: Write `decode-black-box-rallar-formation-input.ts`** following
+- [x] **Step 4: Write `decode-black-box-rallar-formation-input.ts`** following
       `decode-black-box-rallar-crdt-input.ts`: `decodeBlackBoxRallarFormationCommandInput(value: unknown)`
       returns `Either<readonly BlackBoxRallarFormationInputIssue[], BlackBoxRallarFormationCommandInput>`,
       checks `command` against the eight names, accepts an optional `landing` on `reconfigure`
@@ -319,7 +319,7 @@ repository's equivalent) before writing the assertion.
       `landing` and `layout` on the commands that do not take them, and decodes `layout` with the
       `GroupLayoutIdentity` shape check the connect fence already uses in `packages/shared/api`.
 
-- [ ] **Step 5: Write the failing controller test** (same file), driving a fake
+- [x] **Step 5: Write the failing controller test** (same file), driving a fake
       `RallarRoomFormation` (an object literal with `status`, the eight command methods, `onChange`,
       `onLayout`) and a fake RTC port (`roomStatus`, `waitForRoom`, `onStatus`) through
       `BlackBoxRallarFormationController`:
@@ -379,9 +379,9 @@ it('forwards changes, layout events and room status as diagnostics', () => {
 });
 ```
 
-- [ ] **Step 6: Run it** — expected: FAIL, `formation-controller.ts` does not exist.
+- [x] **Step 6: Run it** — expected: FAIL, `formation-controller.ts` does not exist.
 
-- [ ] **Step 7: Implement `formation-controller.ts`** as a class mirroring `director-controller.ts`:
+- [x] **Step 7: Implement `formation-controller.ts`** as a class mirroring `director-controller.ts`:
 
 ```ts
 export interface BlackBoxRallarFormationControllerDependencies {
@@ -428,7 +428,7 @@ undefined (the room is not held), and `command`/`readiness` turn that into
 `rallar.browser.formation.room-status` with the `room` block and the cached snapshot's
 `causalRevision.groupRevision` as `groupRevision`), and returns one unsubscribe.
 
-- [ ] **Step 8: Wire it.** Widen the composition's seams: `rooms` gains `formation`
+- [x] **Step 8: Wire it.** Widen the composition's seams: `rooms` gains `formation`
       (`rallar.rooms.formation`) and `rtc` gains `roomStatus`, `waitForRoom` and `onStatus` in
       `BlackBoxBrowserRallarRuntimeDependency` and `toBlackBoxBrowserRuntimeDependency`. Construct the
       controller in `black-box-rallar-runtime.ts`'s `#createProductControllers` beside the director
@@ -452,11 +452,11 @@ undefined (the room is not held), and `command`/`readiness` turn that into
       green, which Task 2.1's decoder is required to prevent. Add
       `readonly formation: BlackBoxRallarFormationRuntime` to `BlackBoxRallarRuntime`.
 
-- [ ] **Step 9: Run** `npx vitest run packages/tests/shared-test/rallar-browser-runtime` — expected:
+- [x] **Step 9: Run** `npx vitest run packages/tests/shared-test/rallar-browser-runtime` — expected:
       PASS (the composition and lifecycle tests there cover the new subscription's teardown); then
       `npm run typecheck`.
 
-- [ ] **Step 10: Commit** — `Add the formation controller to the browser black-box Rallar runtime`.
+- [x] **Step 10: Commit** — `Add the formation controller to the browser black-box Rallar runtime`.
 
 ### Task 1.2: The two commands in the control protocol and the adapters
 
@@ -487,7 +487,7 @@ undefined (the room is not held), and `command`/`readiness` turn that into
   `RALLAR_BLACK_BOX_FORMATION_DENIED` (the last carrying `toRoomFormationDenial(error)` in
   `details.denial` when it classifies).
 
-- [ ] **Step 1: Write the failing validation tests** in `rallar-bb-test-control-protocol.test.ts`:
+- [x] **Step 1: Write the failing validation tests** in `rallar-bb-test-control-protocol.test.ts`:
 
 ```ts
 it.each([
@@ -543,9 +543,9 @@ it.each([
 });
 ```
 
-- [ ] **Step 2: Run** — expected: FAIL (unknown kind).
+- [x] **Step 2: Run** — expected: FAIL (unknown kind).
 
-- [ ] **Step 3: Add the two kinds** to `RALLAR_BLACK_BOX_TEST_COMMAND_KINDS`, the two interfaces
+- [x] **Step 3: Add the two kinds** to `RALLAR_BLACK_BOX_TEST_COMMAND_KINDS`, the two interfaces
       to the union, and the `case 'formation.command':` /
       `case 'formation.readiness':` branches in `control-protocol.ts` beside `case 'rtc.connect':`
       (`validateKeys` over the allowed keys, `validateStringField` for `command` against the eight names,
@@ -555,7 +555,7 @@ it.each([
       cross-field rule, so an `rtc.connect` naming no room validates today. The new rule is what makes
       the third rejection case above fail.
 
-- [ ] **Step 4: Dispatch** — the bridge exposes `formation` (one-line delegations to
+- [x] **Step 4: Dispatch** — the bridge exposes `formation` (one-line delegations to
       `resolveBrowserRallarRuntime()).formation`, failing with
       `browser-rallar provider did not expose formation runtime commands.`, the wording the director
       resolver uses), the adapter adds the two branches (the `director` family is the template). The
@@ -569,14 +569,14 @@ it.each([
       `ApiHttpError` carrying `group-connect-planned-layout-superseded` yields
       `RALLAR_BLACK_BOX_FORMATION_DENIED` with `details.denial.kind === 'layout'`.
 
-- [ ] **Step 5: Publish the schema** — one `COMMAND_SCHEMAS` entry per kind mirroring the
+- [x] **Step 5: Publish the schema** — one `COMMAND_SCHEMAS` entry per kind mirroring the
       validation, one `RALLAR_BLACK_BOX_COMMAND_CAPABILITIES` entry per kind (title, required and
       optional fields, `supportedProviderModes` naming `browser-rallar` only, runtime surfaces, live
       service requirements, artifact expectations, an example), and one instance of each kind in the
       golden corpus; `rallar-bb-test-schema.test.ts` must accept both, keep its kinds-versus-catalogue
       lockstep, and reject `formation.command` without `command`.
 
-- [ ] **Step 6: Capabilities** — `RallarBlackBoxControlAgentCapabilities` (`distributed-run.ts`,
+- [x] **Step 6: Capabilities** — `RallarBlackBoxControlAgentCapabilities` (`distributed-run.ts`,
       today `{ crdt?, assertions? }`) gains `formation?: { supported: boolean; }`;
       `toControlAgentCapabilities` sets `formation: { supported: providerMode === 'browser-rallar' }` and
       `parseControlAgentCapabilities` rebuilds it (it rebuilds the object field by field, so an
@@ -585,28 +585,54 @@ it.each([
       check refuses to target a `formation.*` command at an agent that does not advertise it. Extend the
       monitor test that covers `requiresCrdtRuntime` with the formation twin.
 
-- [ ] **Step 7: Document** the family in `docs/schema-and-capabilities.md` ("Formation Commands":
+- [x] **Step 7: Document** the family in `docs/schema-and-capabilities.md` ("Formation Commands":
       the two kinds, their fields, the failure codes, the `health.formation` block) and the four
       diagnostics in `docs/runtime-diagnostic-contract.md` (topic, payload shape, producer).
 
-- [ ] **Step 8: Run** `npx vitest run packages/tests/shared-test packages/tests/rallar-black-box`
+- [x] **Step 8: Run** `npx vitest run packages/tests/shared-test packages/tests/rallar-black-box`
       outside the sandbox (three suites bind loopback ports), then `npm run typecheck`. Commit —
       `Add the formation commands to the black-box control protocol`.
 
 ### Task 1.3: Slice 1 closure
 
-- [ ] `npm run test:unit`, `npm run build`, `npm run check:repo-style:changed -- origin/main HEAD`,
+- [x] `npm run test:unit`, `npm run build`, `npm run check:repo-style:changed -- origin/main HEAD`,
       `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD`, `npm run format:check`,
       `npm run test:repo-governance` (the schema docs are governed), and
       `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts` — the headless agent
       bundles the browser runtime, so the controller moves its budget; raise it per the Q6 convention of
       the browser surface plan (smallest whole KiB above the measurement, recorded beside the budget and
       in the PR).
-- [ ] PR with the standard body; `npm run pr:delivery -- status`; the Branch Release Gate on the
+- [x] PR with the standard body; `npm run pr:delivery -- status`; the Branch Release Gate on the
       final feature-branch commit and Run Hetzner Supported Distributed Manifests on the resulting
       default-branch commit (the slice touches a distributed-risk path, so the run is not a no-op).
 
 ---
+
+## Deviations recorded during delivery (slice 1)
+
+- The two new files live in
+  `packages/shared-test/black-box-runner/browser/rallar-browser-runtime/formation/`, not directly in
+  `rallar-browser-runtime/` as the ownership map wrote. That directory already held twenty-one direct
+  production files against a review threshold of twenty, so two more worsened the changed-style gate's
+  density finding; the subdirectory is the feature grouping the gate asks for rather than a
+  pass-through, and it returns the parent to its `main` baseline.
+- Three names lost a `director` prefix they had outgrown, because the formation family shares them
+  verbatim: `RallarBlackBoxTestDirectorRoomFields` is `RallarBlackBoxTestRoomFields`,
+  `directorRoomProperties` is `commandRoomProperties`, and `toDirectorRuntimeInput` is
+  `toRoomScopedRuntimeInput`. No behaviour changed; the alternative was a second copy of each.
+- Two repeated shapes became one named type each, which is what kept the boundary rule satisfied
+  while the family grew: `RallarBlackBoxBrowserRallarRuntimeMethod` replaces twenty-one identical
+  `(input: unknown) => Promise<unknown>` members in `browser-adapter.ts`, and
+  `RallarBlackBoxTestRecord` replaces twenty-five inline `Readonly<Record<string, unknown>>` in
+  `types.ts`.
+- The headless bundle budget moved from 224 to 226 KiB, measured at 225.107421875 KiB, under the
+  maintainer's standing ruling that a crossed budget rises to the next whole KiB with the measurement
+  recorded. The growth is the bridge's decode of the command input and the room it addresses.
+- `formation.readiness` resolves against the room-status projection reached through both wake
+  sources, as repairs R1 and R2 specify. `formation.test.ts` pins the vacuous-resolve guard and the
+  formation-change wake directly, and pins that the diagnostics install only for a connection that
+  resolves a room ref, which is why the runtime's unsubscribe count reads four there and three in
+  `runtime-lifecycle.test.ts`.
 
 ## Slice 2 — The local lane: the lifecycle acceptance spec
 
