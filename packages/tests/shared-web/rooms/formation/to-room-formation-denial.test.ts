@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { toRoomFormationDenial } from '@shared-web/browser/rooms/formation/to-room-formation-denial.ts';
+import { RallarValidationError } from '@shared/api/rallar-validation.ts';
 
 function toFailureBody(code: string, status: number, denial: boolean): string {
     return JSON.stringify({
@@ -39,6 +40,18 @@ describe('room formation denial reader', () => {
             kind: 'layout',
             code: 'group-connect-planned-layout-superseded',
             message: 'Rejected: group-connect-planned-layout-superseded'
+        });
+    });
+
+    it('classifies the local no-planned-layout refusal as the same layout denial', () => {
+        const error = new RallarValidationError('Cannot connect room formation', [
+            { path: '$.layout', code: 'no-planned-layout', message: 'No planned layout is published for this room.' }
+        ]);
+
+        expect(toRoomFormationDenial(error)).toEqual({
+            kind: 'layout',
+            code: 'group-connect-no-planned-layout',
+            message: 'No planned layout is published for this room.'
         });
     });
 
