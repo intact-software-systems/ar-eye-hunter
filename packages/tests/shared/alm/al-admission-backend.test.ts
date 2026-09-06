@@ -12,6 +12,7 @@ import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-back
 import {
     AL_ADMISSION_EXPIRY_INDEX_NAME,
     AL_ADMISSION_REVISION_KEY,
+    AL_ADMISSION_WORK_STORE_NAME,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from '@shared/alm/read-indexed-db-admission-snapshot.ts';
@@ -19,8 +20,9 @@ import {
     computeIndexedDbAdmissionRevisionWrite,
     writeIndexedDbAdmissionMutations
 } from '@shared/alm/write-indexed-db-admission-mutations.ts';
-import { openIndexedDbWithStore } from '@shared/persistence/open-indexed-db.ts';
+import { openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
 import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
+import { toIndexedDbQueueStoreDefinition } from '@shared/queuebox/indexed-db-queue-box-store.ts';
 
 import '../../setup-browser-indexeddb.ts';
 
@@ -110,14 +112,14 @@ describe.each(backends)('$name admission reads', ({ create }) => {
 describe('admission storage envelopes', () => {
     it('rejects an existing store without the required revision metadata', async () => {
         const databaseName = `admission-missing-revision-${crypto.randomUUID()}`;
-        const existing = await openIndexedDbWithStore(databaseName, {
+        const existing = await openIndexedDbWithStores(databaseName, [{
             name: 'entries',
             keyPath: 'key',
             indexes: [{
                 name: AL_ADMISSION_EXPIRY_INDEX_NAME,
                 keyPath: 'expireAtTimestamp'
             }]
-        });
+        }, toIndexedDbQueueStoreDefinition(AL_ADMISSION_WORK_STORE_NAME)]);
         existing.close();
 
         const database = await openIndexedDbAdmissionDatabase(databaseName, 'entries');
@@ -363,6 +365,7 @@ describe('admission storage envelopes', () => {
             }]);
 
             await expect(writeIndexedDbAdmissionMutations({
+                queueMutations: [],
                 db: database,
                 storeName: 'entries',
                 expectedRevision: 0,
@@ -390,6 +393,7 @@ describe('admission storage envelopes', () => {
             }]);
 
             await expect(writeIndexedDbAdmissionMutations({
+                queueMutations: [],
                 db: database,
                 storeName: 'entries',
                 expectedRevision: 0,

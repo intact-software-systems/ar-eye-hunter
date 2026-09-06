@@ -1,10 +1,16 @@
 import { waitForIndexedDbTransaction } from '../persistence/indexed-db-request.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
+import {
+    validateComputedIndexedDbQueueMutations,
+    type ComputedIndexedDbQueueMutation
+} from '../queuebox/indexed-db-queue-box-entry.ts';
+import { submitComputedIndexedDbQueueMutations } from '../queuebox/write-computed-indexed-db-queue-mutations.ts';
 import { toError } from '../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from './al-admission-decoder.ts';
 import type { IndexedDbAdmissionStoredRow } from './indexed-db-admission-row.ts';
 import {
     AL_ADMISSION_REVISION_KEY,
+    AL_ADMISSION_WORK_STORE_NAME,
     decodeIndexedDbAdmissionRevision
 } from './open-indexed-db-admission-database.ts';
 
@@ -25,10 +31,11 @@ interface IndexedDbAdmissionRevisionWrite {
     readonly expireAtTimestamp: number;
 }
 
-interface WriteIndexedDbAdmissionMutationsInput {
+export interface WriteIndexedDbAdmissionMutationsInput {
     readonly db: IDBDatabase;
     readonly expectedRevision: number;
     readonly mutations: readonly IndexedDbAdmissionMutation[];
+    readonly queueMutations: readonly ComputedIndexedDbQueueMutation[];
     readonly revisionWrite: IndexedDbAdmissionRevisionWrite;
     readonly storeName: string;
 }
@@ -58,9 +65,22 @@ export async function writeIndexedDbAdmissionMutations(
     const guardedRemovals = input.mutations.filter(
         (mutation): mutation is IndexedDbAdmissionGuardedRemoval => mutation.kind === 'remove-if-write-token'
     );
-    const transaction = input.db.transaction(input.storeName, 'readwrite');
+    const validatedQueue = validateComputedIndexedDbQueueMutations(input.queueMutations);
+    if (validatedQueue.left) {
+        throw validatedQueue.left;
+    }
+    const storeNames = input.queueMutations.length === 0
+        ? [input.storeName]
+        : [input.storeName, AL_ADMISSION_WORK_STORE_NAME];
+    const transaction = input.db.transaction(storeNames, 'readwrite');
     const completed = waitForIndexedDbTransaction(transaction);
     const store = transaction.objectStore(input.storeName);
+    const queueWrite = input.queueMutations.length === 0
+        ? undefined
+        : submitComputedIndexedDbQueueMutations(
+            transaction.objectStore(AL_ADMISSION_WORK_STORE_NAME),
+            input.queueMutations
+        );
     const revisionRequest = store.get(AL_ADMISSION_REVISION_KEY);
     const context: IndexedDbAdmissionWriteContext = {
         guardedRemovals,
@@ -79,7 +99,10 @@ export async function writeIndexedDbAdmissionMutations(
         if (context.storedValueError) {
             throw context.storedValueError;
         }
-        if (context.conflict) {
+        if (queueWrite?.storedValueError) {
+            throw queueWrite.storedValueError;
+        }
+        if (context.conflict || queueWrite?.conflict) {
             return false;
         }
         throw transaction.error ?? toError(error);

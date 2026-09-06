@@ -10,14 +10,19 @@ import {
     writeComputedIndexedDbStringValue,
     type ComputedIndexedDbStringDeletion
 } from './indexed-db-string-persistence-write.ts';
-import { IndexedDbConnection, openIndexedDbWithStore } from './open-indexed-db.ts';
+import { IndexedDbConnection, openIndexedDbWithStores } from './open-indexed-db.ts';
 import type { PersistenceProvider, PersistenceSetItemOptions } from './PersistenceProvider.ts';
 
-export type IndexedDbStringPersistenceProviderOptions = Readonly<{
-    dbName?: string;
-    storeName?: string;
-    keyPrefix?: string;
-}>;
+export interface IndexedDbStringPersistenceProviderOptions {
+    readonly dbName?: string;
+    readonly storeName?: string;
+    readonly keyPrefix?: string;
+}
+
+interface IndexedDbStringExpiryComputed {
+    readonly deletions: readonly ComputedIndexedDbStringDeletion[];
+    readonly keys: string[];
+}
 
 export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvider<string, V> {
     static readonly DEFAULT_DB_NAME = 'ar-eye-hunter-persistence';
@@ -32,10 +37,10 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
         this.#storeName = options.storeName ?? IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME;
         this.#storedKeyPrefix = options.keyPrefix ? `${options.keyPrefix}:` : '';
         this.#connection = new IndexedDbConnection(() =>
-            openIndexedDbWithStore(dbName, {
+            openIndexedDbWithStores(dbName, [{
                 name: this.#storeName,
                 keyPath: 'key'
-            })
+            }])
         );
     }
 
@@ -44,7 +49,7 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
     }
 
     async getItem(key: string): Promise<V | undefined> {
-        const db = await this.#connection.get();
+        const db = await this.#connection.open();
         const storedKey = toStoredIndexedDbKey(this.#storedKeyPrefix, key);
         const result = await readStoredIndexedDbValue<V>(db, this.#storeName, storedKey);
         if (!result) {
@@ -72,7 +77,7 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
         value: V,
         options: PersistenceSetItemOptions
     ): Promise<void> {
-        const db = await this.#connection.get();
+        const db = await this.#connection.open();
         const storedKey = toStoredIndexedDbKey(this.#storedKeyPrefix, key);
         const stored = {
             key: storedKey,
@@ -84,14 +89,14 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
     }
 
     async removeItem(key: string): Promise<void> {
-        const db = await this.#connection.get();
+        const db = await this.#connection.open();
         const storedKey = toStoredIndexedDbKey(this.#storedKeyPrefix, key);
 
         await removeComputedIndexedDbStringValue(db, this.#storeName, storedKey);
     }
 
     async getAllKeys(): Promise<string[]> {
-        const db = await this.#connection.get();
+        const db = await this.#connection.open();
         const storedValues = await readAllStoredIndexedDbValues<V>(db, this.#storeName);
         const computed = computeIndexedDbStringExpiry(
             storedValues,
@@ -109,7 +114,7 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
     }
 
     async deleteExpired(): Promise<number> {
-        const db = await this.#connection.get();
+        const db = await this.#connection.open();
         const storedValues = await readAllStoredIndexedDbValues<V>(db, this.#storeName);
         const computed = computeIndexedDbStringExpiry(
             storedValues,
@@ -182,10 +187,7 @@ function computeIndexedDbStringExpiry<Value>(
     storedValues: readonly StoredIndexedDbValue<Value>[],
     storedKeyPrefix: string,
     now: number
-): Readonly<{
-    deletions: readonly ComputedIndexedDbStringDeletion[];
-    keys: string[];
-}> {
+): IndexedDbStringExpiryComputed {
     const deletions: ComputedIndexedDbStringDeletion[] = [];
     const keys: string[] = [];
     for (const stored of storedValues) {

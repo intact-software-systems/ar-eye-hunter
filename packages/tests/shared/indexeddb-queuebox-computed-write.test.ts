@@ -3,7 +3,7 @@
 import '../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
-import { openIndexedDbWithStore } from '@shared/persistence/open-indexed-db.ts';
+import { openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
 import { computeIndexedDbFairnessReservation } from '@shared/queuebox/compute-indexed-db-fairness-reservation.ts';
 import {
     decodeStoredResourceEntry,
@@ -45,9 +45,9 @@ describe('IndexedDbQueueBox computed writes', () => {
 
     it('allows only one writer to commit a computed revision', async () => {
         const storeName = 'entries';
-        const db = await openIndexedDbWithStore(
+        const db = await openIndexedDbWithStores(
             `indexeddb-computed-write-${crypto.randomUUID()}`,
-            { name: storeName, keyPath: 'keyString' }
+            [{ name: storeName, keyPath: 'keyString' }]
         );
         const initial = createEntry('initial');
         const keyString = toKeyAsString(initial.key);
@@ -73,9 +73,9 @@ describe('IndexedDbQueueBox computed writes', () => {
 
     it('rolls back every computed mutation when one comparison conflicts', async () => {
         const storeName = 'entries';
-        const db = await openIndexedDbWithStore(
+        const db = await openIndexedDbWithStores(
             `indexeddb-computed-batch-${crypto.randomUUID()}`,
-            { name: storeName, keyPath: 'keyString' }
+            [{ name: storeName, keyPath: 'keyString' }]
         );
         const first = createEntry('first', 'first-row');
         const second = createEntry('second', 'second-row');
@@ -115,9 +115,9 @@ describe('IndexedDbQueueBox computed writes', () => {
 
     it('compares only the stored revision inside the write transaction', async () => {
         const storeName = 'entries';
-        const db = await openIndexedDbWithStore(
+        const db = await openIndexedDbWithStores(
             `indexeddb-revision-comparison-${crypto.randomUUID()}`,
-            { name: storeName, keyPath: 'keyString' }
+            [{ name: storeName, keyPath: 'keyString' }]
         );
         const initial = computeIndexedDbQueuePut(undefined, createEntry('initial'));
         await writeComputedIndexedDbQueueMutations(db, storeName, [initial]);
@@ -159,9 +159,9 @@ describe('IndexedDbQueueBox computed writes', () => {
 
     it('rejects a fabricated mutation whose key differs from its stored value before opening a transaction', async () => {
         const storeName = 'entries';
-        const db = await openIndexedDbWithStore(
+        const db = await openIndexedDbWithStores(
             `indexeddb-invalid-computed-write-${crypto.randomUUID()}`,
-            { name: storeName, keyPath: 'keyString' }
+            [{ name: storeName, keyPath: 'keyString' }]
         );
         const computed = computeIndexedDbQueuePut(undefined, createEntry('value', 'stored-key'));
         const transactionForbidden = new Proxy(db, {
@@ -178,6 +178,39 @@ describe('IndexedDbQueueBox computed writes', () => {
             keyString: toKeyAsString(createEntry('value', 'other-key').key)
         }])).rejects.toThrow('mutation key differs');
     });
+
+    it.each(['mutation', 'expected state'] as const)(
+        'rejects an unknown %s kind before entering a transaction',
+        async (field) => {
+            const storeName = 'entries';
+            const db = await openIndexedDbWithStores(
+                `indexeddb-invalid-kind-${crypto.randomUUID()}`,
+                [{ name: storeName, keyPath: 'keyString' }]
+            );
+            const initial = computeIndexedDbQueuePut(undefined, createEntry('preserved'));
+            await writeComputedIndexedDbQueueMutations(db, storeName, [initial]);
+            const next = computeIndexedDbQueuePut(initial.value, createEntry('replacement'));
+            const invalid = field === 'mutation'
+                ? { ...next, kind: 'unsupported' as never }
+                : { ...next, expected: { kind: 'unsupported' as never, revision: 0 } };
+            const transactionForbidden = new Proxy(db, {
+                get: (target, property, receiver) => {
+                    if (property === 'transaction') {
+                        throw new Error('Invalid computed writes must not open a transaction');
+                    }
+                    return Reflect.get(target, property, receiver);
+                }
+            });
+            try {
+                await expect(writeComputedIndexedDbQueueMutations(transactionForbidden, storeName, [invalid]))
+                    .rejects.toThrow(`queue ${field}`);
+                expect((await readStoredQueueEntry(db, storeName, initial.keyString))?.resource).toBe('preserved');
+            }
+            finally {
+                db.close();
+            }
+        }
+    );
 
     it('computes fairness ordering without reading the IndexedDB global', () => {
         const dueAt = Temporal.Instant.from('2026-01-01T12:00:00Z');

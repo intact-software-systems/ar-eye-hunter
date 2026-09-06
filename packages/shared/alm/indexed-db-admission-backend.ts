@@ -39,11 +39,11 @@ export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
     }
 
     async ready(): Promise<void> {
-        await this.#connection.get();
+        await this.#connection.open();
     }
 
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
-        const db = await this.#connection.get();
+        const db = await this.#connection.open();
         const snapshot = await readIndexedDbAdmissionSnapshot(
             db,
             this.#storeName,
@@ -53,7 +53,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
         if (stored === undefined) {
             return undefined;
         }
-        const [value, expired] = decodeAdmissionValue(stored, key, decode, this.#nowMs());
+        const [value, expired] = decodeAdmissionValue({ stored, key, decode, nowMs: this.#nowMs() });
         if (!expired) {
             return value;
         }
@@ -71,7 +71,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
     }
 
     async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
-        const db = await this.#connection.get();
+        const db = await this.#connection.open();
         const snapshot = await readIndexedDbAdmissionSnapshot(
             db,
             this.#storeName,
@@ -81,7 +81,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
         const expiredRemovals: IndexedDbAdmissionMutation[] = [];
         const nowMs = this.#nowMs();
         for (const row of snapshot.stored) {
-            const [value, expired] = decodeAdmissionValue(row, row.key, decode, nowMs);
+            const [value, expired] = decodeAdmissionValue({ stored: row, key: row.key, decode, nowMs });
             if (expired) {
                 expiredRemovals.push({
                     kind: 'remove-if-write-token',
@@ -104,7 +104,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
     }
 
     async write<T>(fn: (tx: ALAdmissionWriteContext) => Promise<T>): Promise<T> {
-        const db = await this.#connection.get();
+        const db = await this.#connection.open();
         const expectedRevision = (
             await readIndexedDbAdmissionSnapshot(db, this.#storeName, { kind: 'revision' })
         ).revision;
@@ -112,6 +112,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
         const result = await fn(buffer);
         const mutations = buffer.mutations();
         const committed = await writeIndexedDbAdmissionMutations({
+            queueMutations: [],
             db,
             storeName: this.#storeName,
             expectedRevision,
@@ -151,7 +152,7 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWriteContext {
         if (stored === undefined) {
             return undefined;
         }
-        const [value, expired] = decodeAdmissionValue(stored, key, decode, this.#nowMs());
+        const [value, expired] = decodeAdmissionValue({ stored, key, decode, nowMs: this.#nowMs() });
         return expired ? undefined : value;
     }
 
@@ -169,7 +170,7 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWriteContext {
             if (this.#pending.has(row.key)) {
                 continue;
             }
-            const [value, expired] = decodeAdmissionValue(row, row.key, decode, nowMs);
+            const [value, expired] = decodeAdmissionValue({ stored: row, key: row.key, decode, nowMs });
             if (!expired) {
                 values.set(row.key, value);
             }
@@ -182,7 +183,7 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWriteContext {
                 values.delete(key);
                 continue;
             }
-            const [value, expired] = decodeAdmissionValue(stored, key, decode, nowMs);
+            const [value, expired] = decodeAdmissionValue({ stored, key, decode, nowMs });
             if (expired) {
                 values.delete(key);
             }
@@ -213,19 +214,21 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWriteContext {
     }
 }
 
-function decodeAdmissionValue<V>(
-    stored: IndexedDbAdmissionStoredRow,
-    key: string,
-    decode: ALAdmissionDecoder<V>,
-    nowMs: number
-): readonly [value: V, expired: boolean] {
+interface DecodeAdmissionValueInput<V> {
+    readonly stored: IndexedDbAdmissionStoredRow;
+    readonly key: string;
+    readonly decode: ALAdmissionDecoder<V>;
+    readonly nowMs: number;
+}
+
+function decodeAdmissionValue<V>(input: DecodeAdmissionValueInput<V>): readonly [value: V, expired: boolean] {
     const canonical = decodeALAdmissionValue(
-        toALAdmissionStoredValue(stored),
-        key,
+        toALAdmissionStoredValue(input.stored),
+        input.key,
         decodeALAdmissionStoredValue
     );
-    const value = decodeALAdmissionValue(canonical.value, key, decode);
-    return [value, canonical.expireAtTimestamp <= nowMs];
+    const value = decodeALAdmissionValue(canonical.value, input.key, input.decode);
+    return [value, canonical.expireAtTimestamp <= input.nowMs];
 }
 
 interface RemoveExpiredIndexedDbAdmissionValuesInput {
@@ -239,6 +242,7 @@ async function removeExpiredIndexedDbAdmissionValues(
     input: RemoveExpiredIndexedDbAdmissionValuesInput
 ): Promise<void> {
     const committed = await writeIndexedDbAdmissionMutations({
+        queueMutations: [],
         db: input.db,
         storeName: input.storeName,
         expectedRevision: input.expectedRevision,

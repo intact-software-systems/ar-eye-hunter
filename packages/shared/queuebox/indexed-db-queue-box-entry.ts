@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { Either } from '../resilience/Either.ts';
+import { toError } from '../resilience/to-error.ts';
 
 import {
     decodeStoredResourceEntryValue,
@@ -71,31 +73,49 @@ export function computeIndexedDbQueueUnconditionalDelete(
 
 export function validateComputedIndexedDbQueueMutations(
     mutations: readonly ComputedIndexedDbQueueMutation[]
-): void {
-    for (const mutation of mutations) {
-        if (typeof mutation.keyString !== 'string') {
-            throw new TypeError('IndexedDB queue mutation key must be a string');
-        }
-        if (mutation.kind === 'delete-unconditionally') {
-            continue;
-        }
-        validateIndexedDbQueueExpectedState(mutation.expected);
-        if (mutation.kind === 'delete') {
-            if (mutation.expected.kind === 'missing') {
-                throw new TypeError('IndexedDB queue delete cannot expect a missing row');
+): Either<Error, readonly ComputedIndexedDbQueueMutation[]> {
+    try {
+        const keys = new Set<string>();
+        for (const mutation of mutations) {
+            if (mutation.kind !== 'put' && mutation.kind !== 'delete' && mutation.kind !== 'delete-unconditionally') {
+                return Either.ofLeft(new TypeError('IndexedDB queue mutation kind is unsupported'));
             }
-            continue;
+            if (typeof mutation.keyString !== 'string') {
+                return Either.ofLeft(new TypeError('IndexedDB queue mutation key must be a string'));
+            }
+            if (keys.has(mutation.keyString)) {
+                return Either.ofLeft(new TypeError('IndexedDB mutations contain a duplicate queue key'));
+            }
+            keys.add(mutation.keyString);
+            if (mutation.kind === 'delete-unconditionally') {
+                continue;
+            }
+            if (!isValidIndexedDbQueueExpectedState(mutation.expected)) {
+                return Either.ofLeft(
+                    new TypeError('IndexedDB queue expected state must be missing or a non-negative revision')
+                );
+            }
+            if (mutation.kind === 'delete') {
+                if (mutation.expected.kind === 'missing') {
+                    return Either.ofLeft(new TypeError('IndexedDB queue delete cannot expect a missing row'));
+                }
+                continue;
+            }
+            decodeStoredResourceEntryValue(mutation.value);
+            if (mutation.value.keyString !== mutation.keyString) {
+                return Either.ofLeft(new TypeError('IndexedDB queue mutation key differs from its stored value'));
+            }
+            const expectedRevision = mutation.expected.kind === 'missing'
+                ? 0
+                : mutation.expected.revision + 1;
+            if (mutation.value.revision !== expectedRevision) {
+                return Either.ofLeft(new TypeError('IndexedDB queue mutation revision is not the next revision'));
+            }
         }
-        decodeStoredResourceEntryValue(mutation.value);
-        if (mutation.value.keyString !== mutation.keyString) {
-            throw new TypeError('IndexedDB queue mutation key differs from its stored value');
-        }
-        const expectedRevision = mutation.expected.kind === 'missing'
-            ? 0
-            : mutation.expected.revision + 1;
-        if (mutation.value.revision !== expectedRevision) {
-            throw new TypeError('IndexedDB queue mutation revision is not the next revision');
-        }
+        return Either.ofRight(mutations);
+    }
+    catch (error) {
+        return Either.ofLeft(toError(error));
     }
 }
 
@@ -122,15 +142,15 @@ export function isStoredQueueEntryExpired(
     return Temporal.Instant.compare(now, Temporal.Instant.from(stored.audit.expiryTs)) >= 0;
 }
 
-export function isStoredQueueEntryReservable(
-    input: Readonly<{
-        stored: StoredResourceEntry;
-        typeIds: ReadonlySet<string>;
-        statusIds: ReadonlySet<EntityStatus>;
-        now: Temporal.Instant;
-        maxAttempts: number;
-    }>
-): boolean {
+interface StoredQueueEntryReservationInput {
+    readonly stored: StoredResourceEntry;
+    readonly typeIds: ReadonlySet<string>;
+    readonly statusIds: ReadonlySet<EntityStatus>;
+    readonly now: Temporal.Instant;
+    readonly maxAttempts: number;
+}
+
+export function isStoredQueueEntryReservable(input: StoredQueueEntryReservationInput): boolean {
     const { stored, typeIds, statusIds, now, maxAttempts } = input;
     if (isStoredQueueEntryExpired(stored, now)) {
         return false;
@@ -145,14 +165,14 @@ export function isStoredQueueEntryReservable(
         Temporal.Instant.compare(now, Temporal.Instant.from(stored.dequeueAudit.nextTs)) >= 0;
 }
 
-export function isStoredQueueEntryTimedOut(
-    input: Readonly<{
-        stored: StoredResourceEntry;
-        typeIds: ReadonlySet<string>;
-        duration: Temporal.Duration;
-        now: Temporal.Instant;
-    }>
-): boolean {
+interface StoredQueueEntryTimeoutInput {
+    readonly stored: StoredResourceEntry;
+    readonly typeIds: ReadonlySet<string>;
+    readonly duration: Temporal.Duration;
+    readonly now: Temporal.Instant;
+}
+
+export function isStoredQueueEntryTimedOut(input: StoredQueueEntryTimeoutInput): boolean {
     const { stored, typeIds, duration, now } = input;
     if (
         isStoredQueueEntryExpired(stored, now) ||
@@ -176,15 +196,8 @@ function toIndexedDbQueueExpectedState(
     return { kind: 'revision', revision: canonical.revision };
 }
 
-function validateIndexedDbQueueExpectedState(expected: IndexedDbQueueExpectedState): void {
-    if (expected.kind === 'missing') {
-        return;
-    }
-    if (
-        !Number.isSafeInteger(expected.revision) ||
-        expected.revision < 0 ||
-        Object.is(expected.revision, -0)
-    ) {
-        throw new TypeError('IndexedDB queue expected revision must be non-negative');
-    }
+function isValidIndexedDbQueueExpectedState(expected: IndexedDbQueueExpectedState): boolean {
+    return expected.kind === 'missing' ||
+        (expected.kind === 'revision' && Number.isSafeInteger(expected.revision) && expected.revision >= 0 &&
+            !Object.is(expected.revision, -0));
 }

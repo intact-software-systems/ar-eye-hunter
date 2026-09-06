@@ -4,8 +4,9 @@ import '../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { openIndexedDbWithStore } from '@shared/persistence/open-indexed-db.ts';
+import { openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
 import { encodeStoredResourceEntry } from '@shared/queuebox/indexed-db-queue-box-entry-codec.ts';
+import { toIndexedDbQueueStoreDefinition } from '@shared/queuebox/indexed-db-queue-box-store.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, ResourceEntry, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
@@ -24,7 +25,9 @@ describe('IndexedDbQueueBox', () => {
             status: EntityStatus.RETRY,
             nextTs: now.subtract({ seconds: 30 })
         });
-        const database = await openIndexedDbWithStore(dbName, queueStoreDefinition());
+        const database = await openIndexedDbWithStores(dbName, [
+            toIndexedDbQueueStoreDefinition(IndexedDbQueueBox.DEFAULT_STORE_NAME)
+        ]);
         try {
             await writeRawQueueEntry(database, withoutRevision(encodeStoredResourceEntry(original, 0)));
         }
@@ -648,7 +651,7 @@ describe('IndexedDbQueueBox', () => {
                 checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 2,
                 finalizationStaleAfterMs: 5 * 60 * 1000
-            } as never
+            }
         );
         const reserved = entryOptions.status === EntityStatus.RETRY
             ? await queue.reserveEntries(
@@ -884,12 +887,12 @@ describe('IndexedDbQueueBox', () => {
         const bounded = await queue.reserveOverdueRetryEntries(
             new Set([requestedType]),
             Number(now.epochMilliseconds) - 30_000,
-            { maxToReserve: 1, maxAttempts: 2, maxToScan: 2 } as never
+            { maxToReserve: 1, maxAttempts: 2, maxToScan: 2 }
         );
         const extended = await queue.reserveOverdueRetryEntries(
             new Set([requestedType]),
             Number(now.epochMilliseconds) - 30_000,
-            { maxToReserve: 1, maxAttempts: 2, maxToScan: 3 } as never
+            { maxToReserve: 1, maxAttempts: 2, maxToScan: 3 }
         );
 
         expect(bounded.size).toBe(0);
@@ -946,7 +949,7 @@ describe('IndexedDbQueueBox', () => {
             await queue.reserveOverdueRetryEntries(
                 new Set([newer.typeId, older.typeId]),
                 Number(now.epochMilliseconds) - 30_000,
-                { maxToReserve: 1, maxAttempts: 2, maxToScan: 8 } as never
+                { maxToReserve: 1, maxAttempts: 2, maxToScan: 8 }
             )
         );
 
@@ -999,32 +1002,6 @@ async function openQueueDatabase(dbName: string): Promise<IDBDatabase> {
         const request = indexedDB.open(dbName);
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error ?? new Error('IndexedDB queue open failed'));
-    });
-}
-
-function queueStoreDefinition() {
-    return {
-        name: IndexedDbQueueBox.DEFAULT_STORE_NAME,
-        keyPath: 'keyString',
-        indexes: [{
-            name: IndexedDbQueueBox.FAIRNESS_INDEX_NAME,
-            keyPath: ['typeId', 'status', 'fairnessDueEpochMs', 'keyString']
-        }]
-    } as const;
-}
-
-async function readRawQueueEntry(
-    database: IDBDatabase,
-    keyString: string
-): Promise<unknown> {
-    return await new Promise<unknown>((resolve, reject) => {
-        const transaction = database.transaction(
-            IndexedDbQueueBox.DEFAULT_STORE_NAME,
-            'readonly'
-        );
-        const request = transaction.objectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME).get(keyString);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error('IndexedDB raw queue read failed'));
     });
 }
 

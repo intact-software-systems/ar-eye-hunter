@@ -78,6 +78,32 @@ registers the callback. Native completion invokes it after queue mutation. This 
 a language-level event bridge, not a forward dependency between services. No
 additional queue, pending-work registry, or timer is introduced by settlement.
 
+## Atomic IndexedDB work storage
+
+[`openIndexedDbAdmissionDatabase`](../open-indexed-db-admission-database.ts) creates
+the fixed admission and `alm-work` stores together. The work store uses the canonical
+[`IndexedDbQueueBox` schema](../../queuebox/indexed-db-queue-box-store.ts). A QueueBox
+can use the same `IndexedDbConnection` as admission; opening that connection remains
+an explicit storage effect.
+
+[`writeIndexedDbAdmissionMutations`](../write-indexed-db-admission-mutations.ts)
+accepts already computed admission and QueueBox mutations. The pure QueueBox
+validator returns an `Either` before transaction entry. The joint transaction uses
+QueueBox's existing revision-guarded writer and applies the supplied values without
+recomputing them. A stale admission revision, queue revision, or guarded removal
+rolls back the whole transaction. A native abort also preserves neither write.
+Reopened QueueBox instances can reserve the committed work through the ordinary
+queue API.
+
+The admission backend and browser cleanup currently supply an empty queue mutation
+list. They therefore lock only the admission store. Runtime integration must connect
+admission to the joint writer and the existing QueueBox engine, including scoped
+work cleanup; these storage primitives alone do not consolidate runtime ownership.
+
+An existing incompatible database is rejected without changing its schema or data.
+Cutover requires stopping the affected producers and workers before an explicit reset
+of incompatible ALM-owned browser storage. Unrelated application storage is preserved.
+
 The present ALM effect scheduler still overlaps QueueBox's work ownership. The
 roadmap requires consolidating it into the existing QueueBox/InboxOutboxEngine;
 this transport integration does not establish completion of that consolidation or

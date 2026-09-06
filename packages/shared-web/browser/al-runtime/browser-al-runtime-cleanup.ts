@@ -327,6 +327,7 @@ async function writeBrowserALRuntimeCleanup(
         return;
     }
     const committed = await writeIndexedDbAdmissionMutations({
+        queueMutations: [],
         db,
         storeName: BROWSER_AL_RUNTIME_STORE_NAME,
         expectedRevision,

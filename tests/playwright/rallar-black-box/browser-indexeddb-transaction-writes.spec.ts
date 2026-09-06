@@ -22,7 +22,10 @@ test('persists current rows and resolves concurrent writes in real IndexedDB', a
         storedResource: 'stored-value',
         storedRevision: 0,
         admissionTokenPresent: true,
-        guardedAdmissionBatchRolledBack: true
+        guardedAdmissionBatchRolledBack: true,
+        queuedWorkReplayed: true,
+        queueConflictRolledBackAdmission: true,
+        admissionConflictRolledBackQueue: true
     });
     expect(result.durableWinner).toBeDefined();
     expect(result.concurrentResults).toEqual([
