@@ -1,0 +1,457 @@
+{
+  "description": "Group ownership transfer over the wire (coverage plan slice 1): the highest-authority mutation on the aggregate, whose 403 and 400 paths no recipe reached. A plain member cannot transfer; a non-member target is rejected by the compute rather than the policy; an accepted transfer swaps both roles at once, so the old owner becomes admin rather than a plain member; and the demoted owner can no longer transfer while the new one can. A sole owner targeting themselves is denied `last-owner` by the governance policy \u2014 the compute's self-transfer no-op sits behind that denial and is unreachable through this route for a sole owner, which is why nothing had ever observed it.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_OWNTX_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-owntx"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_OWNTX_WORKSPACE_ID",
+      "default": "workspace-owntx-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_OWNTX_GROUP_ID",
+      "default": "owntx-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_OWNTX_PASSWORD",
+      "default": "api-v1-owntx-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/owntx-register-owner-{runId}",
+        "body": {
+          "username": "owntx-owner-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "owner client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/owntx-login-owner-{runId}",
+        "body": {
+          "username": "owntx-owner-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "ownerClientId": "body.clientId",
+          "ownerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOwnerAuthHeader",
+      "type": "set",
+      "output": "ownerAuthHeader",
+      "secret": true,
+      "redactAs": "ownerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.ownerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerHeir",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/owntx-register-heir-{runId}",
+        "body": {
+          "username": "owntx-heir-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "heir client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginHeir",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/owntx-login-heir-{runId}",
+        "body": {
+          "username": "owntx-heir-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "heirClientId": "body.clientId",
+          "heirAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveHeirAuthHeader",
+      "type": "set",
+      "output": "heirAuthHeader",
+      "secret": true,
+      "redactAs": "heirAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.heirAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerOutsider",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/owntx-register-outsider-{runId}",
+        "body": {
+          "username": "owntx-outsider-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "outsider client"
+        },
+        "outputs": {
+          "outsiderClientId": "body.clientId"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "createGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/owntx-create-group-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Ownership transfer group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "heirJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{heirClientId}/requests/owntx-heir-joins-group-{runId}",
+        "headers": {
+          "Authorization": "{heirAuthHeader}",
+          "x-client-id": "{heirClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "plainMemberCannotTransferOwnership",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/owntx-member-attempt-{runId}",
+        "headers": {
+          "Authorization": "{heirAuthHeader}",
+          "x-client-id": "{heirClientId}"
+        },
+        "body": {
+          "newOwnerPrincipalId": "{heirClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403,
+          "message": "Only active group owners/admins can govern group members."
+        }
+      }
+    },
+    {
+      "name": "transferToANonMemberIsRejectedByTheCompute",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/owntx-outsider-target-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "newOwnerPrincipalId": "{outsiderClientId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-mutation-rejected",
+          "status": 400,
+          "message": "Ownership target must be active."
+        }
+      }
+    },
+    {
+      "name": "theSoleOwnerCannotTransferToThemselves",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/owntx-self-transfer-attempt-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "newOwnerPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "last-owner",
+          "status": 403,
+          "message": "Cannot leave an active group without an owner."
+        }
+      }
+    },
+    {
+      "name": "ownerTransfersAndBothRolesMoveAtOnce",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/owntx-transfer-to-heir-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "newOwnerPrincipalId": "{heirClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "members": [
+            {
+              "principalId": "{ownerClientId}",
+              "role": "admin",
+              "status": "active"
+            },
+            {
+              "principalId": "{heirClientId}",
+              "role": "owner",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theSwappedRolesAreTheOnesThatWerePersisted",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{heirAuthHeader}",
+          "x-client-id": "{heirClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "members": [
+            {
+              "principalId": "{ownerClientId}",
+              "role": "admin",
+              "status": "active"
+            },
+            {
+              "principalId": "{heirClientId}",
+              "role": "owner",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theDemotedOwnerCanNoLongerTransfer",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/owntx-demoted-attempt-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "newOwnerPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403,
+          "message": "Only active group owners can transfer group ownership."
+        }
+      }
+    },
+    {
+      "name": "theNewOwnerHoldsRealAuthorityAndCanTransferBack",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/owntx-transfer-back-{runId}",
+        "headers": {
+          "Authorization": "{heirAuthHeader}",
+          "x-client-id": "{heirClientId}"
+        },
+        "body": {
+          "newOwnerPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "members": [
+            {
+              "principalId": "{ownerClientId}",
+              "role": "owner",
+              "status": "active"
+            },
+            {
+              "principalId": "{heirClientId}",
+              "role": "admin",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

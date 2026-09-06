@@ -28,6 +28,7 @@ import {
     waitForRtcDiagnostics,
     waitForRtcHealth,
     waitForRtcMessage,
+    waitForRtcMessageCount,
     waitForRtcMessages
 } from './rtc/rtc-wait-expectations.ts';
 
@@ -142,7 +143,15 @@ interface RemoteRtcWaitInput {
     readonly details?: any;
 }
 
-type RemoteRtcExpectation = 'close' | 'diagnostics' | 'diagnostic' | 'health' | 'messages' | 'message' | 'none';
+type RemoteRtcExpectation =
+    | 'count'
+    | 'close'
+    | 'diagnostics'
+    | 'diagnostic'
+    | 'health'
+    | 'messages'
+    | 'message'
+    | 'none';
 
 interface RemoteRtcSendSubmission {
     readonly remote: RallarRemoteBrowserConfig;
@@ -537,6 +546,9 @@ function toRemoteRtcExpectation(response: any, phase: 'send' | 'wait'): RemoteRt
     if (phase === 'wait' && response?.close !== undefined) {
         return 'close';
     }
+    if (response?.count !== undefined) {
+        return 'count';
+    }
     if (phase === 'send' && response?.messages) {
         return 'messages';
     }
@@ -575,6 +587,8 @@ function waitForRemoteRtcMatch(input: RemoteRtcWaitInput, expectation: RemoteRtc
             return waitForRtcDiagnostics(input);
         case 'diagnostic':
             return waitForRtcDiagnostic(input);
+        case 'count':
+            return waitForRtcMessageCount(input);
         case 'messages':
             return waitForRtcMessages(input);
         case 'message':
@@ -584,7 +598,7 @@ function waitForRemoteRtcMatch(input: RemoteRtcWaitInput, expectation: RemoteRtc
                 config: input.config,
                 interaction: input.interaction,
                 result:
-                    'RTC wait expects expect.message, expect.messages, expect.diagnostic, expect.diagnostics, expect.health, or expect.close',
+                    'RTC wait expects expect.message, expect.messages, expect.count, expect.diagnostic, expect.diagnostics, expect.health, or expect.close',
                 details: { connection: toRtcExpectedConnectionName(input.interaction), remote: input.remote }
             }));
     }

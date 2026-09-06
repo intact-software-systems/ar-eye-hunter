@@ -27,6 +27,7 @@ import {
     rememberWsCloseEvent
 } from './execution/execute-ws-interaction.ts';
 import { isRallarRemoteBrowserRequest } from './execution/remote-browser-execution.ts';
+import { computeParallelAggregateFailure } from './expectations/parallel-aggregate-expectation.ts';
 import { executeHttpInteraction } from './http/execute-http-interaction.ts';
 import {
     toRtcPayload,
@@ -789,6 +790,15 @@ async function executeParallelInteraction(interaction: any, config: any, context
             interaction,
             details: actual,
             result: actual.timedOut ? 'Parallel step exceeded timeout.' : 'Parallel step had failed child steps.'
+        });
+    }
+    const aggregateFailure = computeParallelAggregateFailure(interaction, actual);
+    if (aggregateFailure !== undefined) {
+        return toParallelFailureStatus({
+            config,
+            interaction,
+            result: aggregateFailure.message,
+            details: { ...actual, ...aggregateFailure.details }
         });
     }
     return toParallelSuccessStatus(config, interaction, actual);

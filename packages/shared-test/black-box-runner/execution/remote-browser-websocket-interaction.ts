@@ -22,6 +22,7 @@ import {
     waitForWsClose,
     waitForWsMessage,
     waitForWsMessageAbsence,
+    waitForWsMessageCount,
     waitForWsMessages,
     type WsInteraction,
     type WsInteractionRequest,
@@ -380,7 +381,9 @@ async function sendRemoteWs(
                 result: observation.result
             });
         }
-        if (interaction.response?.messages || interaction.response?.message) {
+        if (
+            interaction.response?.count !== undefined || interaction.response?.messages || interaction.response?.message
+        ) {
             return waitWithRemoteWsEventSync({
                 remote,
                 fetchFn,
@@ -410,6 +413,9 @@ function waitForRemoteWsExpectation(input: WaitWithRemoteWsEventSyncInput): Prom
     if (interaction.response?.absent !== undefined) {
         return waitForWsMessageAbsence({ interaction, config, context, details, observeCloseEvents: true });
     }
+    if (interaction.response?.count !== undefined) {
+        return waitForWsMessageCount({ interaction, config, context, details, observeCloseEvents: true });
+    }
     if (interaction.response?.close !== undefined) {
         return waitForWsClose({ interaction, config, context, details });
     }
@@ -423,7 +429,7 @@ function waitForRemoteWsExpectation(input: WaitWithRemoteWsEventSyncInput): Prom
         toWsFailureStatus(
             config,
             interaction,
-            'WebSocket wait expects expect.message, expect.messages, expect.absent, or expect.close'
+            'WebSocket wait expects expect.message, expect.messages, expect.count, expect.absent, or expect.close'
         )
     );
 }

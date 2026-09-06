@@ -55,12 +55,15 @@ and baseline interpretation lives in `playground/rtc-design/baselines/`.
   resolves fresh request values; correlation injection preserves the recipe.
   [executeAssertInteraction](./execution/execute-assert-interaction.ts#executeAssertInteraction)
   computes comparison evidence before reporting validation failures.
+  [computeParallelAggregateFailure](./expectations/parallel-aggregate-expectation.ts#computeParallelAggregateFailure)
+  checks parallel aggregate expectations after child results have succeeded.
 - [openWs](./execution/local-websocket-session.ts#openWs)
   owns bounded wire observations and scoped snapshot assembly. WS recipes
   inspect `completedSnapshot` after complete assembly; `observedSnapshotPage`
   permits detecting a leaked page even when its snapshot never completes.
   [WS waits](./ws/ws-wait-expectations.ts) require an uninterrupted observation
-  window for absence evidence.
+  window for absence and count evidence. WS and RTC count waits use the same
+  [count bounds](./expectations/wait-count-bound.ts#toWaitCountBound).
 - [RtcClientProvider](./rtc-provider.ts#RtcClientProvider) owns transport calls
   and result reporting. [RallarBrowserSession](./browser/rallar-browser-session.ts#RallarBrowserSession)
   owns Playwright setup, browser events, runtime calls, and resource cleanup;

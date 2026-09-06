@@ -3,6 +3,7 @@ import {
     waitForWsClose,
     waitForWsMessage,
     waitForWsMessageAbsence,
+    waitForWsMessageCount,
     waitForWsMessages,
     type WsInteraction,
     type WsInteractionResult,
@@ -91,6 +92,9 @@ function sendWs(input: LocalWsInput): Promise<WsInteractionResult> {
             exception: details.sendResult.exception
         }));
     }
+    if (interaction.response?.count !== undefined) {
+        return waitForWsMessageCount({ ...input, details: { ...details }, observeCloseEvents: true });
+    }
     if (interaction.response?.messages) {
         return waitForWsMessages({ ...input, details: { ...details } });
     }
@@ -121,6 +125,9 @@ export function executeLocalWsInteraction(
     if (interaction.response?.absent !== undefined) {
         return waitForWsMessageAbsence({ interaction, config, context });
     }
+    if (interaction.response?.count !== undefined) {
+        return waitForWsMessageCount({ interaction, config, context, observeCloseEvents: true });
+    }
     if (interaction.response?.close !== undefined) {
         return waitForWsClose({ interaction, config, context });
     }
@@ -134,7 +141,7 @@ export function executeLocalWsInteraction(
         toWsFailureStatus(
             config,
             interaction,
-            'WebSocket wait expects expect.message, expect.messages, expect.absent, or expect.close'
+            'WebSocket wait expects expect.message, expect.messages, expect.count, expect.absent, or expect.close'
         )
     );
 }

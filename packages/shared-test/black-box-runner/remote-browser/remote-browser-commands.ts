@@ -84,7 +84,6 @@ export function toSendCommand(commandId: string, interaction: any): RallarBlackB
         commandId,
         connection: toRtcConnectionName(request),
         send,
-        expect: interaction.response?.message ?? interaction.response?.messages,
         ...scopeFields,
         transport: toTransport(request),
         timeoutMs: request.timeoutMs,

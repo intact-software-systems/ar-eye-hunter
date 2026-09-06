@@ -772,6 +772,39 @@ still has to sleep. Sleeping is a real cost: the api-v1 corpus carries 371
 seconds of unconditional `delayMs` across 59 steps, concentrated in five
 recipes, almost all of it hand-rolled polling.
 
+## Counting Frames With `expect.count`
+
+`expect.message` resolves on its **first** match, so it cannot tell "exactly
+one" from "at least one". `expect.count` decides cardinality instead: it waits
+the full `withinMs` window and then counts every frame matching
+`expect.message`, for the same reason `expect.absent` waits the whole window — a
+count is only as strong as the time the runner kept listening.
+
+```json
+{
+  "name": "exactlyOneDecisionWasEmitted",
+  "type": "ws.wait",
+  "connection": "wsManager",
+  "expect": {
+    "withinMs": 4000,
+    "message": { "payload": { "typeId": "group-state.event" } },
+    "count": 1
+  }
+}
+```
+
+`count` accepts a non-negative integer, or a range with either end optional:
+`{ "min": 1 }`, `{ "max": 3 }`, `{ "min": 1, "max": 3 }`. `count: 0` asserts
+absence and reports how many matching frames were observed.
+
+It works on `ws.wait`, `rtc.wait`, `ws.send`, and `rtc.send`, including remote
+browser providers. The result carries `matchedCount` and `observedMessageCount`.
+The count includes previously retained frames on the selected connection;
+correlate the matcher to the operation being checked. It does not count frames
+already consumed before the wait. Consumption, observation loss, or a connection
+change during the window prevents the runner from certifying a count. A count
+wait itself leaves observations available for later checks.
+
 ## Array Comparison Is Unordered In Every Mode
 
 Every comparison mode matches array elements by containment, not by position.

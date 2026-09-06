@@ -13,6 +13,7 @@ import {
     waitForRtcHealth,
     waitForRtcMessage,
     waitForRtcMessageAbsence,
+    waitForRtcMessageCount,
     waitForRtcMessages,
     type RtcWaitInput
 } from './rtc/rtc-wait-expectations.ts';
@@ -227,6 +228,9 @@ function toRtcClientSendFailure(input: RtcClientSendFailureInput): any {
 
 function waitForRtcSendResult(input: RtcSendWaitInput): Promise<any> {
     const response = input.interaction.response;
+    if (response?.count !== undefined) {
+        return waitForRtcMessageCount(input);
+    }
     if (response?.messages) {
         return waitForRtcMessages(input);
     }
@@ -378,6 +382,9 @@ class RtcClientProvider implements RtcProvider {
             return waitForRtcMessageAbsence({ interaction, config, context });
         }
 
+        if (interaction.response?.count !== undefined) {
+            return waitForRtcMessageCount({ interaction, config, context });
+        }
         if (interaction.response?.diagnostics) {
             return waitForRtcDiagnostics({ interaction, config, context: context });
         }
@@ -401,7 +408,7 @@ class RtcClientProvider implements RtcProvider {
         return toRtcFailureStatus({
             config,
             interaction,
-            result: 'RTC wait expects expect.message, expect.messages, expect.absent, ' +
+            result: 'RTC wait expects expect.message, expect.messages, expect.count, expect.absent, ' +
                 'expect.diagnostic, expect.diagnostics, expect.health, or expect.close',
             details: {
                 connection: toRtcExpectedConnectionName(interaction)

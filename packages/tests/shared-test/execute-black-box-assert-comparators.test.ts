@@ -161,3 +161,117 @@ describe('executeBlackBox ASSERT expect.comparators', () => {
         expect(result.details.message).toBe('Json array has unexpected elements');
     });
 });
+
+describe('executeBlackBox ASSERT path comparators', () => {
+    it('compares a resolved value for equality and inequality', async () => {
+        const report = await executeBlackBox(
+            [assertStep({
+                actual: { denial: { code: 'forbidden-role', status: 403 } },
+                expectFields: {
+                    comparators: [
+                        { path: 'denial.code', equals: 'forbidden-role' },
+                        { path: 'denial.status', equals: 403 },
+                        { path: 'denial.code', notEquals: 'member-not-active' }
+                    ]
+                },
+                name: 'denialCodeIsNamed'
+            })],
+            0,
+            { failFast: true }
+        );
+
+        expect(report.summary.failure).toBe(0);
+    });
+
+    // The reason this comparator family exists: a denial recipe asserting only
+    // the status cannot tell a correct denial from a differently-wrong one.
+    it('reports the mismatching code rather than only that something differed', async () => {
+        const report = await executeBlackBox(
+            [assertStep({
+                actual: { denial: { code: 'member-not-active' } },
+                expectFields: { comparators: [{ path: 'denial.code', equals: 'forbidden-role' }] },
+                name: 'wrongDenialCode'
+            })],
+            0,
+            { failFast: false }
+        );
+
+        expect(report.summary.failure).toBe(1);
+        expect(JSON.stringify(report)).toContain('forbidden-role');
+        expect(JSON.stringify(report)).toContain('member-not-active');
+    });
+
+    it('compares structured values by deep equality', async () => {
+        const report = await executeBlackBox(
+            [assertStep({
+                actual: { identity: { groupRevision: 9, presenceRevision: 2 } },
+                expectFields: {
+                    comparators: [{ path: 'identity', equals: { groupRevision: 9, presenceRevision: 2 } }]
+                },
+                name: 'identityMatches'
+            })],
+            0,
+            { failFast: true }
+        );
+
+        expect(report.summary.failure).toBe(0);
+    });
+
+    it('asserts a path is present without constraining its value', async () => {
+        const report = await executeBlackBox(
+            [assertStep({
+                actual: { activationStatus: { condition: 'active' } },
+                expectFields: { comparators: [{ path: 'activationStatus.condition', exists: true }] },
+                name: 'conditionIsPresent'
+            })],
+            0,
+            { failFast: true }
+        );
+
+        expect(report.summary.failure).toBe(0);
+    });
+
+    // An absent path is the assertion here, so it must not be reported as an
+    // unresolvable path the way every other comparator treats it.
+    it('asserts a path is absent', async () => {
+        const report = await executeBlackBox(
+            [assertStep({
+                actual: { group: { lifecycleState: 'active' } },
+                expectFields: { comparators: [{ path: 'group.activationStatus', exists: false }] },
+                name: 'noStatusStored'
+            })],
+            0,
+            { failFast: true }
+        );
+
+        expect(report.summary.failure).toBe(0);
+    });
+
+    it('fails when a path asserted absent is present', async () => {
+        const report = await executeBlackBox(
+            [assertStep({
+                actual: { group: { activationStatus: { condition: 'degraded' } } },
+                expectFields: { comparators: [{ path: 'group.activationStatus', exists: false }] },
+                name: 'unexpectedStatus'
+            })],
+            0,
+            { failFast: false }
+        );
+
+        expect(report.summary.failure).toBe(1);
+    });
+
+    it('fails when a path asserted present is absent', async () => {
+        const report = await executeBlackBox(
+            [assertStep({
+                actual: { group: {} },
+                expectFields: { comparators: [{ path: 'group.activationStatus', exists: true }] },
+                name: 'missingStatus'
+            })],
+            0,
+            { failFast: false }
+        );
+
+        expect(report.summary.failure).toBe(1);
+    });
+});

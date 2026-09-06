@@ -1,6 +1,9 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import { compareJson, COMPARISON, toConfig } from '../../json-compare/compare-json-values.ts';
 import { toBoundedWsWaitMessages } from '../artifacts/with-bounded-artifact-report-results.ts';
 import type { LocalWsRequest } from '../execution/local-websocket-session.ts';
+import { toWaitCountBound, type WaitCountBound } from '../expectations/wait-count-bound.ts';
 import { toWsExpectedConnectionName, toWsFailureStatus, toWsSuccessStatus } from './ws-interaction-statuses.ts';
 
 export interface WsInteractionRequest extends LocalWsRequest {
@@ -21,6 +24,7 @@ export interface WsInteractionResponse {
     readonly ordered?: boolean;
     readonly message?: unknown;
     readonly messages?: readonly unknown[];
+    readonly count?: ApiJsonValue;
     readonly absent?: unknown;
     readonly close?: unknown;
     readonly comparison?: string;
@@ -96,6 +100,69 @@ function consumeWsMessages(input: WsWaitInput, connectionName: string, indexes: 
     input.context.wsMessages[connectionName] = messages.filter((_, index) => !indexes.includes(index));
     const loss = input.context.wsObservationLoss ??= {};
     loss[connectionName] = (loss[connectionName] ?? 0) + indexes.length;
+}
+
+export async function waitForWsMessageCount(input: WsWaitInput): Promise<WsInteractionResult> {
+    const { interaction, config } = input;
+    const window = startWsWaitWindow(input);
+    const bound = toWaitCountBound(interaction.response?.count);
+    const details = { ...input.details, connection: window.connectionName };
+    if (interaction.response?.message === undefined || interaction.response.message === null) {
+        return toWsFailureStatus(
+            config,
+            interaction,
+            'WebSocket count wait expects expect.message to match frames against.',
+            details
+        );
+    }
+    if (bound === undefined) {
+        return toWsFailureStatus(
+            config,
+            interaction,
+            'WebSocket count wait expects expect.count to be a non-negative integer or {min,max}.',
+            details
+        );
+    }
+    if (!Number.isFinite(window.timeoutMs) || window.timeoutMs <= 0) {
+        return toWsFailureStatus(config, interaction, 'WebSocket count duration must be positive', details);
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, window.timeoutMs));
+    return completeWsCount(input, window, bound);
+}
+
+function completeWsCount(input: WsWaitInput, window: WsWaitWindow, bound: WaitCountBound): WsInteractionResult {
+    const { interaction, config, context } = input;
+    const messages = context.wsMessages[window.connectionName] ?? [];
+    const matchedCount =
+        messages.filter((message) => matchesWsValue(interaction.response?.message, message.data, interaction)).length;
+    const details = {
+        ...input.details,
+        connection: window.connectionName,
+        expectedMessage: interaction.response?.message,
+        expectedCount: interaction.response?.count,
+        matchedCount,
+        observedMessageCount: messages.length,
+        waitedMs: Date.now() - window.startedAt
+    };
+    if (!hasCompleteWsObservations(input, window)) {
+        return toWsFailureStatus(
+            config,
+            interaction,
+            'WebSocket count cannot be established because observations were discarded',
+            details
+        );
+    }
+    return matchedCount >= bound.min && matchedCount <= bound.max
+        ? toWsSuccessStatus(config, interaction, details)
+        : toWsFailureStatus(config, interaction, 'WebSocket message count did not match the expectation', details);
+}
+
+function hasCompleteWsObservations(input: WsWaitInput, window: WsWaitWindow): boolean {
+    const currentLoss = input.context.wsObservationLoss?.[window.connectionName] ?? 0;
+    return currentLoss === window.observationLoss && Number.isSafeInteger(currentLoss) &&
+        currentLoss < Number.MAX_SAFE_INTEGER &&
+        (input.observeCloseEvents !== true ||
+            (input.context.wsCloseEvents?.[window.connectionName]?.length ?? 0) === window.closeEventCount);
 }
 
 export function waitForWsMessage(input: WsWaitInput): Promise<WsInteractionResult> {
@@ -297,12 +364,7 @@ function completeWsAbsence(input: WsWaitInput, window: WsWaitWindow): WsInteract
         });
     }
     const currentLoss = context.wsObservationLoss?.[connectionName] ?? 0;
-    if (
-        currentLoss !== observationLoss || !Number.isSafeInteger(currentLoss) ||
-        currentLoss >= Number.MAX_SAFE_INTEGER ||
-        (input.observeCloseEvents === true &&
-            (context.wsCloseEvents?.[connectionName]?.length ?? 0) !== window.closeEventCount)
-    ) {
+    if (!hasCompleteWsObservations(input, window)) {
         return toWsFailureStatus(
             config,
             interaction,

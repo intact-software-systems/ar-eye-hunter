@@ -1,4 +1,6 @@
 // deno-lint-ignore-file no-explicit-any
+import { jsonEquals } from '@shared/repository/state-utils.ts';
+
 export interface AssertComparatorIssue {
     readonly path: any;
     readonly comparator: string;
@@ -48,14 +50,9 @@ function toIssue(input: {
 function numericIssues(entry: any, value: any): AssertComparatorIssue[] {
     const issues: AssertComparatorIssue[] = [];
     const actualNumber = Number(value);
-    const numericComparators: Array<[string, (actual: number, bound: number) => boolean]> = [
-        ['gt', (actual, bound) => actual > bound],
-        ['gte', (actual, bound) => actual >= bound],
-        ['lt', (actual, bound) => actual < bound],
-        ['lte', (actual, bound) => actual <= bound]
-    ];
+    const numericComparators = ['gt', 'gte', 'lt', 'lte'] as const;
 
-    for (const [comparator, satisfies] of numericComparators) {
+    for (const comparator of numericComparators) {
         if (entry[comparator] === undefined) {
             continue;
         }
@@ -72,7 +69,14 @@ function numericIssues(entry: any, value: any): AssertComparatorIssue[] {
             continue;
         }
 
-        if (!satisfies(actualNumber, bound)) {
+        const satisfied = comparator === 'gt'
+            ? actualNumber > bound
+            : comparator === 'gte'
+            ? actualNumber >= bound
+            : comparator === 'lt'
+            ? actualNumber < bound
+            : actualNumber <= bound;
+        if (!satisfied) {
             issues.push(toIssue({
                 path: entry.path,
                 comparator,
@@ -168,7 +172,65 @@ function stringIssues(entry: any, value: any): AssertComparatorIssue[] {
     return issues;
 }
 
-const COMPARATOR_KEYS = ['gt', 'gte', 'lt', 'lte', 'between', 'length', 'contains', 'matches'];
+function equalityIssues(entry: any, value: any): AssertComparatorIssue[] {
+    const issues: AssertComparatorIssue[] = [];
+
+    if (entry.equals !== undefined && !jsonEquals(entry.equals, value)) {
+        issues.push(toIssue({
+            path: entry.path,
+            comparator: 'equals',
+            expected: entry.equals,
+            actual: value,
+            message: 'Expected the value to equal the expected value.'
+        }));
+    }
+
+    if (entry.notEquals !== undefined && jsonEquals(entry.notEquals, value)) {
+        issues.push(toIssue({
+            path: entry.path,
+            comparator: 'notEquals',
+            expected: entry.notEquals,
+            actual: value,
+            message: 'Expected the value to differ from the expected value.'
+        }));
+    }
+
+    return issues;
+}
+
+/**
+ * `exists` is decided before the path is required to resolve, because an
+ * absent path is the assertion rather than a failure to make one. Every other
+ * comparator needs a value to compare and reports an unresolved path.
+ */
+function existenceIssues(entry: any, found: boolean): AssertComparatorIssue[] {
+    if (entry.exists === undefined) {
+        return [];
+    }
+
+    const expected = Boolean(entry.exists);
+    return expected === found ? [] : [toIssue({
+        path: entry.path,
+        comparator: 'exists',
+        expected,
+        actual: found,
+        message: expected ? 'Expected the path to resolve to a value.' : 'Expected the path to be absent.'
+    })];
+}
+
+const COMPARATOR_KEYS = [
+    'gt',
+    'gte',
+    'lt',
+    'lte',
+    'between',
+    'length',
+    'contains',
+    'matches',
+    'equals',
+    'notEquals',
+    'exists'
+];
 
 function entryIssues(entry: any, actual: any): AssertComparatorIssue[] {
     if (typeof entry?.path !== 'string' || entry.path.length <= 0) {
@@ -192,21 +254,32 @@ function entryIssues(entry: any, actual: any): AssertComparatorIssue[] {
     }
 
     const resolved = resolveComparatorValue(entry.path, actual);
+    const existence = existenceIssues(entry, resolved.found);
+    const comparesValue = COMPARATOR_KEYS.some((key) => key !== 'exists' && entry[key] !== undefined);
+    if (!comparesValue) {
+        return existence;
+    }
+
     if (!resolved.found) {
-        return [toIssue({
-            path: entry.path,
-            comparator: 'path',
-            expected: undefined,
-            actual: undefined,
-            message: 'Comparator path did not resolve to a value.'
-        })];
+        return [
+            ...existence,
+            toIssue({
+                path: entry.path,
+                comparator: 'path',
+                expected: undefined,
+                actual: undefined,
+                message: 'Comparator path did not resolve to a value.'
+            })
+        ];
     }
 
     return [
+        ...existence,
         ...numericIssues(entry, resolved.value),
         ...betweenIssues(entry, resolved.value),
         ...lengthIssues(entry, resolved.value),
-        ...stringIssues(entry, resolved.value)
+        ...stringIssues(entry, resolved.value),
+        ...equalityIssues(entry, resolved.value)
     ];
 }
 

@@ -978,15 +978,6 @@ function validateStrictExpectIsHonoured(
         return [];
     }
 
-    if (type === 'parallel') {
-        return [{
-            severity: 'error',
-            code: 'STRICT_EXPECT_IGNORED',
-            message: 'Parallel steps ignore expect entirely; assert on the group steps instead.',
-            path: `${path}.expect`
-        }];
-    }
-
     const action = String(toRecipeStepAction(step) || '').toLowerCase();
     const isWsSend = type.startsWith('ws') && (action === 'send' || action.length <= 0);
     if (!isWsSend) {
@@ -998,7 +989,8 @@ function validateStrictExpectIsHonoured(
         .map((key): BlackBoxRunnerPreflightIssue => ({
             severity: 'error',
             code: 'STRICT_EXPECT_IGNORED',
-            message: `WebSocket send steps read only expect.message and expect.messages; expect.${key} is ignored. ` +
+            message:
+                `WebSocket send steps read expect.message, expect.messages, and expect.count; expect.${key} is ignored. ` +
                 'Use a ws.wait step for it.',
             path: `${path}.expect.${key}`
         }));

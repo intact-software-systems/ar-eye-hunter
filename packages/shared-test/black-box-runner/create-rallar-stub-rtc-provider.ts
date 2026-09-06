@@ -15,6 +15,7 @@ import {
     waitForRtcClose,
     waitForRtcMessage,
     waitForRtcMessageAbsence,
+    waitForRtcMessageCount,
     waitForRtcMessages
 } from './rtc/rtc-wait-expectations.ts';
 
@@ -103,6 +104,9 @@ function sendRallarStubRtc(interaction: any, config: any, context: any): Promise
         details: { sentConnection: connectionName, sent: payload, deliveredMessages, deliverTargets, stub: true }
     };
 
+    if (interaction.response?.count !== undefined) {
+        return waitForRtcMessageCount(waitInput);
+    }
     if (interaction.response?.messages) {
         return waitForRtcMessages(waitInput);
     }
@@ -130,6 +134,9 @@ function waitRallarStubRtc(interaction: any, config: any, context: any): Promise
         return waitForRtcMessageAbsence(waitInput);
     }
 
+    if (interaction.response?.count !== undefined) {
+        return waitForRtcMessageCount(waitInput);
+    }
     if (interaction.response?.messages) {
         return waitForRtcMessages(waitInput);
     }
@@ -142,7 +149,7 @@ function waitRallarStubRtc(interaction: any, config: any, context: any): Promise
         toRtcFailureStatus({
             config,
             interaction,
-            result: 'RTC wait expects expect.message, expect.messages, expect.absent, or expect.close',
+            result: 'RTC wait expects expect.message, expect.messages, expect.count, expect.absent, or expect.close',
             details: {
                 stub: true,
                 connection: toRtcExpectedConnectionName(interaction)
