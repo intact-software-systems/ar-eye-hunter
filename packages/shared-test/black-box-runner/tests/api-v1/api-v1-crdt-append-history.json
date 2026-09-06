@@ -725,6 +725,7 @@
       },
       "expect": {
         "status": 200,
+        "comparison": "compatible-complete",
         "body": {
           "ok": true,
           "result": {

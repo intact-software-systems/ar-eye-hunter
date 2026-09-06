@@ -535,7 +535,8 @@ If no plan exists, the initial work acknowledges but intent remains. Every accep
 publication atomically writes a group-scoped publication wake. This wake discovers current
 epoch latches after commit, closing the race where publication prepared before latch creation but
 the initial intent check ran before publication committed. Publication work identity includes its
-source work and exact layout, using source audit timestamps so crash replay is immutable.
+canonical source execution ID—including the coalescing generation—and exact layout, using source
+audit timestamps so crash replay is immutable while later generations remain distinct.
 
 The worker reads current group, latch and planned identity, then petitions exact connect through
 AppInbox. A superseding publication yields a new command identity. The connect write consumes the

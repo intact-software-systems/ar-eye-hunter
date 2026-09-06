@@ -333,7 +333,12 @@ describe('retry handoff commit races and replay', () => {
             createdAtEpochMs: 1000,
             expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
         });
-        const requests = computePublicationConnectTriggerRequests({ automationEnabled: true, target: PLANNED, entry: source });
+        const requests = computePublicationConnectTriggerRequests({
+            automationEnabled: true,
+            target: PLANNED,
+            sourceWorkId: 'source-work:1',
+            entry: source
+        });
         const writes = requests.map(computeAppOutboxInsert);
         expect(requests).toHaveLength(1);
         expect(decodeGroupConnectTriggerWork(requests[0]!.resource).kind).toBe('publication');
@@ -369,8 +374,18 @@ describe('retry handoff commit races and replay', () => {
             createdAtEpochMs: 1000,
             expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP
         });
-        const first = computePublicationConnectTriggerRequests({ automationEnabled: true, target: PLANNED, entry: source });
-        const next = computePublicationConnectTriggerRequests({ automationEnabled: true, target: { ...PLANNED, version: 2 }, entry: source });
+        const first = computePublicationConnectTriggerRequests({
+            automationEnabled: true,
+            target: PLANNED,
+            sourceWorkId: 'source-work:1',
+            entry: source
+        });
+        const next = computePublicationConnectTriggerRequests({
+            automationEnabled: true,
+            target: { ...PLANNED, version: 2 },
+            sourceWorkId: 'source-work:1',
+            entry: source
+        });
         const firstWrite = computeAppOutboxInsert(first[0]!);
         const nextWrite = computeAppOutboxInsert(next[0]!);
         expect(first[0]!.key).not.toEqual(next[0]!.key);

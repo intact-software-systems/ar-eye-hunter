@@ -28,6 +28,7 @@ export interface GroupTopologyPromotionWork {
 
 export interface ComputeTopologyPromotionEntryInput {
     readonly work: GroupTopologyPromotionWork;
+    readonly sourceWorkId: string;
     readonly senderId: string;
     readonly createdAtEpochMs: number;
     readonly expireAtEpochMs: number;
@@ -52,9 +53,16 @@ export function computeTopologyPromotionEntry(
         expectedLayout: input.work.expectedLayout
     };
     const contextId = groupStateGroupStorageKey(work.groupRef);
-    // Same 36-char discipline as the formation timers: the layout identity
-    // rides the fnv hash of its canonical spelling.
-    const identity = fnv1a64(contextId + serializeCanonicalJson(work.expectedLayout));
+    // Same 36-char discipline as the formation timers: the source generation
+    // and layout fence ride the fnv hash of their canonical spelling. Distinct
+    // topology work can request the same fence; retries of one work item retain
+    // one durable identity.
+    const identity = fnv1a64(
+        contextId + serializeCanonicalJson({
+            sourceWorkId: input.sourceWorkId,
+            expectedLayout: work.expectedLayout
+        })
+    );
     const key = toAppQueueKey({
         topicId: APP_OUTBOX_TOPOLOGY_PROMOTION_TOPIC,
         resourceId: `tp-${work.formationEpoch}-${identity}`,

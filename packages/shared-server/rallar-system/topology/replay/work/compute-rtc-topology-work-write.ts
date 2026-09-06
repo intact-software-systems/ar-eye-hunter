@@ -113,6 +113,7 @@ interface ComputedRtcTopologyReplayWrite {
 export interface ComputeRtcTopologyWorkWriteInput {
     readonly accepted: AcceptedRtcTopologyWork;
     readonly entry: ResourceEntry;
+    readonly sourceWorkId: string;
     readonly reservationFinish: ResourceInboxReservationFinish;
     readonly formationAutomationEnabled: boolean;
     readonly serviceId: string | undefined;
@@ -147,11 +148,13 @@ export function computeRtcTopologyWorkWrite(
                 read: accepted.promotionRead,
                 serviceId: input.serviceId,
                 entry,
+                sourceWorkId: input.sourceWorkId,
                 target
             })),
             connectWrites: computePublicationConnectTriggerRequests({
                 automationEnabled: input.formationAutomationEnabled,
                 target,
+                sourceWorkId: input.sourceWorkId,
                 entry
             }).map(computeAppOutboxInsert),
             fingerprint: computeFingerprintWrite(accepted),

@@ -43,7 +43,7 @@ function readResultValue(
 }
 
 describe('group formation lifecycle driver', () => {
-    it('waits through a removed layout until the receipt-owned active publication can connect', async () => {
+    it('accepts a newer active publication after the lifecycle-stage receipt', async () => {
         const commands: LiveRtcControlClient.ExecuteInput[] = [];
         const topologyStates: Array<'removed' | 'active'> = ['removed', 'active'];
         const control: LiveRtcControlPort = {
@@ -74,7 +74,7 @@ describe('group formation lifecycle driver', () => {
                     body: {
                         snapshot: {
                             sourceGroupStateCausalRevision: {
-                                groupRevision: 7,
+                                groupRevision: 8,
                                 presenceRevision: 3
                             },
                             version: 4,
@@ -122,7 +122,7 @@ describe('group formation lifecycle driver', () => {
                     body: {
                         expectedFormationEpoch: 1,
                         expectedLayout: {
-                            groupRevision: 7,
+                            groupRevision: 8,
                             presenceRevision: 3,
                             version: 4,
                             state: 'active'
