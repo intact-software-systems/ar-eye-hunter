@@ -1,0 +1,484 @@
+{
+  "description": "No-browser API-v1 invite admission through the /join route. api-v1-group-invite-revocation pins the same two denial codes on the self-upsert path; the routes are registered separately, so covering one proves nothing about the other. Also pins that the reserved inviteToken field cannot admit anyone, because nothing in the server ever sets the token it is compared against.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_INVADM_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-invadm"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_INVADM_WORKSPACE_ID",
+      "default": "workspace-invadm-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_INVADM_GROUP_ID",
+      "default": "invadm-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_INVADM_PASSWORD",
+      "default": "api-v1-invadm-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/invadm-register-owner-{runId}",
+        "body": {
+          "username": "invadm-owner-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "owner client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/invadm-login-owner-{runId}",
+        "body": {
+          "username": "invadm-owner-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "ownerClientId": "body.clientId",
+          "ownerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOwnerAuthHeader",
+      "type": "set",
+      "output": "ownerAuthHeader",
+      "secret": true,
+      "redactAs": "ownerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.ownerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerInvitee",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/invadm-register-invitee-{runId}",
+        "body": {
+          "username": "invadm-invitee-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "invitee client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginInvitee",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/invadm-login-invitee-{runId}",
+        "body": {
+          "username": "invadm-invitee-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "inviteeClientId": "body.clientId",
+          "inviteeAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveInviteeAuthHeader",
+      "type": "set",
+      "output": "inviteeAuthHeader",
+      "secret": true,
+      "redactAs": "inviteeAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.inviteeAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerExpiree",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/invadm-register-expiree-{runId}",
+        "body": {
+          "username": "invadm-expiree-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "expiree client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginExpiree",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/invadm-login-expiree-{runId}",
+        "body": {
+          "username": "invadm-expiree-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "expireeClientId": "body.clientId",
+          "expireeAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveExpireeAuthHeader",
+      "type": "set",
+      "output": "expireeAuthHeader",
+      "secret": true,
+      "redactAs": "expireeAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.expireeAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerStranger",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/invadm-register-stranger-{runId}",
+        "body": {
+          "username": "invadm-stranger-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "stranger client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginStranger",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/invadm-login-stranger-{runId}",
+        "body": {
+          "username": "invadm-stranger-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "strangerClientId": "body.clientId",
+          "strangerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveStrangerAuthHeader",
+      "type": "set",
+      "output": "strangerAuthHeader",
+      "secret": true,
+      "redactAs": "strangerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.strangerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createInviteOnlyGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/invadm-create-group-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Invite admission group {runId}",
+          "kind": "room",
+          "joinMode": "invite-only",
+          "createdByPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "joinMode": "invite-only"
+          }
+        }
+      }
+    },
+    {
+      "name": "theJoinRouteRefusesAStrangerWithoutAnInvite",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/invadm-stranger-join-route-{runId}",
+        "headers": {
+          "Authorization": "{strangerAuthHeader}",
+          "x-client-id": "{strangerClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-invite-required",
+          "status": 403,
+          "message": "A valid invite is required to join."
+        }
+      }
+    },
+    {
+      "name": "AnInviteTokenDoesNotSubstituteForAnInvite",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/invadm-stranger-token-join-{runId}",
+        "headers": {
+          "Authorization": "{strangerAuthHeader}",
+          "x-client-id": "{strangerClientId}"
+        },
+        "body": {
+          "inviteToken": "invadm-any-token-{runId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-invite-required",
+          "status": 403,
+          "message": "A valid invite is required to join."
+        }
+      }
+    },
+    {
+      "name": "theOwnerInvitesTheInvitee",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{inviteeClientId}/requests/invadm-invite-the-invitee-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{inviteeClientId}",
+              "status": "invited"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "AnInvitedPrincipalJoinsThroughTheJoinRoute",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/invadm-invitee-join-route-{runId}",
+        "headers": {
+          "Authorization": "{inviteeAuthHeader}",
+          "x-client-id": "{inviteeClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{inviteeClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theOwnerInvitesTheExpireeWithAPastExpiry",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{expireeClientId}/requests/invadm-invite-the-expiree-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "invitationExpiresAtEpochMs": 1700000000000
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{expireeClientId}",
+              "status": "invited",
+              "invitationExpiresAtEpochMs": 1700000000000
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "AnExpiredInviteIsRefusedOnTheJoinRoute",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/invadm-expiree-join-route-{runId}",
+        "headers": {
+          "Authorization": "{expireeAuthHeader}",
+          "x-client-id": "{expireeClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-invite-expired",
+          "status": 403,
+          "message": "Group invite has expired."
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

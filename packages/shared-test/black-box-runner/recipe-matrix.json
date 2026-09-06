@@ -2260,6 +2260,29 @@
         ]
       },
       "description": "No-browser API-v1 code-protected admission: group-code-required and group-code-invalid are returned by no recipe in the corpus. A code group refuses a join carrying no code and a join carrying the wrong one, the current code admits, a rotation invalidates the old code while the new one admits, and an expired code is refused even for a principal who is already an active member. Rotation is refused for a non-member and again for an active regular member -- the server returns the same envelope for both, so only the second probe pins the owner/admin rule. Both sides normalise the code identically, so the typed form and the returned form are interchangeable."
+    },
+    {
+      "id": "api-v1-group-invite-admission",
+      "recipe": "tests/api-v1/api-v1-group-invite-admission.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-invite-admission",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 invite admission through the /join route. api-v1-group-invite-revocation pins the same two denial codes on the self-upsert path; the routes are registered separately, so covering one proves nothing about the other. Also pins that the reserved inviteToken field cannot admit anyone, because nothing in the server ever sets the token it is compared against."
     }
   ]
 }
