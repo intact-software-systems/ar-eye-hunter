@@ -2306,6 +2306,29 @@
         ]
       },
       "description": "No-browser API-v1 business status: group-archived and group-deleted are returned by no recipe in the corpus. An archived group refuses new joins while its own members can still read, and is terminal at the route -- assertCanUpdateGroup denies the owner and a plain member alike, so the lifecycle refusal is raised ahead of the role check and the group can be neither revived nor deleted. Deletion is reachable only from active, each transition stamps its own audit entry and clears the other, and a deleted group refuses the read path and the mutation path with the message and the envelope that separate them."
+    },
+    {
+      "id": "api-v1-group-limits",
+      "recipe": "tests/api-v1/api-v1-group-limits.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-limits",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 group limits: group-not-active and member-session-limit-reached are returned by no recipe in the corpus. A group whose clock has passed still stores status active and stays readable, yet refuses a join with the message that separates an expired clock from a non-active status; and a second session for one principal trips maxSessionsPerMember, which is a strict greater-than so a cap of one refuses only the second."
     }
   ]
 }
