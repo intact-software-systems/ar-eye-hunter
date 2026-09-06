@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 group limits: group-not-active and member-session-limit-reached are returned by no recipe in the corpus. A group whose clock has passed still stores status active and stays readable, yet refuses a join with the message that separates an expired clock from a non-active status; and a second session for one principal trips maxSessionsPerMember, which is a strict greater-than so a cap of one refuses only the second.",
+  "description": "No-browser API-v1 group limits: group-not-active and member-session-limit-reached are returned by no recipe in the corpus. A group whose clock has passed still stores status active and stays readable, yet refuses a join with the message that separates an expired clock from a non-active status; a second group carrying a future clock admits through the same guard, so the comparison is pinned rather than the mere presence of the field. A second session for one principal trips maxSessionsPerMember, which is a strict greater-than so a cap of one refuses only the second.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -403,7 +403,8 @@
           "kind": "room",
           "joinMode": "open",
           "createdByPrincipalId": "{ownerClientId}",
-          "maxSessionsPerMember": 1
+          "maxSessionsPerMember": 1,
+          "expiresAtEpochMs": 4102444800000
         }
       },
       "expect": {
@@ -411,7 +412,8 @@
         "body": {
           "group": {
             "groupId": "{cappedGroupId}",
-            "maxSessionsPerMember": 1
+            "maxSessionsPerMember": 1,
+            "expiresAtEpochMs": 4102444800000
           }
         }
       }
