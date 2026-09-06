@@ -953,6 +953,9 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
         });
     }
 
+    // A polled `parallel` re-runs its groups with the same correlation, so its
+    // groups have to be idempotent; a mutating group replays its own request
+    // ids and the retry answers with a conflict rather than converging.
     if (interactionWithConfig.PARALLEL) {
         return withPollUntil({
             request: interaction.request,
@@ -1050,7 +1053,11 @@ async function executeParallelInteraction(interaction: any, config: any, context
         1,
         Number.parseInt(String(interaction.request.maxConcurrency || groups.length), 10) || groups.length
     );
-    const rendezvous = createParallelRendezvous(barrier ? groups.length : 1);
+    // Derived from the workers `runBoundedParallel` will actually start, not
+    // from the group count: a participant that never runs never arrives.
+    const rendezvous = createParallelRendezvous(
+        barrier ? Math.max(1, Math.min(maxConcurrency, groups.length)) : 1
+    );
     const timeoutMs = Number.parseInt(String(interaction.request.timeoutMs || 0), 10);
     const groupFailFast = interaction.request.failFast !== false;
     const startedAtEpochMs = Date.now();

@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-import { resolveWsOpenExpectation } from '../ws/ws-open-expectation.ts';
+import { resolveWsOpenExpectation, type WsOpenOutcome } from '../ws/ws-open-expectation.ts';
 import {
     toWsConnectionName,
     toWsFailureStatus,
@@ -99,35 +99,57 @@ export function openWs(interaction: any, config: any, context: any): Promise<any
             resolve(result);
         };
 
+        const registerOpenConnection = (): void => {
+            context.wsConnections[connectionName] = ws;
+            context.wsMessages[connectionName] = context.wsMessages[connectionName] || [];
+            context.wsCloseEvents[connectionName] = context.wsCloseEvents[connectionName] || [];
+        };
+
         // Every open outcome routes through here, so `expect.rejected` cannot
         // be honoured on one path and silently dropped on another.
         const resolveOpen = (input: {
-            opened: boolean;
+            outcome: WsOpenOutcome;
             details: any;
             failureResult: string;
             close?: { code?: number; reason?: string; };
         }): void => {
             const verdict = resolveWsOpenExpectation({
                 expectation,
-                opened: input.opened,
+                outcome: input.outcome,
                 close: input.close
             });
 
-            resolveOnce(
-                verdict.satisfied
-                    ? toWsSuccessStatus(config, interaction, input.details)
-                    : toWsFailureStatus(
-                        config,
-                        interaction,
-                        verdict.message ?? input.failureResult,
-                        input.details
-                    )
-            );
+            if (verdict.satisfied) {
+                // Registered only once the verdict holds, so a step that
+                // asserted a refusal never leaves a usable connection behind.
+                if (input.outcome === 'opened') {
+                    registerOpenConnection();
+                }
+
+                resolveOnce(toWsSuccessStatus(config, interaction, input.details));
+                return;
+            }
+
+            if (input.outcome === 'opened') {
+                try {
+                    ws.close();
+                }
+                catch {
+                    // The socket is being abandoned; a close failure adds nothing.
+                }
+            }
+
+            resolveOnce(toWsFailureStatus(
+                config,
+                interaction,
+                verdict.message ?? input.failureResult,
+                input.details
+            ));
         };
 
         const timeout = setTimeout(() => {
             resolveOpen({
-                opened: false,
+                outcome: 'timedOut',
                 failureResult: 'WebSocket connect timed out',
                 details: { connection: connectionName, url, timeoutMs }
             });
@@ -141,12 +163,8 @@ export function openWs(interaction: any, config: any, context: any): Promise<any
         }, timeoutMs);
 
         ws.onopen = () => {
-            context.wsConnections[connectionName] = ws;
-            context.wsMessages[connectionName] = context.wsMessages[connectionName] || [];
-            context.wsCloseEvents[connectionName] = context.wsCloseEvents[connectionName] || [];
-
             resolveOpen({
-                opened: true,
+                outcome: 'opened',
                 failureResult: 'WebSocket opened',
                 details: { connection: connectionName, url, readyState: ws.readyState }
             });
@@ -173,7 +191,7 @@ export function openWs(interaction: any, config: any, context: any): Promise<any
 
             if (!settled) {
                 resolveOpen({
-                    opened: false,
+                    outcome: 'refused',
                     failureResult: 'WebSocket closed before opening',
                     close: { code: event.code, reason: event.reason },
                     details: {
@@ -189,7 +207,7 @@ export function openWs(interaction: any, config: any, context: any): Promise<any
 
         ws.onerror = (event) => {
             resolveOpen({
-                opened: false,
+                outcome: 'errored',
                 failureResult: 'WebSocket connection failed',
                 details: {
                     connection: connectionName,

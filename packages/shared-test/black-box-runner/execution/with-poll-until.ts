@@ -21,20 +21,51 @@ function isRecord(value: unknown): value is Record<string, ApiJsonValue> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * `action: 'poll-until'` predates the `poll` block and means "poll with the
+ * defaults", so both forms have to answer the same predicate; otherwise the
+ * action reads as supported and quietly runs the step once.
+ */
 export function hasPollUntilPolicy(request: any): boolean {
-    return isRecord(request?.poll);
+    return isRecord(request?.poll) ||
+        String(request?.action || '').toLowerCase() === 'poll-until';
+}
+
+/**
+ * `Number` rather than `parseInt`/`parseFloat`: those read `"2x"` as 2 and
+ * `"many"` as NaN, so a typo either changes the bound silently or removes it.
+ */
+function toPollBound(value: ApiJsonValue | undefined, fallback: number): number {
+    return value === undefined || value === null ? fallback : Number(value);
 }
 
 export function toPollUntilPolicy(request: any): PollUntilPolicy {
     const poll = isRecord(request?.poll) ? request.poll : {};
 
     return {
-        maxAttempts: Number.parseInt(String(poll.maxAttempts ?? 10), 10),
-        maxDurationMs: Number.parseInt(String(poll.maxDurationMs ?? 15000), 10),
-        backoffMs: Number.parseInt(String(poll.backoffMs ?? 100), 10),
-        backoffMultiplier: Number.parseFloat(String(poll.backoffMultiplier ?? 2)),
-        stableForMs: Number.parseInt(String(poll.stableForMs ?? 0), 10)
+        maxAttempts: toPollBound(poll.maxAttempts, 10),
+        maxDurationMs: toPollBound(poll.maxDurationMs, 15000),
+        backoffMs: toPollBound(poll.backoffMs, 100),
+        backoffMultiplier: toPollBound(poll.backoffMultiplier, 2),
+        stableForMs: toPollBound(poll.stableForMs, 0)
     };
+}
+
+function isUsableBound(value: number, minimum: number): boolean {
+    return Number.isFinite(value) && value >= minimum;
+}
+
+/**
+ * A policy that parsed to NaN or to zero attempts would otherwise skip the loop
+ * body entirely and return a result carrying no `status` at all — a step that
+ * neither passed nor failed and never evaluated its own expectation.
+ */
+export function isUsablePollUntilPolicy(policy: PollUntilPolicy): boolean {
+    return isUsableBound(policy.maxAttempts, 1) &&
+        isUsableBound(policy.maxDurationMs, 0) &&
+        isUsableBound(policy.backoffMs, 0) &&
+        Number.isFinite(policy.backoffMultiplier) && policy.backoffMultiplier > 0 &&
+        isUsableBound(policy.stableForMs, 0);
 }
 
 export function withPollReportFields(status: any, poll: any): any {
@@ -47,7 +78,11 @@ export function withPollReportFields(status: any, poll: any): any {
     };
 }
 
-function toBackoffMs(policy: PollUntilPolicy, attemptNumber: number): number {
+/** Shared with HTTP transport retry so one formula bounds both loops. */
+export function toBackoffMs(
+    policy: { backoffMs: number; backoffMultiplier: number; },
+    attemptNumber: number
+): number {
     return policy.backoffMs * Math.pow(policy.backoffMultiplier, attemptNumber - 1);
 }
 
@@ -72,6 +107,10 @@ export async function withPollUntil(input: WithPollUntilInput): Promise<any> {
     }
 
     const policy = toPollUntilPolicy(input.request);
+    if (!isUsablePollUntilPolicy(policy)) {
+        return toUnusablePolicyStatus(await input.execute(), input.request);
+    }
+
     const startedAtEpochMs = Date.now();
     let lastStatus: any;
     let stableSinceEpochMs: number | undefined;
@@ -114,6 +153,20 @@ export async function withPollUntil(input: WithPollUntilInput): Promise<any> {
         elapsedMs: Date.now() - startedAtEpochMs,
         stableForMs: policy.stableForMs
     });
+}
+
+/**
+ * The step still runs once, so its own expectation is evaluated and reported;
+ * the malformed policy is then a loud failure rather than a bound that silently
+ * did not apply.
+ */
+function toUnusablePolicyStatus(status: any, request: any): any {
+    return {
+        ...status,
+        status: 'FAILURE',
+        result: 'Poll policy needs at least one attempt and finite, non-negative bounds',
+        pollPolicy: request?.poll
+    };
 }
 
 /**

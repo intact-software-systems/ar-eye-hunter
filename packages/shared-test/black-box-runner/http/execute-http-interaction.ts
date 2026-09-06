@@ -1,13 +1,8 @@
 // deno-lint-ignore-file no-explicit-any
-import { withPollUntil } from '../execution/with-poll-until.ts';
+import { hasPollUntilPolicy, toBackoffMs, withPollUntil } from '../execution/with-poll-until.ts';
 import { toHttpInteractionStatus } from './http-response-expectations.ts';
 
-const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
-
-function isRecord(value: any): value is Record<string, any> {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 function toCorrelationReportFields(interaction: any): any {
     const correlation = interaction?.request?.correlation;
@@ -42,10 +37,6 @@ function shouldRetryStatus(response: any, retryPolicy: any): boolean {
     return retryPolicy.onStatus
         .map((status: any) => Number.parseInt(status))
         .includes(response.status);
-}
-
-function toBackoffMs(retryPolicy: any, attemptNumber: number): number {
-    return retryPolicy.backoffMs * Math.pow(retryPolicy.backoffMultiplier, attemptNumber - 1);
 }
 
 async function fetchWithRetry(request: any): Promise<any> {
@@ -169,15 +160,8 @@ function executeSingleHttpAttempt(interaction: any, config: any): Promise<any> {
         });
 }
 
-function isPollUntilHttpRequest(request: any): boolean {
-    return String(request?.action || '').toLowerCase() === 'poll-until' ||
-        isRecord(request?.poll);
-}
-
-// Success is the step's own expect passing; exhaustion of either bound is a
-
 export function executeHttpInteraction(interaction: any, config: any): Promise<any> {
-    if (isPollUntilHttpRequest(interaction.request)) {
+    if (hasPollUntilPolicy(interaction.request)) {
         return withPollUntil({
             request: interaction.request,
             execute: () => executeSingleHttpAttempt(interaction, config)

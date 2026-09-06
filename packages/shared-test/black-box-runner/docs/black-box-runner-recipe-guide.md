@@ -779,14 +779,27 @@ that a `poll` block now expresses directly.
   "name": "theQueueRowReachedItsTerminalState",
   "type": "set.state-write-evidence",
   "output": "stateWriteEvidence",
-  "poll": { "maxAttempts": 20, "maxDurationMs": 15000, "backoffMs": 250, "backoffMultiplier": 1 },
-  "request": { "stateWriteEvidence": { "match": "bb-request-{runId}", "minimumMatchedRows": 1 } }
+  "request": {
+    "poll": { "maxAttempts": 20, "maxDurationMs": 15000, "backoffMs": 250, "backoffMultiplier": 1 },
+    "stateWriteEvidence": { "match": "bb-request-{runId}", "minimumMatchedRows": 1 }
+  }
 }
 ```
 
-A step that declares no `poll` runs exactly once and carries no poll fields, so
-nothing changes for the rest of the corpus. The result reports `pollAttempts`,
-`pollExhausted` and `pollElapsedMs`.
+The block lives **inside `request`**, beside `path` or `stateWriteEvidence` —
+not beside it. A step that declares no `poll` runs exactly once and carries no
+poll fields, so nothing changes for the rest of the corpus. The result reports
+`pollAttempts`, `pollExhausted` and `pollElapsedMs`. A policy that names zero
+attempts, or bounds that do not parse as finite numbers, fails the step rather
+than silently skipping it.
+
+`"action": "poll-until"` on an `http` step is the older spelling and still
+polls, with the defaults.
+
+**A polled step must be idempotent.** Every attempt re-runs the step with the
+same correlation, so a `parallel` group that mutates replays its own request ids
+and the retry is answered with a conflict instead of converging. Poll on reads,
+derived values and queue evidence; not on the mutation itself.
 
 ### `stableForMs`: converged, not passing through
 
@@ -816,10 +829,14 @@ successful open becomes the failure.
 }
 ```
 
-`expect.close.code` is optional; without it any refusal satisfies the assertion.
-With it, a refusal that closed for a different reason fails and reports the code
-it actually saw, so "rejected" cannot quietly mean "rejected for the wrong
-reason".
+`expect.close` is optional; without it any refusal satisfies the assertion. With
+it, both `code` and `reason` are compared when present, and a refusal that closed
+differently fails reporting what it actually saw — so "rejected" cannot quietly
+mean "rejected for the wrong reason".
+
+Only an actual refusal counts. A connect timeout or a transport error is a
+server that never answered, not one that declined, and both fail the assertion:
+otherwise the step would pass against an API that was never started.
 
 ## Racing Parallel Groups With `barrier`
 

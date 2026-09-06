@@ -217,28 +217,49 @@ function isCompatibleObjects(
     return toCompatible();
 }
 
-function isOrderedArrayEqual(
-    expected: JsonArray,
-    actual: JsonArray,
-    config: CompareConfig,
-    currPath: string
+interface IsOrderedArrayEqualInput {
+    readonly expected: JsonArray;
+    readonly actual: JsonArray;
+    readonly config: CompareConfig;
+    readonly currPath: string;
+}
+
+function isOrderedElementEqual(
+    input: IsOrderedArrayEqualInput,
+    index: number
 ): ComparisonResult {
+    const { config } = input;
+    const elementPath = input.currPath + '[' + index + ']';
+    const expectedElement = input.expected[index];
+    const actualElement = input.actual[index];
+
+    if (Array.isArray(expectedElement)) {
+        return isCompatibleArrays(expectedElement, actualElement, config, elementPath);
+    }
+
+    if (isRecord(expectedElement)) {
+        return isCompatibleObjects(expectedElement, actualElement, config, elementPath);
+    }
+
+    // Honours `compareValues` like every other element path, so an ordered
+    // structure-only mode would compare positions without comparing values.
+    if (!config.compareValues) {
+        return toCompatible();
+    }
+
+    return isValueEqual(expectedElement, actualElement, config.compareExact)
+        ? toCompatible()
+        : toNotCompatible(expectedElement, actualElement, 'Json array element value differs');
+}
+
+function isOrderedArrayEqual(input: IsOrderedArrayEqualInput): ComparisonResult {
+    const { expected, actual } = input;
     if (expected.length !== actual.length) {
         return toNotCompatible(expected, actual, 'Json array length differs under exact-ordered');
     }
 
     for (let index = 0; index < expected.length; index++) {
-        const elementPath = currPath + '[' + index + ']';
-        const expectedElement = expected[index];
-        const actualElement = actual[index];
-        const result = Array.isArray(expectedElement)
-            ? isCompatibleArrays(expectedElement, actualElement, config, elementPath)
-            : isRecord(expectedElement)
-            ? isCompatibleObjects(expectedElement, actualElement, config, elementPath)
-            : isValueEqual(expectedElement, actualElement, config.compareExact)
-            ? toCompatible()
-            : toNotCompatible(expectedElement, actualElement, 'Json array element value differs');
-
+        const result = isOrderedElementEqual(input, index);
         if (!result.isEqual) {
             return toNotCompatible(expected, actual, 'Json array element ' + index + ' differs', result);
         }
@@ -258,7 +279,7 @@ function isCompatibleArrays(
     }
 
     if (config.compareArrayOrder) {
-        return isOrderedArrayEqual(expected, actual, config, currPath);
+        return isOrderedArrayEqual({ expected, actual, config, currPath });
     }
 
     const expectedFound: JsonValue[] = [];

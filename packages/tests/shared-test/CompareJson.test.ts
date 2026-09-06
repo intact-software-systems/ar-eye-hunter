@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import {
+    compareJson,
+    COMPARISON,
+    toConfig,
+    type JsonValue
+} from '../../shared-test/json-compare/CompareJson.ts';
 import { CompareJson } from '../../shared-test/json-compare/json-compare.ts';
-import { compareJson, COMPARISON, toConfig } from '../../shared-test/json-compare/CompareJson.ts';
 
 describe('CompareJson facade', () => {
     it('compatible should allow extra actual fields', () => {
@@ -395,12 +400,8 @@ describe('CompareJson compatible-complete', () => {
 });
 
 describe('exact-ordered comparison', () => {
-    function compare(expected: unknown, actual: unknown): boolean {
-        return compareJson(
-            expected as never,
-            actual as never,
-            toConfig(COMPARISON.EXACT_ORDERED, [], [])
-        ).isEqual;
+    function compare(expected: JsonValue, actual: JsonValue): boolean {
+        return compareJson(expected, actual, toConfig(COMPARISON.EXACT_ORDERED, [], [])).isEqual;
     }
 
     // Every other mode, including `exact`, matches a reordered array. Asserting

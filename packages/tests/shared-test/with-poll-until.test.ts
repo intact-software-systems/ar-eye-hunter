@@ -102,4 +102,47 @@ describe('withPollUntil', () => {
         expect(status.status).toBe(FAILURE);
         expect(status.pollExhausted).toBe(true);
     });
+
+    // A policy that parses to zero attempts or to NaN would otherwise skip the
+    // loop and return a result carrying no `status` at all — a step that never
+    // ran and never failed.
+    it('fails a policy that names zero attempts instead of skipping the step', async () => {
+        let calls = 0;
+        const status = await withPollUntil({
+            request: { poll: { maxAttempts: 0 } },
+            execute: () => {
+                calls += 1;
+                return Promise.resolve({ status: 'SUCCESS' });
+            }
+        });
+
+        expect(calls).toBe(1);
+        expect(status.status).toBe('FAILURE');
+        expect(status.result).toContain('at least one attempt');
+    });
+
+    it('fails a policy whose bounds do not parse', async () => {
+        const status = await withPollUntil({
+            request: { poll: { backoffMultiplier: '2x' } },
+            execute: () => Promise.resolve({ status: 'SUCCESS' })
+        });
+
+        expect(status.status).toBe('FAILURE');
+        expect(status.result).toContain('finite');
+    });
+
+    // `action: 'poll-until'` predates the block and has to keep polling with
+    // the defaults, or a step that reads as supported quietly runs once.
+    it('polls an action-only poll-until request with the defaults', async () => {
+        let calls = 0;
+        await withPollUntil({
+            request: { action: 'poll-until' },
+            execute: () => {
+                calls += 1;
+                return Promise.resolve(calls >= 3 ? { status: 'SUCCESS' } : { status: 'FAILURE' });
+            }
+        });
+
+        expect(calls).toBe(3);
+    });
 });

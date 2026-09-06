@@ -6,6 +6,10 @@
  * timing coincidence rather than a race. A rendezvous makes every group arrive
  * before any is released, so the contention the recipe claims to test is the
  * contention that actually happens.
+ *
+ * The participant count must be the number of workers that will actually run,
+ * not the number of items: a count higher than that releases nobody and the
+ * step hangs instead of failing.
  */
 export interface ParallelRendezvous {
     /** Resolves once every participant has arrived. */
@@ -17,20 +21,19 @@ export function createParallelRendezvous(participantCount: number): ParallelRend
         return { arrive: () => Promise.resolve() };
     }
 
-    let arrived = 0;
-    let release: () => void = () => {};
-    const released = new Promise<void>((resolve) => {
-        release = resolve;
-    });
+    const waiting: Array<() => void> = [];
 
     return {
         arrive: () => {
-            arrived += 1;
-            if (arrived >= participantCount) {
-                release();
+            const arrival = new Promise<void>((resolve) => {
+                waiting.push(resolve);
+            });
+
+            if (waiting.length >= participantCount) {
+                waiting.splice(0).forEach((resolve) => resolve());
             }
 
-            return released;
+            return arrival;
         }
     };
 }
