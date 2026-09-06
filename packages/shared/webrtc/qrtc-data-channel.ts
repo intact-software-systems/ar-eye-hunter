@@ -29,6 +29,8 @@ export interface RtcDataChannelSendOptions {
     readonly key?: string;
     readonly maxAgeMs?: number;
     readonly now?: () => number;
+    /** Reports a terminal local outcome in a microtask; observer completion never gates transport work. */
+    readonly onSettled?: (settlement: QRtcDataChannel.SendSettlement) => void | Promise<void>;
 }
 
 export interface RtcDataChannelSendResult {
@@ -105,6 +107,11 @@ interface RtcDataChannelOpenWaiter {
     timeout: ReturnType<typeof setTimeout> | undefined;
 }
 
+interface RtcQueuedPayload {
+    readonly data: RtcDataChannelPayload;
+    readonly onSettled: RtcDataChannelSendOptions['onSettled'];
+}
+
 const DEFAULT_FLOW_CONTROL: Required<RtcDataChannelFlowControlPolicy> = {
     highWatermarkBytes: 64 * 1024,
     lowWatermarkBytes: 16 * 1024,
@@ -127,6 +134,14 @@ const createInitialCounters = (): Record<keyof RtcDataChannelCounters, number> =
 });
 
 export namespace QRtcDataChannel {
+    /** Local ownership outcome. `sent` establishes native submission, not receiver acknowledgement. */
+    export interface SendSettlement {
+        readonly status: 'sent' | 'dropped' | 'superseded' | 'expired' | 'closed' | 'failed';
+        readonly key: string | undefined;
+        readonly reason: string | undefined;
+        readonly bufferedAmount: number;
+    }
+
     export interface InputDto {
         readonly peerId: string;
         readonly dataChannelName: string;
@@ -148,7 +163,8 @@ export class QRtcDataChannel {
     private readonly clientCallbacks = new Map<string, QRtcClientCallbacks>();
     private readonly onMessageCallbacks = new Map<string, RtcMessageSubscription>();
     private readonly onRawMessageCallbacks = new Map<string, RtcRawMessageCallback>();
-    private readonly sendQueue = new RtcDataChannelSendQueue<RtcDataChannelPayload>();
+    private readonly sendQueue = new RtcDataChannelSendQueue<RtcQueuedPayload>();
+    private queueExpiryTimer: ReturnType<typeof setTimeout> | undefined;
     private readonly openWaiters: RtcDataChannelOpenWaiter[] = [];
     private readonly counters = createInitialCounters();
     private readonly flowControlPolicy: Required<RtcDataChannelFlowControlPolicy>;
@@ -177,7 +193,7 @@ export class QRtcDataChannel {
         this.peerConnection.removeDataChannelCallbackById(this.dataChannelCallbackId());
         this.resolveOpenWaiters(false);
         this.closeDataChannelIfPresent();
-        this.sendQueue.clear();
+        this.clearQueuedSends('closed', 'Data channel reset');
         this.status.state = RtcSessionState.Idle;
     }
 
@@ -192,6 +208,7 @@ export class QRtcDataChannel {
         if (!dataChannel) {
             return;
         }
+        this.clearQueuedSends('closed', 'Data channel closed');
         try {
             dataChannel.close();
         }
@@ -255,6 +272,7 @@ export class QRtcDataChannel {
     ): RtcDataChannelSendResult {
         const dc = this.status.dc;
         if (!dc || dc.readyState !== 'open') {
+            this.settleSend(options.onSettled, 'closed', 'Data channel not open', options.key);
             return this.recordSendResult('closed', 'Data channel not open', options.key);
         }
 
@@ -264,7 +282,14 @@ export class QRtcDataChannel {
             return this.enqueueBackPressuredSend(data, options);
         }
 
-        this.sendPayload(dc, data);
+        try {
+            this.sendPayload(dc, data);
+        }
+        catch (error) {
+            this.settleSend(options.onSettled, 'failed', 'Native data channel send failed', options.key);
+            throw error;
+        }
+        this.settleSend(options.onSettled, 'sent', undefined, options.key);
         return this.recordSendResult('sent', undefined, options.key);
     }
 
@@ -475,7 +500,7 @@ export class QRtcDataChannel {
         }
         this.status.state = RtcSessionState.Closed;
         this.resolveOpenWaiters(false);
-        this.sendQueue.clear();
+        this.clearQueuedSends('closed', 'Data channel closed');
         this.clearDataChannelReference(dataChannel);
         await this.notifyCloseCallbacks();
     }
@@ -486,7 +511,7 @@ export class QRtcDataChannel {
         }
         this.status.state = RtcSessionState.Failed;
         this.resolveOpenWaiters(false);
-        this.sendQueue.clear();
+        this.clearQueuedSends('failed', 'Data channel failed');
         this.clearDataChannelReference(dataChannel);
         await this.notifyErrorCallbacks();
         await this.notifyCloseCallbacks();
@@ -516,6 +541,7 @@ export class QRtcDataChannel {
             return;
         }
 
+        this.clearQueuedSends('closed', 'Data channel closed');
         this.clearDataChannelReference(dc);
     }
 
@@ -590,7 +616,11 @@ export class QRtcDataChannel {
 
         dc.bufferedAmountLowThreshold = this.flowControlPolicy
             .lowWatermarkBytes;
-        dc.onbufferedamountlow = () => this.flushQueuedSends();
+        dc.onbufferedamountlow = () => {
+            if (this.status.dc === dc) {
+                this.flushQueuedSends();
+            }
+        };
     }
 
     private async dispatchRawMessage(event: MessageEvent<RtcDataChannelPayload>): Promise<boolean> {
@@ -614,8 +644,8 @@ export class QRtcDataChannel {
     ): RtcDataChannelSendResult {
         const policy = this.flowControlPolicy;
         const createdAtEpochMs = (options.now ?? this.now)();
-        const queued: RtcDataChannelSendQueue.QueuedSend<RtcDataChannelPayload> = {
-            payload,
+        const queued: RtcDataChannelSendQueue.QueuedSend<RtcQueuedPayload> = {
+            payload: { data: payload, onSettled: options.onSettled },
             key: options.key,
             maxAgeMs: options.maxAgeMs,
             createdAtEpochMs
@@ -625,6 +655,18 @@ export class QRtcDataChannel {
         if (offerResult.droppedOldest) {
             this.counters.droppedOldest += 1;
         }
+        if (offerResult.displaced) {
+            this.settleSend(
+                offerResult.displaced.payload.onSettled,
+                offerResult.status === 'replaced' ? 'superseded' : 'dropped',
+                offerResult.status === 'replaced' ? 'Replaced queued payload' : 'Queue capacity exceeded',
+                offerResult.displaced.key
+            );
+        }
+        if (offerResult.status === 'dropped') {
+            this.settleSend(options.onSettled, 'dropped', offerResult.reason, options.key);
+        }
+        this.scheduleQueueExpiry();
 
         return this.recordSendResult(
             offerResult.status,
@@ -635,25 +677,28 @@ export class QRtcDataChannel {
 
     private flushQueuedSends(): void {
         const dc = this.status.dc;
-        if (!dc || dc.readyState !== 'open') {
+        if (!dc || dc.readyState !== 'open' || this.sendQueue.size === 0) {
             return;
         }
 
-        while (!this.isBackPressured(dc)) {
+        this.expireQueuedSends();
+        while (this.status.dc === dc && dc.readyState === 'open' && !this.isBackPressured(dc)) {
             const next = this.sendQueue.shift();
             if (!next) {
-                return;
+                break;
             }
-
-            if (this.isStale(next)) {
-                this.counters.droppedStale += 1;
-                continue;
+            try {
+                this.sendPayload(dc, next.payload.data);
+                this.counters.flushed += 1;
+                this.counters.sent += 1;
+                this.settleSend(next.payload.onSettled, 'sent', undefined, next.key);
             }
-
-            this.sendPayload(dc, next.payload);
-            this.counters.flushed += 1;
-            this.counters.sent += 1;
+            catch {
+                this.counters.dropped += 1;
+                this.settleSend(next.payload.onSettled, 'failed', 'Native data channel send failed', next.key);
+            }
         }
+        this.scheduleQueueExpiry();
     }
 
     private sendPayload(
@@ -678,12 +723,56 @@ export class QRtcDataChannel {
         dc.send(payload);
     }
 
-    private isStale(queued: RtcDataChannelSendQueue.QueuedSend<RtcDataChannelPayload>): boolean {
-        if (queued.maxAgeMs === undefined) {
-            return false;
+    private expireQueuedSends(): void {
+        for (const expired of this.sendQueue.removeExpired(this.now())) {
+            this.counters.droppedStale += 1;
+            this.settleSend(expired.payload.onSettled, 'expired', 'Queued payload expired', expired.key);
         }
+    }
 
-        return this.now() - queued.createdAtEpochMs > queued.maxAgeMs;
+    private scheduleQueueExpiry(): void {
+        if (this.queueExpiryTimer !== undefined) {
+            clearTimeout(this.queueExpiryTimer);
+            this.queueExpiryTimer = undefined;
+        }
+        const expiryAtMs = this.sendQueue.nextExpiryAtMs();
+        if (expiryAtMs === undefined) {
+            return;
+        }
+        const delayMs = Math.min(2_147_483_647, Math.max(0, expiryAtMs - this.now() + 1));
+        this.queueExpiryTimer = setTimeout(() => {
+            this.queueExpiryTimer = undefined;
+            this.expireQueuedSends();
+            this.scheduleQueueExpiry();
+        }, delayMs);
+    }
+
+    private clearQueuedSends(status: 'closed' | 'failed', reason: string): void {
+        const removed = this.sendQueue.clear();
+        this.scheduleQueueExpiry();
+        for (const queued of removed) {
+            this.settleSend(queued.payload.onSettled, status, reason, queued.key);
+        }
+    }
+
+    private settleSend(
+        observer: RtcDataChannelSendOptions['onSettled'],
+        status: QRtcDataChannel.SendSettlement['status'],
+        reason: string | undefined,
+        key: string | undefined
+    ): void {
+        if (!observer) {
+            return;
+        }
+        const settlement: QRtcDataChannel.SendSettlement = {
+            status,
+            reason,
+            key,
+            bufferedAmount: this.status.dc?.bufferedAmount ?? 0
+        };
+        void Promise.resolve().then(() => observer(settlement)).catch((error) => {
+            console.error('RTC send settlement observer failed', toError(error));
+        });
     }
 
     private isBackPressured(dc: RTCDataChannel): boolean {

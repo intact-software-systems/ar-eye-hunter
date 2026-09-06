@@ -13,11 +13,12 @@ export namespace RtcDataChannelSendQueue {
         readonly maxQueueItems: number;
     }
 
-    export interface OfferResult {
+    export interface OfferResult<TPayload> {
         readonly status: 'queued' | 'dropped' | 'replaced';
         readonly reason: string;
         readonly key?: string;
         readonly droppedOldest: boolean;
+        readonly displaced: QueuedSend<TPayload> | undefined;
     }
 }
 
@@ -29,30 +30,42 @@ export class RtcDataChannelSendQueue<TPayload> {
         return this.items.length;
     }
 
-    clear(): void {
-        this.items.length = 0;
+    clear(): readonly RtcDataChannelSendQueue.QueuedSend<TPayload>[] {
+        const removed = this.items.splice(0);
         this.indexByKey.clear();
+        return removed;
     }
 
     offer(
         queued: RtcDataChannelSendQueue.QueuedSend<TPayload>,
         policy: RtcDataChannelSendQueue.Policy
-    ): RtcDataChannelSendQueue.OfferResult {
+    ): RtcDataChannelSendQueue.OfferResult<TPayload> {
         if (policy.overflow === 'drop-new') {
-            return { status: 'dropped', reason: 'Back pressure', key: queued.key, droppedOldest: false };
+            return {
+                status: 'dropped',
+                reason: 'Back pressure',
+                key: queued.key,
+                droppedOldest: false,
+                displaced: undefined
+            };
         }
         if (policy.overflow === 'replace-by-key' && queued.key) {
             const index = this.indexByKey.get(queued.key);
             if (index !== undefined) {
+                const displaced = this.items[index];
                 this.items[index] = queued;
-                return { status: 'replaced', reason: 'Replaced queued payload', key: queued.key, droppedOldest: false };
+                return {
+                    status: 'replaced',
+                    reason: 'Replaced queued payload',
+                    key: queued.key,
+                    droppedOldest: false,
+                    displaced
+                };
             }
         }
         const droppedOldest = policy.overflow === 'drop-old' && this.items.length >= policy.maxQueueItems;
-        if (droppedOldest) {
-            this.shift();
-        }
-        return this.enqueue(queued, policy, droppedOldest);
+        const displaced = droppedOldest ? this.shift() : undefined;
+        return this.enqueue(queued, policy, displaced);
     }
 
     shift(): RtcDataChannelSendQueue.QueuedSend<TPayload> | undefined {
@@ -63,13 +76,42 @@ export class RtcDataChannelSendQueue<TPayload> {
         return shifted;
     }
 
+    removeExpired(nowMs: number): readonly RtcDataChannelSendQueue.QueuedSend<TPayload>[] {
+        const removed: RtcDataChannelSendQueue.QueuedSend<TPayload>[] = [];
+        const retained: RtcDataChannelSendQueue.QueuedSend<TPayload>[] = [];
+        for (const item of this.items) {
+            if (item.maxAgeMs !== undefined && nowMs - item.createdAtEpochMs > item.maxAgeMs) {
+                removed.push(item);
+            }
+            else {
+                retained.push(item);
+            }
+        }
+        if (removed.length > 0) {
+            this.items.splice(0, this.items.length, ...retained);
+            this.rebuildIndexByKey();
+        }
+        return removed;
+    }
+
+    nextExpiryAtMs(): number | undefined {
+        let earliest = Infinity;
+        for (const item of this.items) {
+            if (item.maxAgeMs !== undefined) {
+                earliest = Math.min(earliest, item.createdAtEpochMs + item.maxAgeMs);
+            }
+        }
+        return Number.isFinite(earliest) ? earliest : undefined;
+    }
+
     private enqueue(
         queued: RtcDataChannelSendQueue.QueuedSend<TPayload>,
         policy: RtcDataChannelSendQueue.Policy,
-        droppedOldest: boolean
-    ): RtcDataChannelSendQueue.OfferResult {
+        displaced: RtcDataChannelSendQueue.QueuedSend<TPayload> | undefined
+    ): RtcDataChannelSendQueue.OfferResult<TPayload> {
+        const droppedOldest = displaced !== undefined;
         if (this.items.length >= policy.maxQueueItems) {
-            return { status: 'dropped', reason: 'Queue full', key: queued.key, droppedOldest };
+            return { status: 'dropped', reason: 'Queue full', key: queued.key, droppedOldest, displaced };
         }
         this.items.push(queued);
         this.indexQueuedSend(queued, this.items.length - 1);
@@ -77,7 +119,8 @@ export class RtcDataChannelSendQueue<TPayload> {
             status: 'queued',
             reason: policy.overflow === 'drop-old' ? 'Queued payload after dropping oldest' : 'Queued payload',
             key: queued.key,
-            droppedOldest
+            droppedOldest,
+            displaced
         };
     }
 
