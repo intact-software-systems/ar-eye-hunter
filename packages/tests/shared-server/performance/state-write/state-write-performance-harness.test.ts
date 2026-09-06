@@ -13,14 +13,10 @@ import {
     readValidatedGroupReceiptIdentity,
     type ScopedGroupCommandExpectation
 } from '../../../../../scripts/perf/api-v1-state-write-group-receipt-evidence.ts';
-import {
-    computeProductionOutboxEvidence,
-    computeProductionOutboxExpectations,
-    createProductionOutboxRepository,
-    readAllCommandIds,
-    readCanonicalEffectCommandId,
-    readResourceEffectKind
-} from '../../../../../scripts/perf/api-v1-state-write-outbox-evidence.ts';
+import { computeProductionOutboxEvidence } from '../../../../../scripts/perf/api-v1-state-write-outbox-evidence.ts';
+import { computeProductionOutboxExpectations } from '../../../../../scripts/perf/api-v1-state-write-outbox-expectations.ts';
+import { createProductionOutboxRepository } from '../../../../../scripts/perf/api-v1-state-write-outbox-repository.ts';
+
 import { classifyBenchmarkSql } from '../../../../../scripts/perf/create-instrumented-state-write-sql.ts';
 import {
     readStateWriteAppInboxIdentity,
@@ -595,11 +591,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         const sample = candidate.workloads[0].samples[0];
         sample.durableEvidence.intermediateMutationIntents.push({ intentId: 'forbidden' });
         sample.attemptObservations[0].source = 'group-state-service.mutation.conflict';
-        expectStateWriteArtifactIssues(
-            candidate,
-            'intermediateMutationIntents must be exactly empty',
-            'production ResourceInbox release telemetry'
-        );
+        expectStateWriteArtifactIssues(candidate, ['intermediateMutationIntents must be exactly empty', 'production ResourceInbox release telemetry']);
     });
 
     it('rejects missing same-observation completion components', () => {
@@ -621,7 +613,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         for (const field of ['retryDelayMs', 'dueAgeMs', 'transactionDurationMs'] as const) {
             const candidate = createDefaultStateWritePerformanceArtifact();
             durableEvidence(candidate).appInbox[0][field] = -1;
-            expectStateWriteArtifactIssues(candidate, 'appInbox[0] is malformed');
+            expectStateWriteArtifactIssues(candidate, ['appInbox[0] is malformed']);
         }
         const lane = createDefaultStateWritePerformanceArtifact();
         durableEvidence(lane).appInbox[0].selectedLane = 'unknown';
@@ -635,7 +627,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             ...inventedSample.attemptObservations[0],
             attempt: 2
         });
-        expectStateWriteArtifactIssues(invented, 'must reconcile exactly to durable AppInbox attempts');
+        expectStateWriteArtifactIssues(invented, ['must reconcile exactly to durable AppInbox attempts']);
         const zeroDelay = createDefaultStateWritePerformanceArtifact();
         const sample = artifactSample(zeroDelay);
         const first = sample.attemptObservations[0];
@@ -649,7 +641,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             terminal: true
         });
         sample.durableEvidence.appInbox[0].attempts = 2;
-        expectStateWriteArtifactIssues(zeroDelay, 'nonterminal retryDelayMs must be positive');
+        expectStateWriteArtifactIssues(zeroDelay, ['nonterminal retryDelayMs must be positive']);
     });
 
     it('distinguishes typed transient retries from optimistic conflicts', () => {
@@ -671,14 +663,14 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         refreshStateWritePerformanceWorkload(candidate.workloads[0]);
         expect(validateStateWriteArtifact(candidate)).toEqual([]);
         first.outcome = 'conflicted';
-        expectStateWriteArtifactIssues(candidate, 'only recognized optimistic conflicts');
+        expectStateWriteArtifactIssues(candidate, ['only recognized optimistic conflicts']);
     });
 
     it('rejects malformed durable results and receipt/effect identity mismatches', () => {
         for (const [mutate, expected] of malformedDurableResultCases) {
             const artifact = createDefaultStateWritePerformanceArtifact();
             mutate(artifact);
-            expectStateWriteArtifactIssues(artifact, expected);
+            expectStateWriteArtifactIssues(artifact, [expected]);
         }
         for (const prefix of ['CLIENT_', 'GROUP_']) {
             const swapped = createDefaultStateWritePerformanceArtifact();
@@ -799,35 +791,9 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         );
     });
 
-    it('keeps setup and evidence reads outside measured mutation timing', () => {
+    it('links final outbox evidence to the canonical producer command and exact receipt', () => {
         expect(classifyBenchmarkSql('select * from resource_inbox', [])).toBe('read');
-        expect(
-            readResourceEffectKind({
-                ri_resource_id: 'command:principal-state:event:revision=1',
-                ri_topic_id: 'client-state.event',
-                ri_type_id: 'WS_OUTBOX',
-                ri_resource: '{}'
-            })
-        ).toBe('principal-state:event');
-        expect(
-            readAllCommandIds(queueResource({ request: { requestId: 'nested-command' } }))
-        ).toContain('nested-command');
-        expect(
-            readAllCommandIds(
-                queueResource(
-                    { event: { requestId: 'stale-command' } },
-                    'raw-command:rtc-topology-recompute:group-revision:group=1;presence=0'
-                )
-            )[0]
-        ).toBe('raw-command');
-        expect(
-            readCanonicalEffectCommandId(
-                queueResource(
-                    { event: { requestId: 'config-command' } },
-                    'topology-command:rtc-topology-recompute:group-revision:group=1;presence=0'
-                )
-            )
-        ).toBe('topology-command');
+
         const topologyCommand = {
             kind: 'topology-source',
             commandId: 'topology-command',
@@ -841,8 +807,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             typeId: 'APP_OUTBOX',
             topicId: 'app-outbox.rtc-topology',
             effectKind: 'rtc-topology-recompute',
-            canonicalCommandId: 'topology-command',
-            commandIds: ['topology-command', 'config-command']
+            canonicalCommandId: 'topology-command'
         } as const;
         expect(
             computeProductionOutboxEvidence({
@@ -885,8 +850,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             typeId: 'APP_OUTBOX',
             topicId: 'app-outbox.group-presence-summary',
             effectKind: 'group-presence-summary',
-            canonicalCommandId: groupBinding.receiptId,
-            commandIds: [groupBinding.receiptId, groupCommand.commandId]
+            canonicalCommandId: groupBinding.receiptId
         } as const;
         expect(
             computeProductionOutboxEvidence({
@@ -948,7 +912,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
 
 function expectStateWriteArtifactIssues(
     candidate: StateWritePerformanceArtifact,
-    ...messages: readonly string[]
+    messages: readonly string[]
 ): void {
     expect(validateStateWriteArtifact(candidate)).toEqual(
         expect.arrayContaining(messages.map((message) => expect.stringContaining(message)))

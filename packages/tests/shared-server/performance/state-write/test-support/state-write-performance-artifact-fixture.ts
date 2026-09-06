@@ -1,6 +1,6 @@
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from '../../../../../../scripts/perf/api-v1-state-write-outbox-contract.mjs';
 import {
-    PRODUCTION_STATE_WRITE_MUTATION_CONTRACT,
     STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
     validateStateWriteArtifact
 } from '../../../../../../scripts/perf/compare-api-v1-state-write-results.mjs';

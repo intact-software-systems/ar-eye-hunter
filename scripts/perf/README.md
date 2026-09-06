@@ -211,6 +211,17 @@ inventing evidence: principal snapshot/event effects for profile-instance,
 topology-source. Receipt linkage records the command-specific immutable identity:
 physical ResourceInbox keys for client/group receipts and outer envelope
 `id.msgId` for topology receipts. Intermediate mutation-intent evidence is forbidden.
+Snapshot receipts enumerate every page and audience carrier. Capture uses the
+canonical AL envelope and snapshot-page decoders, checks the page's source
+message, scope, and revision against its operation receipt, and distinguishes
+the source route key from the physical page key. Receipt order does not classify
+effect kinds. The comparator requires exact physical effect linkage for each
+operation, including all snapshot carriers and exactly one event per profile or
+instance update. Missing, repeated, or cross-operation carriers fail validation.
+`api-v1-state-write-outbox-contract.mjs` owns those completion rules and carrier
+counts for capture, comparison, and pooled summaries. Attempt histories are
+validated in `validate-state-write-attempt-evidence.mjs`; durable result and
+receipt linkage are validated in `validate-state-write-durable-evidence.mjs`.
 `atomicCompletionFailures` requires each completed AppInbox result, receipt,
 and exact final effects in the same observation. These evidence queries are
 excluded from command latency and measurement counters. Every metric source is disclosed in
@@ -238,11 +249,10 @@ correctness summaries from raw records before applying comparison gates. Both
 roles are validated against the production durable contract with strict unique
 receipt/final-effect ID, command, and effect linkage; DBW tags cannot waive
 those invariants.
-DBW retention never waives record structure: every receipt is a nonempty raw
-command ID, every final ResourceInbox record has nonempty effect/command/topic/type
-identity and a raw-command reference, and finding IDs must match the governed `DBW-...`
-format. The legacy waiver is selected only by governed baseline metadata; there
-is no permissive either-contract candidate path.
+Every receipt links to a nonempty raw command ID, every final ResourceInbox
+record has nonempty effect/command/topic/type identity and a raw-command
+reference, and finding IDs must match the governed `DBW-...` format. Both
+baseline and candidate artifacts must satisfy these same requirements.
 Validation and comparison are total over parsed JSON-like input: malformed
 nested samples, unsupported mutation kinds, missing evidence containers, or
 invalid derivation records produce path-oriented baseline/candidate errors
@@ -262,7 +272,7 @@ trimming). Validation and resource-regression authorization share this exact
 predicate, so malformed entries cannot authorize a regression.
 
 Loop-driving CLI values are bounded safe integers: warmup runs 1–10, measured
-runs 1–100, and concurrency 1–256. Task 0B further requires exactly one warmup,
+runs 1–100, and concurrency 1–256. The state-write gate requires exactly one warmup,
 at least three measured runs, and concurrency 10.
 
 ## Pinned Benchmark Environment
