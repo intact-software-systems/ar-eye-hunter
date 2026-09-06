@@ -40,13 +40,14 @@ export class PSqlResourceInboxReservationRepository {
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
 
-        const rows = await this.sql<ResourceInboxRow[]>`
+        // Separate query shapes let observed reads use the row-ID index even with a generic plan.
+        const rows = observedRowIds === undefined
+            ? await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status in ${this.sql([...statusIds])}
               and ri_status <> ${EntityStatus.FAILED}
-              and (${observedRowIds === undefined} or ri_row_id = any(${observedRowIds ?? []}::bigint[]))
               and expire_ts > (now() at time zone 'UTC')
               and ri_attempts < ${maxAttempts}
               and (
@@ -57,7 +58,26 @@ export class PSqlResourceInboxReservationRepository {
               )
             order by next_ts asc nulls first, ri_row_id asc
                 for update skip locked
-            limit ${observedRowIds?.length ?? maxToReserve}
+            limit ${maxToReserve}
+        `
+            : await this.sql<ResourceInboxRow[]>`
+            select *
+            from resource_inbox
+            where ri_type_id in ${this.sql([...typeIds])}
+              and ri_status in ${this.sql([...statusIds])}
+              and ri_status <> ${EntityStatus.FAILED}
+              and ri_row_id = any(${observedRowIds}::bigint[])
+              and expire_ts > (now() at time zone 'UTC')
+              and ri_attempts < ${maxAttempts}
+              and (
+                  (ri_status = ${EntityStatus.RETRY} and next_ts <= (now() at time zone 'UTC'))
+                  or
+                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null
+                      and (next_ts is null or next_ts <= (now() at time zone 'UTC')))
+              )
+            order by next_ts asc nulls first, ri_row_id asc
+                for update skip locked
+            limit ${observedRowIds.length}
         `;
 
         return rowsToMap(rows);
@@ -112,19 +132,34 @@ export class PSqlResourceInboxReservationRepository {
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
-        const rows = await this.sql<ResourceInboxRow[]>`
+        // Separate query shapes let observed reads use the row-ID index even with a generic plan.
+        const rows = observedRowIds === undefined
+            ? await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status = ${EntityStatus.RESERVED}
-              and (${observedRowIds === undefined} or ri_row_id = any(${observedRowIds ?? []}::bigint[]))
               and expire_ts > (now() at time zone 'UTC')
               and ri_attempts < ${maxAttempts}
               and start_ts is not null
               and start_ts < (now() - (${timeSinceStartMs} * interval '1 millisecond')) at time zone 'UTC'
             order by ri_row_id
                 for update skip locked
-            limit ${observedRowIds?.length ?? maxToReserve}
+            limit ${maxToReserve}
+        `
+            : await this.sql<ResourceInboxRow[]>`
+            select *
+            from resource_inbox
+            where ri_type_id in ${this.sql([...typeIds])}
+              and ri_status = ${EntityStatus.RESERVED}
+              and ri_row_id = any(${observedRowIds}::bigint[])
+              and expire_ts > (now() at time zone 'UTC')
+              and ri_attempts < ${maxAttempts}
+              and start_ts is not null
+              and start_ts < (now() - (${timeSinceStartMs} * interval '1 millisecond')) at time zone 'UTC'
+            order by ri_row_id
+                for update skip locked
+            limit ${observedRowIds.length}
         `;
 
         return rowsToMap(rows);

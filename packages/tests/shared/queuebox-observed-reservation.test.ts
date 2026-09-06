@@ -95,7 +95,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s observed QueueBox 
         expect(await queue.getItem(entry.key)).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
     });
 
-    it('preserves queue type, status, due time and attempt limits for selected work', async () => {
+    it.each(['ordinary', 'observed'])('preserves queue type, status, due time and attempt limits for %s reservation', async (selection) => {
         const queue = await createQueue(storage);
         const past = Temporal.Instant.from('2026-01-02T00:00:00Z');
         const future = Temporal.Now.instant().add({ hours: 1 });
@@ -126,7 +126,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s observed QueueBox 
             new Set(['ordered-work']),
             new Set([EntityStatus.NEW, EntityStatus.RETRY]),
             { maxToReserve: 1, maxAttempts: 20 },
-            observations
+            selection === 'observed' ? observations : undefined
         );
 
         expect([...claimed.values()]).toMatchObject([{ key: eligible.key, dequeueAudit: { attempts: 1 } }]);
