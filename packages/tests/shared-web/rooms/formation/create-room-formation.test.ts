@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import {
     configureOverlayRepositories,
@@ -17,6 +18,18 @@ import { createFormationSnapshot, createLayoutOverlay } from './room-formation-t
 
 const roomWorkflowMocks = readRoomWorkflowMocks();
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
+const topologyConfig = { topologyKind: 'auto', degreeLimit: 5, treeMinSize: 3, meshMinSize: 8, meshParamK: 2 };
+
+function topologyView(groupRef: GroupRef): GroupTopologyManagementView {
+    return {
+        groupRef,
+        overlayId: toScopedOverlayId(groupRef),
+        snapshot: null,
+        acceptedSnapshot: null,
+        config: { serverDefaults: topologyConfig, durable: null, temporary: null, requestOptions: null, effective: topologyConfig },
+        pending: null
+    };
+}
 
 function stubReceipt(receipt: GroupSnapshot) {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -170,6 +183,99 @@ describe('room formation commands', () => {
             .rejects.toThrow();
 
         expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('reads the room through before connecting when the cached snapshot lags the planned layout', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const stale = createFormationSnapshot({
+            stage: 'planned',
+            formationEpoch: 1,
+            causalRevision: { groupRevision: 2, presenceRevision: 1 }
+        });
+        const fresh = createFormationSnapshot({
+            stage: 'planned',
+            formationEpoch: 2,
+            causalRevision: { groupRevision: 4, presenceRevision: 1 }
+        });
+        seedRoomSnapshots([stale]);
+        setPlannedOverlayById(
+            toScopedOverlayId(stale.group),
+            createLayoutOverlay({
+                roomRef: stale.group,
+                causalRevision: { groupRevision: 4, presenceRevision: 1 },
+                version: 3
+            })
+        );
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            if (init?.method === 'POST') {
+                return new Response(JSON.stringify(fresh), { status: 200, headers: { 'content-type': 'application/json' } });
+            }
+            if (String(input).endsWith('/topology')) {
+                return new Response(JSON.stringify(topologyView(fresh.group)), {
+                    status: 200,
+                    headers: { 'content-type': 'application/json' }
+                });
+            }
+            return new Response(JSON.stringify(fresh), {
+                status: 200,
+                headers: {
+                    'cache-control': 'no-store',
+                    'content-type': 'application/json',
+                    'rallar-state-source': 'durable',
+                    'rallar-group-revision': '4',
+                    'rallar-presence-revision': '1'
+                }
+            });
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        await createRallarFacade().rooms.formation(stale.group).connect();
+
+        expect(fetchMock.mock.calls.map((call) => `${call[1]?.method ?? 'GET'} ${String(call[0]).split('/groups/room-1')[1] ?? ''}`))
+            .toEqual(['GET ', 'GET /topology', expect.stringMatching(/^POST \/lifecycle\/connect\/requests\//)]);
+        expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toMatchObject({
+            expectedFormationEpoch: 2,
+            expectedLayout: { groupRevision: 4, presenceRevision: 1, version: 3, state: 'active' }
+        });
+    });
+
+    it('forgets the planned layout the server refused so the next connect reads through', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const planned = createFormationSnapshot({
+            stage: 'planned',
+            formationEpoch: 1,
+            causalRevision: { groupRevision: 2, presenceRevision: 1 }
+        });
+        seedRoomSnapshots([planned]);
+        setPlannedOverlayById(
+            toScopedOverlayId(planned.group),
+            createLayoutOverlay({
+                roomRef: planned.group,
+                causalRevision: { groupRevision: 2, presenceRevision: 1 },
+                version: 2
+            })
+        );
+        const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+            new Response(
+                JSON.stringify({
+                    type: 'api-mutation-failure',
+                    version: 'canonical.v2',
+                    code: 'group-connect-planned-layout-superseded',
+                    status: 409,
+                    message: 'Rejected',
+                    issues: null,
+                    denial: null,
+                    retry: null
+                }),
+                { status: 409, headers: { 'content-type': 'application/json' } }
+            )
+        );
+        vi.stubGlobal('fetch', fetchMock);
+        const formation = createRallarFacade().rooms.formation(planned.group);
+
+        await expect(formation.connect()).rejects.toMatchObject({ status: 409 });
+
+        expect(formation.status()?.planned).toBeUndefined();
     });
 
     it('sends an explicit layout and a reconfigure landing verbatim', async () => {

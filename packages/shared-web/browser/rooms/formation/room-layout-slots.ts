@@ -2,17 +2,20 @@ import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contra
 import { subscribeOverlaySlot } from '@shared-web/browser/state-cache/overlay-slot-subscriptions.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
 import {
     findAcceptedOverlayById,
     findPlannedOverlayById,
+    removePlannedOverlayByIdIfIdentity,
     type OverlayRepositoryChangeListener
 } from '@shared/repository/overlays-repository.ts';
 
 export interface RallarRoomLayoutSlotsPort {
     readPlanned(roomRef: GroupRef): OverlayInfo | undefined;
     readAccepted(roomRef: GroupRef): OverlayInfo | undefined;
+    forgetPlanned(roomRef: GroupRef, identity: GroupLayoutIdentity): boolean;
     onPlannedChange(listener: OverlayRepositoryChangeListener): RallarUnsubscribe;
     onAcceptedChange(listener: OverlayRepositoryChangeListener): RallarUnsubscribe;
 }
@@ -27,6 +30,9 @@ export function createRoomLayoutSlots(): RallarRoomLayoutSlotsPort {
     return {
         readPlanned: (roomRef) => readConfiguredValue(() => findPlannedOverlayById(toScopedOverlayId(roomRef))),
         readAccepted: (roomRef) => readConfiguredValue(() => findAcceptedOverlayById(toScopedOverlayId(roomRef))),
+        forgetPlanned: (roomRef, identity) =>
+            readConfiguredValue(() => removePlannedOverlayByIdIfIdentity(toScopedOverlayId(roomRef), identity)) ??
+                false,
         onPlannedChange: (listener) => subscribeOverlaySlot('planned', listener),
         onAcceptedChange: (listener) => subscribeOverlaySlot('accepted', listener)
     };
