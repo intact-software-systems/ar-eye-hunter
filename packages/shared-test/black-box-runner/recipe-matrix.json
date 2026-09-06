@@ -2190,7 +2190,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 governance authority: ban, unban, remove and role promotion had owner-happy-path coverage only. A plain member is denied forbidden-role on all three governing routes, an admin may govern a regular member but not the owner, and a removed member is denied by member-removed rather than member-banned."
+      "description": "No-browser API-v1 governance authority: ban, unban, remove and role promotion had owner-happy-path coverage only. A plain member is denied forbidden-role on all three governing routes, an admin may govern a regular member but neither the owner nor another admin, and a removed member is denied by member-removed rather than member-banned. Each denial pins the message that separates its own rule, and each accepted mutation pins the roster it produced -- the unban returns the member to 'left', not 'active'."
     }
   ]
 }

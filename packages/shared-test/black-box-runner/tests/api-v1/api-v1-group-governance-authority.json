@@ -236,7 +236,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/govauth-create-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/govauth-create-group-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
@@ -312,7 +312,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{deputyClientId}/ban/requests/govauth-member-ban-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{deputyClientId}/ban/requests/govauth-plain-member-ban-{runId}",
         "headers": {
           "Authorization": "{memberAuthHeader}",
           "x-client-id": "{memberClientId}"
@@ -325,7 +325,8 @@
           "type": "api-mutation-failure",
           "version": "canonical.v2",
           "code": "forbidden-role",
-          "status": 403
+          "status": 403,
+          "message": "Only active group owners/admins can govern group members."
         }
       }
     },
@@ -348,7 +349,8 @@
           "type": "api-mutation-failure",
           "version": "canonical.v2",
           "code": "forbidden-role",
-          "status": 403
+          "status": 403,
+          "message": "Only active group owners/admins can govern group members."
         }
       }
     },
@@ -373,7 +375,8 @@
           "type": "api-mutation-failure",
           "version": "canonical.v2",
           "code": "forbidden-role",
-          "status": 403
+          "status": 403,
+          "message": "Only active group owners/admins can govern group members."
         }
       }
     },
@@ -394,10 +397,136 @@
       },
       "expect": {
         "status": 200,
+        "comparison": "compatible-complete",
         "body": {
           "group": {
             "groupId": "{groupId}"
-          }
+          },
+          "members": [
+            {
+              "principalId": "{ownerClientId}",
+              "role": "owner",
+              "status": "active"
+            },
+            {
+              "principalId": "{deputyClientId}",
+              "role": "admin",
+              "status": "active"
+            },
+            {
+              "principalId": "{memberClientId}",
+              "role": "member",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theOwnerPromotesTheMemberToAdminToo",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{memberClientId}/role/requests/govauth-promote-member-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "role": "admin"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          },
+          "members": [
+            {
+              "principalId": "{ownerClientId}",
+              "role": "owner",
+              "status": "active"
+            },
+            {
+              "principalId": "{deputyClientId}",
+              "role": "admin",
+              "status": "active"
+            },
+            {
+              "principalId": "{memberClientId}",
+              "role": "admin",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "anAdminCannotGovernAnotherAdmin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{memberClientId}/ban/requests/govauth-admin-bans-admin-{runId}",
+        "headers": {
+          "Authorization": "{deputyAuthHeader}",
+          "x-client-id": "{deputyClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403,
+          "message": "Group admins can only govern regular members."
+        }
+      }
+    },
+    {
+      "name": "theOwnerDemotesTheMemberBackToMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{memberClientId}/role/requests/govauth-demote-member-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          },
+          "members": [
+            {
+              "principalId": "{ownerClientId}",
+              "role": "owner",
+              "status": "active"
+            },
+            {
+              "principalId": "{deputyClientId}",
+              "role": "admin",
+              "status": "active"
+            },
+            {
+              "principalId": "{memberClientId}",
+              "role": "member",
+              "status": "active"
+            }
+          ]
         }
       }
     },
@@ -416,10 +545,32 @@
       },
       "expect": {
         "status": 200,
+        "comparison": "compatible-complete",
         "body": {
           "group": {
             "groupId": "{groupId}"
-          }
+          },
+          "members": [
+            {
+              "principalId": "{ownerClientId}",
+              "role": "owner",
+              "status": "active"
+            },
+            {
+              "principalId": "{deputyClientId}",
+              "role": "admin",
+              "status": "active"
+            },
+            {
+              "principalId": "{memberClientId}",
+              "role": "member",
+              "status": "banned",
+              "banned": {
+                "requestId": "govauth-admin-bans-member-{runId}"
+              }
+            }
+          ],
+          "memberCount": 2
         }
       }
     },
@@ -442,7 +593,8 @@
           "type": "api-mutation-failure",
           "version": "canonical.v2",
           "code": "forbidden-role",
-          "status": 403
+          "status": 403,
+          "message": "Group admins can only govern regular members."
         }
       }
     },
@@ -461,10 +613,29 @@
       },
       "expect": {
         "status": 200,
+        "comparison": "compatible-complete",
         "body": {
           "group": {
             "groupId": "{groupId}"
-          }
+          },
+          "members": [
+            {
+              "principalId": "{ownerClientId}",
+              "role": "owner",
+              "status": "active"
+            },
+            {
+              "principalId": "{deputyClientId}",
+              "role": "admin",
+              "status": "active"
+            },
+            {
+              "principalId": "{memberClientId}",
+              "role": "member",
+              "status": "left",
+              "banned": null
+            }
+          ]
         }
       }
     },
@@ -483,10 +654,29 @@
       },
       "expect": {
         "status": 200,
+        "comparison": "compatible-complete",
         "body": {
           "group": {
             "groupId": "{groupId}"
-          }
+          },
+          "members": [
+            {
+              "principalId": "{ownerClientId}",
+              "role": "owner",
+              "status": "active"
+            },
+            {
+              "principalId": "{deputyClientId}",
+              "role": "admin",
+              "status": "active"
+            },
+            {
+              "principalId": "{memberClientId}",
+              "role": "member",
+              "status": "removed",
+              "banned": null
+            }
+          ]
         }
       }
     },
@@ -511,7 +701,8 @@
           "type": "api-mutation-failure",
           "version": "canonical.v2",
           "code": "member-removed",
-          "status": 403
+          "status": 403,
+          "message": "Group member has been removed."
         }
       }
     }
