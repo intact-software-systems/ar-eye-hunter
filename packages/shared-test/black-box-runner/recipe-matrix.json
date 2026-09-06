@@ -2213,7 +2213,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 invite revocation and expiry: six recipes drive the invite routes and none asserts a single invite denial. A stranger, a revoked invitee and an expired invitee are each refused on the join path with the code and the message that names their own rule, and a live invite still admits, so the denials are not a route that refuses everyone."
+      "description": "No-browser API-v1 invite revocation and expiry: six recipes drive the invite routes and none asserts a single invite denial. A stranger, a revoked invitee on the accept route and that same invitee on the join route all reach the single not-invited branch, so group-invite-required is observed from three different member states rather than one; only the expired invitee carries its own code and message. A live invite still admits, so the denials are not a route that refuses everyone."
     }
   ]
 }

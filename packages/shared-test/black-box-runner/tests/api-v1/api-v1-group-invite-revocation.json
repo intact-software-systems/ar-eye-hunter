@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 invite revocation and expiry: the invite denials a principal actually meets on the join path. A stranger, a revoked invitee and an expired invitee are each refused with the code and message that names their own rule, and a live invite still admits, so the denials are not a route that refuses everyone.",
+  "description": "No-browser API-v1 invite revocation and expiry: the invite denials a principal actually meets on the join path. A stranger, a revoked invitee on the accept route and that same invitee on the join route all reach the single not-invited branch, so group-invite-required is observed from three different member states rather than one; only the expired invitee carries its own code and message. A live invite still admits, so the denials are not a route that refuses everyone.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
