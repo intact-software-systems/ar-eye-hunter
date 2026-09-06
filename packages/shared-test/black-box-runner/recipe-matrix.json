@@ -2807,6 +2807,29 @@
         ]
       },
       "description": "No-browser API-v1 activation clock decay: the evidence-expiry heartbeat is asserted nowhere. The observed edge is reported with an already-stale createdAtEpochMs, which is client-supplied and never compared to now at write time, so it still activates the group and then decays it when the heartbeat re-reads past the freshness window. A count wait pins exactly two status writes, so a clock that never fires and one that republishes on every observation both fail. Read off the group row, since only a writer can put the degraded band there."
+    },
+    {
+      "id": "api-v1-reconfigure-landing-concurrency",
+      "recipe": "tests/api-v1/api-v1-reconfigure-landing-concurrency.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-reconfigure-landing-concurrency",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 reconfigure landing concurrency: reconfigureLanding apply has no coverage anywhere in the corpus, since every recipe that sets it pins hold, so a reconfigure has never been observed landing. Two reconfigures asking for different degree limits are released together by a barrier, so neither is skipped as unchanged and neither is merely adjacent. The row settles on exactly one of the two requested limits and the layout version must have advanced."
     }
   ]
 }

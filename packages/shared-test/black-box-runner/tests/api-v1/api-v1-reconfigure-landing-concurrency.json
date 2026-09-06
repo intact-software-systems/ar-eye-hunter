@@ -1,0 +1,478 @@
+{
+  "description": "No-browser API-v1 reconfigure landing concurrency: reconfigureLanding \"apply\" has no coverage anywhere in the corpus -- every recipe that sets it pins \"hold\", so a reconfigure has never been observed actually landing. Two reconfigures asking for different degree limits are released together by a barrier, so neither can be skipped as unchanged and neither is merely adjacent to the other. The row then settles on exactly one of the two requested limits, not a merge of both and not the baseline, and the layout version must have advanced so a landing provably happened.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_RECONFIG_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-reconfigland"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_RECONFIG_WORKSPACE_ID",
+      "default": "workspace-reconfigland-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_RECONFIG_GROUP_ID",
+      "default": "reconfigland-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_RECONFIG_PASSWORD",
+      "default": "api-v1-reconfigland-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/reconfigland-register-alice-{runId}",
+        "body": {
+          "username": "reconfigland-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/reconfigland-login-alice-{runId}",
+        "body": {
+          "username": "reconfigland-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/reconfigland-register-bob-{runId}",
+        "body": {
+          "username": "reconfigland-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/reconfigland-login-bob-{runId}",
+        "body": {
+          "username": "reconfigland-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheApplyLandingGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/reconfigland-create-group-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Reconfigure landing {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "initiator": "any-member",
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
+            },
+            "admission": {
+              "mode": "open"
+            },
+            "topology": {
+              "reconfigureLanding": "apply"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "lifecycleState": "forming"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/reconfigland-bob-joins-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectAlicePresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/reconfigland-alice-presence-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "reconfigland-generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectBobPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/reconfigland-bob-presence-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "reconfigland-generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "planTheBaseline",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/plan/requests/reconfigland-plan-baseline-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned"
+          }
+        }
+      }
+    },
+    {
+      "name": "theBaselineLayoutIsActive",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 25,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.25
+        },
+        "outputs": {
+          "baselineVersion": "body.snapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "twoReconfiguresLandAtOnce",
+      "type": "parallel",
+      "request": {
+        "barrier": true,
+        "failFast": false,
+        "timeoutMs": 60000
+      },
+      "groups": [
+        {
+          "name": "widening",
+          "steps": [
+            {
+              "name": "widenTheDegreeLimit",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "POST",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure/requests/reconfigland-reconfigure-wide-{runId}",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "body": {
+                  "publish": true,
+                  "options": {
+                    "degreeLimit": 5
+                  }
+                }
+              },
+              "expect": {
+                "status": 200
+              }
+            }
+          ]
+        },
+        {
+          "name": "narrowing",
+          "steps": [
+            {
+              "name": "narrowTheDegreeLimit",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "POST",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure/requests/reconfigland-reconfigure-narrow-{runId}",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "body": {
+                  "publish": true,
+                  "options": {
+                    "degreeLimit": 2
+                  }
+                }
+              },
+              "expect": {
+                "status": 200
+              }
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "barrier": true,
+        "body": {
+          "groupCount": 2,
+          "failure": 0
+        }
+      }
+    },
+    {
+      "name": "theLandedLayoutSettles",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 25,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.25
+        },
+        "outputs": {
+          "settledDegreeLimit": "body.snapshot.degreeLimit",
+          "settledVersion": "body.snapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "exactlyOneOfTheTwoLimitsLanded",
+      "type": "assert",
+      "actual": {
+        "degreeLimit": "{settledDegreeLimit}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "anyOf": [
+          {
+            "degreeLimit": 5
+          },
+          {
+            "degreeLimit": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "theLandingAdvancedTheLayoutVersion",
+      "type": "assert",
+      "actual": {
+        "settled": "{settledVersion}",
+        "baseline": "{baselineVersion}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "settled",
+            "gt": "{baselineVersion}"
+          }
+        ]
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}
