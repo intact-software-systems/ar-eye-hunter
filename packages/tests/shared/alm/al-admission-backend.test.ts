@@ -25,6 +25,7 @@ import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProv
 import '../../setup-browser-indexeddb.ts';
 
 afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
 });
 
@@ -241,6 +242,55 @@ describe('admission storage envelopes', () => {
         });
         expect(result).toBe(8);
         expect(await backend.read('version:new', decodeVersion)).toBe(8);
+    });
+
+    it('serializes cooperating writers that share one IndexedDB store revision', async () => {
+        const lockTails = new Map<string, Promise<void>>();
+        const requestedLockNames: string[] = [];
+        const requestLock = async <T>(
+            name: string,
+            _options: { mode: 'exclusive'; },
+            callback: () => Promise<T>
+        ): Promise<T> => {
+            requestedLockNames.push(name);
+            const previous = lockTails.get(name) ?? Promise.resolve();
+            const release = Promise.withResolvers<void>();
+            const tail = previous.then(() => release.promise);
+            lockTails.set(name, tail);
+            await previous;
+            try {
+                return await callback();
+            }
+            finally {
+                release.resolve();
+                if (lockTails.get(name) === tail) {
+                    lockTails.delete(name);
+                }
+            }
+        };
+        vi.stubGlobal('navigator', { locks: { request: requestLock } });
+        const databaseName = `admission-cooperating-writers-${crypto.randomUUID()}`;
+        const first = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
+        const second = new IndexedDbAdmissionBackend(databaseName, 'entries', Date.now);
+        const firstEntered = Promise.withResolvers<void>();
+        const releaseFirst = Promise.withResolvers<void>();
+        const firstWrite = first.write(async (transaction) => {
+            firstEntered.resolve();
+            await releaseFirst.promise;
+            await transaction.set('version:first', '1');
+        });
+        await firstEntered.promise;
+        const secondWrite = second.write((transaction) => transaction.set('version:second', '2'));
+
+        await new Promise<void>((resolve) => setTimeout(resolve, 20));
+        releaseFirst.resolve();
+        await expect(Promise.all([firstWrite, secondWrite])).resolves.toEqual([undefined, undefined]);
+        expect(requestedLockNames).toEqual([
+            `rallar:indexed-db-admission:${databaseName}:entries`,
+            `rallar:indexed-db-admission:${databaseName}:entries`
+        ]);
+        expect(await first.read('version:first', decodeVersion)).toBe(1);
+        expect(await second.read('version:second', decodeVersion)).toBe(2);
     });
 
     it('validates expired IndexedDB payloads before cleanup', async () => {

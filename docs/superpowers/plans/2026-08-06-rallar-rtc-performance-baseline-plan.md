@@ -4040,8 +4040,21 @@ first diagnostic on exact head
 34028503284 then proved the realtime trio fully ready before timing out on the
 first direct `messages.rtc` A-to-B delivery. That later failure resets the
 proof count to zero. The same PR now retains sanitized sender and receiver RTC
-health plus bounded event/result identities only when message delivery fails;
-the next pushed head restarts the three-run diagnostic proof from zero.
+health plus bounded event/result identities only when message delivery fails.
+Diagnostic run 34029946264 passed that instrumentation on exact head
+`9907d11f4df6998b651a30895d572e3af4d9cf4d`, but run 34030174552 failed on the
+same head after realtime readiness and direct delivery: A's multicast send
+exhausted outbound admission commit retries before any receiver wait began.
+The retained checkpoint identifies the failure as an IndexedDB admission
+commit conflict. All cooperating browser admission backends share one
+database/store revision even when they own different AL namespaces, while the
+existing outbound browser lock serializes only one sender. A deterministic
+backend regression reproduces that cross-writer revision conflict. PR #530's
+next revision serializes the complete read/compute/commit operation at the
+actual database-and-store revision boundary, retaining optimistic conflict
+detection for non-cooperating writers and runtimes without browser locks. The
+proof count remains zero; the next pushed head restarts the three-run
+diagnostic proof.
 
 - [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
       publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
@@ -4587,13 +4600,22 @@ is invalidated by each head change. Run 34028231028 passed exact head
 `0ec0703a576ecae9dd761020e27c64c4bc895ae6`, but run 34028503284 failed later
 after complete realtime readiness when B did not record the first direct
 `messages.rtc` delivery from A. The proof count is zero again. PR #530 next
-adds bounded failure-only message diagnostics on a new head so the next
-recurrence can distinguish endpoint RTC state, command completion, and
-control-event recording without retaining raw command payloads. Three
-independent diagnostics must then pass on one unchanged final PR head before
-merge; any later head change restarts that proof. The next two slices remain
-to prove and merge that correction, then dispatch B06 in publish mode from
-moving `main`. B07 remains held; Task 12 remains blocked on valid B06 evidence.
+added bounded failure-only message diagnostics on head
+`9907d11f4df6998b651a30895d572e3af4d9cf4d` so a receiver timeout can distinguish
+endpoint RTC state, command completion, and control-event recording without
+retaining raw command payloads. Run 34029946264 passed, but run 34030174552
+failed earlier in A's multicast send after its IndexedDB-backed outbound
+admission exhausted commit retries. Because all browser AL backends use one
+database/store revision across namespaces, per-sender serialization does not
+prevent unrelated cooperating writers from repeatedly invalidating the
+read/compute/commit window. A focused same-store concurrency regression now
+reproduces the conflict, and PR #530 serializes cooperating IndexedDB writes
+with one browser lock named for that database/store revision boundary. It does
+not add retries, weaken conflict detection, or retain a second backend path.
+Three independent diagnostics must pass on one unchanged final PR head before
+merge; any later head change restarts that proof. The next two slices remain to
+prove and merge that correction, then dispatch B06 in publish mode from moving
+`main`. B07 remains held; Task 12 remains blocked on valid B06 evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
