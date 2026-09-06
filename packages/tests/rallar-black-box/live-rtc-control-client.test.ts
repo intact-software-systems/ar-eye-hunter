@@ -1,5 +1,8 @@
 import { request, type APIRequestContext } from '@playwright/test';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import {
     afterEach,
     beforeEach,
@@ -18,12 +21,14 @@ describe('live RTC control client', () => {
     let control: LiveRtcControlClient;
     let nowMs: number;
     let readyPeerIds: string[];
+    let diagnosticsRoot: string;
     const refreshRoom = vi.fn<LiveRtcControlClient.FormationAgent['refreshRoom']>();
     const agent = { agentId: 'agent-a', prefix: 'A' as const, refreshRoom };
 
     beforeEach(async () => {
         nowMs = 100;
         readyPeerIds = ['session-b', 'session-c'];
+        diagnosticsRoot = mkdtempSync(path.join(tmpdir(), 'live-rtc-control-client-'));
         const results: LiveRtcControlClient.Result[] = [];
         server = createServer(async (incoming, response) => {
             if (incoming.method === 'POST') {
@@ -55,6 +60,7 @@ describe('live RTC control client', () => {
         control = new LiveRtcControlClient({
             request: api,
             baseUrl: `http://127.0.0.1:${address.port}`,
+            diagnosticsOutDir: diagnosticsRoot,
             monotonicNow: () => nowMs,
             epochNow: () => 0
         });
@@ -67,6 +73,7 @@ describe('live RTC control client', () => {
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
         refreshRoom.mockReset();
+        rmSync(diagnosticsRoot, { recursive: true, force: true });
     });
 
     it('waits for refreshed room membership and includes refresh time in readiness', async () => {
@@ -137,6 +144,7 @@ describe('live RTC control client', () => {
     });
 
     it('does not report readiness after room refresh exhausts the shared deadline', async () => {
+        readyPeerIds = [];
         refreshRoom.mockImplementation(async () => {
             nowMs = 60_101;
         });
@@ -148,6 +156,26 @@ describe('live RTC control client', () => {
             suffix: 'delivery',
             startedAtMs: 100
         })).rejects.toThrow('readiness deadline');
+        expect(
+            JSON.parse(
+                readFileSync(
+                    path.join(diagnosticsRoot, 'live-rtc-readiness-failure-agent-a-delivery.json'),
+                    'utf8'
+                )
+            )
+        ).toMatchObject({
+            runId: 'run-readiness',
+            agentId: 'agent-a',
+            expectedPeerIds: ['session-b'],
+            health: {
+                ok: true,
+                result: {
+                    value: {
+                        rallar: { rtcStatus: { readyPeerIds: [] } }
+                    }
+                }
+            }
+        });
     });
 
     it('reads the sent message identity from the RTC send-result envelope, not the command ID', () => {

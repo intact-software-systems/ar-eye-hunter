@@ -103,6 +103,7 @@ jobs:
             -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
             -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
+            RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="$RTC_OBSERVATION_OUTPUT/readiness-diagnostics" \
             npm run test:rallar:full-stack:memory:live-rtc-3 \
             2>&1 | tee "$RTC_OBSERVATION_OUTPUT/diagnostic.log"
 

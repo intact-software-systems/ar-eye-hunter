@@ -100,7 +100,8 @@ describe('RTC-B06 observation workflow environment', () => {
             RALLAR_ICE_MODE: null,
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS: '1',
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
-            RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
+            RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100',
+            RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: null
         });
     });
 
@@ -124,6 +125,14 @@ describe('RTC-B06 observation workflow environment', () => {
         expect(result.status).toBe(23);
         expect(readFileSync(path.join(outputDirectory, 'diagnostic.log'), 'utf8'))
             .toContain('fake RTC-B06 execution');
+        expect(
+            JSON.parse(readFileSync(`${fixtureRoot}/environment.json`, 'utf8'))
+        ).toMatchObject({
+            RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR: path.join(
+                outputDirectory,
+                'readiness-diagnostics'
+            )
+        });
     });
 });
 
@@ -158,7 +167,8 @@ const names = [
     'RALLAR_ICE_MODE',
     'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS',
     'RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK',
-    'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES'
+    'RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES',
+    'RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR'
 ];
 writeFileSync(
     process.env.RTC_B06_ENVIRONMENT_RECORD,

@@ -104,11 +104,16 @@ while topology publication preceded C's server-side connection propagation,
 showing that authoritative membership alone did not prove browser room
 hydration. A `tee` pipeline also hid that failed Playwright exit. The series is
 invalid as proof.
-PR #530 now refreshes every browser room after exact membership and before
-three-member topology planning, propagates the producer exit, and retains the
-actual Playwright failure directory. There is not yet a valid B06 E3 result.
-B07 remains held, and evidence ranking cannot start until a valid B06 primary
-and any required repeat are archived.
+PR #530 then refreshed every browser room after exact membership and before
+three-member topology planning, propagated the producer exit, and retained the
+actual Playwright failure directory. Diagnostic run 34026553019 correctly
+failed on exact head `5b5ea0575b218342b88d78bdc938abf40efb6b3a`
+with the same C empty-ready-peer result. That disproves a single pre-planning
+refresh as the missing barrier. The next same-PR diagnostic revision retains a
+full RTC health snapshot from any readiness timeout so the browser state can
+distinguish topology adoption from peer-establishment failure. There is not yet
+a valid B06 E3 result. B07 remains held, and evidence ranking cannot start
+until a valid B06 primary and any required repeat are archived.
 
 ### Current execution horizon
 
@@ -3991,11 +3996,17 @@ job. Runs 34025496535 and 34025817473 passed on exact head `f16d45e44825783761ed
 while run 34025502501 reproduced C's empty ready-peer state. Its Playwright log
 reported one failed test, but the `tee` pipeline discarded the producer status
 and incorrectly left the workflow green. None counts toward proof because the
-branch must change. The same PR now propagates that exit status, retains the
-real Playwright result path, and refreshes all three browser room snapshots
+branch must change. The same PR then propagated that exit status, retained the
+real Playwright result path, and refreshed all three browser room snapshots
 after exact authoritative membership but before three-member topology planning.
-This closes the observed window where C was present in authority while its
-browser had not yet hydrated the room that would receive the new layout.
+Diagnostic run 34026553019 correctly failed on exact head
+`5b5ea0575b218342b88d78bdc938abf40efb6b3a` with the same C empty-ready-peer
+result, so the pre-planning refresh is not a sufficient browser-side barrier.
+Its retained screenshots prove all three pages remained connected to the
+expected room, but the previous diagnostics ended before recording the failing
+RTC internals. The next same-PR revision records a full RTC health snapshot at
+the readiness timeout and retains it with the diagnostic artifact before
+choosing another lifecycle correction.
 
 - [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
       publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
@@ -4525,14 +4536,17 @@ exact active-session set after each connect. It also supplies an explicitly
 non-publishing diagnostic mode so this correction can absorb further runtime
 learning without a chain of test-only merges. The first series found that
 `tee` hid run 34025502501's reproduced C-readiness failure while runs
-34025496535 and 34025817473 passed. PR #530 now propagates browser failure,
-retains the real Playwright output path, and makes every browser hydrate the
-exact membership before three-member planning. The prior runs are invalidated
-by that head change. Three independent diagnostics must pass on one unchanged
-new PR head before merge; any later head change restarts that proof. The next
-two slices are to prove and merge that correction, then dispatch B06 in publish
-mode from moving `main`. B07 remains held; Task 12 remains blocked on valid B06
-evidence.
+34025496535 and 34025817473 passed. PR #530 then propagated browser failure,
+retained the real Playwright output path, and made every browser hydrate the
+exact membership before three-member planning. Run 34026553019 correctly
+failed that new head with the same C empty-ready-peer result, disproving one
+refresh as the sufficient barrier. The next revision captures and retains the
+failing browser's detailed RTC health before selecting another correction.
+Every prior run is invalidated by each head change. Three independent
+diagnostics must pass on one unchanged final PR head before merge; any later
+head change restarts that proof. The next two slices remain to prove and merge
+that correction, then dispatch B06 in publish mode from moving `main`. B07
+remains held; Task 12 remains blocked on valid B06 evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
