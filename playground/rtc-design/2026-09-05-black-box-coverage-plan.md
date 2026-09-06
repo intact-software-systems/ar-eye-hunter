@@ -101,16 +101,24 @@ returns the contracted `404`. Do not close this by editing the recipe.
 Two entire join paths — code-protected and invite-only — have zero coverage across all 51 recipes,
 and four denial codes have never been returned by any route.
 
-| Recipe                             | Pins                                                                                                                        |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `api-v1-group-join-code-admission` | `joinMode: "code"` end to end: `group-code-required`, `group-code-invalid`, a successful coded join, and `join-code/rotate` |
-| `api-v1-group-invite-admission`    | `joinMode: "invite-only"`: the invite branch of `canJoinGroup` and its two denial codes                                     |
-| `api-v1-group-business-status`     | archive and delete: `group-archived` and `group-deleted` returned by a real route, and what the read surface then shows     |
-| `api-v1-group-limits`              | `expiresAtEpochMs` producing `group-not-active`, and `maxSessionsPerMember` producing `member-session-limit-reached`        |
+| Recipe                             | Pins                                                                                                                                                                                                                                                                               |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-group-join-code-admission` | `joinMode: "code"` end to end: `group-code-required`, `group-code-invalid`, a successful coded join, and `join-code/rotate`                                                                                                                                                        |
+| `api-v1-group-invite-admission`    | `joinMode: "invite-only"`: the invite branch of `canJoinGroup` and its two denial codes                                                                                                                                                                                            |
+| `api-v1-group-business-status`     | archive and delete: `group-archived` and `group-deleted` returned by a real route, and what the read surface then shows                                                                                                                                                            |
+| `api-v1-group-limits`              | `expiresAtEpochMs` producing `group-not-active` with the message that separates a passed clock from a non-active status, that an expired group still stores `active` and stays readable, and `maxSessionsPerMember` producing `member-session-limit-reached` on the second session |
 
 **Hazards.** A group whose clock has passed keeps `status: "active"` on the row — the denial comes
 from the liveness projection, not the stored status, so the recipe must assert the denial rather than
 the field.
+
+Three things the limits recipe had to get right. `group-not-active` is **overloaded** —
+`group-policy-primitives.ts` returns it both for a non-active status and for a passed clock, so only
+the message pins the expiry rule; swapping one message for the other fails the step. The session cap
+is a strict `>` over the merged admission ledger, so `maxSessionsPerMember: 1` refuses the **second**
+session, not the first. And the presence-connect route binds its `{sessionId}` path segment to the
+authenticated session, so a second session needs a second login **and that login's own token** —
+reusing the first token answers `authorization-denied`, not the cap.
 
 **Gates:** baseline plus both black-box profiles.
 
