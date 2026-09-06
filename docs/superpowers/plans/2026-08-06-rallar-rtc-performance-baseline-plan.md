@@ -65,7 +65,7 @@ observation stream, and B06 E3-memory observation tooling are merged. Five
 distinct valid B05 observations through 2026-09-05 are archived on `main`: PR
 #402 landed directly, and the four observations formerly published by PRs
 #405, #463, #474, and #494 landed through batch PRs #507 and #504 before the
-superseded PRs and branches were closed. Eight B06 observations have failed with
+superseded PRs and branches were closed. Nine B06 observations have failed with
 `acceptedMetrics: false` and are archived on `main`. The first five, their
 focused corrections in PRs #499 and #510, and the Branch Release quiescence
 correction in PR #517 are merged. Run 33991439486 produced the sixth archive in
@@ -85,16 +85,25 @@ one reconnect owner concurrently prove both survivors observe replacement C's
 new session and replacement C observes both survivor sessions. It also keeps
 initial-pair readiness before activation, then makes post-activation A/B/C
 hydration a correctness barrier even when owner scope retains only A's timing
-sample. There is not yet a valid B06 E3 result. B07 remains held, and evidence
-ranking cannot start until a valid B06 primary and any required repeat are
-archived.
+sample. PR #526 merged as `72826db0d286ca2dd3ff9375143df05440b15358`,
+then run 34023176489 observed that moving-`main` snapshot. Its first default
+warmup failed after the realtime trio was retired: messages agent C never
+observed the new A/B sessions as ready. PR #528 archived the ninth failed
+primary with `acceptedMetrics: false`. The reused-group formation driver still
+treated absolute presence revisions `1`, `2`, and `3` as connect barriers even
+though prior lifecycle work had already advanced the same group's revision.
+The current focused follow-up replaces those obsolete thresholds with exact
+active-session-set checks after each connect, so stale departing sessions must
+clear before the next topology is formed. There is not yet a valid B06 E3
+result. B07 remains held, and evidence ranking cannot start until a valid B06
+primary and any required repeat are archived.
 
 ### Current execution horizon
 
-| Order | Slice                                                     | Completion evidence                                                                                                                                                                                                                                                                                                                   |
-| ----- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Merge the accepted-layout readiness correction in PR #526 | The formation owner hydrates all accepted A/B/C routes after activation while filtering only timing evidence by scope; reconnect has one explicit three-participant readiness owner; direct semantic, focused unit, exact default/all-scenarios E3, type/build/style/structure, full-unit, and branch review gates pass before merge. |
-| 2     | Capture B06 E3-memory again from moving `main`            | Manually dispatch `RTC-B06 Performance Observation` after the correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.                                                                                      |
+| Order | Slice                                            | Completion evidence                                                                                                                                                                                                                                      |
+| ----- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Merge the exact active-session formation barrier | A reused group cannot advance from A to B while any retired session remains active; the obsolete absolute-revision barrier is deleted; focused unit, exact default E3, type/build/style/structure, full-unit, and branch review gates pass before merge. |
+| 2     | Capture B06 E3-memory again from moving `main`   | Manually dispatch `RTC-B06 Performance Observation` after the correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.         |
 
 After these two slices, Task 12 will choose the B05 observation window,
 revisit whether the candidate call path requires E4-pg, and reconcile the
@@ -3884,7 +3893,7 @@ performance-observations/rtc-b06/YYYY/MM/DD/<observation-id>.zip
 performance-observations/rtc-b06/index.jsonl
 ```
 
-Current evidence contains eight failed B06 primaries and no accepted metrics.
+Current evidence contains nine failed B06 primaries and no accepted metrics.
 The fourth archive is PR #498. Its first retained default attempt timed out
 receiving `messages.rtc` multicast on agent C after the warmup passed. That run
 exposed a post-activation readiness gap: the lifecycle driver proved readiness
@@ -3948,6 +3957,20 @@ from the correctness barrier. Reconnect returns the maximum receiver-observed
 survivor duration used by the existing evidence timing field, and duplicate
 caller waits plus obsolete fixture modes and readiness APIs are removed.
 
+PR #526 merged as `72826db0d286ca2dd3ff9375143df05440b15358`, and run
+34023176489 observed that exact source. Its source guard, recovery, archive
+verification, publication, and observation-integrity path passed. The first
+default warmup failed after the settled realtime trio had been retired and the
+same group was reused for `messages.rtc`: agent C did not observe either new
+A/B session as ready. PR #528 preserves the ninth primary as failed evidence
+with `acceptedMetrics: false`; no repeat ran. Diagnosis found that formation
+still waited for absolute presence revisions `1`, `2`, and `3`. Those values
+were already far behind the reused group's current causal revision, so they
+could not prove that retired sessions had cleared or that the currently
+expected sessions were the authoritative active set. The focused follow-up
+waits for the exact active-session set after A, B, and C connect and deletes the
+revision-only path.
+
 - [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
       publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
 - [x] Preserve the first four unsuccessful primaries as failed evidence rather than
@@ -3976,17 +3999,18 @@ caller waits plus obsolete fixture modes and readiness APIs are removed.
 - [x] Verify and archive run 34000825989's failed primary through observation
       PR #524; preserve its passed default warmup and five retained attempts,
       and do not accept metrics or run a repeat.
-- [ ] Merge PR #526's focused accepted-layout readiness correction after direct
+- [x] Merge PR #526's focused accepted-layout readiness correction after direct
       semantic, focused unit, exact default/all-scenarios E3,
       type/build/style/structure, full-unit, and branch validation.
-- [ ] Manually dispatch `RTC-B06 Performance Observation` from the then-current
-      moving `main` after that correction merges.
-- [ ] Verify that its observation-only pull request passes RTC observation
-      integrity and merge the ZIP/index row. A valid primary must report
-      `acceptedMetrics: true`; complete any controller-required repeat.
-- [ ] If it fails, diagnose the first failed attempt from that observation,
-      retain the failed archive, and create the smallest evidenced follow-up
-      before dispatching again.
+- [x] Manually dispatch run 34023176489 from the then-current moving `main`
+      after PR #526 merged.
+- [x] Verify and merge observation PR #528, retaining its failed ZIP/index row
+      with `acceptedMetrics: false` and no repeat.
+- [ ] Merge the focused exact active-session formation barrier after its
+      regression, exact default E3, type/build/style/structure, full-unit, and
+      branch review gates pass.
+- [ ] Dispatch `RTC-B06 Performance Observation` from the then-current moving
+      `main`; accept only a valid primary and any controller-required repeat.
 
 **Current exit:** at least one valid B06 E3-memory primary and any required
 repeat are archived. The stream remains available for later observations; no
@@ -4445,7 +4469,7 @@ incomplete evidence milestone and do not mark this written plan complete.
 **2026-09-06 reconciliation:** Task 4B, B04, B05, both observation producers,
 and B06 E3-memory tooling are merged. Five valid B05 observations are archived
 on `main`; the overlapping source PRs and branches were consolidated and
-closed. Eight B06 primaries are archived as failed evidence with no accepted
+closed. Nine B06 primaries are archived as failed evidence with no accepted
 metrics. PRs #499 and #510 corrected the fourth and fifth failures, while PR
 #517 corrected their Branch Release regression recipe's quiescence race. Run
 33991439486 and archive PR #519 exposed the sixth failure: publication-wake
@@ -4462,9 +4486,14 @@ survivor B while replacement C's refresh/readiness remained queued behind it,
 so the three peer establishments timed out. PR #526 owns full reconnect
 readiness concurrently, proves replacement-session identity, and makes every
 post-activation A/B/C route a correctness barrier without adding receiver
-timings to owner-scope evidence. The next two slices are to merge PR #526 and
-then dispatch B06 again from moving `main`. B07 remains held; Task 12 remains
-blocked on valid B06 evidence.
+timings to owner-scope evidence. PR #526 merged, then run 34023176489 failed its
+first default warmup when messages agent C did not observe the new A/B sessions
+after the prior realtime trio was retired. PR #528 preserves that ninth failed
+primary. The follow-up removes absolute `1`/`2`/`3` presence-revision barriers
+that cannot prove membership on the reused group and instead waits for the
+exact active-session set after each connect. The next two slices are to merge
+that focused correction and dispatch B06 again from moving `main`. B07 remains
+held; Task 12 remains blocked on valid B06 evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
