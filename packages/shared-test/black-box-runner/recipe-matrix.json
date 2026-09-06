@@ -2761,6 +2761,29 @@
         ]
       },
       "description": "No-browser API-v1 cluster lifecycle over a non-primary socket. Exactly one lifecycle recipe runs against three nodes today. Group setup is written on primary and secondary only, then the connect command is served by the tertiary node, which wrote none of it, fenced on the layout the other two produced, and both writing nodes must read the result back. The sockets are opened against RALLAR_WS_BASE_URL_SECONDARY, which the runner exports and no recipe in the corpus has referenced, and the connect delta is bound to the tertiary command by its own requestId. Which node executed the entry is deliberately not asserted: those counters are process-local."
+    },
+    {
+      "id": "api-v1-admin-authorization-boundary",
+      "recipe": "tests/api-v1/api-v1-admin-authorization-boundary.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-admin-authorization-boundary",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 admin authorization boundary: the whole admin surface against an authenticated non-admin principal. One conceptual denial reaches the client in four shapes and two are wrong -- the CRDT admin reads answer 400 rather than 403, and that guard is the only authorization on those routes and has never been executed by any test, which all run with requireAuth false; the admin operations mutations answer 500 api-mutation-unexpected rather than 403 because the guard throws a statusless Error. Every denial is compared exactly, so a refusal leaking a diagnostic payload would fail."
     }
   ]
 }
