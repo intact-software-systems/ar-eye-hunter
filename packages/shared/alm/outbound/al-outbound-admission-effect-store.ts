@@ -6,6 +6,7 @@ import {
 } from '../../queuebox/queue-box-types.ts';
 import { EntityStatus, NEW_AND_RETRY_STATUSES, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
+import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
 import { resolveExplicitOutboundMessageExpireAtMs } from '../ALMessageExpiry.ts';
 import {
@@ -25,6 +26,7 @@ import {
     computeALOutboundWorkEntry,
     decodeALOutboundWorkEntry,
     isPendingALOutboundWork,
+    resolveALOutboundWorkReadyAt,
     toALOutboundWorkKey,
     toALOutboundWorkType
 } from './al-outbound-work-entry.ts';
@@ -109,8 +111,9 @@ export class ALOutboundAdmissionEffectStore {
             staleAfterMs: AL_OUTBOUND_WORK_LEASE_MS
         });
         for (const { entry } of finalizations.values()) {
-            decodeALOutboundWorkEntry(entry, this.namespace, decodePrepared);
-            await this.releaseEffect(entry, { status: EntityStatus.FAILED, delayMs: null });
+            if (await this.acceptClaimedEffect(entry, decodePrepared) !== undefined) {
+                await this.releaseEffect(entry, { status: EntityStatus.FAILED, delayMs: null });
+            }
         }
         const remaining = input.maxCount - finalizations.size;
         if (remaining === 0) {
@@ -124,13 +127,35 @@ export class ALOutboundAdmissionEffectStore {
             maxToReserve: Math.max(0, remaining - pending.size),
             maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         }, Temporal.Duration.from({ milliseconds: AL_OUTBOUND_WORK_LEASE_MS }));
-        return [...pending.values(), ...recovered.values()].map((entry) => {
-            const effect = decodeALOutboundWorkEntry(entry, this.namespace, decodePrepared);
-            if (entry.status !== EntityStatus.RESERVED || effect.leaseUntilMs === undefined) {
-                throw new TypeError('Outbound work requires a complete QueueBox reservation');
+        const claimed: ALClaimedOutboundEffect<TPrepared>[] = [];
+        for (const entry of [...pending.values(), ...recovered.values()]) {
+            const effect = await this.acceptClaimedEffect(entry, decodePrepared);
+            if (effect !== undefined) {
+                claimed.push(effect);
             }
-            return { ...effect, leaseUntilMs: effect.leaseUntilMs };
-        });
+        }
+        return claimed;
+    }
+
+    private async acceptClaimedEffect<TPrepared>(
+        entry: ResourceEntry,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    ): Promise<ALClaimedOutboundEffect<TPrepared> | undefined> {
+        let effect: ALOutboundEffectSnapshot<TPrepared>;
+        try {
+            effect = decodeALOutboundWorkEntry(entry, this.namespace, decodePrepared);
+        }
+        catch (error) {
+            if (!(error instanceof ALAdmissionCorruptionError)) {
+                throw error;
+            }
+            await this.releaseEffect(entry, { status: EntityStatus.NON_RETRYABLE, delayMs: null });
+            return undefined;
+        }
+        if (entry.status !== EntityStatus.RESERVED || effect.leaseUntilMs === undefined) {
+            throw new TypeError('Outbound work requires a complete QueueBox reservation');
+        }
+        return { ...effect, leaseUntilMs: effect.leaseUntilMs };
     }
 
     async completeEffect(reservation: ResourceEntry): Promise<void> {
@@ -149,9 +174,7 @@ export class ALOutboundAdmissionEffectStore {
         await this.releaseEffect(input.reservation, disposition);
     }
 
-    async peekNextReadyAt<TPrepared>(
-        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<number | undefined> {
+    async peekNextReadyAt(): Promise<number | undefined> {
         let nextAt: number | undefined;
         const scope = toALOutboundWorkKey(this.namespace, '');
         for (const key of await this.backend.workQueue.getAllKeys()) {
@@ -159,14 +182,10 @@ export class ALOutboundAdmissionEffectStore {
                 continue;
             }
             const entry = await this.backend.workQueue.getItem(key);
-            if (entry === undefined) {
+            if (entry === undefined || !isPendingALOutboundWork(entry)) {
                 continue;
             }
-            const effect = decodeALOutboundWorkEntry(entry, this.namespace, decodePrepared);
-            if (!isPendingALOutboundWork(entry)) {
-                continue;
-            }
-            const candidateAt = effect.leaseUntilMs ?? effect.retryAtMs;
+            const candidateAt = resolveALOutboundWorkReadyAt(entry);
             nextAt = nextAt === undefined ? candidateAt : Math.min(nextAt, candidateAt);
         }
         return nextAt;

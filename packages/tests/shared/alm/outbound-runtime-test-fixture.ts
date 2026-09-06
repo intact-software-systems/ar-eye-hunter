@@ -144,7 +144,7 @@ export function createFlakyOutboundAdmissionStore(
             hooks.rescheduleEffect
                 ? hooks.rescheduleEffect(input)
                 : inner.rescheduleEffect(input),
-        peekNextEffectReadyAt: (decodePrepared) => inner.peekNextEffectReadyAt(decodePrepared)
+        peekNextEffectReadyAt: () => inner.peekNextEffectReadyAt()
     };
 }
 

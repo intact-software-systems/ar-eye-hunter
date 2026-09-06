@@ -31,8 +31,6 @@ import {
     type ALInboundPlanner,
     type ALInboundRuntimeStores,
     type ALMessage,
-    type ALOutboundAdmissionStore,
-    type ALOutboundCommitBundle,
     type ALOutboundPlanner,
     type ALOutboundPreparedMessageDecoder,
     type ClaimALOutboundEffectsInput,
@@ -40,6 +38,7 @@ import {
 } from '@shared/mod.ts';
 
 import '../setup-browser-indexeddb.ts';
+import { createFlakyOutboundAdmissionStore, enqueueOutboundOrThrow } from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 
 describe('IndexedDB AL runtime stores', () => {
@@ -708,25 +707,13 @@ describe('IndexedDB AL runtime stores', () => {
         ]);
 
         await expect.poll(() => acceptedAckDuringTimeout).toBe(true);
-        await expect.poll(() => admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        await expect.poll(() => admissionStore.peekNextEffectReadyAt()).toBeUndefined();
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
         runtime.dispose();
     });
 });
-
-async function enqueueOutboundOrThrow(
-    runtime: Pick<ALOutboundMessageRuntime<OutboundTestPayload>, 'enqueueIfAbsent'>,
-    msg: ALMessage
-): Promise<readonly ResourceEntry[]> {
-    const enqueued = await runtime.enqueueIfAbsent(msg);
-    if (enqueued.status === 'failed') {
-        throw new Error(enqueued.reason);
-    }
-
-    return enqueued.entries;
-}
 
 interface IndexedDbInboundFixtureInput {
     readonly dbName: string;
@@ -860,46 +847,6 @@ function createOutboundPlanner(): ALOutboundPlanner<OutboundTestPayload> {
             maxAttempts: 1
         }
     });
-}
-
-function createFlakyOutboundAdmissionStore(
-    inner: ALOutboundAdmissionStore,
-    hooks: Partial<Pick<ALOutboundAdmissionStore, 'claimReadyEffects' | 'commitBundle' | 'completeEffect' | 'rescheduleEffect'>>
-): ALOutboundAdmissionStore {
-    return {
-        ready: () => inner.ready(),
-        readOutgoingMessage: <TPrepared>(
-            msg: ALMessage,
-            planner: ALOutboundPlanner<TPrepared>
-        ) => inner.readOutgoingMessage<TPrepared>(msg, planner),
-        readRepairMessage: <TPrepared>(
-            msgId: string,
-            planner: ALOutboundPlanner<TPrepared>
-        ) => inner.readRepairMessage<TPrepared>(msgId, planner),
-        getSentMessage: (msgId: string) => inner.getSentMessage(msgId),
-        getAllSentMessages: () => inner.getAllSentMessages(),
-        readReceiptState: (msgId: string) => inner.readReceiptState(msgId),
-        getPendingAck: (msgId: string) => inner.getPendingAck(msgId),
-        commitBundle: <TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>, decode: ALOutboundPreparedMessageDecoder<TPrepared>) =>
-            hooks.commitBundle
-                ? hooks.commitBundle(bundle, decode)
-                : inner.commitBundle(bundle, decode),
-        acceptControlMessage: (msg, decode) => inner.acceptControlMessage(msg, decode),
-        scheduleNotYetInSyncRetry: (schedule, decode) => inner.scheduleNotYetInSyncRetry(schedule, decode),
-        claimReadyEffects: <TPrepared>(input: ClaimALOutboundEffectsInput, decode: ALOutboundPreparedMessageDecoder<TPrepared>) =>
-            hooks.claimReadyEffects
-                ? hooks.claimReadyEffects(input, decode)
-                : inner.claimReadyEffects(input, decode),
-        completeEffect: (reservation) =>
-            hooks.completeEffect
-                ? hooks.completeEffect(reservation)
-                : inner.completeEffect(reservation),
-        rescheduleEffect: (input) =>
-            hooks.rescheduleEffect
-                ? hooks.rescheduleEffect(input)
-                : inner.rescheduleEffect(input),
-        peekNextEffectReadyAt: (decode) => inner.peekNextEffectReadyAt(decode)
-    };
 }
 
 function createOutboundUnicastMessage(resourceId: string) {

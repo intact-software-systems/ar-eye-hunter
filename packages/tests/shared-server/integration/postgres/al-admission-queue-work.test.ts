@@ -6,6 +6,7 @@ import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-con
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
+import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import {
     DequeueResourceEntryController,
@@ -24,6 +25,44 @@ import {
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
 describe('Postgres atomic AL admission and QueueBox work', () => {
+    postgresIt('rejects one malformed work payload while an independent worker completes the valid payload', async () => {
+        const { backend, other, entry } = await createStorage();
+        const namespace = entry.key.contextId;
+        const store = createALOutboundAdmissionStore({
+            namespace,
+            backend,
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention()
+        });
+        await store.commitBundle({
+            senderId: 'self',
+            mutations: [],
+            durableEffects: ['malformed', 'valid'].map((msgId) => ({
+                effectId: msgId,
+                payload: { kind: 'ack-timeout', msgId }
+            }))
+        }, decodeALOutboundPreparedMessage);
+        const malformedKey = toALOutboundWorkKey(namespace, 'malformed');
+        const original = await other.workQueue.getItem(malformedKey);
+        if (original === undefined) {
+            throw new Error('Expected malformed-work fixture');
+        }
+        expect(await other.workQueue.replaceIfObserved(original, { ...original, resource: '{invalid-json' }))
+            .not.toBeNull();
+
+        const claimed = await store.claimReadyEffects({ maxCount: 3 }, decodeALOutboundPreparedMessage);
+
+        expect(claimed.map((effect) => effect.payload)).toEqual([{ kind: 'ack-timeout', msgId: 'valid' }]);
+        expect(await other.workQueue.getItem(malformedKey)).toMatchObject({
+            status: EntityStatus.NON_RETRYABLE,
+            resource: '{invalid-json',
+            dequeueAudit: { attempts: 1, nextTs: undefined }
+        });
+        await other.workQueue.releaseEntries([claimed[0]!.entry], { status: EntityStatus.COMPLETED, delayMs: null });
+        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await store.claimReadyEffects({ maxCount: 3 }, decodeALOutboundPreparedMessage)).toEqual([]);
+    });
+
     postgresIt('keeps non-retryable work out of normal, failed, timeout and exhaustion recovery claims', async () => {
         const { backend, other, entry } = await createStorage();
         const dueAt = Temporal.Now.instant().subtract({ seconds: 10 });

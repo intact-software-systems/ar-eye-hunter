@@ -51,14 +51,14 @@ describe('AL outbound durable effect lifecycle', () => {
         await runtime.enqueueIfAbsent(message);
         settlement.resolve({ status: 'sent' });
         await vi.advanceTimersByTimeAsync(0);
-        const retryAt = await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload);
+        const retryAt = await admissionStore.peekNextEffectReadyAt();
         if (retryAt === undefined) {
             throw new Error('Completion failure must retain retryable work');
         }
         expect(retryAt).toBeGreaterThan(Date.now());
         await vi.advanceTimersByTimeAsync(retryAt - Date.now());
         expect(sent).toEqual([message.id.msgId, message.id.msgId]);
-        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
     });
 
     it.each(['cancelled', 'expired', 'superseded'] as const)('does not retry a retained send after %s settlement', async (status) => {
@@ -79,7 +79,7 @@ describe('AL outbound durable effect lifecycle', () => {
         settlement.resolve({ status });
         await vi.advanceTimersByTimeAsync(10_001);
         expect(attempts).toEqual([message.id.msgId]);
-        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
     });
 
     it('drains committed send effects after a restart when the first runtime crashes before drain', async () => {
@@ -162,8 +162,8 @@ describe('AL outbound durable effect lifecycle', () => {
         await runtime.ready();
         const readNextReadyAt = admissionStore.peekNextEffectReadyAt.bind(admissionStore);
         const acceptControlMessage = admissionStore.acceptControlMessage.bind(admissionStore);
-        vi.spyOn(admissionStore, 'peekNextEffectReadyAt').mockImplementation(async (decodePrepared) => {
-            const readyAt = await readNextReadyAt(decodePrepared);
+        vi.spyOn(admissionStore, 'peekNextEffectReadyAt').mockImplementation(async () => {
+            const readyAt = await readNextReadyAt();
             emptyRead.resolve();
             await releaseEmptyRead.promise;
             return readyAt;
@@ -236,7 +236,7 @@ describe('AL outbound durable effect lifecycle', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
 
-        const retryAt = await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload);
+        const retryAt = await admissionStore.peekNextEffectReadyAt();
         if (retryAt === undefined) {
             throw new Error('Failed completion must leave a pending QueueBox retry');
         }
@@ -638,7 +638,7 @@ describe('AL outbound durable effect lifecycle', () => {
 
         const enqueue = enqueueOutboundOrThrow(runtime, msg);
         await sendStarted.promise;
-        const leaseExpiresAt = await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload);
+        const leaseExpiresAt = await admissionStore.peekNextEffectReadyAt();
         if (leaseExpiresAt === undefined) {
             throw new Error('Expected the in-flight send to retain its durable lease');
         }
@@ -646,7 +646,7 @@ describe('AL outbound durable effect lifecycle', () => {
         runtime.dispose();
         sendCompleted.resolve();
         await enqueue;
-        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBe(leaseExpiresAt);
+        expect(await admissionStore.peekNextEffectReadyAt()).toBe(leaseExpiresAt);
 
         const recovered: string[] = [];
         const restarted = createDefaultOutboundTestRuntime({
@@ -663,7 +663,7 @@ describe('AL outbound durable effect lifecycle', () => {
         expect(recovered).toEqual([]);
         await vi.advanceTimersByTimeAsync(1);
         expect(recovered).toEqual([msg.id.msgId]);
-        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
         restarted.dispose();
     });
 });

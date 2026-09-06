@@ -290,22 +290,13 @@ export interface ALOutboundAdmissionStore extends ALReadyable {
 
     rescheduleEffect(input: RescheduleALOutboundEffectInput): Promise<void>;
 
-    peekNextEffectReadyAt<TPrepared>(
-        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<number | undefined>;
+    peekNextEffectReadyAt(): Promise<number | undefined>;
 }
 
 export function createALOutboundAdmissionStore(
     input: CreateALOutboundAdmissionStoreInput
 ): ALOutboundAdmissionStore {
     return new ProviderBackedALOutboundAdmissionStore(input);
-}
-
-interface CreateProviderBackedALOutboundAdmissionStoreInput {
-    readonly namespace: string;
-    readonly supersedenceTrackTtlMs: number;
-    readonly retention: NormalizedALRuntimeStoreRetentionConfig;
-    readonly backend: ALAdmissionWorkBackend;
 }
 
 class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore {
@@ -317,7 +308,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     private readonly controlStore: ALOutboundAdmissionControlStore;
 
     constructor(
-        input: CreateProviderBackedALOutboundAdmissionStoreInput
+        input: CreateALOutboundAdmissionStoreInput
     ) {
         this.namespace = input.namespace;
         this.supersedenceTrackTtlMs = input.supersedenceTrackTtlMs;
@@ -588,10 +579,8 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         await this.effectStore.rescheduleEffect(input);
     }
 
-    async peekNextEffectReadyAt<TPrepared>(
-        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<number | undefined> {
-        return await this.effectStore.peekNextReadyAt(decodePrepared);
+    async peekNextEffectReadyAt(): Promise<number | undefined> {
+        return await this.effectStore.peekNextReadyAt();
     }
 
     private async readSupersedenceState(

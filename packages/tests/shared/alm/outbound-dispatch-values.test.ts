@@ -36,7 +36,7 @@ describe('outbound dispatch value ownership', () => {
         expect(result.computed.reason).toBe('Outbound queue candidate differs from its message');
         expect(result.committed).toBe(false);
         expect(await store.getSentMessage(message.id.msgId)).toBeUndefined();
-        expect(await store.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
         admission.dispose();
     });
 

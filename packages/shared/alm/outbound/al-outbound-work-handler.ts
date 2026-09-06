@@ -97,9 +97,7 @@ export class ALOutboundWorkHandler<TPrepared> {
         if (this.disposed || this.processing !== undefined) {
             return false;
         }
-        const next = await this.dependencies.admissionStore.peekNextEffectReadyAt(
-            this.dependencies.decodePreparedMessage
-        );
+        const next = await this.dependencies.admissionStore.peekNextEffectReadyAt();
         this.dependencies.queueEngine.wakeAt(this.dependencies.effectWorkerId, next);
         return next !== undefined && next <= this.dependencies.clock.nowMs();
     }
@@ -147,9 +145,7 @@ export class ALOutboundWorkHandler<TPrepared> {
         finally {
             this.emitDiagnostics(startedAtMs, counts);
             if (!this.disposed) {
-                const next = await this.dependencies.admissionStore.peekNextEffectReadyAt(
-                    this.dependencies.decodePreparedMessage
-                );
+                const next = await this.dependencies.admissionStore.peekNextEffectReadyAt();
                 this.dependencies.queueEngine.wakeAt(this.dependencies.effectWorkerId, next);
             }
         }

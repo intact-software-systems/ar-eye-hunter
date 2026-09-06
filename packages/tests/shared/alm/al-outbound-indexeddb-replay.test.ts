@@ -6,11 +6,11 @@ import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
-import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_WORK_STORE_NAME, openIndexedDbAdmissionDatabase } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
+import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { IndexedDbConnection } from '@shared/persistence/open-indexed-db.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
@@ -29,6 +29,38 @@ import {
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('outbound IndexedDB durable queue replay', () => {
+    it.each(['memory', 'indexeddb'] as const)('retains malformed work as non-retryable and releases unrelated work in %s', async (storage) => {
+        const { store, backend } = createAdmission(storage);
+        await store.commitBundle({
+            senderId: 'self',
+            mutations: [],
+            durableEffects: ['malformed', 'valid'].map((msgId) => ({
+                effectId: msgId,
+                payload: { kind: 'ack-timeout', msgId }
+            }))
+        }, decodeOutboundTestPayload);
+        const malformedKey = toALOutboundWorkKey('outbound', 'malformed');
+        const original = await backend.workQueue.getItem(malformedKey);
+        if (original === undefined) {
+            throw new Error('Expected persisted malformed-work fixture');
+        }
+        await backend.workQueue.setItem(malformedKey, { ...original, resource: '{invalid-json' }, {
+            expireAtTimestamp: Number(original.audit.expiryTs.epochMilliseconds)
+        });
+
+        const claimed = await store.claimReadyEffects({ maxCount: 3 }, decodeOutboundTestPayload);
+
+        expect(claimed.map((effect) => effect.payload)).toEqual([{ kind: 'ack-timeout', msgId: 'valid' }]);
+        expect(await backend.workQueue.getItem(malformedKey)).toMatchObject({
+            resource: '{invalid-json',
+            status: EntityStatus.NON_RETRYABLE,
+            dequeueAudit: { attempts: 1, nextTs: undefined }
+        });
+        await store.completeEffect(claimed[0]!.entry);
+        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
+        expect(await store.claimReadyEffects({ maxCount: 3 }, decodeOutboundTestPayload)).toEqual([]);
+    });
+
     it.each(['memory', 'indexeddb'] as const)('skips a complete audience after restart while replaying an incomplete audience in %s', async (storage) => {
         vi.useFakeTimers({ toFake: ['Date'] });
         onTestFinished(() => {
@@ -191,17 +223,21 @@ describe('outbound IndexedDB durable queue replay', () => {
         );
 
         await store.completeEffect(oldClaim.entry);
-        expect(await store.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBe(newClaim.leaseUntilMs);
+        expect(await store.peekNextEffectReadyAt()).toBe(newClaim.leaseUntilMs);
         await store.rescheduleEffect({
             reservation: oldClaim.entry,
             retryAtMs: nowMs + 50_000
         });
-        expect(await store.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBe(newClaim.leaseUntilMs);
+        expect(await store.peekNextEffectReadyAt()).toBe(newClaim.leaseUntilMs);
         await store.completeEffect(newClaim.entry);
-        expect(await store.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
     });
 
     it('keeps Temporal entry values across persistence, lease, reschedule and runtime restart', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
         const { store } = createAdmission();
         const msg = createOutboundMessage('queued');
         const runtime1 = createDefaultOutboundTestRuntime({
@@ -222,6 +258,9 @@ describe('outbound IndexedDB durable queue replay', () => {
         await store.rescheduleEffect(
             { reservation: claimed.entry, retryAtMs: Date.now() }
         );
+        const retryAt = await store.peekNextEffectReadyAt();
+        expect(retryAt).toBeDefined();
+        vi.setSystemTime(retryAt!);
 
         const outbox = new InMemoryQueueBox(new Map());
         const runtime2 = createDefaultOutboundTestRuntime({
@@ -241,7 +280,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         expect(replayed.audit.expiryTs).toBeInstanceOf(Temporal.Instant);
         expect(replayed.audit.expiryTs.toString()).toBe(enqueued.entry?.audit.expiryTs.toString());
         expect(replayed.resource).toBe(JSON.stringify(msg));
-        expect(await store.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
     });
 
     it.each(['memory', 'indexeddb'] as const)('finishes exhausted QueueBox work without advertising another retry in %s', async (storage) => {
@@ -269,7 +308,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             dequeueAudit: { attempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts }
         });
         expect(await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload)).toEqual([]);
-        expect(await store.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
     });
 
     it.each(['memory', 'indexeddb'] as const)('finalizes the last crashed attempt without sending again in %s', async (storage) => {
@@ -296,7 +335,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         expect(await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload)).toEqual([]);
         const [key] = await backend.workQueue.getAllKeys();
         expect(await backend.workQueue.getItem(key)).toMatchObject({ status: EntityStatus.FAILED });
-        expect(await store.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
     });
 
     it('keeps fallback entry timestamps across a persisted lease and rejects old empty timestamp objects', async () => {
@@ -320,18 +359,23 @@ describe('outbound IndexedDB durable queue replay', () => {
         expect(claimed.payload.entry.dequeueAudit.startTs?.toString()).toBe(timestamp.toString());
         expect(claimed.payload.entry.dequeueAudit.endTs?.toString()).toBe(timestamp.toString());
         expect(claimed.payload.entry.dequeueAudit.nextTs?.toString()).toBe(timestamp.toString());
-        expect(await store.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBe(claimed.leaseUntilMs);
+        expect(await store.peekNextEffectReadyAt()).toBe(claimed.leaseUntilMs);
         await store.completeEffect(claimed.entry);
 
         const corrupt = {
             ...claimed.entry,
+            status: EntityStatus.NEW,
+            dequeueAudit: { attempts: 0 },
             resource: JSON.stringify({
                 ...JSON.parse(claimed.entry.resource),
                 payload: { kind: 'fallback-dispatch', msg, entry: { ...entry, audit: { ...entry.audit, expiryTs: {} } } }
             })
         };
         await backend.workQueue.setItem(corrupt.key, corrupt, { expireAtTimestamp: claimed.expireAtTimestamp });
-        await expect(store.peekNextEffectReadyAt(decodeOutboundTestPayload)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        expect(await store.peekNextEffectReadyAt()).toBeDefined();
+        expect(await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload)).toEqual([]);
+        expect((await backend.workQueue.getItem(corrupt.key))?.status).toBe(EntityStatus.NON_RETRYABLE);
+        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
     });
 });
 

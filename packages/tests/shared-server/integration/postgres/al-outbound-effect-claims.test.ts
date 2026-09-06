@@ -52,14 +52,14 @@ describe('Postgres AL outbound effect claims', () => {
             const [newClaim] = await second.claimReadyEffects(input, decodeALOutboundPreparedMessage);
 
             await first.completeEffect(oldClaim.entry);
-            expect(await second.peekNextEffectReadyAt(decodeALOutboundPreparedMessage)).toBe(newClaim.leaseUntilMs);
+            expect(await second.peekNextEffectReadyAt()).toBe(newClaim.leaseUntilMs);
             await first.rescheduleEffect({
                 reservation: oldClaim.entry,
                 retryAtMs: Date.now() + 5_000
             });
-            expect(await second.peekNextEffectReadyAt(decodeALOutboundPreparedMessage)).toBe(newClaim.leaseUntilMs);
+            expect(await second.peekNextEffectReadyAt()).toBe(newClaim.leaseUntilMs);
             await second.completeEffect(newClaim.entry);
-            expect(await first.peekNextEffectReadyAt(decodeALOutboundPreparedMessage)).toBeUndefined();
+            expect(await first.peekNextEffectReadyAt()).toBeUndefined();
         });
     }, 60_000);
 });

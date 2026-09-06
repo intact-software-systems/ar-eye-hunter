@@ -1,4 +1,3 @@
-import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -13,6 +12,7 @@ import {
     newALUnicastMessage,
     QueueBoxUtilities
 } from '@shared/mod.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import {
     createDefaultOutboundTestAdmissionStore,
@@ -64,7 +64,7 @@ describe('ALOutboundMessageRuntime', () => {
         onTestFinished(() => runtime.dispose());
 
         await runtime.enqueueIfAbsent(createOutboundMessage('injected-retry'));
-        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBe(nowMs + 25);
+        expect(await admissionStore.peekNextEffectReadyAt()).toBe(nowMs + 25);
         nowMs += 24;
         vi.setSystemTime(nowMs);
         await queueEngine.executeOnce();
@@ -75,7 +75,7 @@ describe('ALOutboundMessageRuntime', () => {
         await queueEngine.executeOnce();
         await vi.advanceTimersByTimeAsync(0);
         expect(sent).toEqual(['injected-retry', 'injected-retry']);
-        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
     });
 
     it('returns no-route when the outbound planner drops enqueue', async () => {
@@ -244,7 +244,7 @@ describe('ALOutboundMessageRuntime', () => {
         expect(sent).toEqual([msg.id.msgId]);
         await vi.advanceTimersByTimeAsync(500);
         expect(sent).toEqual([msg.id.msgId]);
-        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
         restarted.dispose();
     });
 
@@ -267,7 +267,7 @@ describe('ALOutboundMessageRuntime', () => {
         const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-no-targets'));
 
         expect(result.status).toBe('accepted');
-        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
         runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
             stores: { admissionStore },

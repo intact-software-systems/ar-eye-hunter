@@ -272,7 +272,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
         expect(claimed[0].effectId).toBe(effectId);
         await store.completeEffect(claimed[0].entry);
         expect(await backend.workQueue.getItem(workKey)).toMatchObject({ status: EntityStatus.COMPLETED });
-        expect(await store.peekNextEffectReadyAt(decodePreparedOutboundSend)).toBeUndefined();
+        expect(await store.peekNextEffectReadyAt()).toBeUndefined();
     });
 
     it('bumps the owning sender version when accepting outbound control messages', async () => {

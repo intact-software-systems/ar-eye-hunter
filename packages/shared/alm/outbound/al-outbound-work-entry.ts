@@ -84,11 +84,8 @@ export function decodeALOutboundWorkEntry<TPrepared>(
                     entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
             ),
             expireAtTimestamp: Number(entry.audit.expiryTs.epochMilliseconds),
-            leaseUntilMs: entry.status === EntityStatus.RESERVED && entry.dequeueAudit.startTs !== undefined
-                ? Number(
-                    entry.dequeueAudit.startTs.round({ smallestUnit: 'millisecond', roundingMode: 'ceil' })
-                        .epochMilliseconds
-                ) + AL_OUTBOUND_WORK_LEASE_MS
+            leaseUntilMs: entry.status === EntityStatus.RESERVED
+                ? resolveALOutboundWorkReadyAt(entry)
                 : undefined
         };
     }
@@ -100,4 +97,19 @@ export function decodeALOutboundWorkEntry<TPrepared>(
 export function isPendingALOutboundWork(entry: ResourceEntry): boolean {
     return entry.status === EntityStatus.NEW || entry.status === EntityStatus.RETRY ||
         entry.status === EntityStatus.RESERVED;
+}
+
+export function resolveALOutboundWorkReadyAt(entry: ResourceEntry): number {
+    if (entry.status === EntityStatus.RESERVED) {
+        if (entry.dequeueAudit.startTs === undefined) {
+            throw new TypeError('Outbound work reservation start is missing');
+        }
+        return Number(
+            entry.dequeueAudit.startTs.round({ smallestUnit: 'millisecond', roundingMode: 'ceil' }).epochMilliseconds
+        ) + AL_OUTBOUND_WORK_LEASE_MS;
+    }
+    return Number(
+        entry.dequeueAudit.nextTs?.epochMilliseconds ??
+            entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds
+    );
 }

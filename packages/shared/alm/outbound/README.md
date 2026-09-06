@@ -7,23 +7,25 @@ owns sender serialization, browser locking, and optimistic read/compute/commit.
 [`ALOutboundRepairAdmission`](./al-outbound-repair-admission.ts) owns control,
 ACK-timeout, retransmission, and repair policy; it commits through a direct
 reference to dispatch admission and never sends or drains effects itself.
-[`ALOutboundEffectDrain`](./al-outbound-effect-drain.ts) owns the independent
-durable-worker lifecycle: single-flight draining, claims, leases, scheduling,
-completion, and disposal. A queued native send retains its claimed effect until the
-transport settles; it does not keep the drain waiting or complete the effect merely
-because the carrier accepted local queue ownership.
+[`ALOutboundWorkHandler`](./al-outbound-work-handler.ts) registers outbound work
+with the existing [`InboxOutboxEngine`](../../services/InboxOutboxEngine.ts).
+QueueBox owns durable reservation, release, expiry, retry, and exhausted-attempt
+recovery. A queued native send retains its claimed work until transport settlement;
+it does not block available peers or complete merely because the carrier accepted
+local queue ownership.
 
 ## Construction and registration
 
 WS client, WS server, and RTC multicast composition supply a completed admission
-store, queue, clock, scheduler, worker identity, transport planner, and prepared
+store, queue, clock, engine, worker identity, transport planner, and prepared
 message decoder before constructing `ALOutboundMessageRuntime`. The constructor
 creates dispatch admission, passes that instance directly to repair admission,
-then registers one deferred `runEffect` callback with `ALOutboundEffectDrain`.
-The drain constructor never invokes it. `ready()` awaits storage readiness
-before the first claim. Disposing the runtime closes dispatch admission and the
-worker, cancelling the next scheduled invocation and aborting owned RTC queue items.
-An interrupted durable claim remains recoverable after its lease expires.
+then registers a deferred `runEffect` callback with `ALOutboundWorkHandler`.
+Registration does not invoke the callback. `ready()` awaits storage readiness before
+the first claim. Disposing the runtime closes dispatch admission, removes its engine
+task, and aborts owned RTC queue items. A supplied engine remains available to its
+other tasks; a runtime-owned engine stops. An interrupted durable claim remains
+recoverable after its lease expires.
 
 The transport decoding owners are
 [`decodeALOutboundPreparedMessage`](./al-outbound-effect-validation.ts) for WS
@@ -35,12 +37,12 @@ rerunning a planner.
 
 ## Runtime paths
 
-| Entry                                  | Decision and durable result                                                                                                                                                                                                                                                            | After commit                                                                                                                                                                                                                                                                                                                                                                               |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `enqueueIfAbsent` / `dequeue`          | Dispatch admission's `commit` serializes the sender. `readOutgoingMessage` reads validated state; [`computeALOutboundDispatch`](./compute-al-outbound-dispatch.ts) produces the bundle; `commitBundle` compares the revision, writes the bundle, and advances the revision atomically. | The sender/browser lock is released before runtime calls `drainCommitted`.                                                                                                                                                                                                                                                                                                                 |
-| `acceptControlMessage`                 | [`ALOutboundAdmissionControlStore`](./al-outbound-admission-control-store.ts) validates stored control history and pending acknowledgements, updates the control state, and writes repair hints in the backend transaction.                                                            | The runtime schedules a not-yet-in-sync retry when needed, then wakes the worker.                                                                                                                                                                                                                                                                                                          |
-| ACK timeout / repair hint / NACK retry | Repair admission rereads validated message/acknowledgement snapshots, applies retry/repair limits, and commits a fresh versioned bundle. Optimistic conflicts reenter read/compute.                                                                                                    | The already-running worker consumes new effects; repair never recursively enters the drain.                                                                                                                                                                                                                                                                                                |
-| Startup / scheduled wakeup             | [`ALOutboundAdmissionEffectStore`](./al-outbound-admission-effect-store.ts) validates every listed effect, claims ready effects with a bounded lease, and commits the claim.                                                                                                           | The worker invokes `runEffect` once per claimed attempt. Immediate outcomes complete or reschedule the effect. Retained transport outcomes settle asynchronously while other claims continue. Every claim receives an opaque lease owner, so an old completion or retry cannot alter a new claim by the same worker. A process interruption leaves the lease available for later recovery. |
+| Entry                                  | Decision and durable result                                                                                                                                                                                                    | After commit                                                                                                                                                                                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `enqueueIfAbsent` / `dequeue`          | Dispatch admission reads validated state and computes a bundle. Its commit compares sender versions and original supersedence observations, then writes admission state and QueueBox work atomically.                          | Runtime requests the work handler after leaving admission's sender/browser lock.                                                                                                                                                                       |
+| `acceptControlMessage`                 | [`ALOutboundAdmissionControlStore`](./al-outbound-admission-control-store.ts) validates identity, control history, and pending receipts, then commits control state and repair work together.                                  | Runtime schedules a not-yet-in-sync retry when required and wakes its engine task.                                                                                                                                                                     |
+| ACK timeout / repair hint / NACK retry | Repair admission rereads validated message/receipt snapshots, applies policy, and commits a fresh versioned bundle.                                                                                                            | New work is available to the existing engine; repair does not recursively invoke the work handler.                                                                                                                                                     |
+| Startup / scheduled wakeup             | [`ALOutboundAdmissionEffectStore`](./al-outbound-admission-effect-store.ts) reserves through QueueBox and validates each claimed payload. Malformed work becomes `NON_RETRYABLE`; valid claims remain independently available. | The worker invokes `runEffect` once per accepted claim. Immediate outcomes complete or reschedule; retained transport outcomes settle asynchronously. QueueBox compares the exact reservation on release, so an old worker cannot alter a newer claim. |
 
 ## Read and failure boundaries
 
@@ -49,16 +51,26 @@ checks complete snapshot fields and trusted message slots.
 [`al-outbound-effect-validation.ts`](./al-outbound-effect-validation.ts) checks
 effect identity, metadata, discriminated payloads, prepared transport values,
 and embedded queue messages. The backend wraps decoder failures in
-`ALAdmissionCorruptionError`; runtime readiness and repair paths preserve that
-typed failure instead of treating corruption as absence or retryable transport
-failure.
+`ALAdmissionCorruptionError`. Corrupt admission snapshots and repair dependencies
+remain typed failures rather than guessed state or retryable transport failures.
+
+Queued work has a separate terminal boundary: after reservation, a malformed payload,
+foreign namespace, wrong queue slot, or inconsistent prepared message is released as
+`NON_RETRYABLE`. Its stored content is retained, and valid claims from the same batch
+continue. This applies to normal claims, timeout recovery, and exhausted-attempt
+finalization. If the terminal write fails, the reservation remains recoverable through
+ordinary QueueBox claims. A lost-reservation rejection cannot overwrite a newer worker.
+
+Readiness reads queue status and timestamps only. It never needs a transport decoder
+or reparses terminal payloads. Payload validation occurs on the claimed item before
+any message effect is returned for execution.
 
 Queue-entry timestamps accept existing Temporal objects and their persisted
 string representation through the shared
 [`ResourceEntry` codec](../al-admission-resource-entry-validation.ts). Every
-effect write, including lease and retry updates, explicitly encodes queue entry
-timestamps to the established ISO strings: IndexedDB structured cloning does
-not preserve Temporal instances. An old empty-object timestamp remains corrupt.
+work payload is encoded through the canonical envelope/entry codec. QueueBox's own
+codec preserves reservation and retry timestamps as ISO strings: IndexedDB structured
+cloning does not preserve Temporal instances. An old empty-object timestamp remains corrupt.
 Supersedence intentionally reuses a predecessor's outbox key, so the queue key is
 validated structurally while the embedded AL message must match its effect.
 
@@ -95,16 +107,18 @@ rolls back the whole transaction. A native abort also preserves neither write.
 Reopened QueueBox instances can reserve the committed work through the ordinary
 queue API.
 
-The admission backend and browser cleanup currently supply an empty queue mutation
-list. They therefore lock only the admission store. Runtime integration must connect
-admission to the joint writer and the existing QueueBox engine, including scoped
-work cleanup; these storage primitives alone do not consolidate runtime ownership.
+[`ALAdmissionWorkBackend`](../al-admission-work-backend.ts) connects admission to its
+QueueBox. Memory, IndexedDB, and PostgreSQL implementations commit the work and its
+admission decision together. Browser composition supplies its existing engine to the
+outbound runtime. Namespace cleanup and bounded due-work queries remain part of the
+broader persistence work.
 
 An existing incompatible database is rejected without changing its schema or data.
 Cutover requires stopping the affected producers and workers before an explicit reset
 of incompatible ALM-owned browser storage. Unrelated application storage is preserved.
 
-The present ALM effect scheduler still overlaps QueueBox's work ownership. The
-roadmap requires consolidating it into the existing QueueBox/InboxOutboxEngine;
-this transport integration does not establish completion of that consolidation or
-of the application-facing delivery handle.
+Outbound execution uses QueueBox and InboxOutboxEngine; the separate outbound effect
+scheduler has been removed. Physical transport outboxes still repeat envelope storage,
+and due-work inspection still enumerates queue keys. Inbound work ownership, canonical
+envelope storage, bounded scheduling queries, and the application-facing delivery
+handle remain roadmap work.
