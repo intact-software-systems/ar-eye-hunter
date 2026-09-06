@@ -27,6 +27,9 @@ export interface ALMessageResourceIssue {
     readonly message: string;
 }
 
+const UTF8_ENCODER = new TextEncoder();
+const NON_ASCII_CHARACTER = /[^\x00-\x7f]/u;
+
 interface ALMessageValue {
     readonly value: unknown;
     readonly location: ALMessageResourceLocation;
@@ -128,7 +131,7 @@ function computeALMessageValueSize(
         if (issues.length > 0) {
             return Either.ofLeft(issues[0]);
         }
-        return Either.ofRight({ bytes: new TextEncoder().encode(JSON.stringify(entry.value)).length, children: [] });
+        return Either.ofRight({ bytes: computeJsonStringByteLength(entry.value), children: [] });
     }
     if (entry.value === null || typeof entry.value === 'boolean' || typeof entry.value === 'number') {
         if (typeof entry.value === 'number' && !Number.isFinite(entry.value)) {
@@ -189,7 +192,7 @@ function computeALMessageCollectionSize(
         if (exceedsUtf8Limit(key, byteLimits.envelopeBytes)) {
             return Either.ofLeft({ code: 'oversized', message: 'AL envelope key exceeds the byte limit' });
         }
-        bytes += (array ? 0 : new TextEncoder().encode(JSON.stringify(key)).length + 1) + (children.length > 0 ? 1 : 0);
+        bytes += (array ? 0 : computeJsonStringByteLength(key) + 1) + (children.length > 0 ? 1 : 0);
         children.push({
             value: descriptor.value,
             location: array ? 'other' : resolveALMessageResourceLocation(location, key)
@@ -244,7 +247,19 @@ function resolveALMessageResourceLocation(parent: ALMessageResourceLocation, key
 }
 
 function exceedsUtf8Limit(value: string, limit: number): boolean {
-    return value.length > limit || new TextEncoder().encode(value).length > limit;
+    if (value.length > limit) {
+        return true;
+    }
+    // UTF-8 needs at most three bytes per UTF-16 code unit, including lone surrogates.
+    if (value.length * 3 <= limit || !NON_ASCII_CHARACTER.test(value)) {
+        return false;
+    }
+    return UTF8_ENCODER.encode(value).length > limit;
+}
+
+function computeJsonStringByteLength(value: string): number {
+    const serialized = JSON.stringify(value);
+    return NON_ASCII_CHARACTER.test(serialized) ? UTF8_ENCODER.encode(serialized).length : serialized.length;
 }
 
 function isValidALMessageByteLimits(byteLimits: ALMessageByteLimits): boolean {

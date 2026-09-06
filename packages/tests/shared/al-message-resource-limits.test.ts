@@ -213,6 +213,19 @@ describe('AL envelope resource limits', () => {
         expect(validateALMessageResourceLimits(value)).toEqual([]);
     });
 
+    it.each(['ascii', 'é', '漢', '😀', '\ud800', '"\\\n\u0000'])(
+        'counts escaped property names in the exact envelope budget: %j',
+        (characters) => {
+            const key = characters.repeat(50);
+            const value = { [key]: 'value', nested: { [key]: ['value', true, 12, null] } };
+            const bytes = new TextEncoder().encode(JSON.stringify(value)).length;
+
+            expect(validateALMessageResourceLimits(value, { envelopeBytes: bytes, payloadBytes: 1 })).toEqual([]);
+            expect(validateALMessageResourceLimits(value, { envelopeBytes: bytes - 1, payloadBytes: 1 })[0]?.code)
+                .toBe('oversized');
+        }
+    );
+
     it('limits protocol pages without imposing a room-size limit on domain payloads', () => {
         const members = Array.from({ length: 1000 }, (_, index) => `member-${index}`);
         const message = messageFixture();
