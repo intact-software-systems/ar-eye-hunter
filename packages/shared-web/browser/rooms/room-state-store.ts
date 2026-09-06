@@ -11,6 +11,7 @@ import { isGroupActive, isSessionInGroup, readGroupVersion } from '@shared/api/g
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
 
+import type { StateCacheChangeListener } from '../state-cache/browser-state-cache-lifecycle.ts';
 import type { RallarStateCacheReadPort } from '../state-cache/rallar-state-store.ts';
 import type { RallarRoomState } from './rallar-room-contracts.ts';
 import {
@@ -27,10 +28,12 @@ export interface RallarRoomStateStorePort {
         listener: RallarStateListener<RallarRoomState>,
         options?: RallarOnChangeOptions
     ): RallarUnsubscribe;
-    onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe;
+    onCacheChange(listener: StateCacheChangeListener): RallarUnsubscribe;
     resolveCurrentRoomRef(): GroupRef | undefined;
     readGroupSnapshots(): GroupSnapshot[];
     findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined;
+    /** Whether the cache ever held the room; an expired snapshot reads as absent but stays observed. */
+    wasGroupSnapshotObserved(room: string | GroupRef | undefined): boolean;
     resolveRoomMinSnapshotVersion(
         room: string | GroupRef | undefined,
         explicitMinSnapshotVersion?: number
@@ -103,8 +106,16 @@ class RoomStateStore implements RallarRoomStateStorePort {
         return () => this.#listeners.delete(listener);
     }
 
-    onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe {
+    onCacheChange(listener: StateCacheChangeListener): RallarUnsubscribe {
         return this.#input.stateCache.onCacheChange(listener);
+    }
+
+    wasGroupSnapshotObserved(room: string | GroupRef | undefined): boolean {
+        const roomRef = typeof room === 'string' ? this.resolveGroupRefFromRoomId(room) : room;
+        if (!roomRef) {
+            return false;
+        }
+        return readConfiguredValue(() => this.#input.stateCache.wasGroupSnapshotObserved(roomRef)) ?? false;
     }
 
     resolveCurrentRoomRef(): GroupRef | undefined {

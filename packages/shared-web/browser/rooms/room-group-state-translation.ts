@@ -43,6 +43,7 @@ export type {
     GroupRef,
     GroupRole,
     GroupSnapshot,
+    GroupStateCausalRevision,
     GroupStatus
 } from '@shared/api/group-types.ts';
 export type { StateEventCursor, StateEventPage } from '@shared/api/state-event-types.ts';

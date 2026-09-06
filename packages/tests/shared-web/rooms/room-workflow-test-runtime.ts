@@ -24,6 +24,7 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
     return {
         operationLog,
         groupSnapshots,
+        observedRoomKeys: new Set<string>(),
         cacheListeners: new Set<Parameters<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>[0]>(),
         session: ctx.session,
         ctx,
@@ -101,6 +102,7 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), () => 
             roomWorkflowMocks.groupSnapshots.find((snapshot) => snapshot.activeSessions.some((session) => session.sessionId === sessionId))?.group
     ),
     findGroupStateSnapshotByRef: vi.fn((roomRef: GroupRef) => roomWorkflowMocks.groupSnapshots.find((snapshot) => isSameRoomRef(snapshot.group, roomRef))),
+    wasGroupStateSnapshotObservedByRef: vi.fn((roomRef: GroupRef) => roomWorkflowMocks.observedRoomKeys.has(toRoomKey(roomRef))),
     getAllGroupStateSnapshots: vi.fn(() => [...roomWorkflowMocks.groupSnapshots]),
     removeGroupStateSnapshotIfUnchanged: vi.fn((roomRef: GroupRef, expected: GroupSnapshot) => {
         const index = roomWorkflowMocks.groupSnapshots.findIndex(
@@ -150,6 +152,7 @@ export function resetRoomWorkflowTestRuntime(): void {
     vi.useRealTimers();
     roomWorkflowMocks.operationLog.length = 0;
     roomWorkflowMocks.groupSnapshots.length = 0;
+    roomWorkflowMocks.observedRoomKeys.clear();
     roomWorkflowMocks.cacheListeners.clear();
     resetRoomWorkflowLifecycleMocks();
     resetRoomWorkflowEntryMocks();
@@ -244,8 +247,12 @@ export function createRoomSnapshot(
     });
 }
 
+/** Seeding replaces what the cache holds; what it has ever held only grows, as in the repository. */
 export function seedRoomSnapshots(snapshots: readonly GroupSnapshot[]): void {
     roomWorkflowMocks.groupSnapshots.splice(0, Infinity, ...snapshots);
+    for (const snapshot of snapshots) {
+        roomWorkflowMocks.observedRoomKeys.add(toRoomKey(snapshot.group));
+    }
 }
 
 export function resolveCreateWith(snapshot: GroupSnapshot): void {
@@ -297,6 +304,7 @@ export async function publishRoomSnapshots(snapshots: readonly GroupSnapshot[]):
 
 function upsertGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
     for (const snapshot of snapshots) {
+        roomWorkflowMocks.observedRoomKeys.add(toRoomKey(snapshot.group));
         const index = roomWorkflowMocks.groupSnapshots.findIndex((candidate) => isSameRoomRef(candidate.group, snapshot.group));
         if (index < 0) {
             roomWorkflowMocks.groupSnapshots.push(snapshot);
@@ -316,6 +324,10 @@ async function notifyCacheListeners(groups: readonly GroupSnapshot[]): Promise<v
             })
         )
     );
+}
+
+function toRoomKey(roomRef: GroupRef): string {
+    return `${roomRef.applicationId}/${roomRef.workspaceId}/${roomRef.groupId}`;
 }
 
 function isSameRoomRef(left: GroupRef, right: GroupRef): boolean {

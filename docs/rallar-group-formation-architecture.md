@@ -775,8 +775,11 @@ is what keeps a healthy group quiet on the event stream.
 
 Every group response — point reads, lists, mutation responses, and the WS `GroupStateDeltaEnvelope`
 — carries the mandatory formation and transport fields, plus the nullable `activationStatus` written
-by the projection above. Browser room operations expose all eight commands; browser dial/data
-enforcement uses the authoritative group and layout state.
+by the projection above. Browser room operations expose all eight commands through
+`rallar.rooms.formation(room)` and `RallarRoomSession.formation`
+(`packages/shared-web/browser/rooms/formation/create-room-formation.ts`), with the explicit layout
+wait of product decision 16 and the status projection documented in `docs/rallar-api-reference.md`;
+browser dial/data enforcement uses the authoritative group and layout state.
 
 ### The formation view
 

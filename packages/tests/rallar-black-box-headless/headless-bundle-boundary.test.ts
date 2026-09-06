@@ -63,9 +63,13 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // reader measures 220.846 KiB; posting the lifecycle bodies the schemas
         // declare, keeping slot subscriptions across reconfiguration, and the
         // coherent connect fence with its three read-through refusals measure
-        // 221.455078125 KiB. The maintainer approved the smallest whole-KiB
-        // strict limit containing the current behavior.
-        expect(result.brotliKiB).toBeLessThan(222);
+        // 221.455078125 KiB; its fenced layout wait, stage and condition waits,
+        // subscriptions and validated formation view read measure
+        // 222.6103515625 KiB; settling those waits on the room's own reads,
+        // deriving layout events from status differences and decoding the view
+        // from unknown JSON measure 223.23828125 KiB. The maintainer approved the
+        // smallest whole-KiB strict limit containing the current behavior.
+        expect(result.brotliKiB).toBeLessThan(224);
     });
 });
 

@@ -169,6 +169,84 @@ else {
 }
 ```
 
+## Held-Layout Match Room
+
+A `match` preset admits players only while the room is forming, hands every boundary to the
+application (`plan()`, `connect()`, a commanded replan with a `hold` landing), activates itself once
+every planned edge reports, and blocks application data until the room is active. Its manager is
+elected per formation epoch, so a client checks the view before each manager command.
+
+```ts
+import { toRoomFormationDenial } from '@shared-web/browser/rallar.ts';
+
+const created = await rallar.rooms.createAndSwitch({
+    displayName: 'Ranked match',
+    lifecyclePolicy: { preset: 'match' }
+});
+const room = rallar.rooms.session(created.group);
+const formation = room.formation;
+const stopRendering = formation.onChange((status) => renderFormation(status));
+
+// Closed admission: everyone must be in before the plan.
+const players = await rallar.rooms.waitForPresence(created.group, {
+    expect: { min: 2 },
+    timeoutMs: 60_000
+});
+if (players.status !== 'ready') {
+    throw new Error(`Not enough players to plan: ${players.status}`);
+}
+
+async function isManager(): Promise<boolean> {
+    const principalId = rallar.session()?.clientId;
+    const view = await formation.readView();
+    return principalId !== undefined && view.managerPrincipalIds.includes(principalId);
+}
+
+if (await isManager()) {
+    await formation.plan();
+}
+const planned = await formation.waitForLayout({ timeoutMs: 10_000 });
+if (planned.layout === undefined) {
+    throw new Error(`No layout was published: ${planned.status}`);
+}
+
+if (await isManager()) {
+    try {
+        await formation.connect({ layout: planned.layout.identity });
+    }
+    catch (error) {
+        if (toRoomFormationDenial(error)?.kind !== 'layout') {
+            throw error;
+        }
+        // The server replaced the plan while we waited. A server-driven replacement has no
+        // receipt to fence on, so wait for whatever the slot holds now and connect exactly that.
+        const current = await formation.waitForLayout({ timeoutMs: 10_000 });
+        if (current.layout === undefined) {
+            throw new Error(`The replacement layout never arrived: ${current.status}`);
+        }
+        await formation.connect({ layout: current.layout.identity });
+    }
+}
+
+// The preset activates at full coverage or fails the attempt at its 20 s deadline. A failed
+// attempt returns the room to `forming` (plan again); a spent budget parks it in `dormant`.
+const outcome = await formation.waitForStage('active', { timeoutMs: 60_000 });
+if (outcome.status !== 'ready') {
+    throw new Error(`The match did not activate: ${outcome.formation?.stage ?? outcome.status}`);
+}
+const transport = await rallar.rtc.waitForRoom(created.group, { timeoutMs: 10_000 });
+if (transport.rtc.state !== 'open') {
+    throw new Error(`Peers are not ready: ${transport.rtc.state}`);
+}
+stopRendering();
+```
+
+`pause()` and `resume()` halt and restore application data without dropping a connection.
+`reconfigure({ landing: 'hold' })` publishes a new layout beside the live one; wait for it with
+`waitForLayout({ after: receipt.causalRevision })`, `connect({ layout })` it, and the preset
+activates it once its coverage reports. `reset()` returns the room to `dormant` and `start()` begins
+a new series.
+
 ## Room Event Replay
 
 Use replay when the browser may have missed state-sync events while offline or disconnected.
