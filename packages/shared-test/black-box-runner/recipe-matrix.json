@@ -1274,7 +1274,7 @@
           }
         ]
       },
-      "description": "Pins the connect fence: a connect naming a stale formation epoch or a layout that is not the stored plan is refused with its own 409 code and writes nothing, and the connect naming the published layout under the current epoch dials it."
+      "description": "Pins the connect fence: after a second member's arrival replans the published layout, a connect naming a stale formation epoch is refused 409 group-connect-stale-epoch, a connect naming the replaced layout is refused 409 group-connect-planned-layout-superseded, neither refusal moves the group row, and the connect naming the current plan under the current epoch dials it."
     },
     {
       "id": "api-v1-group-data-policy",

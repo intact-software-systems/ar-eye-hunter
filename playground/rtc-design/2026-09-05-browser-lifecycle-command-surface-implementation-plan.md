@@ -3423,7 +3423,7 @@ longer matched the group reached the wire as the generic `group-mutation-rejecte
 `group-connect-stale-epoch` to `GROUP_CONNECT_REJECTION_CODES`, maps it to `409` beside the two layout
 conflicts, reads it through `toRoomFormationDenial` as the `layout` kind, makes `connect()` read the
 room through before it rethrows that refusal (a stale epoch leaves the planned layout current, so
-forgetting it would strand the caller), drives the refusal from the admission-approval recipe and ran
+forgetting it would strand the caller), drives the refusal from `api-v1-group-connect-fence` (#535) and ran
 the medium-scale gate. The PR leaves the criterion petitions on the shared rejection, since no HTTP
 route sends a fenced non-connect command; the surface table, B4 and Task 1.6 above describe the two
 conflicts the slices shipped with.
