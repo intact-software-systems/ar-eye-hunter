@@ -321,6 +321,7 @@ describe('black-box runner recipe matrix', () => {
 
         expect(apiEntries.map((entry) => entry.id).sort()).toEqual([
             'api-v1-activation-clock-decay',
+            'api-v1-activation-command-race',
             'api-v1-admin-authorization-boundary',
             'api-v1-admin-operations',
             'api-v1-admin-support',
@@ -401,6 +402,7 @@ describe('black-box runner recipe matrix', () => {
 
         expect(apiRecipeEntries.map((entry) => entry.id).sort()).toEqual([
             'api-v1-activation-clock-decay',
+            'api-v1-activation-command-race',
             'api-v1-admin-authorization-boundary',
             'api-v1-admin-operations',
             'api-v1-admin-support',

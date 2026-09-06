@@ -1,0 +1,590 @@
+{
+  "description": "No-browser API-v1 activation command race: a latecomer's join against the activation that closes the lobby, released together by a barrier. Activation is driven manually on purpose -- the criterion has no HTTP surface, so a race against the criterion itself would be settle-sequenced rather than a parallel block (D7), and mislabelling that as a race is how a recipe ends up asserting a timing coincidence. Neither side asserts an outcome, because which lands first is the server's to decide; what is required is that the activation command was answered and the lobby is closed whichever way the race went, with a roster that never half-added the latecomer.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_ACTRACE_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-actrace"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_ACTRACE_WORKSPACE_ID",
+      "default": "workspace-actrace-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_ACTRACE_GROUP_ID",
+      "default": "activationrace-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_ACTRACE_PASSWORD",
+      "default": "api-v1-actrace-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/activationrace-register-alice-{runId}",
+        "body": {
+          "username": "activationrace-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/activationrace-login-alice-{runId}",
+        "body": {
+          "username": "activationrace-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/activationrace-register-bob-{runId}",
+        "body": {
+          "username": "activationrace-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/activationrace-login-bob-{runId}",
+        "body": {
+          "username": "activationrace-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerLatecomer",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/activationrace-register-latecomer-{runId}",
+        "body": {
+          "username": "activationrace-latecomer-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "latecomer client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginLatecomer",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/activationrace-login-latecomer-{runId}",
+        "body": {
+          "username": "activationrace-latecomer-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "latecomerClientId": "body.clientId",
+          "latecomerSessionId": "body.sessionId",
+          "latecomerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveLatecomerAuthHeader",
+      "type": "set",
+      "output": "latecomerAuthHeader",
+      "secret": true,
+      "redactAs": "latecomerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.latecomerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheLobbyGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/activationrace-create-group-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Activation command race {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "initiator": "any-member",
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
+            },
+            "admission": {
+              "mode": "open"
+            },
+            "activation": {
+              "mode": "manual"
+            },
+            "topology": {
+              "reconfigureLanding": "hold"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "lifecycleState": "forming"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/activationrace-bob-joins-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectAlicePresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/activationrace-alice-presence-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "activationrace-generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectBobPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/activationrace-bob-presence-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "activationrace-generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "planTheLobby",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/plan/requests/activationrace-plan-lobby-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned"
+          }
+        }
+      }
+    },
+    {
+      "name": "theLobbyLayoutIsActive",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 25,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.25
+        },
+        "outputs": {
+          "layoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "layoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "layoutVersion": "body.snapshot.version",
+          "layoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectTheLobby",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/connect/requests/activationrace-connect-lobby-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": 1,
+          "expectedLayout": {
+            "groupRevision": "{layoutGroupRevision}",
+            "presenceRevision": "{layoutPresenceRevision}",
+            "version": "{layoutVersion}",
+            "state": "{layoutState}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "connecting"
+          }
+        }
+      }
+    },
+    {
+      "name": "aJoinRacesTheTransitionThatClosesTheLobby",
+      "type": "parallel",
+      "request": {
+        "barrier": true,
+        "failFast": false,
+        "timeoutMs": 60000
+      },
+      "groups": [
+        {
+          "name": "activating",
+          "steps": [
+            {
+              "name": "aliceActivatesTheGroup",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "POST",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/activate/requests/activationrace-activate-group-{runId}",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "body": {},
+                "outputs": {
+                  "activateStatus": "statusCode"
+                }
+              },
+              "expect": {
+                "anyOf": [
+                  {
+                    "status": 200
+                  },
+                  {
+                    "status": 400
+                  },
+                  {
+                    "status": 403
+                  },
+                  {
+                    "status": 409
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "joining",
+          "steps": [
+            {
+              "name": "theLatecomerTriesToJoin",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "POST",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/activationrace-latecomer-joins-{runId}",
+                "headers": {
+                  "Authorization": "{latecomerAuthHeader}",
+                  "x-client-id": "{latecomerClientId}"
+                },
+                "body": {},
+                "outputs": {
+                  "joinStatus": "statusCode"
+                }
+              },
+              "expect": {
+                "anyOf": [
+                  {
+                    "status": 200
+                  },
+                  {
+                    "status": 400
+                  },
+                  {
+                    "status": 403
+                  },
+                  {
+                    "status": 409
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "barrier": true,
+        "body": {
+          "groupCount": 2
+        }
+      }
+    },
+    {
+      "name": "theGroupSettlesAfterTheRace",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 25,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.25
+        },
+        "outputs": {
+          "settledState": "body.group.lifecycleState",
+          "settledMembers": "body.members"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "theActivationCommandWasAnswered",
+      "type": "assert",
+      "actual": {
+        "activate": "{activateStatus}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "activate": 200
+        }
+      }
+    },
+    {
+      "name": "theLobbyIsClosedWhicheverWayTheRaceWent",
+      "type": "assert",
+      "actual": {
+        "state": "{settledState}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "anyOf": [
+          {
+            "state": "active"
+          },
+          {
+            "state": "connecting"
+          }
+        ]
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

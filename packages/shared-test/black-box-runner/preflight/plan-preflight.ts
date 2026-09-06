@@ -654,15 +654,33 @@ function outputPreflight(
     };
 }
 
+/**
+ * A `parallel` step's groups hold ordinary steps, and an output declared inside
+ * one resolves for every later step exactly as a top-level output does. Reading
+ * only the top level reported every such output as missing.
+ */
 function producedOutputsFromSteps(steps: readonly JsonRecord[]): readonly string[] {
     return steps.flatMap((step) =>
         [
             stringValue(step.output),
             stringValue(asRecord(step.request).output),
             ...Object.keys(asRecord(step.outputs)),
-            ...Object.keys(asRecord(asRecord(step.request).outputs))
+            ...Object.keys(asRecord(asRecord(step.request).outputs)),
+            ...producedOutputsFromSteps(toParallelGroupSteps(step))
         ].filter((output): output is string => Boolean(output))
     );
+}
+
+function toParallelGroupSteps(step: JsonRecord): readonly JsonRecord[] {
+    const groups = step.groups;
+    if (!Array.isArray(groups)) {
+        return [];
+    }
+
+    return groups.flatMap((group) => {
+        const groupSteps = asRecord(group).steps;
+        return Array.isArray(groupSteps) ? groupSteps.map(asRecord) : [];
+    });
 }
 
 function producedOutputsFromOperations(operations: readonly BlackBoxRunnerPreflightOperation[]): readonly string[] {

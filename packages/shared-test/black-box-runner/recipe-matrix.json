@@ -2830,6 +2830,29 @@
         ]
       },
       "description": "No-browser API-v1 reconfigure landing concurrency: reconfigureLanding apply has no coverage anywhere in the corpus, since every recipe that sets it pins hold, so a reconfigure has never been observed landing. Two reconfigures asking for different degree limits are released together by a barrier, so neither is skipped as unchanged and neither is merely adjacent. The row settles on exactly one of the two requested limits and the layout version must have advanced."
+    },
+    {
+      "id": "api-v1-activation-command-race",
+      "recipe": "tests/api-v1/api-v1-activation-command-race.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-activation-command-race",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 activation command race: a latecomer join against the activation that closes the lobby, released together by a barrier. Activation is driven manually on purpose, because the criterion has no HTTP surface and racing it would be settle-sequenced rather than a parallel block. Neither side asserts an outcome; what is required is that the activation was answered and the lobby is closed whichever way the race went."
     }
   ]
 }

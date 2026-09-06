@@ -57,4 +57,43 @@ describe('strict preflight expectation checks', () => {
             expect: { body: { managerPrincipalIds: [] } }
         })).toContain('STRICT_EXPECT_VACUOUS');
     });
+
+    // An output declared inside a parallel group resolves for every later step
+    // exactly as a top-level one does; the collector read only the top level and
+    // reported every such output as missing.
+    it('sees an output produced inside a parallel group', () => {
+        const plan = explainBlackBoxRunnerPlan({
+            rawConfig: {
+                steps: [
+                    {
+                        name: 'raceTwoCommands',
+                        type: 'parallel',
+                        groups: [{
+                            name: 'first',
+                            steps: [{
+                                name: 'commandOne',
+                                type: 'http',
+                                request: {
+                                    method: 'POST',
+                                    path: '/api/thing/requests/parallel-output-probe-aaaa',
+                                    outputs: { firstStatus: 'statusCode' }
+                                },
+                                expect: { status: 200 }
+                            }]
+                        }]
+                    },
+                    {
+                        name: 'readTheCapturedStatus',
+                        type: 'assert',
+                        actual: { seen: '{firstStatus}' },
+                        expect: { body: { seen: 200 } }
+                    }
+                ]
+            },
+            profile: 'strict'
+        } as never);
+
+        expect((plan.issues ?? []).map((issue: { code: string; }) => issue.code))
+            .not.toContain('MISSING_OUTPUT_REFERENCE');
+    });
 });
