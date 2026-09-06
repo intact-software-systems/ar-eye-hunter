@@ -114,23 +114,15 @@ describe('live RTC delivery owner', () => {
         });
         const beforeC = recording.milestones.slice(0, recording.milestones.indexOf('connect:C'));
         expect(beforeC).toEqual(expect.arrayContaining(['connect-layout:2', 'ready:A', 'ready:B', 'activate:2']));
-        const firstCIndex = recording.milestones.indexOf('connect:C');
-        const reconnectCIndex = recording.milestones.indexOf('connect:C', firstCIndex + 1);
-        const afterC = recording.milestones.slice(firstCIndex, reconnectCIndex);
+        const afterC = recording.milestones.slice(recording.milestones.indexOf('connect:C'));
         expect(afterC.indexOf('reconfigure')).toBeGreaterThan(afterC.indexOf('presence:3'));
         expect(afterC.indexOf('planned')).toBeGreaterThan(afterC.indexOf('reconfigure'));
         expect(afterC.indexOf('connect-layout:3')).toBeGreaterThan(afterC.indexOf('planned'));
         expect(afterC.indexOf('activate:3')).toBeGreaterThan(afterC.indexOf('connect-layout:3'));
         for (const prefix of ['A', 'B', 'C']) {
-            const membershipRefreshIndex = afterC.indexOf(`refresh:${prefix}`);
-            const readinessRefreshIndex = afterC.lastIndexOf(`refresh:${prefix}`);
-            expect(membershipRefreshIndex).toBeGreaterThan(afterC.indexOf('presence:3'));
-            expect(membershipRefreshIndex).toBeLessThan(afterC.indexOf('reconfigure'));
-            expect(readinessRefreshIndex).toBeGreaterThan(afterC.indexOf('activate:3'));
-            expect(afterC.indexOf(`ready:${prefix}`)).toBeGreaterThan(readinessRefreshIndex);
-            expect(recording.milestones.indexOf('send')).toBeGreaterThan(
-                recording.milestones.lastIndexOf(`ready:${prefix}`)
-            );
+            expect(afterC.indexOf(`refresh:${prefix}`)).toBeGreaterThan(afterC.indexOf('activate:3'));
+            expect(afterC.indexOf(`ready:${prefix}`)).toBeGreaterThan(afterC.indexOf(`refresh:${prefix}`));
+            expect(afterC.indexOf('send')).toBeGreaterThan(afterC.indexOf(`ready:${prefix}`));
         }
         expect(recording.commands.filter(({ command }) => 'request' in command).map(({ command }) => command))
             .toEqual(expect.arrayContaining([

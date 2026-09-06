@@ -109,11 +109,22 @@ three-member topology planning, propagated the producer exit, and retained the
 actual Playwright failure directory. Diagnostic run 34026553019 correctly
 failed on exact head `5b5ea0575b218342b88d78bdc938abf40efb6b3a`
 with the same C empty-ready-peer result. That disproves a single pre-planning
-refresh as the missing barrier. The next same-PR diagnostic revision retains a
-full RTC health snapshot from any readiness timeout so the browser state can
-distinguish topology adoption from peer-establishment failure. There is not yet
-a valid B06 E3 result. B07 remains held, and evidence ranking cannot start
-until a valid B06 primary and any required repeat are archived.
+refresh as the missing barrier. Diagnostic run 34027076621 on exact head
+`282d3a259820b57daa20d6fa72d1e499226a6e6c` retained full readiness-timeout
+health: A and C each had one healthy open connection to B, while neither knew
+the other. Both managers nevertheless reported two desired peers and two
+started connection attempts, proving that A-C was planned and dialed rather
+than omitted by the server topology. A subsequent production-path trace also
+confirmed that this planner uses `K_INSERT_MC`, invalidating the temporary
+combined MC/MDDL explanation. The remaining defect was the browser manager's
+setup-completion wake: a desired setup deleted after the pass was not retried
+unless another peer had previously been paced or deferred. PR #530 now retries
+that still-desired peer and deletes both the disproved pre-planning refresh and
+the out-of-path mesh-algorithm experiment. The exact local memory-mode
+three-browser primary now passes with that correction; the agreed three-run
+remote diagnostic proof still starts from zero on the next pushed head. There
+is not yet a valid B06 E3 result. B07 remains held, and evidence ranking cannot
+start until a valid B06 primary and any required repeat are archived.
 
 ### Current execution horizon
 
@@ -4005,8 +4016,18 @@ result, so the pre-planning refresh is not a sufficient browser-side barrier.
 Its retained screenshots prove all three pages remained connected to the
 expected room, but the previous diagnostics ended before recording the failing
 RTC internals. The next same-PR revision records a full RTC health snapshot at
-the readiness timeout and retains it with the diagnostic artifact before
-choosing another lifecycle correction.
+the readiness timeout and retains it with the diagnostic artifact. Run
+34027076621 on exact head `282d3a259820b57daa20d6fa72d1e499226a6e6c`
+captured A and C with one healthy open B connection each and no A-C peer. The
+same health snapshots recorded two desired peers and two started connection
+attempts for both A and C, so the server layout did include A-C and both
+browsers attempted it. When that setup disappeared, the group manager did not
+wake because no other peer was waiting on connection or pacing capacity. A
+focused regression now reproduces that stranded desired-peer state; PR #530
+reconciles after a desired setup is deleted and removes the disproved
+pre-planning refresh instead of retaining an unnecessary lifecycle step. The
+exact local memory-mode three-browser primary passes with that correction. The
+next exact pushed head must pass the three-run diagnostic proof from zero.
 
 - [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
       publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
@@ -4541,12 +4562,18 @@ retained the real Playwright output path, and made every browser hydrate the
 exact membership before three-member planning. Run 34026553019 correctly
 failed that new head with the same C empty-ready-peer result, disproving one
 refresh as the sufficient barrier. The next revision captures and retains the
-failing browser's detailed RTC health before selecting another correction.
-Every prior run is invalidated by each head change. Three independent
-diagnostics must pass on one unchanged final PR head before merge; any later
-head change restarts that proof. The next two slices remain to prove and merge
-that correction, then dispatch B06 in publish mode from moving `main`. B07
-remains held; Task 12 remains blocked on valid B06 evidence.
+failing browser's detailed RTC health. Run 34027076621 captured a healthy
+A-B-C line: A and C each knew only B. Their manager diagnostics still showed
+two desired peers and two connection attempts, so A-C was planned and attempted
+but its deleted setup was never retried. The manager previously woke after a
+setup ended only when another dial had been paced or deferred. PR #530 now
+wakes for a deleted peer that remains desired and removes the disproved refresh.
+The exact local memory-mode three-browser primary passes. Every prior remote run
+is invalidated by each head change. Three independent diagnostics must pass on
+one unchanged final PR head before merge; any later head change restarts that
+proof. The next two slices remain to prove and merge that correction, then
+dispatch B06 in publish mode from moving `main`. B07 remains held; Task 12
+remains blocked on valid B06 evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

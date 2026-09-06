@@ -1009,6 +1009,44 @@ describe('WebRtcGroupManager', () => {
         manager.stopReconcileWakes();
     });
 
+    it('retries a desired peer when its setup closes without a paced dial waiting', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcConnectionHarness('self');
+        const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service,
+            { groupCache, clientCache, acceptedOverlayCache },
+            { overlayTransitionGraceMs: 0 }
+        );
+        manager.startReconcileWakes();
+        clientCache.set('peer-a', createClientInfo('peer-a', true));
+        await acceptActiveLayoutGroup(
+            manager,
+            acceptedOverlayCache,
+            createGroupSnapshot({
+                groupId: 'group-1',
+                membershipVersion: 1,
+                memberSessionIds: ['self', 'peer-a']
+            })
+        );
+        expect(manager.readDiagnostics()).toMatchObject({
+            reconcileRunCount: 1,
+            connectAttemptCount: 1,
+            connectDeferredPacingCount: 0
+        });
+
+        rtcQBox.nativePeer('peer-a').close();
+        await manager.whenReconciled();
+
+        expect(rtcQBox.knownPeerIds()).toEqual(['peer-a']);
+        expect(manager.readDiagnostics()).toMatchObject({
+            reconcileRunCount: 2,
+            connectAttemptCount: 2
+        });
+        manager.stopReconcileWakes();
+    });
+
     it('stands down a wake scheduled before the wakes stop', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
