@@ -249,7 +249,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'matchesRallarMessageSelector',
                 'normalizeApiBaseUrl',
                 'normalizeRallarMessageSelector',
-                'readApiBaseUrl'
+                'readApiBaseUrl',
+                'toRoomFormationDenial'
             ],
             types: [
                 'ApiMiddleware',
@@ -592,6 +593,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'AppointStateGroupDirectorBody',
                 'BanStateGroupMemberBody',
                 'ConnectStateClientSessionBody',
+                'ConnectStateGroupLifecycleBody',
                 'ConnectStateGroupPresenceSessionBody',
                 'CreateStateGroupBody',
                 'CreateStateGroupInviteBody',
@@ -601,12 +603,14 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'JoinStateGroupBody',
                 'PutStateGroupTopologyConfigBody',
                 'PutStateGroupTopologyOverrideBody',
+                'ReconfigureStateGroupLifecycleBody',
                 'ReconfigureStateGroupTopologyBody',
                 'RemoveStateGroupMemberBody',
                 'RevokeStateGroupInviteBody',
                 'RotateStateGroupJoinCodeBody',
                 'SetStateGroupMemberRoleBody',
                 'TransferStateGroupOwnershipBody',
+                'TransitionStateGroupLifecycleBody',
                 'UnbanStateGroupMemberBody',
                 'UpdateStateGroupBody',
                 'UpsertStateGroupMemberBody'

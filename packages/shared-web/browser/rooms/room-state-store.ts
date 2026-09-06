@@ -136,6 +136,12 @@ class RoomStateStore implements RallarRoomStateStorePort {
         if (!room) {
             return undefined;
         }
+        // Reading before a first connect is ordinary; the snapshot cache does
+        // not exist yet, and an absent snapshot is the honest answer.
+        return readConfiguredValue(() => this.findCachedGroupSnapshot(room));
+    }
+
+    private findCachedGroupSnapshot(room: string | GroupRef): GroupSnapshot | undefined {
         if (typeof room !== 'string') {
             return this.#input.stateCache.findGroupSnapshotByRef(room);
         }

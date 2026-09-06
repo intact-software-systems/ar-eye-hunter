@@ -19,7 +19,8 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
             'matchesRallarMessageSelector',
             'normalizeRallarMessageSelector',
             'normalizeApiBaseUrl',
-            'readApiBaseUrl'
+            'readApiBaseUrl',
+            'toRoomFormationDenial'
         ],
         forbiddenRuntimeExports: [
             'createRallarCrdtFacade',
@@ -38,7 +39,8 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
             'matchesRallarMessageSelector',
             'normalizeRallarMessageSelector',
             'normalizeApiBaseUrl',
-            'readApiBaseUrl'
+            'readApiBaseUrl',
+            'toRoomFormationDenial'
         ],
         forbiddenRuntimeExports: [
             'createRallarCrdtFacade',

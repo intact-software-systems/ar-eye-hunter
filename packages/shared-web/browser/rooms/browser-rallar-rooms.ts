@@ -18,7 +18,10 @@ import type {
 import { throwRallarValidationIssue } from '@shared-web/browser/rooms/rallar-room-validation.ts';
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
-import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
+import {
+    hydrateGroupTopologyOverlays,
+    type GroupTopologyReadThroughOutcome
+} from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import { readStateGroupSnapshot, type StateGroupSnapshotRead } from '@shared-web/browser/state-read/point-read.ts';
 import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -33,6 +36,7 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
+import type { RoomFormationServiceDependencies } from './formation/command-room-formation.ts';
 import { createRoomFormation } from './formation/create-room-formation.ts';
 import type { RallarRoomFormation } from './formation/rallar-room-formation-contracts.ts';
 import type { RallarRoomLayoutSlotsPort } from './formation/room-layout-slots.ts';
@@ -191,18 +195,19 @@ export function createBrowserRallarRooms(
     const refresh = async (
         refreshInput?: StateScope | RallarScopedOperationOptions
     ): Promise<RallarRoomState> => await refreshRooms(input, refreshInput);
+    const formationDependencies: RoomFormationServiceDependencies = {
+        stateStore: input.stateStore,
+        slots: input.roomLayoutSlots,
+        refreshRoom: async (roomRef, options) => await refreshRoom(input, roomRef, options),
+        connect: input.connect,
+        requireSession: input.requireSession,
+        resolveOperationOptions: input.resolveOperationOptions,
+        resolveOperationScope: input.resolveOperationScope,
+        runAuthAwareOperation: input.runAuthAwareOperation,
+        acceptSnapshots: input.acceptSnapshots
+    };
     const createFormation = (roomRef: GroupRef): RallarRoomFormation =>
-        createRoomFormation({
-            roomRef,
-            stateStore: input.stateStore,
-            slots: input.roomLayoutSlots,
-            refreshRoom: async (target) => await refreshRoom(input, target),
-            connect: input.connect,
-            requireSession: input.requireSession,
-            resolveOperationOptions: input.resolveOperationOptions,
-            runAuthAwareOperation: input.runAuthAwareOperation,
-            acceptSnapshots: input.acceptSnapshots
-        });
+        createRoomFormation({ roomRef, dependencies: formationDependencies });
     const createSession = (roomRef: GroupRef): RallarRoomSession =>
         createRoomSession({
             roomRef,
@@ -381,8 +386,8 @@ async function refreshRoom(
     input: CreateBrowserRallarRoomsInput,
     roomRef: GroupRef,
     refreshInput: RallarScopedOperationOptions = {}
-): Promise<void> {
-    await input.runAuthAwareOperation(async () => {
+): Promise<GroupTopologyReadThroughOutcome | undefined> {
+    return await input.runAuthAwareOperation(async () => {
         const scope = toStateScope(roomRef);
         const operationOptions = input.resolveOperationOptions({
             ...refreshInput,
@@ -400,7 +405,7 @@ async function refreshRoom(
                 toRallarCommandOptions(operationOptions)
             ).run();
             await input.acceptSnapshots({ context, clients: [], groups: [response.snapshot], scope });
-            await hydrateGroupTopologyOverlays({
+            const [readThrough] = await hydrateGroupTopologyOverlays({
                 groupSnapshots: [response.snapshot],
                 sessionId: context.session.sessionId,
                 webRtcGroupManager: context.middleware.webRtcGroupManager,
@@ -410,6 +415,7 @@ async function refreshRoom(
                     authSession: context.session
                 }
             });
+            return readThrough?.outcome;
         }
         catch (error) {
             if (error instanceof ApiHttpError && error.status === 404 && observed) {

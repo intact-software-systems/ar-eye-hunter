@@ -117,14 +117,27 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), () => 
 
 vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOriginal) => {
     const actual = await importOriginal();
+    const { isRepositoryNotFoundError } = await import('@shared/cache/RepositoryManager.ts');
+    // The rooms tests configure the overlay repositories only when a test observes
+    // them; a drain before that is the ordinary "nothing to drain".
+    const drainIfConfigured = async (drain: () => Promise<void>): Promise<void> => {
+        try {
+            await drain();
+        }
+        catch (error) {
+            if (!(error instanceof Error && isRepositoryNotFoundError(error))) {
+                throw error;
+            }
+        }
+    };
     return {
         ...actual,
-        findPlannedOverlayById: vi.fn(),
-        findAcceptedOverlayById: vi.fn(),
+        findPlannedOverlayById: vi.fn((overlayId, manager) => actual.findPlannedOverlayById(overlayId, manager)),
+        findAcceptedOverlayById: vi.fn((overlayId, manager) => actual.findAcceptedOverlayById(overlayId, manager)),
         removePlannedOverlayByIdIfUnchanged: vi.fn(() => false),
         removeAcceptedOverlayByIdIfUnchanged: vi.fn(() => false),
-        waitForPlannedOverlayChangesIdle: vi.fn(async () => undefined),
-        waitForAcceptedOverlayChangesIdle: vi.fn(async () => undefined)
+        waitForPlannedOverlayChangesIdle: vi.fn(async (manager) => await drainIfConfigured(() => actual.waitForPlannedOverlayChangesIdle(manager))),
+        waitForAcceptedOverlayChangesIdle: vi.fn(async (manager) => await drainIfConfigured(() => actual.waitForAcceptedOverlayChangesIdle(manager)))
     };
 });
 

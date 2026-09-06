@@ -38,6 +38,41 @@ describe('room formation status projection', () => {
         expect(status.condition).toBeUndefined();
     });
 
+    it('reports the activation condition only while the stored status describes the current series', () => {
+        const snapshot = createFormationSnapshot({
+            stage: 'active',
+            formationEpoch: 3,
+            causalRevision: { groupRevision: 5, presenceRevision: 2 }
+        });
+        const identity = { groupRevision: 5, presenceRevision: 2, version: 4, state: 'active' as const };
+        const accepted = createLayoutOverlay({
+            roomRef: snapshot.group,
+            causalRevision: { groupRevision: 5, presenceRevision: 2 },
+            version: 4
+        });
+        const withStatus = (formationEpoch: number) => ({
+            ...snapshot,
+            group: {
+                ...snapshot.group,
+                acceptedLayoutIdentity: identity,
+                activationStatus: {
+                    condition: 'degraded' as const,
+                    coverageRate: 0.6,
+                    coverageBasisLayoutIdentity: identity,
+                    formationEpoch,
+                    evidenceWatermark: null,
+                    publishedAtEpochMs: 5
+                }
+            }
+        });
+
+        const current = toRallarRoomFormationStatus({ snapshot: withStatus(3), planned: undefined, accepted });
+        const spent = toRallarRoomFormationStatus({ snapshot: withStatus(2), planned: undefined, accepted });
+
+        expect([current.condition, current.coverageRate]).toEqual(['degraded', 0.6]);
+        expect([spent.condition, spent.coverageRate]).toEqual([undefined, undefined]);
+    });
+
     it('reports no accepted layout when the slot does not match the snapshot identity, and no planned layout for a tombstone', () => {
         const snapshot = createFormationSnapshot({
             stage: 'active',

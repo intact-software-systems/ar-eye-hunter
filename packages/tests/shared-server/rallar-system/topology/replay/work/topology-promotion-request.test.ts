@@ -41,6 +41,7 @@ describe('topology promotion request write', () => {
             read,
             serviceId: 'topology-service',
             entry: promotionEntry(),
+            sourceWorkId: 'rtc-topology:group-1:work-1',
             target: null
         })).toBeNull();
         expect(calls).toEqual(['group', 'policy']);

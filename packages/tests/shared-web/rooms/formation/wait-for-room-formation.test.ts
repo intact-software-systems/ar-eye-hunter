@@ -87,6 +87,16 @@ describe('room formation stage and condition waits', () => {
             causalRevision: { groupRevision: 3, presenceRevision: 1 }
         });
         seedRoomSnapshots([connecting]);
+        // The status describes the layout the room is dialing; without that
+        // planned layout in the slot it belongs to no current series.
+        setPlannedOverlayById(
+            toScopedOverlayId(connecting.group),
+            createLayoutOverlay({
+                roomRef: connecting.group,
+                causalRevision: { groupRevision: 3, presenceRevision: 1 },
+                version: 2
+            })
+        );
         const wait = createRallarFacade().rooms.formation(connecting.group).waitForCondition('active', {
             timeoutMs: 1_000
         });

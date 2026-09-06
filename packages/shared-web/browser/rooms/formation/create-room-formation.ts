@@ -11,7 +11,7 @@ import type { GroupRef, RoomFormationCommand } from '../room-group-state-transla
 import {
     commandRoomFormation,
     connectRoomFormation,
-    type RoomFormationCommandPorts
+    type RoomFormationServiceDependencies
 } from './command-room-formation.ts';
 import type {
     RallarRoomFormation,
@@ -25,27 +25,35 @@ import { readRoomFormationView } from './read-room-formation-view.ts';
 import {
     readRoomFormationStatus,
     subscribeRoomFormation,
-    toRallarRoomLayout
+    toRallarRoomLayout,
+    type ReadRoomFormationStatusInput
 } from './room-formation-observation.ts';
 import { waitForRoomCondition, waitForRoomLayout, waitForRoomStage } from './wait-for-room-formation.ts';
 
-export interface CreateRoomFormationInput extends RoomFormationCommandPorts {
+export interface CreateRoomFormationInput {
     readonly roomRef: GroupRef;
+    readonly dependencies: RoomFormationServiceDependencies;
 }
 
 export function createRoomFormation(input: CreateRoomFormationInput): RallarRoomFormation {
+    const { roomRef, dependencies } = input;
+    const observation: ReadRoomFormationStatusInput = {
+        roomRef,
+        stateStore: dependencies.stateStore,
+        slots: dependencies.slots
+    };
+    const waits = { ...observation, resolveOperationOptions: dependencies.resolveOperationOptions };
     const submit = async (
         command: RoomFormationCommand,
         options: RallarRoomFormationCommandOptions = {}
-    ) => await commandRoomFormation({ roomRef: input.roomRef, command, options, ports: input });
+    ) => await commandRoomFormation({ roomRef, command, options, dependencies });
 
     return {
-        roomRef: input.roomRef,
-        status: () => readRoomFormationStatus(input),
-        readView: async (options = {}) =>
-            await readRoomFormationView({ roomRef: input.roomRef, options, ports: input }),
+        roomRef,
+        status: () => readRoomFormationStatus(observation),
+        readView: async (options = {}) => await readRoomFormationView({ roomRef, options, dependencies }),
         plan: async (options) => await submit({ command: 'plan' }, options),
-        connect: async (options = {}) => await connectRoomFormation({ roomRef: input.roomRef, options, ports: input }),
+        connect: async (options = {}) => await connectRoomFormation({ roomRef, options, dependencies }),
         activate: async (options) => await submit({ command: 'activate' }, options),
         reconfigure: async (options = {}) =>
             await submit({ command: 'reconfigure', landing: options.landing }, options),
@@ -54,12 +62,12 @@ export function createRoomFormation(input: CreateRoomFormationInput): RallarRoom
         reset: async (options) => await submit({ command: 'reset' }, options),
         start: async (options) => await submit({ command: 'start' }, options),
         waitForStage: async (stage, options = {}) =>
-            await waitForRoomStage({ ...input, stages: toList(stage), options }),
+            await waitForRoomStage({ ...waits, stages: toList(stage), options }),
         waitForCondition: async (condition, options = {}) =>
-            await waitForRoomCondition({ ...input, conditions: toList(condition), options }),
-        waitForLayout: async (options = {}) => await waitForRoomLayout({ ...input, options }),
-        onChange: (listener, options = {}) => subscribeToFormationChanges(input, listener, options),
-        onLayout: (listener) => subscribeToLayoutEvents(input, listener)
+            await waitForRoomCondition({ ...waits, conditions: toList(condition), options }),
+        waitForLayout: async (options = {}) => await waitForRoomLayout({ ...waits, options }),
+        onChange: (listener, options = {}) => subscribeToFormationChanges(observation, listener, options),
+        onLayout: (listener) => subscribeToLayoutEvents(observation, listener)
     };
 }
 
@@ -68,7 +76,7 @@ function toList<T>(value: T | readonly T[]): readonly T[] {
 }
 
 function subscribeToFormationChanges(
-    input: CreateRoomFormationInput,
+    input: ReadRoomFormationStatusInput,
     listener: RallarStateListener<RallarRoomFormationStatus>,
     options: RallarOnChangeOptions
 ): RallarUnsubscribe {
@@ -98,7 +106,7 @@ function isSameFormationObservation(
 }
 
 function subscribeToLayoutEvents(
-    input: CreateRoomFormationInput,
+    input: ReadRoomFormationStatusInput,
     listener: RallarRoomLayoutListener
 ): RallarUnsubscribe {
     const overlayId = toScopedOverlayId(input.roomRef);
