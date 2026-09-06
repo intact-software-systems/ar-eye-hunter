@@ -92,7 +92,7 @@ observed the new A/B sessions as ready. PR #528 archived the ninth failed
 primary with `acceptedMetrics: false`. The reused-group formation driver still
 treated absolute presence revisions `1`, `2`, and `3` as connect barriers even
 though prior lifecycle work had already advanced the same group's revision.
-The current focused follow-up replaces those obsolete thresholds with exact
+PR #530 replaces those obsolete thresholds with exact
 active-session-set checks after each connect, so stale departing sessions must
 clear before the next topology is formed. There is not yet a valid B06 E3
 result. B07 remains held, and evidence ranking cannot start until a valid B06
@@ -100,10 +100,10 @@ primary and any required repeat are archived.
 
 ### Current execution horizon
 
-| Order | Slice                                            | Completion evidence                                                                                                                                                                                                                                      |
-| ----- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Merge the exact active-session formation barrier | A reused group cannot advance from A to B while any retired session remains active; the obsolete absolute-revision barrier is deleted; focused unit, exact default E3, type/build/style/structure, full-unit, and branch review gates pass before merge. |
-| 2     | Capture B06 E3-memory again from moving `main`   | Manually dispatch `RTC-B06 Performance Observation` after the correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.         |
+| Order | Slice                                                  | Completion evidence                                                                                                                                                                                                                                      |
+| ----- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Merge PR #530's exact active-session formation barrier | A reused group cannot advance from A to B while any retired session remains active; the obsolete absolute-revision barrier is deleted; focused unit, exact default E3, type/build/style/structure, full-unit, and branch review gates pass before merge. |
+| 2     | Capture B06 E3-memory again from moving `main`         | Manually dispatch `RTC-B06 Performance Observation` after the correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.         |
 
 After these two slices, Task 12 will choose the B05 observation window,
 revisit whether the candidate call path requires E4-pg, and reconcile the
@@ -3967,7 +3967,7 @@ with `acceptedMetrics: false`; no repeat ran. Diagnosis found that formation
 still waited for absolute presence revisions `1`, `2`, and `3`. Those values
 were already far behind the reused group's current causal revision, so they
 could not prove that retired sessions had cleared or that the currently
-expected sessions were the authoritative active set. The focused follow-up
+expected sessions were the authoritative active set. PR #530
 waits for the exact active-session set after A, B, and C connect and deletes the
 revision-only path.
 
@@ -4006,7 +4006,7 @@ revision-only path.
       after PR #526 merged.
 - [x] Verify and merge observation PR #528, retaining its failed ZIP/index row
       with `acceptedMetrics: false` and no repeat.
-- [ ] Merge the focused exact active-session formation barrier after its
+- [ ] Merge PR #530's focused exact active-session formation barrier after its
       regression, exact default E3, type/build/style/structure, full-unit, and
       branch review gates pass.
 - [ ] Dispatch `RTC-B06 Performance Observation` from the then-current moving
@@ -4489,7 +4489,7 @@ post-activation A/B/C route a correctness barrier without adding receiver
 timings to owner-scope evidence. PR #526 merged, then run 34023176489 failed its
 first default warmup when messages agent C did not observe the new A/B sessions
 after the prior realtime trio was retired. PR #528 preserves that ninth failed
-primary. The follow-up removes absolute `1`/`2`/`3` presence-revision barriers
+primary. PR #530 removes absolute `1`/`2`/`3` presence-revision barriers
 that cannot prove membership on the reused group and instead waits for the
 exact active-session set after each connect. The next two slices are to merge
 that focused correction and dispatch B06 again from moving `main`. B07 remains
