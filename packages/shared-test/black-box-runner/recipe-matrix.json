@@ -2213,7 +2213,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 browser-director appointment: a route no recipe calls, whose every eligibility branch was unobserved. A non-member, a member without an active room session, a plain member while an owner is online, and a second member against an active fallback director are each refused with the reason named; an owner and, once no owner is online, a plain member are each allowed. The accepted appointment patches only the rallarDirector metadata entry, leaving the group's own metadata untouched."
+      "description": "No-browser API-v1 browser-director appointment: the route no recipe calls, and every denial it raises shares one code so only the reason separates them. A non-member, a member without an active room session, a plain member while an owner is online, and a second member against an active fallback director are each refused with the reason that names the branch. Each accepted appointment advances the director epoch and the metadata version by exactly one, pins the heartbeat TTL default, and leaves the group fields and the seeded metadata entry it must not touch unchanged."
     }
   ]
 }
