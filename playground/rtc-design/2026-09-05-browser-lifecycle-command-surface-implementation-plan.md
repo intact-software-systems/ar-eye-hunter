@@ -25,10 +25,13 @@ behaviour this consumes is `docs/rallar-group-formation-architecture.md`; the ro
 `apps/api-v1/src/group-state/register-group-lifecycle-routes.ts` and
 `apps/api-v1/src/routes/group-formation-view-read.ts`.
 
-Status: **implemented and under review as stacked PRs #506, #512 and #513 (formatting pass #511),
-amended 2026-09-06 after code review; the nine review questions below were settled with the
-maintainer on 2026-09-05, each taking the recommended answer, and "Deviations recorded during
-delivery" amends the task bodies.** Written 2026-09-05 against `main` @ `c11c258b2`. The
+Status: **landed on `main` on 2026-09-06 as the squash commit `a70b4eb05` (#506, carrying #512 and
+#513, which were merged into their bases first) and the formatting pass `3add6ad9d` (#511). The
+Branch Release Gate passed on the final feature-branch commit (run 34021610709) and Run Hetzner
+Supported Distributed Manifests passed on the default-branch commit (run 34023658953). The nine
+review questions below were settled with the maintainer on 2026-09-05, each taking the recommended
+answer, and "Deviations recorded during delivery" amends the task bodies.** Written 2026-09-05
+against `main` @ `c11c258b2`. The
 implementation workstream it completes (`2026-08-22-group-activation-implementation-plan.md`) has all
 fourteen server slices merged; this plan is the browser surface that workstream's slice 8 deliberately
 left to "later work" beyond dial gating. Location note: the writing-plans skill defaults to
