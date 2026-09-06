@@ -1,4 +1,4 @@
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { ApiMiddleware, RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { throwRallarValidationIssue } from '@shared-web/browser/rooms/rallar-room-validation.ts';
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
@@ -23,7 +23,7 @@ import type { RallarRoomLayoutSlotsPort } from './room-layout-slots.ts';
 export interface RoomFormationCommandPorts {
     readonly stateStore: RallarRoomStateStorePort;
     readonly slots: RallarRoomLayoutSlotsPort;
-    readonly refreshRoom: (roomRef: GroupRef) => Promise<void>;
+    readonly refreshRoom: (roomRef: GroupRef, options?: RallarScopedOperationOptions) => Promise<void>;
     readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
     readonly requireSession: () => AuthSession;
     readonly resolveOperationOptions: <T extends RallarOperationOptions>(options: T) => T & RallarOperationOptions;
@@ -95,7 +95,7 @@ async function readConnectFence(input: ConnectRoomFormationInput): Promise<Conne
     if (cached) {
         return cached;
     }
-    await input.ports.refreshRoom(input.roomRef);
+    await input.ports.refreshRoom(input.roomRef, input.options);
     const refreshed = resolveConnectFence(input);
     if (refreshed) {
         return refreshed;

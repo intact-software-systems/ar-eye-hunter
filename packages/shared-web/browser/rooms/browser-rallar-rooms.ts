@@ -196,7 +196,7 @@ export function createBrowserRallarRooms(
             roomRef,
             stateStore: input.stateStore,
             slots: input.roomLayoutSlots,
-            refreshRoom: async (target) => await refreshRoom(input, target),
+            refreshRoom: async (target, options) => await refreshRoom(input, target, options),
             connect: input.connect,
             requireSession: input.requireSession,
             resolveOperationOptions: input.resolveOperationOptions,

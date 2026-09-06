@@ -154,6 +154,24 @@ describe('room formation commands', () => {
         ]);
     });
 
+    it('runs the connect read-through under the caller\'s operation options', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const planned = createFormationSnapshot({
+            stage: 'planned',
+            formationEpoch: 1,
+            causalRevision: { groupRevision: 2, presenceRevision: 1 }
+        });
+        seedRoomSnapshots([planned]);
+        const fetchMock = stubReceipt(planned);
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(createRallarFacade().rooms.formation(planned.group).connect({ signal: controller.signal }))
+            .rejects.toThrow();
+
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it('sends an explicit layout and a reconfigure landing verbatim', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const active = createFormationSnapshot({
