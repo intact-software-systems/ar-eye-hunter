@@ -41,7 +41,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         const result = await service.enqueueOutboxIfAbsent(msg);
 
-        expect(result.status).toBe('sent-immediate');
+        expect(result.status).toBe('accepted');
         expect(result.entries).toEqual([]);
         expect(socket.sentJsonStrings).toHaveLength(1);
         expect(decodePersistedALMessage(socket.sentJsonStrings[0]).id.msgId).toBe(msg.id.msgId);
@@ -74,7 +74,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const first = await service.enqueueOutboxIfAbsent(msg);
         const second = await service.enqueueOutboxIfAbsent(msg);
 
-        expect(first.status).toBe('sent-immediate');
+        expect(first.status).toBe('accepted');
         expect(second.status).toBe('duplicate');
         expect(second.entries).toEqual([]);
         expect(socket.sentJsonStrings).toHaveLength(1);

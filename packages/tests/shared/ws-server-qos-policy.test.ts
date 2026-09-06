@@ -44,7 +44,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         const result = await service.enqueueOutboxIfAbsent(msg);
 
-        expect(result.status).toBe('sent-immediate');
+        expect(result.status).toBe('accepted');
         expect(result.entries).toEqual([]);
         expect(socket.sent).toHaveLength(1);
         expect(socket.sent[0].connectionId).toBe('conn-2');
@@ -97,7 +97,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         const result = await service.enqueueOutboxIfAbsent(msg);
 
-        expect(result.status).toBe('sent-immediate');
+        expect(result.status).toBe('accepted');
         expect(result.entries).toEqual([]);
         expect(socket.sent).toHaveLength(2);
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual(['conn-1', 'conn-3']);

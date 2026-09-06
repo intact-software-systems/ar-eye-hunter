@@ -48,6 +48,7 @@ export class RtcEndpointFixture {
     private readonly messageCallbacks = new Map<string, RtcMessageCallbackRegistry>();
     readonly peers = new Map<string, QRtcPeerDto>();
     readonly received: ALMessage[] = [];
+    private readonly pendingDeliveries: Promise<void>[] = [];
 
     readonly sessionId: string;
 
@@ -105,12 +106,32 @@ export class RtcEndpointFixture {
 
     connect(remote: RtcEndpointFixture): void {
         const peer = this.peers.get(remote.sessionId)!;
-        vi.spyOn(peer.channel, 'send').mockImplementation(async (message) => {
-            this.sent.push(decodePersistedALMessageValue(message));
-            remote.received.push(decodePersistedALMessageValue(message));
-            await remote.messageCallbacks.get(this.sessionId)!.receive(decodePersistedALMessageValue(message));
-            await remote.multicast.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, toResilienceDto());
+        vi.spyOn(peer.channel, 'sendJson').mockImplementation((value) => {
+            const message = decodePersistedALMessageValue(value);
+            this.sent.push(message);
+            const delivery = remote.receiveMessage(this.sessionId, message);
+            this.pendingDeliveries.push(delivery);
+            // The explicit fixture drain reports failures after transport submission returns.
+            void delivery.catch(() => undefined);
+            return { status: 'sent', bufferedAmount: 0 };
         });
+    }
+
+    async sendAndWaitForDelivery(message: ALMessage): Promise<void> {
+        this.peer.channel.sendJson(message);
+        await this.waitForDeliveries();
+    }
+
+    async waitForDeliveries(): Promise<void> {
+        while (this.pendingDeliveries.length > 0) {
+            await Promise.all(this.pendingDeliveries.splice(0));
+        }
+    }
+
+    private async receiveMessage(senderId: string, message: ALMessage): Promise<void> {
+        this.received.push(message);
+        await this.messageCallbacks.get(senderId)!.receive(message);
+        await this.multicast.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, toResilienceDto());
     }
 
     observe(version: number, ref: GroupRef = room, sessionIds: readonly string[] = ['sender', 'receiver']): void {

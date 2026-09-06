@@ -187,7 +187,7 @@ describe('browser RTC runtime composition', () => {
             )
         );
 
-        expect(result).toMatchObject({ status: 'sent-immediate', entries: [] });
+        expect(result).toMatchObject({ status: 'accepted', entries: [] });
         const acceptedMessages = fixture.nativePeer('accepted-peer').channels.flatMap((channel) => channel.sent);
         const plannedMessages = fixture.nativePeer('planned-peer').channels.flatMap((channel) => channel.sent);
         expect(acceptedMessages).toHaveLength(1);

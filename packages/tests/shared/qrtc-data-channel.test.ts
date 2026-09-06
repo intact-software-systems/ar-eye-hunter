@@ -95,9 +95,10 @@ describe('QRtcDataChannel', () => {
             }
         });
 
-        expect(() => dataChannel.send({ nope: true })).toThrow(
-            'Data channel not open'
-        );
+        expect(dataChannel.sendJson({ nope: true })).toMatchObject({
+            status: 'closed',
+            reason: 'Data channel not open'
+        });
 
         dataChannel.connect(true);
 
@@ -110,8 +111,8 @@ describe('QRtcDataChannel', () => {
 
         expect(dataChannel.isOpen()).toBe(true);
 
-        await dataChannel.send({ hello: true });
-        await dataChannel.sendAsJsonString('{"raw":true}');
+        expect(dataChannel.sendJson({ hello: true }).status).toBe('sent');
+        expect(dataChannel.sendRaw('{"raw":true}').status).toBe('sent');
 
         await createdChannel.receive('{"type":"chat","body":"typed"}');
         await createdChannel.receive('{"body":"plain"}');

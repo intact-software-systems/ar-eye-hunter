@@ -20,7 +20,7 @@ import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
 
-export type ALOutboundPreparedSendStatus = 'sent' | 'no-targets' | 'not-ready';
+export type ALOutboundPreparedSendStatus = 'sent' | 'queued' | 'no-targets' | 'not-ready';
 
 export interface ALOutboundPreparedSendResult {
     readonly status: ALOutboundPreparedSendStatus;
@@ -116,7 +116,7 @@ export type ALOutboundRuntimeDiagnosticsSink = (
 
 export type ALOutboundEnqueueStatus =
     | 'enqueued'
-    | 'sent-immediate'
+    | 'accepted'
     | 'skipped'
     | 'duplicate'
     | 'superseded'
@@ -250,7 +250,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return ALOutboundMessageRuntime.toDisposedEnqueueResult(msg);
         }
 
-        const computed = await this.commitDispatchPlanWithRetry({
+        const computed = await this.commitDispatchPlan({
             msg,
             planner: dispatchPlan === undefined
                 ? this.dependencies.planOutgoingMessage
@@ -289,7 +289,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 const clusterPublished = clusterDispatch === undefined || typeof clusterDispatch === 'boolean'
                     ? clusterDispatch ?? false
                     : await clusterDispatch;
-                const computed = await this.commitDispatchPlanWithRetry({
+                const computed = await this.commitDispatchPlan({
                     msg,
                     planner: this.dependencies.planDequeuedMessage,
                     intent: 'dequeue',
@@ -323,7 +323,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return true;
     }
 
-    private async commitDispatchPlanWithRetry(
+    private async commitDispatchPlan(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
     ): Promise<ALOutboundComputedDto<TPrepared>> {
         const result = await this.dispatchAdmission.commit(dispatch);

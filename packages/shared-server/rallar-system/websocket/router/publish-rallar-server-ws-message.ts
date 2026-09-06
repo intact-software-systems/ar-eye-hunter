@@ -127,9 +127,8 @@ function toOutboxPublishStatus(
 ): RallarServerWsPublishStatus {
     switch (status) {
         case 'enqueued':
+        case 'accepted':
             return 'queued-outbox';
-        case 'sent-immediate':
-            return 'sent-live';
         case 'skipped':
         case 'duplicate':
         case 'superseded':

@@ -18,17 +18,10 @@ import {
 
 export type ALOutboundComputeIntent = 'enqueue' | 'dequeue' | 'repair';
 
-export interface ALOutboundComputeDependencies {
-    readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
-    readonly canFallback: boolean;
-}
-
-export interface ALOutboundCommitDispatchOptions<TPrepared> {
+export interface ALOutboundCommitDispatchOptions {
     readonly fallbackEntry?: ResourceEntry;
     readonly replaceExistingOutbox?: boolean;
-    readonly extraMutations?: (
-        read: ALOutboundMessageReadDto<TPrepared>
-    ) => readonly ALOutboundAdmissionMutation[] | 'skip' | undefined;
+    readonly repairBudget?: Readonly<{ priorAttempts: number; maxAttempts: number; }>;
 }
 
 export interface ALOutboundComputedDto<TPrepared> {
@@ -40,10 +33,12 @@ export interface ALOutboundComputedDto<TPrepared> {
 
 export interface ComputeALOutboundDispatchInput<TPrepared> {
     readonly read: ALOutboundMessageReadDto<TPrepared>;
-    readonly dependencies: ALOutboundComputeDependencies;
+    readonly outboxEntry: ResourceEntry | undefined;
+    readonly canFallback: boolean;
+    readonly dispatchAtMs: number;
     readonly intent: ALOutboundComputeIntent;
     readonly phase: ALOutboundDispatchPhase;
-    readonly options: ALOutboundCommitDispatchOptions<TPrepared>;
+    readonly options: ALOutboundCommitDispatchOptions;
 }
 
 interface ALOutboundDispatchStrategy {
@@ -66,6 +61,7 @@ interface ToALOutboundComputedResultInput<TPrepared> {
     readonly entries: readonly ResourceEntry[];
     readonly mutations: readonly ALOutboundAdmissionMutation[];
     readonly durableEffects: readonly ALOutboundDurableEffectWrite<TPrepared>[];
+    readonly dispatchAtMs: number;
 }
 
 export function computeALOutboundDispatch<TPrepared>(
@@ -77,7 +73,7 @@ export function computeALOutboundDispatch<TPrepared>(
     }
 
     const strategy = toALOutboundDispatchStrategy(input);
-    const extraMutations = input.options.extraMutations?.(input.read) ?? [];
+    const extraMutations = computeRepairAttemptMutations(input.read, input.options.repairBudget);
     if (extraMutations === 'skip') {
         return toSkippedDispatchResult(input.read.msg.id.msgId);
     }
@@ -97,7 +93,7 @@ function toEarlyDispatchResult<TPrepared>(
         };
     }
     if (input.intent === 'enqueue' && read.sentSnapshot) {
-        return toDuplicateDispatchResult(read, input.dependencies);
+        return toDuplicateDispatchResult(read, input.outboxEntry);
     }
     return read.supersedenceAcceptance?.observation.status === 'superseded'
         ? { status: 'superseded', reason: `Skipping superseded outbound message ${read.msg.id.msgId}`, entries: [] }
@@ -106,10 +102,10 @@ function toEarlyDispatchResult<TPrepared>(
 
 function toDuplicateDispatchResult<TPrepared>(
     read: ALOutboundMessageReadDto<TPrepared>,
-    dependencies: ALOutboundComputeDependencies
+    outboxEntry: ResourceEntry | undefined
 ): ALOutboundComputedDto<TPrepared> {
     const entry = read.sentSnapshot?.outboxKey
-        ? { ...dependencies.toOutboxEntry(read.msg), key: read.sentSnapshot.outboxKey }
+        ? { ...requireOutboxEntry(outboxEntry), key: read.sentSnapshot.outboxKey }
         : undefined;
     return {
         status: 'duplicate',
@@ -127,7 +123,7 @@ function toALOutboundDispatchStrategy<TPrepared>(
         : preparedMessagesAvailable;
     return {
         dispatchPrepared,
-        fallback: !dispatchPrepared && input.intent !== 'enqueue' && input.dependencies.canFallback,
+        fallback: !dispatchPrepared && input.intent !== 'enqueue' && input.canFallback,
         enqueueOutbox: (input.intent === 'enqueue' || (input.intent === 'repair' && input.read.plan.persist)) &&
             !dispatchPrepared
     };
@@ -152,15 +148,22 @@ function buildALOutboundDispatchResult<TPrepared>(
     mutations.push(...extraMutations);
     appendSupersedenceMutations(mutations, read);
     appendALOutboundDispatchEffects({ input, strategy, entries, mutations, effects: durableEffects });
-    return toALOutboundComputedResult({ read, strategy, entries, mutations, durableEffects });
+    return toALOutboundComputedResult({
+        read,
+        strategy,
+        entries,
+        mutations,
+        durableEffects,
+        dispatchAtMs: input.dispatchAtMs
+    });
 }
 
 function appendALOutboundDispatchEffects<TPrepared>(
     input: AppendALOutboundDispatchEffectsInput<TPrepared>
 ): void {
-    const { read, options, dependencies, phase } = input.input;
+    const { read, options, outboxEntry, phase } = input.input;
     if (input.strategy.enqueueOutbox) {
-        const entry = toPersistedOutboxEntry(read, dependencies);
+        const entry = toPersistedOutboxEntry(read, requireOutboxEntry(outboxEntry));
         input.entries.push(entry);
         input.mutations.push(
             toSentMessageMutation(read.msg, {
@@ -208,7 +211,7 @@ function appendALOutboundDispatchEffects<TPrepared>(
             payload: {
                 kind: 'fallback-dispatch',
                 msg: read.msg,
-                entry: options.fallbackEntry ?? dependencies.toOutboxEntry(read.msg)
+                entry: options.fallbackEntry ?? requireOutboxEntry(outboxEntry)
             }
         });
     }
@@ -220,7 +223,7 @@ function toALOutboundComputedResult<TPrepared>(
     const status: ALOutboundEnqueueStatus = input.strategy.enqueueOutbox
         ? 'enqueued'
         : input.strategy.dispatchPrepared || input.strategy.fallback
-        ? 'sent-immediate'
+        ? 'accepted'
         : 'no-route';
     const reason = status === 'no-route'
         ? `No outbound transport route for message ${input.read.msg.id.msgId}`
@@ -231,13 +234,30 @@ function toALOutboundComputedResult<TPrepared>(
             senderId: input.read.msg.id.senderId,
             expectedVersion: input.read.clientRecord?.version,
             mutations: input.mutations,
-            durableEffects: input.durableEffects
+            durableEffects: input.durableEffects.map((effect) => ({
+                ...effect,
+                retryAtMs: effect.retryAtMs ?? input.dispatchAtMs
+            }))
         } satisfies ALOutboundCommitBundle<TPrepared>;
     return { status, reason, entries: input.entries, bundle };
 }
 
 function toSkippedDispatchResult<TPrepared>(msgId: string): ALOutboundComputedDto<TPrepared> {
     return { status: 'skipped', reason: `Skipped outbound dispatch for message ${msgId}`, entries: [] };
+}
+
+function computeRepairAttemptMutations<TPrepared>(
+    read: ALOutboundMessageReadDto<TPrepared>,
+    repairBudget: ALOutboundCommitDispatchOptions['repairBudget']
+): readonly ALOutboundAdmissionMutation[] | 'skip' {
+    if (!repairBudget) {
+        return [];
+    }
+    const attempts = read.repairAttempt?.attempts ?? repairBudget.priorAttempts;
+    return attempts >= repairBudget.maxAttempts ? 'skip' : [{
+        kind: 'set-repair-attempt',
+        snapshot: { msgId: read.msg.id.msgId, attempts: attempts + 1 }
+    }];
 }
 
 function appendSupersedenceMutations<TPrepared>(
@@ -306,15 +326,21 @@ function appendAckTrackingMutationsAndEffects<TPrepared>(
 
 function toPersistedOutboxEntry<TPrepared>(
     read: ALOutboundMessageReadDto<TPrepared>,
-    dependencies: ALOutboundComputeDependencies
+    entry: ResourceEntry
 ): ResourceEntry {
-    const entry = dependencies.toOutboxEntry(read.msg);
     const tracking = read.plan.supersedenceTracking;
     if (!tracking?.enabled || !tracking.key || !read.priorOutboxKey) {
         return entry;
     }
 
     return { ...entry, key: read.priorOutboxKey };
+}
+
+function requireOutboxEntry(entry: ResourceEntry | undefined): ResourceEntry {
+    if (!entry) {
+        throw new Error('Outbound dispatch requires a captured outbox entry');
+    }
+    return entry;
 }
 
 function toSentMessageMutation(

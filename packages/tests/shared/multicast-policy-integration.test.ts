@@ -144,7 +144,7 @@ describe('multicast QoS integration', () => {
             10
         );
 
-        expect(result.status).toBe('sent-immediate');
+        expect(result.status).toBe('accepted');
         expect(result.entries).toEqual([]);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);
@@ -474,7 +474,7 @@ describe('multicast QoS integration', () => {
             10
         );
 
-        expect(result.status).toBe('sent-immediate');
+        expect(result.status).toBe('accepted');
         expect(result.entries).toEqual([]);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);
@@ -624,10 +624,14 @@ function createRtcPeer(peerId: string, readyState: RTCDataChannelState, sendByPe
     const channel = new shared.QRtcDataChannel(connection, { peerId, dataChannelName: 'test' });
     const health = channel.readHealth();
     vi.spyOn(channel, 'readHealth').mockReturnValue({ ...health, readyState });
-    vi.spyOn(channel, 'send').mockImplementation(async (message) => {
+    vi.spyOn(channel, 'sendJson').mockImplementation((message) => {
+        if (typeof message !== 'object' || message === null) {
+            throw new Error('Expected an RTC message object');
+        }
         const sent = sendByPeerId.get(peerId) ?? [];
         sent.push(message);
         sendByPeerId.set(peerId, sent);
+        return { status: 'sent', bufferedAmount: 0 };
     });
     return { peerId, connection, channel, channels: new Map([['reliable', channel]]), media: new shared.QRtcMediaChannel(connection, { peerId }) };
 }

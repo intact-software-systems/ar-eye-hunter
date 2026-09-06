@@ -155,7 +155,7 @@ export class BrowserTypedMessageChannels {
 function isSuccessfulRallarMessageSendStatus(status: ALOutboundEnqueueStatus): boolean {
     return (
         status === 'enqueued' ||
-        status === 'sent-immediate' ||
+        status === 'accepted' ||
         status === 'duplicate' ||
         status === 'superseded' ||
         status === 'skipped'

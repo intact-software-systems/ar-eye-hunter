@@ -33,7 +33,7 @@ describe('RTC scoped snapshot-floor admission', () => {
         }
         const message = roomMessage(2);
 
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
 
         if (version === undefined || version < 2) {
             expect(receiver.delivered).toEqual([]);
@@ -62,7 +62,7 @@ describe('RTC scoped snapshot-floor admission', () => {
         receiver.observeOverlay(99);
         const message = roomMessage(2);
 
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
 
         expect(receiver.delivered).toEqual([]);
         expect(await sender.nacks(message)).toEqual([expect.objectContaining({ reason: 'not-yet-in-sync' })]);
@@ -76,12 +76,12 @@ describe('RTC scoped snapshot-floor admission', () => {
         receiver.connect(sender);
         receiver.observe(1);
         const message = roomMessage(2);
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
         expect(receiver.delivered).toEqual([]);
 
         receiver.observe(2);
-        await sender.peer.channel.send(message);
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
+        await sender.sendAndWaitForDelivery(message);
 
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
         expect(await sender.nacks(message)).toEqual([expect.objectContaining({ reason: 'not-yet-in-sync' })]);
@@ -99,11 +99,11 @@ describe('RTC scoped snapshot-floor admission', () => {
             qos: { durability: { algo: 'volatile' } }
         });
         receiver.observe(1);
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
         expect(receiver.delivered).toEqual([]);
         expect(await sender.nacks(message)).toEqual([expect.objectContaining({ fromPeerId: 'receiver', msgId: message.id.msgId })]);
         receiver.observe(2);
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
     });
 
@@ -114,7 +114,7 @@ describe('RTC scoped snapshot-floor admission', () => {
         forwarder.connect(receiver);
         receiver.connect(forwarder);
         const message = roomMessage(2);
-        await forwarder.peer.channel.send(message);
+        await forwarder.sendAndWaitForDelivery(message);
         expect(receiver.delivered).toEqual([]);
         expect(await forwarder.nacks(message)).toEqual([expect.objectContaining({
             fromPeerId: 'receiver',
@@ -132,10 +132,10 @@ describe('RTC scoped snapshot-floor admission', () => {
         sender.connect(receiver);
         receiver.connect(sender);
         const message = roomMessage(undefined);
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
         expect(receiver.delivered).toEqual([]);
         receiver.observe(1);
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
     });
 
@@ -154,7 +154,9 @@ describe('RTC scoped snapshot-floor admission', () => {
         }
         const message = roomMessage(undefined);
         const accepted = await sender.multicast.enqueueIfAbsent(message);
-        expect(accepted.status).toBe('sent-immediate');
+        expect(accepted.status).toBe('accepted');
+        await sender.waitForDeliveries();
+        await relay.waitForDeliveries();
         expect(relay.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
         expect(receiver.delivered[0].id.senderId).toBe('sender');
@@ -190,7 +192,7 @@ describe('RTC scoped snapshot-floor admission', () => {
                 const overlay = receiver.overlays.readAllValues()[0];
                 receiver.overlays.set(overlay.overlayId, { ...overlay, groupRef: { ...room, workspaceId: 'elsewhere' } });
             }
-            await sender.peer.channel.send(roomMessage(undefined));
+            await sender.sendAndWaitForDelivery(roomMessage(undefined));
             expect(receiver.delivered).toEqual([]);
             expect(receiver.sent).toEqual([]);
         }
@@ -207,7 +209,7 @@ describe('RTC scoped snapshot-floor admission', () => {
         const current = receiver.overlays.readAllValues()[0];
         receiver.overlays.set(current.overlayId, { ...current, nextHopSessionIds: ['sender'], overlayVersion: 2 });
         const message = { ...roomMessage(undefined), diagnostics: { visitedPeerIds: ['sender', 'relay'] } };
-        await relay.peer.channel.send(message);
+        await relay.sendAndWaitForDelivery(message);
         expect(receiver.delivered).toEqual([]);
         expect(receiver.sent).toEqual([]);
     });

@@ -51,7 +51,7 @@ import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { QueueBoxUtilities } from '../services/QueueBoxUtilities.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
-import type { RtcDataChannelHealth } from '../webrtc/qrtc-data-channel.ts';
+import type { RtcDataChannelHealth, RtcDataChannelSendResult } from '../webrtc/qrtc-data-channel.ts';
 import {
     OverlayMulticastDispatchPlan,
     OverlayMulticasterContext,
@@ -63,7 +63,7 @@ import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from '
 export namespace WebRtcOverlayMulticastManager {
     export interface Channel {
         readHealth(): Pick<RtcDataChannelHealth, 'readyState'>;
-        send(message: ALMessage): Promise<void>;
+        sendJson(message: ALMessage): RtcDataChannelSendResult;
     }
 
     export interface Peer {
@@ -664,8 +664,7 @@ export class WebRtcOverlayMulticastManager {
             };
         }
 
-        await peer.channel.send(msg);
-        return { status: 'sent' };
+        return toALOutboundRtcSendResult(peer.channel.sendJson(msg));
     }
 
     private async sendImmediately(messages: readonly ALMessage[]): Promise<void> {
@@ -863,4 +862,14 @@ export class WebRtcOverlayMulticastManager {
             repairTracking: request.repair
         };
     }
+}
+
+function toALOutboundRtcSendResult(result: RtcDataChannelSendResult): ALOutboundPreparedSendResult {
+    if (result.status === 'dropped' || result.status === 'closed') {
+        return { status: 'not-ready', reason: result.reason, retryAfterMs: 50 };
+    }
+    return {
+        status: result.status === 'sent' ? 'sent' : 'queued',
+        reason: result.reason
+    };
 }

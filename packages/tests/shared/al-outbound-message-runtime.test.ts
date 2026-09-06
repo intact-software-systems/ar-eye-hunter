@@ -115,7 +115,7 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
-    it('returns sent-immediate with no entries for immediate prepared dispatch', async () => {
+    it('returns accepted with no entries for immediate prepared dispatch', async () => {
         const outbox = new InMemoryQueueBox(new Map());
         const sent: Array<OutboundTestPayload> = [];
         const runtime = createDefaultOutboundTestRuntime({
@@ -132,7 +132,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         const result = await runtime.enqueueIfAbsent(msg);
 
-        expect(result.status).toBe('sent-immediate');
+        expect(result.status).toBe('accepted');
         expect(result.entries).toEqual([]);
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
@@ -218,7 +218,7 @@ describe('ALOutboundMessageRuntime', () => {
         const msg = createOutboundMessage('msg-not-ready');
         const result = await runtime.enqueueIfAbsent(msg);
 
-        expect(result.status).toBe('sent-immediate');
+        expect(result.status).toBe('accepted');
         runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
             stores: { admissionStore },
@@ -256,7 +256,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-no-targets'));
 
-        expect(result.status).toBe('sent-immediate');
+        expect(result.status).toBe('accepted');
         expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
         runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({

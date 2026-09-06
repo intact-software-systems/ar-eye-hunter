@@ -186,6 +186,6 @@ function createEnvelope<T>(
 }
 
 function isSuccessfulMessageSendStatus(status: ALOutboundEnqueueStatus): boolean {
-    return status === 'enqueued' || status === 'sent-immediate' ||
+    return status === 'enqueued' || status === 'accepted' ||
         status === 'duplicate' || status === 'superseded' || status === 'skipped';
 }

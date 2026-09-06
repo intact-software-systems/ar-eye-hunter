@@ -137,7 +137,7 @@ it('broadcasts untargeted realtime sends to every ready peer', async () => {
 it('subscribes before WebSocket sends and preserves message metadata', async () => {
     facade.behavior.wsMessageSend.mockResolvedValue({
         transport: 'ws',
-        status: 'sent-immediate',
+        status: 'accepted',
         message: outboundMessage(),
         entries: []
     });
@@ -195,7 +195,7 @@ it('keeps explicit workspace routing in WebSocket diagnostics and delivery', asy
 it('emits received WebSocket payloads and releases their subscription on close', async () => {
     facade.behavior.wsMessageSend.mockResolvedValue({
         transport: 'ws',
-        status: 'sent-immediate',
+        status: 'accepted',
         message: outboundMessage(),
         entries: []
     });

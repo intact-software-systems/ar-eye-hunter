@@ -378,7 +378,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
-            status: 'sent-immediate',
+            status: 'accepted',
             entries: []
         });
         expect(channel.sendCalls).toHaveLength(1);
@@ -497,7 +497,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(manager.enqueueIfAbsent(msg)).resolves.toMatchObject({
-            status: 'sent-immediate',
+            status: 'accepted',
             entries: []
         });
         expect(channel.sendCalls).toHaveLength(1);
@@ -539,8 +539,8 @@ describe('WebRtc overlay services', () => {
             createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-3')
         );
 
-        expect(first.status).toBe('sent-immediate');
-        expect(second.status).toBe('sent-immediate');
+        expect(first.status).toBe('accepted');
+        expect(second.status).toBe('accepted');
         expect(third).toMatchObject({
             status: 'rate-limited',
             entries: [],
@@ -896,8 +896,12 @@ function createOpenRtcChannel(): CapturedRtcChannel {
     const health = channel.readHealth();
     const sendCalls: object[][] = [];
     vi.spyOn(channel, 'readHealth').mockReturnValue({ ...health, readyState: 'open' });
-    vi.spyOn(channel, 'send').mockImplementation(async (message) => {
+    vi.spyOn(channel, 'sendJson').mockImplementation((message) => {
+        if (typeof message !== 'object' || message === null) {
+            throw new Error('Expected an RTC message object');
+        }
         sendCalls.push([message]);
+        return { status: 'sent', bufferedAmount: 0 };
     });
     return Object.assign(channel, { sendCalls });
 }

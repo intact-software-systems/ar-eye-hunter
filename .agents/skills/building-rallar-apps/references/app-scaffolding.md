@@ -109,7 +109,7 @@ Configure and start the facade once at the application boundary:
 ```ts
 import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/middleware.ts';
 import { rallar, type RallarStartOptions } from '@shared-web/browser/rallar.ts';
-import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 
 const credentials = { username: 'alice', password: 'secret' } as const;
 
@@ -186,7 +186,7 @@ type PoseUpdate = Readonly<{
 
 const acceptedMessageStatuses: ReadonlySet<RallarMessageSendStatus> = new Set([
     'enqueued',
-    'sent-immediate',
+    'accepted',
     'duplicate',
     'superseded',
     'skipped'
@@ -296,7 +296,9 @@ Room binding scopes sends, peer selection, and readiness. Message callbacks
 still subscribe by topic/type, so validate their target from
 `message.raw.targets`; realtime callbacks still subscribe by lane, so include
 and validate the full `roomRef` in the typed payload (or use a room-unique
-lane). Treat message statuses other than `enqueued`, `sent-immediate`,
+lane). `accepted` and `enqueued` report outbound admission; neither establishes
+transport submission, receiver acknowledgement, or application completion.
+Treat message statuses other than `enqueued`, `accepted`,
 `duplicate`, `superseded`, or `skipped` as degraded. Treat every room realtime
 status other than `sent` as degraded, including `partial`.
 

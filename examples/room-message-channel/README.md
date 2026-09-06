@@ -5,6 +5,10 @@ default `send(...)` strategy is `rtc-with-ws-fallback`; explicit `sendRtc(...)`
 and `sendWs(...)` are still available. The handle scopes sends, but its receive
 callbacks remain topic/type listeners, so validate each inbound target.
 
+`accepted` and `enqueued` report admission into outbound processing. They do
+not establish transport submission, receiver acknowledgement, or application
+completion. Keep those stages separate when displaying delivery progress.
+
 ```ts
 import {
     rallar,
@@ -22,7 +26,7 @@ interface ReadyMessage {
 
 const acceptedMessageStatuses: ReadonlySet<RallarMessageSendResult['status']> = new Set([
     'enqueued',
-    'sent-immediate',
+    'accepted',
     'duplicate',
     'superseded',
     'skipped'
@@ -66,7 +70,7 @@ if (!acceptedMessageStatuses.has(sendResult.status)) {
     console.warn('Ready delivery degraded', sendResult.status, sendResult.reason);
 }
 
-// For reliable server-routed coordination, force WS.
+// For server-routed coordination, force WS.
 const reliableResult = await readyChannel.sendWs({
     playerId: localPlayerId,
     ready: true,

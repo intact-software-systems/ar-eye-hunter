@@ -6,15 +6,13 @@ import {
 } from '../../al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { RetryableConflictError, tryWithPolicy } from '../../resilience/TryWith.ts';
-import type { ALOutboundPendingAckSnapshot, ALOutboundRepairAttemptSnapshot } from '../al-runtime-state-stores.ts';
+import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import { resolveExplicitOutboundMessageExpireAtMs } from '../ALMessageExpiry.ts';
 import type {
-    ALOutboundAdmissionMutation,
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
     ALOutboundDurableEffectWrite,
-    ALOutboundMessageReadDto,
     ALOutboundPreparedMessageDecoder,
     ALOutboundRepairHint,
     ALOutboundRepairReadDto
@@ -421,28 +419,9 @@ export class ALOutboundRepairAdmission<TPrepared> {
             intent: 'repair',
             phase: 'immediate',
             options: {
-                extraMutations: (read) => this.toRepairAttemptMutations(read, repair.priorAttempts, repair.maxAttempts)
+                repairBudget: { priorAttempts: repair.priorAttempts, maxAttempts: repair.maxAttempts }
             }
         });
-    }
-
-    private toRepairAttemptMutations(
-        read: ALOutboundMessageReadDto<TPrepared>,
-        priorAttempts: number,
-        maxAttempts: number
-    ): readonly ALOutboundAdmissionMutation[] | 'skip' {
-        const currentAttempts = read.repairAttempt?.attempts ?? priorAttempts;
-        if (currentAttempts >= maxAttempts) {
-            return 'skip';
-        }
-
-        return [{
-            kind: 'set-repair-attempt',
-            snapshot: {
-                msgId: read.msg.id.msgId,
-                attempts: currentAttempts + 1
-            } satisfies ALOutboundRepairAttemptSnapshot
-        }];
     }
 
     async retransmitByMsgId(

@@ -531,7 +531,7 @@ describe('Rallar message send', () => {
         );
         webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
-                status: 'sent-immediate',
+                status: 'accepted',
                 message,
                 entries: []
             })
@@ -554,7 +554,7 @@ describe('Rallar message send', () => {
         expect(engineEvents).toEqual([]);
         expect(result).toMatchObject({
             transport: 'ws',
-            status: 'sent-immediate',
+            status: 'accepted',
             entries: [],
             message: {
                 id: {

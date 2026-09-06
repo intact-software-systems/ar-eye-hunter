@@ -259,8 +259,9 @@ function createRtcChannelPeer(peerId: string, ports: RtcChannelPorts): shared.QR
         return channel;
     });
     vi.spyOn(channel, 'readHealth').mockReturnValue({ ...channel.readHealth(), readyState: 'open' });
-    vi.spyOn(channel, 'send').mockImplementation(async (message) => {
+    vi.spyOn(channel, 'sendJson').mockImplementation((message) => {
         ports.sent.push(decodePersistedALMessageValue(message));
+        return { status: 'sent', bufferedAmount: 0 };
     });
     return {
         peerId,
@@ -359,8 +360,8 @@ describe('RTC receiver consumer dispatch', () => {
         });
         const message = exclusiveMessage();
 
-        await sender.peer.channel.send(message);
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
+        await sender.sendAndWaitForDelivery(message);
 
         expect(receivedByType).toEqual([message.id.msgId]);
         expect(receiver.delivered).toEqual([]);
@@ -370,7 +371,7 @@ describe('RTC receiver consumer dispatch', () => {
         const { sender, receiver } = createConnectedEndpoints();
         const message = exclusiveMessage();
 
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
 
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);
     });
@@ -398,7 +399,7 @@ describe('RTC receiver consumer dispatch', () => {
             }
         );
 
-        await sender.peer.channel.send(message);
+        await sender.sendAndWaitForDelivery(message);
 
         expect(receivedByType).toEqual([message.id.msgId]);
         expect(receiver.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);

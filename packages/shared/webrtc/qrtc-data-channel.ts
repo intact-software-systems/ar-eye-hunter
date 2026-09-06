@@ -235,16 +235,6 @@ export class QRtcDataChannel {
         return this.onMessageCallbacks.delete(id);
     }
 
-    sendAsJsonString(data: string): Promise<void> {
-        this.sendRawOrThrow(data);
-        return Promise.resolve();
-    }
-
-    send(data: object): Promise<void> {
-        this.sendRawOrThrow(JSON.stringify(data));
-        return Promise.resolve();
-    }
-
     sendJson<T>(
         data: T,
         options: RtcDataChannelSendOptions = {}
@@ -591,17 +581,6 @@ export class QRtcDataChannel {
             clearTimeout(waiter.timeout);
         }
         waiter.resolve(isOpen);
-    }
-
-    private sendRawOrThrow(data: RtcDataChannelPayload): void {
-        const result = this.sendRaw(data);
-        if (result.status === 'closed') {
-            console.error(
-                'Data channel not open for ' + this.input.dataChannelName + ' and ' + this.input.peerId + ' peer',
-                new Error().stack ?? ''
-            );
-            throw new Error('Data channel not open');
-        }
     }
 
     private configureDataChannel(dc: RTCDataChannel): void {
