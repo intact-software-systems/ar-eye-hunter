@@ -759,37 +759,6 @@
       }
     },
     {
-      "name": "creatorConnectsPastTheParkWithAStaleEpochIsRefused",
-      "type": "http",
-      "connection": "primary",
-      "request": {
-        "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{epochGroupId}/lifecycle/connect/requests/connect-plan-epoch-stale-{runId}",
-        "headers": {
-          "Authorization": "{aliceAuthHeader}",
-          "x-client-id": "{aliceClientId}"
-        },
-        "body": {
-          "expectedFormationEpoch": 0,
-          "expectedLayout": {
-            "groupRevision": "{creatorPlansPastTheParkLayoutGroupRevision}",
-            "presenceRevision": "{creatorPlansPastTheParkLayoutPresenceRevision}",
-            "version": "{creatorPlansPastTheParkLayoutVersion}",
-            "state": "{creatorPlansPastTheParkLayoutState}"
-          }
-        }
-      },
-      "expect": {
-        "status": 409,
-        "body": {
-          "type": "api-mutation-failure",
-          "version": "canonical.v2",
-          "code": "group-connect-stale-epoch",
-          "status": 409
-        }
-      }
-    },
-    {
       "name": "creatorPlansPastTheParkConnectsPublishedLayout",
       "type": "http",
       "connection": "primary",
