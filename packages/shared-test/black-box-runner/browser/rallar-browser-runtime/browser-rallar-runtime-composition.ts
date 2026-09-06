@@ -44,6 +44,7 @@ import type { RallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 import type { RallarRealtimeFacade, RallarWsFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
+import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { RallarRoomSession } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
@@ -131,6 +132,7 @@ export interface BlackBoxBrowserRoomsDependency {
     ): Promise<void>;
     leave(input?: Parameters<BrowserRallarRooms['leave']>[0]): Promise<void>;
     refresh(input?: Parameters<BrowserRallarRooms['refresh']>[0]): Promise<void>;
+    formation(room: Parameters<BrowserRallarRooms['formation']>[0]): RallarRoomFormation;
 }
 
 export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOperations, 'rtc' | 'ws'> {}
@@ -140,7 +142,8 @@ export interface BlackBoxBrowserRealtimeDependency
 
 export interface BlackBoxBrowserWsDependency extends Pick<RallarWsFacade, 'status' | 'onLifecycle'> {}
 
-export interface BlackBoxBrowserRtcDependency extends Pick<RallarRtcFacade, 'status' | 'diagnostics' | 'onLifecycle'> {}
+export interface BlackBoxBrowserRtcDependency
+    extends Pick<RallarRtcFacade, 'status' | 'diagnostics' | 'onLifecycle' | 'roomStatus' | 'onStatus'> {}
 
 export interface BlackBoxBrowserCrdtDependency extends Pick<RallarCrdtFacade, 'open'> {}
 
@@ -384,7 +387,8 @@ function toBlackBoxBrowserRuntimeDependency(
             },
             refresh: async (options) => {
                 await rooms.rooms.refresh(options);
-            }
+            },
+            formation: (room) => rooms.rooms.formation(room)
         },
         messages: messaging.messages,
         realtime: realtime.realtime,

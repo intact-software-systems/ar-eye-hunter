@@ -9,6 +9,7 @@ export namespace BlackBoxRallarConnectionState {
         readonly unsubscribeMessagesRtc?: () => void;
         readonly unsubscribeWsLifecycle?: () => void;
         readonly unsubscribeRtcLifecycle?: () => void;
+        readonly unsubscribeFormationDiagnostics?: () => void;
         readonly unsubscribeConsoleDiagnostics?: () => void;
     }
 }

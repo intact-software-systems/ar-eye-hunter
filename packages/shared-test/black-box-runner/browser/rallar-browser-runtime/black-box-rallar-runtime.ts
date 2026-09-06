@@ -47,6 +47,7 @@ import {
     type BlackBoxBrowserRallarRuntimeDependency
 } from './browser-rallar-runtime-composition.ts';
 import { BlackBoxRallarDirectorController } from './director-controller.ts';
+import { BlackBoxRallarFormationController } from './formation-controller.ts';
 import {
     createBlackBoxRallarLifecycleController,
     type BlackBoxRallarLifecycleOperationContext
@@ -101,7 +102,7 @@ interface RuntimeConnectionAttempt {
     phase: string;
     lifecycleSubscriptions?: Pick<
         BlackBoxRallarConnectionState.Value,
-        'unsubscribeWsLifecycle' | 'unsubscribeRtcLifecycle'
+        'unsubscribeWsLifecycle' | 'unsubscribeRtcLifecycle' | 'unsubscribeFormationDiagnostics'
     >;
     unsubscribeConsoleDiagnostics?: () => void;
 }
@@ -109,6 +110,7 @@ interface RuntimeConnectionAttempt {
 interface RuntimeProductControllers {
     readonly crdt: BlackBoxRallarCrdtController;
     readonly director: BlackBoxRallarDirectorController;
+    readonly formation: BlackBoxRallarFormationController;
     readonly messaging: BlackBoxRallarMessagingController;
 }
 interface RuntimeTransportCloseResult {
@@ -160,6 +162,7 @@ class BlackBoxRallarConnectionRuntime {
     readonly #lifecycle;
     readonly #crdtController;
     readonly #directorController;
+    readonly #formationController;
     readonly #messagingController;
     readonly #consoleDiagnostics;
     constructor(options: BlackBoxRallarConnectionRuntime.Input) {
@@ -202,6 +205,7 @@ class BlackBoxRallarConnectionRuntime {
         const controllers = this.#createProductControllers();
         this.#crdtController = controllers.crdt;
         this.#directorController = controllers.director;
+        this.#formationController = controllers.formation;
         this.#messagingController = controllers.messaging;
         this.#consoleDiagnostics = createBlackBoxRallarConsoleDiagnostics<BlackBoxRallarConnectionConfig>({
             console,
@@ -259,7 +263,14 @@ class BlackBoxRallarConnectionRuntime {
             emitDiagnostic: this.#runtimeDiagnostics.emitDiagnostic,
             emitError: this.#runtimeDiagnostics.emitError
         });
-        return { crdt, director, messaging };
+        const formation = new BlackBoxRallarFormationController({
+            formation: (roomRef) => this.#rallar.rooms.formation(roomRef),
+            rtc: this.#rallar.rtc,
+            emit: this.#runtimeDiagnostics.emit,
+            emitError: this.#runtimeDiagnostics.emitError,
+            now: this.#now
+        });
+        return { crdt, director, formation, messaging };
     }
     #configureRallarConnection = (
         config: BlackBoxRallarConnectionConfig
@@ -284,6 +295,10 @@ class BlackBoxRallarConnectionRuntime {
         }
         if (runtimeState?.unsubscribeRtcLifecycle) {
             runtimeState.unsubscribeRtcLifecycle();
+            unsubscribed += 1;
+        }
+        if (runtimeState?.unsubscribeFormationDiagnostics) {
+            runtimeState.unsubscribeFormationDiagnostics();
             unsubscribed += 1;
         }
         if (runtimeState?.unsubscribeWsLifecycle) {
@@ -344,10 +359,18 @@ class BlackBoxRallarConnectionRuntime {
     };
     #installRallarLifecycleDiagnostics = (
         config: BlackBoxRallarConnectionConfig
-    ): Pick<BlackBoxRallarConnectionState.Value, 'unsubscribeWsLifecycle' | 'unsubscribeRtcLifecycle'> => {
+    ): Pick<
+        BlackBoxRallarConnectionState.Value,
+        'unsubscribeWsLifecycle' | 'unsubscribeRtcLifecycle' | 'unsubscribeFormationDiagnostics'
+    > => {
         const { ws, rtc } = this.#rallar;
+        // The formation stream is room-scoped, so a connection that names no room installs none.
+        const roomRef = blackBoxRallarRoomRefOf(config);
 
         return {
+            ...(roomRef
+                ? { unsubscribeFormationDiagnostics: this.#formationController.installDiagnostics(roomRef) }
+                : {}),
             unsubscribeWsLifecycle: ws.onLifecycle(
                 (event) => this.#runtimeDiagnostics.emitDiagnostic(config, 'rallar.browser.ws.lifecycle', event),
                 { emitCurrent: true }
@@ -908,14 +931,22 @@ class BlackBoxRallarConnectionRuntime {
             readRtcMessageNacks: (messageId) => this.#rallar.readRtcMessageNacks(messageId),
             crdt: this.#crdtController,
             director: this.#directorController,
+            formation: this.#formationController,
             close: this.#close,
-            health: (input = {}) =>
-                this.#healthReader.health({
+            health: (input = {}) => {
+                const config = this.#connectionState.get()?.config;
+                const roomRef = config ? blackBoxRallarRoomRefOf(config) : undefined;
+                return this.#healthReader.health({
                     input,
-                    config: this.#connectionState.get()?.config,
+                    config,
                     crdt: this.#crdtController.summary(),
-                    director: this.#directorController.summary()
-                })
+                    director: this.#directorController.summary(),
+                    // Settled Q4: always present when a room resolves, and handed the resolved ref
+                    // rather than a room id, so the one throwing path in the facade is unreachable
+                    // on the two hot paths that call `health` from inside the runtime.
+                    formation: roomRef ? this.#formationController.summary(roomRef) : undefined
+                });
+            }
         };
         return {
             runtime,

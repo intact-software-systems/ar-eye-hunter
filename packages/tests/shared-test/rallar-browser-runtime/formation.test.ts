@@ -15,9 +15,10 @@ import type {
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'vitest';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
+import { facade, loadRuntime, resetFacade } from './browser-rallar-runtime-test-harness.ts';
 
 const PLANNED: GroupLayoutIdentity = {
     groupRevision: 4,
@@ -330,4 +331,55 @@ it('forwards changes, layout events and room status as diagnostics', () => {
         'rallar.browser.formation.layout',
         'rallar.browser.formation.room-status'
     ]);
+});
+
+// R6: the diagnostics install only when the connection resolves a room ref, so a connection that
+// names a bare room id installs nothing and the runtime's unsubscribe count does not move. Both
+// halves are pinned, because a silently uninstalled stream would leave every browser pin blind.
+beforeEach(() => {
+    resetFacade();
+});
+
+afterEach(() => {
+    resetFacade();
+});
+
+it('installs the formation diagnostics for a room-scoped connection and tears them down on close', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'aliceRtc',
+        actor: 'alice',
+        roomId: 'room-1',
+        rallar: {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1'
+        }
+    });
+
+    expect(facade.behavior.roomFormation).toHaveBeenCalled();
+
+    const closed = await runtime.close();
+
+    expect(closed).toMatchObject({ unsubscribed: 4 });
+});
+
+it('installs no formation diagnostics when the connection resolves no room ref', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'aliceRtc',
+        actor: 'alice',
+        roomId: 'room-1',
+        rallar: {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret'
+        }
+    });
+
+    const closed = await runtime.close();
+
+    expect(closed).toMatchObject({ unsubscribed: 3 });
 });
