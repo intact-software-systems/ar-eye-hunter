@@ -627,6 +627,7 @@ async function runDeliveryCase(
     const durations = await Promise.all(receivers.map((receiver) =>
         input.run.control.waitForMessage({
             runId: input.run.runId,
+            senderAgentId: sender.agentId,
             agentId: receiver.agentId,
             transport: input.run.transport,
             matrixId,

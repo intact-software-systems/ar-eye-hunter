@@ -847,6 +847,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
             );
             await control.waitForMessage({
                 runId,
+                senderAgentId: messageAgents[1].agentId,
                 agentId: messageAgents[2].agentId,
                 transport: 'messages.rtc',
                 matrixId: reconnectMatrixId,
