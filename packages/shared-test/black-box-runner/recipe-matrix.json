@@ -2191,6 +2191,29 @@
         ]
       },
       "description": "No-browser API-v1 governance authority: ban, unban, remove and role promotion had owner-happy-path coverage only. A plain member is denied forbidden-role on all three governing routes, an admin may govern a regular member but neither the owner nor another admin, and a removed member is denied by member-removed rather than member-banned. Each denial pins the message that separates its own rule, and each accepted mutation pins the roster it produced -- the unban returns the member to 'left', not 'active'."
+    },
+    {
+      "id": "api-v1-group-invite-revocation",
+      "recipe": "tests/api-v1/api-v1-group-invite-revocation.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-invite-revocation",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 invite revocation and expiry: six recipes drive the invite routes and none asserts a single invite denial. A stranger, a revoked invitee and an expired invitee are each refused on the join path with the code and the message that names their own rule, and a live invite still admits, so the denials are not a route that refuses everyone."
     }
   ]
 }
