@@ -2085,6 +2085,17 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts#validates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets"
     },
     {
+      "id": "test-structure-coupling-bed585f360e5499b",
+      "path": "packages/tests/shared-test/recipe-matrix.test.ts",
+      "kind": "production-source-read",
+      "contract": "recipe-matrix-public-interface--advertises-the-api-v1-profile-in-recipe-matrix-cli-usage",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared Test maintainers",
+      "rationale": "Reads the executable recipe-matrix CLI module whose advertised profile list is the published command-line interface under review; the module has no other surface that names its profiles.",
+      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#advertises the API-v1 profile in recipe-matrix CLI usage"
+    },
+    {
       "id": "test-structure-coupling-fb9c9389cdd8634a",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
       "kind": "production-source-read",
