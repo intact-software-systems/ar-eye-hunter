@@ -7,19 +7,15 @@ import { createFormationView } from '../shared-web/rooms/formation/room-formatio
 const groupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 
 /** The body the HTTP layer hands over is whatever the server sent, decoded as JSON. */
-function decodeBody(body: string): unknown {
-    return JSON.parse(body);
-}
-
 function issuePaths(body: string): readonly string[] {
-    return (decodeGroupFormationView(decodeBody(body), groupRef).left ?? []).map((issue) => issue.path).sort();
+    return (decodeGroupFormationView(JSON.parse(body), groupRef).left ?? []).map((issue) => issue.path).sort();
 }
 
 describe('group formation view decoding', () => {
     it('accepts a complete view for the requested group', () => {
         const view = createFormationView(groupRef);
 
-        expect(decodeGroupFormationView(decodeBody(JSON.stringify(view)), groupRef).right).toEqual(view);
+        expect(decodeGroupFormationView(JSON.parse(JSON.stringify(view)), groupRef).right).toEqual(view);
     });
 
     it('reports every issue at once', () => {
@@ -36,13 +32,13 @@ describe('group formation view decoding', () => {
     it('reports a missing field once and refuses a body that is not an object', () => {
         const { readiness: _readiness, ...withoutReadiness } = createFormationView(groupRef);
 
-        expect(decodeGroupFormationView(decodeBody(JSON.stringify(withoutReadiness)), groupRef).left).toEqual([
+        expect(decodeGroupFormationView(JSON.parse(JSON.stringify(withoutReadiness)), groupRef).left).toEqual([
             { path: 'readiness', code: 'missing-field', message: 'Formation view is missing readiness' }
         ]);
-        expect(decodeGroupFormationView(decodeBody('"planned"'), groupRef).left).toEqual([
+        expect(decodeGroupFormationView(JSON.parse('"planned"'), groupRef).left).toEqual([
             { path: '$', code: 'invalid-value', message: 'Formation view must be an object' }
         ]);
-        expect(decodeGroupFormationView(decodeBody('[]'), groupRef).left?.map((issue) => issue.path)).toEqual(['$']);
+        expect(issuePaths('[]')).toEqual(['$']);
     });
 
     it('checks the values the schema pins rather than only the key set', () => {
@@ -66,7 +62,7 @@ describe('group formation view decoding', () => {
         ]);
         expect(
             decodeGroupFormationView(
-                decodeBody(JSON.stringify(createFormationView(groupRef, {
+                JSON.parse(JSON.stringify(createFormationView(groupRef, {
                     lastFormationOutcome: { outcome: 'activated', observedRate: 1, atEpochMs: 5, formationEpoch: 1 },
                     pending: { reconfigureQueued: true, dueAtEpochMs: 9, generation: 2 },
                     coverageBasisLayoutIdentity: { groupRevision: 1, presenceRevision: 1, version: 1, state: 'active' }
