@@ -92,6 +92,41 @@ afterEach(async () => {
     vi.unstubAllGlobals();
 });
 
+it.each([
+    { outcome: 'refused', expectedStatus: 'SUCCESS' },
+    { outcome: 'opened', expectedStatus: 'FAILURE' },
+    { outcome: 'errored', expectedStatus: 'FAILURE' },
+    { outcome: 'timedOut', expectedStatus: 'FAILURE' }
+])('reports an expected upgrade rejection after $outcome without retaining a connection', async ({ outcome, expectedStatus }) => {
+    const opening = openWs(
+        {
+            request: { ...interaction.request, timeoutMs: 5 },
+            response: { rejected: true, close: { code: 1008, reason: 'unauthorized' } }
+        },
+        config,
+        context
+    );
+    const socket = TestWebSocket.instances.at(-1)!;
+    if (outcome === 'refused') {
+        socket.disconnect(1008, 'unauthorized');
+    }
+    else if (outcome === 'opened') {
+        socket.open();
+    }
+    else if (outcome === 'errored') {
+        socket.dispatchEvent(new Event('error'));
+    }
+    expect(await opening).toMatchObject({ status: expectedStatus });
+    expect(context.wsConnections.session).toBeUndefined();
+    expect(context.wsSnapshotAssemblies?.session).toBeUndefined();
+});
+
+it('rejects a malformed open expectation before creating a WebSocket', async () => {
+    expect(await openWs({ ...interaction, response: { close: { code: '1008' } } }, config, context))
+        .toMatchObject({ status: 'FAILURE' });
+    expect(TestWebSocket.instances).toHaveLength(0);
+});
+
 it('keeps raw pages separate and exposes only the complete validated 1500-session snapshot', async () => {
     const socket = await openSession();
     const pages = topologyPages();

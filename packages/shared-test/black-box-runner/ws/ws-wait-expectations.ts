@@ -17,6 +17,7 @@ export interface WsInteractionRequest extends LocalWsRequest {
 }
 
 export interface WsInteractionResponse {
+    readonly rejected?: boolean;
     readonly connection?: string;
     readonly onConnection?: string;
     readonly withinMs?: number | string;

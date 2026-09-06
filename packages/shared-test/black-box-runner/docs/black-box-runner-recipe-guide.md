@@ -764,13 +764,90 @@ HTTP retry configuration lives under `request.resilience.retry` or
 WS and RTC waits use `expect.withinMs`. Message waits can also use
 `expect.consume` and `expect.ordered`.
 
-For convergence, prefer the `http.poll-until` step documented above over HTTP
-retry: retry is for transient transport failures, polling is for state that has
-not converged yet. **`poll-until` is HTTP-only** — `assert`, `set` and `parallel`
-have no retry loop, so a recipe waiting on a durable row or a parallel outcome
-still has to sleep. Sleeping is a real cost: the api-v1 corpus carries 371
-seconds of unconditional `delayMs` across 59 steps, concentrated in five
-recipes, almost all of it hand-rolled polling.
+For convergence, prefer polling over HTTP retry: retry is for transient
+transport failures, polling is for state that has not converged yet.
+
+**A `poll` block works on `http`, `assert`, `set` and `parallel`.** Declaring one
+repeats the step until its own `expect` passes, so a recipe waiting on a derived
+value, a durable queue row or a parallel outcome no longer has to sleep and
+hope. Sleeping is a real cost: the api-v1 corpus still carries 371 seconds of
+unconditional `delayMs` across 59 steps, almost all of it hand-rolled polling
+that a `poll` block now expresses directly.
+
+```json
+{
+  "name": "theQueueRowReachedItsTerminalState",
+  "type": "set.state-write-evidence",
+  "output": "stateWriteEvidence",
+  "request": {
+    "poll": { "maxAttempts": 20, "maxDurationMs": 15000, "backoffMs": 250, "backoffMultiplier": 1 },
+    "stateWriteEvidence": { "match": "bb-request-{runId}", "minimumMatchedRows": 1 }
+  }
+}
+```
+
+The block lives **inside `request`**, beside `path` or `stateWriteEvidence` —
+not beside it. A step that declares no `poll` runs exactly once and carries no
+poll fields, so nothing changes for the rest of the corpus. The result reports
+`pollAttempts`, `pollExhausted` and `pollElapsedMs`. A policy that names zero
+attempts, or bounds that do not parse as finite numbers, fails the step rather
+than silently skipping it.
+
+`"action": "poll-until"` on an `http` step is the older spelling and still
+polls, with the defaults.
+
+**A polled step must be idempotent.** Every attempt re-runs the step with the
+same correlation, so a `parallel` group that mutates replays its own request ids
+and the retry is answered with a conflict instead of converging. Poll on reads,
+derived values and queue evidence; not on the mutation itself.
+
+### `stableForMs`: converged, not passing through
+
+`poll.stableForMs` requires the condition to hold **continuously** for that long,
+and any lapse restarts the window. That is the difference between state that has
+converged and state passing through the expected value on its way somewhere
+else — the assertion a churn or replanning recipe actually wants.
+
+A run whose condition held at the last attempt but never for the full window is
+reported as a **failure**, not a pass: treating it as success would be exactly
+the silent weakening the window exists to prevent.
+
+## Asserting A Refused WebSocket Upgrade
+
+`ws.open` normally treats a refusal as a step failure, which makes an upgrade's
+negative paths — a reused, expired, foreign or missing ticket — impossible to
+assert. `expect.rejected` inverts that: the refusal becomes the assertion, and a
+successful open becomes the failure.
+
+```json
+{
+  "name": "aConsumedTicketCannotUpgrade",
+  "type": "ws.open",
+  "connection": "wsAlice",
+  "request": { "url": "{aliceWsUrl}" },
+  "expect": { "rejected": true, "close": { "code": 1008 } }
+}
+```
+
+`expect.close` is optional; without it any refusal satisfies the assertion. With
+it, both `code` and `reason` are compared when present, and a refusal that closed
+differently fails reporting what it actually saw — so "rejected" cannot quietly
+mean "rejected for the wrong reason".
+
+Only an actual refusal counts. A connect timeout or a transport error is a
+server that never answered, not one that declined, and both fail the assertion:
+otherwise the step would pass against an API that was never started.
+
+## Racing Parallel Groups With `barrier`
+
+`parallel` starts its groups as concurrency slots free, so the first group can
+finish before the last one starts. For a recipe that claims to test contention
+that is a timing coincidence, not a race.
+
+`"barrier": true` makes every group arrive before any is released. It overrides
+a narrower `maxConcurrency` rather than deadlocking against it, and the
+aggregate reports `barrier` so an assertion can confirm the race really ran that
+way.
 
 ## Counting Frames With `expect.count`
 
@@ -817,13 +894,20 @@ Measured against `CompareJson` directly:
 | `compatible-complete`  | matches                            | rejected                                    |
 | `exact-structure`      | matches                            | rejected                                    |
 | `exact`                | matches                            | rejected                                    |
+| `exact-ordered`        | **rejected**                       | rejected                                    |
+
+`exact-ordered` is the one mode that compares arrays positionally, and the only
+way to assert a sequence — a delta chain, a stage walk, an event order. It is
+`exact` plus position, so it also requires equal lengths and rejects extra
+elements.
 
 Two consequences worth internalising before writing an assertion.
 
-**Order is never checked, including under `exact`.** To assert a sequence, read
+**Order is never checked except under `exact-ordered`.** In every other mode an
+expected array proves only that each element appears _somewhere_ in the actual
+array. To assert a sequence, either set `comparison: "exact-ordered"` or read
 positions explicitly — `body.0.eventType`, `body.1.eventType` — because both
-`[n]` and `.n` resolve in output paths. An expected array proves only that each
-element appears _somewhere_ in the actual array.
+`[n]` and `.n` resolve in output paths.
 
 **Because matching is unordered, enumerating permutations under `expect.anyOf`
 is dead code.** A race whose two outcomes are `[200, 409]` in either order needs

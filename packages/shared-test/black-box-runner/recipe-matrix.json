@@ -2168,6 +2168,29 @@
         ]
       },
       "description": "No-browser API-v1 ownership transfer: the highest-authority group mutation, whose denial paths no recipe reached. A plain member is denied forbidden-role, a non-member target is the compute's 400 rather than the contract's 404 (an open contract defect the plan records, not a behaviour to keep), an accepted transfer swaps both roles at once so the old owner becomes admin and a read-back proves the swap was persisted, and a sole owner targeting themselves is denied last-owner by the governance policy before the compute's self-transfer no-op can run. Each denial pins the message that separates its own rule: forbidden-role is returned both by the generic governance check and by the transfer-only check."
+    },
+    {
+      "id": "api-v1-group-governance-authority",
+      "recipe": "tests/api-v1/api-v1-group-governance-authority.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-governance-authority",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 governance authority: ban, unban, remove and role promotion had owner-happy-path coverage only. A plain member is denied forbidden-role on all three governing routes, an admin may govern a regular member but neither the owner nor another admin, and a removed member is denied by member-removed rather than member-banned. Each denial pins the message that separates its own rule, and each accepted mutation pins the roster it produced -- the unban returns the member to 'left', not 'active'."
     }
   ]
 }

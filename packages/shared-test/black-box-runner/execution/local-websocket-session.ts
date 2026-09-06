@@ -5,6 +5,13 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { StateSnapshotAssembly } from '@shared/services/state-snapshot-assembly.ts';
 import { toWsConnectionName, toWsFailureStatus, toWsSuccessStatus } from '../ws/ws-interaction-statuses.ts';
+import {
+    resolveWsOpenExpectation,
+    validateWsOpenExpectation,
+    type WsOpenCloseEvent,
+    type WsOpenExpectation,
+    type WsOpenOutcome
+} from '../ws/ws-open-expectation.ts';
 import { acceptLocalWsFrame, type LocalWsMessage } from './local-websocket-frame.ts';
 
 export interface LocalWsRequest {
@@ -23,6 +30,7 @@ export interface LocalWsRequest {
 
 export interface LocalWsInteraction {
     readonly request: LocalWsRequest;
+    readonly response?: Readonly<{ rejected?: boolean; close?: unknown; }>;
 }
 
 export interface LocalWsContext {
@@ -99,6 +107,10 @@ export function rememberWsCloseEvent(connectionName: string, closeEvent: unknown
 }
 
 export function openWs(interaction: LocalWsInteraction, config: unknown, context: LocalWsContext): Promise<unknown> {
+    const expectation = validateWsOpenExpectation(interaction.response ?? {});
+    if (expectation.left) {
+        return Promise.resolve(toWsFailureStatus(config, interaction, expectation.left.message));
+    }
     const request = interaction.request;
     const connectionName = toWsConnectionName(request);
     const url = request.url || request.path;
@@ -128,11 +140,26 @@ export function openWs(interaction: LocalWsInteraction, config: unknown, context
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
         return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket timeout must be positive'));
     }
-    return new LocalWsConnection({ interaction, config, context, connectionName, url, scope: scope?.right, timeoutMs })
+    return new LocalWsConnection({
+        interaction,
+        config,
+        context,
+        connectionName,
+        url,
+        scope: scope?.right,
+        timeoutMs,
+        expectation: expectation.right!
+    })
         .open();
 }
 
 namespace LocalWsConnection {
+    export interface OpenResult {
+        readonly outcome: WsOpenOutcome;
+        readonly failureResult: string;
+        readonly details: Readonly<Record<string, unknown>>;
+        readonly close: WsOpenCloseEvent | undefined;
+    }
     export interface Input {
         readonly interaction: LocalWsInteraction;
         readonly config: unknown;
@@ -141,6 +168,7 @@ namespace LocalWsConnection {
         readonly url: string;
         readonly scope: StateScope | undefined;
         readonly timeoutMs: number;
+        readonly expectation: WsOpenExpectation;
     }
 }
 
@@ -163,7 +191,12 @@ class LocalWsConnection {
             this.#settle = resolve;
             this.#timeout = setTimeout(() => {
                 this.#dispose();
-                this.#resolveFailure('WebSocket connect timed out', { timeoutMs: this.#input.timeoutMs });
+                this.#resolveOpen({
+                    outcome: 'timedOut',
+                    failureResult: 'WebSocket connect timed out',
+                    details: { timeoutMs: this.#input.timeoutMs },
+                    close: undefined
+                });
                 this.#socket.close();
             }, this.#input.timeoutMs);
             this.#socket.onopen = () => this.#onOpen();
@@ -174,11 +207,16 @@ class LocalWsConnection {
     }
 
     #onOpen(): void {
-        if (!this.#settle) {
-            this.#socket.close();
-            return;
-        }
-        const { context, connectionName, config, interaction, url } = this.#input;
+        this.#resolveOpen({
+            outcome: 'opened',
+            failureResult: 'WebSocket opened',
+            details: { readyState: this.#socket.readyState },
+            close: undefined
+        });
+    }
+
+    #registerOpen(): void {
+        const { context, connectionName } = this.#input;
         const previous = context.wsConnections[connectionName];
         context.wsSnapshotAssemblies?.[connectionName]?.dispose();
         context.wsConnections[connectionName] = this.#socket;
@@ -188,13 +226,6 @@ class LocalWsConnection {
         context.wsCloseEvents[connectionName] ??= [];
         previous?.close();
         this.#opened = true;
-        this.#resolve(
-            toWsSuccessStatus(config, interaction, {
-                connection: connectionName,
-                url,
-                readyState: this.#socket.readyState
-            })
-        );
     }
 
     #onMessage(event: MessageEvent): void {
@@ -230,10 +261,11 @@ class LocalWsConnection {
         if (context.wsConnections[connectionName] === this.#socket) {
             delete context.wsConnections[connectionName];
         }
-        this.#resolveFailure('WebSocket closed before opening', {
-            code: event.code,
-            reason: event.reason,
-            wasClean: event.wasClean
+        this.#resolveOpen({
+            outcome: 'refused',
+            failureResult: 'WebSocket closed before opening',
+            details: { code: event.code, reason: event.reason, wasClean: event.wasClean },
+            close: { code: event.code, reason: event.reason }
         });
     }
 
@@ -244,9 +276,11 @@ class LocalWsConnection {
         if (context.wsConnections[connectionName] === this.#socket) {
             delete context.wsConnections[connectionName];
         }
-        this.#resolveFailure('WebSocket connection failed', {
-            eventType: event.type,
-            readyState: this.#socket.readyState
+        this.#resolveOpen({
+            outcome: 'errored',
+            failureResult: 'WebSocket connection failed',
+            details: { eventType: event.type, readyState: this.#socket.readyState },
+            close: undefined
         });
         this.#socket.close();
     }
@@ -262,9 +296,32 @@ class LocalWsConnection {
         }
     }
 
-    #resolveFailure(reason: string, details: Readonly<Record<string, unknown>>): void {
+    #resolveOpen(result: LocalWsConnection.OpenResult): void {
+        if (!this.#settle) {
+            if (result.outcome === 'opened') {
+                this.#socket.close();
+            }
+            return;
+        }
         const { config, interaction, connectionName, url } = this.#input;
-        this.#resolve(toWsFailureStatus(config, interaction, reason, { connection: connectionName, url, ...details }));
+        const verdict = resolveWsOpenExpectation({
+            expectation: this.#input.expectation,
+            outcome: result.outcome,
+            close: result.close
+        });
+        const details = { connection: connectionName, url, ...result.details };
+        if (verdict.satisfied) {
+            if (result.outcome === 'opened') {
+                this.#registerOpen();
+            }
+            this.#resolve(toWsSuccessStatus(config, interaction, details));
+            return;
+        }
+        this.#resolve(toWsFailureStatus(config, interaction, verdict.message ?? result.failureResult, details));
+        if (result.outcome === 'opened') {
+            this.#dispose();
+            this.#socket.close();
+        }
     }
 
     #resolve(result: unknown): void {

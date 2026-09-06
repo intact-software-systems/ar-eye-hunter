@@ -16,6 +16,7 @@ export interface CompareConfig {
     compareValues: boolean;
     compareExact: boolean;
     compareArraysComplete: boolean;
+    compareArrayOrder: boolean;
     ignoreJsonKeys: string[];
     ignoreJsonPaths: string[];
 }
@@ -258,7 +259,33 @@ function compareArrays(input: ComparisonInput): ComparisonResult {
     if (!Array.isArray(actual)) {
         return toNotCompatible(expected, actual, { message: 'expected array was object' });
     }
-    return compareArrayMatches(input, computeArrayMatches(expected, actual, context));
+    return context.config.compareArrayOrder
+        ? compareOrderedArrays(expected, actual, context)
+        : compareArrayMatches(input, computeArrayMatches(expected, actual, context));
+}
+
+function compareOrderedArrays(
+    expected: readonly unknown[],
+    actual: readonly unknown[],
+    context: ComparisonContext
+): ComparisonResult {
+    if (expected.length !== actual.length) {
+        return toNotCompatible(expected, actual, { message: 'Json array length differs under exact-ordered' });
+    }
+    for (let index = 0; index < expected.length; index++) {
+        const result = compareValue({
+            expected: expected[index],
+            actual: actual[index],
+            context: { ...context, path: `${context.path}[${index}]` }
+        });
+        if (!result.isEqual) {
+            return toNotCompatible(expected, actual, {
+                message: `Json array element ${index} differs`,
+                details: { cause: result }
+            });
+        }
+    }
+    return toCompatible();
 }
 
 function compareValue(input: ComparisonInput): ComparisonResult {
@@ -280,20 +307,52 @@ export const COMPARISON = {
     COMPATIBLE: 'compatible',
     COMPATIBLE_COMPLETE: 'compatible-complete',
     EXACT_STRUCTURE: 'exact-structure',
-    EXACT: 'exact'
+    EXACT: 'exact',
+    EXACT_ORDERED: 'exact-ordered'
 } as const;
 
 export type Comparison = typeof COMPARISON[keyof typeof COMPARISON];
 
 const COMPARE_FLAGS_BY_COMPARISON: Record<
     Comparison,
-    Pick<CompareConfig, 'compareValues' | 'compareExact' | 'compareArraysComplete'>
+    Pick<CompareConfig, 'compareValues' | 'compareExact' | 'compareArraysComplete' | 'compareArrayOrder'>
 > = {
-    [COMPARISON.COMPATIBLE_STRUCTURE]: { compareValues: false, compareExact: false, compareArraysComplete: false },
-    [COMPARISON.COMPATIBLE]: { compareValues: true, compareExact: false, compareArraysComplete: false },
-    [COMPARISON.COMPATIBLE_COMPLETE]: { compareValues: true, compareExact: false, compareArraysComplete: true },
-    [COMPARISON.EXACT_STRUCTURE]: { compareValues: false, compareExact: true, compareArraysComplete: false },
-    [COMPARISON.EXACT]: { compareValues: true, compareExact: true, compareArraysComplete: false }
+    [COMPARISON.COMPATIBLE_STRUCTURE]: {
+        compareValues: false,
+        compareExact: false,
+        compareArraysComplete: false,
+        compareArrayOrder: false
+    },
+    [COMPARISON.COMPATIBLE]: {
+        compareValues: true,
+        compareExact: false,
+        compareArraysComplete: false,
+        compareArrayOrder: false
+    },
+    [COMPARISON.COMPATIBLE_COMPLETE]: {
+        compareValues: true,
+        compareExact: false,
+        compareArraysComplete: true,
+        compareArrayOrder: false
+    },
+    [COMPARISON.EXACT_STRUCTURE]: {
+        compareValues: false,
+        compareExact: true,
+        compareArraysComplete: false,
+        compareArrayOrder: false
+    },
+    [COMPARISON.EXACT]: {
+        compareValues: true,
+        compareExact: true,
+        compareArraysComplete: false,
+        compareArrayOrder: false
+    },
+    [COMPARISON.EXACT_ORDERED]: {
+        compareValues: true,
+        compareExact: true,
+        compareArraysComplete: true,
+        compareArrayOrder: true
+    }
 };
 
 function isComparison(value: string): value is Comparison {

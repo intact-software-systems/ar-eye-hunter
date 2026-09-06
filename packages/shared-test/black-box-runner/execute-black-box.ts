@@ -26,7 +26,9 @@ import {
     executeWsInteraction,
     rememberWsCloseEvent
 } from './execution/execute-ws-interaction.ts';
+import { createParallelRendezvous } from './execution/parallel-rendezvous.ts';
 import { isRallarRemoteBrowserRequest } from './execution/remote-browser-execution.ts';
+import { withPollUntil } from './execution/with-poll-until.ts';
 import { computeParallelAggregateFailure } from './expectations/parallel-aggregate-expectation.ts';
 import { executeHttpInteraction } from './http/execute-http-interaction.ts';
 import {
@@ -675,11 +677,20 @@ function executeTransportInteraction(transport: string, input: TransportInteract
     const { interaction, config, context } = input;
     switch (transport) {
         case 'ASSERT':
-            return executeAssertInteraction(interaction, config, context);
+            return withPollUntil({
+                request: interaction.request,
+                execute: () => executeAssertInteraction(interaction, config, context)
+            });
         case 'SET':
-            return executeSetInteraction(interaction, config, context);
+            return withPollUntil({
+                request: interaction.request,
+                execute: () => executeSetInteraction(interaction, config, context)
+            });
         case 'PARALLEL':
-            return executeParallelInteraction(interaction, config, context);
+            return withPollUntil({
+                request: interaction.request,
+                execute: () => executeParallelInteraction(interaction, config, context)
+            });
         case 'WS':
             return executeWsInteraction(interaction, config, context);
         case 'CRDT':
@@ -760,30 +771,37 @@ async function executeParallelInteraction(interaction: any, config: any, context
             result: 'Parallel step requires at least one group with steps.'
         });
     }
-    const maxConcurrency = Math.max(
+    const barrier = interaction.request.barrier === true;
+    const maxConcurrency = barrier ? groups.length : Math.max(
         1,
         Number.parseInt(String(interaction.request.maxConcurrency || groups.length), 10) || groups.length
     );
+    const rendezvous = createParallelRendezvous(barrier ? maxConcurrency : 1);
     const timeoutMs = Number.parseInt(String(interaction.request.timeoutMs || 0), 10);
     const startedAtEpochMs = Date.now();
     const groupResults = await runBoundedParallel(
         groups,
         maxConcurrency,
-        (group: any, groupIndex: number) =>
-            executeParallelGroup({
+        async (group: any, groupIndex: number) => {
+            await rendezvous.arrive();
+            return await executeParallelGroup({
                 group,
                 groupIndex,
                 context,
                 failFast: interaction.request.failFast !== false,
                 nonBlockingFailure: interaction.request.nonBlockingFailure === true
-            })
+            });
+        }
     );
-    const actual = computeParallelSummary({
-        groups: groupResults,
-        maxConcurrency,
-        timeoutMs,
-        durationMs: Date.now() - startedAtEpochMs
-    });
+    const actual = {
+        ...computeParallelSummary({
+            groups: groupResults,
+            maxConcurrency,
+            timeoutMs,
+            durationMs: Date.now() - startedAtEpochMs
+        }),
+        barrier
+    };
     if (actual.timedOut || actual.failure > 0) {
         return toParallelFailureStatus({
             config,
