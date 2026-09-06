@@ -150,6 +150,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         const writeInput: ComputeRtcTopologyWorkWriteInput = {
             accepted: rttRefinementSkip,
             entry,
+            sourceWorkId: workId,
             reservationFinish,
             formationAutomationEnabled: options.formationAutomation !== undefined,
             serviceId: options.serviceId,

@@ -58,28 +58,36 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Created:** 2026-08-06
 
-**Updated:** 2026-09-05
+**Updated:** 2026-09-06
 
 **Status:** Tasks 4A/4B, B04, native-browser B05 capture, the continuous B05
 observation stream, and B06 E3-memory observation tooling are merged. Five
-distinct valid B05 archive PRs (#402, #405, #463, #474, and #494) are awaiting
-human review and chronological merge; they are independent time-series samples
-and must not be closed as duplicates. Four B06 observations are preserved as
-failed evidence with `acceptedMetrics: false`; there is not yet a valid B06 E3
-result. The latest failed observation is PR #498. It ran after the earlier room
-readiness/durable-delivery and setup-phase fixes and exposed a separate
-post-activation readiness-barrier defect. PR #499 contains the focused fix and
-regression proof. Main-wide typechecking is independently repaired by PR #496.
-B07 remains held, and evidence ranking cannot start until a valid B06 primary
-and any required repeat are archived.
+distinct valid B05 observations through 2026-09-05 are archived on `main`: PR
+#402 landed directly, and the four observations formerly published by PRs
+#405, #463, #474, and #494 landed through batch PRs #507 and #504 before the
+superseded PRs and branches were closed. Seven B06 observations have failed with
+`acceptedMetrics: false` and are archived on `main`. The first five, their
+focused corrections in PRs #499 and #510, and the Branch Release quiescence
+correction in PR #517 are merged. Run 33991439486 produced the sixth archive in
+PR #519; its focused publication-wake identity correction merged in PR #520.
+Run 33997173287 then produced the seventh failed archive in PR #522. Its first
+default warmup exposed the same missing source-generation dimension in the
+separate topology-promotion outbox identity. PR #523 keys
+each promotion request by the existing canonical topology execution ID while
+leaving the fenced promotion command unchanged. There is not yet a valid B06 E3
+result. B07 remains held, and evidence ranking cannot start until a valid B06
+primary and any required repeat are archived.
 
 ### Current execution horizon
 
-| Order | Slice                                               | Completion evidence                                                                                                                                                                                                                                                   |
-| ----- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Publish the pending evidence and prerequisite fixes | Merge B05 archives #402, #405, #463, #474, and #494 in chronological order; merge failed B06 archive #498; merge main typecheck repair #496 and post-activation readiness fix #499 with green relevant gates. Delete observation branches only after their PRs merge. |
-| 2     | Capture B06 E3-memory from moving `main`            | Manually dispatch `RTC-B06 Performance Observation` after #499 reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.                                |
-| 3     | Reconcile B05 and B06                               | Name the selected valid B05 observations or time window, compare them with the valid B06 observation without pooling unlike environments, decide whether E4-pg is required by the candidate call path, and rank at most one candidate—or `none`.                      |
+| Order | Slice                                          | Completion evidence                                                                                                                                                                                                                              |
+| ----- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | Correct topology-promotion request identity    | PR #523 keys each promotion outbox event by the existing canonical topology execution ID, including coalescing generation, without changing the convergent fenced command; focused and relevant full-stack gates pass and the PR merges.         |
+| 2     | Capture B06 E3-memory again from moving `main` | Manually dispatch `RTC-B06 Performance Observation` after the correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived. |
+
+After these two slices, Task 12 will choose the B05 observation window,
+revisit whether the candidate call path requires E4-pg, and reconcile the
+unlike-environment evidence before ranking at most one candidate—or `none`.
 
 If the next B06 run fails, retain it as failed evidence and diagnose the first
 failed attempt from that run. Fix only the evidenced tooling or product defect,
@@ -3694,6 +3702,14 @@ valid observations or an explicit time window. RTC-B06 is active under Task
 10; its next requirement is valid E3-memory evidence, not another activation
 decision.
 
+The four initially overlapping 2026-09-02 through 2026-09-05 observation PRs
+were consolidated without changing their immutable ZIPs or canonical rows.
+Batch evidence PR #507 and batch-integrity verifier PR #504 landed the four
+observations together; only then were superseded PRs #405, #463, #474, and
+#494 and their remote branches closed. The batch verifier classifies files
+from the pull request merge base, so an advancing `main` cannot make unrelated
+base-side observations appear to be mixed product changes.
+
 **Superseded historical procedure (preserved for provenance; do not execute):**
 
 **Organization prerequisite:** use only the unchanged exact Task 7 anchor and
@@ -3857,23 +3873,77 @@ performance-observations/rtc-b06/YYYY/MM/DD/<observation-id>.zip
 performance-observations/rtc-b06/index.jsonl
 ```
 
-Current evidence contains four failed B06 primaries and no accepted metrics.
+Current evidence contains seven failed B06 primaries and no accepted metrics.
 The fourth archive is PR #498. Its first retained default attempt timed out
 receiving `messages.rtc` multicast on agent C after the warmup passed. That run
 exposed a post-activation readiness gap: the lifecycle driver proved readiness
 before activation, refreshed the accepted room layout after activation, and
-returned without proving final delivery readiness. PR #499 adds that final
-barrier and direct ordering/timing regression coverage.
+returned without proving final delivery readiness. Merged PR #499 added that
+final barrier and direct ordering/timing regression coverage.
+
+The fifth failed observation is PR #509, dispatched from commit
+`27fdb5dfd714ae97a35e7330d55156f0a5af9999` after PR #499 merged. Its default
+warmup reached formation epoch 10, but an activation-status update advanced the
+active topology from the lifecycle-stage receipt's group revision 25 to group
+revision 26. The driver incorrectly required exact revision equality and could
+not accept the valid newer same-epoch publication. PR #510 changes the receipt
+revision into a lower bound while preserving the required-session check, the
+selected layout identity, and the server-enforced formation-epoch fence; it
+adds regression coverage for that transition and does not retain the obsolete
+exact-revision behavior.
+
+PRs #509 and #510 merged, and PR #517 added the missing quiescence barrier to
+the Branch Release regression recipe that had raced an activation-status
+write. Run 33991439486 then observed commit
+`a9726f7a21ccac31ae91b3639613c9ebce504ad4`; its source guard, tooling checks,
+capture recovery, archive verification, publication, and observation-integrity
+gate all passed. PR #519 archived the failed result. The default warmup timed
+out waiting for agent A to observe both ready peers while the API repeatedly
+reported a final-outbox collision for one
+`app-outbox.group-connect-trigger` resource. The coalesced topology head keeps
+one queue key across generations, but publication wake identity used only that
+key and the selected layout. Two generations that legitimately selected the
+same layout therefore attempted the same final outbox identity. The focused
+correction in PR #520 passes the already-canonical topology execution ID, which includes
+coalescing generation, into publication wake identity; it does not weaken the
+strict final-outbox collision invariant or retain an alternate identity path.
+
+PR #520 merged, and run 33997173287 observed resulting `main` commit
+`021e10aa153e17a2695d31302768269582972d3a`. PR #522 archives its failed
+primary. The first default warmup again timed out before agent A observed both
+ready peers, but the causal server error moved to
+`app-outbox.topology-promotion`: two distinct topology source generations that
+selected the same formation epoch and layout attempted one immutable promotion
+outbox key. The focused follow-up in PR #523 includes the canonical topology
+execution ID in the outbox event identity. It intentionally leaves the decoded
+`applyPlannedLayout` work unchanged so multiple source events converge on the
+same fenced command, and it retains no old identity overload or fallback.
 
 - [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
       publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
-- [x] Preserve all four unsuccessful primaries as failed evidence rather than
+- [x] Preserve the first four unsuccessful primaries as failed evidence rather than
       accepting their metrics or replacing their attempt identities.
-- [x] Diagnose the latest failure to the missing post-activation readiness
-      barrier and publish the focused correction in PR #499.
-- [ ] Merge PR #499 after relevant validation and human review.
+- [x] Diagnose the fourth failure to the missing post-activation readiness
+      barrier, merge the focused correction in PR #499, and dispatch run
+      33983623186 from the then-current `main`.
+- [x] Diagnose run 33983623186's first failure to the exact-revision race and
+      publish its failed archive as PR #509 and its focused correction as PR
+      #510.
+- [x] Merge PRs #509 and #510 after relevant validation and human review.
+- [x] Correct the Branch Release recipe's activation-status quiescence race in
+      PR #517, then dispatch run 33991439486 from moving `main`.
+- [x] Verify and archive run 33991439486's failed primary through observation
+      PR #519; do not accept its metrics or run a repeat.
+- [x] Merge the focused coalesced publication-wake identity correction in PR
+      #520 after relevant unit, type, full-stack, and branch validation.
+- [x] Dispatch run 33997173287 from the then-current `main` after PR #520
+      merges.
+- [x] Verify and archive run 33997173287's failed primary through observation
+      PR #522; do not accept its metrics or run a repeat.
+- [ ] Merge the focused topology-promotion request identity correction in PR
+      #523 after relevant unit, type, full-stack, and branch validation.
 - [ ] Manually dispatch `RTC-B06 Performance Observation` from the then-current
-      `main` after the fix merges.
+      `main` after that correction merges.
 - [ ] Verify that its observation-only pull request passes RTC observation
       integrity and merge the ZIP/index row. A valid primary must report
       `acceptedMetrics: true`; complete any controller-required repeat.
@@ -4335,17 +4405,22 @@ incomplete evidence milestone and do not mark this written plan complete.
 
 ## 13. Progress Record
 
-**2026-09-05 reconciliation:** Task 4B, B04, B05, both observation producers,
-and B06 E3-memory tooling are merged. Five valid B05 observation PRs remain
-open because each is a distinct append-only sample; merge #402, #405, #463,
-#474, and #494 chronologically, then delete their branches. Four B06 primaries
-are archived as failed evidence with no accepted metrics. The newest archive,
-PR #498, exposed the post-activation readiness gap corrected by PR #499.
-PR #496 independently restores main-wide typechecking. After #499 merges, the
-next performance action is a fresh manual Task 10 dispatch from moving `main`,
-followed by integrity-gated archive publication or evidence-led diagnosis of
-its first failed attempt. B07 remains held; Task 12 remains blocked on valid
-B06 evidence.
+**2026-09-06 reconciliation:** Task 4B, B04, B05, both observation producers,
+and B06 E3-memory tooling are merged. Five valid B05 observations are archived
+on `main`; the overlapping source PRs and branches were consolidated and
+closed. Seven B06 primaries are archived as failed evidence with no accepted
+metrics. PRs #499 and #510 corrected the fourth and fifth failures, while PR
+#517 corrected their Branch Release regression recipe's quiescence race. Run
+33991439486 and archive PR #519 exposed the sixth failure: publication-wake
+identity omitted the generation of its mutable coalesced topology source. The
+focused correction merged in PR #520. Run 33997173287 and archive PR #522 then
+exposed the same omitted generation in the separate topology-promotion outbox
+identity. PR #523 threads the existing canonical execution ID
+into that event identity while preserving the unchanged convergent command and
+strict collision handling. After it merges, the next performance action is
+another manual Task 10 dispatch from moving `main`, followed by
+integrity-gated archive publication or evidence-led diagnosis of its first
+failed attempt. B07 remains held; Task 12 remains blocked on valid B06 evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

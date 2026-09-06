@@ -67,6 +67,56 @@ describe('RTC topology complete write computation', () => {
         expect(computeRtcTopologyWorkWrite(input)).toEqual(computed);
     });
 
+    it('gives each coalesced source generation a distinct publication wake identity', () => {
+        const firstInput = {
+            ...createWriteInput(),
+            sourceWorkId: 'rtc-topology:group-1:coalesced-work:1',
+            formationAutomationEnabled: true
+        };
+        const secondInput = {
+            ...firstInput,
+            sourceWorkId: 'rtc-topology:group-1:coalesced-work:2'
+        };
+
+        const first = computeRtcTopologyWorkWrite(firstInput);
+        const second = computeRtcTopologyWorkWrite(secondInput);
+        if (first.kind !== 'transaction' || second.kind !== 'transaction') {
+            throw new Error('Expected topology transaction fixtures');
+        }
+
+        expect(first.transaction.connectWrites).toHaveLength(1);
+        expect(second.transaction.connectWrites).toHaveLength(1);
+        expect(first.transaction.connectWrites[0]!.entry.key.resourceId).not.toBe(
+            second.transaction.connectWrites[0]!.entry.key.resourceId
+        );
+    });
+
+    it('gives each coalesced source generation a distinct promotion request identity', () => {
+        const firstInput = {
+            ...createWriteInput(),
+            sourceWorkId: 'rtc-topology:group-1:coalesced-work:1'
+        };
+        const secondInput = {
+            ...firstInput,
+            sourceWorkId: 'rtc-topology:group-1:coalesced-work:2'
+        };
+
+        const first = computeRtcTopologyWorkWrite(firstInput);
+        const second = computeRtcTopologyWorkWrite(secondInput);
+        if (
+            first.kind !== 'transaction' ||
+            second.kind !== 'transaction' ||
+            first.transaction.promotionWrite === null ||
+            second.transaction.promotionWrite === null
+        ) {
+            throw new Error('Expected topology promotion transaction fixtures');
+        }
+
+        expect(first.transaction.promotionWrite.entry.key.resourceId).not.toBe(
+            second.transaction.promotionWrite.entry.key.resourceId
+        );
+    });
+
     it('leaves durable replay checks to validation', () => {
         const snapshot = createTopologySnapshot(createGroupRef(), 1);
         const publication = createPublication(snapshot, 'work-1');
@@ -223,6 +273,7 @@ function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
     return {
         accepted,
         entry,
+        sourceWorkId: 'rtc-topology:group-1:work-1:0',
         reservationFinish: {
             key: entry.key,
             expectedAttempts: entry.dequeueAudit.attempts,
