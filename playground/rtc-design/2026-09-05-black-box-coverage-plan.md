@@ -64,12 +64,12 @@ The highest-authority mutations on the group aggregate have owner-happy-path cov
 regression that let any member seize ownership, or that left a demoted owner still privileged, would
 pass every black-box gate today.
 
-| Recipe                              | Pins                                                                                                                                                                                                                        |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `api-v1-group-ownership-transfer`   | a plain member's transfer is `403 forbidden-role`; the owner's transfer is `200` and swaps roles to `owner`/`admin`; a non-member target is `400 group-mutation-rejected`; a sole owner's self-transfer is `403 last-owner` |
-| `api-v1-group-governance-authority` | ban, unban, remove and role promotion each denied for a non-owner with the code named; `last-owner` returned when the sole owner is removed, demoted or leaves                                                              |
-| `api-v1-group-invite-revocation`    | revoke-then-accept is denied; `group-invite-required` and `group-invite-expired` are returned by a real join                                                                                                                |
-| `api-v1-group-director-appoint`     | the appointment route's status mapping, actor binding, and metadata-patch containment                                                                                                                                       |
+| Recipe                              | Pins                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-group-ownership-transfer`   | a plain member's transfer is `403 forbidden-role`; the owner's transfer is `200` and swaps roles to `owner`/`admin`; a non-member target is `400 group-mutation-rejected`; a sole owner's self-transfer is `403 last-owner`                                                                                                                                                                    |
+| `api-v1-group-governance-authority` | ban, unban, remove and role promotion each denied for a non-owner with the code named; `last-owner` returned when the sole owner is removed, demoted or leaves                                                                                                                                                                                                                                 |
+| `api-v1-group-invite-revocation`    | revoke-then-accept is denied; `group-invite-required` and `group-invite-expired` are returned by a real join                                                                                                                                                                                                                                                                                   |
+| `api-v1-group-director-appoint`     | every eligibility branch: not-a-member, no active room session, a plain member while an owner is online, and a second member against an active fallback director are each `400 group-mutation-rejected` with the reason named; each acceptance advances the epoch and metadata version by one, pins the heartbeat TTL default, and leaves the group fields and seeded metadata entry unchanged |
 
 **Hazards.** The demoted owner becomes `admin`, not a member, and an admin may still govern regular
 members — a recipe asserting "the old owner can no longer do anything" will fail for the wrong
@@ -94,6 +94,11 @@ than a deliberate exclusion. The recipe pins the observed `400` so the behaviour
 but the disagreement is real work: either the contract gains `400` for this route, or the route
 returns the contracted `404`. Do not close this by editing the recipe.
 
+Every director-appointment denial is raised as `GroupMutationRejectedError('Forbidden: ' + reason)`,
+so the route answers **`400 group-mutation-rejected`** carrying a `Forbidden:` message rather than the
+`403` the wording implies — the status mapping this slice set out to pin. The reason string is the
+only thing separating the four denial branches, so the recipe pins it rather than the shared code.
+
 **Gates:** baseline plus both black-box profiles.
 
 ### Slice 2 — Admission modes that exist nowhere in the corpus
@@ -101,16 +106,32 @@ returns the contracted `404`. Do not close this by editing the recipe.
 Two entire join paths — code-protected and invite-only — have zero coverage across all 51 recipes,
 and four denial codes have never been returned by any route.
 
-| Recipe                             | Pins                                                                                                                        |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `api-v1-group-join-code-admission` | `joinMode: "code"` end to end: `group-code-required`, `group-code-invalid`, a successful coded join, and `join-code/rotate` |
-| `api-v1-group-invite-admission`    | `joinMode: "invite-only"`: the invite branch of `canJoinGroup` and its two denial codes                                     |
-| `api-v1-group-business-status`     | archive and delete: `group-archived` and `group-deleted` returned by a real route, and what the read surface then shows     |
-| `api-v1-group-limits`              | `expiresAtEpochMs` producing `group-not-active`, and `maxSessionsPerMember` producing `member-session-limit-reached`        |
+| Recipe                             | Pins                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-group-join-code-admission` | `joinMode: "code"` end to end: `group-code-required`, `group-code-invalid`, a successful coded join, and `join-code/rotate`                                                                                                                                                                                                         |
+| `api-v1-group-invite-admission`    | `joinMode: "invite-only"`: the invite branch of `canJoinGroup` and its two denial codes                                                                                                                                                                                                                                             |
+| `api-v1-group-business-status`     | archive and delete: `group-archived` and `group-deleted` returned by a real route, and what the read surface then shows                                                                                                                                                                                                             |
+| `api-v1-group-limits`              | `expiresAtEpochMs` producing `group-not-active` with the message that separates a passed clock from a non-active status, a future clock admitting through the same guard, that an expired group still stores `active` and stays readable, and `maxSessionsPerMember` producing `member-session-limit-reached` on the second session |
+
+Rotation **rewrites** the code it is given: trim, upper-case, strip every non-alphanumeric, cut to 12
+characters, and reject anything under 4. The join side applies the same rule, so the form an operator
+typed and the form `join-code/rotate` handed back verify alike — a regression normalizing on only one
+side would lock every user out, so the recipe pins both. The plaintext code is returned **only** by the
+rotate response; group state stores a verifier.
 
 **Hazards.** A group whose clock has passed keeps `status: "active"` on the row — the denial comes
 from the liveness projection, not the stored status, so the recipe must assert the denial rather than
 the field.
+
+**Archived is terminal at the route, and that is not the same as the compute being dead.**
+`assertCanUpdateGroup` runs before AppInbox and before the body is parsed
+(`register-group-state-mutation-routes.ts:67`), so `requireActiveGroup` denies `group-archived`
+regardless of actor role, flag or requested status — an already-archived group has no exit through any
+route, admin surface, WS command or worker. The `allowsArchivedDeletion` carve-out below it
+(`compute-group-aggregate-mutation.ts:130`) is **not** dead: it is the convergence branch for a delete
+admitted while the group was still active, it is reachable by racing archive against delete (both pass
+the guard on an active read), and it is already pinned green by
+`apps/api-v1/test/services/group-state-service.test.ts:344-388`. Do not describe it as dead code.
 
 **Gates:** baseline plus both black-box profiles.
 

@@ -2214,6 +2214,144 @@
         ]
       },
       "description": "No-browser API-v1 governance authority: ban, unban, remove and role promotion had owner-happy-path coverage only. A plain member is denied forbidden-role on all three governing routes, an admin may govern a regular member but neither the owner nor another admin, and a removed member is denied by member-removed rather than member-banned. Each denial pins the message that separates its own rule, and each accepted mutation pins the roster it produced -- the unban returns the member to 'left', not 'active'."
+    },
+    {
+      "id": "api-v1-group-invite-revocation",
+      "recipe": "tests/api-v1/api-v1-group-invite-revocation.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-invite-revocation",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 invite revocation and expiry: six recipes drive the invite routes and none asserts a single invite denial. A stranger, a revoked invitee on the accept route and that same invitee on the join route all reach the single not-invited branch, so group-invite-required is observed from three different member states rather than one; only the expired invitee carries its own code and message. A live invite still admits, so the denials are not a route that refuses everyone."
+    },
+    {
+      "id": "api-v1-group-director-appoint",
+      "recipe": "tests/api-v1/api-v1-group-director-appoint.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-director-appoint",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 browser-director appointment: the route no recipe calls, and every denial it raises shares one code so only the reason separates them. A non-member, a member without an active room session, a plain member while an owner is online, and a second member against an active fallback director are each refused with the reason that names the branch. Each accepted appointment advances the director epoch and the metadata version by exactly one, pins the heartbeat TTL default, and leaves the group fields and the seeded metadata entry it must not touch unchanged."
+    },
+    {
+      "id": "api-v1-group-join-code-admission",
+      "recipe": "tests/api-v1/api-v1-group-join-code-admission.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-join-code-admission",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 code-protected admission: group-code-required and group-code-invalid are returned by no recipe in the corpus. A code group refuses a join carrying no code and a join carrying the wrong one, the current code admits, a rotation invalidates the old code while the new one admits, and an expired code is refused even for a principal who is already an active member. Rotation is refused for a non-member and again for an active regular member -- the server returns the same envelope for both, so only the second probe pins the owner/admin rule. Both sides normalise the code identically, so the typed form and the returned form are interchangeable."
+    },
+    {
+      "id": "api-v1-group-invite-admission",
+      "recipe": "tests/api-v1/api-v1-group-invite-admission.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-invite-admission",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 invite admission through the group join route. The self-upsert member route reaches the same two denial codes but is registered separately, so covering one proves nothing about the other and this recipe drives the join route only. Also pins that the reserved inviteToken field cannot admit anyone, because nothing in the server ever sets the token it is compared against."
+    },
+    {
+      "id": "api-v1-group-business-status",
+      "recipe": "tests/api-v1/api-v1-group-business-status.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-business-status",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 business status: group-archived and group-deleted are returned by no recipe in the corpus. An archived group refuses new joins while its own members can still read, and is terminal at the route -- assertCanUpdateGroup denies the owner and a plain member alike, so the lifecycle refusal is raised ahead of the role check and the group can be neither revived nor deleted. Deletion is reachable only from active, each transition stamps its own audit entry and clears the other, and a deleted group refuses the read path and the mutation path with the message and the envelope that separate them."
+    },
+    {
+      "id": "api-v1-group-limits",
+      "recipe": "tests/api-v1/api-v1-group-limits.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-limits",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 group limits: group-not-active and member-session-limit-reached are returned by no recipe in the corpus. A group whose clock has passed still stores status active and stays readable, yet refuses a join with the message that separates an expired clock from a non-active status; a second group carrying a future clock admits through the same guard, so the comparison is pinned rather than the mere presence of the field. A second session for one principal trips maxSessionsPerMember, which is a strict greater-than so a cap of one refuses only the second."
     }
   ]
 }
