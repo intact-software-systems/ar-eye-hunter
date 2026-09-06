@@ -80,19 +80,21 @@ all-scenarios warmup failed during replacement-C reconnect; PR #524 archived
 that eighth failed primary. The original pre-activation readiness gap cleared,
 but the reconnect helper refreshed and waited only for survivor B while the
 replacement endpoint's refresh and two-survivor readiness check remained
-queued behind B. All three peer establishments later timed out. The current
-focused correction makes one reconnect owner concurrently prove both survivors
-observe replacement C's new session and replacement C observes both survivor
-sessions. There is not yet a valid B06 E3 result. B07 remains held, and evidence
+queued behind B. All three peer establishments later timed out. PR #526 makes
+one reconnect owner concurrently prove both survivors observe replacement C's
+new session and replacement C observes both survivor sessions. It also keeps
+initial-pair readiness before activation, then makes post-activation A/B/C
+hydration a correctness barrier even when owner scope retains only A's timing
+sample. There is not yet a valid B06 E3 result. B07 remains held, and evidence
 ranking cannot start until a valid B06 primary and any required repeat are
 archived.
 
 ### Current execution horizon
 
-| Order | Slice                                          | Completion evidence                                                                                                                                                                                                                                                              |
-| ----- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Merge the full reconnect-readiness correction  | The reconnect helper has one explicit three-participant readiness owner, direct semantic coverage proves replacement-session identity plus concurrent A/B/C waits, and focused unit, exact E3 all-scenarios, type/build/style/structure gates pass before the correction merges. |
-| 2     | Capture B06 E3-memory again from moving `main` | Manually dispatch `RTC-B06 Performance Observation` after the correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.                                 |
+| Order | Slice                                                     | Completion evidence                                                                                                                                                                                                                                                                                                                   |
+| ----- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Merge the accepted-layout readiness correction in PR #526 | The formation owner hydrates all accepted A/B/C routes after activation while filtering only timing evidence by scope; reconnect has one explicit three-participant readiness owner; direct semantic, focused unit, exact default/all-scenarios E3, type/build/style/structure, full-unit, and branch review gates pass before merge. |
+| 2     | Capture B06 E3-memory again from moving `main`            | Manually dispatch `RTC-B06 Performance Observation` after the correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.                                                                                      |
 
 After these two slices, Task 12 will choose the B05 observation window,
 revisit whether the candidate call path requires E4-pg, and reconcile the
@@ -3936,11 +3938,15 @@ original pre-activation readiness failure, but the reconnect helper still
 owned only survivor B's wait. Replacement C's refresh and readiness check for
 both survivor sessions ran later in the caller, behind B's blocked readiness
 poll, so signaling could not complete and all involved peer establishments
-timed out. The focused test-tooling correction gives the reconnect helper one
-explicit owner for concurrent A/B/C readiness: both survivors must observe
-replacement C's new session ID, and replacement C must observe both surviving
-session IDs. It returns the maximum receiver-observed survivor duration used by
-the existing evidence timing field and removes the callers' duplicate waits.
+timed out. PR #526 gives the reconnect helper one explicit owner for concurrent
+A/B/C readiness: both survivors must observe replacement C's new session ID,
+and replacement C must observe both surviving session IDs. The same correction
+preserves initial-pair readiness, activates the staged three-participant layout,
+and then requires all three endpoints to hydrate the accepted routes. Owner
+scope filters only the returned timing evidence to A; it does not remove B/C
+from the correctness barrier. Reconnect returns the maximum receiver-observed
+survivor duration used by the existing evidence timing field, and duplicate
+caller waits plus obsolete fixture modes and readiness APIs are removed.
 
 - [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
       publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
@@ -3970,9 +3976,9 @@ the existing evidence timing field and removes the callers' duplicate waits.
 - [x] Verify and archive run 34000825989's failed primary through observation
       PR #524; preserve its passed default warmup and five retained attempts,
       and do not accept metrics or run a repeat.
-- [ ] Merge the focused full reconnect-readiness correction after direct
-      semantic, focused unit, exact E3 all-scenarios, type/build/style/structure,
-      and branch validation.
+- [ ] Merge PR #526's focused accepted-layout readiness correction after direct
+      semantic, focused unit, exact default/all-scenarios E3,
+      type/build/style/structure, full-unit, and branch validation.
 - [ ] Manually dispatch `RTC-B06 Performance Observation` from the then-current
       moving `main` after that correction merges.
 - [ ] Verify that its observation-only pull request passes RTC observation
@@ -4453,11 +4459,12 @@ the default warmup and five retained default attempts before its all-scenarios
 warmup failed at replacement-C reconnect; PR #524 archived the result. The
 original readiness failure cleared, but the reconnect helper waited only for
 survivor B while replacement C's refresh/readiness remained queued behind it,
-so the three peer establishments timed out. The current correction owns the
-full reconnect readiness concurrently and proves replacement-session identity.
-The next two slices are to merge that focused correction and then dispatch B06
-again from moving `main`. B07 remains held; Task 12 remains blocked on valid
-B06 evidence.
+so the three peer establishments timed out. PR #526 owns full reconnect
+readiness concurrently, proves replacement-session identity, and makes every
+post-activation A/B/C route a correctness barrier without adding receiver
+timings to owner-scope evidence. The next two slices are to merge PR #526 and
+then dispatch B06 again from moving `main`. B07 remains held; Task 12 remains
+blocked on valid B06 evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
