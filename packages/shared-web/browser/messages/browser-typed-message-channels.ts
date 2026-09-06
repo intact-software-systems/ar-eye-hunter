@@ -1,6 +1,6 @@
 import type { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
+import type { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import type {
-    RallarMessageSendResult,
     RallarRoomMessageChannelDefinition,
     RallarTypedMessageChannel,
     RallarTypedMessageChannelDefinition,
@@ -10,13 +10,13 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import { normalizeRallarMessageSelector } from '@shared-web/browser/messages/rallar-message-selectors.ts';
-import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
 export namespace BrowserTypedMessageChannels {
     export interface Input {
         readonly inputValidator: BrowserMessageInputValidator;
-        readonly rtc: RallarMessagesOperations['rtc'];
-        readonly ws: RallarMessagesOperations['ws'];
+        readonly sender: BrowserRallarMessageSender;
+        readonly rtc: Pick<RallarMessagesOperations['rtc'], 'onMessage'>;
+        readonly ws: Pick<RallarMessagesOperations['ws'], 'onMessage'>;
     }
 }
 
@@ -45,11 +45,11 @@ export class BrowserTypedMessageChannels {
 
         return {
             send: async (payload, options: RallarTypedMessageSendOptions<T> = {}) =>
-                await this.sendWithStrategy(channelDefinition, payload, options),
+                await this.input.sender.sendTyped({ ...options, ...channelDefinition, payload }),
             sendRtc: async (payload, options: RallarTypedRtcSendOptions<T> = {}) =>
-                await this.sendRtc(channelDefinition, payload, options),
+                await this.input.sender.sendRtc({ ...options, ...channelDefinition, payload }),
             sendWs: async (payload, options: RallarTypedWsSendOptions<T> = {}) =>
-                await this.sendWs(channelDefinition, payload, options),
+                await this.input.sender.sendWs({ ...options, ...channelDefinition, payload }),
             onRtc: (handler) =>
                 this.input.rtc.onMessage<T>(channelDefinition, async (message) => {
                     await handler(message.payload, message);
@@ -91,73 +91,4 @@ export class BrowserTypedMessageChannels {
             onWs: (handler) => channel.onWs(handler)
         };
     }
-
-    private async sendWithStrategy<T>(
-        definition: RallarTypedMessageChannelDefinition,
-        payload: T,
-        options: RallarTypedMessageSendOptions<T>
-    ): Promise<RallarMessageSendResult> {
-        const { strategy = 'rtc-with-ws-fallback', ...sendOptions } = options;
-        const rtcOptions = sendOptions as RallarTypedRtcSendOptions<T>;
-        const wsOptions = sendOptions as RallarTypedWsSendOptions<T>;
-
-        switch (strategy) {
-            case 'ws':
-                return await this.sendWs(definition, payload, wsOptions);
-            case 'rtc':
-            case 'realtime':
-                return await this.sendRtc(definition, payload, rtcOptions);
-            case 'ws-then-rtc': {
-                const wsResult = await this.sendWs(definition, payload, wsOptions);
-                if (isSuccessfulRallarMessageSendStatus(wsResult.status)) {
-                    return wsResult;
-                }
-                return await this.sendRtc(definition, payload, rtcOptions);
-            }
-            case 'rtc-with-ws-fallback':
-            default: {
-                const rtcResult = await this.sendRtc(definition, payload, rtcOptions);
-                if (isSuccessfulRallarMessageSendStatus(rtcResult.status)) {
-                    return rtcResult;
-                }
-                return await this.sendWs(definition, payload, wsOptions);
-            }
-        }
-    }
-
-    private sendRtc<T>(
-        definition: RallarTypedMessageChannelDefinition,
-        payload: T,
-        options: RallarTypedRtcSendOptions<T>
-    ): Promise<RallarMessageSendResult> {
-        return this.input.rtc.send<T>({
-            ...options,
-            topicId: definition.topicId,
-            typeId: definition.typeId,
-            payload
-        });
-    }
-
-    private sendWs<T>(
-        definition: RallarTypedMessageChannelDefinition,
-        payload: T,
-        options: RallarTypedWsSendOptions<T>
-    ): Promise<RallarMessageSendResult> {
-        return this.input.ws.send<T>({
-            ...options,
-            topicId: definition.topicId,
-            typeId: definition.typeId,
-            payload
-        });
-    }
-}
-
-function isSuccessfulRallarMessageSendStatus(status: ALOutboundEnqueueStatus): boolean {
-    return (
-        status === 'enqueued' ||
-        status === 'accepted' ||
-        status === 'duplicate' ||
-        status === 'superseded' ||
-        status === 'skipped'
-    );
 }

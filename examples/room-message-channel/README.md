@@ -9,6 +9,18 @@ callbacks remain topic/type listeners, so validate each inbound target.
 not establish transport submission, receiver acknowledgement, or application
 completion. Keep those stages separate when displaying delivery progress.
 
+RTC/WS fallback captures one envelope and scoped room before the first
+attempt. A second carrier preserves its ID, ordering, exclusions, and original
+deadline, even if the current room changes. Typed sends default to a 30-second
+deadline; override it with `ttlMs`. An elapsed deadline prevents further
+carrier admission.
+
+Current fallback reacts to no-route or open-circuit admission results. It does
+not bypass validation, supersedence, or rate limiting. Both fallback orders
+require a room audience; use WS explicitly for world/all scope. Receiver
+receipt timeouts and shared RTC/WS receiver deduplication remain implementation
+work, so one outgoing ID does not yet establish one logical receiver delivery.
+
 ```ts
 import {
     rallar,
@@ -27,9 +39,7 @@ interface ReadyMessage {
 const acceptedMessageStatuses: ReadonlySet<RallarMessageSendResult['status']> = new Set([
     'enqueued',
     'accepted',
-    'duplicate',
-    'superseded',
-    'skipped'
+    'duplicate'
 ]);
 
 function isMessageForRoom<T>(
@@ -67,20 +77,20 @@ const sendResult = await readyChannel.send({
     changedAtEpochMs: Date.now()
 });
 if (!acceptedMessageStatuses.has(sendResult.status)) {
-    console.warn('Ready delivery degraded', sendResult.status, sendResult.reason);
+    console.warn('Ready message was not admitted', sendResult.status, sendResult.reason);
 }
 
 // For server-routed coordination, force WS.
-const reliableResult = await readyChannel.sendWs({
+const wsResult = await readyChannel.sendWs({
     playerId: localPlayerId,
     ready: true,
     changedAtEpochMs: Date.now()
 });
-if (!acceptedMessageStatuses.has(reliableResult.status)) {
+if (!acceptedMessageStatuses.has(wsResult.status)) {
     console.warn(
-        'Reliable ready delivery degraded',
-        reliableResult.status,
-        reliableResult.reason
+        'WS ready message was not admitted',
+        wsResult.status,
+        wsResult.reason
     );
 }
 

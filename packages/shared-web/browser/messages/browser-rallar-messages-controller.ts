@@ -81,6 +81,7 @@ export class BrowserRallarMessagesController {
         };
         const channels = new BrowserTypedMessageChannels({
             inputValidator,
+            sender: this.sender,
             rtc,
             ws
         });
