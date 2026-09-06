@@ -1,4 +1,4 @@
-import { compareGroupCausalRevision, readGroupCausalRevision } from '@shared/api/group-client-views.ts';
+import { isGroupCausalRevisionAtOrAfter, readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type {
     GroupStateSnapshotReadOptions,
@@ -219,6 +219,5 @@ function satisfiesGroupFloor(
     observed: GroupStateCausalRevision,
     requested: GroupStateCausalRevision
 ): boolean {
-    const order = compareGroupCausalRevision(observed, requested);
-    return order === 'equal' || order === 'dominates';
+    return isGroupCausalRevisionAtOrAfter(observed, requested);
 }

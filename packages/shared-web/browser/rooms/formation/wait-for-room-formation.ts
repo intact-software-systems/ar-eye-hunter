@@ -1,23 +1,23 @@
 import { normalizeWaitTimeoutMs } from '@shared-web/browser/connection/normalize-wait-timeout-ms.ts';
-import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
+import { waitForSettledRead } from '@shared-web/browser/connection/wait-for-settled-read.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import { isGroupCausalRevisionAtOrAfter } from '@shared/api/group-client-views.ts';
 import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
-import type { GroupStateCausalRevision } from '../room-group-state-translation.ts';
-import { waitForRoomChange } from '../wait-for-room-change.ts';
+import type { GroupRef } from '../room-group-state-translation.ts';
 import type {
     RallarRoomFormationStatus,
     RallarRoomFormationWaitResult,
     RallarRoomFormationWaitStatus,
-    RallarRoomLayout,
     RallarRoomLayoutWaitOptions,
     RallarRoomLayoutWaitResult
 } from './rallar-room-formation-contracts.ts';
 import {
     readRoomFormationStatus,
     subscribeRoomFormation,
+    subscribeRoomSnapshot,
     type ReadRoomFormationStatusInput
 } from './room-formation-observation.ts';
 
@@ -27,94 +27,107 @@ export interface WaitForRoomFormationInput extends ReadRoomFormationStatusInput 
 
 export interface WaitForRoomStageInput extends WaitForRoomFormationInput {
     readonly stages: readonly GroupLifecycleState[];
-    readonly options: RallarScopedOperationOptions;
+    readonly options: RallarOperationOptions;
 }
 
 export interface WaitForRoomConditionInput extends WaitForRoomFormationInput {
     readonly conditions: readonly GroupActivationCondition[];
-    readonly options: RallarScopedOperationOptions;
+    readonly options: RallarOperationOptions;
 }
 
 export interface WaitForRoomLayoutInput extends WaitForRoomFormationInput {
     readonly options: RallarRoomLayoutWaitOptions;
 }
 
-interface WaitForRoomFormationStatusInput extends WaitForRoomFormationInput {
-    readonly options: RallarScopedOperationOptions;
-    readonly isReached: (formation: RallarRoomFormationStatus) => boolean;
+interface WaitForRoomFormationResultInput<TResult extends RallarRoomFormationWaitResult>
+    extends WaitForRoomFormationInput {
+    readonly options: RallarOperationOptions;
+    readonly subscribe: (
+        input: ReadRoomFormationStatusInput,
+        listener: () => void | Promise<void>
+    ) => RallarUnsubscribe;
+    readonly toResult: (formation: RallarRoomFormationStatus | undefined) => TResult;
 }
 
 export async function waitForRoomStage(input: WaitForRoomStageInput): Promise<RallarRoomFormationWaitResult> {
-    return await waitForRoomFormationStatus({
+    return await waitForRoomFormationResult({
         ...input,
-        isReached: (formation) => input.stages.includes(formation.stage)
+        subscribe: subscribeRoomSnapshot,
+        toResult: (formation) =>
+            toRoomFormationWaitResult(
+                input.roomRef,
+                formation,
+                formation !== undefined && input.stages.includes(formation.stage)
+            )
     });
 }
 
 export async function waitForRoomCondition(
     input: WaitForRoomConditionInput
 ): Promise<RallarRoomFormationWaitResult> {
-    return await waitForRoomFormationStatus({
+    return await waitForRoomFormationResult({
         ...input,
-        isReached: (formation) => formation.condition !== undefined && input.conditions.includes(formation.condition)
+        subscribe: subscribeRoomSnapshot,
+        toResult: (formation) =>
+            toRoomFormationWaitResult(
+                input.roomRef,
+                formation,
+                formation?.condition !== undefined && input.conditions.includes(formation.condition)
+            )
     });
-}
-
-async function waitForRoomFormationStatus(
-    input: WaitForRoomFormationStatusInput
-): Promise<RallarRoomFormationWaitResult> {
-    const operationOptions = input.resolveOperationOptions(input.options);
-    const readResult = (override?: RallarRoomFormationWaitStatus): RallarRoomFormationWaitResult => {
-        const formation = readRoomFormationStatus(input);
-        const status = formation === undefined ? 'not-found' : input.isReached(formation) ? 'ready' : 'timeout';
-        return { status: override ?? status, roomRef: input.roomRef, formation };
-    };
-    return await waitForRoomChange({
-        readResult: () => readResult(),
-        isSettled: (result) => result.status === 'ready' || result.status === 'not-found',
-        subscribe: (listener) => subscribeRoomFormation(input, listener),
-        signal: operationOptions.signal,
-        timeoutMs: normalizeWaitTimeoutMs(input.options.timeoutMs),
-        toTimedOut: () => readResult('timeout'),
-        toAborted: () => readResult('aborted')
-    });
-}
-
-/**
- * A fenced wait accepts only a layout published at or after the fence;
- * `incomparable` is refused rather than folded into either answer (product
- * decision 29).
- */
-export function isRoomLayoutAtOrAfter(
-    layout: RallarRoomLayout,
-    after: GroupStateCausalRevision | undefined
-): boolean {
-    if (after === undefined) {
-        return true;
-    }
-    const order = compareGroupCausalRevision(layout.overlay.sourceGroupStateCausalRevision, after);
-    return order === 'equal' || order === 'dominates';
 }
 
 export async function waitForRoomLayout(input: WaitForRoomLayoutInput): Promise<RallarRoomLayoutWaitResult> {
-    const operationOptions = input.resolveOperationOptions(input.options);
     const role = input.options.role ?? 'planned';
-    const readResult = (override?: RallarRoomFormationWaitStatus): RallarRoomLayoutWaitResult => {
+    const fence = input.options.after;
+    return await waitForRoomFormationResult({
+        ...input,
+        subscribe: subscribeRoomFormation,
+        toResult: (formation) => {
+            const candidate = formation?.[role];
+            const layout = candidate !== undefined &&
+                    (fence === undefined ||
+                        isGroupCausalRevisionAtOrAfter(candidate.overlay.sourceGroupStateCausalRevision, fence))
+                ? candidate
+                : undefined;
+            return { ...toRoomFormationWaitResult(input.roomRef, formation, layout !== undefined), layout };
+        }
+    });
+}
+
+function toRoomFormationWaitResult(
+    roomRef: GroupRef,
+    formation: RallarRoomFormationStatus | undefined,
+    reached: boolean
+): RallarRoomFormationWaitResult {
+    return { status: reached ? 'ready' : 'timeout', roomRef, formation };
+}
+
+/**
+ * `ready` and `not-found` settle. A missing snapshot is `not-found` only for a
+ * room this browser never held; an expired one keeps the wait going, and a
+ * deadline or abort that finds a settled read reports that read.
+ */
+async function waitForRoomFormationResult<TResult extends RallarRoomFormationWaitResult>(
+    input: WaitForRoomFormationResultInput<TResult>
+): Promise<TResult> {
+    const operationOptions = input.resolveOperationOptions(input.options);
+    const readResult = (): TResult => {
         const formation = readRoomFormationStatus(input);
-        const candidate = formation?.[role];
-        const layout = candidate !== undefined && isRoomLayoutAtOrAfter(candidate, input.options.after)
-            ? candidate
-            : undefined;
-        const status = formation === undefined ? 'not-found' : layout === undefined ? 'timeout' : 'ready';
-        return { status: override ?? status, roomRef: input.roomRef, layout, formation };
+        const result = input.toResult(formation);
+        if (formation !== undefined || input.stateStore.wasGroupSnapshotObserved(input.roomRef)) {
+            return result;
+        }
+        return { ...result, status: 'not-found' };
     };
-    return await waitForRoomChange({
-        readResult: () => readResult(),
+    const withStatus = (status: RallarRoomFormationWaitStatus): TResult => ({ ...readResult(), status });
+    return await waitForSettledRead({
+        readResult,
         isSettled: (result) => result.status === 'ready' || result.status === 'not-found',
-        subscribe: (listener) => subscribeRoomFormation(input, listener),
+        subscribe: (listener) => input.subscribe(input, listener),
         signal: operationOptions.signal,
         timeoutMs: normalizeWaitTimeoutMs(input.options.timeoutMs),
-        toTimedOut: () => readResult('timeout'),
-        toAborted: () => readResult('aborted')
+        toTimedOut: () => withStatus('timeout'),
+        toAborted: () => withStatus('aborted')
     });
 }

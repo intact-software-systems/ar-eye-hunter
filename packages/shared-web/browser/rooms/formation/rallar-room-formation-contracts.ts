@@ -1,4 +1,5 @@
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type {
     RallarOnChangeOptions,
     RallarStateListener,
@@ -45,6 +46,32 @@ export interface RallarRoomFormationStatus {
     readonly snapshot: GroupSnapshot;
 }
 
+export type RallarRoomFormationWaitStatus = 'ready' | 'timeout' | 'aborted' | 'not-found';
+
+export interface RallarRoomFormationWaitResult {
+    readonly status: RallarRoomFormationWaitStatus;
+    readonly roomRef: GroupRef;
+    readonly formation: RallarRoomFormationStatus | undefined;
+}
+
+export interface RallarRoomLayoutWaitOptions extends RallarOperationOptions {
+    /** The slot to wait on; the planned slot when omitted. */
+    readonly role?: RallarRoomLayoutRole;
+    /** Accept only a layout published at or after this revision; any layout when omitted. */
+    readonly after?: GroupStateCausalRevision;
+}
+
+export interface RallarRoomLayoutWaitResult extends RallarRoomFormationWaitResult {
+    readonly layout: RallarRoomLayout | undefined;
+}
+
+export type RallarRoomLayoutEvent =
+    | Readonly<{ kind: 'layoutPlanned'; roomRef: GroupRef; layout: RallarRoomLayout; }>
+    | Readonly<{ kind: 'layoutAccepted'; roomRef: GroupRef; layout: RallarRoomLayout; }>
+    | Readonly<{ kind: 'layoutRemoved'; roomRef: GroupRef; role: RallarRoomLayoutRole; previous: RallarRoomLayout; }>;
+
+export type RallarRoomLayoutListener = RallarStateListener<RallarRoomLayoutEvent>;
+
 export interface RallarRoomFormationCommandOptions extends RallarScopedOperationOptions {
     readonly reason?: string;
 }
@@ -58,40 +85,6 @@ export interface RallarRoomReconfigureOptions extends RallarRoomFormationCommand
     /** Overrides the stored policy's `reconfigureLanding` for this call. */
     readonly landing?: GroupTopologyReconfigureLanding;
 }
-
-export type RallarRoomFormationWaitStatus = 'ready' | 'timeout' | 'aborted' | 'not-found';
-
-export interface RallarRoomFormationWaitResult {
-    readonly status: RallarRoomFormationWaitStatus;
-    readonly roomRef: GroupRef;
-    readonly formation: RallarRoomFormationStatus | undefined;
-}
-
-export interface RallarRoomLayoutWaitOptions extends RallarScopedOperationOptions {
-    /** The slot to wait on; the planned slot when omitted. */
-    readonly role?: RallarRoomLayoutRole;
-    /** Accept only a layout published at or after this revision; any layout when omitted. */
-    readonly after?: GroupStateCausalRevision;
-}
-
-export interface RallarRoomLayoutWaitResult {
-    readonly status: RallarRoomFormationWaitStatus;
-    readonly roomRef: GroupRef;
-    readonly layout: RallarRoomLayout | undefined;
-    readonly formation: RallarRoomFormationStatus | undefined;
-}
-
-export type RallarRoomLayoutEvent =
-    | Readonly<{ kind: 'layoutPlanned'; roomRef: GroupRef; layout: RallarRoomLayout; }>
-    | Readonly<{ kind: 'layoutAccepted'; roomRef: GroupRef; layout: RallarRoomLayout; }>
-    | Readonly<{
-        kind: 'layoutRemoved';
-        roomRef: GroupRef;
-        role: RallarRoomLayoutRole;
-        previous: RallarRoomLayout | undefined;
-    }>;
-
-export type RallarRoomLayoutListener = (event: RallarRoomLayoutEvent) => void | Promise<void>;
 
 export interface RallarRoomFormation {
     readonly roomRef: GroupRef;
@@ -107,11 +100,11 @@ export interface RallarRoomFormation {
     start(options?: RallarRoomFormationCommandOptions): Promise<GroupSnapshot>;
     waitForStage(
         stage: GroupLifecycleState | readonly GroupLifecycleState[],
-        options?: RallarScopedOperationOptions
+        options?: RallarOperationOptions
     ): Promise<RallarRoomFormationWaitResult>;
     waitForCondition(
         condition: GroupActivationCondition | readonly GroupActivationCondition[],
-        options?: RallarScopedOperationOptions
+        options?: RallarOperationOptions
     ): Promise<RallarRoomFormationWaitResult>;
     waitForLayout(options?: RallarRoomLayoutWaitOptions): Promise<RallarRoomLayoutWaitResult>;
     onChange(

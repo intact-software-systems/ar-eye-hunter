@@ -63,6 +63,15 @@ vi.mock('@shared/repository/group-state-snapshots-repository.ts', () => ({
     getAllGroupStateSnapshots: () => {
         requireConfiguredRepositories();
         return [...stateMocks.groups];
+    },
+    wasGroupStateSnapshotObservedByRef: (roomRef: GroupRef) => {
+        requireConfiguredRepositories();
+        return stateMocks.groups.some(
+            (snapshot) =>
+                snapshot.group.applicationId === roomRef.applicationId &&
+                snapshot.group.workspaceId === roomRef.workspaceId &&
+                snapshot.group.groupId === roomRef.groupId
+        );
     }
 }));
 

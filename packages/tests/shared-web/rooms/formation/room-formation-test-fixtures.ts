@@ -37,13 +37,14 @@ export interface LayoutOverlayFixtureInput {
     readonly causalRevision: GroupStateCausalRevision;
     readonly version: number;
     readonly state?: OverlayInfo['state'];
+    readonly provenance?: OverlayInfo['provenance'];
     readonly peerIds?: readonly string[];
 }
 
 export function createLayoutOverlay(input: LayoutOverlayFixtureInput): OverlayInfo {
     return {
         sourceGroupStateCausalRevision: input.causalRevision,
-        provenance: 'server',
+        provenance: input.provenance ?? 'server',
         state: input.state ?? 'active',
         overlayId: toScopedOverlayId(input.roomRef),
         groupRef: input.roomRef,

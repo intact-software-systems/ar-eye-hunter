@@ -1,4 +1,5 @@
 import { normalizeWaitTimeoutMs } from '@shared-web/browser/connection/normalize-wait-timeout-ms.ts';
+import { waitForSettledRead } from '@shared-web/browser/connection/wait-for-settled-read.ts';
 import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import {
@@ -12,7 +13,6 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { RallarRoomPresenceWaitOptions, RallarRoomPresenceWaitResult } from './rallar-room-contracts.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
-import { waitForRoomChange } from './wait-for-room-change.ts';
 
 export interface WaitForRoomPresenceInput {
     readonly room: string | GroupRef;
@@ -55,7 +55,7 @@ export async function waitForRoomPresence(
         roomRef,
         expectation
     });
-    return await waitForRoomChange({
+    return await waitForSettledRead({
         readResult: () => readResult(),
         isSettled: isTerminalReadinessWaitResult,
         subscribe: input.onCacheChange,
@@ -72,9 +72,13 @@ function createRoomPresenceResultReader(
     return (statusOverride?: RallarReadinessStatus): RallarRoomPresenceWaitResult => {
         const snapshot = input.stateStore.findGroupSnapshot(input.roomRef ?? input.room);
         if (!snapshot || !isGroupActive(snapshot)) {
+            // An inactive room is gone for presence; an expired snapshot is not,
+            // so only a room this browser never held settles as not-found.
+            const absent = snapshot !== undefined ||
+                !input.stateStore.wasGroupSnapshotObserved(input.roomRef ?? input.room);
             return {
                 ...evaluateRallarReadinessExpectation([], input.expectation),
-                status: statusOverride ?? 'not-found',
+                status: statusOverride ?? (absent ? 'not-found' : 'timeout'),
                 roomId: input.roomId,
                 roomRef: input.roomRef,
                 activeSessionIds: [],
