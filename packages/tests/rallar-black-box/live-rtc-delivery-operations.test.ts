@@ -94,8 +94,8 @@ describe('live RTC delivery owner', () => {
             groupId: 'room/c',
             suffix: 'again'
         });
-        expect(formation.sessions).toEqual({ A: 'session-A', B: 'session-B', C: 'session-C' });
-        expect(reconnect.sessionId).toBe('session-C');
+        expect(formation.sessions).toEqual({ A: 'session-A-1', B: 'session-B-1', C: 'session-C-1' });
+        expect(reconnect.sessionId).toBe('session-C-2');
         await operations.sendMatrixPayload({
             control: recording,
             runId: 'run',
@@ -110,7 +110,7 @@ describe('live RTC delivery owner', () => {
         expect(recording.commands.at(-1)?.command).toMatchObject({
             kind: 'rtc.send',
             roomRef: { applicationId: 'app/a', workspaceId: 'work b', groupId: 'room/c' },
-            send: { nextHopPeerIds: ['session-C'], payload: { matrixId: 'reconnect-result' } }
+            send: { nextHopPeerIds: ['session-C-2'], payload: { matrixId: 'reconnect-result' } }
         });
         const beforeC = recording.milestones.slice(0, recording.milestones.indexOf('connect:C'));
         expect(beforeC).toEqual(expect.arrayContaining(['connect-layout:2', 'ready:A', 'ready:B', 'activate:2']));
@@ -144,7 +144,7 @@ describe('live RTC delivery owner', () => {
     });
 
     it('waits concurrently for both survivors and the replacement session before returning reconnect readiness', async () => {
-        const recording = RecordingLiveRtcControl.withReplacementSessions();
+        const recording = new RecordingLiveRtcControl();
         const operations = createLiveRtcDeliveryOperations(config);
         const formation = await operations.runGroupFormation({
             control: recording,
@@ -182,6 +182,12 @@ describe('live RTC delivery owner', () => {
         ]);
         recording.completeNextReadiness('A', 30);
         recording.completeNextReadiness('B', 40);
+        let reconnectResolved = false;
+        void reconnectPromise.then(() => {
+            reconnectResolved = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(reconnectResolved).toBe(false);
         recording.completeNextReadiness('C', 50);
 
         await expect(reconnectPromise).resolves.toEqual({
@@ -205,7 +211,7 @@ describe('live RTC delivery owner', () => {
             suffix: 'second-transport',
             readinessScope: 'all'
         });
-        expect(formation.sessions).toEqual({ A: 'session-A', B: 'session-B', C: 'session-C' });
+        expect(formation.sessions).toEqual({ A: 'session-A-1', B: 'session-B-1', C: 'session-C-1' });
         const pair = recording.milestones.slice(0, recording.milestones.indexOf('connect:C'));
         expect(pair.indexOf('reconfigure')).toBeGreaterThan(pair.indexOf('presence:2'));
         expect(pair.indexOf('planned')).toBeGreaterThan(pair.indexOf('reconfigure'));
@@ -284,7 +290,7 @@ describe('live RTC delivery owner', () => {
             groupId: 'room',
             suffix: 'post-activation',
             deliveryMode: 'multicast',
-            targetSessionIds: ['session-B', 'session-C'],
+            targetSessionIds: ['session-B-1', 'session-C-1'],
             matrixId: 'post-activation-delivery'
         });
         expect(recording.milestones.indexOf('send')).toBeGreaterThan(
@@ -376,7 +382,6 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
     private formationEpoch = 0;
     private groupRevision = 0;
     private deferReadiness: boolean;
-    private replacementSessions = false;
     private readonly connectionCountByAgentId = new Map<string, number>();
     private readonly sessionIdByAgentId = new Map<string, string>();
     private readonly pendingReadiness = new Map<LiveRtcControlClient.FormationAgent['prefix'], Array<(durationMs: number) => void>>();
@@ -403,12 +408,6 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
 
     static withDeferredReadiness(): RecordingLiveRtcControl {
         return new RecordingLiveRtcControl({ lifecycleState: 'forming', acceptedSessions: [] }, true);
-    }
-
-    static withReplacementSessions(): RecordingLiveRtcControl {
-        const recording = new RecordingLiveRtcControl();
-        recording.replacementSessions = true;
-        return recording;
     }
 
     deferReadinessObservations(): void {
@@ -445,6 +444,7 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
         this.commands.push(input);
         const command = input.command;
         const body = this.recordCommand(input, command);
+        const sessionId = this.sessionIdByAgentId.get(input.agentId);
         return {
             agentId: input.agentId,
             commandId: input.commandId,
@@ -452,8 +452,12 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
             result: {
                 value: {
                     body,
-                    sessionId: this.sessionIdByAgentId.get(input.agentId) ?? `session-${input.agentId}`,
-                    message: { message: { id: { msgId: 'attempted-message', senderId: `session-${input.agentId}` } } }
+                    ...(sessionId
+                        ? {
+                            sessionId,
+                            message: { message: { id: { msgId: 'attempted-message', senderId: sessionId } } }
+                        }
+                        : {})
                 }
             }
         };
@@ -464,22 +468,7 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
         command: LiveRtcControlClient.ExecuteInput['command']
     ): ReturnType<LiveRtcControlPort['resultValue']> {
         if (command.kind === 'rtc.connect') {
-            if (input.agentId === 'C' && this.lifecycleState !== 'active') {
-                throw new Error('Third agent connected before pair activation');
-            }
-            const connectionCount = (this.connectionCountByAgentId.get(input.agentId) ?? 0) + 1;
-            this.connectionCountByAgentId.set(input.agentId, connectionCount);
-            this.sessionIdByAgentId.set(
-                input.agentId,
-                this.replacementSessions
-                    ? `session-${input.agentId}-${connectionCount}`
-                    : `session-${input.agentId}`
-            );
-            this.connected.add(input.agentId);
-            if (this.lifecycleState === 'active' && connectionCount > 1) {
-                this.acceptedSessions = [...this.connected].map((id) => this.requireConnectedSessionId(id));
-            }
-            this.milestones.push(`connect:${input.agentId}`);
+            this.recordConnection(input.agentId);
         }
         else if (command.kind === 'rtc.send') {
             this.milestones.push('send');
@@ -488,11 +477,36 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
             this.milestones.push(`${command.kind}:${input.agentId}`);
             this.connected.delete(input.agentId);
         }
-        else if (input.commandId.startsWith('group-presence')) {
+        else {
+            return this.recordHttpCommand(input, command);
+        }
+        return {};
+    }
+
+    private recordConnection(agentId: string): void {
+        if (agentId === 'C' && this.lifecycleState !== 'active') {
+            throw new Error('Third agent connected before pair activation');
+        }
+        const connectionCount = (this.connectionCountByAgentId.get(agentId) ?? 0) + 1;
+        this.connectionCountByAgentId.set(agentId, connectionCount);
+        this.sessionIdByAgentId.set(agentId, `session-${agentId}-${connectionCount}`);
+        this.connected.add(agentId);
+        if (this.lifecycleState === 'active' && connectionCount > 1) {
+            this.acceptedSessions = [...this.connected].map((id) => this.requireConnectedSessionId(id));
+        }
+        this.milestones.push(`connect:${agentId}`);
+    }
+
+    private recordHttpCommand(
+        input: LiveRtcControlClient.ExecuteInput,
+        command: LiveRtcControlClient.ExecuteInput['command']
+    ): ReturnType<LiveRtcControlPort['resultValue']> {
+        const request = 'request' in command ? command.request : undefined;
+        if (input.commandId.startsWith('group-presence')) {
             this.milestones.push(`presence:${this.connected.size}`);
             return { causalRevision: { presenceRevision: this.connected.size } };
         }
-        else if (('request' in command ? command.request?.path : undefined)?.endsWith('/topology')) {
+        if (request?.path?.endsWith('/topology')) {
             this.milestones.push('planned');
             return {
                 snapshot: {
@@ -506,13 +520,19 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
                 }
             };
         }
-        else if (('request' in command ? command.request?.method : undefined) === 'GET') {
+        if (request?.method === 'GET') {
             return { group: { lifecycleState: this.lifecycleState } };
         }
-        else if (('request' in command ? command.request?.path : undefined)?.includes('/topology/config/')) {
+        return this.recordLifecycleRequest(request?.path);
+    }
+
+    private recordLifecycleRequest(
+        requestPath: string | undefined
+    ): ReturnType<LiveRtcControlPort['resultValue']> {
+        if (requestPath?.includes('/topology/config/')) {
             this.milestones.push('mesh');
         }
-        else if (('request' in command ? command.request?.path : undefined)?.includes('/lifecycle/plan/')) {
+        else if (requestPath?.includes('/lifecycle/plan/')) {
             this.formationEpoch++;
             this.groupRevision++;
             this.lifecycleState = 'connecting';
@@ -522,7 +542,7 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
                 causalRevision: { groupRevision: this.groupRevision }
             };
         }
-        else if (('request' in command ? command.request?.path : undefined)?.includes('/lifecycle/reconfigure/')) {
+        else if (requestPath?.includes('/lifecycle/reconfigure/')) {
             this.formationEpoch++;
             this.groupRevision++;
             this.lifecycleState = 'reconfiguring';
@@ -532,11 +552,11 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
                 causalRevision: { groupRevision: this.groupRevision }
             };
         }
-        else if (('request' in command ? command.request?.path : undefined)?.includes('/lifecycle/connect/')) {
+        else if (requestPath?.includes('/lifecycle/connect/')) {
             this.acceptedSessions = [...this.connected].map((id) => this.requireConnectedSessionId(id));
             this.milestones.push(`connect-layout:${this.connected.size}`);
         }
-        else if (('request' in command ? command.request?.path : undefined)?.includes('/lifecycle/activate/')) {
+        else if (requestPath?.includes('/lifecycle/activate/')) {
             this.lifecycleState = 'active';
             this.acceptedSessions = [...this.connected].map((id) => this.requireConnectedSessionId(id));
             this.milestones.push(`activate:${this.connected.size}`);
@@ -561,7 +581,7 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
         await input.agent.refreshRoom({ timeoutMs: 60_000 });
         const dialableSessions = this.acceptedSessions.length > 0
             ? this.acceptedSessions
-            : [...this.connected].map((id) => `session-${id}`);
+            : [...this.connected].map((id) => this.requireConnectedSessionId(id));
         if (input.expectedPeerIds.some((id) => !dialableSessions.includes(id))) {
             throw new Error('Readiness requested for a peer absent from the dialable layout');
         }
