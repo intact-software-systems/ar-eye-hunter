@@ -188,6 +188,51 @@ moved or changed test.
       }
     },
     {
+      "id": "shared-web-room-formation-stale-epoch-refusal-read-through",
+      "domain": "Shared-web room formation connect read-through",
+      "owner": "Shared Web maintainers",
+      "summary": "A connect the server refuses as group-connect-stale-epoch reads the group point snapshot and then the topology view after its one lifecycle POST and keeps the planned slot, so the caller's retry names the refreshed epoch. Executable assertion: \u201creads the room through on a stale-epoch refusal instead of forgetting the planned layout\u201d.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#reads the room through on a stale-epoch refusal instead of forgetting the planned layout",
+      "coverageRelation": "The handle test seeds a coherent snapshot and planned slot, answers the connect POST with the stale-epoch conflict, and observes the ordered HTTP calls of the lifecycle port and the room refresh the handle owns; the refreshed epoch and the kept slot are what the caller's retry names.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "Room refresh read-through port",
+        "observableEffect": "Exactly one connect POST, then the group point read, then the topology read; the planned slot survives and the cached epoch is the one just read.",
+        "requiredConstraint": "A stale-epoch refusal is answered by one read-through of the room, never by forgetting a planned layout the server still holds and never by a second POST under the same request id.",
+        "failureRationale": "Forgetting the current plan strands a caller waiting for a publication that never comes, and re-posting the cached epoch earns the same 409; the read-through is the one repair that lets the documented retry succeed."
+      }
+    },
+    {
+      "id": "shared-web-room-formation-named-layout-lagging-snapshot-order",
+      "domain": "Shared-web room formation connect read-through",
+      "owner": "Shared Web maintainers",
+      "summary": "A connect that names its layout while the planned slot was published past the cached snapshot reads the group point snapshot and then the topology view before its one lifecycle POST names the refreshed epoch with the named layout. Executable assertion: \u201creads the room through before posting a named layout when the cached snapshot lags the planned layout\u201d.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#reads the room through before posting a named layout when the cached snapshot lags the planned layout",
+      "coverageRelation": "The handle test seeds a snapshot behind the planned slot's causal revision, executes connect with an explicit layout through the facade, and observes the ordered HTTP calls of the room refresh and the lifecycle port the handle owns; the fence in the POST body is the refreshed epoch beside the named identity.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "Room refresh read-through port",
+        "observableEffect": "The group point read precedes the topology read, and exactly one connect POST follows carrying the refreshed epoch with the named layout.",
+        "requiredConstraint": "Naming a layout does not skip the coherence check: a snapshot behind the planned slot is read through before any epoch read from it is posted, and the single POST names what the read-through returned.",
+        "failureRationale": "Posting the cached epoch beside a named layout earns the stale-epoch 409 the read-through exists to avoid, and a second POST would race the fence against itself."
+      }
+    },
+    {
+      "id": "shared-web-room-formation-foreign-refusal-count",
+      "domain": "Shared-web room formation connect",
+      "owner": "Shared Web maintainers",
+      "summary": "A connect the server refuses with a code outside the connect conflicts spends its one request and triggers no repair: no read-through, no forgotten layout, no retry. Executable assertion: \u201ckeeps the planned layout when the server refuses a connect for another reason\u201d.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#keeps the planned layout when the server refuses a connect for another reason",
+      "coverageRelation": "The handle test seeds a snapshot and planned slot, answers the connect POST with the shared group-mutation-rejected code, and observes the single call on the HTTP port the handle owns beside the untouched planned slot.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Room formation HTTP command port",
+        "observableEffect": "Exactly one POST and no read-through; the planned slot survives.",
+        "requiredConstraint": "Only the connect conflict codes drive the facade's repairs; any other refusal reaches the caller untouched after its one request.",
+        "failureRationale": "A read-through or a forgotten slot on an unrelated refusal would hide the server's answer behind cache churn the caller never asked for, and a retry would spend a second request id on the same refusal."
+      }
+    },
+    {
       "id": "workbench-collection-served-paths",
       "domain": "Rallar server workbench collection addressing",
       "owner": "Shared Test maintainers",
@@ -1556,6 +1601,50 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-104d778272a91197",
+      "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-room-formation-stale-epoch-refusal-read-through",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The ordered call list proves the stale-epoch refusal is followed by the point read and the topology read, with no second POST.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#reads the room through on a stale-epoch refusal instead of forgetting the planned layout"
+    },
+    {
+      "id": "test-structure-coupling-b9fa0627d8b82a1c",
+      "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-room-formation-named-layout-lagging-snapshot-order",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The ordered call list proves the point read and the topology read precede the one connect POST when the caller names a layout against a lagging snapshot.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#reads the room through before posting a named layout when the cached snapshot lags the planned layout"
+    },
+    {
+      "id": "test-structure-coupling-b1c7d7e63dfffee2",
+      "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-room-formation-named-layout-lagging-snapshot-order",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The third-call body assertion proves the single POST carries the refreshed epoch beside the named layout.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#reads the room through before posting a named layout when the cached snapshot lags the planned layout"
+    },
+    {
+      "id": "test-structure-coupling-65bde97bdf539de6",
+      "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-room-formation-foreign-refusal-count",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The call-count assertion proves an unrelated refusal spends exactly one request and starts no read-through.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#keeps the planned layout when the server refuses a connect for another reason"
+    },
     {
       "id": "test-structure-coupling-1c06d83399d28d75",
       "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
