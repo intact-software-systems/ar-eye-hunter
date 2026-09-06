@@ -2375,6 +2375,29 @@
         ]
       },
       "description": "No-browser API-v1 group-state delta contents: the corpus proves delta frames arrive and never reads what is in them. removedSessionIds is the one reachable removal set, populated only by the self-disconnect route, and the disconnecting session never sees its own removal, so a second peer observes it. removedMemberPrincipalIds is a hard-coded empty literal no mutation can populate. Removing a member who holds live presence drops the session from activeSessionIds while naming nothing in either removal set. Each delta binds to its own mutation by event.requestId through expect.decodeJsonPaths."
+    },
+    {
+      "id": "api-v1-overlay-topology-publication",
+      "recipe": "tests/api-v1/api-v1-overlay-topology-publication.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-overlay-topology-publication",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 overlay topology publication: nothing in the corpus reads an overlay frame body. A published overlay.topology broadcast is compared field for field against the authoritative HTTP topology read at the same version; the row is written in the transaction that publishes, so the equality is a real invariant. The frame is selected by its own degreeLimit through expect.decodeJsonPaths, which separates it from the unicast hydration frame every socket receives on connect, and both members must receive the same body rather than a body each."
     }
   ]
 }
