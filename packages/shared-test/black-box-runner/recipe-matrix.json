@@ -2214,6 +2214,29 @@
         ]
       },
       "description": "No-browser API-v1 invite revocation and expiry: six recipes drive the invite routes and none asserts a single invite denial. A stranger, a revoked invitee on the accept route and that same invitee on the join route all reach the single not-invited branch, so group-invite-required is observed from three different member states rather than one; only the expired invitee carries its own code and message. A live invite still admits, so the denials are not a route that refuses everyone."
+    },
+    {
+      "id": "api-v1-group-director-appoint",
+      "recipe": "tests/api-v1/api-v1-group-director-appoint.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-director-appoint",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 browser-director appointment: a route no recipe calls, whose every eligibility branch was unobserved. A non-member, a member without an active room session, a plain member while an owner is online, and a second member against an active fallback director are each refused with the reason named; an owner and, once no owner is online, a plain member are each allowed. The accepted appointment patches only the rallarDirector metadata entry, leaving the group's own metadata untouched."
     }
   ]
 }

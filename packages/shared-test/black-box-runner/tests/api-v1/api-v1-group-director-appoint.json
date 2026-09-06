@@ -1,0 +1,664 @@
+{
+  "description": "No-browser API-v1 browser-director appointment: the route no recipe calls. Every eligibility branch is observed -- a non-member, a member without an active room session, a plain member while an owner is online, and a second member against an active fallback director are each refused; an owner and, once no owner is online, a plain member are each allowed. The accepted appointment patches only the rallarDirector metadata entry.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_DIRAPT_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-dirapt"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_DIRAPT_WORKSPACE_ID",
+      "default": "workspace-dirapt-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_DIRAPT_GROUP_ID",
+      "default": "dirapt-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_DIRAPT_PASSWORD",
+      "default": "api-v1-dirapt-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/dirapt-register-owner-{runId}",
+        "body": {
+          "username": "dirapt-owner-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "owner client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/dirapt-login-owner-{runId}",
+        "body": {
+          "username": "dirapt-owner-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "ownerClientId": "body.clientId",
+          "ownerSessionId": "body.sessionId",
+          "ownerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOwnerAuthHeader",
+      "type": "set",
+      "output": "ownerAuthHeader",
+      "secret": true,
+      "redactAs": "ownerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.ownerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerMemberA",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/dirapt-register-membera-{runId}",
+        "body": {
+          "username": "dirapt-membera-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "membera client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginMemberA",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/dirapt-login-membera-{runId}",
+        "body": {
+          "username": "dirapt-membera-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "memberaClientId": "body.clientId",
+          "memberaSessionId": "body.sessionId",
+          "memberaAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveMemberAAuthHeader",
+      "type": "set",
+      "output": "memberaAuthHeader",
+      "secret": true,
+      "redactAs": "memberaAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.memberaAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerMemberB",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/dirapt-register-memberb-{runId}",
+        "body": {
+          "username": "dirapt-memberb-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "memberb client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginMemberB",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/dirapt-login-memberb-{runId}",
+        "body": {
+          "username": "dirapt-memberb-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "memberbClientId": "body.clientId",
+          "memberbSessionId": "body.sessionId",
+          "memberbAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveMemberBAuthHeader",
+      "type": "set",
+      "output": "memberbAuthHeader",
+      "secret": true,
+      "redactAs": "memberbAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.memberbAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerOutsider",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/dirapt-register-outsider-{runId}",
+        "body": {
+          "username": "dirapt-outsider-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "outsider client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOutsider",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/dirapt-login-outsider-{runId}",
+        "body": {
+          "username": "dirapt-outsider-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "outsiderClientId": "body.clientId",
+          "outsiderSessionId": "body.sessionId",
+          "outsiderAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOutsiderAuthHeader",
+      "type": "set",
+      "output": "outsiderAuthHeader",
+      "secret": true,
+      "redactAs": "outsiderAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.outsiderAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createGroupWithItsOwnMetadata",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/dirapt-create-group-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Director appointment group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{ownerClientId}",
+          "metadata": {
+            "recipeMarker": "director-containment-{runId}"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "metadata": {
+              "recipeMarker": "director-containment-{runId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "memberAJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{memberaClientId}/requests/dirapt-membera-joins-{runId}",
+        "headers": {
+          "Authorization": "{memberaAuthHeader}",
+          "x-client-id": "{memberaClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{memberaClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "memberBJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{memberbClientId}/requests/dirapt-memberb-joins-{runId}",
+        "headers": {
+          "Authorization": "{memberbAuthHeader}",
+          "x-client-id": "{memberbClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{memberbClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "anOutsiderCannotAppointBecauseItIsNotAMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/director/appoint/requests/dirapt-outsider-appoints-{runId}",
+        "headers": {
+          "Authorization": "{outsiderAuthHeader}",
+          "x-client-id": "{outsiderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-mutation-rejected",
+          "status": 400,
+          "message": "Forbidden: Cannot confirm local room membership yet."
+        }
+      }
+    },
+    {
+      "name": "aMemberWithoutAnActiveSessionCannotAppoint",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/director/appoint/requests/dirapt-membera-no-session-{runId}",
+        "headers": {
+          "Authorization": "{memberaAuthHeader}",
+          "x-client-id": "{memberaClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-mutation-rejected",
+          "status": 400,
+          "message": "Forbidden: Only active room members can appoint the browser director."
+        }
+      }
+    },
+    {
+      "name": "connectOwnerPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{ownerSessionId}/requests/dirapt-owner-connects-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "generationId": "dirapt-generation-{runId}",
+          "principalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectMemberAPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{memberaSessionId}/requests/dirapt-membera-connects-{runId}",
+        "headers": {
+          "Authorization": "{memberaAuthHeader}",
+          "x-client-id": "{memberaClientId}"
+        },
+        "body": {
+          "generationId": "dirapt-generation-{runId}",
+          "principalId": "{memberaClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "aPlainMemberCannotAppointWhileAnOwnerIsOnline",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/director/appoint/requests/dirapt-membera-blocked-{runId}",
+        "headers": {
+          "Authorization": "{memberaAuthHeader}",
+          "x-client-id": "{memberaClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-mutation-rejected",
+          "status": 400,
+          "message": "Forbidden: Only owners/admins can appoint while an owner/admin is online."
+        }
+      }
+    },
+    {
+      "name": "theOwnerAppointsItselfAndPatchesOnlyTheDirectorEntry",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/director/appoint/requests/dirapt-owner-appoints-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "metadata": {
+              "recipeMarker": "director-containment-{runId}",
+              "rallarDirector": {
+                "version": 1,
+                "mode": "appointed-spa",
+                "principalId": "{ownerClientId}",
+                "sessionId": "{ownerSessionId}",
+                "epoch": 1,
+                "appointedAtEpochMs": "integer",
+                "heartbeatTtlMs": "integer"
+              }
+            },
+            "metadataVersion": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "disconnectOwnerPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{ownerSessionId}/disconnect/requests/dirapt-owner-disconnects-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "generationId": "dirapt-generation-{runId}",
+          "principalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "aPlainMemberBecomesTheFallbackDirectorWhenNoOwnerIsOnline",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/director/appoint/requests/dirapt-membera-appoints-{runId}",
+        "headers": {
+          "Authorization": "{memberaAuthHeader}",
+          "x-client-id": "{memberaClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "metadata": {
+              "recipeMarker": "director-containment-{runId}",
+              "rallarDirector": {
+                "version": 1,
+                "mode": "appointed-spa",
+                "principalId": "{memberaClientId}",
+                "sessionId": "{memberaSessionId}",
+                "epoch": 2,
+                "appointedAtEpochMs": "integer",
+                "heartbeatTtlMs": "integer"
+              }
+            },
+            "metadataVersion": 3
+          }
+        }
+      }
+    },
+    {
+      "name": "connectMemberBPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{memberbSessionId}/requests/dirapt-memberb-connects-{runId}",
+        "headers": {
+          "Authorization": "{memberbAuthHeader}",
+          "x-client-id": "{memberbClientId}"
+        },
+        "body": {
+          "generationId": "dirapt-generation-{runId}",
+          "principalId": "{memberbClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "aSecondMemberCannotDisplaceAnActiveFallbackDirector",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/director/appoint/requests/dirapt-memberb-blocked-{runId}",
+        "headers": {
+          "Authorization": "{memberbAuthHeader}",
+          "x-client-id": "{memberbClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-mutation-rejected",
+          "status": 400,
+          "message": "Forbidden: Cannot appoint a fallback director while another director is active."
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}
