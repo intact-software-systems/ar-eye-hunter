@@ -283,12 +283,6 @@ async function connectGroupLifecycle(
         expectedFormationEpoch: stageReceipt.formationEpoch,
         expectedLayout: plannedLayout.identity
     });
-    await waitForFormationReadiness({
-        run: input.run,
-        sessions: input.sessions,
-        suffix: input.lifecycleSuffix,
-        startedAtMs: input.readinessStartedAtMs
-    });
     const activateCommandId = await activateGroup(config, {
         ...input.run,
         owner
@@ -673,10 +667,7 @@ async function waitForPresenceRevision(
 async function waitForFormationReadiness(
     input: WaitForFormationReadinessInput
 ): Promise<Readonly<Partial<Record<AgentPrefix, number>>>> {
-    const agents = input.run.readinessScope === 'owner'
-        ? [input.run.agents[0]]
-        : input.run.agents;
-    const durations = await Promise.all(agents.map(async (agent) => ({
+    const durations = await Promise.all(input.run.agents.map(async (agent) => ({
         prefix: agent.prefix,
         durationMs: await input.run.control.waitForPeerReadiness({
             runId: input.run.runId,
@@ -688,8 +679,11 @@ async function waitForFormationReadiness(
             startedAtMs: input.startedAtMs
         })
     })));
+    const measuredDurations = input.run.readinessScope === 'owner'
+        ? durations.slice(0, 1)
+        : durations;
     return Object.fromEntries(
-        durations.map(({ prefix, durationMs }) => [prefix, durationMs])
+        measuredDurations.map(({ prefix, durationMs }) => [prefix, durationMs])
     );
 }
 

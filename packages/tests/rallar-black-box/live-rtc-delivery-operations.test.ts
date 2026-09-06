@@ -118,10 +118,10 @@ describe('live RTC delivery owner', () => {
         expect(afterC.indexOf('reconfigure')).toBeGreaterThan(afterC.indexOf('presence:3'));
         expect(afterC.indexOf('planned')).toBeGreaterThan(afterC.indexOf('reconfigure'));
         expect(afterC.indexOf('connect-layout:3')).toBeGreaterThan(afterC.indexOf('planned'));
+        expect(afterC.indexOf('activate:3')).toBeGreaterThan(afterC.indexOf('connect-layout:3'));
         for (const prefix of ['A', 'B', 'C']) {
-            expect(afterC.indexOf(`refresh:${prefix}`)).toBeGreaterThan(afterC.indexOf('connect-layout:3'));
+            expect(afterC.indexOf(`refresh:${prefix}`)).toBeGreaterThan(afterC.indexOf('activate:3'));
             expect(afterC.indexOf(`ready:${prefix}`)).toBeGreaterThan(afterC.indexOf(`refresh:${prefix}`));
-            expect(afterC.indexOf('activate:3')).toBeGreaterThan(afterC.indexOf(`ready:${prefix}`));
             expect(afterC.indexOf('send')).toBeGreaterThan(afterC.indexOf(`ready:${prefix}`));
         }
         expect(recording.commands.filter(({ command }) => 'request' in command).map(({ command }) => command))
@@ -222,8 +222,9 @@ describe('live RTC delivery owner', () => {
         }
     });
 
-    it('revalidates every RTC route after each activation refresh before delivery', async () => {
-        const recording = RecordingLiveRtcControl.withDeferredReadiness();
+    it('hydrates every accepted route after activation while owner scope emits only owner readiness', async () => {
+        const recording = new RecordingLiveRtcControl();
+        recording.deferReadinessObservations();
         const operations = createLiveRtcDeliveryOperations(config);
         const formationPromise = operations.runGroupFormation({
             control: recording,
@@ -232,7 +233,7 @@ describe('live RTC delivery owner', () => {
             transport: 'messages.rtc',
             groupId: 'room',
             suffix: 'post-activation',
-            readinessScope: 'all'
+            readinessScope: 'owner'
         });
 
         await waitForPendingReadiness(recording, ['A', 'B']);
@@ -254,14 +255,7 @@ describe('live RTC delivery owner', () => {
         expect(recording.milestones).not.toContain('connect:C');
         recording.completeNextReadiness('B', 22);
 
-        await waitForPendingReadiness(recording, ['A', 'B', 'C']);
-        expect(recording.milestones).not.toContain('activate:3');
-        recording.completeNextReadiness('A', 31);
-        recording.completeNextReadiness('B', 32);
-        await Promise.resolve();
-        expect(recording.milestones).not.toContain('activate:3');
-        recording.completeNextReadiness('C', 33);
-
+        await vi.waitFor(() => expect(recording.milestones).toContain('activate:3'));
         await waitForPendingReadiness(recording, ['A', 'B', 'C']);
         const activationIndex = recording.milestones.lastIndexOf('activate:3');
         for (const prefix of ['A', 'B', 'C'] as const) {
@@ -269,19 +263,20 @@ describe('live RTC delivery owner', () => {
             expect(refreshIndex).toBeGreaterThan(activationIndex);
             expect(recording.milestones.lastIndexOf(`ready-start:${prefix}`)).toBeGreaterThan(refreshIndex);
         }
-        recording.completeNextReadiness('A', 41);
-        recording.completeNextReadiness('B', 42);
-        await Promise.resolve();
         let formationResolved = false;
         void formationPromise.then(() => {
             formationResolved = true;
         });
+        recording.completeNextReadiness('A', 41);
+        await Promise.resolve();
+        expect(formationResolved).toBe(false);
+        recording.completeNextReadiness('B', 42);
         await Promise.resolve();
         expect(formationResolved).toBe(false);
         recording.completeNextReadiness('C', 43);
         const formation = await formationPromise;
 
-        expect(formation.readinessDurations).toEqual({ A: 41, B: 42, C: 43 });
+        expect(formation.readinessDurations).toEqual({ A: 41 });
         await operations.sendMatrixPayload({
             control: recording,
             runId: 'run',
@@ -381,7 +376,7 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
     private acceptedSessions: readonly string[];
     private formationEpoch = 0;
     private groupRevision = 0;
-    private deferReadiness: boolean;
+    private deferReadiness = false;
     private readonly connectionCountByAgentId = new Map<string, number>();
     private readonly sessionIdByAgentId = new Map<string, string>();
     private readonly pendingReadiness = new Map<LiveRtcControlClient.FormationAgent['prefix'], Array<(durationMs: number) => void>>();
@@ -397,17 +392,9 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
         this.createAgent('B'),
         this.createAgent('C')
     ];
-    constructor(
-        initial: RecordingLiveRtcControl.InitialState = { lifecycleState: 'forming', acceptedSessions: [] },
-        deferReadiness = false
-    ) {
+    constructor(initial: RecordingLiveRtcControl.InitialState = { lifecycleState: 'forming', acceptedSessions: [] }) {
         this.lifecycleState = initial.lifecycleState;
         this.acceptedSessions = initial.acceptedSessions;
-        this.deferReadiness = deferReadiness;
-    }
-
-    static withDeferredReadiness(): RecordingLiveRtcControl {
-        return new RecordingLiveRtcControl({ lifecycleState: 'forming', acceptedSessions: [] }, true);
     }
 
     deferReadinessObservations(): void {
