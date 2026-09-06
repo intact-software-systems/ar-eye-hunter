@@ -236,6 +236,16 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.authentication.rateLimits.loginUsername = value
     },
     {
+        name: 'RALLAR_REGISTRATION_IP_RATE_LIMIT',
+        decode: decodeNumber,
+        apply: (source, value) => source.authentication.rateLimits.registrationIp = value
+    },
+    {
+        name: 'RALLAR_REGISTRATION_USER_RATE_LIMIT',
+        decode: decodeNumber,
+        apply: (source, value) => source.authentication.rateLimits.registrationUsername = value
+    },
+    {
         name: 'RALLAR_STATE_STRICT_READ_AUTH',
         decode: decodeBoolean,
         apply: (source, value) => source.stateApi.strictReadAuthorization = value
