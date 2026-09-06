@@ -216,14 +216,18 @@ describe('group lifecycle transition computation', () => {
 
     it.each(
         [
-            ['stale-epoch', 3, PLANNED_LAYOUT],
-            ['no-planned-layout', 4, null],
-            ['planned-layout-superseded', 4, { ...PLANNED_LAYOUT, version: PLANNED_LAYOUT.version + 1 }]
+            { denial: 'stale-epoch', expectedFormationEpoch: 3, storedIdentity: PLANNED_LAYOUT },
+            { denial: 'no-planned-layout', expectedFormationEpoch: 4, storedIdentity: null },
+            {
+                denial: 'planned-layout-superseded',
+                expectedFormationEpoch: 4,
+                storedIdentity: { ...PLANNED_LAYOUT, version: PLANNED_LAYOUT.version + 1 }
+            }
         ] as const
-    )('rejects a %s connect with its own conflict code', (denial, expectedFormationEpoch, storedIdentity) => {
+    )('rejects a $denial connect with its own conflict code', (row) => {
         const computed = computeGroupMutation({
-            command: connectCommand({ expectedFormationEpoch, expectedLayout: PLANNED_LAYOUT }),
-            read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, storedIdentity),
+            command: connectCommand({ expectedFormationEpoch: row.expectedFormationEpoch, expectedLayout: PLANNED_LAYOUT }),
+            read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, row.storedIdentity),
             facts: createGroupAuthorityFacts()
         });
 
@@ -231,12 +235,12 @@ describe('group lifecycle transition computation', () => {
         if (computed.outcome !== 'rejected') {
             return;
         }
-        expect(computed.rejectionCode).toBe(`group-connect-${denial}`);
+        expect(computed.rejectionCode).toBe(`group-connect-${row.denial}`);
         // The handler boundary maps the code to its own 409 conflict.
         const error = toGroupMutationRejectionError(computed);
         expect(error).toBeInstanceOf(GroupConnectDeniedError);
         expect((error as GroupConnectDeniedError).status).toBe(409);
-        expect((error as GroupConnectDeniedError).code).toBe(`group-connect-${denial}`);
+        expect((error as GroupConnectDeniedError).code).toBe(`group-connect-${row.denial}`);
     });
 
     it('rejects a connect fence that names a removed layout', () => {

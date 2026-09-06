@@ -3,7 +3,6 @@ import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-co
 import type { GroupTopologyReadThroughOutcome } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import { toApiMutationWorkflowRequestId } from '@shared-web/browser/state-read/state-workflow-support.ts';
 import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
-import { isGroupConnectRejectionCode } from '@shared/api/group-lifecycle/group-connect-rejection-codes.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { throwRallarValidation, type RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { Command } from '@shared/cache/Command.ts';
@@ -84,18 +83,21 @@ export async function connectRoomFormation(input: ConnectRoomFormationInput): Pr
         });
     }
     catch (error) {
-        // A refused fence names a layout the server no longer dials; the next
-        // connect must read the current one through rather than post it again.
-        if (error instanceof ApiHttpError && isConnectFenceRejection(error)) {
+        // A refused epoch means the cached snapshot is behind the group while the
+        // plan may well be current, so the room is read through before the caller
+        // retries; a refused layout is one the server no longer dials, so it is
+        // forgotten and the next connect reads the current one through.
+        const refused = error instanceof ApiHttpError ? error.mutationFailure?.code : undefined;
+        if (refused === 'group-connect-stale-epoch') {
+            await input.dependencies.refreshRoom(input.roomRef, input.options);
+        }
+        else if (
+            refused === 'group-connect-no-planned-layout' || refused === 'group-connect-planned-layout-superseded'
+        ) {
             input.dependencies.slots.forgetPlanned(input.roomRef, fence.expectedLayout);
         }
         throw error;
     }
-}
-
-function isConnectFenceRejection(error: ApiHttpError): boolean {
-    const code = error.mutationFailure?.code;
-    return code !== undefined && (isGroupConnectRejectionCode(code) || code === 'group-mutation-rejected');
 }
 
 async function readConnectFence(input: ConnectRoomFormationInput): Promise<ConnectFence> {
@@ -147,10 +149,11 @@ function toMissingPlannedLayoutIssue(readThrough: GroupTopologyReadThroughOutcom
 /**
  * The epoch and the planned identity come from two caches that fill
  * independently. A planned layout published past the cached snapshot's
- * revision would pair a fresh identity with a stale epoch, which the server
- * refuses as `group-connect-stale-epoch` before it looks at the layout; the
- * first resolution refuses that pair so the read-through can catch the
- * snapshot up, and the second accepts what the read-through returned.
+ * revision means the snapshot is behind, and an epoch read from it is refused
+ * as `group-connect-stale-epoch` before the server looks at the layout,
+ * whether the caller names one or not; the first resolution refuses that
+ * pairing so the read-through can catch the snapshot up, and the second
+ * accepts what the read-through returned.
  */
 function resolveConnectFence(
     input: ConnectRoomFormationInput,
@@ -160,18 +163,16 @@ function resolveConnectFence(
     if (!snapshot) {
         return undefined;
     }
-    if (input.options.layout) {
-        return { expectedFormationEpoch: snapshot.group.formationEpoch, expectedLayout: input.options.layout };
-    }
     const planned = toRallarRoomLayout('planned', input.dependencies.slots.readPlanned(input.roomRef), input.roomRef);
-    if (!planned) {
-        return undefined;
-    }
-    const snapshotLagsLayout =
+    const snapshotLagsLayout = planned !== undefined &&
         compareGroupCausalRevision(planned.overlay.sourceGroupStateCausalRevision, snapshot.causalRevision) ===
             'dominates';
     if (pairing === 'coherent' && snapshotLagsLayout) {
         return undefined;
     }
-    return { expectedFormationEpoch: snapshot.group.formationEpoch, expectedLayout: planned.identity };
+    const expectedLayout = input.options.layout ?? planned?.identity;
+    if (!expectedLayout) {
+        return undefined;
+    }
+    return { expectedFormationEpoch: snapshot.group.formationEpoch, expectedLayout };
 }

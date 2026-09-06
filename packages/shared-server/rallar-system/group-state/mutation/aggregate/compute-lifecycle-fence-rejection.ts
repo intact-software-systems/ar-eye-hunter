@@ -28,24 +28,26 @@ type LifecycleFenceMismatch = Exclude<ExpectedLayoutFenceOutcome, 'match'>;
  * epoch, a layout identity that is no longer the stored plan, or a removed
  * layout as a dialing target is a typed rejection that writes no state, event,
  * or receipt effect — never a wrong transition and never a silent no-op.
- * `connect` names its epoch and its layout explicitly, so each of its
- * mismatches carries its own conflict code rather than the shared one.
- * Unfenced (principal) commands pass; absent, like null, means no fence,
- * though the wire decoders reject absent keys before compute.
+ * `connect` names its epoch and its layout explicitly, so a mismatch of either
+ * carries its own conflict code; its other refusals keep the shared one, as
+ * every other command's do. Unfenced (principal) commands pass; absent, like
+ * null, means no fence, though the wire decoders reject absent keys before
+ * compute.
  */
 export function computeLifecycleFenceRejection(input: LifecycleFenceInput): GroupMutationComputed | null {
     const { command, read, facts, stored } = input;
-    const rejectedFence = (message: string) =>
+    const toSharedRejection = (message: string) =>
         rejected({ command, read, facts, rejectionCode: 'group-mutation-rejected', message });
     const expectedFormationEpoch = command.input.expectedFormationEpoch ?? null;
     if (expectedFormationEpoch !== null && expectedFormationEpoch !== stored.formationEpoch) {
-        return rejectFence(input, 'stale-epoch');
+        const epochs = `expected ${expectedFormationEpoch}, stored ${stored.formationEpoch}`;
+        return toFenceRejection(input, 'stale-epoch', `Group ${command.operation} fence is stale-epoch (${epochs})`);
     }
     if (
         command.operation === 'connectGroup' && facts.internalAuthority === 'formation-automation' &&
         (read.connectTriggerLatch === null || read.connectTriggerLatch.latch.state !== 'awaiting-publication')
     ) {
-        return rejectedFence('Automatic connect trigger is absent or consumed');
+        return toSharedRejection('Automatic connect trigger is absent or consumed');
     }
     const expectedLayout = command.operation === 'activateGroup' ||
             command.operation === 'failGroupFormation' ||
@@ -56,13 +58,13 @@ export function computeLifecycleFenceRejection(input: LifecycleFenceInput): Grou
         return null;
     }
     if (expectedFormationEpoch === null) {
-        return rejectedFence('Criterion petition carries a layout fence without an epoch fence');
+        return toSharedRejection('Criterion petition carries a layout fence without an epoch fence');
     }
     if (
         (command.operation === 'activateGroup' || command.operation === 'connectGroup') &&
         expectedLayout.state !== 'active'
     ) {
-        return rejectedFence(`Group ${command.operation} fence names a removed layout`);
+        return toSharedRejection(`Group ${command.operation} fence names a removed layout`);
     }
     const fence = computeExpectedLayoutFence({
         expectedFormationEpoch,
@@ -75,38 +77,19 @@ export function computeLifecycleFenceRejection(input: LifecycleFenceInput): Grou
     if (fence === 'match') {
         return null;
     }
-    return rejectFence(input, fence);
+    return toFenceRejection(input, fence, `Group ${command.operation} fence is ${fence}`);
 }
 
-/**
- * `connect` retries against the current snapshot, so each of its mismatches
- * is a distinguishable conflict code (product decision 32; the stale epoch
- * joined the two layout conflicts with the browser surface's settled question
- * Q3) — a typed rejection value here, mapped to its own 409 at the handler
- * boundary like every other rejection code. Every other fenced command keeps
- * the shared rejection; a fence naming a tombstone is refused before this.
- */
-function rejectFence(
-    { command, read, facts, stored }: LifecycleFenceInput,
-    fence: LifecycleFenceMismatch
+function toFenceRejection(
+    { command, read, facts }: LifecycleFenceInput,
+    fence: LifecycleFenceMismatch,
+    message: string
 ): GroupMutationComputed {
-    const detail = fence === 'stale-epoch'
-        ? `(expected ${command.input.expectedFormationEpoch}, stored ${stored.formationEpoch})`
-        : 'for the stored planned layout';
-    if (command.operation === 'connectGroup') {
-        return rejected({
-            command,
-            read,
-            facts,
-            rejectionCode: `group-connect-${fence}`,
-            message: `Group connect fence is ${fence} ${detail}`
-        });
-    }
     return rejected({
         command,
         read,
         facts,
-        rejectionCode: 'group-mutation-rejected',
-        message: `Criterion petition fence is ${fence} ${detail}`
+        rejectionCode: command.operation === 'connectGroup' ? `group-connect-${fence}` : 'group-mutation-rejected',
+        message
     });
 }

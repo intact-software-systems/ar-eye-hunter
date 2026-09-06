@@ -218,12 +218,12 @@ if (await isManager()) {
         if (toRoomFormationDenial(error)?.kind !== 'layout') {
             throw error;
         }
-        // The server replaced the plan, or advanced the epoch, while we waited. A server-driven
-        // replacement has no receipt to fence on, so wait for whatever the slot holds now and
-        // connect exactly that.
+        // The plan was replaced, or the cached epoch fell behind, while we waited; the facade has
+        // forgotten the refused layout or read the room through. A server-driven replacement has
+        // no receipt to fence on, so wait for whatever the slot holds now and connect exactly that.
         const current = await formation.waitForLayout({ timeoutMs: 10_000 });
         if (current.layout === undefined) {
-            throw new Error(`The replacement layout never arrived: ${current.status}`);
+            throw new Error(`The current layout never arrived: ${current.status}`);
         }
         await formation.connect({ layout: current.layout.identity });
     }

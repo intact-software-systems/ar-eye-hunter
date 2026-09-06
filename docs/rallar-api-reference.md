@@ -230,9 +230,9 @@ which layout roles the browser dials, the accepted and planned layouts it holds,
 activation condition. Commands reject with `ApiHttpError`; `toRoomFormationDenial(error)`
 classifies it as `{ kind: 'policy', code }` for a stage or initiator denial or
 `{ kind: 'layout', code }` for `group-connect-stale-epoch`, `group-connect-no-planned-layout` and
-`group-connect-planned-layout-superseded`, the three typed `409` conflicts of `connect`: the epoch
-or the layout the command named is no longer current, so the caller re-reads the room and
-connects again.
+`group-connect-planned-layout-superseded`, the three typed `409` conflicts of `connect`. Before it
+rethrows one, `connect()` reads the room through on a stale epoch and forgets a refused layout, so
+waiting for the layout the slot holds and connecting exactly that recovers from all three.
 
 `formation.waitForLayout(options?)` is the explicit wait for a published layout: it observes the
 browser's planned and accepted layout slots and resolves `ready` with the layout, or `timeout`,

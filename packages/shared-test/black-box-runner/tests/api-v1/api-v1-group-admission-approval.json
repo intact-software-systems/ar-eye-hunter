@@ -785,8 +785,7 @@
           "type": "api-mutation-failure",
           "version": "canonical.v2",
           "code": "group-connect-stale-epoch",
-          "status": 409,
-          "message": "Group connect fence is stale-epoch (expected 0, stored 1)"
+          "status": 409
         }
       }
     },
