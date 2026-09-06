@@ -21,6 +21,18 @@ export function validateALOutboundDispatch<TPrepared>(
             message: 'Outbound candidate differs from its observed sender fence'
         });
     }
+    for (const mutation of bundle.mutations) {
+        if (
+            mutation.kind === 'set-supersedence-latest' &&
+            (mutation.supersedenceKey !== read.supersedence.key ||
+                !jsonEquals(mutation.expected, read.supersedence.latest))
+        ) {
+            return Either.ofLeft({
+                code: 'malformed',
+                message: 'Outbound candidate differs from its observed shared supersedence'
+            });
+        }
+    }
     const effectIds = new Set<string>();
     for (const effect of bundle.durableEffects) {
         if (

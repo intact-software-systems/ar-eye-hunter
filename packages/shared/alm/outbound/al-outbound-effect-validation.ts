@@ -5,10 +5,8 @@ import {
 } from '../../al-contracts/al-message-persistence-validation.ts';
 import {
     requireOptionalPersistedALNonEmptyString,
-    requireOptionalPersistedALSafeInteger,
     requireOptionalPersistedALStringArray,
-    requirePersistedALNonEmptyString,
-    requirePersistedALSafeInteger
+    requirePersistedALNonEmptyString
 } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import {
@@ -24,8 +22,7 @@ import {
 import type {
     ALOutboundDurableEffect,
     ALOutboundPreparedMessageDecoder,
-    ALOutboundRepairHint,
-    ALPersistedOutboundEffect
+    ALOutboundRepairHint
 } from './al-outbound-admission-store.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
@@ -51,62 +48,16 @@ interface RequireALOutboundSendEffectIdentityInput {
     readonly preparedFingerprint: string;
 }
 
-export interface StoredALPersistedOutboundEffect<TPrepared>
-    extends Omit<ALPersistedOutboundEffect<TPrepared>, 'payload'> {
-    readonly payload: StoredALOutboundDurableEffect<TPrepared>;
-}
-
-export function encodeALOutboundEffect<TPrepared>(
-    effect: ALPersistedOutboundEffect<TPrepared>
-): StoredALPersistedOutboundEffect<TPrepared> {
-    const payload = effect.payload;
+export function encodeALOutboundEffectPayload<TPrepared>(
+    payload: ALOutboundDurableEffect<TPrepared>
+): StoredALOutboundDurableEffect<TPrepared> {
     switch (payload.kind) {
         case 'enqueue-outbox':
         case 'fallback-dispatch':
-            return { ...effect, payload: { ...payload, entry: encodeALAdmissionResourceEntry(payload.entry) } };
+            return { ...payload, entry: encodeALAdmissionResourceEntry(payload.entry) };
         default:
-            return { ...effect, payload };
+            return payload;
     }
-}
-
-export function decodeALOutboundEffect<TPrepared>(
-    value: unknown,
-    expectedEffectId: string,
-    decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-): ALPersistedOutboundEffect<TPrepared> {
-    const effect = decodeALAdmissionRecord(value, [
-        'effectId',
-        'payload',
-        'status',
-        'attempts',
-        'retryAtMs',
-        'updatedAtMs',
-        'expireAtTimestamp'
-    ], ['leaseOwner', 'leaseUntilMs', 'lastError']);
-    requirePersistedALNonEmptyString(effect.effectId, 'outbound effect id');
-    if (effect.effectId !== expectedEffectId) {
-        throw new TypeError('Persisted AL outbound effect identity does not match its slot');
-    }
-    if (effect.status !== 'pending' && effect.status !== 'running') {
-        throw new TypeError('Persisted AL outbound effect status is invalid');
-    }
-    requirePersistedALSafeInteger(effect.attempts, 0, 'outbound effect attempts');
-    requirePersistedALSafeInteger(effect.retryAtMs, 0, 'outbound effect retry time');
-    requirePersistedALSafeInteger(effect.updatedAtMs, 0, 'outbound effect update time');
-    requirePersistedALSafeInteger(effect.expireAtTimestamp, 0, 'outbound effect expiry');
-    requireOptionalPersistedALNonEmptyString(effect.leaseOwner, 'outbound effect lease owner');
-    requireOptionalPersistedALSafeInteger(effect.leaseUntilMs, 0, 'outbound effect lease expiry');
-    if (effect.lastError !== undefined && typeof effect.lastError !== 'string') {
-        throw new TypeError('Persisted AL outbound effect error is invalid');
-    }
-    if (effect.status === 'running' && (effect.leaseOwner === undefined || effect.leaseUntilMs === undefined)) {
-        throw new TypeError('Persisted AL running outbound effect has no complete lease');
-    }
-    if (effect.status === 'pending' && (effect.leaseOwner !== undefined || effect.leaseUntilMs !== undefined)) {
-        throw new TypeError('Persisted AL pending outbound effect retains a lease');
-    }
-    const payload = decodeALOutboundEffectPayload(effect.payload, effect.effectId, decodePrepared);
-    return { ...effect, payload } as ALPersistedOutboundEffect<TPrepared>;
 }
 
 export function decodeALOutboundPreparedMessage(value: unknown, msg: ALMessage): ALMessage {
@@ -155,7 +106,7 @@ function isPreparedTransportCopy(prepared: ALMessage, source: ALMessage): boolea
     return sourceVisited.every((peerId, index) => preparedVisited[index] === peerId);
 }
 
-function decodeALOutboundEffectPayload<TPrepared>(
+export function decodeALOutboundEffectPayload<TPrepared>(
     value: unknown,
     effectId: string,
     decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>

@@ -10,7 +10,6 @@ export interface AppInboxOptions {
     readonly waitMaxRetryIntervalMsecs?: number;
     readonly waitJitterRatio?: number;
     readonly nowEpochMs?: () => number;
-    readonly timingNowEpochMs?: () => number;
 }
 
 export interface NormalizedAppInboxOptions {

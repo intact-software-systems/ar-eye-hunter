@@ -51,11 +51,6 @@ export namespace ALOutboundRepairAdmission {
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
     }
-
-    export interface ControlAcceptance {
-        readonly handled: boolean;
-        readonly retryAtMs: number | undefined;
-    }
 }
 
 /** Turns persisted control/ACK/repair state into new durable admission commits; never sends directly. */
@@ -69,10 +64,10 @@ export class ALOutboundRepairAdmission<TPrepared> {
         this.admissionStore = dependencies.admissionStore;
     }
 
-    async acceptControlMessage(msg: ALMessage): Promise<ALOutboundRepairAdmission.ControlAcceptance> {
+    async acceptControlMessage(msg: ALMessage): Promise<boolean> {
         const decoded = decodeALControlMessage(msg);
         if (decoded.left || !await this.hasCurrentRepairAuthority(decoded.right!)) {
-            return { handled: false, retryAtMs: undefined };
+            return false;
         }
         const acceptance = await tryWithPolicy(
             async () => {
@@ -94,10 +89,10 @@ export class ALOutboundRepairAdmission<TPrepared> {
             },
             ALOutboundDispatchAdmission.COMMIT_RETRY_POLICY
         );
-        return {
-            handled: acceptance.handled,
-            retryAtMs: acceptance.handled ? await this.scheduleNotYetInSyncRetryIfRequired(msg) : undefined
-        };
+        if (acceptance.handled) {
+            await this.scheduleNotYetInSyncRetryIfRequired(msg);
+        }
+        return acceptance.handled;
     }
 
     private async hasCurrentRepairAuthority(control: ALParsedControlMessage): Promise<boolean> {
@@ -132,26 +127,26 @@ export class ALOutboundRepairAdmission<TPrepared> {
 
     private async scheduleNotYetInSyncRetryIfRequired(
         controlMessage: ALMessage
-    ): Promise<number | undefined> {
+    ): Promise<void> {
         const parsed = parseALControlMessage(controlMessage);
         if (parsed?.type !== 'nack' || parsed.payload.reason !== 'not-yet-in-sync') {
-            return undefined;
+            return;
         }
 
         const msgId = parsed.payload.msgId;
 
-        return await tryWithPolicy<number | undefined>(
+        await tryWithPolicy<void>(
             () => this.scheduleNotYetInSyncRetryOnce(msgId),
             ALOutboundDispatchAdmission.COMMIT_RETRY_POLICY
         );
     }
 
-    private async scheduleNotYetInSyncRetryOnce(msgId: string): Promise<number | undefined> {
+    private async scheduleNotYetInSyncRetryOnce(msgId: string): Promise<void> {
         const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const msg = read.sentSnapshot?.msg;
         const retry = read.plan?.retryTracking;
         if (!msg || !retry?.enabled || retry.maxAttempts <= 0) {
-            return undefined;
+            return;
         }
 
         const retryDelayMs = Math.max(
@@ -177,9 +172,8 @@ export class ALOutboundRepairAdmission<TPrepared> {
         }
         if (result.status === 'exhausted') {
             console.warn(`Not-yet-in-sync retry budget exceeded for message ${msgId}`);
-            return undefined;
+            return;
         }
-        return result.retryAtMs;
     }
 
     async handlePendingAckTimeout(msgId: string): Promise<void> {

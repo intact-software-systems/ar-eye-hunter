@@ -1,7 +1,4 @@
 import {
-    type RuntimeStateOptimisticTransactionalRepositoryLike
-} from '@shared-server/runtime-state/runtime-state-repository.ts';
-import {
     configureALRuntimeStoreScopes,
     resolveALInboundRuntimeStores,
     resolveALOutboundRuntimeStores,
@@ -13,11 +10,12 @@ import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-ad
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { PSqlRuntimeStateRepository } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { PSqlInboundAdmissionBackend } from './p-sql-inbound-admission-backend.ts';
 import { PSqlOutboundAdmissionBackend } from './p-sql-outbound-admission-backend.ts';
 
 export interface CreatePSqlALRuntimeStoresInput {
-    readonly repository: RuntimeStateOptimisticTransactionalRepositoryLike;
+    readonly repository: PSqlRuntimeStateRepository;
     readonly namespace: string;
     readonly orderingTrackTtlMs: number;
     readonly supersedenceTrackTtlMs: number;
@@ -25,7 +23,7 @@ export interface CreatePSqlALRuntimeStoresInput {
 }
 
 export interface CreateDefaultPSqlALRuntimeStoresInput {
-    readonly repository: RuntimeStateOptimisticTransactionalRepositoryLike;
+    readonly repository: PSqlRuntimeStateRepository;
     readonly namespace?: string;
     readonly orderingTrackTtlMs?: number;
     readonly supersedenceTrackTtlMs?: number;
@@ -73,7 +71,7 @@ function createPSqlALRuntimeStores(
         admissionStore: createALOutboundAdmissionStore({
             namespace: `${namespace}:outbound:admission`,
             backend: new PSqlOutboundAdmissionBackend(
-                repository,
+                repository.sql,
                 `${namespace}:outbound:admission`
             ),
             supersedenceTrackTtlMs: input.supersedenceTrackTtlMs,

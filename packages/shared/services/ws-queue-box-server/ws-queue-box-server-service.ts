@@ -30,6 +30,7 @@ import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-t
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '../../websocket/json-web-socket-server.ts';
+import type { InboxOutboxEngine } from '../InboxOutboxEngine.ts';
 import type { OnWebSocketServerMessageCallback, WebSocketServerMessageContext } from '../queue-message-callbacks.ts';
 import { QueueBoxUtilities } from '../QueueBoxUtilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from './decode-ws-queue-box-server-prepared-message.ts';
@@ -51,6 +52,7 @@ import { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-r
 
 export namespace WsQueueBoxServerService {
     export interface Input {
+        readonly queueEngine?: InboxOutboxEngine;
         readonly inbox: QueueBoxResourceEntryRepository;
         readonly outbox: QueueBoxResourceEntryRepository;
         readonly socket: JsonWebSocketServer;
@@ -647,7 +649,10 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
             toInboxEntry: (message) =>
                 QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxServerService.INBOX_ENQUEUE_TYPE)
         }),
-        outboundRuntime: createDefaultALOutboundRuntimeResources({ stores: input.outboundStores }),
+        outboundRuntime: createDefaultALOutboundRuntimeResources({
+            stores: input.outboundStores,
+            queueEngine: input.queueEngine
+        }),
         outboundDiagnostics: input.outboundDiagnostics,
         outboundDeliveryOutcome: input.outboundDeliveryOutcome,
         deliveryDiagnostics: input.deliveryDiagnostics,

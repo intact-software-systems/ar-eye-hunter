@@ -32,12 +32,12 @@ describe('AL outbound durable effect lifecycle', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores: {
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    completeEffect: async (effectId, leaseOwner, decode) => {
+                    completeEffect: async (reservation) => {
                         if (failCompletion) {
                             failCompletion = false;
                             throw new Error('Completion storage unavailable');
                         }
-                        await admissionStore.completeEffect(effectId, leaseOwner, decode);
+                        await admissionStore.completeEffect(reservation);
                     }
                 })
             },
@@ -51,8 +51,12 @@ describe('AL outbound durable effect lifecycle', () => {
         await runtime.enqueueIfAbsent(message);
         settlement.resolve({ status: 'sent' });
         await vi.advanceTimersByTimeAsync(0);
-        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBe(Date.now() + 50);
-        await vi.advanceTimersByTimeAsync(50);
+        const retryAt = await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload);
+        if (retryAt === undefined) {
+            throw new Error('Completion failure must retain retryable work');
+        }
+        expect(retryAt).toBeGreaterThan(Date.now());
+        await vi.advanceTimersByTimeAsync(retryAt - Date.now());
         expect(sent).toEqual([message.id.msgId, message.id.msgId]);
         expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
     });
@@ -189,7 +193,7 @@ describe('AL outbound durable effect lifecycle', () => {
         releaseEmptyRead.resolve();
         await Promise.all([enqueue, acceptControl]);
 
-        expect(sent).toEqual([
+        await expect.poll(() => sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'repair', msgId: msg.id.msgId, trigger: 'nack', phase: 'immediate' }
         ]);
@@ -206,13 +210,13 @@ describe('AL outbound durable effect lifecycle', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores: {
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    completeEffect: async (effectId, leaseOwner) => {
+                    completeEffect: async (reservation) => {
                         if (failFirstComplete) {
                             failFirstComplete = false;
                             throw new Error('complete failed after send');
                         }
 
-                        await admissionStore.completeEffect(effectId, leaseOwner, decodeOutboundTestPayload);
+                        await admissionStore.completeEffect(reservation);
                     }
                 })
             },
@@ -232,7 +236,11 @@ describe('AL outbound durable effect lifecycle', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
 
-        await vi.advanceTimersByTimeAsync(49);
+        const retryAt = await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload);
+        if (retryAt === undefined) {
+            throw new Error('Failed completion must leave a pending QueueBox retry');
+        }
+        await vi.advanceTimersByTimeAsync(retryAt - Date.now() - 1);
         expect(sent).toHaveLength(1);
 
         await vi.advanceTimersByTimeAsync(1);
@@ -558,10 +566,7 @@ describe('AL outbound durable effect lifecycle', () => {
         expect(handled).toBe(false);
         expect(sent).toEqual([]);
         const pending = await admissionStore.claimReadyEffects({
-            workerId: 'next-runtime',
-            maxCount: 10,
-            leaseMs: 100,
-            nowMs: Date.now()
+            maxCount: 10
         }, decodeOutboundTestPayload);
         expect(pending.map((effect) => effect.payload)).toEqual([payload]);
     });
@@ -605,7 +610,7 @@ describe('AL outbound durable effect lifecycle', () => {
                 }
             )
         );
-        await vi.runAllTimersAsync();
+        await vi.advanceTimersByTimeAsync(500);
 
         await expect(accepted).resolves.toBe(true);
         expect(attempts).toBe(4);

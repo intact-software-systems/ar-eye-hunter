@@ -187,7 +187,7 @@ export class PSqlAdmissionMutationCollector implements ALAdmissionWriteContext {
         return observation;
     }
 
-    private async writeMutations(
+    async writeMutations(
         transaction: RuntimeStateOptimisticTransactionalRepositoryLike,
         mutations: readonly ALAdmissionMutation[]
     ): Promise<void> {

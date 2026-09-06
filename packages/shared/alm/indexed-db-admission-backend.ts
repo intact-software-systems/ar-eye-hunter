@@ -1,19 +1,32 @@
+import { Temporal } from '@js-temporal/polyfill';
+
 import { IndexedDbConnection } from '../persistence/open-indexed-db.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
+import { decodeStoredResourceEntry, type StoredResourceEntry } from '../queuebox/indexed-db-queue-box-entry-codec.ts';
+import {
+    computeIndexedDbQueueGuard,
+    computeIndexedDbQueuePut,
+    isStoredQueueEntryExpired,
+    type ComputedIndexedDbQueueMutation,
+    type ComputedIndexedDbQueuePut
+} from '../queuebox/indexed-db-queue-box-entry.ts';
+import { readStoredQueueEntry } from '../queuebox/indexed-db-queue-box-store.ts';
+import { IndexedDbQueueBox } from '../queuebox/indexed-db-queue-box.ts';
+import { toKeyAsString, type Key, type ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import {
     decodeALAdmissionStoredValue,
-    type ALAdmissionBackend,
-    type ALAdmissionBackendEntry,
-    type ALAdmissionWriteContext
+    type ALAdmissionBackendEntry
 } from './al-admission-backend.ts';
 import { decodeALAdmissionValue, type ALAdmissionDecoder } from './al-admission-decoder.ts';
 import { decodeALAdmissionNumber } from './al-admission-value-validation.ts';
+import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from './al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
 import {
     toALAdmissionStoredValue,
     type IndexedDbAdmissionStoredRow
 } from './indexed-db-admission-row.ts';
 import {
+    AL_ADMISSION_WORK_STORE_NAME,
     openIndexedDbAdmissionDatabase
 } from './open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from './read-indexed-db-admission-snapshot.ts';
@@ -23,7 +36,8 @@ import {
     type IndexedDbAdmissionMutation
 } from './write-indexed-db-admission-mutations.ts';
 
-export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
+export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
+    readonly workQueue: IndexedDbQueueBox;
     readonly #connection: IndexedDbConnection;
     readonly #storeName: string;
     readonly #nowMs: () => number;
@@ -36,6 +50,10 @@ export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
         this.#storeName = storeName;
         this.#nowMs = nowMs;
         this.#connection = new IndexedDbConnection(() => openIndexedDbAdmissionDatabase(dbName, storeName));
+        this.workQueue = new IndexedDbQueueBox({
+            connection: this.#connection,
+            storeName: AL_ADMISSION_WORK_STORE_NAME
+        });
     }
 
     async ready(): Promise<void> {
@@ -103,7 +121,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
         return entries;
     }
 
-    async write<T>(fn: (tx: ALAdmissionWriteContext) => Promise<T>): Promise<T> {
+    async write<T>(fn: (tx: ALAdmissionWorkWriteContext) => Promise<T>): Promise<T> {
         const db = await this.#connection.open();
         const expectedRevision = (
             await readIndexedDbAdmissionSnapshot(db, this.#storeName, { kind: 'revision' })
@@ -112,7 +130,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
         const result = await fn(buffer);
         const mutations = buffer.mutations();
         const committed = await writeIndexedDbAdmissionMutations({
-            queueMutations: [],
+            queueMutations: buffer.queueMutations(),
             db,
             storeName: this.#storeName,
             expectedRevision,
@@ -126,8 +144,10 @@ export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
     }
 }
 
-class IndexedDbAdmissionWriteBuffer implements ALAdmissionWriteContext {
+class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
     readonly #pending = new Map<string, IndexedDbAdmissionStoredRow | undefined>();
+    readonly #workObservations = new Map<string, StoredResourceEntry | undefined>();
+    readonly #pendingWork = new Map<string, ComputedIndexedDbQueuePut>();
     readonly #db: IDBDatabase;
     readonly #storeName: string;
     readonly #nowMs: () => number;
@@ -205,6 +225,40 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWriteContext {
 
     async remove(key: string): Promise<void> {
         this.#pending.set(key, undefined);
+    }
+
+    async readWork(key: Key): Promise<ResourceEntry | undefined> {
+        const keyString = toKeyAsString(key);
+        const stored = this.#pendingWork.get(keyString)?.value ?? await this.readStoredWork(keyString);
+        return stored === undefined ||
+                isStoredQueueEntryExpired(stored, Temporal.Instant.fromEpochMilliseconds(this.#nowMs()))
+            ? undefined
+            : decodeStoredResourceEntry(stored);
+    }
+
+    writeWork(entry: ResourceEntry): void {
+        const keyString = toKeyAsString(entry.key);
+        if (!this.#workObservations.has(keyString) || this.#pendingWork.has(keyString)) {
+            throw new TypeError('Admission work requires one write after its slot has been read');
+        }
+        const stored = this.#workObservations.get(keyString);
+        this.#pendingWork.set(keyString, computeIndexedDbQueuePut(stored, entry));
+    }
+
+    queueMutations(): readonly ComputedIndexedDbQueueMutation[] {
+        return [...this.#workObservations].map(([key, stored]) =>
+            this.#pendingWork.get(key) ?? computeIndexedDbQueueGuard(key, stored)
+        );
+    }
+
+    private async readStoredWork(keyString: string): Promise<StoredResourceEntry | undefined> {
+        if (!this.#workObservations.has(keyString)) {
+            this.#workObservations.set(
+                keyString,
+                await readStoredQueueEntry(this.#db, AL_ADMISSION_WORK_STORE_NAME, keyString)
+            );
+        }
+        return this.#workObservations.get(keyString);
     }
 
     mutations(): readonly IndexedDbAdmissionMutation[] {

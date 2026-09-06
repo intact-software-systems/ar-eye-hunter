@@ -4,6 +4,7 @@ import { PSqlInboundAdmissionBackend } from '@shared-server/al-runtime/postgres/
 import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-outbound-admission-backend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
 import {
@@ -13,7 +14,9 @@ import {
     newALUnicastMessage,
     normalizeALRuntimeStoreRetention
 } from '@shared/mod.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
+import { createPSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import { FakeRuntimeStateRepository } from './fake-optimistic-runtime-state-repository.ts';
 
 interface IndexedRecord {
@@ -173,9 +176,9 @@ describe('PSqlInboundAdmissionBackend', () => {
 
 describe('PSqlOutboundAdmissionBackend', () => {
     it('lists prefix rows through runtime-state pages when available', async () => {
-        const repository = new FakeRuntimeStateRepository();
+        const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:outbound:paged-list';
-        const backend = new PSqlOutboundAdmissionBackend(repository, namespace);
+        const backend = new PSqlOutboundAdmissionBackend(sql, namespace);
         const prefix = 'sent:';
         const total = RUNTIME_STATE_PREFIX_READ_PAGE_SIZE + 1;
 
@@ -197,11 +200,12 @@ describe('PSqlOutboundAdmissionBackend', () => {
     });
 
     it('conditionally advances sender version and persists durable effects in one commit', async () => {
-        const repository = new FakeRuntimeStateRepository();
+        const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:outbound:admission';
+        const backend = new PSqlOutboundAdmissionBackend(sql, namespace);
         const store = createALOutboundAdmissionStore({
             namespace,
-            backend: new PSqlOutboundAdmissionBackend(repository, namespace),
+            backend,
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
@@ -251,41 +255,32 @@ describe('PSqlOutboundAdmissionBackend', () => {
             version: 1
         });
 
-        const effectEntry = await repository.findEntry(
+        const workKey = toALOutboundWorkKey(namespace, effectId);
+        const effectEntry = await backend.workQueue.getItem(workKey);
+        expect(effectEntry).toMatchObject({ status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
+        expect(JSON.parse(effectEntry!.resource)).toMatchObject({
             namespace,
-            `${namespace}:effect:${effectId}`
-        );
-        expect(effectEntry).toBeDefined();
-        expect(JSON.parse(effectEntry!.value)).toMatchObject({
             effectId,
-            status: 'pending',
-            attempts: 0,
             payload: {
                 kind: 'send-prepared'
             }
         });
 
-        const claimed = await store.claimReadyEffects({
-            workerId: 'worker-1',
-            maxCount: 1,
-            leaseMs: 10_000,
-            nowMs: Date.now()
-        }, decodePreparedOutboundSend);
+        const claimed = await store.claimReadyEffects({ maxCount: 1 }, decodePreparedOutboundSend);
 
         expect(claimed).toHaveLength(1);
         expect(claimed[0].effectId).toBe(effectId);
-        await store.completeEffect(effectId, 'worker-1', decodePreparedOutboundSend);
-        expect(
-            await repository.findEntry(namespace, `${namespace}:effect:${effectId}`)
-        ).toBeUndefined();
+        await store.completeEffect(claimed[0].entry);
+        expect(await backend.workQueue.getItem(workKey)).toMatchObject({ status: EntityStatus.COMPLETED });
+        expect(await store.peekNextEffectReadyAt(decodePreparedOutboundSend)).toBeUndefined();
     });
 
     it('bumps the owning sender version when accepting outbound control messages', async () => {
-        const repository = new FakeRuntimeStateRepository();
+        const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:outbound:admission';
         const store = createALOutboundAdmissionStore({
             namespace,
-            backend: new PSqlOutboundAdmissionBackend(repository, namespace),
+            backend: new PSqlOutboundAdmissionBackend(sql, namespace),
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
@@ -351,7 +346,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
         const { createDefaultPSqlALOutboundRuntimeStores } = await import(
             '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts'
         );
-        const repository = new FakeRuntimeStateRepository();
+        const { repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:factory';
         const stores = createDefaultPSqlALOutboundRuntimeStores({
             namespace,

@@ -268,7 +268,7 @@ describe('InMemoryQueueBox', () => {
         }));
 
         const recovered = await queue.reserveRetryExhaustionFinalizations(
-            new Set([EnqueuedType.APP_INBOX, EnqueuedType.APP_OUTBOX]),
+            new Set([EnqueuedType.APP_INBOX]),
             {
                 processingAttempts: 20,
                 maxToReserve: 10,

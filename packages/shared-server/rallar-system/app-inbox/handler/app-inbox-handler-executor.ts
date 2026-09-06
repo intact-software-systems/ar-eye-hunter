@@ -1,11 +1,15 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { ResourceInboxFinalizedByHandlerError } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { ResourceInboxHandlerEntryError } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import {
     EntityStatus,
     toResourceEntryWithUpdatedResource,
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+import type {
+    ResourceInboxAttempt,
+    ResourceInboxAttemptTelemetry
+} from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 
 import {
     recordRallarTiming,
@@ -16,6 +20,7 @@ import {
 import { AppInboxCommandIdentityError, validateAppInboxCommandIdentity } from '../app-inbox-command-identity.ts';
 import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../app-inbox-contracts.ts';
 import { classifyAppInboxError, type AppInboxErrorClassification } from '../app-inbox-error-classification.ts';
+import { toTerminalAppInboxFailure } from '../app-inbox-failure.ts';
 import type { AppInboxOptions } from '../app-inbox-options.ts';
 import type { AppInboxResultRepository } from '../app-inbox-persistence-ports.ts';
 import { toAppInboxAttemptTimingDetails, toAppInboxTimingDetails } from './app-inbox-attempt-timing.ts';
@@ -23,11 +28,16 @@ import { computeAppInboxCompletion, validateAppInboxCompletion } from './app-inb
 import type { AppInboxHandlerRegistration } from './app-inbox-handler-registration.ts';
 import { AppInboxTransactionWriter } from './app-inbox-transaction-writer.ts';
 
-interface AppInboxExecutionAttempt<Command, Result> {
-    readonly registration: AppInboxHandlerRegistration<Command, Result>;
-    readonly message: ALMessage;
-    readonly entry: ResourceEntry;
+interface AppInboxExecutionAttempt<Command, Result> extends AppInboxHandlerExecutor.Input<Command, Result> {
     readonly undecodedEnqueue: AppInboxEnqueueInput;
+}
+
+interface AppInboxPhaseOperation<Result> {
+    readonly operation: 'handler-action' | 'write-result';
+    readonly enqueue: AppInboxEnqueueInput;
+    readonly key: Key;
+    readonly action: () => Promise<Result>;
+    readonly details: RallarTimingDetails;
 }
 
 interface BegunAppInboxExecution<Command, Result> {
@@ -42,6 +52,13 @@ interface FailedAppInboxExecution<Command, Result> extends AppInboxExecutionAtte
 }
 
 export namespace AppInboxHandlerExecutor {
+    export interface Input<Command, Result> {
+        readonly registration: AppInboxHandlerRegistration<Command, Result>;
+        readonly message: ALMessage;
+        readonly entry: ResourceEntry;
+        readonly attemptTelemetry: ResourceInboxAttemptTelemetry;
+    }
+
     export interface Dependencies {
         readonly resultRepository: AppInboxResultRepository;
         readonly transactionWriter: AppInboxTransactionWriter;
@@ -73,10 +90,9 @@ export class AppInboxHandlerExecutor {
     }
 
     async execute<Command, Result>(
-        registration: AppInboxHandlerRegistration<Command, Result>,
-        message: ALMessage,
-        entry: ResourceEntry
+        input: AppInboxHandlerExecutor.Input<Command, Result>
     ): Promise<void> {
+        const { registration, entry } = input;
         const undecodedEnqueue: AppInboxEnqueueInput = {
             type: registration.type,
             resourceId: entry.key.resourceId,
@@ -97,8 +113,28 @@ export class AppInboxHandlerExecutor {
                     resourceId: entry.key.resourceId
                 }
             },
-            async () => await this.executeAttempt({ registration, message, entry, undecodedEnqueue })
+            async () => await this.executeAttempt({ ...input, undecodedEnqueue })
         );
+    }
+
+    async rejectMalformedMessage(attempt: ResourceInboxAttempt): Promise<ResourceEntry> {
+        const completionInput = {
+            entry: attempt.entry,
+            completedAtEpochMs: (this.options.nowEpochMs ?? Date.now)(),
+            durableResult: toTerminalAppInboxFailure({
+                code: 'app-inbox-malformed-command',
+                status: 400,
+                message: 'Persisted AppInbox message is malformed or unsupported'
+            }),
+            status: EntityStatus.NON_RETRYABLE
+        } as const;
+        const computed = computeAppInboxCompletion(completionInput);
+        const issues = validateAppInboxCompletion(completionInput, computed);
+        if (issues[0] !== undefined) {
+            throw issues[0].cause;
+        }
+        await this.transactionWriter.writeComputedQueueFailure(attempt, computed);
+        return computed.finalizedEntry;
     }
 
     private async executeAttempt<Command, Result>(
@@ -108,12 +144,13 @@ export class AppInboxHandlerExecutor {
         try {
             const begun = this.beginExecution(attempt);
             context = begun.context;
-            const result = await this.timePhase(
-                'handler-action',
-                begun.context.enqueue,
-                attempt.entry.key,
-                async () => await attempt.registration.handle(begun.command, begun.context)
-            );
+            const result = await this.timePhase({
+                operation: 'handler-action',
+                enqueue: begun.context.enqueue,
+                key: attempt.entry.key,
+                action: async () => await attempt.registration.handle(begun.command, begun.context),
+                details: {}
+            });
             const finalization = this.transactionWriter.read(begun.context);
             if (finalization.state === 'transaction-finalized') {
                 return;
@@ -123,8 +160,11 @@ export class AppInboxHandlerExecutor {
         catch (caught) {
             await this.finishFailedExecution({
                 ...attempt,
+                entry: caught instanceof ResourceInboxHandlerEntryError ? caught.entry : attempt.entry,
                 error: caught instanceof Error ? caught : new Error(String(caught)),
-                classification: classifyAppInboxError(caught),
+                classification: classifyAppInboxError(
+                    caught instanceof ResourceInboxHandlerEntryError ? caught.handlerError : caught
+                ),
                 context
             });
         }
@@ -142,6 +182,7 @@ export class AppInboxHandlerExecutor {
             enqueue: identity.command,
             message: attempt.message,
             entry: attempt.entry,
+            attemptTelemetry: attempt.attemptTelemetry,
             encodeResult: attempt.registration.encodeResult
         };
         this.transactionWriter.begin(context);
@@ -156,11 +197,11 @@ export class AppInboxHandlerExecutor {
         context: AppInboxMessageContext<Result>,
         result: Result
     ): Promise<void> {
-        await this.timePhase(
-            'write-result',
-            context.enqueue,
-            context.entry.key,
-            async () => {
+        await this.timePhase({
+            operation: 'write-result',
+            enqueue: context.enqueue,
+            key: context.entry.key,
+            action: async () => {
                 await this.resultRepository.replace(
                     toResourceEntryWithUpdatedResource(
                         context.entry,
@@ -169,8 +210,8 @@ export class AppInboxHandlerExecutor {
                     )
                 );
             },
-            { resultStatus: EntityStatus.COMPLETED }
-        );
+            details: { resultStatus: EntityStatus.COMPLETED }
+        });
     }
 
     private async finishFailedExecution<Command, Result>(
@@ -186,24 +227,24 @@ export class AppInboxHandlerExecutor {
             }
         }
         if (input.classification.kind === 'retryable') {
-            this.recordQueueRetryTiming(
-                input.context?.enqueue ?? input.undecodedEnqueue,
-                input.entry,
-                input.classification,
-                input.error
-            );
+            this.recordQueueRetryTiming(input);
             throw input.error;
         }
         const terminalContext = input.context ?? {
             enqueue: input.undecodedEnqueue,
             message: input.message,
             entry: input.entry,
+            attemptTelemetry: input.attemptTelemetry,
             encodeResult: input.registration.encodeResult
         };
         const completionInput = {
             ...this.transactionWriter.readCompletionFacts(terminalContext),
+            entry: input.entry,
             durableResult: input.classification.result,
-            status: EntityStatus.FAILED
+            status: input.classification.code === 'app-inbox-malformed-command' ||
+                    input.classification.code === 'app-inbox-non-retryable'
+                ? EntityStatus.NON_RETRYABLE
+                : EntityStatus.FAILED
         } as const;
         const computed = computeAppInboxCompletion(completionInput);
         const issues = validateAppInboxCompletion(completionInput, computed);
@@ -211,20 +252,21 @@ export class AppInboxHandlerExecutor {
             throw issues[0].cause;
         }
         await this.transactionWriter.writeComputedTerminalFailure(terminalContext, computed);
-        throw new ResourceInboxFinalizedByHandlerError(
+        throw new ResourceInboxHandlerEntryError(
             computed.finalizedEntry,
             input.error
         );
     }
 
-    private recordQueueRetryTiming(
-        enqueue: AppInboxEnqueueInput,
-        entry: ResourceEntry,
-        classification: Extract<AppInboxErrorClassification, { kind: 'retryable'; }>,
-        error: Error
+    private recordQueueRetryTiming<Command, Result>(
+        input: FailedAppInboxExecution<Command, Result>
     ): void {
-        const nowEpochMs = this.timingNowEpochMs();
-        const attemptDetails = toAppInboxAttemptTimingDetails(enqueue, entry, nowEpochMs);
+        if (input.classification.kind !== 'retryable') {
+            throw new Error('Queue retry timing requires a retryable failure');
+        }
+        const { entry, attemptTelemetry, classification, error } = input;
+        const enqueue = input.context?.enqueue ?? input.undecodedEnqueue;
+        const attemptDetails = toAppInboxAttemptTimingDetails(enqueue, entry, attemptTelemetry);
         recordRallarTiming({
             sink: this.timing,
             event: {
@@ -247,29 +289,21 @@ export class AppInboxHandlerExecutor {
     }
 
     private async timePhase<Result>(
-        operation: string,
-        enqueue: AppInboxEnqueueInput,
-        key: Key,
-        action: () => Promise<Result>,
-        details: RallarTimingDetails = {}
+        phase: AppInboxPhaseOperation<Result>
     ): Promise<Result> {
         if (!(this.options.phaseTiming ?? false)) {
-            return await action();
+            return await phase.action();
         }
         return await timeRallarAsync(
             this.timing,
             {
                 component: 'app-inbox-phase',
-                operation,
+                operation: phase.operation,
                 serviceId: this.serviceId,
-                requestId: enqueue.resourceId,
-                details: { ...toAppInboxTimingDetails(enqueue, key), ...details }
+                requestId: phase.enqueue.resourceId,
+                details: { ...toAppInboxTimingDetails(phase.enqueue, phase.key), ...phase.details }
             },
-            action
+            phase.action
         );
-    }
-
-    private timingNowEpochMs(): number {
-        return this.options.timingNowEpochMs?.() ?? Date.now();
     }
 }

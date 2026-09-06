@@ -18,7 +18,7 @@ export type IndexedDbQueueExpectedState =
     | Readonly<{ kind: 'missing'; }>
     | Readonly<{ kind: 'revision'; revision: number; }>;
 
-interface ComputedIndexedDbQueuePut {
+export interface ComputedIndexedDbQueuePut {
     readonly kind: 'put';
     readonly keyString: ResourceEntryKeyString;
     readonly expected: IndexedDbQueueExpectedState;
@@ -31,6 +31,12 @@ interface ComputedIndexedDbQueueDelete {
     readonly expected: IndexedDbQueueExpectedState;
 }
 
+export interface ComputedIndexedDbQueueGuard {
+    readonly kind: 'guard';
+    readonly keyString: ResourceEntryKeyString;
+    readonly expected: IndexedDbQueueExpectedState;
+}
+
 interface ComputedIndexedDbQueueUnconditionalDelete {
     readonly kind: 'delete-unconditionally';
     readonly keyString: ResourceEntryKeyString;
@@ -38,6 +44,7 @@ interface ComputedIndexedDbQueueUnconditionalDelete {
 
 export type ComputedIndexedDbQueueMutation =
     | ComputedIndexedDbQueuePut
+    | ComputedIndexedDbQueueGuard
     | ComputedIndexedDbQueueDelete
     | ComputedIndexedDbQueueUnconditionalDelete;
 
@@ -65,6 +72,13 @@ export function computeIndexedDbQueueDelete(
     };
 }
 
+export function computeIndexedDbQueueGuard(
+    keyString: ResourceEntryKeyString,
+    stored: StoredResourceEntry | undefined
+): ComputedIndexedDbQueueGuard {
+    return { kind: 'guard', keyString, expected: toIndexedDbQueueExpectedState(stored) };
+}
+
 export function computeIndexedDbQueueUnconditionalDelete(
     keyString: ResourceEntryKeyString
 ): ComputedIndexedDbQueueUnconditionalDelete {
@@ -77,7 +91,10 @@ export function validateComputedIndexedDbQueueMutations(
     try {
         const keys = new Set<string>();
         for (const mutation of mutations) {
-            if (mutation.kind !== 'put' && mutation.kind !== 'delete' && mutation.kind !== 'delete-unconditionally') {
+            if (
+                mutation.kind !== 'put' && mutation.kind !== 'delete' && mutation.kind !== 'guard' &&
+                mutation.kind !== 'delete-unconditionally'
+            ) {
                 return Either.ofLeft(new TypeError('IndexedDB queue mutation kind is unsupported'));
             }
             if (typeof mutation.keyString !== 'string') {
@@ -94,6 +111,9 @@ export function validateComputedIndexedDbQueueMutations(
                 return Either.ofLeft(
                     new TypeError('IndexedDB queue expected state must be missing or a non-negative revision')
                 );
+            }
+            if (mutation.kind === 'guard') {
+                continue;
             }
             if (mutation.kind === 'delete') {
                 if (mutation.expected.kind === 'missing') {

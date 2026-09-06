@@ -32,16 +32,38 @@ export class InboxOutboxEngine {
     private generation = 0;
     private wakeAfterExecution = false;
     private successiveIdleExecutions = 0;
+    private scheduledAtMs: number | undefined;
 
     private readonly tasks = new Map<string, ComputeAsyncTask.LoopsTaskDto>();
+    private readonly readyAtByTask = new Map<string, number>();
 
     includeTask(id: string, task: ComputeAsyncTask.LoopsTaskDto): InboxOutboxEngine {
+        this.readyAtByTask.delete(id);
         this.tasks.set(id, { ...task, name: id, ongoingTasks: [...task.ongoingTasks] });
         return this;
     }
 
     excludeTask(id: string): boolean {
+        this.readyAtByTask.delete(id);
         return this.tasks.delete(id);
+    }
+
+    wakeAt(taskId: string, readyAtMs: number | undefined): void {
+        if (!this.tasks.has(taskId)) {
+            return;
+        }
+        if (readyAtMs === undefined) {
+            this.readyAtByTask.delete(taskId);
+            return;
+        }
+        if (!Number.isSafeInteger(readyAtMs) || readyAtMs < 0) {
+            throw new RangeError('Queue task readiness must be a non-negative safe timestamp');
+        }
+        this.readyAtByTask.set(taskId, readyAtMs);
+        if (this.running && this.execution === undefined) {
+            const earliest = Math.min(this.scheduledAtMs ?? readyAtMs, readyAtMs);
+            this.scheduleEngine(Math.max(0, earliest - Date.now()));
+        }
     }
 
     start(): void {
@@ -61,6 +83,7 @@ export class InboxOutboxEngine {
             clearTimeout(this.timer);
         }
         this.timer = NOT_SET;
+        this.scheduledAtMs = undefined;
     }
 
     wake(): void {
@@ -91,6 +114,13 @@ export class InboxOutboxEngine {
             clearTimeout(this.timer);
             this.timer = NOT_SET;
         }
+        this.scheduledAtMs = undefined;
+        const nowMs = Date.now();
+        for (const [taskId, readyAtMs] of this.readyAtByTask) {
+            if (readyAtMs <= nowMs) {
+                this.readyAtByTask.delete(taskId);
+            }
+        }
         let taskCreated = false;
         this.execution = this.executeTaskEngine()
             .then((result) => {
@@ -115,10 +145,17 @@ export class InboxOutboxEngine {
         if (this.timer !== NOT_SET) {
             clearTimeout(this.timer);
         }
+        const nowMs = Date.now();
+        let scheduledAtMs = nowMs + delayMs;
+        for (const readyAtMs of this.readyAtByTask.values()) {
+            scheduledAtMs = Math.min(scheduledAtMs, readyAtMs);
+        }
+        this.scheduledAtMs = Math.max(nowMs, scheduledAtMs);
         this.timer = setTimeout(() => {
             this.timer = NOT_SET;
+            this.scheduledAtMs = undefined;
             void this.executeOnce();
-        }, delayMs);
+        }, this.scheduledAtMs - nowMs);
     }
 
     private async executeTaskEngine(): Promise<boolean> {

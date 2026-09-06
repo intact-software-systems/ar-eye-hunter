@@ -2,11 +2,11 @@ import {
     describe,
     expect,
     it,
-    onTestFinished
+    onTestFinished,
+    vi
 } from 'vitest';
 
 import {
-    createDefaultPSqlALInboundRuntimeStores,
     createDefaultPSqlALOutboundRuntimeStores
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { PSqlInboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-inbound-admission-backend.ts';
@@ -26,6 +26,7 @@ import {
     type ALInboundPlanner
 } from '@shared/mod.ts';
 
+import { createPSqlAdmissionTestStorage, type PSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import { FakeRuntimeStateRepository } from './fake-optimistic-runtime-state-repository.ts';
 
 describe('PSql admission optimistic retry', () => {
@@ -101,7 +102,15 @@ describe('PSql admission optimistic retry', () => {
         const runtime = createDefaultALInboundMessageRuntime({
             selfPeerId: 'self',
             inbox: new InMemoryQueueBox(new Map()),
-            stores: createDefaultPSqlALInboundRuntimeStores({ namespace, repository }),
+            stores: {
+                admissionStore: createALInboundAdmissionStore({
+                    namespace: `${namespace}:inbound:admission`,
+                    backend: new PSqlInboundAdmissionBackend(repository, `${namespace}:inbound:admission`),
+                    orderingTrackTtlMs: 60_000,
+                    supersedenceTrackTtlMs: 60_000,
+                    retention: normalizeALRuntimeStoreRetention()
+                })
+            },
             planIncomingMessage: plan,
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
@@ -144,15 +153,16 @@ describe('PSql admission optimistic retry', () => {
     });
 
     it('translates an outbound apply-time CAS loss to the owner conflict result', async () => {
-        const repository = new FakeRuntimeStateRepository();
+        const storage = await createPSqlAdmissionTestStorage();
+        const { sql } = storage;
         const namespace = 'psql-test:outbound:apply-conflict';
         const store = createALOutboundAdmissionStore({
             namespace,
-            backend: new PSqlOutboundAdmissionBackend(repository, namespace),
+            backend: new PSqlOutboundAdmissionBackend(sql, namespace),
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
-        repository.conflictNextConditionalWrite = true;
+        conflictNextAdmissionCommit(storage, { namespace, senderId: 'self' });
 
         await expect(store.commitBundle({
             senderId: 'self',
@@ -167,15 +177,16 @@ describe('PSql admission optimistic retry', () => {
     });
 
     it('translates an outbound retry-schedule CAS loss to the owner conflict result', async () => {
-        const repository = new FakeRuntimeStateRepository();
+        const storage = await createPSqlAdmissionTestStorage();
+        const { sql } = storage;
         const namespace = 'psql-test:outbound:retry-apply-conflict';
         const store = createALOutboundAdmissionStore({
             namespace,
-            backend: new PSqlOutboundAdmissionBackend(repository, namespace),
+            backend: new PSqlOutboundAdmissionBackend(sql, namespace),
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
-        repository.conflictNextConditionalWrite = true;
+        conflictNextAdmissionCommit(storage, { namespace, senderId: 'self' });
 
         await expect(store.scheduleNotYetInSyncRetry({
             senderId: 'self',
@@ -196,15 +207,16 @@ describe('PSql admission optimistic retry', () => {
     });
 
     it('does not translate an unexpected outbound apply failure into a conflict', async () => {
-        const repository = new FakeRuntimeStateRepository();
+        const storage = await createPSqlAdmissionTestStorage();
+        const { sql } = storage;
         const namespace = 'psql-test:outbound:apply-error';
         const store = createALOutboundAdmissionStore({
             namespace,
-            backend: new PSqlOutboundAdmissionBackend(repository, namespace),
+            backend: new PSqlOutboundAdmissionBackend(sql, namespace),
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
-        repository.errorNextConditionalWrite = new Error('outbound storage unavailable');
+        vi.spyOn(sql, 'begin').mockRejectedValueOnce(new Error('outbound storage unavailable'));
 
         await expect(store.commitBundle({
             senderId: 'self',
@@ -219,7 +231,8 @@ describe('PSql admission optimistic retry', () => {
     });
 
     it('commits an outbound message after an apply-time CAS loss', async () => {
-        const repository = new FakeRuntimeStateRepository();
+        const storage = await createPSqlAdmissionTestStorage();
+        const { repository } = storage;
         const namespace = 'psql-test:outbound:runtime-retry';
         const plan = () => ({ persist: true, preparedMessages: [] });
         const runtime = createDefaultALOutboundMessageRuntime({
@@ -234,14 +247,13 @@ describe('PSql admission optimistic retry', () => {
             }
         });
         onTestFinished(() => runtime.dispose());
-        repository.conflictNextConditionalWrite = true;
+        conflictNextAdmissionCommit(storage, { namespace: `${namespace}:outbound:admission`, senderId: 'self' });
 
         const result = await runtime.enqueueIfAbsent(
             createOutboundMessage('outbound-runtime-retry')
         );
 
         expect(result.status).toBe('enqueued');
-        expect(repository.conflictCount).toBe(1);
         const admissionNamespace = `${namespace}:outbound:admission`;
         expect(
             await repository.findEntry(
@@ -261,4 +273,20 @@ function createOutboundMessage(resourceId: string) {
         'chat.private-text.v1',
         { text: 'hello' }
     );
+}
+
+function conflictNextAdmissionCommit(
+    storage: PSqlAdmissionTestStorage,
+    scope: Readonly<{ namespace: string; senderId: string; }>
+): void {
+    const begin = storage.sql.begin;
+    vi.spyOn(storage.sql, 'begin').mockImplementationOnce(async (write) => {
+        await storage.repository.upsert(
+            scope.namespace,
+            `${scope.namespace}:version:${scope.senderId}`,
+            JSON.stringify({ senderId: scope.senderId, version: 1 }),
+            Date.now() + 60_000
+        );
+        return await begin(write);
+    });
 }

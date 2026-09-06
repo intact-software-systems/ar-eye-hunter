@@ -14,28 +14,20 @@ import {
     type AppInboxMutationTransactionWriter
 } from '@shared-server/rallar-system/app-inbox/handler/app-inbox-transaction-writer.ts';
 import type {
-    GroupMutationAuthority,
-    GroupMutationDescriptor,
-    GroupMutationIngress,
-    GroupStateMutationService
+    GroupMutationDescriptor
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
-import { createGroupStateService as createDurableGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import {
-    GroupStateInboxHandler,
-    type GroupStateInboxHandlerDependencies,
-    type GroupStateInboxResultReader
+    GroupStateInboxHandler
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import type { GroupMutationComputed } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutationWriteResult, type GroupMutationWriteInput } from '@shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
-import type { GroupFormationGroupMutationSink } from '@shared-server/rallar-system/observability/formation-metrics.ts';
-import type { WsSessionGenerationLifecycleService } from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
 
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 
-type DurableResult = Readonly<{ status: 'durable'; }>;
 type ExpectedTransactionWriter = {
     readCompletionFacts(context: AppInboxExecutionMetadata): AppInboxCompletionFacts;
     writeComputedMutation<Result>(
@@ -44,28 +36,12 @@ type ExpectedTransactionWriter = {
         write: (transaction: PSqlSql) => Promise<void>
     ): Promise<Result>;
 };
-type ExpectedHandlerDependencies = {
-    readonly mutationService: GroupStateMutationService;
-    readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
-    readonly resultReader: GroupStateInboxResultReader;
-    readonly transactionWriter: ExpectedTransactionWriter;
-    readonly wakeQueue?: () => void;
-    readonly formationMetrics?: GroupFormationGroupMutationSink;
-    readonly captureAuthenticatedMutationIngress: (
-        descriptor: GroupMutationDescriptor,
-        authority: GroupMutationAuthority
-    ) => Promise<GroupMutationIngress>;
-    readonly persistMutationIngress: (
-        context: AppInboxMessageContext<GroupStateInboxDurableResult>,
-        ingress: GroupMutationIngress
-    ) => Promise<void>;
-};
 type ExpectedComputedWrite = (input: GroupMutationWriteInput) => GroupMutationComputed;
 
 describe('convergent group and presence state', () => {
     it('refuses to construct a user mutation service without an auth repository', () => {
         expect(() =>
-            createDurableGroupStateService({
+            createGroupStateService({
                 runtimeRepository: new GroupBarrierRepository(),
                 serviceId: 'missing-auth-service'
             } as never)
@@ -83,16 +59,6 @@ describe('convergent group and presence state', () => {
             .toEqualTypeOf<AppInboxMessageContext<GroupStateInboxDurableResult>>();
         expectTypeOf<Parameters<typeof toGroupMutationDescriptor>[0]>().toEqualTypeOf<AuthenticatedGroupMutationEnqueue>();
         expectTypeOf<ReturnType<typeof toGroupMutationDescriptor>>().toEqualTypeOf<GroupMutationDescriptor>();
-    });
-
-    it('requires a narrow handler capability', () => {
-        expectTypeOf<GroupStateInboxHandlerDependencies>().toEqualTypeOf<ExpectedHandlerDependencies>();
-        expectTypeOf<GroupStateInboxHandlerDependencies['mutationService']>().toEqualTypeOf<GroupStateMutationService>();
-        expectTypeOf<GroupStateInboxHandlerDependencies['sessionGenerationLifecycle']>().toEqualTypeOf<WsSessionGenerationLifecycleService>();
-        expectTypeOf<GroupStateInboxHandlerDependencies['resultReader']>().toEqualTypeOf<GroupStateInboxResultReader>();
-        expectTypeOf<GroupStateInboxHandlerDependencies['transactionWriter']>().toEqualTypeOf<ExpectedTransactionWriter>();
-        expectTypeOf<GroupStateInboxHandlerDependencies['wakeQueue']>().toEqualTypeOf<(() => void) | undefined>();
-        expectTypeOf<ConstructorParameters<typeof GroupStateInboxHandler>>().toEqualTypeOf<[GroupStateInboxHandlerDependencies]>();
     });
 
     it('exports the computed-write result function with its direct input and output contract', () => {

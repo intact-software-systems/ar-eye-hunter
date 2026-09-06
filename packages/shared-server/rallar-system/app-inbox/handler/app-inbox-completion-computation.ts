@@ -29,11 +29,11 @@ export interface AppInboxCompletionFacts {
 
 export interface AppInboxCompletionInput<Result> extends AppInboxCompletionFacts {
     readonly durableResult: Result;
-    readonly status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED;
+    readonly status: ResourceInboxReservationFinish['status'];
 }
 
 interface AppInboxCompletionValidationFacts extends AppInboxCompletionFacts {
-    readonly status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED;
+    readonly status: ResourceInboxReservationFinish['status'];
 }
 
 export interface AppInboxCompletionComputed<Result> {
@@ -103,8 +103,11 @@ export function validateAppInboxCompletionFacts(
     if (input.entry.status !== EntityStatus.RESERVED) {
         issues.push(toAppInboxCompletionValidationIssue('entry.status', 'must be RESERVED'));
     }
-    if (input.status !== EntityStatus.COMPLETED && input.status !== EntityStatus.FAILED) {
-        issues.push(toAppInboxCompletionValidationIssue('status', 'must be COMPLETED or FAILED'));
+    if (
+        input.status !== EntityStatus.COMPLETED && input.status !== EntityStatus.FAILED &&
+        input.status !== EntityStatus.NON_RETRYABLE
+    ) {
+        issues.push(toAppInboxCompletionValidationIssue('status', 'must be COMPLETED, FAILED or NON_RETRYABLE'));
     }
     return issues;
 }

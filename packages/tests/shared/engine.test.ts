@@ -6,6 +6,30 @@ afterEach(() => {
 });
 
 describe('engine', () => {
+    it('wakes for a registered task deadline before idle backoff elapses', async () => {
+        vi.useFakeTimers();
+        const engine = new InboxOutboxEngine();
+        const dueAt = Date.now() + 20;
+        const ranAt: number[] = [];
+        engine.includeTask('receipt', {
+            name: 'receipt',
+            maxConcurrency: () => 1,
+            isWork: () => ranAt.length === 0 && Date.now() >= dueAt,
+            runnable: () => {
+                ranAt.push(Date.now());
+            },
+            ongoingTasks: []
+        });
+        engine.start();
+        await vi.advanceTimersByTimeAsync(0);
+        engine.wakeAt('receipt', dueAt);
+        await vi.advanceTimersByTimeAsync(19);
+        expect(ranAt).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(ranAt).toEqual([dueAt]);
+        engine.stop();
+    });
+
     it('shares an active pass between scheduled and manual execution without duplicating work', async () => {
         vi.useFakeTimers();
         const engine = new InboxOutboxEngine();

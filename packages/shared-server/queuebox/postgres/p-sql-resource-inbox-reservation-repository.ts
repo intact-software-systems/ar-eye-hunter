@@ -9,6 +9,7 @@ import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/Res
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+import { PSqlResourceInboxEntryRepository } from './p-sql-resource-inbox-entry-repository.ts';
 import { requeueObservedResourceInboxDeliveryFailure } from './requeue-observed-resource-inbox-delivery-failure.ts';
 import { rowsToMap, toDomain, type ResourceInboxRow } from './resource-inbox-row-codec.ts';
 
@@ -220,82 +221,32 @@ export class PSqlResourceInboxReservationRepository {
             : Either.ofRight<StartProcessingEntitySkipped, ResourceEntry>(toDomain(rows[0]));
     }
 
-    async updateResourceEntry(
-        key: Key,
-        newStatus: EntityStatus,
-        timeUntilNextAttemptMs: number | null
-    ): Promise<number> {
-        if (
-            timeUntilNextAttemptMs !== null &&
-            (!Number.isSafeInteger(timeUntilNextAttemptMs) || timeUntilNextAttemptMs < 0)
-        ) {
-            throw new Error('Resource inbox release delay must be a non-negative integer or null');
-        }
-
-        const endTs = new Date();
-        const nextTs = timeUntilNextAttemptMs !== null
-            ? new Date(endTs.getTime() + timeUntilNextAttemptMs)
-            : null;
-
-        const rows = await this.sql<{ ri_row_id: bigint; }[]>`
-            update resource_inbox
-            set ri_status = ${newStatus},
-                end_ts    = ${endTs},
-                next_ts   = ${nextTs}
-            where ri_topic_id = ${key.topicId}
-              and ri_resource_id = ${key.resourceId}
-              and fk_ext_bank_id = ${key.contextId}
-            returning ri_row_id
-        `;
-
-        return rows.length;
-    }
-
     async releaseReserved(
-        key: Key,
+        expected: ResourceEntry,
         options: Readonly<{
-            expectedAttempts: number;
             releasedAt: Temporal.Instant;
             disposition: ResourceInboxReleaseDisposition;
         }>
     ): Promise<ResourceEntry | null> {
         const disposition = toResourceInboxReleaseDisposition(options.disposition);
+        if (expected.status !== EntityStatus.RESERVED) {
+            return null;
+        }
         const persistedReleasedAt = Temporal.Instant.fromEpochMilliseconds(
             Number(options.releasedAt.epochMilliseconds)
         );
-        const endTs = new Date(Number(persistedReleasedAt.epochMilliseconds));
-        const nextTs = disposition.delayMs !== null
-            ? new Date(endTs.getTime() + disposition.delayMs)
-            : null;
-        const rows = await this.sql<ResourceInboxRow[]>`
-            update resource_inbox
-            set ri_status = ${disposition.status},
-                end_ts    = ${endTs},
-                next_ts   = ${nextTs}
-            where ri_topic_id = ${key.topicId}
-              and ri_resource_id = ${key.resourceId}
-              and fk_ext_bank_id = ${key.contextId}
-              and ri_status = ${EntityStatus.RESERVED}
-              and ri_attempts = ${options.expectedAttempts}
-              and expire_ts > (now() at time zone 'UTC')
-            returning *
-        `;
-
-        if (rows.length !== 1) {
-            return null;
-        }
-
-        const released = toDomain(rows[0]);
-        return {
-            ...released,
+        const computed: ResourceEntry = {
+            ...expected,
+            status: disposition.status,
             dequeueAudit: {
-                ...released.dequeueAudit,
+                ...expected.dequeueAudit,
                 endTs: persistedReleasedAt,
                 nextTs: disposition.delayMs !== null
                     ? persistedReleasedAt.add({ milliseconds: disposition.delayMs })
                     : undefined
             }
         };
+        return await new PSqlResourceInboxEntryRepository(this.sql).replaceIfObserved(expected, computed);
     }
 
     async requeueObservedDeliveryFailure(

@@ -216,7 +216,8 @@ describe('enqueue and dequeue', () => {
         )
             .withReturnDequeuedEntries(true)
             .dequeueForCompute(
-                async (_: Key, entry: ResourceEntry) => {
+                async (_, attempt) => {
+                    const entry = attempt.entry;
                     const testData: TestData = await JSON.parse(entry.resource);
 
                     expect(testData.name).toEqual(helloWorld);

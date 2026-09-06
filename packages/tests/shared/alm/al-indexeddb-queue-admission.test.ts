@@ -3,6 +3,9 @@ import '../../setup-browser-indexeddb.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
+import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import {
     AL_ADMISSION_WORK_STORE_NAME,
     openIndexedDbAdmissionDatabase
@@ -20,7 +23,146 @@ import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queue
 
 const admissionStore = 'admission';
 
-describe('atomic IndexedDB admission and QueueBox work', () => {
+describe('atomic admission and QueueBox work', () => {
+    it.each(['memory', 'indexeddb'] as const)('records QueueBox work through the %s admission write context', async (storage) => {
+        const backend = createWorkBackend(storage);
+        const entry = createEntry('backend-work');
+        await backend.write(async (transaction) => {
+            expect(await transaction.readWork(entry.key)).toBeUndefined();
+            await transaction.set('admitted', 'accepted');
+            transaction.writeWork(entry);
+            expect(await transaction.readWork(entry.key)).toMatchObject({ resource: 'backend-work' });
+        });
+        expect(await backend.read('admitted', (value) => value)).toBe('accepted');
+        const reserved = await backend.workQueue.reserveEntries(new Set(['alm-work']), new Set([EntityStatus.NEW]), 1);
+        expect([...reserved.values()]).toMatchObject([{ key: entry.key, resource: 'backend-work', status: EntityStatus.RESERVED }]);
+    });
+
+    it.each(['memory', 'indexeddb'] as const)('rolls back %s admission when a queue insertion loses its observed empty slot', async (storage) => {
+        const backend = createWorkBackend(storage);
+        const entry = createEntry('raced-work');
+        await expect(backend.write(async (transaction) => {
+            expect(await transaction.readWork(entry.key)).toBeUndefined();
+            await backend.workQueue.enqueueIfAbsent({ ...entry, resource: 'winner' });
+            await transaction.set('admitted', 'loser');
+            transaction.writeWork(entry);
+        })).rejects.toMatchObject({ name: 'ALAdmissionBackendConflictError' });
+        expect(await backend.read('admitted', (value) => value)).toBeUndefined();
+        expect((await backend.workQueue.getItem(entry.key))?.resource).toBe('winner');
+    });
+
+    it.each(['memory', 'indexeddb'] as const)('keeps neither state nor work after a rejected %s admission', async (storage) => {
+        const backend = createWorkBackend(storage);
+        const entry = createEntry('rejected');
+        await expect(backend.write(async (transaction) => {
+            await transaction.readWork(entry.key);
+            await transaction.set('admitted', 'rejected');
+            transaction.writeWork(entry);
+            throw new Error('Admission rejected');
+        })).rejects.toThrow('Admission rejected');
+        expect(await backend.read('admitted', (value) => value)).toBeUndefined();
+        expect(await backend.workQueue.getItem(entry.key)).toBeUndefined();
+    });
+
+    it.each(['memory', 'indexeddb'] as const)('reuses observed terminal %s work for a later repair', async (storage) => {
+        const backend = createWorkBackend(storage);
+        const entry = createEntry('repair');
+        await backend.workQueue.enqueue({ ...entry, status: EntityStatus.COMPLETED });
+        await backend.write(async (transaction) => {
+            const observed = await transaction.readWork(entry.key);
+            expect(observed?.status).toBe(EntityStatus.COMPLETED);
+            transaction.writeWork(entry);
+            await transaction.set('admitted', 'repair');
+        });
+        expect(await backend.read('admitted', (value) => value)).toBe('repair');
+        expect(await backend.workQueue.getItem(entry.key)).toMatchObject(entry);
+    });
+
+    it.each(['memory', 'indexeddb'] as const)('cannot overwrite a %s reservation made after the admission read', async (storage) => {
+        const backend = createWorkBackend(storage);
+        const entry = createEntry('reserved');
+        await backend.workQueue.enqueue(entry);
+        await expect(backend.write(async (transaction) => {
+            await transaction.readWork(entry.key);
+            await backend.workQueue.reserveEntries(new Set(['alm-work']), new Set([EntityStatus.NEW]), 1);
+            transaction.writeWork({ ...entry, resource: 'stale-repair' });
+            await transaction.set('admitted', 'stale');
+        })).rejects.toMatchObject({ name: 'ALAdmissionBackendConflictError' });
+        expect(await backend.read('admitted', (value) => value)).toBeUndefined();
+        expect(await backend.workQueue.getItem(entry.key)).toMatchObject({
+            status: EntityStatus.RESERVED,
+            resource: 'reserved',
+            dequeueAudit: { attempts: 1 }
+        });
+    });
+
+    it.each(['memory', 'indexeddb'] as const)('owns %s admission work values across reads and computed writes', async (storage) => {
+        const backend = createWorkBackend(storage);
+        const entry = createEntry('owned');
+        await backend.workQueue.enqueue({ ...entry, status: EntityStatus.COMPLETED });
+        await backend.write(async (transaction) => {
+            const observed = await transaction.readWork(entry.key);
+            observed!.status = EntityStatus.FAILED;
+            expect((await transaction.readWork(entry.key))?.status).toBe(EntityStatus.COMPLETED);
+            transaction.writeWork(entry);
+            const pending = await transaction.readWork(entry.key);
+            Object.assign(pending!.dequeueAudit, { attempts: 99 });
+            Object.assign(entry.audit, { createdBy: 'mutated-after-write' });
+            Object.assign(entry.key, { resourceId: 'mutated-key' });
+        });
+        expect(await backend.workQueue.getItem(createEntry('owned').key)).toMatchObject(createEntry('owned'));
+    });
+
+    it.each(['memory', 'indexeddb'] as const)('rejects a %s decision when a read-only queue observation changes', async (storage) => {
+        const backend = createWorkBackend(storage);
+        const entry = createEntry('observed-work');
+        await backend.workQueue.enqueue(entry);
+        await expect(backend.write(async (transaction) => {
+            expect((await transaction.readWork(entry.key))?.status).toBe(EntityStatus.NEW);
+            await backend.workQueue.reserveEntries(new Set(['alm-work']), new Set([EntityStatus.NEW]), 1);
+            await transaction.set('admitted', 'stale-decision');
+        })).rejects.toMatchObject({ name: 'ALAdmissionBackendConflictError' });
+        expect(await backend.read('admitted', (value) => value)).toBeUndefined();
+        expect((await backend.workQueue.getItem(entry.key))?.status).toBe(EntityStatus.RESERVED);
+    });
+
+    it.each(['memory', 'indexeddb'] as const)('guards an observed empty %s queue slot even without a queued write', async (storage) => {
+        const backend = createWorkBackend(storage);
+        const entry = createEntry('observed-empty');
+        await expect(backend.write(async (transaction) => {
+            expect(await transaction.readWork(entry.key)).toBeUndefined();
+            await backend.workQueue.enqueueIfAbsent(entry);
+        })).rejects.toMatchObject({ name: 'ALAdmissionBackendConflictError' });
+        expect(await backend.workQueue.getItem(entry.key)).toMatchObject(entry);
+    });
+
+    it.each(['memory', 'indexeddb'] as const)('commits a %s decision without rewriting unchanged observed work', async (storage) => {
+        const backend = createWorkBackend(storage);
+        const entry = createEntry('unchanged-work');
+        await backend.workQueue.enqueue(entry);
+        const observed = await backend.workQueue.getItem(entry.key);
+        await backend.write(async (transaction) => {
+            expect(await transaction.readWork(entry.key)).toEqual(observed);
+            await transaction.set('admitted', 'accepted');
+        });
+        expect(await backend.read('admitted', (value) => value)).toBe('accepted');
+        expect(await backend.workQueue.getItem(entry.key)).toEqual(observed);
+    });
+
+    it.each(['memory', 'indexeddb'] as const)('fences an old %s worker after completed work is reused at the same key', async (storage) => {
+        const queue = createWorkBackend(storage).workQueue;
+        const entry = createEntry('reused');
+        await queue.enqueue(entry);
+        const [old] = (await queue.reserveEntries(new Set(['alm-work']), new Set([EntityStatus.NEW]), 1)).values();
+        await queue.releaseEntries([old], { status: EntityStatus.COMPLETED, delayMs: null });
+        await queue.enqueue({ ...entry, resource: 'later-work' });
+        const [current] = (await queue.reserveEntries(new Set(['alm-work']), new Set([EntityStatus.NEW]), 1)).values();
+        expect(old.dequeueAudit.attempts).toBe(current.dequeueAudit.attempts);
+        await expect(queue.releaseEntries([old], { status: EntityStatus.COMPLETED, delayMs: null }))
+            .rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
+        expect(await queue.getItem(entry.key)).toEqual(current);
+    });
+
     it('records admission and work together, then reserves work through the existing QueueBox', async () => {
         const { db, queue } = await createStorage();
         const entry = createEntry('message');
@@ -115,6 +257,12 @@ describe('atomic IndexedDB admission and QueueBox work', () => {
 interface AdmissionQueueStorage {
     readonly db: IDBDatabase;
     readonly queue: IndexedDbQueueBox;
+}
+
+function createWorkBackend(storage: 'memory' | 'indexeddb'): ALAdmissionWorkBackend {
+    return storage === 'memory'
+        ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
+        : new IndexedDbAdmissionBackend(`backend-work-${crypto.randomUUID()}`, admissionStore, Date.now);
 }
 
 async function createStorage(): Promise<AdmissionQueueStorage> {

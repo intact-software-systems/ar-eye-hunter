@@ -6,12 +6,12 @@ import {
     type ALParsedControlMessage,
     type ALRepairPayload
 } from '../../al-contracts/al-control.ts';
-import type { ALAdmissionBackend, ALAdmissionWriteContext } from '../al-admission-backend.ts';
 import {
     decodeALAdmissionClientRecord,
     decodeALAdmissionControlValue,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
+import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { ALOutboundAdmissionEffectStore } from './al-outbound-admission-effect-store.ts';
@@ -30,20 +30,17 @@ import {
     type ALControlAdmissionRead,
     type ALControlHistory
 } from './compute-al-outbound-control-admission.ts';
-import {
-    toALOutboundPendingAckExpireAtTimestamp
-} from './transition-al-outbound-pending-ack.ts';
 import { validateALOutboundControlAdmission } from './validate-al-outbound-control-admission.ts';
 
 export interface CreateALOutboundAdmissionControlStoreInput {
-    readonly backend: ALAdmissionBackend;
+    readonly backend: ALAdmissionWorkBackend;
     readonly effectStore: ALOutboundAdmissionEffectStore;
     readonly namespace: string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
 }
 
 export class ALOutboundAdmissionControlStore {
-    private readonly backend: ALAdmissionBackend;
+    private readonly backend: ALAdmissionWorkBackend;
     private readonly effectStore: ALOutboundAdmissionEffectStore;
     private readonly namespace: string;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
@@ -57,7 +54,7 @@ export class ALOutboundAdmissionControlStore {
 
     async acceptControlMessage<TPrepared>(
         msg: ALMessage,
-        _decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<ALOutboundControlAcceptance> {
         const decoded = decodeALControlMessage(msg);
         if (decoded.left) {
@@ -73,7 +70,7 @@ export class ALOutboundAdmissionControlStore {
         }
         await this.backend.write(async (tx) => {
             await this.assertControlAdmissionFence(tx, validated.right!.read);
-            await this.applyControlAdmission(tx, validated.right!);
+            await this.applyControlAdmission(tx, validated.right!, decodePrepared);
         });
         return { handled: true };
     }
@@ -144,7 +141,7 @@ export class ALOutboundAdmissionControlStore {
     }
 
     private async assertControlAdmissionFence(
-        tx: ALAdmissionWriteContext,
+        tx: ALAdmissionWorkWriteContext,
         read: ALControlAdmissionRead
     ): Promise<void> {
         const currentOwner = await tx.read(this.toMessageOwnerKey(read.targetMsgId), decodeALAdmissionString);
@@ -162,9 +159,10 @@ export class ALOutboundAdmissionControlStore {
         }
     }
 
-    private async applyControlAdmission(
-        tx: ALAdmissionWriteContext,
-        candidate: ALControlAdmissionCandidate
+    private async applyControlAdmission<TPrepared>(
+        tx: ALAdmissionWorkWriteContext,
+        candidate: ALControlAdmissionCandidate,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void> {
         const { read } = candidate;
         await tx.set(
@@ -182,7 +180,7 @@ export class ALOutboundAdmissionControlStore {
                 await tx.set(
                     this.toPendingAckKey(read.targetMsgId),
                     candidate.pending.value,
-                    toALOutboundPendingAckExpireAtTimestamp(candidate.pending.value)
+                    candidate.receiptExpireAtTimestamp
                 );
                 break;
         }
@@ -190,7 +188,7 @@ export class ALOutboundAdmissionControlStore {
             await tx.remove(this.toRepairAttemptKey(read.targetMsgId));
         }
         if (candidate.repairEffect) {
-            await this.effectStore.writePreparedEffect(tx, candidate.repairEffect, candidate.read.nowMs);
+            await this.effectStore.persistEffect(tx, candidate.repairEffect, decodePrepared);
         }
         await tx.set(
             this.toVersionKey(read.owner!),

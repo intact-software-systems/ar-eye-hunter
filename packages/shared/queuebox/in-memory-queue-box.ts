@@ -2,6 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 
 import { EnqueuedType } from '../api/api-config.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
+import { Either } from '../resilience/Either.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { ResilienceDto } from './DequeueResourceEntryController.ts';
 import { hasSameResourceEntryValue } from './has-same-resource-entry-value.ts';
@@ -35,6 +36,20 @@ import {
     toResourceEntryKey
 } from './ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from './ResourceInboxRetryPolicy.ts';
+
+export namespace InMemoryQueueBox {
+    export interface ComputedWrite {
+        readonly expected: ResourceEntry | undefined;
+        readonly entry: ResourceEntry;
+    }
+
+    export interface ComputedGuard {
+        readonly key: Key;
+        readonly expected: ResourceEntry | undefined;
+    }
+
+    export type ComputedOperation = ComputedWrite | ComputedGuard;
+}
 
 export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     private readonly data: Map<ResourceEntryKeyString, ResourceEntry>;
@@ -91,45 +106,51 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         expected: ResourceEntry,
         replacement: ResourceEntry
     ): Promise<ResourceEntry | null> {
-        const key = toKeyAsString(expected.key);
-        if (key !== toKeyAsString(replacement.key)) {
-            throw new TypeError('Queue replacement key differs from its observation');
-        }
-        const current = this.data.get(key);
-        if (
-            current === undefined ||
-            isExpiredResourceEntry(current) ||
-            !hasSameResourceEntryValue(current, expected)
-        ) {
-            return null;
-        }
-
-        this.data.set(key, toResourceEntrySnapshot(replacement));
-        return toResourceEntrySnapshot(replacement);
+        return this.writeIfAllObserved([{ expected, entry: replacement }])
+            ? toResourceEntrySnapshot(replacement)
+            : null;
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
-        const previous = this.data.get(toKeyAsString(resourceEntry.key));
-
-        if (!previous || isExpiredResourceEntry(previous)) {
-            this.data.set(toKeyAsString(resourceEntry.key), toResourceEntrySnapshot(resourceEntry));
+        if (this.writeIfAllObserved([{ expected: undefined, entry: resourceEntry }])) {
             return toResourceEntrySnapshot(resourceEntry);
         }
+        return toResourceEntrySnapshot(this.data.get(toKeyAsString(resourceEntry.key))!);
+    }
 
-        return toResourceEntrySnapshot(previous);
+    /** The caller can commit its other in-memory state immediately after this synchronous batch. */
+    writeIfAllObserved(writes: readonly InMemoryQueueBox.ComputedOperation[]): boolean {
+        const observedAt = Temporal.Now.instant();
+        const observations = writes.map((write) => {
+            const key = toKeyAsString('entry' in write ? write.entry.key : write.key);
+            return {
+                key,
+                expected: write.expected,
+                entry: 'entry' in write ? toResourceEntrySnapshot(write.entry) : undefined,
+                existing: this.data.get(key)
+            };
+        });
+        const validated = validateInMemoryQueueWrites(observations, observedAt);
+        if (validated.left === 'conflict') {
+            return false;
+        }
+        if (validated.left) {
+            throw validated.left;
+        }
+        for (const write of validated.right!) {
+            if (write.entry !== undefined) {
+                this.data.set(write.key, write.entry);
+            }
+        }
+        return true;
     }
 
     async tryWriteIfAbsentOrReplaceExpired(
         resourceEntry: ResourceEntry
     ): Promise<ResourceEntry | null> {
-        const key = toKeyAsString(resourceEntry.key);
-        const current = this.data.get(key);
-        if (current !== undefined && !isExpiredResourceEntry(current)) {
-            return null;
-        }
-
-        this.data.set(key, toResourceEntrySnapshot(resourceEntry));
-        return toResourceEntrySnapshot(resourceEntry);
+        return this.writeIfAllObserved([{ expected: undefined, entry: resourceEntry }])
+            ? toResourceEntrySnapshot(resourceEntry)
+            : null;
     }
 
     async releaseEntries(
@@ -145,7 +166,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                     (
                         isExpiredResourceEntry(current) ||
                         current.status !== EntityStatus.RESERVED ||
-                        current.dequeueAudit.attempts !== resource.dequeueAudit.attempts
+                        !hasSameResourceEntryValue(current, resource)
                     ) &&
                     !isIdempotentHandlerFinalizedRelease(
                         current,
@@ -303,13 +324,13 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         input: ResourceInboxFinalizationReservationOptions
     ): Promise<Map<Key, ResourceInboxFinalizationSelection>> {
         const options = toResourceInboxFinalizationReservationOptions(input);
-        if (!typeIds.has(EnqueuedType.APP_INBOX) || options.maxToReserve === 0) {
+        if (typeIds.size === 0 || options.maxToReserve === 0) {
             return new Map();
         }
         const now = Temporal.Now.instant();
         const staleBefore = now.subtract({ milliseconds: options.staleAfterMs });
         const candidates = [...this.data.entries()].filter(([, entry]) =>
-            entry.typeId === EnqueuedType.APP_INBOX &&
+            typeIds.has(entry.typeId) &&
             entry.status === EntityStatus.RESERVED &&
             !isExpiredResourceEntry(entry, now) &&
             entry.dequeueAudit.attempts >= options.processingAttempts &&
@@ -502,6 +523,37 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     }
 }
 
+interface InMemoryQueueWrite {
+    readonly key: ResourceEntryKeyString;
+    readonly expected: ResourceEntry | undefined;
+    readonly entry: ResourceEntry | undefined;
+    readonly existing: ResourceEntry | undefined;
+}
+
+function validateInMemoryQueueWrites(
+    writes: readonly InMemoryQueueWrite[],
+    observedAt: Temporal.Instant
+): Either<Error | 'conflict', readonly InMemoryQueueWrite[]> {
+    const keys = new Set<string>();
+    for (const write of writes) {
+        if (keys.has(write.key)) {
+            return Either.ofLeft(new TypeError('Queue writes contain a duplicate key'));
+        }
+        if (write.expected !== undefined && toKeyAsString(write.expected.key) !== write.key) {
+            return Either.ofLeft(new TypeError('Queue replacement key differs from its observation'));
+        }
+        keys.add(write.key);
+    }
+    return writes.some(({ expected, existing }) =>
+            expected === undefined
+                ? existing !== undefined && !isExpiredResourceEntry(existing, observedAt)
+                : existing === undefined || isExpiredResourceEntry(existing, observedAt) ||
+                    !hasSameResourceEntryValue(existing, expected)
+        )
+        ? Either.ofLeft('conflict')
+        : Either.ofRight(writes);
+}
+
 function computeReservedResourceEntry(entry: ResourceEntry, now: Temporal.Instant): ResourceEntry {
     return {
         ...entry,
@@ -534,7 +586,7 @@ function computeReleasedResourceEntry(
     };
 }
 
-function toResourceEntrySnapshot(entry: ResourceEntry): ResourceEntry {
+export function toResourceEntrySnapshot(entry: ResourceEntry): ResourceEntry {
     // Temporal leaves are immutable; copy the mutable records without structuredClone losing their prototypes.
     return {
         ...entry,

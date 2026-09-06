@@ -520,6 +520,7 @@ describe('IndexedDB AL runtime stores', () => {
 
         await enqueueOutboundOrThrow(runtime1, seq1);
         await enqueueOutboundOrThrow(runtime1, seq2);
+        runtime1.dispose();
 
         const runtime2 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent });
         await runtime2.acceptControlMessage(
@@ -538,7 +539,7 @@ describe('IndexedDB AL runtime stores', () => {
             )
         );
 
-        expect(sent.filter((entry) => entry.msgId === seq1.id.msgId)).toHaveLength(2);
+        await expect.poll(() => sent.filter((entry) => entry.msgId === seq1.id.msgId)).toHaveLength(2);
     });
 
     it('drains committed outbound effects from IndexedDB after restart', async () => {
@@ -706,9 +707,8 @@ describe('IndexedDB AL runtime stores', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
 
-        await new Promise<void>((resolve) => setTimeout(resolve, 30));
-
-        expect(acceptedAckDuringTimeout).toBe(true);
+        await expect.poll(() => acceptedAckDuringTimeout).toBe(true);
+        await expect.poll(() => admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
@@ -878,6 +878,7 @@ function createFlakyOutboundAdmissionStore(
         ) => inner.readRepairMessage<TPrepared>(msgId, planner),
         getSentMessage: (msgId: string) => inner.getSentMessage(msgId),
         getAllSentMessages: () => inner.getAllSentMessages(),
+        readReceiptState: (msgId: string) => inner.readReceiptState(msgId),
         getPendingAck: (msgId: string) => inner.getPendingAck(msgId),
         commitBundle: <TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>, decode: ALOutboundPreparedMessageDecoder<TPrepared>) =>
             hooks.commitBundle
@@ -889,14 +890,14 @@ function createFlakyOutboundAdmissionStore(
             hooks.claimReadyEffects
                 ? hooks.claimReadyEffects(input, decode)
                 : inner.claimReadyEffects(input, decode),
-        completeEffect: (effectId, leaseOwner, decode) =>
+        completeEffect: (reservation) =>
             hooks.completeEffect
-                ? hooks.completeEffect(effectId, leaseOwner, decode)
-                : inner.completeEffect(effectId, leaseOwner, decode),
-        rescheduleEffect: (input, decode) =>
+                ? hooks.completeEffect(reservation)
+                : inner.completeEffect(reservation),
+        rescheduleEffect: (input) =>
             hooks.rescheduleEffect
-                ? hooks.rescheduleEffect(input, decode)
-                : inner.rescheduleEffect(input, decode),
+                ? hooks.rescheduleEffect(input)
+                : inner.rescheduleEffect(input),
         peekNextEffectReadyAt: (decode) => inner.peekNextEffectReadyAt(decode)
     };
 }

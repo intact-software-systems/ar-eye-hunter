@@ -8,6 +8,13 @@ import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import { describe, expect, it, vi } from 'vitest';
 
+interface OutboundObligationInput {
+    readonly targets: NonNullable<ALMessage['targets']>;
+    readonly expectedPeerIds: readonly string[];
+    readonly ackedPeerIds: readonly string[];
+    readonly ordering: ALMessage['ordering'];
+}
+
 describe('outbound control admission identity', () => {
     it.each(['ack', 'nack', 'repair'] as const)('does not create state or repair effects for an unknown %s', async (type) => {
         const { store, state } = createFixture();
@@ -15,6 +22,7 @@ describe('outbound control admission identity', () => {
 
         expect(await store.acceptControlMessage(control, decodeALOutboundPreparedMessage)).toEqual({ handled: false });
         expect(state.data.size).toBe(0);
+        expect(await store.claimReadyEffects({ maxCount: 10 }, decodeALOutboundPreparedMessage)).toEqual([]);
     });
 
     it('ignores an ACK from an unexpected peer and accepts the expected receiver without changing the input', async () => {
@@ -41,6 +49,7 @@ describe('outbound control admission identity', () => {
 
         expect(await store.acceptControlMessage(controlMessage(type, 'intruder'), decodeALOutboundPreparedMessage)).toEqual({ handled: false });
         expect([...state.data]).toEqual(baseline);
+        expect(await store.claimReadyEffects({ maxCount: 10 }, decodeALOutboundPreparedMessage)).toEqual([]);
     });
 
     it('rejects a control addressed to another local message owner', async () => {
@@ -67,7 +76,17 @@ describe('outbound control admission identity', () => {
             handled: false
         });
         expect([...state.data]).toEqual(acceptedState);
-        expect([...state.data.keys()].filter((key) => key.includes(':effect:'))).toHaveLength(1);
+        const effects = await store.claimReadyEffects({ maxCount: 10 }, decodeALOutboundPreparedMessage);
+        expect(effects.map((effect) => effect.payload)).toEqual([{
+            kind: 'repair-hint',
+            msgId: 'message',
+            request: {
+                trigger: 'repair',
+                requestedByPeerId: 'receiver',
+                missingSeqs: [],
+                failedPeerIds: []
+            }
+        }]);
     });
 
     it('keeps control history within the persisted collection limit', async () => {
@@ -140,12 +159,12 @@ describe('outbound control admission identity', () => {
     it('completes a frozen 256-peer audience after diagnostic ACK history is already full', async () => {
         const { store, state } = createFixture();
         const expectedPeerIds = Array.from({ length: 256 }, (_, index) => `peer-${index}`);
-        await seedObligation(
-            store,
-            { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
+        await seedObligation(store, {
+            targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
             expectedPeerIds,
-            expectedPeerIds.slice(0, -1)
-        );
+            ackedPeerIds: expectedPeerIds.slice(0, -1),
+            ordering: undefined
+        });
         const values = [
             ...expectedPeerIds.slice(0, -1).map((fromPeerId, observedAtEpochMs) => ({
                 ackedMsgId: 'message',
@@ -189,7 +208,7 @@ describe('outbound control admission identity', () => {
         await expect(store.acceptControlMessage(controlMessage('ack'), decodeALOutboundPreparedMessage))
             .rejects.toBeInstanceOf(ALAdmissionBackendConflictError);
         expect(state.data.has('outbound-control:control:acks:message')).toBe(false);
-        expect(state.data.has('outbound-control:effect:message')).toBe(false);
+        expect(await store.claimReadyEffects({ maxCount: 10 }, decodeALOutboundPreparedMessage)).toEqual([]);
     });
 });
 
@@ -206,49 +225,43 @@ function createFixture() {
 }
 
 async function seedDirectObligation(store: ALOutboundAdmissionStore): Promise<void> {
-    await seedObligation(store, { mode: 'unicast', toPeerId: 'receiver' }, ['receiver']);
+    await seedObligation(store, {
+        targets: { mode: 'unicast', toPeerId: 'receiver' },
+        expectedPeerIds: ['receiver'],
+        ackedPeerIds: [],
+        ordering: undefined
+    });
 }
 
 async function seedMulticastObligation(store: ALOutboundAdmissionStore): Promise<void> {
-    await seedObligation(
-        store,
-        { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
-        ['receiver', 'other-receiver']
-    );
+    await seedObligation(store, {
+        targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } },
+        expectedPeerIds: ['receiver', 'other-receiver'],
+        ackedPeerIds: [],
+        ordering: undefined
+    });
 }
 
 async function seedOrderedObligation(store: ALOutboundAdmissionStore): Promise<void> {
-    const msg: ALMessage = {
-        id: { v: 2, msgId: 'message', senderId: 'sender', ts: 1 },
-        route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
-        payload: { typeId: 'command.v1', resource: '{}' },
+    await seedObligation(store, {
         targets: { mode: 'unicast', toPeerId: 'receiver' },
+        expectedPeerIds: ['receiver'],
+        ackedPeerIds: [],
         ordering: { orderingKey: 'stream', epoch: 7, seq: 10 }
-    };
-    await commitObligation(store, msg, ['receiver'], []);
+    });
 }
 
 async function seedObligation(
     store: ALOutboundAdmissionStore,
-    targets: NonNullable<ALMessage['targets']>,
-    expectedPeerIds: readonly string[],
-    ackedPeerIds: readonly string[] = []
+    input: OutboundObligationInput
 ): Promise<void> {
     const msg: ALMessage = {
         id: { v: 2, msgId: 'message', senderId: 'sender', ts: 1 },
         route: { topicId: 'command', resourceId: 'resource', contextId: 'context' },
         payload: { typeId: 'command.v1', resource: '{}' },
-        targets
+        targets: input.targets,
+        ordering: input.ordering
     };
-    await commitObligation(store, msg, expectedPeerIds, ackedPeerIds);
-}
-
-async function commitObligation(
-    store: ALOutboundAdmissionStore,
-    msg: ALMessage,
-    expectedPeerIds: readonly string[],
-    ackedPeerIds: readonly string[]
-): Promise<void> {
     await store.commitBundle({
         senderId: 'sender',
         mutations: [
@@ -258,8 +271,8 @@ async function commitObligation(
                 kind: 'set-pending-ack',
                 snapshot: {
                     msgId: 'message',
-                    expectedPeerIds,
-                    ackedPeerIds,
+                    expectedPeerIds: input.expectedPeerIds,
+                    ackedPeerIds: input.ackedPeerIds,
                     timeoutMs: 2000,
                     maxAttempts: 3,
                     attempts: 0,

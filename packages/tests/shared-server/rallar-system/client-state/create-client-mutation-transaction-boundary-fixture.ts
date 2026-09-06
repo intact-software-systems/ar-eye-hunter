@@ -1,4 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { Reservator } from '@shared/queuebox/DequeueController.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 
 import {
     AppInboxType,
@@ -169,6 +171,12 @@ function createReservedClientContext(): AppInboxMessageContext<ClientStateWritte
             payload: { typeId: enqueue.type, contentType: 'application/json', resource: entry.resource }
         },
         entry,
+        attemptTelemetry: computeResourceInboxAttempt({
+            entry: entry,
+            selectedLane: Reservator.NEW,
+            selectedAtEpochMs: Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds),
+            selectedDueAtEpochMs: undefined
+        }).telemetry,
         encodeResult: (result) => encodeAppInboxResult(result, 'Client transaction test result')
     };
 }

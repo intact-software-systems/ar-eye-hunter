@@ -204,15 +204,12 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         input: ResourceInboxFinalizationReservationOptions
     ): Promise<Map<Key, ResourceInboxFinalizationSelection>> {
         const options = toResourceInboxFinalizationReservationOptions(input);
-        const finalizationTypes = typeIds.has(EnqueuedType.APP_INBOX)
-            ? new Set([EnqueuedType.APP_INBOX])
-            : new Set<string>();
-        if (finalizationTypes.size === 0 || options.maxToReserve === 0) {
+        if (typeIds.size === 0 || options.maxToReserve === 0) {
             return new Map();
         }
         return await this.resourceInbox.transaction(async (txRepo) => {
             const found = await txRepo.finalization.findRetryExhaustionFinalizationsSkipLocked(
-                finalizationTypes,
+                typeIds,
                 options.staleAfterMs,
                 {
                     processingAttempts: options.processingAttempts,
@@ -252,8 +249,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                 const releasedEntries = new Map<Key, ResourceEntry>();
 
                 for (const entry of resources) {
-                    const updated = await txRepo.reservations.releaseReserved(entry.key, {
-                        expectedAttempts: entry.dequeueAudit.attempts,
+                    const updated = await txRepo.reservations.releaseReserved(entry, {
                         releasedAt,
                         disposition
                     });

@@ -1,3 +1,4 @@
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -31,22 +32,20 @@ describe('ALOutboundMessageRuntime', () => {
         vi.restoreAllMocks();
     });
 
-    it('replays a deferred send using its supplied store, clock, and scheduler', async () => {
+    it('replays a deferred send using its supplied store, clock, and queue engine', async () => {
         vi.useFakeTimers();
         const admissionStore = createDefaultOutboundTestAdmissionStore();
         const sent: string[] = [];
         let nowMs = Date.now() + 1_000;
+        vi.setSystemTime(nowMs);
+        const queueEngine = new InboxOutboxEngine();
         const runtime = new ALOutboundMessageRuntime<OutboundTestPayload>({
             decodePreparedMessage: decodeOutboundTestPayload,
             admissionStore,
             effectWorkerId: 'injected-outbound-worker',
             clock: { nowMs: () => nowMs },
-            scheduler: {
-                schedule: (callback, delayMs) => {
-                    const timer = setTimeout(callback, delayMs * 2);
-                    return () => clearTimeout(timer);
-                }
-            },
+            queueEngine,
+            ownsQueueEngine: false,
             browserLocks: undefined,
             outbox: new InMemoryQueueBox(new Map()),
             diagnostics: undefined,
@@ -66,10 +65,15 @@ describe('ALOutboundMessageRuntime', () => {
 
         await runtime.enqueueIfAbsent(createOutboundMessage('injected-retry'));
         expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBe(nowMs + 25);
-        nowMs += 25;
-        await vi.advanceTimersByTimeAsync(25);
+        nowMs += 24;
+        vi.setSystemTime(nowMs);
+        await queueEngine.executeOnce();
+        await vi.advanceTimersByTimeAsync(0);
         expect(sent).toEqual(['injected-retry']);
-        await vi.advanceTimersByTimeAsync(25);
+        nowMs += 1;
+        vi.setSystemTime(nowMs);
+        await queueEngine.executeOnce();
+        await vi.advanceTimersByTimeAsync(0);
         expect(sent).toEqual(['injected-retry', 'injected-retry']);
         expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
     });
@@ -593,7 +597,7 @@ describe('ALOutboundMessageRuntime', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
 
-        await vi.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(102);
 
         expect(sent[1]).toMatchObject({
             kind: 'repair',
@@ -602,7 +606,7 @@ describe('ALOutboundMessageRuntime', () => {
             phase: 'immediate'
         });
 
-        await vi.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(102);
         expect(sent).toHaveLength(2);
 
         runtime.dispose();
@@ -696,7 +700,7 @@ describe('ALOutboundMessageRuntime', () => {
             )
         );
 
-        expect(sent.map((entry) => entry.msgId)).toEqual([
+        await expect.poll(() => sent.map((entry) => entry.msgId)).toEqual([
             seq1.id.msgId,
             seq2.id.msgId,
             seq1.id.msgId
@@ -747,7 +751,7 @@ describe('ALOutboundMessageRuntime', () => {
         await vi.advanceTimersByTimeAsync(49);
         expect(sent).toHaveLength(1);
 
-        await vi.advanceTimersByTimeAsync(1);
+        await vi.advanceTimersByTimeAsync(3);
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
@@ -806,6 +810,7 @@ describe('ALOutboundMessageRuntime', () => {
             )
         );
         await vi.advanceTimersByTimeAsync(50);
+        await vi.advanceTimersByTimeAsync(1);
 
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
@@ -870,6 +875,7 @@ describe('ALOutboundMessageRuntime', () => {
             )
         );
         await vi.advanceTimersByTimeAsync(50);
+        await vi.advanceTimersByTimeAsync(1);
 
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
@@ -922,9 +928,11 @@ describe('ALOutboundMessageRuntime', () => {
         await runtime.acceptControlMessage(nack());
         await runtime.acceptControlMessage(nack());
         await vi.advanceTimersByTimeAsync(50);
+        await vi.advanceTimersByTimeAsync(1);
 
         await runtime.acceptControlMessage(nack(2));
         await vi.advanceTimersByTimeAsync(50);
+        await vi.advanceTimersByTimeAsync(1);
 
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
@@ -1199,6 +1207,7 @@ describe('ALOutboundMessageRuntime', () => {
             )
         );
 
+        await expect.poll(() => outbox.getItem(msg.route)).toBeDefined();
         const reserved = await outbox.reserveEntries(
             new Set(['outbox']),
             new Set([EntityStatus.NEW]),

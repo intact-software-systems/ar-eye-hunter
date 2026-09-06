@@ -1,5 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceInboxAttemptTelemetry } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
 
 export const AppInboxType = {
@@ -81,6 +82,7 @@ export type AppInboxExecutionMetadata = Readonly<{
     enqueue: AppInboxEnqueueInput;
     message: ALMessage;
     entry: ResourceEntry;
+    attemptTelemetry: ResourceInboxAttemptTelemetry;
 }>;
 
 export type AppInboxMessageContext<Result> =

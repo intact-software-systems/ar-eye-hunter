@@ -1,3 +1,4 @@
+import { Reservator } from '@shared/queuebox/DequeueController.ts';
 import {
     describe,
     expect,
@@ -412,6 +413,7 @@ describe('topology AppInbox transaction and idempotency', () => {
                         status: EntityStatus.RESERVED,
                         dequeueAudit: { ...entry.dequeueAudit, attempts: 1 }
                     },
+                    attemptTelemetry: { selectedLane: Reservator.NEW, queueAgeMs: 0, dueAgeMs: 0, attempt: 1, selectedDueAtEpochMs: 0 },
                     encodeResult: (result) => encodeAppInboxResult(result, 'Topology transaction test result')
                 } satisfies AppInboxMessageContext<TopologyAppInboxResult>,
                 management.mutationOwners

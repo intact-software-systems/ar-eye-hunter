@@ -71,7 +71,12 @@ export function submitComputedIndexedDbQueueMutations(
                 store.transaction.abort();
                 return;
             }
-            mutation.kind === 'put' ? store.put(mutation.value) : store.delete(mutation.keyString);
+            if (mutation.kind === 'put') {
+                store.put(mutation.value);
+            }
+            else if (mutation.kind === 'delete') {
+                store.delete(mutation.keyString);
+            }
         };
     }
     return state;

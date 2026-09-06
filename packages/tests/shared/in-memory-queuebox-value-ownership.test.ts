@@ -9,6 +9,27 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 
 describe('InMemoryQueueBox value ownership', () => {
+    it('commits no insertion when any member of a batch has a live winner', async () => {
+        const queue = new InMemoryQueueBox();
+        const existing = createEntry();
+        await queue.enqueue(existing);
+        const fresh = { ...createEntry(), key: { ...existing.key, resourceId: 'fresh' } };
+        expect(queue.writeIfAllObserved([{ expected: undefined, entry: fresh }, { expected: undefined, entry: { ...existing, resource: 'loser' } }])).toBe(
+            false
+        );
+        expect(await queue.getItem(fresh.key)).toBeUndefined();
+        expect(await queue.getItem(existing.key)).toEqual(existing);
+    });
+
+    it('rejects duplicate batch identities before recording any work', async () => {
+        const queue = new InMemoryQueueBox();
+        const entry = createEntry();
+        expect(() => queue.writeIfAllObserved([{ expected: undefined, entry }, { expected: undefined, entry: { ...entry, resource: 'other' } }])).toThrow(
+            'duplicate'
+        );
+        expect(await queue.getAllKeys()).toEqual([]);
+    });
+
     it('keeps the computed input and read observation unchanged when work is reserved', async () => {
         const entry = createEntry();
         const queue = new InMemoryQueueBox();
@@ -73,6 +94,7 @@ describe('InMemoryQueueBox value ownership', () => {
             'constructor',
             'enqueue',
             'enqueueIfAbsent',
+            'writeIfAllObserved',
             'tryWriteIfAbsentOrReplaceExpired',
             'replaceIfObserved',
             'setItem'
@@ -90,6 +112,9 @@ describe('InMemoryQueueBox value ownership', () => {
                 break;
             case 'enqueueIfAbsent':
                 await queue.enqueueIfAbsent(entry);
+                break;
+            case 'writeIfAllObserved':
+                expect(queue.writeIfAllObserved([{ expected: undefined, entry }])).toBe(true);
                 break;
             case 'tryWriteIfAbsentOrReplaceExpired':
                 await queue.tryWriteIfAbsentOrReplaceExpired(entry);

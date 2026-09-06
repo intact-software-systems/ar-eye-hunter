@@ -18,14 +18,16 @@ describe('Postgres runtime-state client lifecycle', () => {
 
         await expect(
             withPostgresClients(
-                'acquisition-failure',
-                2,
-                () => {
-                    createCalls += 1;
-                    if (createCalls === 1) {
-                        return Promise.resolve(firstClient);
+                {
+                    namespace: 'acquisition-failure',
+                    clientCount: 2,
+                    createClient: () => {
+                        createCalls += 1;
+                        if (createCalls === 1) {
+                            return Promise.resolve(firstClient);
+                        }
+                        throw setupFailure;
                     }
-                    throw setupFailure;
                 },
                 () => {
                     runCalls += 1;
@@ -55,14 +57,16 @@ describe('Postgres runtime-state client lifecycle', () => {
 
         await expect(
             withPostgresClients(
-                'synchronous-cleanup-acquisition-failure',
-                2,
-                () => {
-                    createCalls += 1;
-                    if (createCalls === 1) {
-                        return Promise.resolve(firstClient);
+                {
+                    namespace: 'synchronous-cleanup-acquisition-failure',
+                    clientCount: 2,
+                    createClient: () => {
+                        createCalls += 1;
+                        if (createCalls === 1) {
+                            return Promise.resolve(firstClient);
+                        }
+                        throw setupFailure;
                     }
-                    throw setupFailure;
                 },
                 () => Promise.resolve()
             )
@@ -86,9 +90,7 @@ describe('Postgres runtime-state client lifecycle', () => {
 
         await expect(
             withPostgresClients(
-                'synchronous-cleanup-only-failure',
-                1,
-                () => Promise.resolve(client),
+                { namespace: 'synchronous-cleanup-only-failure', clientCount: 1, createClient: () => Promise.resolve(client) },
                 () => Promise.resolve(undefined)
             )
         ).rejects.toMatchObject({

@@ -20,7 +20,7 @@ describe('Postgres AL outbound effect claims', () => {
     postgresIt('keeps one claim across independent connections and fences an old attempt by the same worker', async () => {
         const namespace = `alm-claim-${crypto.randomUUID()}`;
         const databaseUrl = requirePostgresDatabaseUrl();
-        await withPostgresClients(namespace, 2, () => createRuntimeStatePostgresSql(databaseUrl), async (clients) => {
+        await withPostgresClients({ namespace: namespace, clientCount: 2, createClient: () => createRuntimeStatePostgresSql(databaseUrl) }, async (clients) => {
             const first = createAdmission(new PSqlRuntimeStateRepository(requirePostgresClient(clients, 0)), namespace);
             const second = createAdmission(new PSqlRuntimeStateRepository(requirePostgresClient(clients, 1)), namespace);
             const nowMs = Date.now();
@@ -34,7 +34,7 @@ describe('Postgres AL outbound effect claims', () => {
                     payload: { kind: 'ack-timeout', msgId: 'message' }
                 }]
             }, decodeALOutboundPreparedMessage);
-            const input = { workerId: 'same-worker', maxCount: 1, leaseMs: 100, nowMs };
+            const input = { maxCount: 1 };
             const results = await Promise.allSettled([
                 first.claimReadyEffects(input, decodeALOutboundPreparedMessage),
                 second.claimReadyEffects(input, decodeALOutboundPreparedMessage)
@@ -48,18 +48,17 @@ describe('Postgres AL outbound effect claims', () => {
             });
             expect(claimed).toHaveLength(1);
             const [oldClaim] = claimed;
-            const [newClaim] = await second.claimReadyEffects({ ...input, nowMs: nowMs + 100 }, decodeALOutboundPreparedMessage);
+            await new Promise((resolve) => setTimeout(resolve, 10_010));
+            const [newClaim] = await second.claimReadyEffects(input, decodeALOutboundPreparedMessage);
 
-            await first.completeEffect(oldClaim.effectId, oldClaim.leaseOwner, decodeALOutboundPreparedMessage);
+            await first.completeEffect(oldClaim.entry);
             expect(await second.peekNextEffectReadyAt(decodeALOutboundPreparedMessage)).toBe(newClaim.leaseUntilMs);
             await first.rescheduleEffect({
-                effectId: oldClaim.effectId,
-                leaseOwner: oldClaim.leaseOwner,
-                retryAtMs: nowMs + 5_000,
-                lastError: 'Late native failure'
-            }, decodeALOutboundPreparedMessage);
+                reservation: oldClaim.entry,
+                retryAtMs: Date.now() + 5_000
+            });
             expect(await second.peekNextEffectReadyAt(decodeALOutboundPreparedMessage)).toBe(newClaim.leaseUntilMs);
-            await second.completeEffect(newClaim.effectId, newClaim.leaseOwner, decodeALOutboundPreparedMessage);
+            await second.completeEffect(newClaim.entry);
             expect(await first.peekNextEffectReadyAt(decodeALOutboundPreparedMessage)).toBeUndefined();
         });
     }, 60_000);
@@ -68,7 +67,7 @@ describe('Postgres AL outbound effect claims', () => {
 function createAdmission(repository: PSqlRuntimeStateRepository, namespace: string) {
     return createALOutboundAdmissionStore({
         namespace,
-        backend: new PSqlOutboundAdmissionBackend(repository, namespace),
+        backend: new PSqlOutboundAdmissionBackend(repository.sql, namespace),
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     });

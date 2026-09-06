@@ -45,6 +45,7 @@ import {
     tryWithPolicy
 } from '../resilience/TryWith.ts';
 import type { JsonWebSocketClient } from '../websocket/json-web-socket-client.ts';
+import type { InboxOutboxEngine } from './InboxOutboxEngine.ts';
 import type { OnMessageCallback, OnOutboxWebSocketMessageCallback } from './queue-message-callbacks.ts';
 import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
 
@@ -95,6 +96,7 @@ export namespace WsQueueBoxClientService {
     }
 
     export interface Input {
+        readonly queueEngine?: InboxOutboxEngine;
         readonly inbox: QueueBoxResourceEntryRepository;
         readonly outbox: QueueBoxResourceEntryRepository;
         readonly socket: JsonWebSocketClient;
@@ -700,7 +702,10 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
             toInboxEntry: (message) =>
                 QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxClientService.INBOX_ENQUEUE_TYPE)
         }),
-        outboundRuntime: createDefaultALOutboundRuntimeResources({ stores: input.outboundStores }),
+        outboundRuntime: createDefaultALOutboundRuntimeResources({
+            stores: input.outboundStores,
+            queueEngine: input.queueEngine
+        }),
         outboundDiagnostics: input.outboundDiagnostics,
         newConnectionRequestId: input.newConnectionRequestId,
         reconnect: input.reconnect ?? DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS

@@ -29,6 +29,8 @@ The agreed direction is:
   audience without a room-wide readiness barrier. High-rate realtime stays explicitly best-effort.
 - Reuse QueueBox for queued work, reservations, redelivery, and scheduling. ALM owns message
   handling, policy, validation, receipts, and recovery decisions; it does not implement another queue.
+- Keep durable messages self-contained. Prefer immutable facts, independently retryable derived
+  state, and small atomic decisions; recover through ordinary redelivery and skip proven completed work.
 - Use existing repository libraries. No new third-party dependency or general-purpose message
   buffer library is currently required. Discuss a demonstrated foundational gap with the user
   before introducing a new library or expanding a domain helper into a shared framework.
@@ -105,12 +107,76 @@ bounded decode -> read -> compute -> validate (Either) -> write or send -> obser
   neither may multiply the other's attempts or extend the logical message deadline. Keep external
   sends after the relevant commit, with ambiguous crash/send outcomes handled through stable identity.
 
+Carry reservation telemetry as explicit attempt values alongside the returned QueueBox entry.
+Copying an entry must preserve its selected lane and observed ages without an object-identity lookup
+or another clock sample. Durable queue status and cross-message resilience remain QueueBox concerns.
+Malformed persisted messages use `NonRetryableException` and terminate as `NON_RETRYABLE`; AppInbox records
+the failure result and finalizes the reservation atomically so the waiting caller receives a terminal
+answer. A failed database finalization still requires ordinary QueueBox redelivery.
+
 Lifecycle subscriptions, transport callbacks, and existing QueueBox transaction callbacks belong
 to the imperative shell. Keep ALM computation and validation callback-free; do not rewrite
 existing libraries to remove their callback contracts. Prefer direct named functions and canonical interfaces;
 do not introduce forwarding wrappers, type aliases that merely rename types, or a generic workflow
 framework. Test frozen inputs and computed candidates through the real write/send boundary to prove
 that neither success, conflict, nor transport failure mutates them.
+
+### Self-contained messages and ordinary redelivery
+
+Use one durable message/work owner in QueueBox, immutable facts where possible, independently
+retryable derived state, and small atomic decisions where necessary. This is the agreed direction
+for reducing admission dependencies; it is not a claim that the current implementation already
+has those properties. Keep message identity, payload, policy, deadline, and the admitted audience
+stable across attempts. Store the canonical message once; any additional work refers to it and
+cannot outlive the facts required to execute it safely.
+
+Consolidate storage and its consumers together. Server cluster notifications currently publish
+transport outbox keys that receiving servers dereference. Removing the ALM-to-outbox handoff
+requires moving that message lookup and notification path to the canonical work owner in the same
+cutover; replacing the handoff with a transient message would weaken crash recovery.
+
+Recovery should normally be the ordinary message handler running again. Its read method identifies
+completed work, remaining work, and terminal outcomes. Compute and validate only the remaining
+actions, using the retained message and freshly read values. A completed action may be skipped
+only when its durable evidence also establishes the facts on which remaining actions depend;
+an existing key alone does not prove that the same message or action completed. This permits
+independent messages and independent derived updates to make progress despite a conflict elsewhere.
+
+Classify state by its meaning before separating writes. A derived index or summary can retry
+independently only when the retained authoritative facts determine its correct value and readers
+can safely handle it being temporarily behind. Authorization, deduplication, ordering decisions,
+and supersedence winners are not automatically disposable derived state. Keep the smallest
+conditional commit needed for an invariant. Carry each mutable dependency's original observation
+into that commit, including relevant absence or range observations; rereading a revision only at
+write time does not protect earlier computation. Do not optimistically lock immutable facts merely
+because they are entities, or add a new global version that couples unrelated messages.
+
+Pure computation makes replay deterministic; it does not make a network send atomic with storing
+its completion. A crash after sending may repeat the send. Preserve its identity and receiver
+deduplication, and retain uncertain delivery in the result. Retain the canonical message and
+completion/deduplication facts for the declared retry/recovery horizon, with bounded expiry and
+explicit terminal policy. Do not acknowledge durable acceptance before its required work is retained.
+
+Preserve complete-audience receipt evidence until related queued work can no longer replay; an
+absent pending-ACK record does not itself prove completion. A worker crash on the final permitted
+attempt still needs terminal cleanup. Reuse QueueBox's existing exhaustion-finalization operation,
+scoped to the handler's work types, without granting another message delivery attempt.
+
+Keep a queued message immutable after its facts are captured. If an existing handler must first
+persist captured facts into its reserved message, carry the returned persisted entry into retry
+release. The original claimed value remains unchanged; QueueBox compares the returned observation
+when releasing the reservation. Do not weaken that comparison or reload an unrelated newer
+reservation merely to make a release succeed. This handoff is attempt-local data, not a new durable
+recovery record. An uncertain write still uses ordinary timeout recovery and rereads the stored
+message on the next delivery.
+
+Do not introduce a recovery service, generic stage ledger, or another queue by default. First test
+ordinary QueueBox redelivery after crashes between the actual updates: completed changes remain
+no-ops, unfinished changes converge, stale attempts cannot overwrite newer decisions, and unrelated
+messages continue. Add explicit recovery metadata only if a concrete failure cannot be resolved
+from the retained message and authoritative state; keep the user informed if that evidence changes
+this design or requires a new library. Measure extra reads, conditional writes, retained bytes, and
+queue age before claiming that smaller commits improve performance.
 
 ### Reuse inventory and library decisions
 
@@ -374,13 +440,13 @@ complete room-audience confirmation ships only when its receipt behavior is depe
 These remain outcome-based until they enter the next-two-slice horizon. Tests and affected
 legacy consolidation are part of each milestone, not a final cleanup phase.
 
-| Order | Outcome                                                                                                                                                                                                                         | Required exit evidence                                                                                                                                                                                                                         |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3     | **Correct arbitration and recovery:** shared-key compare-and-set, bounded range/page repair, resynchronization integration, and authoritative membership fencing.                                                               | Cross-sender races, stale decisions, restart, epoch changes, exhausted repair, and deterministic convergence across affected memory/IndexedDB/PostgreSQL paths.                                                                                |
-| 4     | **Volatile scale and lifecycle hardening:** extend slice 2's zero-IDB path across concurrent topics/rooms, aggregate budgets, fairness, and long-running retention.                                                             | Sustained bounded memory and fair progress under many tracks, churn, backpressure, disposal, and cross-carrier traffic. Basic zero-IDB execution must already pass in slice 2.                                                                 |
-| 5     | **One durable work owner through QueueBox:** consolidate ALM work into existing QueueBox/ResourceInbox ownership, with canonical envelope storage, indexed due/expiry queries, fixed browser schema, and existing-engine wakes. | Atomic admission/work recording, reservation recovery, crash replay, multi-tab claims, quota/abort handling, bounded cleanup, and work independent of unrelated rows or historical sessions. No parallel ALM queue/lease/retry engine remains. |
-| 6     | **Consumer-backed audience and QoS extensions:** evaluate room/principal/world/all/fixed audiences, distinct leader ACKs, and remaining capability/congestion policy against concrete Rallar consumers.                         | Named consumer and independent acceptance scenario for each implemented capability; equivalent logical RTC/WS outcomes, explicit unsupported results, and preserved authority during repair.                                                   |
-| 7     | **Application integration:** correlation/reply matching, timeouts, session/trace propagation, ownership semantics, and payload-free diagnostics; distributed exclusive ownership only for a demonstrated consumer.              | Duplicate/late replies, wrong responders, restart, cancellation uncertainty, and privacy assertions. Any distributed claim use proves QueueBox-backed expiry/redelivery rather than a second claim system.                                     |
+| Order | Outcome                                                                                                                                                                                                                          | Required exit evidence                                                                                                                                                                                                                                                 |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3     | **Correct arbitration and recovery:** shared-key compare-and-set, bounded range/page repair, resynchronization integration, and authoritative membership fencing.                                                                | Cross-sender races, stale decisions, restart, epoch changes, exhausted repair, and deterministic convergence across affected memory/IndexedDB/PostgreSQL paths.                                                                                                        |
+| 4     | **Volatile scale and lifecycle hardening:** extend slice 2's zero-IDB path across concurrent topics/rooms, aggregate budgets, fairness, and long-running retention.                                                              | Sustained bounded memory and fair progress under many tracks, churn, backpressure, disposal, and cross-carrier traffic. Basic zero-IDB execution must already pass in slice 2.                                                                                         |
+| 5     | **One durable work owner through QueueBox:** retain canonical messages and authoritative facts; retry derived state independently where safe. Use indexed due/expiry queries, a fixed browser schema, and existing-engine wakes. | Small atomic acceptance decisions; redelivery after partial progress skips completed work and converges. Prove reservation recovery, multi-tab claims, retention, quota/abort handling, and bounded queries/cleanup. No parallel ALM queue/lease/retry engine remains. |
+| 6     | **Consumer-backed audience and QoS extensions:** evaluate room/principal/world/all/fixed audiences, distinct leader ACKs, and remaining capability/congestion policy against concrete Rallar consumers.                          | Named consumer and independent acceptance scenario for each implemented capability; equivalent logical RTC/WS outcomes, explicit unsupported results, and preserved authority during repair.                                                                           |
+| 7     | **Application integration:** correlation/reply matching, timeouts, session/trace propagation, ownership semantics, and payload-free diagnostics; distributed exclusive ownership only for a demonstrated consumer.               | Duplicate/late replies, wrong responders, restart, cancellation uncertainty, and privacy assertions. Any distributed claim use proves QueueBox-backed expiry/redelivery rather than a second claim system.                                                             |
 
 Cancellation, basic lifecycle observation, practical topic policy, full room-notification receipts,
 and zero-IDB volatile execution land in slice 2. Milestones 4, 6, and 7 harden or extend them; they
@@ -414,7 +480,7 @@ ten completion criteria. A listed test establishes only its existing assertions,
   [RTC flow control](../../packages/tests/shared/qrtc-data-channel.test.ts).
 - **E4 — persistence/arbitration:** [admission backend](../../packages/tests/shared/alm/al-admission-backend.test.ts),
   [IndexedDB replay](../../packages/tests/shared/alm/al-outbound-indexeddb-replay.test.ts), and
-  [PostgreSQL validated reads](../../packages/tests/shared-server/al-runtime/postgres/p-sql-admission-validated-reads.test.ts).
+  [PostgreSQL validated reads](../../packages/tests/shared-server/al-runtime/postgres/p-sql-admission-mutation-collector.test.ts).
 - **E5 — browser lifetime:** [AL cleanup](../../packages/tests/shared-web/al-runtime/browser-al-runtime-cleanup-validation.test.ts),
   [scope ownership](../../packages/tests/shared-web/al-runtime/browser-al-runtime-ownership.test.ts),
   [QueueBox persistence](../../packages/tests/shared-web/queuebox/browser-queuebox-persistence.test.ts), and
@@ -483,7 +549,10 @@ ten completion criteria. A listed test establishes only its existing assertions,
    browser bundle-boundary checks, consumer tests/builds, and repository style/navigation review.
 6. **Computation and library ownership:** prove deterministic compute/validate from the same value
    snapshot, `Either`-based expected rejections, no mutation of frozen inputs/candidates by
-   write/send, and fresh full read/compute/validate after a QueueBox-owned conflict/redelivery.
+   write/send, and a fresh read/compute/validate attempt after QueueBox-owned conflict/redelivery.
+   Exercise crashes between independently committed updates: read skips proven completed actions,
+   retains the facts needed by pending actions, and retries only the remaining work. Verify the
+   small atomic decisions separately, including stale and absent predecessors and duplicate sends.
    Inspect actual registration-to-result paths to verify QueueBox is reused and no second work,
    lease, retry, buffer-framework, or scheduling owner is introduced. A mock callback count or a
    source-string assertion is not sufficient evidence for the behavior.
@@ -563,6 +632,8 @@ represented in the evidence matrix. No GitHub issues or publication actions are 
 planning deliverable. ALM implementation requires the subsequent execution task.
 
 ### Commands executed and what they taught us
+
+These entries record the original planning verification; they are not a live implementation status.
 
 - **Source, policy, and library inspection:** confirmed Rallar's optimistic default and the existing
   QueueBox, RTC queue, retry, rate-window, ordering, memory-state, and `Either` owners. A rate

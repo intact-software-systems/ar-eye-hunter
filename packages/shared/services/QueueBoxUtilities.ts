@@ -8,6 +8,7 @@ import {
 } from '../queuebox/DequeueResourceEntryController.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import type { ResourceInboxAttemptTelemetry } from '../queuebox/ResourceInboxAttemptTelemetry.ts';
 
 export class QueueBoxUtilities {
     static readonly RETRY_DISPOSITION_ERROR = 'Queue entry requested retry';
@@ -16,7 +17,7 @@ export class QueueBoxUtilities {
         qbox: QueueBoxResourceEntryRepository,
         typesToDequeue: Set<string>,
         resilience: ResilienceDto,
-        onDequeuedDo: (entry: ResourceEntry) => Promise<void>,
+        onDequeuedDo: (entry: ResourceEntry, attemptTelemetry: ResourceInboxAttemptTelemetry) => Promise<void>,
         options: DequeueResourceEntryOptions = {}
     ): Promise<void> {
         if (resilience.isNotAllowedThroughToDequeue()) {
@@ -40,8 +41,8 @@ export class QueueBoxUtilities {
                 (_) => resilience.success()
             )
             .dequeueForCompute(
-                async (key, entry) => {
-                    await onDequeuedDo(entry);
+                async (key, attempt) => {
+                    await onDequeuedDo(attempt.entry, attempt.telemetry);
                     return key;
                 }
             );

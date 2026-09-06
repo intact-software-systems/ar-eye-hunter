@@ -1,5 +1,6 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import { Reservator } from '@shared/queuebox/DequeueController.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -382,6 +383,7 @@ function createMessageContext(
     return {
         enqueue: wireEnqueue,
         message,
+        attemptTelemetry: { selectedLane: Reservator.NEW, queueAgeMs: 0, dueAgeMs: 0, attempt: 7, selectedDueAtEpochMs: 0 },
         encodeResult: (result) => encodeAppInboxResult(result, 'Topology handler test result'),
         entry: {
             ...entry,

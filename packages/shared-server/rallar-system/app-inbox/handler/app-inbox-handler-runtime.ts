@@ -30,8 +30,7 @@ export function createAppInboxHandlerRuntime(
         {
             serviceId: input.serviceId,
             timing: input.timing,
-            nowEpochMs: input.options?.nowEpochMs,
-            timingNowEpochMs: input.options?.timingNowEpochMs
+            nowEpochMs: input.options?.nowEpochMs
         }
     );
     const handlerExecutor = new AppInboxHandlerExecutor(

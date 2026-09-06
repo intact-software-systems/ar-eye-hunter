@@ -1,3 +1,4 @@
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { assembleRallarMiddlewareRuntime } from './assemble-rallar-middleware-runtime.ts';
 import { createRallarMiddlewareInboxServices } from './create-rallar-middleware-inbox-services.ts';
 import { createRallarMiddlewareInfrastructure } from './create-rallar-middleware-infrastructure.ts';
@@ -8,10 +9,11 @@ import type { RallarMiddlewareRuntime } from './rallar-middleware-runtime.ts';
 export function createRallarMiddleware(
     options: CreateRallarMiddlewareOptions
 ): RallarMiddlewareRuntime {
-    const queueRegistration = createRallarMiddlewareQueueRegistration();
+    const queueEngine = new InboxOutboxEngine();
+    const queueRegistration = createRallarMiddlewareQueueRegistration(queueEngine);
     const infrastructure = createRallarMiddlewareInfrastructure(
         options,
-        () => queueRegistration.wake()
+        queueEngine
     );
     const inboxServices = createRallarMiddlewareInboxServices(options, infrastructure);
     const registeredQueue = queueRegistration.registerExactTasks({

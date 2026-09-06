@@ -4,6 +4,7 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import { isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
+import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -19,7 +20,7 @@ import type {
 
 export function createRallarMiddlewareInfrastructure(
     options: CreateRallarMiddlewareOptions,
-    wakeQueueEngine: () => void
+    queueEngine: InboxOutboxEngine
 ): RallarMiddlewareInfrastructure {
     initialiseRallarServerCacheRepositories();
     const webSocketServer = options.webSocketServer ?? new JsonWebSocketServer();
@@ -30,6 +31,7 @@ export function createRallarMiddlewareInfrastructure(
             now: options.now
         });
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({
+        queueEngine,
         inbox: options.inbox,
         outbox: options.outbox ?? options.inbox,
         socket: webSocketServer,
@@ -58,7 +60,7 @@ export function createRallarMiddlewareInfrastructure(
         appInboxResilience: options.resilience.appInbox ?? options.resilience.inbox,
         appOutboxResilience: options.resilience.appOutbox,
         queuePubSubBridgeReadiness,
-        wakeQueueEngine
+        wakeQueueEngine: () => queueEngine.wake()
     };
 }
 

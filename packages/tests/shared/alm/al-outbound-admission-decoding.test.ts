@@ -8,10 +8,12 @@ import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts'
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
+import { toALOutboundWorkKey, toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { EntityStatus, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 
@@ -61,54 +63,38 @@ describe('outbound admission persisted-record validation', () => {
         const msg = createMessage();
         const effect = createEffect(msg);
         await backend.write(async (tx) => {
-            await tx.set(`outbound:effect:${effect.effectId}`, effect);
+            await writeRawOutboundWork(backend, effect.effectId, effect);
         });
         const [claimed] = await store.claimReadyEffects({
-            workerId: 'worker',
-            maxCount: 1,
-            leaseMs: 100,
-            nowMs: Date.now()
+            maxCount: 1
         }, decodePersistedALMessageValue);
         expect(claimed.payload).toEqual(effect.payload);
-        expect(claimed.status).toBe('running');
+        expect(claimed.entry.status).toBe(EntityStatus.RESERVED);
     });
 
-    it('rejects corrupt prepared values at every durable-effect read boundary without modifying the row', async () => {
+    it('rejects corrupt prepared values without changing their payload or admitting message state', async () => {
         const { backend, store, state } = createAdmission();
         const msg = createMessage();
         const effect = createEffect(msg);
         const corrupt = {
             ...effect,
-            status: 'running',
-            leaseOwner: 'worker',
-            leaseUntilMs: 1,
             payload: { kind: 'send-prepared', msg, prepared: { id: msg.id }, phase: 'immediate' }
         };
         await backend.write(async (tx) => {
-            await tx.set(`outbound:effect:${effect.effectId}`, corrupt);
+            await writeRawOutboundWork(backend, effect.effectId, corrupt);
         });
         await expect(store.claimReadyEffects({
-            workerId: 'worker',
-            maxCount: 1,
-            leaseMs: 100,
-            nowMs: Date.now()
+            maxCount: 1
         }, decodePersistedALMessageValue)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         await expect(store.peekNextEffectReadyAt(decodePersistedALMessageValue))
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
-        await expect(store.completeEffect(effect.effectId, 'worker', decodePersistedALMessageValue))
-            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
-        await expect(store.rescheduleEffect({
-            effectId: effect.effectId,
-            leaseOwner: 'worker',
-            retryAtMs: Date.now(),
-            lastError: undefined
-        }, decodePersistedALMessageValue)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         await expect(store.commitBundle({
             senderId: msg.id.senderId,
             mutations: [],
             durableEffects: [{ effectId: effect.effectId, payload: effect.payload }]
         }, decodePersistedALMessageValue)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
-        expect(state.data.get(`outbound:effect:${effect.effectId}`)?.value).toEqual(corrupt);
+        const persisted = await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId));
+        expect(JSON.parse(persisted!.resource).payload).toEqual(corrupt.payload);
         expect(state.data.has(`outbound:version:${msg.id.senderId}`)).toBe(false);
     });
 
@@ -117,7 +103,7 @@ describe('outbound admission persisted-record validation', () => {
         const msg = createMessage();
         const effect = createEffect(msg);
         await backend.write(async (tx) => {
-            await tx.set(`outbound:effect:${effect.effectId}`, {
+            await writeRawOutboundWork(backend, effect.effectId, {
                 ...effect,
                 payload: { ...effect.payload, prepared: { id: msg.id } }
             });
@@ -155,7 +141,7 @@ describe('outbound admission persisted-record validation', () => {
         };
         const effect = createEffect(msg);
         await backend.write(async (tx) => {
-            await tx.set(`outbound:effect:${effect.effectId}`, {
+            await writeRawOutboundWork(backend, effect.effectId, {
                 ...effect,
                 payload: {
                     kind: 'enqueue-outbox',
@@ -165,7 +151,7 @@ describe('outbound admission persisted-record validation', () => {
                 }
             });
         });
-        const [claimed] = await store.claimReadyEffects({ workerId: 'worker', maxCount: 1, leaseMs: 100, nowMs: Date.now() }, decodeALOutboundPreparedMessage);
+        const [claimed] = await store.claimReadyEffects({ maxCount: 1 }, decodeALOutboundPreparedMessage);
         if (claimed.payload.kind !== 'enqueue-outbox') {
             throw new Error('Expected the durable outbox effect');
         }
@@ -186,7 +172,7 @@ describe('outbound admission persisted-record validation', () => {
         const effect = createEffect(msg);
         await backend.write(async (tx) => {
             await tx.set(`outbound:sent:${msg.id.msgId}`, { msgId: msg.id.msgId, msg: { ...msg, payload: {} } });
-            await tx.set(`outbound:effect:${effect.effectId}`, { ...effect, payload });
+            await writeRawOutboundWork(backend, effect.effectId, { ...effect, payload });
         });
         const runtime = createDefaultALOutboundMessageRuntime({
             stores: { admissionStore: store },
@@ -235,7 +221,7 @@ describe('outbound admission persisted-record validation', () => {
         const msg = createMessage();
         const effect = createEffect(msg);
         await backend.write(async (tx) => {
-            await tx.set(`outbound:effect:${effect.effectId}`, {
+            await writeRawOutboundWork(backend, effect.effectId, {
                 ...effect,
                 payload: {
                     ...effect.payload,
@@ -248,10 +234,7 @@ describe('outbound admission persisted-record validation', () => {
         });
 
         await expect(store.claimReadyEffects({
-            workerId: 'worker',
-            maxCount: 1,
-            leaseMs: 100,
-            nowMs: Date.now()
+            maxCount: 1
         }, decodeALOutboundPreparedMessage)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
@@ -264,7 +247,7 @@ describe('outbound admission persisted-record validation', () => {
             forwarding: { nextHopPeerIds: ['redirected-peer'] }
         };
         await backend.write(async (tx) => {
-            await tx.set(`outbound:effect:${effect.effectId}`, {
+            await writeRawOutboundWork(backend, effect.effectId, {
                 ...effect,
                 payload: {
                     ...effect.payload,
@@ -275,10 +258,7 @@ describe('outbound admission persisted-record validation', () => {
         });
 
         await expect(store.claimReadyEffects({
-            workerId: 'worker',
-            maxCount: 1,
-            leaseMs: 100,
-            nowMs: Date.now()
+            maxCount: 1
         }, decodeALOutboundPreparedMessage)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
@@ -312,21 +292,15 @@ describe('outbound admission persisted-record validation', () => {
         const { backend, store } = createAdmission();
         const msgId = createMessage().id.msgId;
         const effectId = toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync', 1]);
-        const nowMs = Date.now();
         await backend.write(async (tx) => {
             await tx.set(`outbound:not-yet-in-sync-retry:${msgId}`, {
                 msgId,
                 attempts: 1,
                 pendingEffectId: effectId
             });
-            await tx.set(`outbound:effect:${effectId}`, {
+            await writeRawOutboundWork(backend, effectId, {
                 effectId,
-                payload: { kind: 'ack-timeout', msgId },
-                status: 'pending',
-                attempts: 0,
-                retryAtMs: nowMs,
-                updatedAtMs: nowMs,
-                expireAtTimestamp: nowMs + 60_000
+                payload: { kind: 'ack-timeout', msgId }
             });
         });
 
@@ -338,48 +312,34 @@ describe('outbound admission persisted-record validation', () => {
         const { backend, store } = createAdmission();
         const msgId = createMessage().id.msgId;
         const effectId = toALOutboundEffectId(['nack-retry', msgId, 'not-yet-in-sync', 1]);
-        const nowMs = Date.now();
         await backend.write(async (tx) => {
-            await tx.set(`outbound:effect:${effectId}`, {
+            await writeRawOutboundWork(backend, effectId, {
                 effectId,
                 payload: {
                     kind: 'nack-retry',
                     msgId: 'foreign-msg',
                     reason: 'not-yet-in-sync'
-                },
-                status: 'pending',
-                attempts: 0,
-                retryAtMs: nowMs,
-                updatedAtMs: nowMs,
-                expireAtTimestamp: nowMs + 60_000
+                }
             });
         });
 
         await expect(store.claimReadyEffects({
-            workerId: 'worker',
-            maxCount: 1,
-            leaseMs: 100,
-            nowMs
+            maxCount: 1
         }, decodePersistedALMessageValue)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
     it.each([
         { field: 'effectId', value: 'wrong-slot' },
-        { field: 'status', value: 'done' },
-        { field: 'attempts', value: -1 },
-        { field: 'retryAtMs', value: 'tomorrow' },
+        { field: 'namespace', value: 'foreign-scope' },
         { field: 'payload', value: { kind: 'unknown' } }
-    ])('rejects invalid effect $field before claiming it', async ({ field, value }) => {
+    ])('rejects invalid effect $field at the claimed-work boundary', async ({ field, value }) => {
         const { backend, store } = createAdmission();
         const effect = createEffect(createMessage());
         await backend.write(async (tx) => {
-            await tx.set(`outbound:effect:${effect.effectId}`, { ...effect, [field]: value });
+            await writeRawOutboundWork(backend, effect.effectId, { ...effect, [field]: value });
         });
         await expect(store.claimReadyEffects({
-            workerId: 'worker',
-            maxCount: 1,
-            leaseMs: 100,
-            nowMs: Date.now()
+            maxCount: 1
         }, decodePersistedALMessageValue)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 });
@@ -444,11 +404,21 @@ function createEffect(msg: ReturnType<typeof createMessage>) {
             prepared: msg,
             preparedFingerprint,
             phase: 'immediate' as const
-        },
-        status: 'pending' as const,
-        attempts: 0,
-        retryAtMs: 0,
-        updatedAtMs: Date.now(),
-        expireAtTimestamp: Date.now() + 60_000
+        }
     };
+}
+
+async function writeRawOutboundWork(
+    backend: InMemoryAdmissionBackend,
+    effectId: string,
+    raw: Readonly<{ namespace?: unknown; effectId: unknown; payload: unknown; }>
+) {
+    const entry = toResourceEntryWithKey(
+        toALOutboundWorkKey('outbound', effectId),
+        toALOutboundWorkType('outbound'),
+        { namespace: raw.namespace ?? 'outbound', effectId: raw.effectId, payload: raw.payload },
+        Temporal.Instant.fromEpochMilliseconds(Date.now() + 60_000)
+    );
+    await backend.workQueue.setItem(entry.key, entry, { expireAtTimestamp: Date.now() + 60_000 });
+    return entry;
 }

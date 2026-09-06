@@ -9,13 +9,18 @@ import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundSentMessageSnapshot
 } from '../al-runtime-state-stores.ts';
+import { resolveExplicitOutboundMessageExpireAtMs } from '../ALMessageExpiry.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import type {
     ALOutboundRepairHint,
     ALOutboundVersionedClientRecord
 } from './al-outbound-admission-store.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
-import { acceptALOutboundPendingAckSnapshot } from './transition-al-outbound-pending-ack.ts';
+import {
+    acceptALOutboundPendingAckSnapshot,
+    isALOutboundReceiptComplete,
+    toALOutboundPendingAckExpireAtTimestamp
+} from './transition-al-outbound-pending-ack.ts';
 
 export type ALControlHistory =
     | Readonly<{ kind: 'acks'; values: readonly ALAckPayload[]; }>
@@ -54,6 +59,7 @@ export interface ALControlAdmissionCandidate {
     readonly history: ALControlHistory;
     readonly pending: ALPendingAckWrite;
     readonly removeRepairAttempt: boolean;
+    readonly receiptExpireAtTimestamp: number;
     readonly repairEffect?: ALRepairHintEffectWrite;
     readonly controlExpireAtTimestamp: number;
     readonly versionExpireAtTimestamp: number;
@@ -70,7 +76,14 @@ export function computeALOutboundControlAdmission(
         read,
         history,
         pending,
-        removeRepairAttempt: terminal || pending.kind === 'remove',
+        removeRepairAttempt: terminal || pending.kind === 'remove' ||
+            (pending.kind === 'set' && isALOutboundReceiptComplete(pending.value)),
+        receiptExpireAtTimestamp: pending.kind === 'set' && !isALOutboundReceiptComplete(pending.value)
+            ? toALOutboundPendingAckExpireAtTimestamp(pending.value)
+            : Math.max(
+                read.sent ? resolveExplicitOutboundMessageExpireAtMs(read.sent.msg) ?? 0 : 0,
+                toExpireAtTimestampFromNow(retention.durableEffectTtlMs, read.nowMs)
+            ),
         repairEffect: toRepairHintEffect(read, retention),
         controlExpireAtTimestamp: toExpireAtTimestampFromNow(retention.controlHistoryTtlMs, read.nowMs),
         versionExpireAtTimestamp: toExpireAtTimestampFromNow(retention.versionTtlMs, read.nowMs)

@@ -8,7 +8,7 @@ import {
 } from 'vitest';
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import { PersistenceProviderAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -16,7 +16,6 @@ import {
     ALAdmissionCorruptionError,
     createALInboundAdmissionStore,
     createDefaultInMemoryALInboundRuntimeStores,
-    InMemoryPersistenceProvider,
     InMemoryQueueBox,
     newALAckControlMessage,
     newALMulticastMessage,
@@ -921,17 +920,13 @@ function createSenderScopedDedupMessage(senderId: string, text: string): ALMessa
 }
 
 function createInboundPersistenceFixture() {
-    const provider = new InMemoryPersistenceProvider<string, unknown>();
+    const state = createInMemoryALAdmissionState();
     return {
         openStores(): ALInboundRuntimeStores {
             return {
                 admissionStore: createALInboundAdmissionStore({
-                    namespace: 'al-inbound-runtime-test:provider',
-                    backend: new PersistenceProviderAdmissionBackend(
-                        provider,
-                        'al-inbound-runtime-test:provider',
-                        Date.now
-                    ),
+                    namespace: 'al-inbound-runtime-test:retained',
+                    backend: new InMemoryAdmissionBackend(state, Date.now),
                     orderingTrackTtlMs: 5 * 60_000,
                     supersedenceTrackTtlMs: 5 * 60_000,
                     retention: normalizeALRuntimeStoreRetention()

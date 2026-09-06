@@ -18,10 +18,12 @@ import {
     type ALOutboundPlanner,
     type ResourceEntry
 } from '@shared/mod.ts';
+import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 interface OutboundTestRuntimeInput {
+    readonly queueEngine?: InboxOutboxEngine;
     readonly outbox?: InMemoryQueueBox;
     readonly stores?: ALOutboundRuntimeStores;
     readonly diagnostics?: ALOutboundRuntimeDiagnosticsSink;
@@ -60,6 +62,7 @@ export function createDefaultOutboundTestRuntime(options: OutboundTestRuntimeInp
 
     const runtime = createDefaultALOutboundMessageRuntime<OutboundTestPayload>({
         decodePreparedMessage: decodeOutboundTestPayload,
+        queueEngine: options.queueEngine,
         outbox,
         stores: options.stores ?? { admissionStore: createDefaultOutboundTestAdmissionStore() },
         diagnostics: options.diagnostics,
@@ -118,6 +121,7 @@ export function createFlakyOutboundAdmissionStore(
         ) => inner.readRepairMessage<TPrepared>(msgId, planner),
         getSentMessage: (msgId: string) => inner.getSentMessage(msgId),
         getAllSentMessages: () => inner.getAllSentMessages(),
+        readReceiptState: (msgId: string) => inner.readReceiptState(msgId),
         getPendingAck: (msgId: string) => inner.getPendingAck(msgId),
         commitBundle: (bundle, decodePrepared) =>
             hooks.commitBundle
@@ -132,14 +136,14 @@ export function createFlakyOutboundAdmissionStore(
             hooks.claimReadyEffects
                 ? hooks.claimReadyEffects(input, decodePrepared)
                 : inner.claimReadyEffects(input, decodePrepared),
-        completeEffect: (effectId, leaseOwner, decodePrepared) =>
+        completeEffect: (reservation) =>
             hooks.completeEffect
-                ? hooks.completeEffect(effectId, leaseOwner, decodePrepared)
-                : inner.completeEffect(effectId, leaseOwner, decodePrepared),
-        rescheduleEffect: (input, decodePrepared) =>
+                ? hooks.completeEffect(reservation)
+                : inner.completeEffect(reservation),
+        rescheduleEffect: (input) =>
             hooks.rescheduleEffect
-                ? hooks.rescheduleEffect(input, decodePrepared)
-                : inner.rescheduleEffect(input, decodePrepared),
+                ? hooks.rescheduleEffect(input)
+                : inner.rescheduleEffect(input),
         peekNextEffectReadyAt: (decodePrepared) => inner.peekNextEffectReadyAt(decodePrepared)
     };
 }

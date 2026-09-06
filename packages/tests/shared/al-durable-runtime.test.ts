@@ -9,7 +9,7 @@ import {
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import { PersistenceProviderAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend, type ALAdmissionMemoryState } from '@shared/alm/al-admission-backend.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -19,7 +19,6 @@ import {
     ALOutboundMessageRuntime,
     createALInboundAdmissionStore,
     createALOutboundAdmissionStore,
-    InMemoryPersistenceProvider,
     InMemoryQueueBox,
     newALMulticastMessage,
     newALNackControlMessage,
@@ -34,21 +33,21 @@ import {
 
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
 
-interface PersistentAdmissionStorage {
-    readonly admissionProvider: InMemoryPersistenceProvider<string, unknown>;
+interface RetainedAdmissionState {
+    readonly admissionState: ALAdmissionMemoryState;
 }
 
-interface PersistentRuntimeStoreSet<TStores> extends PersistentAdmissionStorage {
+interface RetainedRuntimeStoreSet<TStores> extends RetainedAdmissionState {
     readonly runtimeStores: TStores;
 }
 
-describe('Durable AL runtime stores', () => {
+describe('AL state retained across runtime recreation', () => {
     afterEach(() => {
         vi.useRealTimers();
     });
 
-    it('keeps inbound dedup decisions across runtime restarts when stores are persisted', async () => {
-        const stores = createDefaultPersistentInboundStoreSet();
+    it('keeps inbound dedup decisions across runtime restarts when the storage owner is retained', async () => {
+        const stores = createRetainedInboundStoreSet();
         const dispatchedMsgIds: string[] = [];
 
         const runtime1 = createDefaultInboundRuntime(stores, dispatchedMsgIds);
@@ -73,7 +72,7 @@ describe('Durable AL runtime stores', () => {
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
 
         const restartedRuntime = createDefaultInboundRuntime(
-            createDefaultPersistentInboundStoreSet(stores),
+            createRetainedInboundStoreSet(stores),
             dispatchedMsgIds
         );
 
@@ -82,7 +81,7 @@ describe('Durable AL runtime stores', () => {
     });
 
     it('releases buffered ordered messages after restart when the missing sequence arrives', async () => {
-        const stores = createDefaultPersistentInboundStoreSet();
+        const stores = createRetainedInboundStoreSet();
         const dispatchedMsgIds: string[] = [];
         const controlMessages: ALMessage[] = [];
 
@@ -94,7 +93,7 @@ describe('Durable AL runtime stores', () => {
         expect(dispatchedMsgIds).toEqual([]);
 
         const runtime2 = createDefaultInboundRuntime(
-            createDefaultPersistentInboundStoreSet(stores),
+            createRetainedInboundStoreSet(stores),
             dispatchedMsgIds,
             controlMessages
         );
@@ -110,7 +109,7 @@ describe('Durable AL runtime stores', () => {
     it('retransmits cached ordered messages and reuses supersedence keys across outbound restarts', async () => {
         const sent: Array<OutboundTestPayload> = [];
         const outbox = new InMemoryQueueBox(new Map());
-        const stores = createDefaultPersistentOutboundStoreSet();
+        const stores = createRetainedOutboundStoreSet();
 
         const runtime1 = createDefaultOutboundRuntime(stores, sent, outbox);
         const firstPresence = newALUnicastMessage(
@@ -130,7 +129,7 @@ describe('Durable AL runtime stores', () => {
         const [firstEntry] = await enqueueOutboundOrThrow(runtime1, firstPresence);
 
         const restartedForSupersedence = createDefaultOutboundRuntime(
-            createDefaultPersistentOutboundStoreSet(stores),
+            createRetainedOutboundStoreSet(stores),
             sent,
             outbox
         );
@@ -172,7 +171,7 @@ describe('Durable AL runtime stores', () => {
         await enqueueOutboundOrThrow(restartedForSupersedence, seq2);
 
         const restartedForRepair = createDefaultOutboundRuntime(
-            createDefaultPersistentOutboundStoreSet(stores),
+            createRetainedOutboundStoreSet(stores),
             sent,
             outbox
         );
@@ -194,14 +193,14 @@ describe('Durable AL runtime stores', () => {
         );
 
         expect(sent.map((entry) => entry.msgId)).toContain(seq1.id.msgId);
-        expect(sent.filter((entry) => entry.msgId === seq1.id.msgId)).toHaveLength(2);
+        await expect.poll(() => sent.filter((entry) => entry.msgId === seq1.id.msgId)).toHaveLength(2);
     });
 
     it('continues pending outbound acknowledgement timers after restart', async () => {
         vi.useFakeTimers();
 
         const sent: Array<OutboundTestPayload> = [];
-        const stores = createDefaultPersistentOutboundStoreSet();
+        const stores = createRetainedOutboundStoreSet();
         const runtime1 = createDefaultOutboundRuntime(stores, sent);
         const msg = createOutboundMessage('msg-timeout');
 
@@ -209,7 +208,7 @@ describe('Durable AL runtime stores', () => {
         runtime1.dispose();
 
         const runtime2 = createDefaultOutboundRuntime(
-            createDefaultPersistentOutboundStoreSet(stores),
+            createRetainedOutboundStoreSet(stores),
             sent
         );
         await runtime2.ready();
@@ -226,14 +225,14 @@ describe('Durable AL runtime stores', () => {
         vi.useFakeTimers();
 
         const sent: Array<OutboundTestPayload> = [];
-        const stores = createDefaultPersistentOutboundStoreSet();
+        const stores = createRetainedOutboundStoreSet();
         const runtime1 = createDefaultOutboundRuntime(stores, sent);
         const msg = createOutboundMessage('msg-shared-timeout');
 
         await enqueueOutboundOrThrow(runtime1, msg);
 
         const runtime2 = createDefaultOutboundRuntime(
-            createDefaultPersistentOutboundStoreSet(stores),
+            createRetainedOutboundStoreSet(stores),
             sent
         );
         await runtime2.ready();
@@ -260,22 +259,18 @@ async function enqueueOutboundOrThrow(
     return enqueued.entries;
 }
 
-function createDefaultPersistentInboundStoreSet(
-    existing?: PersistentAdmissionStorage
-): PersistentRuntimeStoreSet<ALInboundRuntimeStores> {
-    const admissionProvider = existing?.admissionProvider ??
-        new InMemoryPersistenceProvider<string, unknown>();
+function createRetainedInboundStoreSet(
+    existing?: RetainedAdmissionState
+): RetainedRuntimeStoreSet<ALInboundRuntimeStores> {
+    const admissionState = existing?.admissionState ??
+        createInMemoryALAdmissionState();
 
     return {
-        admissionProvider,
+        admissionState,
         runtimeStores: {
             admissionStore: createALInboundAdmissionStore({
                 namespace: 'durable-test:inbound:admission',
-                backend: new PersistenceProviderAdmissionBackend(
-                    admissionProvider,
-                    'durable-test:inbound:admission',
-                    Date.now
-                ),
+                backend: new InMemoryAdmissionBackend(admissionState, Date.now),
                 orderingTrackTtlMs: 5 * 60_000,
                 supersedenceTrackTtlMs: 5 * 60_000,
                 retention: normalizeALRuntimeStoreRetention()
@@ -285,7 +280,7 @@ function createDefaultPersistentInboundStoreSet(
 }
 
 function createDefaultInboundRuntime(
-    stores: PersistentRuntimeStoreSet<ALInboundRuntimeStores>,
+    stores: RetainedRuntimeStoreSet<ALInboundRuntimeStores>,
     dispatchedMsgIds: string[],
     controlMessages: ALMessage[] = []
 ) {
@@ -316,22 +311,18 @@ function createDefaultInboundRuntime(
     return runtime;
 }
 
-function createDefaultPersistentOutboundStoreSet(
-    existing?: PersistentAdmissionStorage
-): PersistentRuntimeStoreSet<ALOutboundRuntimeStores> {
-    const admissionProvider = existing?.admissionProvider ??
-        new InMemoryPersistenceProvider<string, unknown>();
+function createRetainedOutboundStoreSet(
+    existing?: RetainedAdmissionState
+): RetainedRuntimeStoreSet<ALOutboundRuntimeStores> {
+    const admissionState = existing?.admissionState ??
+        createInMemoryALAdmissionState();
 
     return {
-        admissionProvider,
+        admissionState,
         runtimeStores: {
             admissionStore: createALOutboundAdmissionStore({
                 namespace: 'durable-test:outbound:admission',
-                backend: new PersistenceProviderAdmissionBackend(
-                    admissionProvider,
-                    'durable-test:outbound:admission',
-                    Date.now
-                ),
+                backend: new InMemoryAdmissionBackend(admissionState, Date.now),
                 supersedenceTrackTtlMs: 5 * 60_000,
                 retention: normalizeALRuntimeStoreRetention()
             })
@@ -340,7 +331,7 @@ function createDefaultPersistentOutboundStoreSet(
 }
 
 function createDefaultOutboundRuntime(
-    stores: PersistentRuntimeStoreSet<ALOutboundRuntimeStores>,
+    stores: RetainedRuntimeStoreSet<ALOutboundRuntimeStores>,
     sent: Array<OutboundTestPayload>,
     outbox: InMemoryQueueBox = new InMemoryQueueBox(new Map())
 ) {

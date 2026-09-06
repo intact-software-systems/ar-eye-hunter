@@ -1,4 +1,6 @@
 import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 import { toPSqlSql } from '../../integration/postgres/test-support/postgres-sql-adapter.ts';
 
@@ -8,6 +10,12 @@ export type PostgresSql =
         end(): Promise<void>;
     }>;
 
+export interface WithPostgresClientsInput {
+    readonly namespace: string;
+    readonly clientCount: number;
+    readonly createClient: () => Promise<PostgresSql>;
+}
+
 export async function createRuntimeStatePostgresSql(
     databaseUrl: string,
     maxConnections = 1
@@ -15,7 +23,8 @@ export async function createRuntimeStatePostgresSql(
     const postgres = await import('postgres');
     const rawSql = postgres.default(databaseUrl, {
         max: maxConnections,
-        idle_timeout: 1
+        idle_timeout: 1,
+        types: { timestampWithoutTimeZone: createPostgresTimestampWithoutTimeZoneTextType() }
     });
     return Object.assign(toPSqlSql(rawSql), {
         end: async (): Promise<void> => await rawSql.end()
@@ -48,17 +57,15 @@ export function createLifecycleSql(
 }
 
 export async function withPostgresClients<T>(
-    namespace: string,
-    clientCount: number,
-    createClient: () => Promise<PostgresSql>,
+    input: WithPostgresClientsInput,
     run: (clients: readonly PostgresSql[]) => Promise<T>
 ): Promise<T> {
     const clients: PostgresSql[] = [];
     let hasPrimaryFailure = false;
 
     try {
-        for (let index = 0; index < clientCount; index += 1) {
-            clients.push(await createClient());
+        for (let index = 0; index < input.clientCount; index += 1) {
+            clients.push(await input.createClient());
         }
         return await run(clients);
     }
@@ -67,7 +74,7 @@ export async function withPostgresClients<T>(
         throw error;
     }
     finally {
-        await cleanupRuntimeState({ namespace, cleanupSql: clients[0], clients, hasPrimaryFailure });
+        await cleanupRuntimeState({ namespace: input.namespace, cleanupSql: clients[0], clients, hasPrimaryFailure });
     }
 }
 
@@ -124,8 +131,4 @@ async function cleanupRuntimeState(input: CleanupRuntimeStateInput): Promise<voi
             'Failed to clean up Postgres runtime-state integration resources.'
         );
     }
-}
-
-function toError(value: unknown): Error {
-    return value instanceof Error ? value : new Error(String(value));
 }

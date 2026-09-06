@@ -52,6 +52,7 @@ export function initialiseRtcOverlayMulticastManager(
         multicasterFactory: (overlayId: OverlayId): WebRtcOverlayMulticaster =>
             new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
+            queueEngine: qboxEngine,
             stores: resolveBrowserRtcOverlayALOutboundRuntimeStores(webRtcConnectionService.input.sessionId)
         }),
         outboundDiagnostics: input.outboundDiagnostics,

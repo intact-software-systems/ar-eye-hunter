@@ -65,6 +65,7 @@ interface IndexedDbQueueComputedWrite<Result> {
 }
 
 interface RetryExhaustionSelectionInput {
+    readonly typeIds: ReadonlySet<string>;
     readonly stored: StoredResourceEntry;
     readonly processingAttempts: number;
     readonly now: Temporal.Instant;
@@ -353,7 +354,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         input: ResourceInboxFinalizationReservationOptions
     ): Promise<Map<Key, ResourceInboxFinalizationSelection>> {
         const options = toResourceInboxFinalizationReservationOptions(input);
-        if (!typeIds.has(EnqueuedType.APP_INBOX) || options.maxToReserve === 0) {
+        if (typeIds.size === 0 || options.maxToReserve === 0) {
             return new Map();
         }
         const db = await this.#connection.open();
@@ -367,6 +368,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 break;
             }
             const selectedDueTs = selectRetryExhaustionDueTimestamp({
+                typeIds,
                 stored,
                 processingAttempts: options.processingAttempts,
                 now,
@@ -433,6 +435,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 const staleBefore = now.subtract({ milliseconds: finalizationStaleAfterMs });
                 return entries.some((stored) =>
                     selectRetryExhaustionDueTimestamp({
+                        typeIds: new Set([EnqueuedType.APP_INBOX]),
                         stored,
                         processingAttempts: maxAttempts,
                         now,
@@ -538,7 +541,7 @@ function selectRetryExhaustionDueTimestamp(
         ? Temporal.Instant.from(input.stored.dequeueAudit.startTs)
         : undefined;
     if (
-        input.stored.typeId !== EnqueuedType.APP_INBOX ||
+        !input.typeIds.has(input.stored.typeId) ||
         input.stored.status !== EntityStatus.RESERVED ||
         isStoredQueueEntryExpired(input.stored, input.now) ||
         input.stored.dequeueAudit.attempts < input.processingAttempts ||

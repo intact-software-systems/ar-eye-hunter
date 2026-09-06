@@ -12,7 +12,16 @@ import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';
 import { decodePersistedAppInboxFailure } from '../app-inbox-failure-decoding.ts';
 import { toTerminalAppInboxFailure, toUnavailableAppInboxFailure, type AppInboxFailure } from '../app-inbox-failure.ts';
 import type { NormalizedAppInboxOptions } from '../app-inbox-options.ts';
+import { toAppInboxTimingDetails } from '../handler/app-inbox-attempt-timing.ts';
 import type { AppInboxReservationClient } from './app-inbox-reservation-client.ts';
+
+interface AppInboxWaitPhase<Result> {
+    readonly operation: 'read-result' | 'wait-completion';
+    readonly enqueue: AppInboxEnqueueInput;
+    readonly key: Key;
+    readonly action: () => Promise<Result>;
+    readonly details: RallarTimingDetails;
+}
 
 export namespace AppInboxResultWaiter {
     export type ResultDecoder<Result> = (value: JsonWireValue) => Result;
@@ -66,12 +75,13 @@ export class AppInboxResultWaiter {
         if (!(await this.waitForCompletion(enqueue, key))) {
             return Either.ofLeft(toUnavailableAppInboxFailure());
         }
-        return await this.timePhase(
-            'read-result',
+        return await this.timePhase({
+            operation: 'read-result',
             enqueue,
             key,
-            async () => await this.readResult(key, decodeResult)
-        );
+            action: async () => await this.readResult(key, decodeResult),
+            details: {}
+        });
     }
 
     async waitForReservedResult<Result>(
@@ -100,7 +110,7 @@ export class AppInboxResultWaiter {
                 message: 'App inbox entry result was not found'
             }));
         }
-        if (result.status === EntityStatus.FAILED) {
+        if (result.status === EntityStatus.FAILED || result.status === EntityStatus.NON_RETRYABLE) {
             return Either.ofLeft(decodePersistedAppInboxFailure(result.resource));
         }
         if (result.status !== EntityStatus.COMPLETED) {
@@ -127,16 +137,17 @@ export class AppInboxResultWaiter {
         key: Key
     ): Promise<boolean> {
         try {
-            return await this.timePhase(
-                'wait-completion',
+            return await this.timePhase({
+                operation: 'wait-completion',
                 enqueue,
                 key,
-                async () =>
+                action: async () =>
                     await tryWithPolicy(
                         async () => {
                             const completed = await this.statusRepository.isEntryWithStatus(key, [
                                 EntityStatus.COMPLETED,
-                                EntityStatus.FAILED
+                                EntityStatus.FAILED,
+                                EntityStatus.NON_RETRYABLE
                             ]);
                             if (!completed) {
                                 throw new Error('App inbox entry not found');
@@ -145,8 +156,8 @@ export class AppInboxResultWaiter {
                         },
                         this.toWaitPolicy(enqueue, key)
                     ),
-                { waitMaxElapsedMsecs: this.options.waitMaxElapsedMsecs }
-            );
+                details: { waitMaxElapsedMsecs: this.options.waitMaxElapsedMsecs }
+            });
         }
         catch (error) {
             if (!(error instanceof TryWithExhaustedError)) {
@@ -160,7 +171,7 @@ export class AppInboxResultWaiter {
                     serviceId: this.serviceId,
                     requestId: enqueue.resourceId,
                     details: {
-                        ...toTimingDetails(enqueue, key),
+                        ...toAppInboxTimingDetails(enqueue, key),
                         attempt: error.context.attempt,
                         elapsedMsecs: error.context.elapsedMsecs,
                         waitMaxElapsedMsecs: this.options.waitMaxElapsedMsecs,
@@ -195,7 +206,7 @@ export class AppInboxResultWaiter {
                         serviceId: this.serviceId,
                         requestId: enqueue.resourceId,
                         details: {
-                            ...toTimingDetails(enqueue, key),
+                            ...toAppInboxTimingDetails(enqueue, key),
                             attempt: context.attempt,
                             nextAttempt: context.nextAttempt,
                             delayMsecs: context.delayMsecs,
@@ -215,38 +226,21 @@ export class AppInboxResultWaiter {
     }
 
     private async timePhase<Result>(
-        operation: string,
-        enqueue: AppInboxEnqueueInput,
-        key: Key,
-        action: () => Promise<Result>,
-        details: RallarTimingDetails = {}
+        phase: AppInboxWaitPhase<Result>
     ): Promise<Result> {
         if (!this.options.phaseTiming) {
-            return await action();
+            return await phase.action();
         }
         return await timeRallarAsync(
             this.timing,
             {
                 component: 'app-inbox-phase',
-                operation,
+                operation: phase.operation,
                 serviceId: this.serviceId,
-                requestId: enqueue.resourceId,
-                details: { ...toTimingDetails(enqueue, key), ...details }
+                requestId: phase.enqueue.resourceId,
+                details: { ...toAppInboxTimingDetails(phase.enqueue, phase.key), ...phase.details }
             },
-            action
+            phase.action
         );
     }
-}
-
-function toTimingDetails(
-    enqueue: AppInboxEnqueueInput,
-    key: Key
-): RallarTimingDetails {
-    return {
-        type: enqueue.type,
-        topicId: key.topicId,
-        contextId: key.contextId,
-        resourceId: key.resourceId,
-        senderId: enqueue.senderId
-    };
 }

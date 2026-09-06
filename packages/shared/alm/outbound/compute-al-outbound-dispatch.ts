@@ -272,6 +272,7 @@ function appendSupersedenceMutations<TPrepared>(
     mutations.push({
         kind: 'set-supersedence-latest',
         supersedenceKey: tracking.key,
+        expected: read.supersedence.latest,
         value: read.supersedenceAcceptance.latestWrite
     });
     for (const replacement of read.supersedenceAcceptance.replacementWrites) {

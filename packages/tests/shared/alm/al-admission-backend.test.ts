@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend,
-    PersistenceProviderAdmissionBackend,
     type ALAdmissionBackend
 } from '@shared/alm/al-admission-backend.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
@@ -21,7 +20,6 @@ import {
     writeIndexedDbAdmissionMutations
 } from '@shared/alm/write-indexed-db-admission-mutations.ts';
 import { openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
-import { InMemoryPersistenceProvider } from '@shared/persistence/PersistenceProvider.ts';
 import { toIndexedDbQueueStoreDefinition } from '@shared/queuebox/indexed-db-queue-box-store.ts';
 
 import '../../setup-browser-indexeddb.ts';
@@ -40,10 +38,6 @@ const backends: readonly BackendCase[] = [
     {
         name: 'IndexedDB',
         create: () => new IndexedDbAdmissionBackend(`admission-decode-${crypto.randomUUID()}`, 'entries', Date.now)
-    },
-    {
-        name: 'provider',
-        create: () => new PersistenceProviderAdmissionBackend(new InMemoryPersistenceProvider(), crypto.randomUUID(), Date.now)
     }
 ];
 

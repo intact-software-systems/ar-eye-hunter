@@ -52,6 +52,7 @@ function createBrowserWebSocketQueueBoxService(
 ): WsQueueBoxClientService {
     const { clientData, socket } = input;
     return createDefaultWsQueueBoxClientService({
+        queueEngine: input.qboxEngine,
         inbox: createBrowserQueueBox(`ws-inbox-${clientData.sessionId}`),
         outbox: createBrowserQueueBox(`ws-outbox-${clientData.sessionId}`),
         socket,
