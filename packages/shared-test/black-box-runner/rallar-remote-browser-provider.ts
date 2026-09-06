@@ -1247,16 +1247,19 @@ export function createRallarRemoteBrowserRtcProvider(
                         remote
                     });
                 }
+
                 if (interaction.response?.diagnostics) {
                     return waitForRtcDiagnostics(interaction, config, context, {
                         remote
                     });
                 }
+
                 if (interaction.response?.diagnostic) {
                     return waitForRtcDiagnostic(interaction, config, context, {
                         remote
                     });
                 }
+
                 if (interaction.response?.health !== undefined) {
                     return waitForRemoteRtcHealth(
                         remote,
@@ -1269,6 +1272,7 @@ export function createRallarRemoteBrowserRtcProvider(
                         }
                     );
                 }
+
                 // Before `message`, which resolves on its first match.
                 if (interaction.response?.count !== undefined) {
                     return waitForRtcMessageCount({
@@ -1278,11 +1282,13 @@ export function createRallarRemoteBrowserRtcProvider(
                         details: { remote }
                     });
                 }
+
                 if (interaction.response?.messages) {
                     return waitForRtcMessages(interaction, config, context, {
                         remote
                     });
                 }
+
                 if (interaction.response?.message) {
                     return waitForRtcMessage(interaction, config, context, {
                         remote

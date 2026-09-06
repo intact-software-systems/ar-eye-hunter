@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
 import { FakeRemoteBrowserControlServer } from './fake-remote-browser-control-server.ts';
@@ -10,7 +13,7 @@ const payload = {
     }
 };
 
-function toWsSend(interactionExecutionNumber: number, response: unknown): unknown {
+function toWsSend(interactionExecutionNumber: number, response: ApiJsonObject): ApiJsonObject {
     return {
         WS: {
             request: {
@@ -26,7 +29,7 @@ function toWsSend(interactionExecutionNumber: number, response: unknown): unknow
     };
 }
 
-function toRtcSend(interactionExecutionNumber: number, response: unknown): unknown {
+function toRtcSend(interactionExecutionNumber: number, response: ApiJsonObject): ApiJsonObject {
     return {
         RTC: {
             request: {
@@ -76,7 +79,8 @@ const rtcConnect = {
     connectAlice: {}
 };
 
-function toWsOptions(server: FakeRemoteBrowserControlServer, runId: string): unknown {
+// The options carry a fetch and a provider instance, so they are wiring, not JSON.
+function toWsOptions(server: FakeRemoteBrowserControlServer, runId: string) {
     return {
         rallarRemoteBrowser: {
             controlBaseUrl: 'http://control.example.test',
@@ -89,7 +93,7 @@ function toWsOptions(server: FakeRemoteBrowserControlServer, runId: string): unk
     };
 }
 
-function toRtcOptions(server: FakeRemoteBrowserControlServer, runId: string): unknown {
+function toRtcOptions(server: FakeRemoteBrowserControlServer, runId: string) {
     return {
         rallarRemoteBrowser: {
             controlBaseUrl: 'http://control.example.test',

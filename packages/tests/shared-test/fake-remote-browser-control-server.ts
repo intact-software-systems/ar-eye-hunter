@@ -1,4 +1,31 @@
-import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/types.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestEvent,
+    RallarBlackBoxTestHttpRequestCommand,
+    RallarBlackBoxTestResult
+} from '../../shared-test/rallar-bb-test/types.ts';
+
+/** The three canned values this fake answers commands with. */
+type FakeCommandResultValue =
+    | Readonly<{
+        url: string | undefined;
+        status: number;
+        statusText: string;
+        ok: true;
+        headers: Readonly<Record<string, string>>;
+        body: Readonly<{
+            ok: true;
+            method: string | undefined;
+            body: RallarBlackBoxTestHttpRequestCommand['request']['body'];
+        }>;
+    }>
+    | Readonly<{
+        rallar: Readonly<{
+            connected: true;
+            laneHealth: Readonly<{ ready: true; }>;
+        }>;
+    }>
+    | Readonly<{ accepted: true; command: RallarBlackBoxTestCommand; }>;
 
 type StoredResult = Readonly<{
     kind: 'result';
@@ -6,16 +33,7 @@ type StoredResult = Readonly<{
     agentId: string;
     commandId: string;
     ok: boolean;
-    result: Readonly<{
-        commandId: string;
-        kind: string;
-        status: 'ok';
-        ok: true;
-        startedAtEpochMs: number;
-        endedAtEpochMs: number;
-        durationMs: number;
-        value: unknown;
-    }>;
+    result: RallarBlackBoxTestResult<FakeCommandResultValue>;
 }>;
 
 type StoredEvent = Readonly<{
@@ -25,7 +43,7 @@ type StoredEvent = Readonly<{
     atEpochMs: number;
     eventId: string;
     commandId: string;
-    payload: unknown;
+    payload: RallarBlackBoxTestEvent;
 }>;
 
 export class FakeRemoteBrowserControlServer {
@@ -188,7 +206,7 @@ export class FakeRemoteBrowserControlServer {
         });
     }
 
-    private resultValue(command: RallarBlackBoxTestCommand): unknown {
+    private resultValue(command: RallarBlackBoxTestCommand): FakeCommandResultValue {
         if (command.kind === 'http.request') {
             return {
                 url: command.request.url ?? command.request.path,
@@ -224,7 +242,7 @@ export class FakeRemoteBrowserControlServer {
     }
 }
 
-export function toJsonResponse(value: unknown, status = 200): Response {
+export function toJsonResponse<T>(value: T, status = 200): Response {
     return new Response(JSON.stringify(value), {
         status,
         headers: {
