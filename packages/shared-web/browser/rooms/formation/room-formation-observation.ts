@@ -205,17 +205,20 @@ function toRoomLayoutEvents(
     next: RallarRoomFormationStatus
 ): readonly RallarRoomLayoutEvent[] {
     return [
-        ...toRoomLayoutRoleEvents(roomRef, 'planned', previous?.planned, next.planned),
-        ...toRoomLayoutRoleEvents(roomRef, 'accepted', previous?.accepted, next.accepted)
+        ...toRoomLayoutRoleEvents({ roomRef, role: 'planned', before: previous?.planned, after: next.planned }),
+        ...toRoomLayoutRoleEvents({ roomRef, role: 'accepted', before: previous?.accepted, after: next.accepted })
     ];
 }
 
-function toRoomLayoutRoleEvents(
-    roomRef: GroupRef,
-    role: RallarRoomLayoutRole,
-    before: RallarRoomLayout | undefined,
-    after: RallarRoomLayout | undefined
-): readonly RallarRoomLayoutEvent[] {
+interface ToRoomLayoutRoleEventsInput {
+    readonly roomRef: GroupRef;
+    readonly role: RallarRoomLayoutRole;
+    readonly before: RallarRoomLayout | undefined;
+    readonly after: RallarRoomLayout | undefined;
+}
+
+function toRoomLayoutRoleEvents(input: ToRoomLayoutRoleEventsInput): readonly RallarRoomLayoutEvent[] {
+    const { roomRef, role, before, after } = input;
     if (after === undefined) {
         return before === undefined ? [] : [{ kind: 'layoutRemoved', roomRef, role, previous: before }];
     }

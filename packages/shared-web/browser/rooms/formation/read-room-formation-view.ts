@@ -2,8 +2,8 @@ import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-co
 import { toRallarCommandOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { readStateGroupFormationView } from '@shared-web/browser/state-read/state-snapshot-http-api.ts';
 import { toStateScope } from '@shared/api/api-type-utils.ts';
+import { decodeGroupFormationView } from '@shared/api/group-lifecycle/decode-group-formation-view.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
-import { validateGroupFormationView } from '@shared/api/group-lifecycle/validate-group-formation-view.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 
@@ -33,14 +33,15 @@ export async function readRoomFormationView(input: ReadRoomFormationViewInput): 
                 }),
             toRallarCommandOptions(operationOptions)
         ).run();
-        const issues = validateGroupFormationView(view, input.roomRef);
-        if (issues.length > 0) {
-            throw new TypeError(
-                `Formation view for ${input.roomRef.groupId} is invalid: ${
-                    issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ')
-                }`
-            );
-        }
-        return view;
+        return decodeGroupFormationView(view, input.roomRef).fold(
+            (issues) => {
+                throw new TypeError(
+                    `Formation view for ${input.roomRef.groupId} is invalid: ${
+                        issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ')
+                    }`
+                );
+            },
+            (decoded) => decoded
+        );
     });
 }
