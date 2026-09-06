@@ -491,7 +491,11 @@ class RecordingLiveRtcControl implements LiveRtcControlPort {
         const request = 'request' in command ? command.request : undefined;
         if (input.commandId.startsWith('group-presence')) {
             this.milestones.push(`presence:${this.connected.size}`);
-            return { causalRevision: { presenceRevision: this.connected.size } };
+            return {
+                activeSessions: [...this.connected].map((id) => ({
+                    sessionId: this.requireConnectedSessionId(id)
+                }))
+            };
         }
         if (request?.path?.endsWith('/topology')) {
             this.milestones.push('planned');
