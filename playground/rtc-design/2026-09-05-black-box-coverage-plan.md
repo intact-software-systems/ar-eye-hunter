@@ -151,6 +151,30 @@ because the assertion shapes it establishes are reused by slices 4 and 5.
 dark — the selective-pause assertion needs a frame that is _supposed_ to survive the halt. Cross-topic
 ordering is not guaranteed, so no assertion may depend on a total order across topics.
 
+**Two blockers found while researching this slice, both verified against the server.**
+
+`eventType` **cannot be selected by a `ws.wait`**, so `api-v1-group-lifecycle-events` cannot be
+written as the plan describes. The event sits inside `payload.resource`, which is a JSON _string_
+(`state-sync-entry-computation.ts:199` does `JSON.stringify(effect.payload)`), and the recorder
+parses only the outer frame (`local-websocket-state.ts:40`). `CompareJson` has no substring,
+regex or decode step — only whole-value tokens and `a|b` alternation — so no `expect.message` can
+reach the field. A recipe can already `set`/`jsonParse` a frame it has _matched_, but it cannot
+_select_ which frame to wait for. **The fix is a framework capability, not a weaker recipe:** the
+wait matcher needs to decode a declared JSON-string field before comparing. Until it exists this
+recipe stays unwritten; nothing in the corpus should pretend to pin an `eventType`.
+
+Separately, **no HTTP command produces `group-activation-status-changed`** — it is route-less by
+design, driven by the criterion. The recipe must reach it by walking the managed lifecycle, the
+way `api-v1-group-status-lifecycle` already does.
+
+`removedMemberPrincipalIds` **can never be populated**. It is a hard-coded `[]` literal at
+`group-presence-summary-effects.ts:346`; member removal is expressed instead as a `members[]` row
+carrying `removed`/`left`/`banned` status and audit. So `api-v1-group-state-delta-contents` pins
+the one reachable removal — `removedSessionIds`, populated only by the self-disconnect route and
+at most one entry — plus the asymmetry worth having: a member removal shrinks `activeSessionIds`
+while `removedSessionIds` stays empty. The empty literal is pinned as a standing invariant, and
+recorded here as a product question rather than absorbed silently.
+
 **Gates:** baseline plus both black-box profiles.
 
 ### Slice 4 — Lifecycle concurrency
