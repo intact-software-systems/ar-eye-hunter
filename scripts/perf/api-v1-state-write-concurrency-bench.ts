@@ -8,7 +8,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { dirname, normalize } from 'node:path';
 import process from 'node:process';
-import postgres, { type Sql } from 'postgres';
+import type { Sql } from 'postgres';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -34,6 +34,7 @@ import {
     PRODUCTION_STATE_WRITE_MUTATION_CONTRACT,
     requiredStateWriteOutboxCount
 } from './api-v1-state-write-outbox-contract.mjs';
+import { createStateWriteBenchmarkSql } from './create-state-write-benchmark-sql.ts';
 import { mapWithConcurrency } from './map-with-concurrency.ts';
 import {
     toStateWriteBenchmarkGroupContextId,
@@ -262,14 +263,16 @@ async function readBenchmarkConfiguration(): Promise<BenchmarkConfiguration> {
 
 async function main(): Promise<void> {
     const { options, gitIdentity, regressionReasons, databaseUrl, runId } = await readBenchmarkConfiguration();
-    const adminSql = postgres(databaseUrl, {
-        max: 10,
-        connection: { application_name: `${runId}-admin` }
+    const adminSql = createStateWriteBenchmarkSql({
+        databaseUrl,
+        maxConnections: 10,
+        applicationName: `${runId}-admin`
     });
     const serviceSql = [0, 1].map((index) =>
-        postgres(databaseUrl, {
-            max: options.concurrency,
-            connection: { application_name: `${runId}-service-${index}` }
+        createStateWriteBenchmarkSql({
+            databaseUrl,
+            maxConnections: options.concurrency,
+            applicationName: `${runId}-service-${index}`
         })
     );
 

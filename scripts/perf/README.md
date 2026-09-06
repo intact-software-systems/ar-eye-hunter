@@ -164,6 +164,14 @@ deterministic auth-session insertion, and HTTP routing are not included in
 mutation latency. Each authoritative command is enqueued, retried, and completed
 by the production AppInbox transaction boundary; authorization revalidation and
 its SQL remain measured.
+`create-state-write-benchmark-sql.ts` configures both the admin and service
+clients with API-v1's existing lossless timestamp decoder. PostgreSQL reservation
+comparisons require all six fractional digits; JavaScript `Date` decoding loses
+precision and can make a worker reject its own observation. When comparing a
+revision whose harness omits that decoder, record the same harness-only
+correction on a separate measurement commit, retaining its unchanged product
+code and original parent identity. Never attribute a setup failure to mutation
+latency or fabricate a successful baseline artifact.
 Every workload uses 100
 clients, concurrency 10, and the same deterministic mix: profile/instance,
 membership, presence connect/heartbeat/disconnect, group config, and topology
