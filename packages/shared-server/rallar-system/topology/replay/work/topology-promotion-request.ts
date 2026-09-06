@@ -33,6 +33,7 @@ interface ComputeTopologyPromotionRequestInput {
     readonly read: TopologyPromotionRead | null;
     readonly serviceId: string | undefined;
     readonly entry: ResourceEntry;
+    readonly sourceWorkId: string;
     readonly target: RallarOverlayTopologySnapshot | null;
 }
 
@@ -94,6 +95,7 @@ export function computeTopologyPromotionRequest(
             formationEpoch: group.formationEpoch,
             expectedLayout: targetIdentity
         },
+        sourceWorkId: input.sourceWorkId,
         senderId: input.serviceId ?? 'topology-promotion',
         createdAtEpochMs: input.entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
         expireAtEpochMs: GROUP_MUTATION_QUEUE_EXPIRE_AT_EPOCH_MS
