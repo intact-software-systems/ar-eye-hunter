@@ -77,6 +77,7 @@ export class WebRtcGroupManager {
     private reconcileInFlight: Promise<void> | undefined;
     private reconcileRequested = false;
     private reconcilePassRunning = false;
+    private reconcileWakesActive = false;
     private scheduledWake: Promise<void> | undefined;
     private waitingDialCount = 0;
     private retainedOrder = 0;
@@ -103,23 +104,25 @@ export class WebRtcGroupManager {
     }
 
     /**
-     * Every setup ending frees a slot under the in-flight bound (product
-     * decision 18), so an ending re-plans the dials that wait for one. The
-     * composition root starts this once the service and manager exist; shutdown
-     * stops it before tearing peers down, because shutdown removes peers their
-     * groups still want and every removal would otherwise dial them back.
+     * A completed setup frees an in-flight slot, while a deleted desired setup
+     * needs another attempt. The composition root starts these wakes once the
+     * service and manager exist; shutdown stops them before tearing peers down,
+     * because shutdown removes peers their groups still want and every removal
+     * would otherwise dial them back.
      */
     startReconcileWakes(): void {
+        this.reconcileWakesActive = true;
         this.rtcQBox.onRtcPeerLifecycleDo(WebRtcGroupManager.SETUP_COMPLETION_CALLBACK_ID, {
             onCreated: () => {},
-            onDeleted: () => this.wakeAfterSetupEnded(),
+            onDeleted: (peer) => this.wakeAfterSetupEnded(peer.peerId),
             onEstablished: () => this.wakeAfterSetupEnded()
         });
     }
 
     stopReconcileWakes(): void {
+        this.reconcileWakesActive = false;
         this.rtcQBox.removeRtcPeerLifecycleById(WebRtcGroupManager.SETUP_COMPLETION_CALLBACK_ID);
-        // A wake already on the microtask queue finds nothing waiting and stands down.
+        // A wake already on the microtask queue observes the inactive latch and stands down.
         this.waitingDialCount = 0;
     }
 
@@ -353,10 +356,17 @@ export class WebRtcGroupManager {
         }
     }
 
-    private wakeAfterSetupEnded(): void {
+    private wakeAfterSetupEnded(removedPeerId?: PeerId): void {
         // A pass runs synchronously, so an ending observed while it runs is one
         // the pass caused itself and already accounted for.
-        if (this.waitingDialCount === 0 || this.reconcilePassRunning || this.scheduledWake) {
+        const removedDesiredPeer = removedPeerId !== undefined &&
+            this.isPeerDialAllowedByAnyGroup(removedPeerId);
+        if (
+            !this.reconcileWakesActive ||
+            (this.waitingDialCount === 0 && !removedDesiredPeer) ||
+            this.reconcilePassRunning ||
+            this.scheduledWake
+        ) {
             return;
         }
         // Deferred past the notification that raised it, so every observer sees
@@ -364,7 +374,7 @@ export class WebRtcGroupManager {
         this.scheduledWake = Promise.resolve()
             .then(() => {
                 this.scheduledWake = undefined;
-                if (this.waitingDialCount === 0) {
+                if (!this.reconcileWakesActive) {
                     return;
                 }
                 return this.reconcileAllGroups();

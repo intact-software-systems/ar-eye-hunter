@@ -24,17 +24,23 @@ import {
 } from './write-indexed-db-admission-mutations.ts';
 
 export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
+    readonly #browserLocks: LockManager | undefined;
     readonly #connection: IndexedDbConnection;
     readonly #storeName: string;
     readonly #nowMs: () => number;
+    readonly #writeLockName: string;
 
     constructor(
         dbName: string,
         storeName: string,
         nowMs: () => number
     ) {
+        this.#browserLocks = typeof globalThis.navigator?.locks?.request === 'function'
+            ? globalThis.navigator.locks
+            : undefined;
         this.#storeName = storeName;
         this.#nowMs = nowMs;
+        this.#writeLockName = `rallar:indexed-db-admission:${dbName}:${storeName}`;
         this.#connection = new IndexedDbConnection(() => openIndexedDbAdmissionDatabase(dbName, storeName));
     }
 
@@ -104,6 +110,18 @@ export class IndexedDbAdmissionBackend implements ALAdmissionBackend {
     }
 
     async write<T>(fn: (tx: ALAdmissionWriteContext) => Promise<T>): Promise<T> {
+        const locks = this.#browserLocks;
+        if (!locks) {
+            return await this.#writeNow(fn);
+        }
+        return await locks.request(
+            this.#writeLockName,
+            { mode: 'exclusive' },
+            () => this.#writeNow(fn)
+        );
+    }
+
+    async #writeNow<T>(fn: (tx: ALAdmissionWriteContext) => Promise<T>): Promise<T> {
         const db = await this.#connection.get();
         const expectedRevision = (
             await readIndexedDbAdmissionSnapshot(db, this.#storeName, { kind: 'revision' })

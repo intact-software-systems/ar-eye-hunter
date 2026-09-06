@@ -44,8 +44,11 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
   diagnostic evidence but contributes no accepted metric, and a later run does
   not overwrite or repair its identity.
 - Task 10 capture does not authorize a production change. When a failed
-  observation exposes a product defect, correct that defect in its own reviewed
-  slice and then dispatch a new observation from moving `main`.
+  observation exposes a product defect, keep one reviewed correction PR open
+  while its hypothesis is tested. Use explicitly non-publishing diagnostics
+  against that PR's exact head; do not merge test-only hypothesis slices merely
+  to learn from the next run. Merge only after the correction is proved, then
+  dispatch the accepted observation from moving `main`.
 - Apply the current repository human-readability standard: visible ownership,
   dataflow, decisions, side effects, failure paths, cognitive-load tiers,
   responsibility review, and the post-discount navigation backstop. The old
@@ -65,7 +68,7 @@ observation stream, and B06 E3-memory observation tooling are merged. Five
 distinct valid B05 observations through 2026-09-05 are archived on `main`: PR
 #402 landed directly, and the four observations formerly published by PRs
 #405, #463, #474, and #494 landed through batch PRs #507 and #504 before the
-superseded PRs and branches were closed. Eight B06 observations have failed with
+superseded PRs and branches were closed. Nine B06 observations have failed with
 `acceptedMetrics: false` and are archived on `main`. The first five, their
 focused corrections in PRs #499 and #510, and the Branch Release quiescence
 correction in PR #517 are merged. Run 33991439486 produced the sixth archive in
@@ -85,26 +88,71 @@ one reconnect owner concurrently prove both survivors observe replacement C's
 new session and replacement C observes both survivor sessions. It also keeps
 initial-pair readiness before activation, then makes post-activation A/B/C
 hydration a correctness barrier even when owner scope retains only A's timing
-sample. There is not yet a valid B06 E3 result. B07 remains held, and evidence
-ranking cannot start until a valid B06 primary and any required repeat are
-archived.
+sample. PR #526 merged as `72826db0d286ca2dd3ff9375143df05440b15358`,
+then run 34023176489 observed that moving-`main` snapshot. Its first default
+warmup failed after the realtime trio was retired: messages agent C never
+observed the new A/B sessions as ready. PR #528 archived the ninth failed
+primary with `acceptedMetrics: false`. The reused-group formation driver still
+treated absolute presence revisions `1`, `2`, and `3` as connect barriers even
+though prior lifecycle work had already advanced the same group's revision.
+PR #530 replaces those obsolete thresholds with exact active-session-set checks
+after each connect, so stale departing sessions must clear before the next
+topology is formed. The same PR adds a non-publishing workflow mode for
+repeated exact-head diagnostics. Its first exact-head series exposed two more
+facts before merge: run 34025502501 reproduced C's empty ready-peer state
+while topology publication preceded C's server-side connection propagation,
+showing that authoritative membership alone did not prove browser room
+hydration. A `tee` pipeline also hid that failed Playwright exit. The series is
+invalid as proof.
+PR #530 then refreshed every browser room after exact membership and before
+three-member topology planning, propagated the producer exit, and retained the
+actual Playwright failure directory. Diagnostic run 34026553019 correctly
+failed on exact head `5b5ea0575b218342b88d78bdc938abf40efb6b3a`
+with the same C empty-ready-peer result. That disproves a single pre-planning
+refresh as the missing barrier. Diagnostic run 34027076621 on exact head
+`282d3a259820b57daa20d6fa72d1e499226a6e6c` retained full readiness-timeout
+health: A and C each had one healthy open connection to B, while neither knew
+the other. Both managers nevertheless reported two desired peers and two
+started connection attempts, proving that A-C was planned and dialed rather
+than omitted by the server topology. A subsequent production-path trace also
+confirmed that this planner uses `K_INSERT_MC`, invalidating the temporary
+combined MC/MDDL explanation. The remaining defect was the browser manager's
+setup-completion wake: a desired setup deleted after the pass was not retried
+unless another peer had previously been paced or deferred. PR #530 now retries
+that still-desired peer and deletes both the disproved pre-planning refresh and
+the out-of-path mesh-algorithm experiment. The exact local memory-mode
+three-browser primary now passes with that correction. Diagnostic run
+34028231028 passed exact head
+`0ec0703a576ecae9dd761020e27c64c4bc895ae6`; the next independent run,
+34028503284, reached complete A/B/C readiness for the realtime trio but later
+timed out waiting for B to record the first direct `messages.rtc` delivery from
+A. That different failure resets the proof count to zero and shows the current
+failure artifact lacks the endpoint state needed to distinguish transport
+loss from control-event loss. PR #530 therefore remains the single proving PR
+and will add failure-only, sanitized sender/receiver health and event/result
+summaries before another remote attempt. There is not yet a valid B06 E3
+result. B07 remains held, and evidence ranking cannot start until a valid B06
+primary and any required repeat are archived.
 
 ### Current execution horizon
 
-| Order | Slice                                                     | Completion evidence                                                                                                                                                                                                                                                                                                                   |
-| ----- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Merge the accepted-layout readiness correction in PR #526 | The formation owner hydrates all accepted A/B/C routes after activation while filtering only timing evidence by scope; reconnect has one explicit three-participant readiness owner; direct semantic, focused unit, exact default/all-scenarios E3, type/build/style/structure, full-unit, and branch review gates pass before merge. |
-| 2     | Capture B06 E3-memory again from moving `main`            | Manually dispatch `RTC-B06 Performance Observation` after the correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.                                                                                      |
+| Order | Slice                                                          | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Prove and merge PR #530 without intermediate hypothesis merges | Three separate `diagnostic` workflow run IDs check out the same exact PR head and pass the default memory-mode three-browser scenario. Diagnostic artifacts retain the source commit and logs temporarily but create no observation archive or publication PR. Any change to the PR head resets the three-run count. Focused, type/build/style/structure, full-unit, review, and branch gates also pass before merge. |
+| 2     | Capture B06 E3-memory again from moving `main`                 | Manually dispatch `RTC-B06 Performance Observation` in `publish` mode after the proved correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.                                                                                                                                             |
 
 After these two slices, Task 12 will choose the B05 observation window,
 revisit whether the candidate call path requires E4-pg, and reconcile the
 unlike-environment evidence before ranking at most one candidate—or `none`.
 
-If the next B06 run fails, retain it as failed evidence and diagnose the first
-failed attempt from that run. Fix only the evidenced tooling or product defect,
-then dispatch a new observation from whatever `main` snapshot exists at that
-time. Do not pin, rebase, or wait for a quiet `main` merely to make performance
-evidence current.
+If a PR #530 diagnostic fails, diagnose the first failed attempt, update the
+same PR, and restart its three-run proof from the new exact head. Do not merge
+the hypothesis or open another correction PR merely to obtain runtime feedback.
+If the later published B06 run fails, retain it as failed evidence and diagnose
+the first failed attempt from that run. Fix only the evidenced tooling or
+product defect, then dispatch a new observation from whatever `main` snapshot
+exists at that time. Do not pin, rebase, or wait for a quiet `main` merely to
+make performance evidence current.
 
 **Roadmap:**
 [Rallar Architecture Quality And RTC Program Roadmap](../../../plans/rallar-architecture-quality-and-rtc-program-roadmap.md)
@@ -3884,7 +3932,7 @@ performance-observations/rtc-b06/YYYY/MM/DD/<observation-id>.zip
 performance-observations/rtc-b06/index.jsonl
 ```
 
-Current evidence contains eight failed B06 primaries and no accepted metrics.
+Current evidence contains nine failed B06 primaries and no accepted metrics.
 The fourth archive is PR #498. Its first retained default attempt timed out
 receiving `messages.rtc` multicast on agent C after the warmup passed. That run
 exposed a post-activation readiness gap: the lifecycle driver proved readiness
@@ -3948,6 +3996,66 @@ from the correctness barrier. Reconnect returns the maximum receiver-observed
 survivor duration used by the existing evidence timing field, and duplicate
 caller waits plus obsolete fixture modes and readiness APIs are removed.
 
+PR #526 merged as `72826db0d286ca2dd3ff9375143df05440b15358`, and run
+34023176489 observed that exact source. Its source guard, recovery, archive
+verification, publication, and observation-integrity path passed. The first
+default warmup failed after the settled realtime trio had been retired and the
+same group was reused for `messages.rtc`: agent C did not observe either new
+A/B session as ready. PR #528 preserves the ninth primary as failed evidence
+with `acceptedMetrics: false`; no repeat ran. Diagnosis found that formation
+still waited for absolute presence revisions `1`, `2`, and `3`. Those values
+were already far behind the reused group's current causal revision, so they
+could not prove that retired sessions had cleared or that the currently
+expected sessions were the authoritative active set. PR #530
+waits for the exact active-session set after A, B, and C connect and deletes the
+revision-only path. Its workflow diagnostic mode runs the exact default
+memory-mode matrix from a branch head, retains only temporary Actions logs and
+source identity, and cannot invoke the observation finalizer or publication
+job. Runs 34025496535 and 34025817473 passed on exact head `f16d45e44825783761eddffba26d044cb9522fbe`,
+while run 34025502501 reproduced C's empty ready-peer state. Its Playwright log
+reported one failed test, but the `tee` pipeline discarded the producer status
+and incorrectly left the workflow green. None counts toward proof because the
+branch must change. The same PR then propagated that exit status, retained the
+real Playwright result path, and refreshed all three browser room snapshots
+after exact authoritative membership but before three-member topology planning.
+Diagnostic run 34026553019 correctly failed on exact head
+`5b5ea0575b218342b88d78bdc938abf40efb6b3a` with the same C empty-ready-peer
+result, so the pre-planning refresh is not a sufficient browser-side barrier.
+Its retained screenshots prove all three pages remained connected to the
+expected room, but the previous diagnostics ended before recording the failing
+RTC internals. The next same-PR revision records a full RTC health snapshot at
+the readiness timeout and retains it with the diagnostic artifact. Run
+34027076621 on exact head `282d3a259820b57daa20d6fa72d1e499226a6e6c`
+captured A and C with one healthy open B connection each and no A-C peer. The
+same health snapshots recorded two desired peers and two started connection
+attempts for both A and C, so the server layout did include A-C and both
+browsers attempted it. When that setup disappeared, the group manager did not
+wake because no other peer was waiting on connection or pacing capacity. A
+focused regression now reproduces that stranded desired-peer state; PR #530
+reconciles after a desired setup is deleted and removes the disproved
+pre-planning refresh instead of retaining an unnecessary lifecycle step. The
+exact local memory-mode three-browser primary passes with that correction. The
+first diagnostic on exact head
+`0ec0703a576ecae9dd761020e27c64c4bc895ae6`, run 34028231028, passed. Run
+34028503284 then proved the realtime trio fully ready before timing out on the
+first direct `messages.rtc` A-to-B delivery. That later failure resets the
+proof count to zero. The same PR now retains sanitized sender and receiver RTC
+health plus bounded event/result identities only when message delivery fails.
+Diagnostic run 34029946264 passed that instrumentation on exact head
+`9907d11f4df6998b651a30895d572e3af4d9cf4d`, but run 34030174552 failed on the
+same head after realtime readiness and direct delivery: A's multicast send
+exhausted outbound admission commit retries before any receiver wait began.
+The retained checkpoint identifies the failure as an IndexedDB admission
+commit conflict. All cooperating browser admission backends share one
+database/store revision even when they own different AL namespaces, while the
+existing outbound browser lock serializes only one sender. A deterministic
+backend regression reproduces that cross-writer revision conflict. PR #530's
+next revision serializes the complete read/compute/commit operation at the
+actual database-and-store revision boundary, retaining optimistic conflict
+detection for non-cooperating writers and runtimes without browser locks. The
+proof count remains zero; the next pushed head restarts the three-run
+diagnostic proof.
+
 - [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
       publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
 - [x] Preserve the first four unsuccessful primaries as failed evidence rather than
@@ -3976,17 +4084,22 @@ caller waits plus obsolete fixture modes and readiness APIs are removed.
 - [x] Verify and archive run 34000825989's failed primary through observation
       PR #524; preserve its passed default warmup and five retained attempts,
       and do not accept metrics or run a repeat.
-- [ ] Merge PR #526's focused accepted-layout readiness correction after direct
+- [x] Merge PR #526's focused accepted-layout readiness correction after direct
       semantic, focused unit, exact default/all-scenarios E3,
       type/build/style/structure, full-unit, and branch validation.
-- [ ] Manually dispatch `RTC-B06 Performance Observation` from the then-current
-      moving `main` after that correction merges.
-- [ ] Verify that its observation-only pull request passes RTC observation
-      integrity and merge the ZIP/index row. A valid primary must report
-      `acceptedMetrics: true`; complete any controller-required repeat.
-- [ ] If it fails, diagnose the first failed attempt from that observation,
-      retain the failed archive, and create the smallest evidenced follow-up
-      before dispatching again.
+- [x] Manually dispatch run 34023176489 from the then-current moving `main`
+      after PR #526 merged.
+- [x] Verify and merge observation PR #528, retaining its failed ZIP/index row
+      with `acceptedMetrics: false` and no repeat.
+- [ ] Pass three independent `diagnostic` workflow runs on one exact PR #530
+      head. If that head changes, discard the earlier diagnostic count and
+      restart; do not merge an intermediate hypothesis.
+- [ ] Merge PR #530's focused lifecycle corrections after their regressions,
+      exact default E3, type/build/style/structure, full-unit, branch review
+      gates, and same-head diagnostic proof pass.
+- [ ] Dispatch `RTC-B06 Performance Observation` in `publish` mode from the
+      then-current moving `main`; accept only a valid primary and any
+      controller-required repeat.
 
 **Current exit:** at least one valid B06 E3-memory primary and any required
 repeat are archived. The stream remains available for later observations; no
@@ -4445,7 +4558,7 @@ incomplete evidence milestone and do not mark this written plan complete.
 **2026-09-06 reconciliation:** Task 4B, B04, B05, both observation producers,
 and B06 E3-memory tooling are merged. Five valid B05 observations are archived
 on `main`; the overlapping source PRs and branches were consolidated and
-closed. Eight B06 primaries are archived as failed evidence with no accepted
+closed. Nine B06 primaries are archived as failed evidence with no accepted
 metrics. PRs #499 and #510 corrected the fourth and fifth failures, while PR
 #517 corrected their Branch Release regression recipe's quiescence race. Run
 33991439486 and archive PR #519 exposed the sixth failure: publication-wake
@@ -4462,9 +4575,47 @@ survivor B while replacement C's refresh/readiness remained queued behind it,
 so the three peer establishments timed out. PR #526 owns full reconnect
 readiness concurrently, proves replacement-session identity, and makes every
 post-activation A/B/C route a correctness barrier without adding receiver
-timings to owner-scope evidence. The next two slices are to merge PR #526 and
-then dispatch B06 again from moving `main`. B07 remains held; Task 12 remains
-blocked on valid B06 evidence.
+timings to owner-scope evidence. PR #526 merged, then run 34023176489 failed its
+first default warmup when messages agent C did not observe the new A/B sessions
+after the prior realtime trio was retired. PR #528 preserves that ninth failed
+primary. PR #530 removes absolute `1`/`2`/`3` presence-revision barriers
+that cannot prove membership on the reused group and instead waits for the
+exact active-session set after each connect. It also supplies an explicitly
+non-publishing diagnostic mode so this correction can absorb further runtime
+learning without a chain of test-only merges. The first series found that
+`tee` hid run 34025502501's reproduced C-readiness failure while runs
+34025496535 and 34025817473 passed. PR #530 then propagated browser failure,
+retained the real Playwright output path, and made every browser hydrate the
+exact membership before three-member planning. Run 34026553019 correctly
+failed that new head with the same C empty-ready-peer result, disproving one
+refresh as the sufficient barrier. The next revision captures and retains the
+failing browser's detailed RTC health. Run 34027076621 captured a healthy
+A-B-C line: A and C each knew only B. Their manager diagnostics still showed
+two desired peers and two connection attempts, so A-C was planned and attempted
+but its deleted setup was never retried. The manager previously woke after a
+setup ended only when another dial had been paced or deferred. PR #530 now
+wakes for a deleted peer that remains desired and removes the disproved refresh.
+The exact local memory-mode three-browser primary passes. Every prior remote run
+is invalidated by each head change. Run 34028231028 passed exact head
+`0ec0703a576ecae9dd761020e27c64c4bc895ae6`, but run 34028503284 failed later
+after complete realtime readiness when B did not record the first direct
+`messages.rtc` delivery from A. The proof count is zero again. PR #530 next
+added bounded failure-only message diagnostics on head
+`9907d11f4df6998b651a30895d572e3af4d9cf4d` so a receiver timeout can distinguish
+endpoint RTC state, command completion, and control-event recording without
+retaining raw command payloads. Run 34029946264 passed, but run 34030174552
+failed earlier in A's multicast send after its IndexedDB-backed outbound
+admission exhausted commit retries. Because all browser AL backends use one
+database/store revision across namespaces, per-sender serialization does not
+prevent unrelated cooperating writers from repeatedly invalidating the
+read/compute/commit window. A focused same-store concurrency regression now
+reproduces the conflict, and PR #530 serializes cooperating IndexedDB writes
+with one browser lock named for that database/store revision boundary. It does
+not add retries, weaken conflict detection, or retain a second backend path.
+Three independent diagnostics must pass on one unchanged final PR head before
+merge; any later head change restarts that proof. The next two slices remain to
+prove and merge that correction, then dispatch B06 in publish mode from moving
+`main`. B07 remains held; Task 12 remains blocked on valid B06 evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -157,8 +157,8 @@ interface WaitForPlannedLayoutInput extends GroupLifecycleCommandInput {
     readonly minimumGroupRevision: number;
 }
 
-interface WaitForPresenceRevisionInput extends GroupLifecycleCommandInput {
-    readonly minimumRevision: number;
+interface WaitForActiveSessionsInput extends GroupLifecycleCommandInput {
+    readonly expectedSessionIds: readonly string[];
 }
 
 interface WaitForFormationReadinessInput {
@@ -315,19 +315,19 @@ async function connectFormationAgents(
         ...input,
         agent: owner
     });
-    const presenceA = await waitForPresenceRevision(config, {
+    const presenceA = await waitForActiveSessions(config, {
         ...input,
         owner,
-        minimumRevision: 1
+        expectedSessionIds: [connectA.sessionId]
     });
     const connectB = await connectFormationAgent(config, {
         ...input,
         agent: input.agents[1]
     });
-    const presenceB = await waitForPresenceRevision(config, {
+    const presenceB = await waitForActiveSessions(config, {
         ...input,
         owner,
-        minimumRevision: 2
+        expectedSessionIds: [connectA.sessionId, connectB.sessionId]
     });
     const initialPairCommandIds = await connectInitialPair(config, input, [connectA, connectB]);
     const readinessStartedAtMs = performance.now();
@@ -335,10 +335,10 @@ async function connectFormationAgents(
         ...input,
         agent: input.agents[2]
     });
-    const presenceC = await waitForPresenceRevision(config, {
+    const presenceC = await waitForActiveSessions(config, {
         ...input,
         owner,
-        minimumRevision: 3
+        expectedSessionIds: [connectA.sessionId, connectB.sessionId, connectC.sessionId]
     });
 
     return {
@@ -637,14 +637,15 @@ async function waitForPlannedLayout(
     return { commandIds, identity: plannedLayout };
 }
 
-async function waitForPresenceRevision(
+async function waitForActiveSessions(
     config: CreateGroupFormationLifecycleDriverConfig,
-    input: WaitForPresenceRevisionInput
+    input: WaitForActiveSessionsInput
 ): Promise<readonly string[]> {
     let attempt = 0;
     const commandIds: string[] = [];
+    const expectedSessionIds = [...input.expectedSessionIds].sort((left, right) => left.localeCompare(right));
     await expect.poll(async () => {
-        const commandId = `group-presence-${input.suffix}-${input.minimumRevision}-${attempt++}`;
+        const commandId = `group-presence-${input.suffix}-${expectedSessionIds.length}-${attempt++}`;
         commandIds.push(commandId);
         const result = await input.control.executeResult({
             ...input,
@@ -654,13 +655,13 @@ async function waitForPresenceRevision(
             timeoutMs: 15_000
         }).catch(() => undefined);
         if (!result?.ok) {
-            return -1;
+            return [];
         }
-        return readPresenceRevision(input.control.resultValue(result)) ?? -1;
+        return readActiveSessionIds(input.control.resultValue(result));
     }, {
-        message: `Expected presence revision ${input.minimumRevision} for ${input.groupId}`,
+        message: `Expected exactly the active sessions ${expectedSessionIds.join(', ')} for ${input.groupId}`,
         timeout: 30_000
-    }).toBeGreaterThanOrEqual(input.minimumRevision);
+    }).toEqual(expectedSessionIds);
     return commandIds;
 }
 
@@ -771,10 +772,15 @@ function readLifecycleStageReceipt(
     return { formationEpoch, groupRevision };
 }
 
-function readPresenceRevision(value: Readonly<Record<string, RtcBaselineJson>>): number | undefined {
+function readActiveSessionIds(value: Readonly<Record<string, RtcBaselineJson>>): readonly string[] {
     const body = jsonRecord(value.body);
-    const revision = jsonRecord(body.causalRevision).presenceRevision;
-    return typeof revision === 'number' ? revision : undefined;
+    if (!Array.isArray(body.activeSessions)) {
+        return [];
+    }
+    return body.activeSessions.flatMap((session) => {
+        const sessionId = jsonRecord(session).sessionId;
+        return typeof sessionId === 'string' ? [sessionId] : [];
+    }).sort((left, right) => left.localeCompare(right));
 }
 
 function readFormationEntryLifecycleState(
