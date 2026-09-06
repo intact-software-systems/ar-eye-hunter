@@ -140,12 +140,12 @@ the guard on an active read), and it is already pinned green by
 The corpus proves frames _arrive_. It does not prove what is _in_ them. This slice is sequenced third
 because the assertion shapes it establishes are reused by slices 4 and 5.
 
-| Recipe                                   | Pins                                                                                                                     |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `api-v1-overlay-topology-publication`    | the published `overlay.topology` body equals the authoritative HTTP topology read for the same layout                    |
-| `api-v1-group-state-delta-contents`      | the delta envelope's causal chain and its **removal** sets — the stronger and entirely uncovered half                    |
-| `api-v1-group-lifecycle-events`          | a `group-state.event` waited for by named `eventType`, including `group-activation-status-changed` observed on a socket  |
-| _(append to `api-v1-group-data-policy`)_ | the transport-halt NACK to the **sender** (today's step has no `expect` at all), and that a pause is topic-**selective** |
+| Recipe                                   | Pins                                                                                                                                                                                                                               |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-overlay-topology-publication`    | the published `overlay.topology` body equals the authoritative HTTP topology read for the same layout                                                                                                                              |
+| `api-v1-group-state-delta-contents`      | the delta envelope's causal chain and its **removal** sets — the stronger and entirely uncovered half                                                                                                                              |
+| `api-v1-group-lifecycle-events`          | **delivered** as an append to `api-v1-group-status-lifecycle`: the route-less `group-activation-status-changed` selected on the socket by `eventType` via `expect.decodeJsonPaths`, asserted service-authored and causally chained |
+| _(append to `api-v1-group-data-policy`)_ | the transport-halt NACK to the **sender** (today's step has no `expect` at all), and that a pause is topic-**selective**                                                                                                           |
 
 **Hazards.** `aliceDoesNotReceivePausedData` is currently indistinguishable from the whole room going
 dark — the selective-pause assertion needs a frame that is _supposed_ to survive the halt. Cross-topic
@@ -437,6 +437,22 @@ probe script written to a temporary directory fails on the import rather than on
 And a `parallel` group's steps use the runner's `{TRANSPORT: {request, response}, name: {}}` pair
 shape, not the flat `{name, type, expect}` shape recipes use at the top level; a group written the
 flat way executes nothing and reports `success: 0` rather than failing.
+
+## Open findings
+
+Raised while writing the slices. Each is a product or contract question that a recipe
+surfaced and could not itself resolve, recorded here rather than absorbed into a weaker
+assertion. None is fixed by the recipes that found them.
+
+| # | Finding                                                                                                                                                                                                                                                                                | Where                                                                        | Status                                                    |
+| - | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------- |
+| 1 | The transfer route returns `400 group-mutation-rejected` for a non-member target, a status its OpenAPI entry does not declare (it lists 200/401/403/404/409). The sibling `/director/appoint` route does declare 400, so the omission reads as a contract gap.                         | `api-v1-openapi.yaml:1108-1139`; pinned by `api-v1-group-ownership-transfer` | open — contract or route must change                      |
+| 2 | `removedMemberPrincipalIds` in the group-state delta envelope is a hard-coded `[]` literal that no HTTP mutation can populate. Member removal is expressed as a `members[]` row instead.                                                                                               | `group-presence-summary-effects.ts:346`                                      | open — dead field, or a missing write                     |
+| 3 | `eventType` is not selectable by a `ws.wait` without `expect.decodeJsonPaths`, because the envelope is a JSON string and the comparator has no decode step. The capability was added; the underlying shape is still that a socket frame hides its own type inside a string.            | `state-sync-entry-computation.ts:199`                                        | capability added; shape question open                     |
+| 4 | No HTTP command produces `group-activation-status-changed`. It is route-less by design, reachable only by walking the managed lifecycle, which makes it observable in exactly one recipe.                                                                                              | criterion-driven, `group-activation-status-observer.ts`                      | open — accepted design, noted so no one hunts for a route |
+| 5 | A room denial reaches the wire as `reason: 'unauthorized'` for every cause. `toPolicyDeniedDecision` flattens the policy code and message into the server log only, so a transport halt and an authorization failure are indistinguishable to a client.                                | `ws-topic-room-authorizer.ts:200-211`                                        | open — clients cannot tell why they were refused          |
+| 6 | The two `api-v1-group-formation-burst-*` recipes fail under `pglite-memory` at `captureFormationMetricsT0Secondary`; they need a secondary server that backend does not start. `passed=44 failed=2` is the green baseline for that profile, not `46/0`.                                | matrix profile `api-v1-black-box`                                            | open — profile/recipe mismatch                            |
+| 7 | `api-v1-crdt-append-history-recipe`'s strict expansion fails on pristine `main`: a `"sequenceGaps": []` asserted under a partial-match comparison, which the strict preflight rejects. The per-recipe debt ratchet tolerates it but the test invokes the CLI directly, which does not. | `api-v1-crdt-append-history.json:733`                                        | open — red on main                                        |
 
 ## Not in this plan
 
