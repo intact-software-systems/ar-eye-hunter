@@ -3,6 +3,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
@@ -20,6 +21,37 @@ import {
 import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
 describe('outbound IndexedDB durable queue replay', () => {
+    it.each(['memory', 'indexeddb'] as const)('fences old completion and retry after the same worker reclaims an effect in %s', async (storage) => {
+        const { store } = createAdmission(storage);
+        const msg = createOutboundMessage('lease-fence');
+        const nowMs = Date.now();
+        await store.commitBundle({
+            senderId: msg.id.senderId,
+            mutations: [],
+            durableEffects: [{ effectId: 'lease-fence', retryAtMs: nowMs, payload: { kind: 'ack-timeout', msgId: msg.id.msgId } }]
+        }, decodeOutboundTestPayload);
+        const [oldClaim] = await store.claimReadyEffects(
+            { workerId: 'same-worker', maxCount: 1, leaseMs: 100, nowMs },
+            decodeOutboundTestPayload
+        );
+        const [newClaim] = await store.claimReadyEffects(
+            { workerId: 'same-worker', maxCount: 1, leaseMs: 100, nowMs: nowMs + 100 },
+            decodeOutboundTestPayload
+        );
+
+        await store.completeEffect(oldClaim.effectId, oldClaim.leaseOwner, decodeOutboundTestPayload);
+        expect(await store.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBe(newClaim.leaseUntilMs);
+        await store.rescheduleEffect({
+            effectId: oldClaim.effectId,
+            leaseOwner: oldClaim.leaseOwner,
+            retryAtMs: nowMs + 5_000,
+            lastError: 'Late failure from the previous claim'
+        }, decodeOutboundTestPayload);
+        expect(await store.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBe(newClaim.leaseUntilMs);
+        await store.completeEffect(newClaim.effectId, newClaim.leaseOwner, decodeOutboundTestPayload);
+        expect(await store.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+    });
+
     it('keeps Temporal entry values across persistence, lease, reschedule and runtime restart', async () => {
         const { store } = createAdmission();
         const msg = createOutboundMessage('queued');
@@ -39,7 +71,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         );
         expect(claimed.payload.kind).toBe('enqueue-outbox');
         await store.rescheduleEffect(
-            { effectId: claimed.effectId, workerId: 'stopped-worker', retryAtMs: Date.now(), lastError: 'restart' },
+            { effectId: claimed.effectId, leaseOwner: claimed.leaseOwner, retryAtMs: Date.now(), lastError: 'restart' },
             decodeOutboundTestPayload
         );
 
@@ -86,7 +118,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         expect(claimed.payload.entry.dequeueAudit.endTs?.toString()).toBe(timestamp.toString());
         expect(claimed.payload.entry.dequeueAudit.nextTs?.toString()).toBe(timestamp.toString());
         expect(await store.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBe(claimed.leaseUntilMs);
-        await store.completeEffect(claimed.effectId, 'worker', decodeOutboundTestPayload);
+        await store.completeEffect(claimed.effectId, claimed.leaseOwner, decodeOutboundTestPayload);
 
         await backend.write(async (tx) => {
             await tx.set('outbound:effect:fallback', {
@@ -98,8 +130,10 @@ describe('outbound IndexedDB durable queue replay', () => {
     });
 });
 
-function createAdmission() {
-    const backend = new IndexedDbAdmissionBackend(`outbound-replay-${crypto.randomUUID()}`, 'admission', Date.now);
+function createAdmission(storage: 'memory' | 'indexeddb' = 'indexeddb') {
+    const backend = storage === 'memory'
+        ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
+        : new IndexedDbAdmissionBackend(`outbound-replay-${crypto.randomUUID()}`, 'admission', Date.now);
     const store = createALOutboundAdmissionStore({
         namespace: 'outbound',
         backend,

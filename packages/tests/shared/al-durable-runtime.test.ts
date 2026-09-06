@@ -390,37 +390,12 @@ function createDefaultOutboundRuntime(
         }),
         sendPreparedMessage: async (prepared, phase) => {
             sent.push({ ...prepared, phase });
+
+            return { status: 'sent' as const };
         }
     });
     onTestFinished(() => runtime.dispose());
     return runtime;
-}
-
-function createOrderedMessage(seq: number): ALMessage {
-    return {
-        ...newALMulticastMessage(
-            'peer-1',
-            {
-                topicId: 'chat',
-                resourceId: `msg-${seq}`,
-                contextId: 'group-1'
-            },
-            groupRef('group-1'),
-            'chat.message.v1',
-            {
-                text: `message-${seq}`
-            },
-            {
-                seq,
-                reliability: 'at-least-once'
-            }
-        ),
-        ordering: {
-            orderingKey: 'group-1',
-            epoch: 0,
-            seq
-        }
-    };
 }
 
 function createBufferedOrderedMessage(seq: number, text: string) {

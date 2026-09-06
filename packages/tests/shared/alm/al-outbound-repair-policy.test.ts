@@ -34,6 +34,8 @@ describe('AL outbound repair policy', () => {
                     : { persist: false, preparedMessages: [{ kind: 'repair', msgId: msg.id.msgId }] },
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared);
+
+                return { status: 'sent' as const };
             }
         });
         await enqueueOutboundOrThrow(runtime, message);

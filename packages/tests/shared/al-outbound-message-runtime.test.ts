@@ -76,7 +76,7 @@ describe('ALOutboundMessageRuntime', () => {
 
     it('returns no-route when the outbound planner drops enqueue', async () => {
         const runtime = createDefaultOutboundTestRuntime({
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: () => ({
                 dropReason: 'No route for outbound enqueue',
                 persist: false,
@@ -99,6 +99,8 @@ describe('ALOutboundMessageRuntime', () => {
             outbox,
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: () => ({
                 persist: false,
@@ -122,6 +124,8 @@ describe('ALOutboundMessageRuntime', () => {
             outbox,
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
                 persist: false,
@@ -148,7 +152,7 @@ describe('ALOutboundMessageRuntime', () => {
         const admissionStore = createDefaultOutboundTestAdmissionStore();
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore },
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: () => ({
                 persist: false,
                 preparedMessages: [{ kind: 'send' }],
@@ -224,6 +228,8 @@ describe('ALOutboundMessageRuntime', () => {
             stores: { admissionStore },
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: () => ({ persist: false, preparedMessages: [] })
         });
@@ -263,6 +269,8 @@ describe('ALOutboundMessageRuntime', () => {
             stores: { admissionStore },
             sendPreparedMessage: async () => {
                 sent.push('replayed');
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: () => ({ persist: false, preparedMessages: [] })
         });
@@ -286,7 +294,7 @@ describe('ALOutboundMessageRuntime', () => {
             }
         });
         const runtime = createDefaultOutboundTestRuntime({
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: () => ({
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
@@ -328,6 +336,8 @@ describe('ALOutboundMessageRuntime', () => {
                 events.push('send-start');
                 await sendGate.promise;
                 events.push('send-end');
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: () => ({
                 persist: false,
@@ -369,6 +379,8 @@ describe('ALOutboundMessageRuntime', () => {
                 if (resourceId === 'msg-drain-second') {
                     await secondGate.promise;
                 }
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => {
                 planned.push(msg.route.resourceId);
@@ -414,7 +426,7 @@ describe('ALOutboundMessageRuntime', () => {
                 nowMs += 5;
                 return nowMs;
             },
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: () => ({
                 persist: false,
                 preparedMessages: [{ kind: 'send' }]
@@ -444,7 +456,7 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: () => ({
                 persist: true,
                 preparedMessages: []
@@ -471,7 +483,7 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: () => ({
                 persist: true,
                 preparedMessages: []
@@ -494,7 +506,7 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
                 persist: true,
                 preparedMessages: [],
@@ -544,6 +556,8 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
                 persist: false,
@@ -601,6 +615,8 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
                 persist: false,
@@ -630,6 +646,8 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
                 persist: false,
@@ -692,6 +710,8 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
                 persist: false,
@@ -746,6 +766,8 @@ describe('ALOutboundMessageRuntime', () => {
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
                 persistRetry = true;
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) =>
                 persistRetry
@@ -807,6 +829,8 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
                 persist: false,
@@ -861,6 +885,8 @@ describe('ALOutboundMessageRuntime', () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
                 persist: false,
@@ -912,7 +938,7 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
                 persist: true,
                 preparedMessages: [],
@@ -972,7 +998,7 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
                 persist: true,
                 preparedMessages: [],
@@ -1053,6 +1079,8 @@ describe('ALOutboundMessageRuntime', () => {
                 sent.push({ ...prepared, phase });
                 sendStarted.resolve();
                 await sendCompleted.promise;
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 persist: false,
@@ -1116,6 +1144,8 @@ describe('ALOutboundMessageRuntime', () => {
                 }
 
                 sent.push(String(prepared.peerId));
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: () => ({
                 persist: false,
@@ -1138,7 +1168,7 @@ describe('ALOutboundMessageRuntime', () => {
         const outbox = new InMemoryQueueBox(new Map());
         const runtime = createDefaultOutboundTestRuntime({
             outbox,
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],

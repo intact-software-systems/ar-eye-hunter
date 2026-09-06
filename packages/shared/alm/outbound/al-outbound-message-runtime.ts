@@ -13,6 +13,7 @@ import { ALOutboundDispatchAdmission } from './al-outbound-dispatch-admission.ts
 import {
     ALOutboundEffectDrain,
     computeALOutboundEffectRetryDelayMs,
+    type ALOutboundEffectDisposition,
     type ALOutboundEffectRunResult
 } from './al-outbound-effect-drain.ts';
 import { ALOutboundRepairAdmission } from './al-outbound-repair-admission.ts';
@@ -20,13 +21,19 @@ import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
 
-export type ALOutboundPreparedSendStatus = 'sent' | 'queued' | 'no-targets' | 'not-ready' | 'cancelled' | 'expired';
-
-export interface ALOutboundPreparedSendResult {
-    readonly status: ALOutboundPreparedSendStatus;
+export interface ALOutboundSettledSendResult {
+    readonly status: 'sent' | 'no-targets' | 'not-ready' | 'cancelled' | 'expired' | 'superseded';
     readonly reason?: string;
     readonly retryAfterMs?: number;
 }
+
+export type ALOutboundPreparedSendResult =
+    | ALOutboundSettledSendResult
+    | Readonly<{
+        status: 'queued';
+        /** The transport retains this attempt until exactly one local terminal outcome. */
+        settled: Promise<ALOutboundSettledSendResult>;
+    }>;
 
 export interface ALOutboundAckTrackingPlan {
     readonly enabled: boolean;
@@ -139,6 +146,7 @@ export namespace ALOutboundMessageRuntime {
         /** The runtime owns this cancellation signal; disposal stops remaining local transport work. */
         readonly signal: AbortSignal;
         readonly expiresAtMs: number | undefined;
+        readonly leaseUntilMs: number | undefined;
     }
 
     export interface Clock {
@@ -177,7 +185,7 @@ export namespace ALOutboundMessageRuntime {
             prepared: TPrepared,
             phase: ALOutboundDispatchPhase,
             lifecycle: SendLifecycle
-        ) => Promise<void | ALOutboundPreparedSendResult>;
+        ) => Promise<ALOutboundPreparedSendResult>;
         readonly planRepairMessage:
             | ((
                 msg: ALMessage,
@@ -366,25 +374,24 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
         switch (effect.payload.kind) {
             case 'send-prepared': {
-                const sendResult =
-                    await this.dependencies.sendPreparedMessage(effect.payload.prepared, effect.payload.phase, {
+                const sendResult = await this.dependencies.sendPreparedMessage(
+                    effect.payload.prepared,
+                    effect.payload.phase,
+                    {
                         signal: this.sendSignal,
-                        expiresAtMs: effect.expireAtTimestamp
-                    }) ??
-                        { status: 'sent' };
-                if (sendResult.status === 'not-ready') {
+                        expiresAtMs: effect.expireAtTimestamp,
+                        leaseUntilMs: effect.leaseUntilMs
+                    }
+                );
+                if (sendResult.status === 'queued') {
                     return {
-                        status: 'reschedule',
-                        readyAtMs: this.readNowMs() +
-                            Math.max(
-                                0,
-                                sendResult.retryAfterMs ?? computeALOutboundEffectRetryDelayMs(effect.attempts)
-                            ),
-                        reason: sendResult.reason ?? 'Prepared outbound transport is not ready.'
+                        status: 'retained',
+                        settled: sendResult.settled.then((settled) =>
+                            computeALOutboundSendDisposition(settled, this.readNowMs(), effect.attempts)
+                        )
                     };
                 }
-
-                return { status: 'completed' };
+                return computeALOutboundSendDisposition(sendResult, this.readNowMs(), effect.attempts);
             }
             case 'enqueue-outbox':
                 if (effect.payload.replaceExisting) {
@@ -419,4 +426,18 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private readNowMs(): number {
         return this.dependencies.clock.nowMs();
     }
+}
+
+function computeALOutboundSendDisposition(
+    result: ALOutboundSettledSendResult,
+    observedAtMs: number,
+    attempts: number
+): ALOutboundEffectDisposition {
+    return result.status === 'not-ready'
+        ? {
+            status: 'reschedule',
+            readyAtMs: observedAtMs + Math.max(0, result.retryAfterMs ?? computeALOutboundEffectRetryDelayMs(attempts)),
+            reason: result.reason ?? 'Prepared outbound transport is not ready.'
+        }
+        : { status: 'completed' };
 }

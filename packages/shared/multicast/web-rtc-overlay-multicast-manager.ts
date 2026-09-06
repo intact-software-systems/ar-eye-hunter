@@ -23,7 +23,8 @@ import type {
     ALOutboundEnqueueResult,
     ALOutboundEnqueueStatus,
     ALOutboundPreparedSendResult,
-    ALOutboundRuntimeDiagnosticsSink
+    ALOutboundRuntimeDiagnosticsSink,
+    ALOutboundSettledSendResult
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     ALOutboundAckTrackingPlan,
@@ -51,6 +52,7 @@ import { RateLimiter } from '../resilience/Resilience.ts';
 import { QueueBoxUtilities } from '../services/QueueBoxUtilities.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
 import type {
+    QRtcDataChannel,
     RtcDataChannelHealth,
     RtcDataChannelSendOptions,
     RtcDataChannelSendResult
@@ -664,17 +666,52 @@ export class WebRtcOverlayMulticastManager {
             };
         }
 
-        return toALOutboundRtcSendResult(peer.channel.sendJson(msg, {
+        return this.submitPreparedMessage(peer.channel, msg, lifecycle);
+    }
+
+    private submitPreparedMessage(
+        channel: WebRtcOverlayMulticastManager.Channel,
+        msg: ALMessage,
+        lifecycle: ALOutboundMessageRuntime.SendLifecycle
+    ): ALOutboundPreparedSendResult {
+        // Promise's executor runs synchronously, before the transport registers this completion callback.
+        let resolveSettlement!: (value: QRtcDataChannel.SendSettlement) => void;
+        const settled = new Promise<QRtcDataChannel.SendSettlement>((resolve) => {
+            resolveSettlement = resolve;
+        });
+        const expiresAtEpochMs = Math.min(lifecycle.expiresAtMs ?? Infinity, lifecycle.leaseUntilMs ?? Infinity);
+        const result = channel.sendJson(msg, {
             signal: lifecycle.signal,
-            expiresAtEpochMs: lifecycle.expiresAtMs
-        }));
+            expiresAtEpochMs: Number.isFinite(expiresAtEpochMs) ? expiresAtEpochMs : undefined,
+            onSettled: resolveSettlement
+        });
+        if (result.status === 'queued' || result.status === 'replaced') {
+            return {
+                status: 'queued',
+                settled: settled.then((value) =>
+                    toALOutboundRtcSettlement({
+                        status: value.status,
+                        reason: value.reason,
+                        messageExpiresAtMs: lifecycle.expiresAtMs,
+                        observedAtMs: this.clock.nowMs()
+                    })
+                )
+            };
+        }
+        return toALOutboundRtcSettlement({
+            status: result.status,
+            reason: result.reason,
+            messageExpiresAtMs: lifecycle.expiresAtMs,
+            observedAtMs: this.clock.nowMs()
+        });
     }
 
     private async sendImmediately(messages: readonly ALMessage[]): Promise<void> {
         for (const message of messages) {
             await this.sendPreparedMessage(message, {
                 signal: this.outboundRuntime.sendSignal,
-                expiresAtMs: message.constraints?.expiresAtMs
+                expiresAtMs: message.constraints?.expiresAtMs,
+                leaseUntilMs: undefined
             });
         }
     }
@@ -870,15 +907,20 @@ export class WebRtcOverlayMulticastManager {
     }
 }
 
-function toALOutboundRtcSendResult(result: RtcDataChannelSendResult): ALOutboundPreparedSendResult {
-    if (result.status === 'cancelled' || result.status === 'expired') {
-        return { status: result.status, reason: result.reason };
+interface ALOutboundRtcSettlementInput {
+    readonly status: QRtcDataChannel.SendSettlement['status'];
+    readonly reason: string | undefined;
+    readonly messageExpiresAtMs: number | undefined;
+    readonly observedAtMs: number;
+}
+
+function toALOutboundRtcSettlement(input: ALOutboundRtcSettlementInput): ALOutboundSettledSendResult {
+    const { status, reason, messageExpiresAtMs, observedAtMs } = input;
+    if (status === 'expired' && (messageExpiresAtMs === undefined || observedAtMs < messageExpiresAtMs)) {
+        return { status: 'not-ready', reason: 'RTC attempt lease elapsed before native submission.', retryAfterMs: 50 };
     }
-    if (result.status === 'dropped' || result.status === 'closed') {
-        return { status: 'not-ready', reason: result.reason, retryAfterMs: 50 };
+    if (status === 'dropped' || status === 'closed' || status === 'failed') {
+        return { status: 'not-ready', reason, retryAfterMs: 50 };
     }
-    return {
-        status: result.status === 'sent' ? 'sent' : 'queued',
-        reason: result.reason
-    };
+    return { status, reason };
 }

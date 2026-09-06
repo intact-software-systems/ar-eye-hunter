@@ -28,12 +28,85 @@ afterEach(() => {
 });
 
 describe('RTC outbound transport results', () => {
+    it('retains queued send work until submission without blocking an available peer', async () => {
+        const blocked = createChannel({ overflow: 'queue' });
+        const available = createChannel({}, 'peer-2');
+        const blockedNative = nativeRuntime.createdConnections[0].channels[0];
+        const availableNative = nativeRuntime.createdConnections[1].channels[0];
+        await blockedNative.open();
+        await availableNative.open();
+        blockedNative.bufferedAmount = 128 * 1024;
+        const resources = createDefaultALOutboundRuntimeResources();
+        const manager = createManager([blocked, available], resources);
+        onTestFinished(() => manager.dispose());
+        const queuedMessage = createMessage('queued-owner');
+
+        await manager.enqueueIfAbsent(queuedMessage);
+        await manager.enqueueIfAbsent(createMessage('available', 'peer-2'));
+
+        expect(blockedNative.sent).toEqual([]);
+        expect(availableNative.sent).toHaveLength(1);
+        expect(await resources.admissionStore.peekNextEffectReadyAt(decodeALOutboundPreparedMessage)).toBeDefined();
+        blockedNative.bufferedAmount = 0;
+        await blockedNative.drain();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(JSON.parse(String(blockedNative.sent[0]))).toMatchObject({ id: queuedMessage.id });
+        expect(await resources.admissionStore.peekNextEffectReadyAt(decodeALOutboundPreparedMessage)).toBeUndefined();
+    });
+
+    it('retries the same owned message when a retained native send closes before submission', async () => {
+        const channel = createChannel({ overflow: 'queue' });
+        const native = nativeRuntime.createdConnections[0].channels[0];
+        await native.open();
+        native.bufferedAmount = 128 * 1024;
+        const resources = createDefaultALOutboundRuntimeResources();
+        const manager = createManager([channel], resources);
+        onTestFinished(() => manager.dispose());
+        const message = createMessage('queued-close');
+        await manager.enqueueIfAbsent(message);
+
+        await native.close();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(await resources.admissionStore.peekNextEffectReadyAt(decodeALOutboundPreparedMessage)).toBe(Date.now() + 50);
+        channel.connect(true);
+        const replacement = nativeRuntime.createdConnections[0].channels[1];
+        await replacement.open();
+        await vi.advanceTimersByTimeAsync(50);
+
+        expect(native.sent).toEqual([]);
+        expect(replacement.sent).toHaveLength(1);
+        expect(JSON.parse(String(replacement.sent[0]))).toMatchObject({ id: message.id });
+        expect(await resources.admissionStore.peekNextEffectReadyAt(decodeALOutboundPreparedMessage)).toBeUndefined();
+    });
+
+    it('expires a native attempt at its lease boundary while retaining the original message deadline for retry', async () => {
+        const channel = createChannel({ overflow: 'queue' });
+        const native = nativeRuntime.createdConnections[0].channels[0];
+        await native.open();
+        native.bufferedAmount = 128 * 1024;
+        const resources = createDefaultALOutboundRuntimeResources();
+        const manager = createManager([channel], resources);
+        onTestFinished(() => manager.dispose());
+        const message = createMessage('attempt-lease', 'peer-1', 30_000);
+        await manager.enqueueIfAbsent(message);
+
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(channel.readHealth().queuedItemCount).toBe(0);
+        expect(native.sent).toEqual([]);
+        native.bufferedAmount = 0;
+        await vi.advanceTimersByTimeAsync(50);
+
+        expect(native.sent).toHaveLength(1);
+        expect(JSON.parse(String(native.sent[0]))).toMatchObject({ id: message.id, constraints: message.constraints });
+        expect(await resources.admissionStore.peekNextEffectReadyAt(decodeALOutboundPreparedMessage)).toBeUndefined();
+    });
+
     it('releases native queued work when the ALM owner is disposed', async () => {
         const channel = createChannel({ overflow: 'queue' });
         const native = nativeRuntime.createdConnections[0].channels[0];
         await native.open();
         native.bufferedAmount = 128 * 1024;
-        const manager = createManager(channel, createDefaultALOutboundRuntimeResources());
+        const manager = createManager([channel], createDefaultALOutboundRuntimeResources());
         onTestFinished(() => manager.dispose());
 
         await manager.enqueueIfAbsent(createMessage('dispose-retained'));
@@ -50,7 +123,7 @@ describe('RTC outbound transport results', () => {
         const native = nativeRuntime.createdConnections[0].channels[0];
         await native.open();
         native.bufferedAmount = 128 * 1024;
-        const manager = createManager(channel, createDefaultALOutboundRuntimeResources());
+        const manager = createManager([channel], createDefaultALOutboundRuntimeResources());
         onTestFinished(() => manager.dispose());
         await manager.enqueueIfAbsent(createMessage('expire-retained'));
 
@@ -67,7 +140,7 @@ describe('RTC outbound transport results', () => {
         await native.open();
         native.bufferedAmount = 128 * 1024;
         const resources = createDefaultALOutboundRuntimeResources();
-        const manager = createManager(channel, resources);
+        const manager = createManager([channel], resources);
         onTestFinished(() => manager.dispose());
         const message = createMessage('backpressure');
 
@@ -88,7 +161,7 @@ describe('RTC outbound transport results', () => {
     it('reports admission without claiming a transport send while the channel is closed', async () => {
         const channel = createChannel();
         const resources = createDefaultALOutboundRuntimeResources();
-        const manager = createManager(channel, resources);
+        const manager = createManager([channel], resources);
         onTestFinished(() => manager.dispose());
 
         const result = await manager.enqueueIfAbsent(createMessage('connecting'));
@@ -98,16 +171,16 @@ describe('RTC outbound transport results', () => {
     });
 });
 
-function createChannel(flowControl: RtcDataChannelFlowControlPolicy = {}): QRtcDataChannel {
+function createChannel(flowControl: RtcDataChannelFlowControlPolicy = {}, peerId = 'peer-1'): QRtcDataChannel {
     const peer = new QRtcPeerConnection({ send: async () => {} }, {
         sessionId: 'self',
-        peerSessionId: 'peer-1',
+        peerSessionId: peerId,
         token: 'fixture-token',
         iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
         isPolite: false
     });
     peer.connect();
-    const channel = new QRtcDataChannel(peer, { peerId: 'peer-1', dataChannelName: 'alm', flowControl });
+    const channel = new QRtcDataChannel(peer, { peerId, dataChannelName: 'alm', flowControl });
     channel.connect(true);
     onTestFinished(() => {
         peer.reset();
@@ -116,15 +189,18 @@ function createChannel(flowControl: RtcDataChannelFlowControlPolicy = {}): QRtcD
 }
 
 function createManager(
-    channel: QRtcDataChannel,
+    channels: readonly QRtcDataChannel[],
     resources: ALOutboundMessageRuntime.Resources
 ): WebRtcOverlayMulticastManager {
     return new WebRtcOverlayMulticastManager({
         outbox: new InMemoryQueueBox(),
         connectionService: {
             input: { sessionId: 'self' },
-            readyPeerIdsForLane: () => ['peer-1'],
-            readPeer: (peerId) => peerId === 'peer-1' ? { channel } : undefined
+            readyPeerIdsForLane: () => channels.map((channel) => channel.input.peerId),
+            readPeer: (peerId) => {
+                const channel = channels.find((candidate) => candidate.input.peerId === peerId);
+                return channel ? { channel } : undefined;
+            }
         },
         groupCache: new LatestRepository(),
         overlayCache: new LatestRepository(),
@@ -139,13 +215,13 @@ function createManager(
     });
 }
 
-function createMessage(resourceId: string) {
+function createMessage(resourceId: string, peerId = 'peer-1', ttlMs = 5_000) {
     return newALUnicastMessage(
         'self',
         { topicId: 'chat', resourceId, contextId: 'direct' },
-        'peer-1',
+        peerId,
         'chat.message.v1',
         { text: 'hello' },
-        { ttlMs: 5_000, qos: { durability: { algo: 'volatile' } } }
+        { ttlMs, qos: { durability: { algo: 'volatile' } } }
     );
 }

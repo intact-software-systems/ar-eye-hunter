@@ -132,10 +132,10 @@ export function createFlakyOutboundAdmissionStore(
             hooks.claimReadyEffects
                 ? hooks.claimReadyEffects(input, decodePrepared)
                 : inner.claimReadyEffects(input, decodePrepared),
-        completeEffect: (effectId, workerId, decodePrepared) =>
+        completeEffect: (effectId, leaseOwner, decodePrepared) =>
             hooks.completeEffect
-                ? hooks.completeEffect(effectId, workerId, decodePrepared)
-                : inner.completeEffect(effectId, workerId, decodePrepared),
+                ? hooks.completeEffect(effectId, leaseOwner, decodePrepared)
+                : inner.completeEffect(effectId, leaseOwner, decodePrepared),
         rescheduleEffect: (input, decodePrepared) =>
             hooks.rescheduleEffect
                 ? hooks.rescheduleEffect(input, decodePrepared)

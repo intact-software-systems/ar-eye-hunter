@@ -99,7 +99,7 @@ describe('outbound admission persisted-record validation', () => {
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         await expect(store.rescheduleEffect({
             effectId: effect.effectId,
-            workerId: 'worker',
+            leaseOwner: 'worker',
             retryAtMs: Date.now(),
             lastError: undefined
         }, decodePersistedALMessageValue)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
@@ -132,6 +132,8 @@ describe('outbound admission persisted-record validation', () => {
             planOutgoingMessage: () => ({ persist: false, preparedMessages: [] }),
             sendPreparedMessage: async (message) => {
                 sent.push(message.id.msgId);
+
+                return { status: 'sent' as const };
             }
         });
         try {

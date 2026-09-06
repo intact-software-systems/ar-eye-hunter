@@ -1,9 +1,9 @@
 import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type {
+    ALClaimedOutboundEffect,
     ALOutboundAdmissionStore,
-    ALOutboundPreparedMessageDecoder,
-    ALPersistedOutboundEffect
+    ALOutboundPreparedMessageDecoder
 } from './al-outbound-admission-store.ts';
 import type {
     ALOutboundMessageRuntime,
@@ -11,9 +11,16 @@ import type {
     ALOutboundRuntimeDiagnosticsSink
 } from './al-outbound-message-runtime.ts';
 
-export type ALOutboundEffectRunResult =
+export type ALOutboundEffectDisposition =
     | Readonly<{ status: 'completed'; }>
     | Readonly<{ status: 'reschedule'; readyAtMs: number; reason: string; }>;
+
+export type ALOutboundEffectRunResult =
+    | ALOutboundEffectDisposition
+    | Readonly<{
+        status: 'retained';
+        settled: Promise<ALOutboundEffectDisposition>;
+    }>;
 
 interface ALOutboundDurableEffectDrainCounts {
     claimedCount: number;
@@ -31,7 +38,7 @@ export namespace ALOutboundEffectDrain {
         readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
         /** Invoked once per claimed attempt, after commit; rejection retains/retries the durable effect unless corruption. */
-        readonly runEffect: (effect: ALPersistedOutboundEffect<TPrepared>) => Promise<ALOutboundEffectRunResult>;
+        readonly runEffect: (effect: ALClaimedOutboundEffect<TPrepared>) => Promise<ALOutboundEffectRunResult>;
     }
 }
 
@@ -174,7 +181,7 @@ export class ALOutboundEffectDrain<TPrepared> {
     }
 
     private async runClaimedDurableEffects(
-        effects: readonly ALPersistedOutboundEffect<TPrepared>[],
+        effects: readonly ALClaimedOutboundEffect<TPrepared>[],
         counts: ALOutboundDurableEffectDrainCounts
     ): Promise<void> {
         for (const effect of effects) {
@@ -187,7 +194,7 @@ export class ALOutboundEffectDrain<TPrepared> {
     }
 
     private async runClaimedDurableEffect(
-        effect: ALPersistedOutboundEffect<TPrepared>,
+        effect: ALClaimedOutboundEffect<TPrepared>,
         counts: ALOutboundDurableEffectDrainCounts
     ): Promise<void> {
         try {
@@ -195,6 +202,12 @@ export class ALOutboundEffectDrain<TPrepared> {
                 counts.skippedExpiredCount += 1;
             }
             const result = await this.dependencies.runEffect(effect);
+            if (result.status === 'retained') {
+                void this.settleRetainedEffect(effect, result.settled).catch((error) => {
+                    console.error('Failed to settle retained outbound effect', error);
+                });
+                return;
+            }
             if (result.status === 'reschedule') {
                 await this.rescheduleDurableEffect(effect, result.readyAtMs, result.reason);
                 counts.rescheduledCount += 1;
@@ -203,7 +216,7 @@ export class ALOutboundEffectDrain<TPrepared> {
 
             await this.dependencies.admissionStore.completeEffect(
                 effect.effectId,
-                this.dependencies.effectWorkerId,
+                effect.leaseOwner,
                 this.dependencies.decodePreparedMessage
             );
             counts.completedCount += 1;
@@ -224,16 +237,53 @@ export class ALOutboundEffectDrain<TPrepared> {
     }
 
     private async rescheduleDurableEffect(
-        effect: ALPersistedOutboundEffect<TPrepared>,
+        effect: ALClaimedOutboundEffect<TPrepared>,
         retryAtMs: number,
         lastError: string
     ): Promise<void> {
         await this.dependencies.admissionStore.rescheduleEffect({
             effectId: effect.effectId,
-            workerId: this.dependencies.effectWorkerId,
+            leaseOwner: effect.leaseOwner,
             retryAtMs,
             lastError
         }, this.dependencies.decodePreparedMessage);
+    }
+
+    private async settleRetainedEffect(
+        effect: ALClaimedOutboundEffect<TPrepared>,
+        settlement: Promise<ALOutboundEffectDisposition>
+    ): Promise<void> {
+        try {
+            const result = await settlement;
+            if (this.disposed) {
+                return;
+            }
+            if (result.status === 'reschedule') {
+                await this.rescheduleDurableEffect(effect, result.readyAtMs, result.reason);
+            }
+            else {
+                await this.dependencies.admissionStore.completeEffect(
+                    effect.effectId,
+                    effect.leaseOwner,
+                    this.dependencies.decodePreparedMessage
+                );
+            }
+        }
+        catch (error) {
+            if (error instanceof ALAdmissionCorruptionError) {
+                throw error;
+            }
+            if (!this.disposed) {
+                await this.rescheduleDurableEffect(
+                    effect,
+                    this.readNowMs() + computeALOutboundEffectRetryDelayMs(effect.attempts),
+                    toError(error).message
+                );
+            }
+        }
+        finally {
+            this.requestEffectDrain();
+        }
     }
 
     scheduleAt(readyAtMs: number): void {

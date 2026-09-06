@@ -1,8 +1,10 @@
+import { Either } from '../../resilience/Either.ts';
 import type { ALAdmissionBackend, ALAdmissionWriteContext } from '../al-admission-backend.ts';
 import { resolveExplicitOutboundMessageExpireAtMs } from '../ALMessageExpiry.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../ALStoreRetention.ts';
 import type {
+    ALClaimedOutboundEffect,
     ALOutboundDurableEffect,
     ALOutboundDurableEffectWrite,
     ALOutboundPreparedMessageDecoder,
@@ -19,7 +21,8 @@ export interface ClaimALOutboundEffectsInput {
 
 export interface RescheduleALOutboundEffectInput {
     readonly effectId: string;
-    readonly workerId: string;
+    /** Exact owner returned by claimReadyEffects; a worker name alone cannot finish a claim. */
+    readonly leaseOwner: string;
     readonly retryAtMs: number;
     readonly lastError: string | undefined;
 }
@@ -114,7 +117,7 @@ export class ALOutboundAdmissionEffectStore {
     async claimReadyEffects<TPrepared>(
         input: ClaimALOutboundEffectsInput,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<readonly ALPersistedOutboundEffect<TPrepared>[]> {
+    ): Promise<readonly ALClaimedOutboundEffect<TPrepared>[]> {
         if (input.maxCount <= 0) {
             return [];
         }
@@ -129,7 +132,7 @@ export class ALOutboundAdmissionEffectStore {
             ]
                 .map((entry) => entry.value)
                 .sort((left, right) => left.retryAtMs - right.retryAtMs || left.effectId.localeCompare(right.effectId));
-            const claimed: ALPersistedOutboundEffect<TPrepared>[] = [];
+            const claimed: ALClaimedOutboundEffect<TPrepared>[] = [];
             for (const effect of effects) {
                 if (claimed.length >= input.maxCount) {
                     break;
@@ -138,11 +141,11 @@ export class ALOutboundAdmissionEffectStore {
                     continue;
                 }
 
-                const claimedEffect: ALPersistedOutboundEffect<TPrepared> = {
+                const claimedEffect: ALClaimedOutboundEffect<TPrepared> = {
                     ...effect,
                     status: 'running',
                     attempts: effect.attempts + 1,
-                    leaseOwner: input.workerId,
+                    leaseOwner: `${input.workerId}:${crypto.randomUUID()}`,
                     leaseUntilMs: input.nowMs + input.leaseMs,
                     updatedAtMs: input.nowMs
                 };
@@ -159,15 +162,13 @@ export class ALOutboundAdmissionEffectStore {
 
     async completeEffect<TPrepared>(
         effectId: string,
-        workerId: string,
+        leaseOwner: string,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void> {
         await this.backend.write(async (tx) => {
-            const current = await tx.read(
-                this.toEffectKey(effectId),
-                (value) => decodeALOutboundEffect(value, effectId, decodePrepared)
-            );
-            if (current?.leaseOwner === workerId) {
+            const current = await this.readEffect(tx, effectId, decodePrepared);
+            const validated = validateALOutboundEffectLease(current, leaseOwner);
+            if (validated.right) {
                 await tx.remove(this.toEffectKey(effectId));
             }
         });
@@ -177,27 +178,26 @@ export class ALOutboundAdmissionEffectStore {
         input: RescheduleALOutboundEffectInput,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void> {
+        const observedAtMs = Date.now();
         await this.backend.write(async (tx) => {
-            const current = await tx.read(
-                this.toEffectKey(input.effectId),
-                (value) => decodeALOutboundEffect(value, input.effectId, decodePrepared)
-            );
-            if (current?.leaseOwner !== input.workerId) {
+            const current = await this.readEffect(tx, input.effectId, decodePrepared);
+            const validated = validateALOutboundEffectLease(current, input.leaseOwner);
+            if (!validated.right) {
                 return;
             }
-
+            const rescheduled: ALPersistedOutboundEffect<TPrepared> = {
+                ...validated.right,
+                status: 'pending',
+                retryAtMs: input.retryAtMs,
+                leaseOwner: undefined,
+                leaseUntilMs: undefined,
+                lastError: input.lastError,
+                updatedAtMs: observedAtMs
+            };
             await tx.set(
                 this.toEffectKey(input.effectId),
-                encodeALOutboundEffect({
-                    ...current,
-                    status: 'pending',
-                    retryAtMs: input.retryAtMs,
-                    leaseOwner: undefined,
-                    leaseUntilMs: undefined,
-                    lastError: input.lastError,
-                    updatedAtMs: Date.now()
-                }),
-                current.expireAtTimestamp
+                encodeALOutboundEffect(rescheduled),
+                rescheduled.expireAtTimestamp
             );
         });
     }
@@ -255,4 +255,14 @@ export class ALOutboundAdmissionEffectStore {
     private toEffectPrefix(): string {
         return `${this.namespace}:effect:`;
     }
+}
+
+function validateALOutboundEffectLease<TPrepared>(
+    current: ALPersistedOutboundEffect<TPrepared> | undefined,
+    leaseOwner: string
+): Either<'stale-claim', ALClaimedOutboundEffect<TPrepared>> {
+    if (current?.status !== 'running' || current.leaseOwner !== leaseOwner || current.leaseUntilMs === undefined) {
+        return Either.ofLeft('stale-claim');
+    }
+    return Either.ofRight({ ...current, status: 'running', leaseOwner, leaseUntilMs: current.leaseUntilMs });
 }

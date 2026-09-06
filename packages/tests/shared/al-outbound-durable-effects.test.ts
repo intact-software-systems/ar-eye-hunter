@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
+import type { ALOutboundSettledSendResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
 import { ALOutboundMessageRuntime, InMemoryQueueBox, newALAckControlMessage, newALNackControlMessage } from '@shared/mod.ts';
@@ -22,6 +23,61 @@ describe('AL outbound durable effect lifecycle', () => {
         vi.restoreAllMocks();
     });
 
+    it('recovers a retained send when durable completion fails after its native settlement', async () => {
+        vi.useFakeTimers();
+        const admissionStore = createDefaultOutboundTestAdmissionStore();
+        const settlement = Promise.withResolvers<ALOutboundSettledSendResult>();
+        const sent: string[] = [];
+        let failCompletion = true;
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: {
+                admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
+                    completeEffect: async (effectId, leaseOwner, decode) => {
+                        if (failCompletion) {
+                            failCompletion = false;
+                            throw new Error('Completion storage unavailable');
+                        }
+                        await admissionStore.completeEffect(effectId, leaseOwner, decode);
+                    }
+                })
+            },
+            sendPreparedMessage: async (prepared) => {
+                sent.push(String(prepared.msgId));
+                return sent.length === 1 ? { status: 'queued', settled: settlement.promise } : { status: 'sent' };
+            },
+            planOutgoingMessage: (msg) => ({ persist: false, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+        });
+        const message = createOutboundMessage('retained-completion-failure');
+        await runtime.enqueueIfAbsent(message);
+        settlement.resolve({ status: 'sent' });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBe(Date.now() + 50);
+        await vi.advanceTimersByTimeAsync(50);
+        expect(sent).toEqual([message.id.msgId, message.id.msgId]);
+        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+    });
+
+    it.each(['cancelled', 'expired', 'superseded'] as const)('does not retry a retained send after %s settlement', async (status) => {
+        vi.useFakeTimers();
+        const admissionStore = createDefaultOutboundTestAdmissionStore();
+        const settlement = Promise.withResolvers<ALOutboundSettledSendResult>();
+        const attempts: string[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: { admissionStore },
+            sendPreparedMessage: async (prepared) => {
+                attempts.push(String(prepared.msgId));
+                return { status: 'queued', settled: settlement.promise };
+            },
+            planOutgoingMessage: (msg) => ({ persist: false, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] })
+        });
+        const message = createOutboundMessage(`retained-${status}`);
+        await runtime.enqueueIfAbsent(message);
+        settlement.resolve({ status });
+        await vi.advanceTimersByTimeAsync(10_001);
+        expect(attempts).toEqual([message.id.msgId]);
+        expect(await admissionStore.peekNextEffectReadyAt(decodeOutboundTestPayload)).toBeUndefined();
+    });
+
     it('drains committed send effects after a restart when the first runtime crashes before drain', async () => {
         const sent: Array<OutboundTestPayload> = [];
         const admissionStore = createDefaultOutboundTestAdmissionStore();
@@ -34,6 +90,8 @@ describe('AL outbound durable effect lifecycle', () => {
             },
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 persist: false,
@@ -52,6 +110,8 @@ describe('AL outbound durable effect lifecycle', () => {
             },
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 persist: false,
@@ -78,6 +138,8 @@ describe('AL outbound durable effect lifecycle', () => {
             stores: { admissionStore },
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 persist: false,
@@ -144,18 +206,20 @@ describe('AL outbound durable effect lifecycle', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores: {
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    completeEffect: async (effectId, workerId) => {
+                    completeEffect: async (effectId, leaseOwner) => {
                         if (failFirstComplete) {
                             failFirstComplete = false;
                             throw new Error('complete failed after send');
                         }
 
-                        await admissionStore.completeEffect(effectId, workerId, decodeOutboundTestPayload);
+                        await admissionStore.completeEffect(effectId, leaseOwner, decodeOutboundTestPayload);
                     }
                 })
             },
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 persist: false,
@@ -191,6 +255,8 @@ describe('AL outbound durable effect lifecycle', () => {
             },
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 persist: false,
@@ -211,6 +277,8 @@ describe('AL outbound durable effect lifecycle', () => {
             sent.push({ ...prepared, phase });
             sendStarted.resolve();
             await sendBarrier.promise;
+
+            return { status: 'sent' as const };
         };
         const runtime2 = createDefaultOutboundTestRuntime({
             stores: {
@@ -284,6 +352,8 @@ describe('AL outbound durable effect lifecycle', () => {
             },
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 persist: false,
@@ -362,6 +432,8 @@ describe('AL outbound durable effect lifecycle', () => {
             },
             sendPreparedMessage: async (prepared, phase) => {
                 sent.push({ ...prepared, phase });
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (plannedMsg) => ({
                 persist: false,
@@ -413,6 +485,8 @@ describe('AL outbound durable effect lifecycle', () => {
             }),
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
+
+                return { status: 'sent' as const };
             }
         });
         runtime.dispose();
@@ -458,6 +532,8 @@ describe('AL outbound durable effect lifecycle', () => {
             stores: { admissionStore },
             sendPreparedMessage: async (prepared) => {
                 sent.push(String(prepared.msgId));
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: (msg) => ({
                 persist: false,
@@ -508,7 +584,7 @@ describe('AL outbound durable effect lifecycle', () => {
                     }
                 })
             },
-            sendPreparedMessage: async () => Promise.resolve(),
+            sendPreparedMessage: async () => ({ status: 'sent' as const }),
             planOutgoingMessage: (msg) => ({
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
@@ -572,6 +648,8 @@ describe('AL outbound durable effect lifecycle', () => {
             stores: { admissionStore },
             sendPreparedMessage: async (prepared) => {
                 recovered.push(String(prepared.msgId));
+
+                return { status: 'sent' as const };
             },
             planOutgoingMessage: () => ({ persist: false, preparedMessages: [] })
         });

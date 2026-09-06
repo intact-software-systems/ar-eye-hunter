@@ -215,11 +215,18 @@ export interface ALPersistedOutboundEffect<TPrepared> {
     readonly status: 'pending' | 'running';
     readonly attempts: number;
     readonly retryAtMs: number;
+    /** Opaque claim identity; every reservation, including one by the same worker, receives a fresh value. */
     readonly leaseOwner?: string;
     readonly leaseUntilMs?: number;
     readonly lastError?: string;
     readonly updatedAtMs: number;
     readonly expireAtTimestamp: number;
+}
+
+export interface ALClaimedOutboundEffect<TPrepared> extends ALPersistedOutboundEffect<TPrepared> {
+    readonly status: 'running';
+    readonly leaseOwner: string;
+    readonly leaseUntilMs: number;
 }
 
 export interface ALOutboundCommitBundle<TPrepared> {
@@ -240,6 +247,12 @@ export interface ALOutboundNotYetInSyncRetrySchedule<TPrepared> {
     readonly maxAttempts: number;
     readonly expireAtTimestamp: number | undefined;
     readonly createEffect: (attempt: number) => ALOutboundDurableEffectWrite<TPrepared>;
+}
+
+interface ALOutboundNotYetInSyncRetryRead<TPrepared> {
+    readonly current: ALOutboundVersionedClientRecord | undefined;
+    readonly retry: ALOutboundNotYetInSyncRetrySnapshot | undefined;
+    readonly pending: ALPersistedOutboundEffect<TPrepared> | undefined;
 }
 
 export type ALOutboundNotYetInSyncRetryScheduleResult =
@@ -283,11 +296,11 @@ export interface ALOutboundAdmissionStore extends ALReadyable {
     claimReadyEffects<TPrepared>(
         input: ClaimALOutboundEffectsInput,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<readonly ALPersistedOutboundEffect<TPrepared>[]>;
+    ): Promise<readonly ALClaimedOutboundEffect<TPrepared>[]>;
 
     completeEffect<TPrepared>(
         effectId: string,
-        workerId: string,
+        leaseOwner: string,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void>;
 
@@ -503,38 +516,24 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     ): Promise<ALOutboundNotYetInSyncRetryScheduleResult> {
         try {
             return await this.backend.write(async (tx) => {
-                const current = await tx.read(
-                    this.toVersionKey(schedule.senderId),
-                    (value) => decodeALAdmissionClientRecord(value, schedule.senderId)
-                );
+                const { current, retry, pending } = await this.readNotYetInSyncRetry(tx, schedule, decodePrepared);
                 if (current?.version !== schedule.expectedVersion) {
                     return { status: 'conflict' };
                 }
 
-                const retry = await tx.read(
-                    this.toNotYetInSyncRetryKey(schedule.msgId),
-                    (value) => decodeALOutboundNotYetInSyncRetry(value, schedule.msgId)
-                );
-                if (retry) {
-                    const pending = await this.effectStore.readEffect(
-                        tx,
-                        retry.pendingEffectId,
-                        decodePrepared
-                    );
-                    if (pending) {
-                        if (
-                            pending.payload.kind !== 'nack-retry' ||
-                            pending.payload.msgId !== schedule.msgId
-                        ) {
-                            throw new ALAdmissionCorruptionError(
-                                this.toNotYetInSyncRetryKey(schedule.msgId),
-                                new TypeError(
-                                    'Persisted AL not-yet-in-sync retry snapshot points to another effect'
-                                )
-                            );
-                        }
-                        return { status: 'pending', retryAtMs: pending.retryAtMs };
+                if (pending) {
+                    if (
+                        pending.payload.kind !== 'nack-retry' ||
+                        pending.payload.msgId !== schedule.msgId
+                    ) {
+                        throw new ALAdmissionCorruptionError(
+                            this.toNotYetInSyncRetryKey(schedule.msgId),
+                            new TypeError(
+                                'Persisted AL not-yet-in-sync retry snapshot points to another effect'
+                            )
+                        );
                     }
+                    return { status: 'pending', retryAtMs: pending.retryAtMs };
                 }
 
                 const attempts = retry?.attempts ?? 0;
@@ -569,19 +568,38 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         }
     }
 
+    private async readNotYetInSyncRetry<TPrepared>(
+        tx: ALAdmissionWriteContext,
+        schedule: ALOutboundNotYetInSyncRetrySchedule<TPrepared>,
+        decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+    ): Promise<ALOutboundNotYetInSyncRetryRead<TPrepared>> {
+        const current = await tx.read(
+            this.toVersionKey(schedule.senderId),
+            (value) => decodeALAdmissionClientRecord(value, schedule.senderId)
+        );
+        const retry = await tx.read(
+            this.toNotYetInSyncRetryKey(schedule.msgId),
+            (value) => decodeALOutboundNotYetInSyncRetry(value, schedule.msgId)
+        );
+        const pending = retry
+            ? await this.effectStore.readEffect(tx, retry.pendingEffectId, decodePrepared)
+            : undefined;
+        return { current, retry, pending };
+    }
+
     async claimReadyEffects<TPrepared>(
         input: ClaimALOutboundEffectsInput,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
-    ): Promise<readonly ALPersistedOutboundEffect<TPrepared>[]> {
+    ): Promise<readonly ALClaimedOutboundEffect<TPrepared>[]> {
         return await this.effectStore.claimReadyEffects(input, decodePrepared);
     }
 
     async completeEffect<TPrepared>(
         effectId: string,
-        workerId: string,
+        leaseOwner: string,
         decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
     ): Promise<void> {
-        await this.effectStore.completeEffect(effectId, workerId, decodePrepared);
+        await this.effectStore.completeEffect(effectId, leaseOwner, decodePrepared);
     }
 
     async rescheduleEffect<TPrepared>(

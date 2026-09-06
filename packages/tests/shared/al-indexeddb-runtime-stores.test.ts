@@ -611,6 +611,8 @@ describe('IndexedDB AL runtime stores', () => {
             sent.push({ ...prepared, phase });
             sendStarted.resolve();
             await sendBarrier.promise;
+
+            return { status: 'sent' as const };
         };
         const runtime2 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent, sendPreparedMessage });
         const runtime3 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent, sendPreparedMessage });
@@ -840,6 +842,8 @@ function createDefaultOutboundRuntime(input: IndexedDbOutboundFixtureInput) {
         })),
         sendPreparedMessage: input.sendPreparedMessage ?? (async (prepared, phase) => {
             sent.push({ ...prepared, phase });
+
+            return { status: 'sent' as const };
         })
     });
     onTestFinished(() => runtime.dispose());
@@ -885,10 +889,10 @@ function createFlakyOutboundAdmissionStore(
             hooks.claimReadyEffects
                 ? hooks.claimReadyEffects(input, decode)
                 : inner.claimReadyEffects(input, decode),
-        completeEffect: (effectId, workerId, decode) =>
+        completeEffect: (effectId, leaseOwner, decode) =>
             hooks.completeEffect
-                ? hooks.completeEffect(effectId, workerId, decode)
-                : inner.completeEffect(effectId, workerId, decode),
+                ? hooks.completeEffect(effectId, leaseOwner, decode)
+                : inner.completeEffect(effectId, leaseOwner, decode),
         rescheduleEffect: (input, decode) =>
             hooks.rescheduleEffect
                 ? hooks.rescheduleEffect(input, decode)

@@ -229,7 +229,9 @@ describe('PSql admission optimistic retry', () => {
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             decodePreparedMessage: decodeALOutboundPreparedMessage,
             planOutgoingMessage: plan,
-            sendPreparedMessage: () => Promise.resolve(undefined)
+            sendPreparedMessage: async () => {
+                throw new Error('An outbox-only admission must not submit a transport send');
+            }
         });
         onTestFinished(() => runtime.dispose());
         repository.conflictNextConditionalWrite = true;
