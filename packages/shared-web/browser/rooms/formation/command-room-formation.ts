@@ -148,9 +148,9 @@ function toMissingPlannedLayoutIssue(readThrough: GroupTopologyReadThroughOutcom
  * The epoch and the planned identity come from two caches that fill
  * independently. A planned layout published past the cached snapshot's
  * revision would pair a fresh identity with a stale epoch, which the server
- * rejects without naming the layout; the first resolution refuses that pair
- * so the read-through can catch the snapshot up, and the second accepts what
- * the read-through returned.
+ * refuses as `group-connect-stale-epoch` before it looks at the layout; the
+ * first resolution refuses that pair so the read-through can catch the
+ * snapshot up, and the second accepts what the read-through returned.
  */
 function resolveConnectFence(
     input: ConnectRoomFormationInput,

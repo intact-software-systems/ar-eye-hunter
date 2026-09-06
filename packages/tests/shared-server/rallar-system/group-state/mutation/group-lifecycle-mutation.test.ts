@@ -216,12 +216,13 @@ describe('group lifecycle transition computation', () => {
 
     it.each(
         [
-            ['no-planned-layout', null],
-            ['planned-layout-superseded', { ...PLANNED_LAYOUT, version: PLANNED_LAYOUT.version + 1 }]
+            ['stale-epoch', 3, PLANNED_LAYOUT],
+            ['no-planned-layout', 4, null],
+            ['planned-layout-superseded', 4, { ...PLANNED_LAYOUT, version: PLANNED_LAYOUT.version + 1 }]
         ] as const
-    )('rejects a %s connect with its own conflict code', (denial, storedIdentity) => {
+    )('rejects a %s connect with its own conflict code', (denial, expectedFormationEpoch, storedIdentity) => {
         const computed = computeGroupMutation({
-            command: connectCommand({ expectedFormationEpoch: 4, expectedLayout: PLANNED_LAYOUT }),
+            command: connectCommand({ expectedFormationEpoch, expectedLayout: PLANNED_LAYOUT }),
             read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, storedIdentity),
             facts: createGroupAuthorityFacts()
         });
@@ -236,15 +237,6 @@ describe('group lifecycle transition computation', () => {
         expect(error).toBeInstanceOf(GroupConnectDeniedError);
         expect((error as GroupConnectDeniedError).status).toBe(409);
         expect((error as GroupConnectDeniedError).code).toBe(`group-connect-${denial}`);
-    });
-
-    it('rejects a stale-epoch connect with the shared code, not a connect denial', () => {
-        const computed = computeGroupMutation({
-            command: connectCommand({ expectedFormationEpoch: 3, expectedLayout: PLANNED_LAYOUT }),
-            read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, PLANNED_LAYOUT),
-            facts: createGroupAuthorityFacts()
-        });
-        expect(computed.outcome).toBe('rejected');
     });
 
     it('rejects a connect fence that names a removed layout', () => {
@@ -529,6 +521,8 @@ describe('group lifecycle transition computation', () => {
             return;
         }
         expect(computed.receipt.rejection).toMatch(row.rejection);
+        // Only `connect` earns the conflict codes; a criterion petition keeps the shared rejection.
+        expect(computed.rejectionCode).toBe('group-mutation-rejected');
         expect(computed.receipt.eventId).toBeNull();
         expect(computed.receipt.outboxIds).toEqual([]);
         expect('guard' in computed).toBe(false);
