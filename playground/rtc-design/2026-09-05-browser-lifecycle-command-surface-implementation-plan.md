@@ -25,13 +25,17 @@ behaviour this consumes is `docs/rallar-group-formation-architecture.md`; the ro
 `apps/api-v1/src/group-state/register-group-lifecycle-routes.ts` and
 `apps/api-v1/src/routes/group-formation-view-read.ts`.
 
-Status: **landed on `main` on 2026-09-06 as the squash commit `a70b4eb05` (#506, carrying #512 and
-#513, which were merged into their bases first) and the formatting pass `3add6ad9d` (#511). The
-Branch Release Gate passed on the final feature-branch commit (run 34021610709) and Run Hetzner
-Supported Distributed Manifests passed on the default-branch commit (run 34023658953). The nine
-review questions below were settled with the maintainer on 2026-09-05, each taking the recommended
-answer, and "Deviations recorded during delivery" amends the task bodies.** Written 2026-09-05
-against `main` @ `c11c258b2`. The
+Status: **landed on `main` on 2026-09-06 as the squash commit `a70b4eb05` (#506). Its branch tip
+`9d1e2aeda` already carried slices 2 and 3: #512's squash onto the slice-1 branch folded in #513's
+commits, so #512 and #513 report merged without commits of their own on `main`. #511
+(`3add6ad9d`) landed empty, its fourteen files having ridden inside `a70b4eb05` and its fifteenth
+inside #526, so that reformat lives in a code commit `.git-blame-ignore-revs` cannot list. The
+Branch Release Gate passed on `9d1e2aeda` (run 34021610709, which runs the root CI suite and the
+app builds); Run Hetzner Supported Distributed Manifests on `a70b4eb05` (run 34023658953)
+selected no manifest, since the squash touched no distributed-risk path. Amended 2026-09-06 after
+code review: "Questions settled in review" and "Deviations recorded during delivery" below carry
+the settled questions and the task-body amendments.** Written 2026-09-05 against `main` @
+`c11c258b2`. The
 implementation workstream it completes (`2026-08-22-group-activation-implementation-plan.md`) has all
 fourteen server slices merged; this plan is the browser surface that workstream's slice 8 deliberately
 left to "later work" beyond dial gating. Location note: the writing-plans skill defaults to
@@ -3412,9 +3416,10 @@ operations (`apps/rallar-black-box/src/direct-rallar-operations.ts`), the contro
 `packages/shared-test/rallar-bb-test/` and the Playwright matrix
 `tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts`, gated by
 `npm run test:rallar:full-stack:memory:live-rtc-3` and the Hetzner distributed manifests. That is a
-test-infrastructure subsystem with its own owners and is written as its own plan once slices 1 and 2
-have landed; it does not block them. Its first scenario is the quickstart recipe above run by three
-browsers: `plan` on one, `waitForLayout` on all three, `connect`, `activate`, `rtc.waitForRoom`.
+test-infrastructure subsystem with its own owners and gets its own plan, which is not yet written;
+it did not block the slices, which landed on 2026-09-06. Its first scenario is the quickstart recipe
+above run by three browsers: `plan` on one, `waitForLayout` on all three, `connect`, `activate`,
+`rtc.waitForRoom`.
 
 ---
 
@@ -3524,6 +3529,9 @@ record is the only durable explanation of why the code looks as it does.
 | `npm run test:repo-governance`, group documentation tests                                                          | —       | —       | yes     |
 | Branch Release Gate (CI), medium-scale auto-trigger on `packages/shared/**`                                        | yes     | yes     | yes     |
 | `npm run pr:delivery -- status` before broad validation, `-- ready` once at handoff                                | yes     | yes     | yes     |
+
+Run Hetzner Supported Distributed Manifests ran on the default-branch commit `a70b4eb05` (run
+34023658953) and selected no manifest: the squash touched no distributed-risk path.
 
 Not required by this plan: local medium-scale, state-write, topology-replay, formation-large and
 the live three-browser matrix. No mutation path, recipe, OpenAPI block or server behaviour changes;
