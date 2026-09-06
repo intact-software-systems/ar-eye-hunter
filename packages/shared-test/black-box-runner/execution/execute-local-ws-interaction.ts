@@ -11,9 +11,9 @@ import {
 } from '../ws/ws-wait-expectations.ts';
 import {
     closeWs,
-    openWs,
-    toWsSocketState
+    openWs
 } from './local-websocket-session.ts';
+import { toWsSocketState } from './local-websocket-state.ts';
 
 interface ToWsSendResultInput {
     readonly status: string;

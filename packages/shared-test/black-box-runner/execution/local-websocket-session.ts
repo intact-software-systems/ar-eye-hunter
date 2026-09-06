@@ -5,73 +5,13 @@ import {
     toWsFailureStatus,
     toWsSuccessStatus
 } from '../ws/ws-wait-expectations.ts';
-
-function toWsUrl(request: any): string | undefined {
-    return request.url || request.path;
-}
-
-function toWsReadyStateName(readyState: any): string {
-    if (readyState === WebSocket.CONNECTING) {
-        return 'CONNECTING';
-    }
-    if (readyState === WebSocket.OPEN) {
-        return 'OPEN';
-    }
-    if (readyState === WebSocket.CLOSING) {
-        return 'CLOSING';
-    }
-    if (readyState === WebSocket.CLOSED) {
-        return 'CLOSED';
-    }
-
-    return 'UNKNOWN';
-}
-
-export function toWsSocketState(ws: any): any {
-    if (!ws) {
-        return {
-            readyState: undefined,
-            readyStateName: 'MISSING'
-        };
-    }
-
-    return {
-        readyState: ws.readyState,
-        readyStateName: toWsReadyStateName(ws.readyState),
-        bufferedAmount: typeof ws.bufferedAmount === 'number'
-            ? ws.bufferedAmount
-            : undefined
-    };
-}
-
-function parseWsData(data: any): any {
-    if (typeof data !== 'string') {
-        return data;
-    }
-
-    try {
-        return JSON.parse(data);
-    }
-    catch (_ignored) {
-        return data;
-    }
-}
-
-function rememberWsMessage(connectionName: string, message: any, context: any): void {
-    if (!context.wsMessages[connectionName]) {
-        context.wsMessages[connectionName] = [];
-    }
-
-    context.wsMessages[connectionName].push(message);
-}
-
-export function rememberWsCloseEvent(connectionName: string, closeEvent: any, context: any): void {
-    if (!context.wsCloseEvents[connectionName]) {
-        context.wsCloseEvents[connectionName] = [];
-    }
-
-    context.wsCloseEvents[connectionName].push(closeEvent);
-}
+import {
+    parseWsData,
+    rememberWsCloseEvent,
+    rememberWsMessage,
+    toWsSocketState,
+    toWsUrl
+} from './local-websocket-state.ts';
 
 export function openWs(interaction: any, config: any, context: any): Promise<any> {
     const request = interaction.request;
