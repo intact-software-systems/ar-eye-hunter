@@ -102,16 +102,6 @@ Browser HTTP starts from the operation's product owner. Generic request
 execution and typed HTTP failures remain under [`api/`](./api/), but that
 directory does not own product workflows.
 
-- [createRoomFormation](./rooms/formation/create-room-formation.ts) owns the room-bound formation
-  handle: [commandRoomFormation](./rooms/formation/command-room-formation.ts) posts the lifecycle
-  commands through [room-formation-http-api.ts](./rooms/formation/room-formation-http-api.ts) and
-  accepts each receipt into the state cache;
-  [waitForRoomLayout](./rooms/formation/wait-for-room-formation.ts) and its stage and condition
-  siblings observe the cache and the two overlay slots through
-  [createRoomLayoutSlots](./rooms/formation/room-layout-slots.ts) on the shared
-  [waitForRoomChange](./rooms/wait-for-room-change.ts) engine;
-  [readRoomFormationView](./rooms/formation/read-room-formation-view.ts) fetches and validates the
-  formation view.
 - [createAndJoinStateGroup](./rooms/room-group-state-workflows.ts) translates
   room intent, then calls
   [createStateGroup](./rooms/room-group-state-http-api.ts) and
@@ -119,6 +109,22 @@ directory does not own product workflows.
   Both operations return an authoritative `GroupSnapshot`; rejected HTTP
   responses surface as `ApiHttpError` from
   [executeHttpRequest](./api/http-request.ts).
+- [createRoomFormation](./rooms/formation/create-room-formation.ts) owns the room-bound formation
+  handle over the public types in
+  [rallar-room-formation-contracts.ts](./rooms/formation/rallar-room-formation-contracts.ts):
+  [commandRoomFormation](./rooms/formation/command-room-formation.ts) posts the lifecycle commands
+  through `commandLifecycle` in [room-group-state-http-api.ts](./rooms/room-group-state-http-api.ts)
+  and accepts each receipt into the state cache;
+  [room-formation-observation.ts](./rooms/formation/room-formation-observation.ts) projects the
+  status from the snapshot and the two overlay slots of
+  [createRoomLayoutSlots](./rooms/formation/room-layout-slots.ts) and derives the change and layout
+  subscriptions from it; [waitForRoomLayout](./rooms/formation/wait-for-room-formation.ts) and its
+  stage and condition siblings run on the shared
+  [waitForSettledRead](./connection/wait-for-settled-read.ts) engine;
+  [readRoomFormationView](./rooms/formation/read-room-formation-view.ts) fetches the formation view
+  and decodes it with the shared `decodeGroupFormationView`;
+  [toRoomFormationDenial](./rooms/formation/to-room-formation-denial.ts) classifies a thrown
+  command error.
 - [refreshStateSnapshots](./state-read/refresh-state-snapshots.ts) coordinates
   the client and group collection reads in
   [state-snapshot-http-api.ts](./state-read/state-snapshot-http-api.ts), then
