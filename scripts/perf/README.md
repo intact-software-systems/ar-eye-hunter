@@ -336,7 +336,17 @@ rather than surviving into a verdict.
 
 The order-balanced protocol runs four positions — approved-base, candidate,
 candidate, approved-base — each against a freshly recreated container, and
-`write-api-v1-state-write-pooled-results.mjs` pools them. Note that it rejects
+requires exactly nine measured runs per workload at every position:
+
+```sh
+DATABASE_URL=postgres://app:app@localhost:5433/appdb npm run perf:api-v1:state-write -- \
+  --backend=postgres --warmup=1 --runs=9 --concurrency=10 \
+  --out=tmp/perf/position-1.json
+```
+
+Capture preflight and postflight evidence separately for every position.
+`write-api-v1-state-write-pooled-results.mjs` validates the four sources and
+pools them into eighteen measured runs per workload for each role. It rejects
 equal approved-base and candidate commits, so an identical-code control needs
 two distinct commits whose runtime code does not differ.
 
