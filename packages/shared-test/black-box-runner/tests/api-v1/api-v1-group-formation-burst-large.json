@@ -457,15 +457,11 @@
               },
               "&applicationId=",
               {
-                "urlEncode": {
-                  "path": "variables.applicationId"
-                }
+                "urlEncode": "{applicationId}"
               },
               "&workspaceId=",
               {
-                "urlEncode": {
-                  "path": "variables.workspaceId"
-                }
+                "urlEncode": "{workspaceId}"
               }
             ]
           }
@@ -549,10 +545,15 @@
               {
                 "completedSnapshot": {
                   "route": {
-                    "topicId": "overlay.topology",
-                    "contextId": "{groupId}"
+                    "topicId": "overlay.topology"
                   },
-                  "typeId": "overlay.topology"
+                  "typeId": "overlay.topology",
+                  "scope": {
+                    "kind": "group",
+                    "applicationId": "{applicationId}",
+                    "workspaceId": "{workspaceId}",
+                    "resourceId": "{groupId}"
+                  }
                 }
               }
             ]

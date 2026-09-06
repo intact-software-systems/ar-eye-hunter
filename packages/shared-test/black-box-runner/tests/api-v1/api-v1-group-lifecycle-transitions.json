@@ -383,15 +383,11 @@
           },
           "&applicationId=",
           {
-            "urlEncode": {
-              "path": "variables.applicationId"
-            }
+            "urlEncode": "{applicationId}"
           },
           "&workspaceId=",
           {
-            "urlEncode": {
-              "path": "variables.workspaceId"
-            }
+            "urlEncode": "{workspaceId}"
           }
         ]
       }

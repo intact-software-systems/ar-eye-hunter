@@ -120,8 +120,14 @@ describe('API-v1 three-server recipe semantics', () => {
                     messages: [
                         {
                             completedSnapshot: {
-                                route: { topicId: 'overlay.topology', contextId: '{groupId}' },
-                                typeId: 'overlay.topology'
+                                route: { topicId: 'overlay.topology' },
+                                typeId: 'overlay.topology',
+                                scope: {
+                                    kind: 'group',
+                                    applicationId: '{applicationId}',
+                                    workspaceId: '{workspaceId}',
+                                    resourceId: '{groupId}'
+                                }
                             }
                         }
                     ]
