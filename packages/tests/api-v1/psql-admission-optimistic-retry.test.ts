@@ -9,8 +9,7 @@ import {
 import {
     createDefaultPSqlALOutboundRuntimeStores
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
-import { PSqlInboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-inbound-admission-backend.ts';
-import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-outbound-admission-backend.ts';
+import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
@@ -27,20 +26,20 @@ import {
 } from '@shared/mod.ts';
 
 import { createPSqlAdmissionTestStorage, type PSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
-import { FakeRuntimeStateRepository } from './fake-optimistic-runtime-state-repository.ts';
 
 describe('PSql admission optimistic retry', () => {
     it('translates an inbound apply-time CAS loss to the owner conflict result', async () => {
-        const repository = new FakeRuntimeStateRepository();
+        const storage = await createPSqlAdmissionTestStorage();
+        const { sql } = storage;
         const namespace = 'psql-test:inbound:apply-conflict';
         const store = createALInboundAdmissionStore({
             namespace,
-            backend: new PSqlInboundAdmissionBackend(repository, namespace),
+            backend: new PSqlAdmissionWorkBackend(sql, namespace),
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
-        repository.conflictNextConditionalWrite = true;
+        conflictNextAdmissionCommit(storage, { namespace, senderId: 'peer-1' });
 
         await expect(store.commitMutations({
             senderId: 'peer-1',
@@ -58,16 +57,17 @@ describe('PSql admission optimistic retry', () => {
     });
 
     it('does not translate an unexpected inbound apply failure into a conflict', async () => {
-        const repository = new FakeRuntimeStateRepository();
+        const storage = await createPSqlAdmissionTestStorage();
+        const { sql } = storage;
         const namespace = 'psql-test:inbound:apply-error';
         const store = createALInboundAdmissionStore({
             namespace,
-            backend: new PSqlInboundAdmissionBackend(repository, namespace),
+            backend: new PSqlAdmissionWorkBackend(sql, namespace),
             orderingTrackTtlMs: 60_000,
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
-        repository.errorNextConditionalWrite = new Error('inbound storage unavailable');
+        vi.spyOn(sql, 'begin').mockRejectedValueOnce(new Error('inbound storage unavailable'));
 
         await expect(store.commitMutations({
             senderId: 'peer-1',
@@ -85,7 +85,8 @@ describe('PSql admission optimistic retry', () => {
     });
 
     it('requires a fresh carrier delivery after an inbound apply-time CAS loss', async () => {
-        const repository = new FakeRuntimeStateRepository();
+        const storage = await createPSqlAdmissionTestStorage();
+        const { sql, repository } = storage;
         const namespace = 'psql-test:inbound:runtime-retry';
         const plan: ALInboundPlanner = (
             msg,
@@ -105,7 +106,7 @@ describe('PSql admission optimistic retry', () => {
             stores: {
                 admissionStore: createALInboundAdmissionStore({
                     namespace: `${namespace}:inbound:admission`,
-                    backend: new PSqlInboundAdmissionBackend(repository, `${namespace}:inbound:admission`),
+                    backend: new PSqlAdmissionWorkBackend(sql, `${namespace}:inbound:admission`),
                     orderingTrackTtlMs: 60_000,
                     supersedenceTrackTtlMs: 60_000,
                     retention: normalizeALRuntimeStoreRetention()
@@ -118,7 +119,8 @@ describe('PSql admission optimistic retry', () => {
             sendControlMessage: () => Promise.resolve(undefined)
         });
         onTestFinished(() => runtime.dispose());
-        repository.conflictNextConditionalWrite = true;
+        await runtime.ready();
+        conflictNextAdmissionCommit(storage, { namespace: `${namespace}:inbound:admission`, senderId: 'peer-1' });
         const msg = newALUnicastMessage(
             'peer-1',
             { topicId: 'chat', resourceId: 'inbound-runtime-retry', contextId: 'chat-1' },
@@ -130,7 +132,6 @@ describe('PSql admission optimistic retry', () => {
         const source = { kind: 'ws-client' as const, peerId: 'peer-1' };
         const conflicted = await runtime.handleIncomingMessage(msg, source);
 
-        expect(repository.conflictCount).toBe(1);
         const admissionNamespace = `${namespace}:inbound:admission`;
         expect(conflicted.right).toEqual({ kind: 'not-admitted', reason: 'conflict' });
         expect(
@@ -138,7 +139,7 @@ describe('PSql admission optimistic retry', () => {
                 admissionNamespace,
                 `${admissionNamespace}:version:peer-1`
             )
-        ).toBeUndefined();
+        ).toMatchObject({ value: JSON.stringify({ senderId: 'peer-1', version: 1 }) });
 
         const admitted = await runtime.handleIncomingMessage(msg, source);
 
@@ -148,7 +149,7 @@ describe('PSql admission optimistic retry', () => {
                 admissionNamespace,
                 `${admissionNamespace}:version:peer-1`
             )
-        ).toBeDefined();
+        ).toMatchObject({ value: JSON.stringify({ senderId: 'peer-1', version: 2 }) });
         runtime.dispose();
     });
 
@@ -158,7 +159,7 @@ describe('PSql admission optimistic retry', () => {
         const namespace = 'psql-test:outbound:apply-conflict';
         const store = createALOutboundAdmissionStore({
             namespace,
-            backend: new PSqlOutboundAdmissionBackend(sql, namespace),
+            backend: new PSqlAdmissionWorkBackend(sql, namespace),
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
@@ -182,7 +183,7 @@ describe('PSql admission optimistic retry', () => {
         const namespace = 'psql-test:outbound:retry-apply-conflict';
         const store = createALOutboundAdmissionStore({
             namespace,
-            backend: new PSqlOutboundAdmissionBackend(sql, namespace),
+            backend: new PSqlAdmissionWorkBackend(sql, namespace),
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
@@ -212,7 +213,7 @@ describe('PSql admission optimistic retry', () => {
         const namespace = 'psql-test:outbound:apply-error';
         const store = createALOutboundAdmissionStore({
             namespace,
-            backend: new PSqlOutboundAdmissionBackend(sql, namespace),
+            backend: new PSqlAdmissionWorkBackend(sql, namespace),
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });

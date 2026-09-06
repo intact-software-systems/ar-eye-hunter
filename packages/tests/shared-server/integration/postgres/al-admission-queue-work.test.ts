@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
-import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-outbound-admission-backend.ts';
+import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore, type ALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
@@ -314,8 +314,8 @@ async function createStorage() {
     const otherSql = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl());
     onTestFinished(() => otherSql.end());
     return {
-        backend: new PSqlOutboundAdmissionBackend(sql, namespace),
-        other: new PSqlOutboundAdmissionBackend(otherSql, namespace),
+        backend: new PSqlAdmissionWorkBackend(sql, namespace),
+        other: new PSqlAdmissionWorkBackend(otherSql, namespace),
         entry: createEntry(namespace)
     };
 }

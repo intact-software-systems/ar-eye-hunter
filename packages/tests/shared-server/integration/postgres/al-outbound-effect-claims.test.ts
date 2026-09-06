@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-outbound-admission-backend.ts';
+import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -67,7 +67,7 @@ describe('Postgres AL outbound effect claims', () => {
 function createAdmission(repository: PSqlRuntimeStateRepository, namespace: string) {
     return createALOutboundAdmissionStore({
         namespace,
-        backend: new PSqlOutboundAdmissionBackend(repository.sql, namespace),
+        backend: new PSqlAdmissionWorkBackend(repository.sql, namespace),
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     });

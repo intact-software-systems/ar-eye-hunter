@@ -1,7 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { PSqlInboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-inbound-admission-backend.ts';
-import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-outbound-admission-backend.ts';
+import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
@@ -17,7 +16,6 @@ import {
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import { createPSqlAdmissionTestStorage } from '../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
-import { FakeRuntimeStateRepository } from './fake-optimistic-runtime-state-repository.ts';
 
 interface IndexedRecord {
     readonly index: number;
@@ -28,11 +26,11 @@ interface TestPreparedOutboundSend {
     readonly msgId: string;
 }
 
-describe('PSqlInboundAdmissionBackend', () => {
+describe('PostgreSQL inbound admission', () => {
     it('lists prefix rows through runtime-state pages when available', async () => {
-        const repository = new FakeRuntimeStateRepository();
+        const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:paged-list';
-        const backend = new PSqlInboundAdmissionBackend(repository, namespace);
+        const backend = new PSqlAdmissionWorkBackend(sql, namespace);
         const prefix = 'effect:';
         const total = RUNTIME_STATE_PREFIX_READ_PAGE_SIZE + 2;
 
@@ -64,12 +62,20 @@ describe('PSqlInboundAdmissionBackend', () => {
         });
     });
 
-    it('conditionally advances the sender version with durable inbox effects', async () => {
-        const repository = new FakeRuntimeStateRepository();
+    it('returns a read-only admission result without opening a SQL transaction', async () => {
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const backend = new PSqlAdmissionWorkBackend(sql, 'psql-test:read-only');
+        vi.spyOn(sql, 'begin').mockRejectedValue(new Error('A read-only result must not begin a write'));
+
+        await expect(backend.write((read) => read.read('missing', decodeIndexedRecord))).resolves.toBeUndefined();
+    });
+
+    it('conditionally advances the inbound sender version', async () => {
+        const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:admission';
         const store = createALInboundAdmissionStore({
             namespace,
-            backend: new PSqlInboundAdmissionBackend(repository, namespace),
+            backend: new PSqlAdmissionWorkBackend(sql, namespace),
             orderingTrackTtlMs: 5 * 60_000,
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention()
@@ -101,11 +107,11 @@ describe('PSqlInboundAdmissionBackend', () => {
     });
 
     it('bumps the owning sender version when accepting a control message', async () => {
-        const repository = new FakeRuntimeStateRepository();
+        const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:admission';
         const store = createALInboundAdmissionStore({
             namespace,
-            backend: new PSqlInboundAdmissionBackend(repository, namespace),
+            backend: new PSqlAdmissionWorkBackend(sql, namespace),
             orderingTrackTtlMs: 5 * 60_000,
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention()
@@ -174,35 +180,11 @@ describe('PSqlInboundAdmissionBackend', () => {
     });
 });
 
-describe('PSqlOutboundAdmissionBackend', () => {
-    it('lists prefix rows through runtime-state pages when available', async () => {
-        const { sql, repository } = await createPSqlAdmissionTestStorage();
-        const namespace = 'psql-test:outbound:paged-list';
-        const backend = new PSqlOutboundAdmissionBackend(sql, namespace);
-        const prefix = 'sent:';
-        const total = RUNTIME_STATE_PREFIX_READ_PAGE_SIZE + 1;
-
-        for (let index = 0; index < total; index++) {
-            await repository.upsert(
-                namespace,
-                `${prefix}${String(index).padStart(6, '0')}`,
-                JSON.stringify({ index }),
-                Date.now() + 60_000
-            );
-        }
-
-        const values = await backend.list(prefix, decodeIndexedRecord);
-
-        expect(values).toHaveLength(total);
-        expect(values.map((entry) => entry.value.index)).toEqual(
-            Array.from({ length: total }, (_, index) => index)
-        );
-    });
-
+describe('PostgreSQL outbound admission', () => {
     it('conditionally advances sender version and persists durable effects in one commit', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:outbound:admission';
-        const backend = new PSqlOutboundAdmissionBackend(sql, namespace);
+        const backend = new PSqlAdmissionWorkBackend(sql, namespace);
         const store = createALOutboundAdmissionStore({
             namespace,
             backend,
@@ -280,7 +262,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
         const namespace = 'psql-test:outbound:admission';
         const store = createALOutboundAdmissionStore({
             namespace,
-            backend: new PSqlOutboundAdmissionBackend(sql, namespace),
+            backend: new PSqlAdmissionWorkBackend(sql, namespace),
             supersedenceTrackTtlMs: 5 * 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
@@ -355,7 +337,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
         const msg = createOutboundMessage('msg-factory');
 
         expect(stores.admissionStore).toBeDefined();
-        await stores.admissionStore!.commitBundle({
+        await stores.admissionStore.commitBundle({
             senderId: 'self',
             expectedVersion: undefined,
             mutations: [

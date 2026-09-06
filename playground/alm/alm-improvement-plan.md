@@ -142,6 +142,15 @@ only when its durable evidence also establishes the facts on which remaining act
 an existing key alone does not prove that the same message or action completed. This permits
 independent messages and independent derived updates to make progress despite a conflict elsewhere.
 
+Separate execution eligibility from a failed attempt. An ordered message waiting for its predecessor
+must not consume QueueBox's processing retry budget just because a worker sees it again. Read the
+required ordering facts, select eligible work, and wake the existing engine when a predecessor
+completes. Keep ordinary transport/storage failures on the existing retry policy. Before cutting
+inbound work over, prove that a full 256-message ordered buffer drains across restart without
+exhausting attempts on waiting messages, and that an expired or non-retryable predecessor produces
+the declared resynchronization outcome. Reuse or extend the canonical QueueBox selection boundary;
+do not add another queue, lease manager, or recovery scheduler.
+
 Classify state by its meaning before separating writes. A derived index or summary can retry
 independently only when the retained authoritative facts determine its correct value and readers
 can safely handle it being temporarily behind. Authorization, deduplication, ordering decisions,

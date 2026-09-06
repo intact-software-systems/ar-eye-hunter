@@ -16,7 +16,7 @@ import {
 } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { PSqlAdmissionMutationCollector } from './p-sql-admission-mutation-collector.ts';
 
-export class PSqlOutboundAdmissionBackend implements ALAdmissionWorkBackend {
+export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     readonly workQueue: PSqlQueueBox;
     private readonly sql: PSqlSql;
     private readonly repository: PSqlRuntimeStateRepository;
@@ -55,6 +55,9 @@ export class PSqlOutboundAdmissionBackend implements ALAdmissionWorkBackend {
         const result = await fn(collector);
         const mutations = collector.mutations();
         const workWrites = collector.workWrites();
+        if (mutations.length === 0 && workWrites.length === 0) {
+            return result;
+        }
         try {
             await this.sql.begin(async (sql) => {
                 const transaction = createTransactionBoundPSqlRuntimeStateRepository(sql);
@@ -65,7 +68,7 @@ export class PSqlOutboundAdmissionBackend implements ALAdmissionWorkBackend {
                         ? await work.tryWriteIfAbsentOrReplaceExpired(write.entry)
                         : await work.replaceIfObserved(write.expected, write.entry);
                     if (committed === null) {
-                        throw new ALAdmissionBackendConflictError('Outbound admission work write conflicted');
+                        throw new ALAdmissionBackendConflictError('AL admission work write conflicted');
                     }
                 }
             });
@@ -73,7 +76,7 @@ export class PSqlOutboundAdmissionBackend implements ALAdmissionWorkBackend {
         catch (error) {
             if (error instanceof RuntimeStateWriteConflictError) {
                 throw new ALAdmissionBackendConflictError(
-                    'Outbound admission apply conflict',
+                    'AL admission apply conflict',
                     { cause: error }
                 );
             }
