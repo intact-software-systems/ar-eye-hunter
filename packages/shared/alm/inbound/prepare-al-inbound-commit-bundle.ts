@@ -34,6 +34,12 @@ export interface PrepareALInboundCommitBundleInput {
     readonly facts: ALInboundEffectFacts;
 }
 
+interface ALInboundControlOrdering {
+    readonly orderingKey?: string;
+    readonly expectedSeq?: number;
+    readonly missingSeqs?: readonly number[];
+}
+
 /** Captures shell-owned identity and QueueBox values before the pure admission computation. */
 export function readALInboundEffectFacts(
     msg: ALMessage,
@@ -145,7 +151,7 @@ function prepareALInboundDurableEffect(
     }
 }
 
-function toControlOrdering(ordering: ALOrderingObservation | undefined) {
+function toControlOrdering(ordering: ALOrderingObservation | undefined): ALInboundControlOrdering {
     return {
         ...(ordering?.trackKey === undefined ? {} : { orderingKey: ordering.trackKey }),
         ...(ordering?.expectedSeq === undefined ? {} : { expectedSeq: ordering.expectedSeq }),
