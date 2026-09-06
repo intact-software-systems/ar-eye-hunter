@@ -2352,6 +2352,29 @@
         ]
       },
       "description": "No-browser API-v1 group limits: group-not-active and member-session-limit-reached are returned by no recipe in the corpus. A group whose clock has passed still stores status active and stays readable, yet refuses a join with the message that separates an expired clock from a non-active status; a second group carrying a future clock admits through the same guard, so the comparison is pinned rather than the mere presence of the field. A second session for one principal trips maxSessionsPerMember, which is a strict greater-than so a cap of one refuses only the second."
+    },
+    {
+      "id": "api-v1-group-state-delta-contents",
+      "recipe": "tests/api-v1/api-v1-group-state-delta-contents.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-state-delta-contents",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 group-state delta contents: the corpus proves delta frames arrive and never reads what is in them. removedSessionIds is the one reachable removal set, populated only by the self-disconnect route, and the disconnecting session never sees its own removal, so a second peer observes it. removedMemberPrincipalIds is a hard-coded empty literal no mutation can populate. Removing a member who holds live presence drops the session from activeSessionIds while naming nothing in either removal set. Each delta binds to its own mutation by event.requestId through expect.decodeJsonPaths."
     }
   ]
 }
