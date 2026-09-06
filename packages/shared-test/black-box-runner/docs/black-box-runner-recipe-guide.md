@@ -849,6 +849,47 @@ a narrower `maxConcurrency` rather than deadlocking against it, and the
 aggregate reports `barrier` so an assertion can confirm the race really ran that
 way.
 
+## Matching Inside A JSON-String Payload With `expect.decodeJsonPaths`
+
+Some frames carry a nested document as a JSON **string**. A group-state delta puts
+its whole envelope — including `event.eventType` — inside `payload.resource` that
+way. `CompareJson` has no decode step, so an `expect.message` can match the outer
+frame but nothing inside the string, and a wait cannot select the frame it wants.
+
+`expect.decodeJsonPaths` names the fields to decode in the **observed** frame
+before comparison, so the expectation is written against the decoded shape:
+
+```json
+{
+  "name": "theActivationStatusChangeReachesTheSocket",
+  "type": "ws.wait",
+  "connection": "wsAlice",
+  "expect": {
+    "connection": "wsAlice",
+    "withinMs": 20000,
+    "decodeJsonPaths": ["payload.resource"],
+    "message": {
+      "payload": { "resource": { "event": { "eventType": "group-activation-status-changed" } } }
+    }
+  }
+}
+```
+
+This is not the same as `set`/`jsonParse`, which can only inspect a frame the wait
+has **already matched**. Selecting on a nested field is the point: a wait resolves
+on its earliest match, and every delta on the topic looks identical from outside
+the string.
+
+The declaration applies to the observed frame only, never to the expectation, and
+the matched frame is still reported in its original wire form — so an `output`
+capturing `matchedMessage.data.payload.resource` still yields the string, and the
+existing `jsonParse` step keeps working. A declared path that is absent, or whose
+value is not parseable JSON, is left exactly as it was: a frame that does not
+carry the document fails the expectation on its own terms instead of vanishing
+from the candidate set.
+
+Available on `ws.wait`, `ws.send`, `rtc.wait` and `rtc.send` expectations.
+
 ## Counting Frames With `expect.count`
 
 `expect.message` resolves on its **first** match, so it cannot tell "exactly
