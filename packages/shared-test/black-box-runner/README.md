@@ -39,3 +39,38 @@ The runner owns recipe execution and artifacts; the black-box control
 protocol and distributed-run contracts live in `../rallar-bb-test/`. Recipes
 assert liveness and contracts; storm quantities are captured, never judged,
 and baseline interpretation lives in `playground/rtc-design/baselines/`.
+
+## Recipe execution and observations
+
+- [scenario-black-box.ts](./scenario-black-box.ts) owns CLI execution and
+  iteration. [readScenarioRecipeIncludes](./recipes/read-scenario-recipe-includes.ts#readScenarioRecipeIncludes)
+  reads and expands includes before the recipe's variables and defaults are
+  applied. [readScenarioWorkload](./recipes/scenario-workload.ts#readScenarioWorkload)
+  owns bounded loop, soak, and seeded traffic expansion.
+- [toExecutableInteractions](./recipes/to-executable-interactions.ts#toExecutableInteractions)
+  translates recipes. [toRecipeStepAction](./recipes/to-recipe-step-action.ts#toRecipeStepAction)
+  defines action precedence for both translation and strict preflight.
+- [executeBlackBox](./execute-black-box.ts#executeBlackBox) owns serial and
+  bounded parallel execution, result collection, and final cleanup. Each step
+  resolves fresh request values; correlation injection preserves the recipe.
+  [executeAssertInteraction](./execution/execute-assert-interaction.ts#executeAssertInteraction)
+  computes comparison evidence before reporting validation failures.
+- [openWs](./execution/local-websocket-session.ts#openWs)
+  owns bounded wire observations and scoped snapshot assembly. WS recipes
+  inspect `completedSnapshot` after complete assembly; `observedSnapshotPage`
+  permits detecting a leaked page even when its snapshot never completes.
+  [WS waits](./ws/ws-wait-expectations.ts) require an uninterrupted observation
+  window for absence evidence.
+- [RtcClientProvider](./rtc-provider.ts#RtcClientProvider) owns transport calls
+  and result reporting. [RallarBrowserSession](./browser/rallar-browser-session.ts#RallarBrowserSession)
+  owns Playwright setup, browser events, runtime calls, and resource cleanup;
+  [browser request translation](./browser/browser-rtc-requests.ts) computes
+  send values from explicit payload, scope, and observed target sessions.
+- [RallarRemoteBrowserRtcProvider](./rallar-remote-browser-provider.ts#RallarRemoteBrowserRtcProvider)
+  owns control-server commands and observation polling. Results must match run,
+  agent, and command identity. Polling failures reach the active wait, and wait
+  cleanup settles outstanding reads. The command and observation translations
+  live under [remote-browser](./remote-browser/).
+
+Transport/provider acceptance is test-runner evidence. It does not establish
+complete ALM audience acknowledgement or application completion.

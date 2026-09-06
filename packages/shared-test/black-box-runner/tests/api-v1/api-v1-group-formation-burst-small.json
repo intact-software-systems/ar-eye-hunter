@@ -278,6 +278,18 @@
                 "urlEncode": {
                   "path": "resultsByName.createClient{i}WsTicket.0.actual.body.ticket"
                 }
+              },
+              "&applicationId=",
+              {
+                "urlEncode": {
+                  "path": "variables.applicationId"
+                }
+              },
+              "&workspaceId=",
+              {
+                "urlEncode": {
+                  "path": "variables.workspaceId"
+                }
               }
             ]
           }
@@ -288,7 +300,11 @@
           "connection": "ws-client-{i}",
           "request": {
             "url": "{client{i}WsUrl}",
-            "timeoutMs": 30000
+            "timeoutMs": 30000,
+            "snapshotScope": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}"
+            }
           }
         },
         {
@@ -355,11 +371,11 @@
             "consume": true,
             "messages": [
               {
-                "route": {
-                  "topicId": "overlay.topology",
-                  "contextId": "{groupId}"
-                },
-                "payload": {
+                "completedSnapshot": {
+                  "route": {
+                    "topicId": "overlay.topology",
+                    "contextId": "{groupId}"
+                  },
                   "typeId": "overlay.topology"
                 }
               }
@@ -371,7 +387,7 @@
           "type": "set",
           "output": "client{i}OverlayTopicId",
           "transform": {
-            "path": "resultsByName.waitClient{i}OverlayAttempt{attempt}.0.actual.matchedMessages.0.matchedMessage.data.route.topicId"
+            "path": "resultsByName.waitClient{i}OverlayAttempt{attempt}.0.actual.matchedMessages.0.matchedMessage.data.completedSnapshot.route.topicId"
           }
         }
       ]

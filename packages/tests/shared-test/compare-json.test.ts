@@ -1,7 +1,36 @@
 import { describe, expect, it } from 'vitest';
+import {
+    compareJson,
+    COMPARISON,
+    toConfig
+} from '../../shared-test/json-compare/compare-json-values.ts';
 import { CompareJson } from '../../shared-test/json-compare/json-compare.ts';
 
 describe('CompareJson facade', () => {
+    it('accepts unknown values captured at a native input boundary', () => {
+        const expected: unknown = { type: 'message', payload: { id: 'integer' } };
+        const actual: unknown = { type: 'message', payload: { id: 7, extra: true } };
+
+        expect(compareJson(expected, actual, toConfig(COMPARISON.COMPATIBLE)).isEqual).toBe(true);
+    });
+
+    it('selects a comparison through the facade named input', () => {
+        const result = CompareJson.compare(
+            { id: 'integer' },
+            { id: 7, extra: true },
+            { comparison: COMPARISON.COMPATIBLE }
+        );
+
+        expect(result.isEqual).toBe(true);
+    });
+
+    it.each(['constructor', '__proto__'])('rejects inherited comparison key %s', (comparison) => {
+        expect(() => toConfig(comparison)).toThrow(expect.objectContaining({
+            error: 'Comparison unsupported: ' + comparison,
+            comparisons: COMPARISON
+        }));
+    });
+
     it('compatible should allow extra actual fields', () => {
         const expected = {
             id: 'integer',

@@ -380,6 +380,18 @@
             "urlEncode": {
               "path": "outputs.aliceWsTicket"
             }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "variables.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "variables.workspaceId"
+            }
           }
         ]
       }
@@ -390,7 +402,11 @@
       "connection": "wsAlice",
       "request": {
         "url": "{aliceWsUrl}",
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
       }
     },
     {
@@ -399,26 +415,18 @@
       "connection": "wsAlice",
       "request": {
         "outputs": {
-          "formingTopologyResource": "matchedMessage.data.payload.resource"
+          "formingTopology": "matchedMessage.data.completedSnapshot.snapshot"
         }
       },
       "expect": {
         "connection": "wsAlice",
         "withinMs": 10000,
         "message": {
-          "route": {
-            "topicId": "overlay.topology"
+          "completedSnapshot": {
+            "route": {
+              "topicId": "overlay.topology"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "parseFormingTopology",
-      "type": "set",
-      "output": "formingTopology",
-      "transform": {
-        "jsonParse": {
-          "path": "outputs.formingTopologyResource"
         }
       }
     },

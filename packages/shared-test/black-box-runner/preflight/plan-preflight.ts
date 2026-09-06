@@ -1,4 +1,5 @@
 import type { JsonSchemaValidationIssue } from '../../rallar-bb-test/schema.ts';
+import { toRecipeStepAction } from '../recipes/to-recipe-step-action.ts';
 import { directSafeOutputTransformSpec } from '../scenario-transform/safe-output-transform.ts';
 import { validateBlackBoxRunnerScenarioRecipe } from '../schema.ts';
 import {
@@ -697,7 +698,7 @@ function transformConsumedRoots(value: unknown): readonly string[] {
     const record = asRecord(value);
     const roots: string[] = [];
     if (isTransformOnlySpec(record)) {
-        roots.push(...transformPathRoots(record.path, record.from, record.outputPath));
+        roots.push(...transformPathRoots([record.path, record.from, record.outputPath]));
     }
 
     Object.values(record).forEach((nested) => {
@@ -707,7 +708,7 @@ function transformConsumedRoots(value: unknown): readonly string[] {
     return roots;
 }
 
-function transformPathRoots(...values: readonly unknown[]): readonly string[] {
+function transformPathRoots(values: readonly unknown[]): readonly string[] {
     return values
         .filter((value): value is string => typeof value === 'string' && value.length > 0)
         .flatMap((value) => {
@@ -986,7 +987,7 @@ function validateStrictExpectIsHonoured(
         }];
     }
 
-    const action = String(asRecord(step.request).action || '').toLowerCase();
+    const action = String(toRecipeStepAction(step) || '').toLowerCase();
     const isWsSend = type.startsWith('ws') && (action === 'send' || action.length <= 0);
     if (!isWsSend) {
         return [];

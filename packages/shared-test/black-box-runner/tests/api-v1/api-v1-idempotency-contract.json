@@ -656,9 +656,27 @@
       "redactAs": "contractWsUrl",
       "transform": {
         "concat": [
-          { "path": "variables.rallarWsBaseUrl" },
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
           "/api/ws/{crdtAdminSessionId}?ticket=",
-          { "urlEncode": { "path": "outputs.contractWsTicket" } }
+          {
+            "urlEncode": {
+              "path": "outputs.contractWsTicket"
+            }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "variables.crdtApplicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "variables.crdtWorkspaceId"
+            }
+          }
         ]
       }
     },
@@ -666,7 +684,13 @@
       "name": "openContractWebSocket",
       "type": "ws.open",
       "connection": "wsPrimary",
-      "request": { "url": "{contractWsUrl}" }
+      "request": {
+        "url": "{contractWsUrl}",
+        "snapshotScope": {
+          "applicationId": "{crdtApplicationId}",
+          "workspaceId": "{crdtWorkspaceId}"
+        }
+      }
     },
     {
       "name": "waitForContractWebSocketAuthorization",
@@ -676,7 +700,11 @@
         "connection": "wsPrimary",
         "withinMs": 15000,
         "consume": true,
-        "messages": [{ "payload": { "typeId": "client-state.snapshot" } }]
+        "messages": [{
+          "completedSnapshot": {
+            "typeId": "client-state.snapshot"
+          }
+        }]
       }
     },
     {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { JsonValue } from '@shared-test/json-compare/CompareJson.ts';
+import type { JsonValue } from '@shared-test/json-compare/compare-json-values.ts';
 import { CompareJson } from '@shared-test/json-compare/json-compare.ts';
 import {
     evaluateGroupAssertionConformanceCase,
@@ -168,8 +168,8 @@ describe('rallar-bb-test group assertion conformance', () => {
         expect(deepEqualJson(keyOrderLeft, keyOrderRight)).toBe(true);
         expect(sameJsonValue(keyOrderLeft, keyOrderRight)).toBe(false);
 
-        const arrayOrderLeft = { members: ['a', 'b'] } as unknown as JsonValue;
-        const arrayOrderRight = { members: ['b', 'a'] } as unknown as JsonValue;
+        const arrayOrderLeft: JsonValue = { members: ['a', 'b'] };
+        const arrayOrderRight: JsonValue = { members: ['b', 'a'] };
         expect(deepEqualJson(arrayOrderLeft, arrayOrderRight)).toBe(false);
         expect(CompareJson.exact(arrayOrderLeft, arrayOrderRight).isEqual).toBe(true);
 

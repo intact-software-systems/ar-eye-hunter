@@ -143,9 +143,27 @@
       "redactAs": "primaryCrdtWsUrl",
       "transform": {
         "concat": [
-          { "path": "variables.rallarWsBaseUrl" },
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
           "/api/ws/{crdtSessionId}?ticket=",
-          { "urlEncode": { "path": "outputs.primaryCrdtWsTicket" } }
+          {
+            "urlEncode": {
+              "path": "outputs.primaryCrdtWsTicket"
+            }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "variables.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "variables.workspaceId"
+            }
+          }
         ]
       }
     },
@@ -157,9 +175,27 @@
       "redactAs": "tertiaryCrdtWsUrl",
       "transform": {
         "concat": [
-          { "path": "variables.rallarWsBaseUrlTertiary" },
+          {
+            "path": "variables.rallarWsBaseUrlTertiary"
+          },
           "/api/ws/{crdtReaderSessionId}?ticket=",
-          { "urlEncode": { "path": "outputs.secondaryCrdtWsTicket" } }
+          {
+            "urlEncode": {
+              "path": "outputs.secondaryCrdtWsTicket"
+            }
+          },
+          "&applicationId=",
+          {
+            "urlEncode": {
+              "path": "variables.applicationId"
+            }
+          },
+          "&workspaceId=",
+          {
+            "urlEncode": {
+              "path": "variables.workspaceId"
+            }
+          }
         ]
       }
     },
@@ -167,7 +203,13 @@
       "name": "openPrimaryCrdtSocket",
       "type": "ws.open",
       "connection": "wsPrimary",
-      "request": { "url": "{primaryCrdtWsUrl}" }
+      "request": {
+        "url": "{primaryCrdtWsUrl}",
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
+      }
     },
     {
       "name": "wsPrimaryAuthorizationReady",
@@ -178,8 +220,12 @@
         "withinMs": 15000,
         "consume": true,
         "messages": [{
-          "route": { "topicId": "client-state.snapshot" },
-          "payload": { "typeId": "client-state.snapshot" }
+          "completedSnapshot": {
+            "route": {
+              "topicId": "client-state.snapshot"
+            },
+            "typeId": "client-state.snapshot"
+          }
         }]
       }
     },
@@ -187,7 +233,13 @@
       "name": "openTertiaryCrdtSocket",
       "type": "ws.open",
       "connection": "wsTertiary",
-      "request": { "url": "{tertiaryCrdtWsUrl}" }
+      "request": {
+        "url": "{tertiaryCrdtWsUrl}",
+        "snapshotScope": {
+          "applicationId": "{applicationId}",
+          "workspaceId": "{workspaceId}"
+        }
+      }
     },
     {
       "name": "wsTertiaryAuthorizationReady",
@@ -198,8 +250,12 @@
         "withinMs": 15000,
         "consume": true,
         "messages": [{
-          "route": { "topicId": "client-state.snapshot" },
-          "payload": { "typeId": "client-state.snapshot" }
+          "completedSnapshot": {
+            "route": {
+              "topicId": "client-state.snapshot"
+            },
+            "typeId": "client-state.snapshot"
+          }
         }]
       }
     },

@@ -1,60 +1,126 @@
 // deno-lint-ignore-file no-explicit-any
-import { compareJson, COMPARISON, toConfig } from '../json-compare/CompareJson.ts';
+import { Either } from '../../shared/resilience/Either.ts';
+
 import { evaluateScenarioTransform } from './execution/black-box-output-transform.ts';
 import { isRecord, redactBlackBoxData } from './execution/black-box-redaction.ts';
 import {
-    stringOption,
     toCorrelationReportFields,
-    toPublicCorrelationConfig,
-    type RunnerCorrelationConfig
+    toPublicCorrelationConfig
 } from './execution/black-box-run-correlation.ts';
-import { resolveBlackBoxVariables } from './execution/black-box-run-secrets.ts';
 import {
     createMissingRtcProvider,
     createScenarioContext
 } from './execution/black-box-scenario-context.ts';
 import {
     storeInteractionData,
+    toInteractionOutputFields,
     toResultKey
 } from './execution/black-box-scenario-results.ts';
 import {
-    resolveAssertActual,
-    resolvePath,
     resolvePlaceholders
 } from './execution/black-box-value-resolution.ts';
+import { computeInteractionCorrelation } from './execution/compute-interaction-correlation.ts';
+import { executeAssertInteraction } from './execution/execute-assert-interaction.ts';
 import { executeRemoteHttpInteraction } from './execution/execute-remote-http-interaction.ts';
 import {
     executeWsInteraction,
     rememberWsCloseEvent
 } from './execution/execute-ws-interaction.ts';
 import { isRallarRemoteBrowserRequest } from './execution/remote-browser-execution.ts';
-import { validateAssertValueComparators } from './expectations/assert-value-comparators.ts';
 import { executeHttpInteraction } from './http/execute-http-interaction.ts';
 import {
-    rememberRtcCloseEvent,
-    toRtcFailureStatus,
     toRtcPayload,
-    toRtcSuccessStatus,
     type RtcClient
 } from './rtc-provider.ts';
+import { rememberRtcCloseEvent, toRtcFailureStatus, toRtcSuccessStatus } from './rtc/rtc-wait-expectations.ts';
 import { SafeOutputTransformError } from './scenario-transform/safe-output-transform.ts';
+
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
 const INTERACTION_TRANSPORTS = ['HTTP', 'MQ', 'WS', 'RTC', 'WEBRTC', 'CRDT', 'ASSERT', 'SET', 'PARALLEL'];
-function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+
+interface InteractionFailureStatusInput {
+    readonly config: any;
+    readonly interaction: any;
+    readonly result: string;
+    readonly details?: any;
+}
+interface ConditionFailureStatusInput {
+    readonly interactionWithConfig: any;
+    readonly interaction: any;
+    readonly config: any;
+    readonly error: Error;
+}
+interface ExecutionReportInput {
+    readonly context: any;
+    readonly options: any;
+    readonly startedAtEpochMs: number;
+    readonly endedAtEpochMs: number;
 }
 
-function toOutputReportFields(interaction: any): any {
-    return {
-        output: interaction.request.output,
-        outputPath: interaction.request.outputPath,
-        outputs: interaction.request.outputs,
-        transform: interaction.request.transform,
-        secret: interaction.request.secret,
-        redact: interaction.request.redact,
-        redactAs: interaction.request.redactAs
-    };
+interface TransportInteractionInput {
+    readonly interaction: any;
+    readonly config: any;
+    readonly context: any;
+}
+
+interface ScenarioStepsInput {
+    readonly interactions: any[];
+    readonly index: number;
+    readonly options: any;
+    readonly context: any;
+}
+
+interface ParallelGroupInput {
+    readonly group: any;
+    readonly groupIndex: number;
+    readonly context: any;
+    readonly failFast: boolean;
+    readonly nonBlockingFailure: boolean;
+}
+interface ParallelGroupResult {
+    readonly name: string;
+    readonly index: number;
+    readonly status: string;
+    readonly success: number;
+    readonly failure: number;
+    readonly durationMs: number;
+    readonly result?: string;
+    readonly resultKeys?: readonly string[];
+}
+interface ParallelSummaryInput {
+    readonly groups: readonly ParallelGroupResult[];
+    readonly maxConcurrency: number;
+    readonly timeoutMs: number;
+    readonly durationMs: number;
+}
+interface ParallelSummary {
+    readonly groups: readonly ParallelGroupResult[];
+    readonly groupCount: number;
+    readonly maxConcurrency: number;
+    readonly timeoutMs: number | undefined;
+    readonly timedOut: boolean;
+    readonly durationMs: number;
+    readonly success: number;
+    readonly failure: number;
+}
+
+export async function executeBlackBox(interactions: any[], index = 0, options: any = {}): Promise<any> {
+    const startedAtEpochMs = Date.now();
+    const context = createScenarioContext(options);
+    try {
+        await executeScenarioSteps({ interactions, index, options, context });
+    }
+    finally {
+        closeAllWsConnections(context);
+        await closeAllRtcConnections(context);
+    }
+    const endedAtEpochMs = Date.now();
+    return toReport({ context, options, startedAtEpochMs, endedAtEpochMs });
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function toInteractionName(interactionWithConfig: any): string {
@@ -98,12 +164,8 @@ function toSkippedInteractionStatus(
     };
 }
 
-function toConditionFailureStatus(
-    interactionWithConfig: any,
-    interaction: any,
-    config: any,
-    error: Error
-): any {
+function toConditionFailureStatus(input: ConditionFailureStatusInput): any {
+    const { interactionWithConfig, interaction, config, error } = input;
     return {
         name: config.interactionName,
         status: FAILURE,
@@ -127,19 +189,22 @@ function toConditionFailureStatus(
     };
 }
 
-function evaluateInteractionCondition(interaction: any, context: any): boolean {
+function evaluateInteractionCondition(interaction: any, context: any): Either<Error, boolean> {
     const condition = interaction.request.when;
-    const value = isRecord(condition)
-        ? evaluateScenarioTransform({
-            transform: condition,
-            context,
-            operatorPath: 'when'
-        })
-        : condition;
-    if (typeof value !== 'boolean') {
-        throw new Error('Step condition must resolve to a boolean.');
+    if (condition === undefined) {
+        return Either.ofRight(true);
     }
-    return value;
+    try {
+        const value = isRecord(condition)
+            ? evaluateScenarioTransform({ transform: condition, context, operatorPath: 'when' })
+            : condition;
+        return typeof value === 'boolean'
+            ? Either.ofRight(value)
+            : Either.ofLeft(new Error('Step condition must resolve to a boolean.'));
+    }
+    catch (error) {
+        return Either.ofLeft(error instanceof Error ? error : new Error(String(error)));
+    }
 }
 
 function toInteractionConfig(interactionWithConfig: any): any {
@@ -171,154 +236,6 @@ function toExecutableInteraction(interaction: any): any {
         interaction?.PARALLEL;
 }
 
-function toRunnerStepId(
-    correlation: RunnerCorrelationConfig,
-    request: any,
-    interactionName: string,
-    options: any = {}
-): string {
-    const runIndex = Number.parseInt(String(options.runIndex || request.runIndex || 1), 10) || 1;
-    const scenarioExecutionNumber = Number.parseInt(String(request.scenarioExecutionNumber || 1), 10) || 1;
-    const interactionExecutionNumber = Number.parseInt(String(request.interactionExecutionNumber || 0), 10) || 0;
-    const repeatIndex = Number.parseInt(String(request.repeatIndex || 1), 10) || 1;
-    const safeName = String(interactionName || 'step')
-        .replace(/[^a-zA-Z0-9_.:-]+/g, '-')
-        .replace(/^-+|-+$/g, '') || 'step';
-
-    return [
-        correlation.runnerRunId,
-        'run',
-        runIndex,
-        'scenario',
-        scenarioExecutionNumber,
-        'step',
-        interactionExecutionNumber,
-        safeName,
-        'repeat',
-        repeatIndex
-    ].join('-');
-}
-
-function toStepCorrelation(interaction: any, config: any, context: any): any {
-    const request = interaction.request || {};
-    const correlation = context.correlation as RunnerCorrelationConfig;
-    const runIndex = Number.parseInt(String(context.options?.runIndex || request.runIndex || 1), 10) || 1;
-    const runnerStepId = stringOption(request.runnerStepId, request.correlation?.runnerStepId) ||
-        toRunnerStepId(correlation, request, config.interactionName, context.options);
-
-    return {
-        runnerRunId: correlation.runnerRunId,
-        runnerStepId,
-        runIndex,
-        scenarioExecutionNumber: request.scenarioExecutionNumber,
-        interactionExecutionNumber: request.interactionExecutionNumber,
-        repeatIndex: request.repeatIndex,
-        interactionName: config.interactionName
-    };
-}
-
-function isSendAction(request: any): boolean {
-    return String(request?.action || 'send').toLowerCase() === 'send';
-}
-
-function mergePayloadCorrelation(value: unknown, correlation: any, payloadField: string): unknown {
-    if (!isRecord(value)) {
-        return value;
-    }
-
-    return {
-        ...value,
-        [payloadField]: {
-            ...(isRecord(value[payloadField]) ? value[payloadField] : {}),
-            runnerRunId: correlation.runnerRunId,
-            runnerStepId: correlation.runnerStepId
-        }
-    };
-}
-
-function injectCorrelationPayload(request: any, correlation: any, payloadField: string): boolean {
-    if (request.send !== undefined) {
-        const next = mergePayloadCorrelation(request.send, correlation, payloadField);
-        if (next !== request.send) {
-            request.send = next;
-            return true;
-        }
-        return false;
-    }
-
-    if (request.message !== undefined) {
-        const next = mergePayloadCorrelation(request.message, correlation, payloadField);
-        if (next !== request.message) {
-            request.message = next;
-            return true;
-        }
-        return false;
-    }
-
-    if (request.body !== undefined) {
-        const next = mergePayloadCorrelation(request.body, correlation, payloadField);
-        if (next !== request.body) {
-            request.body = next;
-            return true;
-        }
-    }
-
-    return false;
-}
-
-function applyInteractionCorrelation(interactionWithConfig: any, interaction: any, config: any, context: any): void {
-    const request = interaction.request || {};
-    const correlationConfig = context.correlation as RunnerCorrelationConfig;
-    const correlation = toStepCorrelation(interaction, config, context);
-    const transport = interactionWithConfig.HTTP
-        ? 'HTTP'
-        : interactionWithConfig.WS
-        ? 'WS'
-        : interactionWithConfig.CRDT
-        ? 'CRDT'
-        : interactionWithConfig.RTC || interactionWithConfig.WEBRTC
-        ? 'RTC'
-        : interactionWithConfig.PARALLEL
-        ? 'PARALLEL'
-        : interactionWithConfig.SET
-        ? 'SET'
-        : interactionWithConfig.ASSERT
-        ? 'ASSERT'
-        : 'UNKNOWN';
-
-    request.correlation = {
-        ...correlation,
-        transport,
-        injected: {
-            headers: false,
-            payload: false
-        }
-    };
-    request.runnerRunId = correlation.runnerRunId;
-    request.runnerStepId = correlation.runnerStepId;
-
-    if (correlationConfig.injectHeaders && interactionWithConfig.HTTP) {
-        request.headers = {
-            ...(isRecord(request.headers) ? request.headers : {}),
-            [correlationConfig.runIdHeader]: correlation.runnerRunId,
-            [correlationConfig.stepIdHeader]: correlation.runnerStepId
-        };
-        request.correlation.injected.headers = true;
-    }
-
-    if (
-        correlationConfig.injectPayloads &&
-        isSendAction(request) &&
-        (interactionWithConfig.WS || interactionWithConfig.RTC || interactionWithConfig.WEBRTC)
-    ) {
-        request.correlation.injected.payload = injectCorrelationPayload(
-            request,
-            correlation,
-            correlationConfig.payloadField
-        );
-    }
-}
-
 function toSetSuccessStatus(config: any, interaction: any, value: any): any {
     return {
         name: config.interactionName,
@@ -331,12 +248,13 @@ function toSetSuccessStatus(config: any, interaction: any, value: any): any {
         delayMs: config.interaction.request.delayMs,
         expected: interaction.response,
         actual: value,
-        ...toOutputReportFields(interaction),
+        ...toInteractionOutputFields(interaction),
         input: interaction.request.input
     };
 }
 
-function toSetFailureStatus(config: any, interaction: any, result: string, details: any = {}): any {
+function toSetFailureStatus(input: InteractionFailureStatusInput): any {
+    const { config, interaction, result } = input;
     return {
         name: config.interactionName,
         status: FAILURE,
@@ -348,7 +266,7 @@ function toSetFailureStatus(config: any, interaction: any, result: string, detai
         repeatIndex: config.interaction.request.repeatIndex,
         expected: interaction.response,
         actual: undefined,
-        details,
+        details: input.details ?? {},
         ...config
     };
 }
@@ -368,11 +286,11 @@ async function executeSetInteraction(interaction: any, config: any, context: any
         value = await collector(evidence);
     }
     if (!output) {
-        return toSetFailureStatus(
+        return toSetFailureStatus({
             config,
             interaction,
-            'Set step is missing output. Use output to name the stored value.'
-        );
+            result: 'Set step is missing output. Use output to name the stored value.'
+        });
     }
 
     if (transform !== undefined) {
@@ -384,27 +302,27 @@ async function executeSetInteraction(interaction: any, config: any, context: any
             });
         }
         catch (error) {
-            return toSetFailureStatus(
+            return toSetFailureStatus({
                 config,
                 interaction,
-                'Set transform failed.',
-                {
+                result: 'Set transform failed.',
+                details: {
                     transform,
                     transformError: {
                         message: error instanceof Error ? error.message : String(error),
                         details: error instanceof SafeOutputTransformError ? error.details : undefined
                     }
                 }
-            );
+            });
         }
     }
 
     if (value === undefined) {
-        return toSetFailureStatus(
+        return toSetFailureStatus({
             config,
             interaction,
-            'Set step is missing value. Use value, request.value, or transform.'
-        );
+            result: 'Set step is missing value. Use value, request.value, or transform.'
+        });
     }
 
     if (Number.isFinite(delayMs) && delayMs > 0) {
@@ -414,243 +332,20 @@ async function executeSetInteraction(interaction: any, config: any, context: any
     return toSetSuccessStatus(config, interaction, value);
 }
 
-function toAssertSuccessStatus(config: any, interaction: any, actual: any, details: any = {}): any {
+function toResolvedInteraction(interaction: any, context: any, transport: string): any {
+    const { groups, ...parentRequest } = interaction.request;
+    const rawResponse = interaction.response || {};
+    const { actual, ...responseWithoutActual } = rawResponse;
     return {
-        name: config.interactionName,
-        status: SUCCESS,
-        transport: 'ASSERT',
-        ...toCorrelationReportFields(interaction),
-        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
-        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
-        repeatIndex: config.interaction.request.repeatIndex,
-        expected: interaction.response,
-        actual,
-        details,
-        ...toOutputReportFields(interaction),
-        input: interaction.request.input
+        ...interaction,
+        request: transport === 'PARALLEL'
+            ? { ...resolvePlaceholders(parentRequest, context), groups }
+            : resolvePlaceholders(interaction.request, context),
+        response: {
+            ...resolvePlaceholders(responseWithoutActual, context),
+            ...(transport === 'ASSERT' && actual !== undefined ? { actual } : {})
+        }
     };
-}
-
-function toAssertFailureStatus(config: any, interaction: any, actual: any, result: string, details: any = {}): any {
-    return {
-        name: config.interactionName,
-        status: FAILURE,
-        transport: 'ASSERT',
-        result,
-        ...toCorrelationReportFields(interaction),
-        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
-        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
-        repeatIndex: config.interaction.request.repeatIndex,
-        expected: interaction.response,
-        actual,
-        details,
-        ...config
-    };
-}
-
-function monotonicComparisonFailures(actual: any, paths: unknown): any[] {
-    if (!Array.isArray(paths)) {
-        return [];
-    }
-
-    return paths.flatMap<any>((path) => {
-        if (typeof path !== 'string' || path.length <= 0) {
-            return [{ path, error: 'Monotonic assertion paths must be non-empty strings.' }];
-        }
-
-        let values: unknown;
-        try {
-            values = resolvePath(path, actual);
-        }
-        catch (error) {
-            return [{
-                path,
-                error: error instanceof Error ? error.message : String(error)
-            }];
-        }
-
-        if (!Array.isArray(values) || values.length <= 0) {
-            return [{ path, values, error: 'Monotonic assertion path must resolve to a non-empty array.' }];
-        }
-
-        const numericValues = values.map((value) => Number(value));
-        if (numericValues.some((value) => !Number.isFinite(value))) {
-            return [{ path, values, error: 'Monotonic assertion values must be finite numbers.' }];
-        }
-
-        const regressionIndex = numericValues.findIndex((value, index) =>
-            index > 0 && value < numericValues[index - 1]
-        );
-        return regressionIndex < 0
-            ? []
-            : [{
-                path,
-                values,
-                regressionIndex,
-                previous: numericValues[regressionIndex - 1],
-                current: numericValues[regressionIndex]
-            }];
-    });
-}
-
-function toResolvedAssertActual(interaction: any, context: any): any {
-    return interaction.response.actual !== undefined
-        ? isRecord(interaction.response.actual) && interaction.response.actual.transform !== undefined
-            ? evaluateScenarioTransform({
-                transform: interaction.response.actual.transform,
-                context,
-                operatorPath: 'assert.actual'
-            })
-            : resolveAssertActual(
-                interaction.response.actual,
-                context,
-                interaction.response.missingActualValue
-            )
-        : interaction.request.actual;
-}
-
-function toAssertAnyOfStatus(interaction: any, config: any, actual: any): any {
-    const expectedAlternatives = interaction.response.anyOf;
-    const comparisons = expectedAlternatives.map((expectedValue: any) =>
-        compareJson(
-            expectedValue,
-            actual,
-            toConfig(
-                interaction.response?.comparison || COMPARISON.COMPATIBLE,
-                interaction.response?.ignoreJsonKeys || [],
-                interaction.response?.ignoreJsonPaths || []
-            )
-        )
-    );
-    const matchedIndex = comparisons.findIndex((result: any) => result.isEqual);
-
-    if (matchedIndex < 0) {
-        return toAssertFailureStatus(config, interaction, actual, 'Assert comparison failed', {
-            anyOf: expectedAlternatives,
-            comparisons
-        });
-    }
-
-    return toAssertSuccessStatus(config, interaction, actual, {
-        anyOfMatchedIndex: matchedIndex,
-        comparison: comparisons[matchedIndex]
-    });
-}
-
-function executeAssertInteraction(interaction: any, config: any, context: any): Promise<any> {
-    const expectedAlternatives = Array.isArray(interaction.response.anyOf)
-        ? interaction.response.anyOf
-        : [];
-    const comparators = Array.isArray(interaction.response.comparators)
-        ? interaction.response.comparators
-        : [];
-    const expected = interaction.response.body !== undefined
-        ? interaction.response.body
-        : interaction.response.expect !== undefined
-        ? interaction.response.expect
-        : interaction.response.expected;
-
-    const actual = toResolvedAssertActual(interaction, context);
-
-    if (expected === undefined && expectedAlternatives.length <= 0 && comparators.length <= 0) {
-        return Promise.resolve(toAssertFailureStatus(
-            config,
-            interaction,
-            actual,
-            'Assert step is missing expected value. ' +
-                'Use expect.body, expect.expect, expect.expected, or expect.comparators.'
-        ));
-    }
-
-    if (actual === undefined) {
-        return Promise.resolve(toAssertFailureStatus(
-            config,
-            interaction,
-            actual,
-            'Assert step is missing actual value. Use actual or expect.actual.'
-        ));
-    }
-
-    const monotonicFailures = monotonicComparisonFailures(
-        actual,
-        interaction.response.monotonicPaths
-    );
-    if (monotonicFailures.length > 0) {
-        return Promise.resolve(toAssertFailureStatus(
-            config,
-            interaction,
-            actual,
-            'Assert monotonic comparison failed',
-            {
-                monotonicPaths: interaction.response.monotonicPaths,
-                failures: monotonicFailures
-            }
-        ));
-    }
-
-    const comparatorIssues = validateAssertValueComparators(actual, comparators);
-    if (comparatorIssues.length > 0) {
-        return Promise.resolve(toAssertFailureStatus(
-            config,
-            interaction,
-            actual,
-            'Assert comparator failed',
-            {
-                comparators,
-                failures: comparatorIssues
-            }
-        ));
-    }
-
-    if (expectedAlternatives.length > 0) {
-        return Promise.resolve(toAssertAnyOfStatus(interaction, config, actual));
-    }
-
-    if (expected === undefined) {
-        return Promise.resolve(toAssertSuccessStatus(config, interaction, actual, {
-            comparators
-        }));
-    }
-
-    const comparisonResult = compareJson(
-        expected,
-        actual,
-        toConfig(
-            interaction.response?.comparison || COMPARISON.COMPATIBLE,
-            interaction.response?.ignoreJsonKeys || [],
-            interaction.response?.ignoreJsonPaths || []
-        )
-    );
-
-    if (!comparisonResult.isEqual) {
-        return Promise.resolve(toAssertFailureStatus(
-            config,
-            interaction,
-            actual,
-            'Assert comparison failed',
-            comparisonResult
-        ));
-    }
-
-    return Promise.resolve(toAssertSuccessStatus(config, interaction, actual, comparisonResult));
-}
-
-function toRequest(request: any, context: any): any {
-    return resolvePlaceholders(request, context);
-}
-
-function toParallelRequest(request: any, context: any): any {
-    const { groups, ...parentRequest } = request;
-
-    return {
-        ...resolvePlaceholders(parentRequest, context),
-        groups
-    };
-}
-
-function toOutputKey(interactionData: any): string {
-    return interactionData.scenarioExecutionNumber + '-' + interactionData.name + '-' +
-        interactionData.interactionExecutionNumber;
 }
 
 function toResultEntries(results: any): any[] {
@@ -678,7 +373,9 @@ function toResultEntries(results: any): any[] {
         });
 }
 
-function toSummary(results: any, options: any, startedAtEpochMs: number, endedAtEpochMs: number): any {
+function toSummary(input: ExecutionReportInput): any {
+    const { context, options, startedAtEpochMs, endedAtEpochMs } = input;
+    const results = context.results;
     const entries = toResultEntries(results);
     const observedFailures = entries.filter((entry) => entry?.status === FAILURE);
     const failures = observedFailures.filter((entry) => entry?.nonBlockingFailure !== true);
@@ -711,7 +408,8 @@ function toSummary(results: any, options: any, startedAtEpochMs: number, endedAt
     };
 }
 
-function toReport(context: any, options: any, startedAtEpochMs: number, endedAtEpochMs: number): any {
+function toReport(input: ExecutionReportInput): any {
+    const { context } = input;
     const resultsList = toResultEntries(context.results);
     const results = Object.fromEntries(resultsList.map((result: any) => [result.resultKey, result]));
     const resultsByName = resultsList.reduce<Record<string, any[]>>((byName, result: any) => {
@@ -722,7 +420,7 @@ function toReport(context: any, options: any, startedAtEpochMs: number, endedAtE
 
     return redactBlackBoxData({
         summary: {
-            ...toSummary(context.results, options, startedAtEpochMs, endedAtEpochMs),
+            ...toSummary(input),
             runnerRunId: context.correlation.runnerRunId
         },
         runnerRunId: context.correlation.runnerRunId,
@@ -828,15 +526,17 @@ function executeRtcInteraction(interaction: any, config: any, context: any): Pro
         return provider.close(interaction, config, context);
     }
 
-    return Promise.resolve(toRtcFailureStatus(
-        config,
-        interaction,
-        'Unsupported RTC action: ' + action,
-        {
-            provider: providerName,
-            supportedActions: ['connect', 'send', 'wait', 'expect', 'close']
-        }
-    ));
+    return Promise.resolve(
+        toRtcFailureStatus({
+            config: config,
+            interaction: interaction,
+            result: 'Unsupported RTC action: ' + action,
+            details: {
+                provider: providerName,
+                supportedActions: ['connect', 'send', 'wait', 'expect', 'close']
+            }
+        })
+    );
 }
 
 function toCrdtReportFields(interaction: any): any {
@@ -876,7 +576,8 @@ function toCrdtSuccessStatus(config: any, interaction: any, details: any = {}): 
     };
 }
 
-function toCrdtFailureStatus(config: any, interaction: any, result: string, details: any = {}): any {
+function toCrdtFailureStatus(input: InteractionFailureStatusInput): any {
+    const { config, interaction, result } = input;
     return {
         name: config.interactionName,
         status: FAILURE,
@@ -890,7 +591,7 @@ function toCrdtFailureStatus(config: any, interaction: any, result: string, deta
         expected: interaction.response,
         actual: {
             ...toCrdtReportFields(interaction),
-            ...details
+            ...(input.details ?? {})
         },
         ...config
     };
@@ -918,98 +619,83 @@ function executeCrdtInteraction(interaction: any, config: any, context: any): Pr
     }
 
     if (!provider.command) {
-        return Promise.resolve(toCrdtFailureStatus(
+        return Promise.resolve(toCrdtFailureStatus({
             config,
             interaction,
-            'CRDT provider command support is not configured: ' + providerName,
-            {
+            result: 'CRDT provider command support is not configured: ' + providerName,
+            details: {
                 provider: providerName,
                 supportedProviders: Object.keys(context.rtcProviders || {})
                     .filter((name) => Boolean(context.rtcProviders?.[name]?.command))
             }
-        ));
+        }));
     }
 
     return provider.command(interaction, config, context);
 }
 
 function executeInteraction(interactionWithConfig: any, context: any): Promise<any> {
-    const interaction = toExecutableInteraction(interactionWithConfig);
-
-    if (!interaction) {
+    const sourceInteraction = toExecutableInteraction(interactionWithConfig);
+    if (!sourceInteraction) {
         return Promise.resolve();
     }
 
-    if (interaction.request.when !== undefined) {
-        try {
-            if (!evaluateInteractionCondition(interaction, context)) {
-                const config = toInteractionExecutionConfig(interactionWithConfig, interaction);
-                applyInteractionCorrelation(interactionWithConfig, interaction, config, context);
-                return Promise.resolve(toSkippedInteractionStatus(
-                    interactionWithConfig,
-                    interaction,
-                    config
-                ));
-            }
-        }
-        catch (error) {
-            const conditionError = error instanceof Error ? error : new Error(String(error));
-            const config = toInteractionExecutionConfig(interactionWithConfig, interaction);
-            applyInteractionCorrelation(interactionWithConfig, interaction, config, context);
-            return Promise.resolve(toConditionFailureStatus(
-                interactionWithConfig,
-                interaction,
-                config,
-                conditionError
-            ));
-        }
-    }
-
-    interaction.request = interactionWithConfig.PARALLEL
-        ? toParallelRequest(interaction.request, context)
-        : toRequest(interaction.request, context);
-    const rawResponse = interaction.response || {};
-    const { actual: rawAssertActual, ...responseWithoutAssertActual } = rawResponse;
-    interaction.response = resolvePlaceholders(responseWithoutAssertActual, context);
-    if (interactionWithConfig.ASSERT && rawAssertActual !== undefined) {
-        interaction.response.actual = rawAssertActual;
-    }
-
+    const condition = evaluateInteractionCondition(sourceInteraction, context);
+    const transport = interactionTransport(interactionWithConfig);
+    const resolvedInteraction = condition.right === true
+        ? toResolvedInteraction(sourceInteraction, context, transport)
+        : sourceInteraction;
+    const interaction = {
+        ...resolvedInteraction,
+        request: computeInteractionCorrelation({
+            request: resolvedInteraction.request,
+            transport,
+            interactionName: toInteractionName(interactionWithConfig),
+            correlationConfig: context.correlation,
+            runIndex: context.options?.runIndex
+        })
+    };
     const config = toInteractionExecutionConfig(interactionWithConfig, interaction);
-    applyInteractionCorrelation(interactionWithConfig, interaction, config, context);
-
-    if (interactionWithConfig.ASSERT) {
-        return executeAssertInteraction(interaction, config, context);
+    if (condition.left !== undefined) {
+        return Promise.resolve(toConditionFailureStatus({
+            interactionWithConfig,
+            interaction,
+            config,
+            error: condition.left
+        }));
     }
-
-    if (interactionWithConfig.SET) {
-        return executeSetInteraction(interaction, config, context);
+    if (!condition.right) {
+        return Promise.resolve(toSkippedInteractionStatus(interactionWithConfig, interaction, config));
     }
-
-    if (interactionWithConfig.PARALLEL) {
-        return executeParallelInteraction(interaction, config, context);
-    }
-
-    if (interactionWithConfig.WS) {
-        return executeWsInteraction(interaction, config, context);
-    }
-
-    if (interactionWithConfig.CRDT) {
-        return executeCrdtInteraction(interaction, config, context);
-    }
-
-    if (interactionWithConfig.RTC || interactionWithConfig.WEBRTC) {
-        return executeRtcInteraction(interaction, config, context);
-    }
-
-    if (isRallarRemoteBrowserRequest(interaction.request)) {
-        return executeRemoteHttpInteraction(interaction, config, context);
-    }
-
-    return executeHttpInteraction(interaction, config);
+    return executeTransportInteraction(transport, { interaction, config, context });
 }
 
-function toParallelFailureStatus(config: any, interaction: any, result: string, details: any = {}): any {
+function executeTransportInteraction(transport: string, input: TransportInteractionInput): Promise<any> {
+    const { interaction, config, context } = input;
+    switch (transport) {
+        case 'ASSERT':
+            return executeAssertInteraction(interaction, config, context);
+        case 'SET':
+            return executeSetInteraction(interaction, config, context);
+        case 'PARALLEL':
+            return executeParallelInteraction(interaction, config, context);
+        case 'WS':
+            return executeWsInteraction(interaction, config, context);
+        case 'CRDT':
+            return executeCrdtInteraction(interaction, config, context);
+        case 'RTC':
+        case 'WEBRTC':
+            return executeRtcInteraction(interaction, config, context);
+        default:
+            return isRallarRemoteBrowserRequest(interaction.request)
+                ? executeRemoteHttpInteraction(interaction, config, context)
+                : executeHttpInteraction(interaction, config);
+    }
+}
+
+function toParallelFailureStatus(input: InteractionFailureStatusInput): any {
+    const { config, interaction, result } = input;
+    const details = input.details ?? {};
     return {
         name: config.interactionName,
         status: FAILURE,
@@ -1065,170 +751,156 @@ async function runBoundedParallel<T, R>(
 }
 
 async function executeParallelInteraction(interaction: any, config: any, context: any): Promise<any> {
-    const groups = Array.isArray(interaction.request.groups)
-        ? interaction.request.groups
-        : [];
-
-    if (groups.length <= 0) {
-        return toParallelFailureStatus(config, interaction, 'Parallel step requires at least one group with steps.');
+    const groups = Array.isArray(interaction.request.groups) ? interaction.request.groups : [];
+    if (groups.length === 0) {
+        return toParallelFailureStatus({
+            config,
+            interaction,
+            result: 'Parallel step requires at least one group with steps.'
+        });
     }
-
     const maxConcurrency = Math.max(
         1,
         Number.parseInt(String(interaction.request.maxConcurrency || groups.length), 10) || groups.length
     );
     const timeoutMs = Number.parseInt(String(interaction.request.timeoutMs || 0), 10);
-    const groupFailFast = interaction.request.failFast !== false;
     const startedAtEpochMs = Date.now();
-
-    const groupResults = await runBoundedParallel(groups, maxConcurrency, async (group: any, groupIndex: number) => {
-        const groupStartedAtEpochMs = Date.now();
-        const steps = Array.isArray(group.steps)
-            ? group.steps
-            : [];
-
-        if (steps.length <= 0) {
-            return {
-                name: String(group.name || 'group-' + (groupIndex + 1)),
-                index: group.index || groupIndex + 1,
-                status: FAILURE,
-                success: 0,
-                failure: 1,
-                result: 'Parallel group has no steps.',
-                durationMs: Date.now() - groupStartedAtEpochMs
-            };
-        }
-
-        const stepResults = await executeBlackBoxRecursive({
-            interactions: steps,
-            index: 0,
-            options: {
-                ...context.options,
-                failFast: groupFailFast,
-                nonBlockingFailure: interaction.request.nonBlockingFailure === true
-            },
-            context
-        });
-        const resultValues = Object.values(stepResults || {}) as any[];
-        const failureCount = resultValues.filter((result) => result?.status === FAILURE).length;
-
-        return {
-            name: String(group.name || 'group-' + (groupIndex + 1)),
-            index: group.index || groupIndex + 1,
-            status: failureCount > 0 ? FAILURE : SUCCESS,
-            success: resultValues.filter((result) => result?.status === SUCCESS).length,
-            failure: failureCount,
-            resultKeys: resultValues.map((result) => result?.resultKey).filter(Boolean),
-            durationMs: Date.now() - groupStartedAtEpochMs
-        };
-    });
-
-    const durationMs = Date.now() - startedAtEpochMs;
-    const failure = groupResults.reduce((count, group) => count + Number((group as any).failure || 0), 0);
-    const success = groupResults.reduce((count, group) => count + Number((group as any).success || 0), 0);
-    const timedOut = Number.isFinite(timeoutMs) && timeoutMs > 0 && durationMs > timeoutMs;
-    const actual = {
-        groups: groupResults,
-        groupCount: groupResults.length,
+    const groupResults = await runBoundedParallel(
+        groups,
         maxConcurrency,
-        timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : undefined,
-        timedOut,
-        durationMs,
-        success,
-        failure
-    };
-
-    if (timedOut) {
-        return toParallelFailureStatus(config, interaction, 'Parallel step exceeded timeout.', actual);
+        (group: any, groupIndex: number) =>
+            executeParallelGroup({
+                group,
+                groupIndex,
+                context,
+                failFast: interaction.request.failFast !== false,
+                nonBlockingFailure: interaction.request.nonBlockingFailure === true
+            })
+    );
+    const actual = computeParallelSummary({
+        groups: groupResults,
+        maxConcurrency,
+        timeoutMs,
+        durationMs: Date.now() - startedAtEpochMs
+    });
+    if (actual.timedOut || actual.failure > 0) {
+        return toParallelFailureStatus({
+            config,
+            interaction,
+            details: actual,
+            result: actual.timedOut ? 'Parallel step exceeded timeout.' : 'Parallel step had failed child steps.'
+        });
     }
-
-    if (failure > 0) {
-        return toParallelFailureStatus(config, interaction, 'Parallel step had failed child steps.', actual);
-    }
-
     return toParallelSuccessStatus(config, interaction, actual);
 }
 
-interface ExecuteBlackBoxRecursiveInput {
-    readonly interactions: any[];
-    readonly index: number;
-    readonly options: any;
-    readonly context: any;
+async function executeParallelGroup(input: ParallelGroupInput): Promise<ParallelGroupResult> {
+    const { group, groupIndex, context } = input;
+    const groupStartedAtEpochMs = Date.now();
+    const steps = Array.isArray(group.steps)
+        ? group.steps
+        : [];
+
+    if (steps.length <= 0) {
+        return {
+            name: String(group.name || 'group-' + (groupIndex + 1)),
+            index: group.index || groupIndex + 1,
+            status: FAILURE,
+            success: 0,
+            failure: 1,
+            result: 'Parallel group has no steps.',
+            durationMs: Date.now() - groupStartedAtEpochMs
+        };
+    }
+
+    const stepResults = await executeScenarioSteps({
+        interactions: steps,
+        index: 0,
+        options: {
+            ...context.options,
+            failFast: input.failFast,
+            nonBlockingFailure: input.nonBlockingFailure
+        },
+        context
+    });
+    const resultValues = Object.values(stepResults || {}) as any[];
+    const failureCount = resultValues.filter((result) => result?.status === FAILURE).length;
+
+    return {
+        name: String(group.name || 'group-' + (groupIndex + 1)),
+        index: group.index || groupIndex + 1,
+        status: failureCount > 0 ? FAILURE : SUCCESS,
+        success: resultValues.filter((result) => result?.status === SUCCESS).length,
+        failure: failureCount,
+        resultKeys: resultValues.map((result) => result?.resultKey).filter(Boolean),
+        durationMs: Date.now() - groupStartedAtEpochMs
+    };
 }
 
-function executeBlackBoxRecursive(input: ExecuteBlackBoxRecursiveInput): Promise<any> {
-    const { interactions, index, options, context } = input;
-    const executeNext = (interactionData: any): any => {
-        const storedInteractionData = storeInteractionData(
-            options.nonBlockingFailure === true
-                ? { ...interactionData, nonBlockingFailure: true }
-                : interactionData,
+function computeParallelSummary(input: ParallelSummaryInput): ParallelSummary {
+    const failure = input.groups.reduce((count, group) => count + group.failure, 0);
+    const success = input.groups.reduce((count, group) => count + group.success, 0);
+    const timeoutMs = Number.isFinite(input.timeoutMs) && input.timeoutMs > 0 ? input.timeoutMs : undefined;
+    return {
+        ...input,
+        groupCount: input.groups.length,
+        timeoutMs,
+        timedOut: timeoutMs !== undefined && input.durationMs > timeoutMs,
+        success,
+        failure
+    };
+}
+
+async function executeScenarioSteps(input: ScenarioStepsInput): Promise<any> {
+    const { interactions, options, context } = input;
+    const results: Record<string, any> = {};
+    for (let index = input.index; index < interactions.length; index++) {
+        const interactionData = await executeMeasuredInteraction(interactions[index], context);
+        const stored = storeInteractionData(
+            options.nonBlockingFailure === true ? { ...interactionData, nonBlockingFailure: true } : interactionData,
             context
         );
-
-        const data = {
-            [toResultKey(storedInteractionData)]: storedInteractionData
-        };
-
-        if (
-            storedInteractionData.status === FAILURE &&
-            storedInteractionData.nonBlockingFailure !== true &&
-            options.failFast !== false
-        ) {
-            return data;
+        results[toResultKey(stored)] = stored;
+        if (stored.status === FAILURE && stored.nonBlockingFailure !== true && options.failFast !== false) {
+            break;
         }
+    }
+    return results;
+}
 
-        if (index + 1 < interactions.length) {
-            return executeBlackBoxRecursive({
-                interactions,
-                index: index + 1,
-                options,
-                context
-            })
-                .then((d) => {
-                    return { ...data, ...d };
-                });
-        }
-
-        return data;
-    };
-
+async function executeMeasuredInteraction(interactionWithConfig: any, context: any): Promise<any> {
     const startedAtEpochMs = Date.now();
-    const interactionWithConfig = interactions[index];
-
-    return Promise.resolve()
-        .then(() => executeInteraction(interactionWithConfig, context))
-        .catch((error) => {
-            const interaction = toExecutableInteraction(interactionWithConfig);
-            const request = interaction?.request || {};
-            return {
-                name: toInteractionName(interactionWithConfig),
-                status: FAILURE,
-                result: 'Interaction execution failed',
-                exception: error instanceof Error ? error.message : String(error),
-                scenarioExecutionNumber: request.scenarioExecutionNumber,
-                interactionExecutionNumber: request.interactionExecutionNumber,
-                repeatIndex: request.repeatIndex,
-                interaction
-            };
-        })
-        .then((data) => {
-            const endedAtEpochMs = Date.now();
-            return executeNext(
-                withMaxDurationBound({
-                    ...data,
-                    startedAtEpochMs,
-                    endedAtEpochMs,
-                    durationMs: endedAtEpochMs - startedAtEpochMs
-                }, interactionWithConfig)
-            );
-        });
+    let result: any;
+    try {
+        result = await executeInteraction(interactionWithConfig, context);
+    }
+    catch (error) {
+        const interaction = toExecutableInteraction(interactionWithConfig);
+        const request = interaction?.request || {};
+        result = {
+            name: toInteractionName(interactionWithConfig),
+            status: FAILURE,
+            result: 'Interaction execution failed',
+            exception: error instanceof Error ? error.message : String(error),
+            scenarioExecutionNumber: request.scenarioExecutionNumber,
+            interactionExecutionNumber: request.interactionExecutionNumber,
+            repeatIndex: request.repeatIndex,
+            interaction
+        };
+    }
+    const endedAtEpochMs = Date.now();
+    return withMaxDurationBound({
+        ...result,
+        startedAtEpochMs,
+        endedAtEpochMs,
+        durationMs: endedAtEpochMs - startedAtEpochMs
+    });
 }
 
 // A bound never masks the step's own failure: only a step that succeeded and
 // overran expect.maxDurationMs is flipped, keeping its original actual data.
-function withMaxDurationBound(interactionData: any, interactionWithConfig: any): any {
-    const response = toExecutableInteraction(interactionWithConfig)?.response;
+function withMaxDurationBound(interactionData: any): any {
+    const response = interactionData.expected;
     const maxDurationMs = Number.parseInt(String(response?.maxDurationMs ?? ''), 10);
 
     if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0) {
@@ -1323,27 +995,3 @@ async function closeAllRtcConnections(context: any): Promise<void> {
 
     context.rtcConnections = {};
 }
-
-export function executeBlackBox(
-    interactions: any[],
-    index = 0,
-    options: any = {}
-): Promise<any> {
-    const startedAtEpochMs = Date.now();
-    const context = createScenarioContext(options);
-
-    return executeBlackBoxRecursive({ interactions, index, options, context })
-        .then(async () => {
-            closeAllWsConnections(context);
-            await closeAllRtcConnections(context);
-            const endedAtEpochMs = Date.now();
-            return toReport(context, options, startedAtEpochMs, endedAtEpochMs);
-        })
-        .catch(async (e) => {
-            closeAllWsConnections(context);
-            await closeAllRtcConnections(context);
-            throw e;
-        });
-}
-
-export { redactBlackBoxData, resolveBlackBoxVariables };

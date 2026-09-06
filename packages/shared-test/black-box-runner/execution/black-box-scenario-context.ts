@@ -1,10 +1,11 @@
 // deno-lint-ignore-file no-explicit-any
+import { createRallarStubRtcProvider } from '../create-rallar-stub-rtc-provider.ts';
 import { createRallarBrowserRtcProvider } from '../rallar-browser-rtc-provider.ts';
 import { createRallarInMemoryProvider } from '../rallar-in-memory-runtime.ts';
 import { createRallarRemoteBrowserRtcProvider } from '../rallar-remote-browser-provider.ts';
-import { createRallarStubRtcProvider } from '../rallar-stub-rtc-provider.ts';
 import { createRallarWebRtcWebSocketSignalingProvider } from '../rallar-webrtc-runtime.ts';
-import { toRtcFailureStatus, type RtcProvider } from '../rtc-provider.ts';
+import { type RtcProvider } from '../rtc-provider.ts';
+import { toRtcFailureStatus } from '../rtc/rtc-wait-expectations.ts';
 import { normalizeRedactions } from './black-box-redaction.ts';
 import { toRunnerCorrelationConfig } from './black-box-run-correlation.ts';
 import {
@@ -14,14 +15,16 @@ import {
 
 export function createMissingRtcProvider(providerName: string): RtcProvider {
     const missing = (interaction: any, config: any, context: any): Promise<any> => {
-        return Promise.resolve(toRtcFailureStatus(
-            config,
-            interaction,
-            'RTC provider is not configured: ' + providerName,
-            {
-                availableProviders: Object.keys(context.rtcProviders || {})
-            }
-        ));
+        return Promise.resolve(
+            toRtcFailureStatus({
+                config: config,
+                interaction: interaction,
+                result: 'RTC provider is not configured: ' + providerName,
+                details: {
+                    availableProviders: Object.keys(context.rtcProviders || {})
+                }
+            })
+        );
     };
 
     return {
