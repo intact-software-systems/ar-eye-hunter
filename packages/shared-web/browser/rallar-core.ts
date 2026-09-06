@@ -9,6 +9,8 @@ export {
     normalizeRallarMessageSelector
 } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 
+export { toRoomFormationDenial } from '@shared-web/browser/rooms/formation/to-room-formation-denial.ts';
+
 export type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
 
 export type {
@@ -63,9 +65,23 @@ export type {
     RallarReplayPeopleEventsOptions,
     RallarReplayRoomEventsInput,
     RallarReplayRoomEventsOptions,
+    RallarRoomConnectOptions,
     RallarRoomEventOptions,
+    RallarRoomFormation,
+    RallarRoomFormationCommandOptions,
+    RallarRoomFormationDenial,
+    RallarRoomFormationStatus,
+    RallarRoomFormationWaitResult,
+    RallarRoomFormationWaitStatus,
+    RallarRoomLayout,
+    RallarRoomLayoutEvent,
+    RallarRoomLayoutListener,
+    RallarRoomLayoutRole,
+    RallarRoomLayoutWaitOptions,
+    RallarRoomLayoutWaitResult,
     RallarRoomMember,
     RallarRoomMessageChannelDefinition,
+    RallarRoomReconfigureOptions,
     RallarRoomSession,
     RallarRoomSessionMessageDefinition,
     RallarRoomSessionRealtimeInput,

@@ -12,6 +12,7 @@ import type {
 } from '../../al-contracts/al-runtime.ts';
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-admission-backend.ts';
+import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import { decodeALAdmissionClientRecord, decodeALAdmissionSupersedenceValue } from '../al-admission-value-validation.ts';
 import type {
     ALOutboundNotYetInSyncRetrySnapshot,
@@ -20,7 +21,6 @@ import type {
     ALOutboundSentMessageSnapshot
 } from '../al-runtime-state-stores.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
-import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../ALStoreRetention.ts';
 import { acceptALSupersedenceObservation } from '../compute-al-supersedence-observation.ts';

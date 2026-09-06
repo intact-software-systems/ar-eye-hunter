@@ -128,6 +128,66 @@ moved or changed test.
       "coverageRelation": "The named schema test parses and validates the exact published fixture, application example, compatibility corpus, or guide example represented by this filesystem occurrence."
     },
     {
+      "id": "shared-web-room-formation-command-request",
+      "domain": "Shared-web room formation commands",
+      "owner": "Shared Web maintainers",
+      "summary": "A formation command issues exactly one lifecycle POST under one fresh request id whose body carries the reason and nothing the route's schema does not declare. Executable assertion: “plans through the bound room and accepts the receipt into the cache”.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#plans through the bound room and accepts the receipt into the cache",
+      "coverageRelation": "The handle test executes plan through the facade and observes the HTTP port the handle owns; the request-id path and first-call body assertions are the wire contract the api-v1 lifecycle route decodes.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Room formation HTTP command port",
+        "observableEffect": "One POST per command under one fresh request id, carrying the reason as its only audit field.",
+        "requiredConstraint": "Exactly one POST per command; a retry after a typed conflict is a new call with a new request id.",
+        "failureRationale": "A second POST under a fresh id would submit the transition twice, and reusing a spent id replays the very denial the retry meant to escape."
+      }
+    },
+    {
+      "id": "shared-web-room-formation-connect-fence",
+      "domain": "Shared-web room formation connect",
+      "owner": "Shared Web maintainers",
+      "summary": "A connect with no explicit layout names the cached formation epoch and the planned-slot identity in its one lifecycle POST. Executable assertion: “connects the current planned layout with the cached epoch”.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#connects the current planned layout with the cached epoch",
+      "coverageRelation": "The handle test seeds the snapshot and the planned slot, executes connect through the facade, and observes the single POST on the HTTP port the handle owns; the body is the fence the server compares.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Room formation HTTP command port",
+        "observableEffect": "One connect POST whose body carries the cached epoch and the planned-slot identity.",
+        "requiredConstraint": "Exactly one POST carries the fence; a superseded identity is answered by the server, never retried under the same request id.",
+        "failureRationale": "Two POSTs would race the fence against itself, and a fence read from anywhere but the cached snapshot and slot could dial a layout the caller never saw."
+      }
+    },
+    {
+      "id": "shared-web-room-formation-connect-read-through-order",
+      "domain": "Shared-web room formation connect read-through",
+      "owner": "Shared Web maintainers",
+      "summary": "A connect with no planned layout in the slot reads the group point snapshot before the topology view and spends no lifecycle request. Executable assertion: “refuses to connect locally when no planned layout exists after a read-through”.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#refuses to connect locally when no planned layout exists after a read-through",
+      "coverageRelation": "The handle test executes connect against an empty planned slot and observes the ordered HTTP calls of the room refresh the handle owns; no lifecycle POST follows the two reads.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "Room refresh read-through port",
+        "observableEffect": "The group point read precedes the topology read, and no lifecycle POST follows when the slot stays empty.",
+        "requiredConstraint": "Topology hydration compares against the group snapshot read immediately before it, and a connect with nothing to name never reaches the server.",
+        "failureRationale": "Reading topology first would hydrate against a stale group and could adopt a superseded layout; posting anyway would spend a request id on a guaranteed no-planned-layout conflict."
+      }
+    },
+    {
+      "id": "shared-web-room-formation-connect-lagging-snapshot-order",
+      "domain": "Shared-web room formation connect read-through",
+      "owner": "Shared Web maintainers",
+      "summary": "A connect whose planned slot was published past the cached snapshot reads the group point snapshot and then the topology view before its one lifecycle POST names the refreshed epoch. Executable assertion: “reads the room through before connecting when the cached snapshot lags the planned layout”.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#reads the room through before connecting when the cached snapshot lags the planned layout",
+      "coverageRelation": "The handle test seeds a snapshot behind the planned slot's causal revision, executes connect through the facade, and observes the ordered HTTP calls of the room refresh and the lifecycle port the handle owns; the fence in the POST body is the refreshed epoch.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "Room refresh read-through port",
+        "observableEffect": "The group point read precedes the topology read, and exactly one connect POST follows carrying the refreshed epoch with the planned-slot identity.",
+        "requiredConstraint": "A planned identity newer than the cached snapshot is never posted with the stale epoch; the read-through runs first and the single POST names what it returned.",
+        "failureRationale": "Posting the cached epoch with a newer identity earns the untyped stale-epoch 400 the denial reader cannot classify, and a second POST would race the fence against itself."
+      }
+    },
+    {
       "id": "workbench-collection-served-paths",
       "domain": "Rallar server workbench collection addressing",
       "owner": "Shared Test maintainers",
@@ -1497,6 +1557,17 @@ moved or changed test.
   ],
   "entries": [
     {
+      "id": "test-structure-coupling-1c06d83399d28d75",
+      "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-room-formation-command-request",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The first-call body assertion proves the plan command posts the reason once under a fresh request id.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#plans through the bound room and accepts the receipt into the cache"
+    },
+    {
       "id": "test-structure-coupling-7f88b9c9cc3c1256",
       "path": "packages/tests/rallar-black-box/rallar-server-workbench.test.ts",
       "kind": "production-source-read",
@@ -1528,6 +1599,61 @@ moved or changed test.
       "owner": "Shared RTC benchmark maintainers",
       "rationale": "Reads the accepted workload catalog so maintained diagnostics cannot silently become accepted baseline evidence producers.",
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno"
+    },
+    {
+      "id": "test-structure-coupling-b4e8f6b00e0259a0",
+      "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-room-formation-connect-read-through-order",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The ordered call list proves the point read precedes the topology read and that no lifecycle POST follows.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#refuses to connect locally when no planned layout exists after a read-through"
+    },
+    {
+      "id": "test-structure-coupling-b604e54c823905c7",
+      "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-room-formation-connect-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The first-call body assertion proves connect names the cached epoch and the planned-slot identity in its one POST.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#connects the current planned layout with the cached epoch"
+    },
+    {
+      "id": "test-structure-coupling-084da7565a82615e",
+      "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-room-formation-command-request",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The call-count assertion proves the plan command spends exactly one request id; a second POST would submit the transition twice.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#plans through the bound room and accepts the receipt into the cache"
+    },
+    {
+      "id": "test-structure-coupling-1b2a9025717e14f9",
+      "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-room-formation-connect-fence",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The call-count assertion proves exactly one POST carries the fence; a second would race the fence against itself.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#connects the current planned layout with the cached epoch"
+    },
+    {
+      "id": "test-structure-coupling-00bec008d0fc81d3",
+      "path": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "shared-web-room-formation-connect-lagging-snapshot-order",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Web maintainers",
+      "rationale": "The ordered call list proves the point read and the topology read precede the single connect POST when the cached snapshot lags the planned slot.",
+      "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#reads the room through before connecting when the cached snapshot lags the planned layout"
     },
     {
       "id": "test-structure-coupling-df5e57893203b500",

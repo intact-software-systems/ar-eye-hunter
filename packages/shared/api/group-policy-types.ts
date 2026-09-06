@@ -29,6 +29,10 @@ export const GROUP_POLICY_REASON_CODES = [
 
 export type GroupPolicyReasonCode = typeof GROUP_POLICY_REASON_CODES[number];
 
+export function isGroupPolicyReasonCode(code: string): code is GroupPolicyReasonCode {
+    return GROUP_POLICY_REASON_CODES.some((known) => known === code);
+}
+
 export type GroupPolicyDenied = Readonly<{
     allowed: false;
     code: GroupPolicyReasonCode;

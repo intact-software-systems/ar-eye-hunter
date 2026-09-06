@@ -14,6 +14,10 @@ import {
     type RallarStateEventsPort
 } from '@shared-web/browser/people/browser-rallar-people-events.ts';
 import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
+import {
+    createRoomLayoutSlots,
+    type RallarRoomLayoutSlotsPort
+} from '@shared-web/browser/rooms/formation/room-layout-slots.ts';
 import { createRoomEvents, type RallarRoomEventsPort } from '@shared-web/browser/rooms/room-events.ts';
 import {
     resolveBrowserRoomTransportTarget,
@@ -34,11 +38,8 @@ import {
     createBrowserWebSocketInbox,
     type BrowserWebSocketInbox
 } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
-import { findAcceptedOverlayById } from '@shared/repository/overlays-repository.ts';
 
 export interface BrowserRuntimeFoundation {
     readonly runtime: RallarBrowserFacadeRuntimeContext;
@@ -52,6 +53,7 @@ export interface BrowserRuntimeFoundation {
 export interface BrowserStateComposition {
     readonly stateStore: RallarStatePort;
     readonly roomStateStore: RallarRoomStateStorePort;
+    readonly roomLayoutSlots: RallarRoomLayoutSlotsPort;
     readonly readDefaults: () => RallarDefaults | undefined;
     readonly resolveDefaultRoomRef: () => GroupRef | undefined;
     readonly resolveDefaultRoom: () => string | GroupRef | undefined;
@@ -120,6 +122,7 @@ export function createBrowserStateComposition(
     input: CreateBrowserStateCompositionInput
 ): BrowserStateComposition {
     const stateCache = createRallarStateCacheReadPort();
+    const roomLayoutSlots = createRoomLayoutSlots();
     const roomStateStore = createRoomStateStore({
         runtime: input.stateRuntime,
         readSession,
@@ -149,6 +152,7 @@ export function createBrowserStateComposition(
     return {
         stateStore,
         roomStateStore,
+        roomLayoutSlots,
         readDefaults,
         resolveDefaultRoomRef,
         resolveDefaultRoom,
@@ -157,9 +161,7 @@ export function createBrowserStateComposition(
             return resolveBrowserRoomTransportTarget({
                 sessionId: readSession()?.sessionId,
                 snapshot,
-                acceptedOverlay: snapshot
-                    ? readConfiguredValue(() => findAcceptedOverlayById(toScopedOverlayId(snapshot.group)))
-                    : undefined
+                acceptedOverlay: snapshot ? roomLayoutSlots.readAccepted(snapshot.group) : undefined
             });
         }
     };

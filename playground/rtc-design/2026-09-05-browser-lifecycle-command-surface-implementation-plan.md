@@ -25,8 +25,10 @@ behaviour this consumes is `docs/rallar-group-formation-architecture.md`; the ro
 `apps/api-v1/src/group-state/register-group-lifecycle-routes.ts` and
 `apps/api-v1/src/routes/group-formation-view-read.ts`.
 
-Status: **planning, not started; the nine review questions below were settled with the maintainer on
-2026-09-05, each taking the recommended answer.** Written 2026-09-05 against `main` @ `c11c258b2`. The
+Status: **implemented and under review as stacked PRs #506, #512 and #513 (formatting pass #511),
+amended 2026-09-06 after code review; the nine review questions below were settled with the
+maintainer on 2026-09-05, each taking the recommended answer, and "Deviations recorded during
+delivery" amends the task bodies.** Written 2026-09-05 against `main` @ `c11c258b2`. The
 implementation workstream it completes (`2026-08-22-group-activation-implementation-plan.md`) has all
 fourteen server slices merged; this plan is the browser surface that workstream's slice 8 deliberately
 left to "later work" beyond dial gating. Location note: the writing-plans skill defaults to
@@ -140,33 +142,36 @@ question Q4 records the fallback if it does not hold.
 
 ### Ownership map
 
-| Path                                                                                                                                                                                               | Responsibility                                                                                                                                     | Slice |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
-| `packages/shared/api/state-types.ts`                                                                                                                                                               | `GroupConnectRequest`, `GroupReconfigureRequest` shared HTTP DTOs                                                                                  | 1     |
-| `packages/shared/api/group-lifecycle/group-connect-rejection-codes.ts`                                                                                                                             | The two connect conflict codes and their predicate                                                                                                 | 1     |
-| `packages/shared/api/group-policy-types.ts`                                                                                                                                                        | `isGroupPolicyReasonCode` predicate                                                                                                                | 1     |
-| `packages/shared/repository/overlays-repository.ts`                                                                                                                                                | Exports `toOverlayLayoutIdentity` (already implemented privately)                                                                                  | 1     |
-| `packages/shared-server/rallar-system/group-state/mutation/group-mutation-rejection-codes.ts`                                                                                                      | Registry spreads the shared connect codes                                                                                                          | 1     |
-| `packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts`                                                                                                            | Connect inbox payload uses `GroupConnectRequest`                                                                                                   | 1     |
-| `packages/shared-web/browser/rooms/rallar-room-contracts.ts`                                                                                                                                       | `lifecyclePolicy` on create input; `formation` on `RallarRoomSession`                                                                              | 1     |
-| `packages/shared-web/browser/rooms/room-group-state-translation.ts`                                                                                                                                | Create request carries the policy; `RoomFormationCommand`, `toRoomFormationGroupStateRequest`, `toRallarRoomLayout`, `toRallarRoomFormationStatus` | 1     |
-| `packages/shared-web/browser/rooms/create-and-join-room.ts`                                                                                                                                        | `toCreateOptions` forwards the policy                                                                                                              | 1     |
-| `packages/shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts`                                                                                                                   | Every public formation type                                                                                                                        | 1, 2  |
-| `packages/shared-web/browser/rooms/formation/room-formation-http-api.ts`                                                                                                                           | The eight command POSTs and the formation view GET                                                                                                 | 1, 2  |
-| `packages/shared-web/browser/rooms/formation/room-layout-slots.ts`                                                                                                                                 | `RallarRoomLayoutSlotsPort` over the two overlay repositories                                                                                      | 1     |
-| `packages/shared-web/browser/rooms/formation/command-room-formation.ts`                                                                                                                            | The command workflow and `connect`'s identity resolution                                                                                           | 1     |
-| `packages/shared-web/browser/rooms/formation/create-room-formation.ts`                                                                                                                             | The handle factory (feature entry), status read, subscriptions                                                                                     | 1, 2  |
-| `packages/shared-web/browser/rooms/formation/room-formation-observation.ts`                                                                                                                        | `readRoomFormationStatus` and `subscribeRoomFormation`: the cached status read and the change subscription both the handle and the waits use       | 1, 2  |
-| `packages/shared-web/browser/rooms/formation/to-room-formation-denial.ts`                                                                                                                          | Pure classification of a thrown command error                                                                                                      | 1     |
-| `packages/shared-web/browser/rooms/wait-for-room-change.ts`                                                                                                                                        | Generic cache-driven wait engine (extracted from `room-presence.ts`)                                                                               | 2     |
-| `packages/shared-web/browser/rooms/formation/wait-for-room-formation.ts`                                                                                                                           | `waitForRoomStage`, `waitForRoomCondition`, `waitForRoomLayout`, `subscribeRoomFormation`                                                          | 2     |
-| `packages/shared-web/browser/rooms/formation/read-room-formation-view.ts`                                                                                                                          | Formation view read and boundary decode                                                                                                            | 2     |
-| `packages/shared/api/group-lifecycle/validate-group-formation-view.ts`                                                                                                                             | Pure formation view validator                                                                                                                      | 2     |
-| `packages/shared-web/browser/rooms/browser-rallar-rooms.ts`, `room-session.ts`                                                                                                                     | `rooms.formation(room?)`, `session.formation`, port wiring                                                                                         | 1     |
-| `packages/shared-web/browser/composition/browser-runtime-composition.ts`, `browser-product-composition.ts`                                                                                         | `roomLayoutSlots` created once in the state composition and passed to rooms                                                                        | 1     |
-| `packages/shared-web/browser/rallar.ts`, `rallar-core.ts`, `rallar-facade-contract.ts`                                                                                                             | Public type and value exports                                                                                                                      | 1, 2  |
-| `packages/tests/shared-web/rooms/formation/**`, `packages/tests/shared/**`                                                                                                                         | Behaviour tests mirroring the paths above                                                                                                          | 1, 2  |
-| `docs/rallar-api-reference.md`, `docs/rallar-quickstart-and-recipes.md`, `docs/rallar-group-formation-architecture.md`, `packages/shared-web/browser/README.md`, `playground/rtc-design/README.md` | Documentation and navigation                                                                                                                       | 1–3   |
+| Path                                                                                                                                                                                               | Responsibility                                                                                                                                                                                                                 | Slice |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- |
+| `packages/shared/api/state-types.ts`                                                                                                                                                               | `GroupConnectRequest` shared HTTP DTO (`GroupReconfigureRequest` was not needed; see the deviations)                                                                                                                           | 1     |
+| `packages/shared/api/group-lifecycle/group-lifecycle-commands.ts`                                                                                                                                  | The eight lifecycle command names, one owner for the wire spelling                                                                                                                                                             | 1     |
+| `packages/shared/api/group-lifecycle/group-connect-rejection-codes.ts`                                                                                                                             | The two connect conflict codes and their predicate                                                                                                                                                                             | 1     |
+| `packages/shared/api/group-policy-types.ts`                                                                                                                                                        | `isGroupPolicyReasonCode` predicate                                                                                                                                                                                            | 1     |
+| `packages/shared/repository/overlays-repository.ts`                                                                                                                                                | Exports `toOverlayLayoutIdentity` (already implemented privately)                                                                                                                                                              | 1     |
+| `packages/shared-server/rallar-system/group-state/mutation/group-mutation-rejection-codes.ts`                                                                                                      | Registry spreads the shared connect codes                                                                                                                                                                                      | 1     |
+| `packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts`                                                                                                            | Connect inbox payload uses `GroupConnectRequest`                                                                                                                                                                               | 1     |
+| `packages/shared-web/browser/rooms/rallar-room-contracts.ts`                                                                                                                                       | `lifecyclePolicy` on create input; `formation` on `RallarRoomSession`                                                                                                                                                          | 1     |
+| `packages/shared-web/browser/rooms/room-group-state-translation.ts`                                                                                                                                | Create request carries the policy; `RoomFormationCommand`, `toRoomFormationGroupStateRequest` pairing each command with the body its OpenAPI schema declares (the projections moved out; see the deviations below)             | 1     |
+| `packages/shared-web/browser/rooms/create-and-join-room.ts`                                                                                                                                        | `toCreateOptions` forwards the policy                                                                                                                                                                                          | 1     |
+| `packages/shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts`                                                                                                                   | Every public formation type                                                                                                                                                                                                    | 1, 2  |
+| `packages/shared-web/browser/rooms/room-group-state-http-api.ts`, `state-read/state-snapshot-http-api.ts`                                                                                          | `commandLifecycle` (the eight command POSTs) and `readStateGroupFormationView` (the view GET); there is no separate formation port                                                                                             | 1, 2  |
+| `packages/shared-web/browser/rooms/formation/room-layout-slots.ts`                                                                                                                                 | `RallarRoomLayoutSlotsPort` over the two overlay repositories                                                                                                                                                                  | 1     |
+| `packages/shared-web/browser/rooms/formation/command-room-formation.ts`                                                                                                                            | The command workflow and `connect`'s identity resolution                                                                                                                                                                       | 1     |
+| `packages/shared-web/browser/rooms/formation/create-room-formation.ts`                                                                                                                             | The handle factory (feature entry), status read, subscriptions                                                                                                                                                                 | 1, 2  |
+| `packages/shared-web/browser/rooms/formation/room-formation-observation.ts`                                                                                                                        | `readRoomFormationStatus`, `subscribeRoomFormation`, `subscribeRoomFormationChanges`, `subscribeRoomLayoutEvents`, `toRallarRoomLayout`, `toRallarRoomFormationStatus`: the status projection, its read and both subscriptions | 1, 2  |
+| `packages/shared-web/browser/state-cache/overlay-slot-subscriptions.ts`                                                                                                                            | Slot listeners kept across the overlay repositories being replaced on connect                                                                                                                                                  | 1     |
+| `packages/shared-web/browser/rooms/is-room-layout-overlay.ts`                                                                                                                                      | The live-layout predicates the status projection and the transport target share                                                                                                                                                | 1     |
+| `packages/shared-web/browser/rooms/formation/to-room-formation-denial.ts`                                                                                                                          | Pure classification of a thrown command error                                                                                                                                                                                  | 1     |
+| `packages/shared-web/browser/connection/wait-for-settled-read.ts`                                                                                                                                  | The cache-driven wait engine, extracted from `room-presence.ts`; the WS open wait runs on it too                                                                                                                               | 2     |
+| `packages/shared-web/browser/rooms/formation/wait-for-room-formation.ts`                                                                                                                           | `waitForRoomStage`, `waitForRoomCondition`, `waitForRoomLayout` over one generic wait                                                                                                                                          | 2     |
+| `packages/shared-web/browser/rooms/formation/read-room-formation-view.ts`                                                                                                                          | Formation view read and boundary decode                                                                                                                                                                                        | 2     |
+| `packages/shared/api/group-lifecycle/decode-group-formation-view.ts`                                                                                                                               | `decodeGroupFormationView` over the JSON the server sent, returning an `Either` of every issue                                                                                                                                 | 2     |
+| `packages/shared-web/browser/rooms/browser-rallar-rooms.ts`, `room-session.ts`                                                                                                                     | `rooms.formation(room?)`, `session.formation`, port wiring                                                                                                                                                                     | 1     |
+| `packages/shared-web/browser/composition/browser-runtime-composition.ts`, `browser-product-composition.ts`                                                                                         | `roomLayoutSlots` created once in the state composition and passed to rooms                                                                                                                                                    | 1     |
+| `packages/shared-web/browser/rallar.ts`, `rallar-core.ts`, `rallar-facade-contract.ts`                                                                                                             | Public type and value exports                                                                                                                                                                                                  | 1, 2  |
+| `packages/tests/shared-web/rooms/formation/**`, `packages/tests/shared/**`                                                                                                                         | Behaviour tests mirroring the paths above                                                                                                                                                                                      | 1, 2  |
+| `docs/rallar-api-reference.md`, `docs/rallar-quickstart-and-recipes.md`, `docs/rallar-group-formation-architecture.md`, `packages/shared-web/browser/README.md`, `playground/rtc-design/README.md` | Documentation and navigation                                                                                                                                                                                                   | 1–3   |
 
 ### The public surface after slice 2
 
@@ -743,6 +748,7 @@ git commit -m "Translate and post the lifecycle commands from the browser"
 - Create: `packages/shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts`
 - Create: `packages/shared-web/browser/rooms/formation/room-layout-slots.ts`
 - Modify: `packages/shared-web/browser/rooms/room-group-state-translation.ts` (`toRallarRoomLayout`, `toRallarRoomFormationStatus`)
+  — _delivered in `room-formation-observation.ts` instead; see "Deviations recorded during delivery"_
 - Create: `packages/shared-web/browser/rooms/formation/command-room-formation.ts`
 - Create: `packages/shared-web/browser/rooms/formation/room-formation-observation.ts`
 - Create: `packages/shared-web/browser/rooms/formation/create-room-formation.ts`
@@ -820,6 +826,8 @@ export interface RallarRoomLayoutSlotsPort {
 export function createRoomLayoutSlots(): RallarRoomLayoutSlotsPort;
 ```
 
+- _Delivered: the two projections below live in `room-formation-observation.ts`, not in the translation
+  module; the signatures are as written._
 - Produces (translation): `toRallarRoomLayout(role, overlay, roomRef): RallarRoomLayout | undefined`,
   `toRallarRoomFormationStatus(input: ToRallarRoomFormationStatusInput): RallarRoomFormationStatus`
   with `ToRallarRoomFormationStatusInput { snapshot: GroupSnapshot; planned: OverlayInfo | undefined; accepted: OverlayInfo | undefined }`.
@@ -887,7 +895,8 @@ export function createLayoutOverlay(input: LayoutOverlayFixtureInput): OverlayIn
 
 - [ ] **Step 2: Write the failing projection test**
 
-Add to `packages/tests/shared-web/rooms/room-group-state-translation.test.ts`:
+Add to `packages/tests/shared-web/rooms/room-group-state-translation.test.ts` (_delivered as
+`packages/tests/shared-web/rooms/formation/room-formation-observation.test.ts`_):
 
 ```ts
 it('projects a formation status from the snapshot and the two layout slots', () => {
@@ -968,7 +977,8 @@ it('reports no accepted layout when the slot does not match the snapshot identit
 ```
 
 (import `createFormationSnapshot`, `createLayoutOverlay` from `./formation/room-formation-test-fixtures.ts`
-and `toRallarRoomFormationStatus` from the translation module.)
+and `toRallarRoomFormationStatus` from the translation module — _delivered from
+`./room-formation-observation.ts`_.)
 
 - [ ] **Step 3: Write the failing handle test**
 
@@ -1182,6 +1192,7 @@ describe('room formation commands', () => {
 
 Run: `npx vitest run packages/tests/shared-web/rooms/room-group-state-translation.test.ts packages/tests/shared-web/rooms/formation/create-room-formation.test.ts`
 Expected: FAIL, `rooms.formation` and the projections do not exist.
+_(Delivered: the projection test is `packages/tests/shared-web/rooms/formation/room-formation-observation.test.ts`.)_
 
 - [ ] **Step 5: Add the contracts file** with the types from the Interfaces block, importing
       `OverlayInfo` from `@shared/api/api-config.ts`, `GroupActivationCondition` from
@@ -1241,7 +1252,8 @@ export function createRoomLayoutSlots(): RallarRoomLayoutSlotsPort {
 }
 ```
 
-- [ ] **Step 7: Add the projections to the translation module**
+- [ ] **Step 7: Add the projections to the translation module** (_delivered in
+      `room-formation-observation.ts`; see "Deviations recorded during delivery"_)
 
 Imports to add: `import { isSameGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';`
 is not needed; use `isOverlayIdentity` and `toOverlayLayoutIdentity` from
@@ -1318,7 +1330,7 @@ import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layo
 import { Command } from '@shared/cache/Command.ts';
 
 import {
-    toRallarRoomLayout,
+    toRallarRoomLayout, // delivered from ./room-formation-observation.ts; see the deviations section
     toRoomFormationGroupStateRequest,
     type GroupRef,
     type GroupSnapshot,
@@ -3266,7 +3278,9 @@ npm run format:check
 - Modify: `docs/rallar-quickstart-and-recipes.md` (a new `## Held-Layout Match Room` section after
   `## Wait For Room Presence`)
 
-- [ ] **Step 1: Write the recipe**
+- [ ] **Step 1: Write the recipe** (_the delivered recipe in `docs/rallar-quickstart-and-recipes.md`
+      differs from the draft below: players are admitted before the plan, the manager is re-read per
+      command, the preset activates itself, and every wait result is checked; see the deviations_)
 
 ````markdown
 ## Held-Layout Match Room
@@ -3427,6 +3441,70 @@ record is the only durable explanation of why the code looks as it does.
 | Q7 | Shared DTO naming: `GroupConnectRequest` / `GroupReconfigureRequest` follow the OpenAPI schema names; the older TypeScript family uses `JoinGroupRequest`-style verb-first names.                                                                                                                                                         | Follow OpenAPI. One name on the wire and in code beats family symmetry, and the older family is not renamed.                                                          |
 | Q8 | Whether the browser-driven acceptance pins (follow-up plan) belong to this workstream or to the distributed-validation lane.                                                                                                                                                                                                              | A separate plan after slice 2, owned by whoever owns the three-browser matrix; slices 1–3 do not wait for it.                                                         |
 | Q9 | Whether `RallarRoomFormationStatus` should also carry `remediation`, which the server derives at read (implementation decision I40) and never pushes.                                                                                                                                                                                     | No. Only pushed facts belong in the free status; `readView()` is the one place remediation is truthful.                                                               |
+
+## Deviations recorded during delivery (2026-09-05, amended 2026-09-06 after code review)
+
+- The status projections `toRallarRoomLayout` and `toRallarRoomFormationStatus` live in
+  `packages/shared-web/browser/rooms/formation/room-formation-observation.ts`, not in
+  `room-group-state-translation.ts` as Task 1.4 wrote: adding them there crossed the translation
+  file's cognitive-load warn tier in the changed-style gate. Their consumers are the command
+  workflow (the connect fence), the waits, both subscriptions and the handle; the translation file
+  keeps the request translation only. Task 1.4's body carries a pointer note at each site.
+- Lifecycle bodies are typed as the OpenAPI schemas (`TransitionStateGroupLifecycleBody`,
+  `ConnectStateGroupLifecycleBody`, `ReconfigureStateGroupLifecycleBody` in
+  `packages/shared-web/browser/api/state-mutation-http-contracts.ts`) and carry no actor fields: the
+  routes take the actor from authentication and declare `additionalProperties: false`.
+  `GroupReconfigureRequest` was not added to `packages/shared` (Task 1.1): the server never consumed
+  it and the browser body derives from the schema. The eight command names have one owner,
+  `packages/shared/api/group-lifecycle/group-lifecycle-commands.ts`, from which the browser union
+  derives; `apps/api-v1/src/group-state/register-group-lifecycle-routes.ts` keeps its literal
+  registrations for the route analyzer.
+- There is no separate formation HTTP port (Task 1.3): the lifecycle POST is
+  `roomGroupStateHttpApi.commandLifecycle` in `packages/shared-web/browser/rooms/room-group-state-http-api.ts`,
+  the view GET is `readStateGroupFormationView` in
+  `packages/shared-web/browser/state-read/state-snapshot-http-api.ts`, and the command runs through
+  the existing `runRoomTargetMutation` envelope. The dependency bundle is
+  `RoomFormationServiceDependencies`, built once by the rooms facade.
+- `connect()` pairs the planned identity with the cached epoch only when the snapshot is at or past
+  the layout's causal revision and reads the room through otherwise, forgets a fence the server
+  refused, and distinguishes three local refusals where B4 named one: `no-planned-layout`,
+  `session-not-present` and `planned-layout-read-failed`. `toRoomFormationDenial` classifies the
+  local `no-planned-layout` as the `group-connect-no-planned-layout` layout denial and is exported
+  from `rallar-core.ts`. Slot subscriptions survive the overlay repositories being replaced on
+  connect (`packages/shared-web/browser/state-cache/overlay-slot-subscriptions.ts`), and `status()`
+  reports the activation condition only while the stored status describes the current series.
+- The wait engine is `packages/shared-web/browser/connection/wait-for-settled-read.ts`, not a
+  rooms-local module (Task 2.1): the WS open wait runs on it too. It prefers a settled read at a
+  deadline or abort, the formation waits wake only on changes naming the bound room, and `not-found`
+  settles only for a room this browser never held (an expired snapshot keeps the wait going). Wait
+  options are `RallarOperationOptions`; the fence is the shared `isGroupCausalRevisionAtOrAfter`.
+- `onLayout` derives its events from the differences between consecutive status projections rather
+  than from raw slot writes (Task 2.4): a bootstrap or tombstoned slot raises nothing,
+  `layoutAccepted` fires once the snapshot names the accepted layout, and a layout that appears and
+  disappears before the browser observes it raises no event. `onChange` emits nothing for a room
+  leaving the cache; `rooms.onChange` reports that.
+- `decodeGroupFormationView(value: unknown, expectedGroupRef)` in
+  `packages/shared/api/group-lifecycle/decode-group-formation-view.ts` returns an `Either` of every
+  issue over the JSON the server sent (Task 2.5 named a validator over the typed DTO, whose guards
+  were dead). The registries `GROUP_ACTIVATION_REMEDIATIONS` and `GROUP_FORMATION_OUTCOME_KINDS`
+  sit beside their unions, and the layout identity guard beside its key registry.
+- The subscription tests drain the overlay repositories' observer queue with
+  `waitForPlannedOverlayChangesIdle()` before asserting, because slot changes are delivered through
+  that promise queue rather than synchronously; the room test runtime delegates those drains to the
+  real repository, so a facade imported after the runtime drains the same queue.
+- Q4 outcome: verified. `api-v1-group-lifecycle-transitions` on the memory profile, with a temporary
+  expectation that the first publication after `plan` carries the receipt's
+  `causalRevision.groupRevision`, passed 37/37 (receipt revision 4, published layout revision 4), so
+  `waitForLayout({ after })` shipped with the fence.
+- The quickstart recipe (Task 3.1) admits the players before `plan()` (closed admission admits only
+  while forming), re-reads the manager from `readView()` before each manager command (the election is
+  per epoch), never calls `activate()` (the preset activates itself at full coverage), re-waits
+  unfenced after a server-driven supersede, and checks every wait result.
+- Budgets: the browser facade measures 178.888671875 KiB Brotli (budget 179 in
+  `packages/shared-web/scripts/measure-browser-bundles.mjs` and
+  `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts`) and the headless agent
+  223.23828125 KiB (ceiling 224 in `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`,
+  recorded beside the assertion), each raised to the next whole KiB per the settled convention.
 
 ## Validation summary
 

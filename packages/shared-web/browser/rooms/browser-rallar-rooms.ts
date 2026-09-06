@@ -18,7 +18,10 @@ import type {
 import { throwRallarValidationIssue } from '@shared-web/browser/rooms/rallar-room-validation.ts';
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
-import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
+import {
+    hydrateGroupTopologyOverlays,
+    type GroupTopologyReadThroughOutcome
+} from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import { readStateGroupSnapshot, type StateGroupSnapshotRead } from '@shared-web/browser/state-read/point-read.ts';
 import { refreshStateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -33,6 +36,10 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
+import type { RoomFormationServiceDependencies } from './formation/command-room-formation.ts';
+import { createRoomFormation } from './formation/create-room-formation.ts';
+import type { RallarRoomFormation } from './formation/rallar-room-formation-contracts.ts';
+import type { RallarRoomLayoutSlotsPort } from './formation/room-layout-slots.ts';
 import { enterRoom, joinRoom } from './join-room.ts';
 import { leaveRoom } from './leave-room.ts';
 import type {
@@ -90,6 +97,7 @@ export interface CreateBrowserRallarRoomsInput {
     readonly resolveDefaultRoomRef: () => GroupRef | undefined;
     readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
     readonly acceptSnapshots: (input: RallarStateSnapshotAcceptanceInput) => Promise<void>;
+    readonly roomLayoutSlots: RallarRoomLayoutSlotsPort;
 }
 
 export interface BrowserRallarRooms {
@@ -107,6 +115,7 @@ export interface BrowserRallarRooms {
     join(room: string | GroupRef | RallarJoinRoomInput, options?: RallarJoinRoomOptions): Promise<GroupSnapshot>;
     enter(room: string | GroupRef | RallarJoinRoomInput, options?: RallarJoinRoomOptions): Promise<RallarRoomSession>;
     session(room?: string | GroupRef): RallarRoomSession;
+    formation(room?: string | GroupRef): RallarRoomFormation;
     leave(input?: string | RallarLeaveRoomOptions): Promise<GroupSnapshot | undefined>;
     update(input: RallarUpdateRoomInput): Promise<GroupSnapshot>;
     archive(
@@ -164,6 +173,7 @@ export interface BrowserRallarRooms {
 interface CreateRoomEntryOperationsInput {
     readonly rooms: CreateBrowserRallarRoomsInput;
     readonly createSession: (roomRef: GroupRef) => RallarRoomSession;
+    readonly createFormation: (roomRef: GroupRef) => RallarRoomFormation;
     readonly resolveRoomRef: (room: string | GroupRef, scope?: StateScope) => GroupRef | undefined;
     readonly onCacheChange: (listener: () => void | Promise<void>) => RallarUnsubscribe;
 }
@@ -185,6 +195,19 @@ export function createBrowserRallarRooms(
     const refresh = async (
         refreshInput?: StateScope | RallarScopedOperationOptions
     ): Promise<RallarRoomState> => await refreshRooms(input, refreshInput);
+    const formationDependencies: RoomFormationServiceDependencies = {
+        stateStore: input.stateStore,
+        slots: input.roomLayoutSlots,
+        refreshRoom: async (roomRef, options) => await refreshRoom(input, roomRef, options),
+        connect: input.connect,
+        requireSession: input.requireSession,
+        resolveOperationOptions: input.resolveOperationOptions,
+        resolveOperationScope: input.resolveOperationScope,
+        runAuthAwareOperation: input.runAuthAwareOperation,
+        acceptSnapshots: input.acceptSnapshots
+    };
+    const createFormation = (roomRef: GroupRef): RallarRoomFormation =>
+        createRoomFormation({ roomRef, dependencies: formationDependencies });
     const createSession = (roomRef: GroupRef): RallarRoomSession =>
         createRoomSession({
             roomRef,
@@ -192,7 +215,8 @@ export function createBrowserRallarRooms(
             messages: input.messages,
             realtime: input.realtime,
             leaveRoom: async (leaveInput) => await leaveRoom({ ...input, input: leaveInput }),
-            refreshRoom: async (roomRef, options) => await refreshRoom(input, roomRef, options)
+            refreshRoom: async (roomRef, options) => await refreshRoom(input, roomRef, options),
+            createFormation
         });
 
     return {
@@ -200,6 +224,7 @@ export function createBrowserRallarRooms(
         ...createRoomEntryOperations({
             rooms: input,
             createSession,
+            createFormation,
             resolveRoomRef,
             onCacheChange
         }),
@@ -250,6 +275,7 @@ function createRoomEntryOperations(
     | 'join'
     | 'enter'
     | 'session'
+    | 'formation'
     | 'leave'
     | 'waitForPresence'
 > {
@@ -272,6 +298,10 @@ function createRoomEntryOperations(
             }),
         session: (room) =>
             input.createSession(
+                resolveRoomSessionRef(input.rooms, room, input.resolveRoomRef)
+            ),
+        formation: (room) =>
+            input.createFormation(
                 resolveRoomSessionRef(input.rooms, room, input.resolveRoomRef)
             ),
         leave: async (leaveInput) => await leaveRoom({ ...input.rooms, input: leaveInput }),
@@ -356,8 +386,8 @@ async function refreshRoom(
     input: CreateBrowserRallarRoomsInput,
     roomRef: GroupRef,
     refreshInput: RallarScopedOperationOptions = {}
-): Promise<void> {
-    await input.runAuthAwareOperation(async () => {
+): Promise<GroupTopologyReadThroughOutcome | undefined> {
+    return await input.runAuthAwareOperation(async () => {
         const scope = toStateScope(roomRef);
         const operationOptions = input.resolveOperationOptions({
             ...refreshInput,
@@ -375,7 +405,7 @@ async function refreshRoom(
                 toRallarCommandOptions(operationOptions)
             ).run();
             await input.acceptSnapshots({ context, clients: [], groups: [response.snapshot], scope });
-            await hydrateGroupTopologyOverlays({
+            const [readThrough] = await hydrateGroupTopologyOverlays({
                 groupSnapshots: [response.snapshot],
                 sessionId: context.session.sessionId,
                 webRtcGroupManager: context.middleware.webRtcGroupManager,
@@ -385,6 +415,7 @@ async function refreshRoom(
                     authSession: context.session
                 }
             });
+            return readThrough?.outcome;
         }
         catch (error) {
             if (error instanceof ApiHttpError && error.status === 404 && observed) {

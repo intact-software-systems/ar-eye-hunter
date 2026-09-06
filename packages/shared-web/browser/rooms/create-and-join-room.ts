@@ -130,7 +130,8 @@ function toCreateOptions(
         ...(input.expiresAtEpochMs === undefined ? {} : { expiresAtEpochMs: input.expiresAtEpochMs }),
         ...(input.purgeAfterEpochMs === undefined
             ? {}
-            : { purgeAfterEpochMs: input.purgeAfterEpochMs })
+            : { purgeAfterEpochMs: input.purgeAfterEpochMs }),
+        ...(input.lifecyclePolicy === undefined ? {} : { lifecyclePolicy: input.lifecyclePolicy })
     };
     return Object.keys(options).length > 0 ? options : undefined;
 }

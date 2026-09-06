@@ -496,7 +496,7 @@ export function isOverlayIdentity(
     );
 }
 
-function toOverlayLayoutIdentity(overlay: OverlayInfo): GroupLayoutIdentity {
+export function toOverlayLayoutIdentity(overlay: OverlayInfo): GroupLayoutIdentity {
     return {
         groupRevision: overlay.sourceGroupStateCausalRevision.groupRevision,
         presenceRevision: overlay.sourceGroupStateCausalRevision.presenceRevision,
