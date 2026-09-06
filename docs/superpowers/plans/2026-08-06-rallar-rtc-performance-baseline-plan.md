@@ -121,10 +121,18 @@ setup-completion wake: a desired setup deleted after the pass was not retried
 unless another peer had previously been paced or deferred. PR #530 now retries
 that still-desired peer and deletes both the disproved pre-planning refresh and
 the out-of-path mesh-algorithm experiment. The exact local memory-mode
-three-browser primary now passes with that correction; the agreed three-run
-remote diagnostic proof still starts from zero on the next pushed head. There
-is not yet a valid B06 E3 result. B07 remains held, and evidence ranking cannot
-start until a valid B06 primary and any required repeat are archived.
+three-browser primary now passes with that correction. Diagnostic run
+34028231028 passed exact head
+`0ec0703a576ecae9dd761020e27c64c4bc895ae6`; the next independent run,
+34028503284, reached complete A/B/C readiness for the realtime trio but later
+timed out waiting for B to record the first direct `messages.rtc` delivery from
+A. That different failure resets the proof count to zero and shows the current
+failure artifact lacks the endpoint state needed to distinguish transport
+loss from control-event loss. PR #530 therefore remains the single proving PR
+and will add failure-only, sanitized sender/receiver health and event/result
+summaries before another remote attempt. There is not yet a valid B06 E3
+result. B07 remains held, and evidence ranking cannot start until a valid B06
+primary and any required repeat are archived.
 
 ### Current execution horizon
 
@@ -4027,7 +4035,13 @@ focused regression now reproduces that stranded desired-peer state; PR #530
 reconciles after a desired setup is deleted and removes the disproved
 pre-planning refresh instead of retaining an unnecessary lifecycle step. The
 exact local memory-mode three-browser primary passes with that correction. The
-next exact pushed head must pass the three-run diagnostic proof from zero.
+first diagnostic on exact head
+`0ec0703a576ecae9dd761020e27c64c4bc895ae6`, run 34028231028, passed. Run
+34028503284 then proved the realtime trio fully ready before timing out on the
+first direct `messages.rtc` A-to-B delivery. That later failure resets the
+proof count to zero. The same PR now retains sanitized sender and receiver RTC
+health plus bounded event/result identities only when message delivery fails;
+the next pushed head restarts the three-run diagnostic proof from zero.
 
 - [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
       publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
@@ -4067,9 +4081,9 @@ next exact pushed head must pass the three-run diagnostic proof from zero.
 - [ ] Pass three independent `diagnostic` workflow runs on one exact PR #530
       head. If that head changes, discard the earlier diagnostic count and
       restart; do not merge an intermediate hypothesis.
-- [ ] Merge PR #530's focused exact active-session formation barrier after its
-      regression, exact default E3, type/build/style/structure, full-unit,
-      branch review gates, and same-head diagnostic proof pass.
+- [ ] Merge PR #530's focused lifecycle corrections after their regressions,
+      exact default E3, type/build/style/structure, full-unit, branch review
+      gates, and same-head diagnostic proof pass.
 - [ ] Dispatch `RTC-B06 Performance Observation` in `publish` mode from the
       then-current moving `main`; accept only a valid primary and any
       controller-required repeat.
@@ -4569,11 +4583,17 @@ but its deleted setup was never retried. The manager previously woke after a
 setup ended only when another dial had been paced or deferred. PR #530 now
 wakes for a deleted peer that remains desired and removes the disproved refresh.
 The exact local memory-mode three-browser primary passes. Every prior remote run
-is invalidated by each head change. Three independent diagnostics must pass on
-one unchanged final PR head before merge; any later head change restarts that
-proof. The next two slices remain to prove and merge that correction, then
-dispatch B06 in publish mode from moving `main`. B07 remains held; Task 12
-remains blocked on valid B06 evidence.
+is invalidated by each head change. Run 34028231028 passed exact head
+`0ec0703a576ecae9dd761020e27c64c4bc895ae6`, but run 34028503284 failed later
+after complete realtime readiness when B did not record the first direct
+`messages.rtc` delivery from A. The proof count is zero again. PR #530 next
+adds bounded failure-only message diagnostics on a new head so the next
+recurrence can distinguish endpoint RTC state, command completion, and
+control-event recording without retaining raw command payloads. Three
+independent diagnostics must then pass on one unchanged final PR head before
+merge; any later head change restarts that proof. The next two slices remain
+to prove and merge that correction, then dispatch B06 in publish mode from
+moving `main`. B07 remains held; Task 12 remains blocked on valid B06 evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

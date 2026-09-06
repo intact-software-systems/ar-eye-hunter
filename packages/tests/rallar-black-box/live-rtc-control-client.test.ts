@@ -22,6 +22,8 @@ describe('live RTC control client', () => {
     let nowMs: number;
     let readyPeerIds: string[];
     let diagnosticsRoot: string;
+    let results: LiveRtcControlClient.Result[];
+    let events: LiveRtcControlClient.Event[];
     const refreshRoom = vi.fn<LiveRtcControlClient.FormationAgent['refreshRoom']>();
     const agent = { agentId: 'agent-a', prefix: 'A' as const, refreshRoom };
 
@@ -29,7 +31,8 @@ describe('live RTC control client', () => {
         nowMs = 100;
         readyPeerIds = ['session-b', 'session-c'];
         diagnosticsRoot = mkdtempSync(path.join(tmpdir(), 'live-rtc-control-client-'));
-        const results: LiveRtcControlClient.Result[] = [];
+        results = [];
+        events = [];
         server = createServer(async (incoming, response) => {
             if (incoming.method === 'POST') {
                 const chunks: Buffer[] = [];
@@ -49,7 +52,7 @@ describe('live RTC control client', () => {
                 response.writeHead(202).end('{}');
                 return;
             }
-            response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ results }));
+            response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ results, events }));
         });
         await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
         const address = server.address();
@@ -176,6 +179,70 @@ describe('live RTC control client', () => {
                 }
             }
         });
+    });
+
+    it('retains sender and receiver health when message delivery times out', async () => {
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'send-direct-timeout',
+            ok: true,
+            result: { value: { credential: 'must-not-be-retained' } }
+        });
+        events.push({
+            agentId: 'agent-b',
+            payload: {
+                kind: 'message',
+                transport: 'messages.rtc',
+                topic: 'direct-topic',
+                payload: {
+                    data: {
+                        matrixId: 'an-earlier-message',
+                        deliveryMode: 'direct',
+                        credential: 'must-not-be-retained'
+                    }
+                }
+            }
+        });
+        await expect(control.waitForMessage({
+            runId: 'run-message-timeout',
+            senderAgentId: 'agent-a',
+            agentId: 'agent-b',
+            transport: 'messages.rtc',
+            matrixId: 'direct-timeout',
+            deliveryMode: 'direct',
+            startedAtMs: 100,
+            timeoutMs: 10
+        })).rejects.toThrow('direct-timeout');
+
+        const artifactBody = readFileSync(
+            path.join(diagnosticsRoot, 'live-rtc-message-failure-direct-timeout-agent-b.json'),
+            'utf8'
+        );
+        expect(artifactBody).not.toContain('must-not-be-retained');
+        const artifact = JSON.parse(artifactBody);
+        expect(artifact).toMatchObject({
+            runId: 'run-message-timeout',
+            senderAgentId: 'agent-a',
+            receiverAgentId: 'agent-b',
+            matrixId: 'direct-timeout',
+            healthByAgentId: {
+                'agent-a': { ok: true },
+                'agent-b': { ok: true }
+            }
+        });
+        expect(artifact.recentResults).toEqual(expect.arrayContaining([{
+            agentId: 'agent-a',
+            commandId: 'send-direct-timeout',
+            ok: true
+        }]));
+        expect(artifact.recentEvents).toEqual([{
+            agentId: 'agent-b',
+            kind: 'message',
+            transport: 'messages.rtc',
+            topic: 'direct-topic',
+            matrixId: 'an-earlier-message',
+            deliveryMode: 'direct'
+        }]);
     });
 
     it('reads the sent message identity from the RTC send-result envelope, not the command ID', () => {

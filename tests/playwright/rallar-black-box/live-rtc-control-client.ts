@@ -118,11 +118,13 @@ export namespace LiveRtcControlClient {
 
     export interface WaitForMessageInput {
         runId: string;
+        senderAgentId: string;
         agentId: string;
         transport: 'realtime' | 'messages.rtc';
         matrixId: string;
         deliveryMode: string;
         startedAtMs: number;
+        timeoutMs?: number;
     }
 
     export interface WaitForPeerReadinessInput {
@@ -267,14 +269,90 @@ export class LiveRtcControlClient {
     async waitForMessage(
         input: LiveRtcControlClient.WaitForMessageInput
     ): Promise<number> {
-        await expect.poll(async () => {
-            const run = await this.fetchRun(input.runId);
-            return run.events.some((event) => isMessageFor(event, input));
-        }, {
-            message: `Expected ${input.agentId} to receive ${input.transport} ${input.deliveryMode} ${input.matrixId}`,
-            timeout: 60_000
-        }).toBe(true);
+        try {
+            await expect.poll(async () => {
+                const run = await this.fetchRun(input.runId);
+                return run.events.some((event) => isMessageFor(event, input));
+            }, {
+                message:
+                    `Expected ${input.agentId} to receive ${input.transport} ${input.deliveryMode} ${input.matrixId}`,
+                timeout: input.timeoutMs ?? 60_000
+            }).toBe(true);
+        }
+        catch (cause) {
+            try {
+                await this.#recordMessageFailure(input, toError(cause));
+            }
+            catch (diagnosticCause) {
+                console.error('Failed to record RTC message diagnostics', toError(diagnosticCause));
+            }
+            throw cause;
+        }
         return this.#monotonicNow() - input.startedAtMs;
+    }
+
+    async #recordMessageFailure(
+        input: LiveRtcControlClient.WaitForMessageInput,
+        failure: Error
+    ): Promise<void> {
+        if (!this.#diagnosticsOutDir) {
+            return;
+        }
+        const agentIds = [...new Set([input.senderAgentId, input.agentId])];
+        const healthEntries = await Promise.all(agentIds.map(async (agentId) => {
+            try {
+                const health = await this.executeResult({
+                    runId: input.runId,
+                    agentId,
+                    commandId: `health-message-failure-${safeFileName(input.matrixId)}-${safeFileName(input.agentId)}-${
+                        safeFileName(agentId)
+                    }`,
+                    command: { kind: 'health', includeRtcDiagnostics: true },
+                    timeoutMs: 15_000
+                });
+                return [agentId, health] as const;
+            }
+            catch (cause) {
+                const error = toError(cause);
+                return [agentId, {
+                    captureFailure: { name: error.name, message: error.message }
+                }] as const;
+            }
+        }));
+        let run: LiveRtcControlClient.RunSnapshot | undefined;
+        let runCaptureFailure: Readonly<{ name: string; message: string; }> | undefined;
+        try {
+            run = await this.fetchRun(input.runId);
+        }
+        catch (cause) {
+            const error = toError(cause);
+            runCaptureFailure = { name: error.name, message: error.message };
+        }
+        await this.#writeDiagnosticsArtifact(
+            `live-rtc-message-failure-${safeFileName(input.matrixId)}-${safeFileName(input.agentId)}.json`,
+            JSON.stringify(
+                {
+                    runId: input.runId,
+                    senderAgentId: input.senderAgentId,
+                    receiverAgentId: input.agentId,
+                    transport: input.transport,
+                    matrixId: input.matrixId,
+                    deliveryMode: input.deliveryMode,
+                    capturedAtEpochMs: this.#epochNow(),
+                    failure: { name: failure.name, message: failure.message },
+                    healthByAgentId: Object.fromEntries(healthEntries),
+                    ...(runCaptureFailure ? { runCaptureFailure } : {}),
+                    recentResults: (run?.results ?? []).slice(-100).map((result) => ({
+                        agentId: result.agentId,
+                        commandId: result.commandId,
+                        ok: result.ok
+                    })),
+                    recentEvents: (run?.events ?? []).slice(-100).map(summarizeEvent)
+                },
+                null,
+                2
+            )
+        );
     }
 
     async waitForPeerReadiness(
@@ -579,6 +657,21 @@ function messageData(
     const runtimeEvent = runtimeEventPayload(event);
     const runtimePayload = jsonRecord(runtimeEvent.payload) ?? {};
     return jsonRecord(runtimePayload.data ?? runtimeEvent.data) ?? {};
+}
+
+function summarizeEvent(event: LiveRtcControlClient.Event): Readonly<Record<string, string>> {
+    const runtimeEvent = runtimeEventPayload(event);
+    const data = messageData(event);
+    return Object.fromEntries(
+        Object.entries({
+            agentId: event.agentId,
+            kind: stringValue(runtimeEvent.kind) ?? event.kind,
+            transport: stringValue(runtimeEvent.transport),
+            topic: stringValue(runtimeEvent.topic),
+            matrixId: stringValue(data.matrixId),
+            deliveryMode: stringValue(data.deliveryMode)
+        }).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+    );
 }
 
 export interface LiveRtcObservedDeliveries {
