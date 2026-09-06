@@ -64,12 +64,12 @@ The highest-authority mutations on the group aggregate have owner-happy-path cov
 regression that let any member seize ownership, or that left a demoted owner still privileged, would
 pass every black-box gate today.
 
-| Recipe                              | Pins                                                                                                                                                                                                                        |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `api-v1-group-ownership-transfer`   | a plain member's transfer is `403 forbidden-role`; the owner's transfer is `200` and swaps roles to `owner`/`admin`; a non-member target is `400 group-mutation-rejected`; a sole owner's self-transfer is `403 last-owner` |
-| `api-v1-group-governance-authority` | ban, unban, remove and role promotion each denied for a non-owner with the code named; `last-owner` returned when the sole owner is removed, demoted or leaves                                                              |
-| `api-v1-group-invite-revocation`    | revoke-then-accept is denied `group-invite-required`; `group-invite-required` and `group-invite-expired` are both returned by a real self-join; a live invite still admits                                                  |
-| `api-v1-group-director-appoint`     | the appointment route's status mapping, actor binding, and metadata-patch containment                                                                                                                                       |
+| Recipe                              | Pins                                                                                                                                                                                                                             |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-group-ownership-transfer`   | a plain member's transfer is `403 forbidden-role`; the owner's transfer is `200` and swaps roles to `owner`/`admin`; a non-member target is `400 group-mutation-rejected`; a sole owner's self-transfer is `403 last-owner`      |
+| `api-v1-group-governance-authority` | ban, unban, remove and role promotion each denied for a non-owner with the code named; `last-owner` returned when the sole owner is removed, demoted or leaves                                                                   |
+| `api-v1-group-invite-revocation`    | the one not-invited branch reached from three member states (stranger, revoked-on-accept, revoked-on-join) all answering `group-invite-required`; only expiry carries its own `group-invite-expired`; a live invite still admits |
+| `api-v1-group-director-appoint`     | the appointment route's status mapping, actor binding, and metadata-patch containment                                                                                                                                            |
 
 **Hazards.** The demoted owner becomes `admin`, not a member, and an admin may still govern regular
 members — a recipe asserting "the old owner can no longer do anything" will fail for the wrong
