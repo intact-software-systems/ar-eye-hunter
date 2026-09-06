@@ -13,6 +13,8 @@ export interface CompareConfig {
     compareValues: boolean;
     compareExact: boolean;
     compareArraysComplete: boolean;
+    /** Compare array elements positionally; no other mode checks order. */
+    compareArrayOrder: boolean;
     ignoreJsonKeys: string[];
     ignoreJsonPaths: string[];
 }
@@ -215,6 +217,57 @@ function isCompatibleObjects(
     return toCompatible();
 }
 
+interface IsOrderedArrayEqualInput {
+    readonly expected: JsonArray;
+    readonly actual: JsonArray;
+    readonly config: CompareConfig;
+    readonly currPath: string;
+}
+
+function isOrderedElementEqual(
+    input: IsOrderedArrayEqualInput,
+    index: number
+): ComparisonResult {
+    const { config } = input;
+    const elementPath = input.currPath + '[' + index + ']';
+    const expectedElement = input.expected[index];
+    const actualElement = input.actual[index];
+
+    if (Array.isArray(expectedElement)) {
+        return isCompatibleArrays(expectedElement, actualElement, config, elementPath);
+    }
+
+    if (isRecord(expectedElement)) {
+        return isCompatibleObjects(expectedElement, actualElement, config, elementPath);
+    }
+
+    // Honours `compareValues` like every other element path, so an ordered
+    // structure-only mode would compare positions without comparing values.
+    if (!config.compareValues) {
+        return toCompatible();
+    }
+
+    return isValueEqual(expectedElement, actualElement, config.compareExact)
+        ? toCompatible()
+        : toNotCompatible(expectedElement, actualElement, 'Json array element value differs');
+}
+
+function isOrderedArrayEqual(input: IsOrderedArrayEqualInput): ComparisonResult {
+    const { expected, actual } = input;
+    if (expected.length !== actual.length) {
+        return toNotCompatible(expected, actual, 'Json array length differs under exact-ordered');
+    }
+
+    for (let index = 0; index < expected.length; index++) {
+        const result = isOrderedElementEqual(input, index);
+        if (!result.isEqual) {
+            return toNotCompatible(expected, actual, 'Json array element ' + index + ' differs', result);
+        }
+    }
+
+    return toCompatible();
+}
+
 function isCompatibleArrays(
     expected: JsonArray,
     actual: JsonValue | undefined,
@@ -223,6 +276,10 @@ function isCompatibleArrays(
 ): ComparisonResult {
     if (!Array.isArray(actual)) {
         return toNotCompatible(expected, actual, 'expected array was object');
+    }
+
+    if (config.compareArrayOrder) {
+        return isOrderedArrayEqual({ expected, actual, config, currPath });
     }
 
     const expectedFound: JsonValue[] = [];
@@ -325,39 +382,51 @@ export const COMPARISON = {
     COMPATIBLE: 'compatible',
     COMPATIBLE_COMPLETE: 'compatible-complete',
     EXACT_STRUCTURE: 'exact-structure',
-    EXACT: 'exact'
+    EXACT: 'exact',
+    EXACT_ORDERED: 'exact-ordered'
 } as const;
 
 export type Comparison = typeof COMPARISON[keyof typeof COMPARISON];
 
 const COMPARE_FLAGS_BY_COMPARISON: Record<
     Comparison,
-    Pick<CompareConfig, 'compareValues' | 'compareExact' | 'compareArraysComplete'>
+    Pick<CompareConfig, 'compareValues' | 'compareExact' | 'compareArraysComplete' | 'compareArrayOrder'>
 > = {
     [COMPARISON.COMPATIBLE_STRUCTURE]: {
         compareValues: false,
         compareExact: false,
-        compareArraysComplete: false
+        compareArraysComplete: false,
+        compareArrayOrder: false
     },
     [COMPARISON.COMPATIBLE]: {
         compareValues: true,
         compareExact: false,
-        compareArraysComplete: false
+        compareArraysComplete: false,
+        compareArrayOrder: false
     },
     [COMPARISON.COMPATIBLE_COMPLETE]: {
         compareValues: true,
         compareExact: false,
-        compareArraysComplete: true
+        compareArraysComplete: true,
+        compareArrayOrder: false
     },
     [COMPARISON.EXACT_STRUCTURE]: {
         compareValues: false,
         compareExact: true,
-        compareArraysComplete: false
+        compareArraysComplete: false,
+        compareArrayOrder: false
     },
     [COMPARISON.EXACT]: {
         compareValues: true,
         compareExact: true,
-        compareArraysComplete: false
+        compareArraysComplete: false,
+        compareArrayOrder: false
+    },
+    [COMPARISON.EXACT_ORDERED]: {
+        compareValues: true,
+        compareExact: true,
+        compareArraysComplete: true,
+        compareArrayOrder: true
     }
 };
 

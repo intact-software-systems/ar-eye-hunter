@@ -26,7 +26,9 @@ import {
     executeWsInteraction,
     rememberWsCloseEvent
 } from './execution/execute-ws-interaction.ts';
+import { createParallelRendezvous } from './execution/parallel-rendezvous.ts';
 import { isRallarRemoteBrowserRequest } from './execution/remote-browser-execution.ts';
+import { withPollUntil } from './execution/with-poll-until.ts';
 import { validateAssertValueComparators } from './expectations/assert-value-comparators.ts';
 import { monotonicComparisonFailures } from './expectations/monotonic-comparison-failures.ts';
 import { parallelAggregateFailure } from './expectations/parallel-aggregate-expectation.ts';
@@ -934,16 +936,31 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
     const config = toInteractionExecutionConfig(interactionWithConfig, interaction);
     applyInteractionCorrelation(interactionWithConfig, interaction, config, context);
 
+    // These three had no retry loop of their own, so a recipe waiting on a
+    // durable row, a derived value or a parallel outcome had to sleep. HTTP
+    // already polls inside its own executor.
     if (interactionWithConfig.ASSERT) {
-        return executeAssertInteraction(interaction, config, context);
+        return withPollUntil({
+            request: interaction.request,
+            execute: () => executeAssertInteraction(interaction, config, context)
+        });
     }
 
     if (interactionWithConfig.SET) {
-        return executeSetInteraction(interaction, config, context);
+        return withPollUntil({
+            request: interaction.request,
+            execute: () => executeSetInteraction(interaction, config, context)
+        });
     }
 
+    // A polled `parallel` re-runs its groups with the same correlation, so its
+    // groups have to be idempotent; a mutating group replays its own request
+    // ids and the retry answers with a conflict rather than converging.
     if (interactionWithConfig.PARALLEL) {
-        return executeParallelInteraction(interaction, config, context);
+        return withPollUntil({
+            request: interaction.request,
+            execute: () => executeParallelInteraction(interaction, config, context)
+        });
     }
 
     if (interactionWithConfig.WS) {
@@ -1029,15 +1046,24 @@ async function executeParallelInteraction(interaction: any, config: any, context
         return toParallelFailureStatus(config, interaction, 'Parallel step requires at least one group with steps.');
     }
 
-    const maxConcurrency = Math.max(
+    // A barrier needs every group in flight at once, so it overrides any
+    // narrower concurrency rather than deadlocking against it.
+    const barrier = interaction.request.barrier === true;
+    const maxConcurrency = barrier ? groups.length : Math.max(
         1,
         Number.parseInt(String(interaction.request.maxConcurrency || groups.length), 10) || groups.length
+    );
+    // Derived from the workers `runBoundedParallel` will actually start, not
+    // from the group count: a participant that never runs never arrives.
+    const rendezvous = createParallelRendezvous(
+        barrier ? Math.max(1, Math.min(maxConcurrency, groups.length)) : 1
     );
     const timeoutMs = Number.parseInt(String(interaction.request.timeoutMs || 0), 10);
     const groupFailFast = interaction.request.failFast !== false;
     const startedAtEpochMs = Date.now();
 
     const groupResults = await runBoundedParallel(groups, maxConcurrency, async (group: any, groupIndex: number) => {
+        await rendezvous.arrive();
         const groupStartedAtEpochMs = Date.now();
         const steps = Array.isArray(group.steps)
             ? group.steps
@@ -1087,6 +1113,7 @@ async function executeParallelInteraction(interaction: any, config: any, context
         groups: groupResults,
         groupCount: groupResults.length,
         maxConcurrency,
+        barrier,
         timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : undefined,
         timedOut,
         durationMs,
