@@ -86,15 +86,15 @@ export async function connectRoomFormation(input: ConnectRoomFormationInput): Pr
     catch (error) {
         // A refused fence names a layout the server no longer dials; the next
         // connect must read the current one through rather than post it again.
-        if (isConnectFenceRejection(error)) {
+        if (error instanceof ApiHttpError && isConnectFenceRejection(error)) {
             input.dependencies.slots.forgetPlanned(input.roomRef, fence.expectedLayout);
         }
         throw error;
     }
 }
 
-function isConnectFenceRejection(error: unknown): boolean {
-    const code = error instanceof ApiHttpError ? error.mutationFailure?.code : undefined;
+function isConnectFenceRejection(error: ApiHttpError): boolean {
+    const code = error.mutationFailure?.code;
     return code !== undefined && (isGroupConnectRejectionCode(code) || code === 'group-mutation-rejected');
 }
 

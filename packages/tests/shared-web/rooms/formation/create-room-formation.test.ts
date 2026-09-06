@@ -10,6 +10,7 @@ import {
 } from '@shared/api/group-lifecycle/group-lifecycle-commands.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
+import { CommandCancelledError } from '@shared/cache/Command.ts';
 import {
     configureOverlayRepositories,
     removeAcceptedOverlayByGroupRef,
@@ -23,7 +24,7 @@ import { createFormationSnapshot, createLayoutOverlay } from './room-formation-t
 
 const roomWorkflowMocks = readRoomWorkflowMocks();
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
-const topologyConfig = { topologyKind: 'auto', degreeLimit: 5, treeMinSize: 3, meshMinSize: 8, meshParamK: 2 };
+const topologyConfig = { topologyKind: 'auto', degreeLimit: 5, treeMinSize: 3, meshMinSize: 8, meshParamK: 2 } as const;
 
 function topologyView(groupRef: GroupRef): GroupTopologyManagementView {
     return {
@@ -211,14 +212,14 @@ describe('room formation commands', () => {
             causalRevision: { groupRevision: 2, presenceRevision: 1 }
         });
         seedRoomSnapshots([planned]);
-        const fetchMock = stubReceipt(planned);
+        stubReceipt(planned);
         const controller = new AbortController();
         controller.abort();
 
+        // A read-through that ignored the signal would end in the no-planned-layout
+        // refusal instead; the cancellation proves it never reached the transport.
         await expect(createRallarFacade().rooms.formation(planned.group).connect({ signal: controller.signal }))
-            .rejects.toThrow();
-
-        expect(fetchMock).not.toHaveBeenCalled();
+            .rejects.toBeInstanceOf(CommandCancelledError);
     });
 
     it('reads the room through before connecting when the cached snapshot lags the planned layout', async () => {
