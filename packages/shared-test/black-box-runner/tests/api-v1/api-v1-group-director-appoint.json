@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 browser-director appointment: the route no recipe calls. Every eligibility branch is observed -- a non-member, a member without an active room session, a plain member while an owner is online, and a second member against an active fallback director are each refused; an owner and, once no owner is online, a plain member are each allowed. The accepted appointment patches only the rallarDirector metadata entry.",
+  "description": "No-browser API-v1 browser-director appointment: the route no recipe calls. Every eligibility branch is observed -- a non-member, a member without an active room session, a plain member while an owner is online, and a second member against an active fallback director are each refused with the reason that names the branch, since all four share one code. Each accepted appointment advances the director epoch and the metadata version by exactly one, pins the heartbeat TTL default, and leaves the group fields and the seeded metadata entry it must not touch unchanged.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -528,6 +528,10 @@
         "body": {
           "group": {
             "groupId": "{groupId}",
+            "status": "active",
+            "displayName": "Director appointment group {runId}",
+            "kind": "room",
+            "joinMode": "open",
             "metadata": {
               "recipeMarker": "director-containment-{runId}",
               "rallarDirector": {
@@ -537,7 +541,7 @@
                 "sessionId": "{ownerSessionId}",
                 "epoch": 1,
                 "appointedAtEpochMs": "integer",
-                "heartbeatTtlMs": "integer"
+                "heartbeatTtlMs": 5000
               }
             },
             "metadataVersion": 2
@@ -587,6 +591,11 @@
         "status": 200,
         "body": {
           "group": {
+            "groupId": "{groupId}",
+            "status": "active",
+            "displayName": "Director appointment group {runId}",
+            "kind": "room",
+            "joinMode": "open",
             "metadata": {
               "recipeMarker": "director-containment-{runId}",
               "rallarDirector": {
@@ -596,7 +605,7 @@
                 "sessionId": "{memberaSessionId}",
                 "epoch": 2,
                 "appointedAtEpochMs": "integer",
-                "heartbeatTtlMs": "integer"
+                "heartbeatTtlMs": 5000
               }
             },
             "metadataVersion": 3
