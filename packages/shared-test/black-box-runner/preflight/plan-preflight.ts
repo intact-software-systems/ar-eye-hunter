@@ -963,6 +963,10 @@ function validateStrictStep(step: JsonRecord, path: string): readonly BlackBoxRu
  * the runner will not perform. Wait plumbing (`connection`, `withinMs`,
  * `consume`) is deliberately absent from this list: those are honoured
  * elsewhere on the step and flagging them would be noise, not a finding.
+ *
+ * A `parallel` step is no longer listed here at all. Its `expect` is compared
+ * against the aggregate, so flagging it would block the capability rather than
+ * report a dropped one.
  */
 const WS_SEND_IGNORED_ASSERTION_KEYS = ['absent', 'close'];
 
@@ -975,15 +979,6 @@ function validateStrictExpectIsHonoured(
     const expectedKeys = Object.keys(expected);
     if (expectedKeys.length <= 0) {
         return [];
-    }
-
-    if (type === 'parallel') {
-        return [{
-            severity: 'error',
-            code: 'STRICT_EXPECT_IGNORED',
-            message: 'Parallel steps ignore expect entirely; assert on the group steps instead.',
-            path: `${path}.expect`
-        }];
     }
 
     const action = String(asRecord(step.request).action || '').toLowerCase();

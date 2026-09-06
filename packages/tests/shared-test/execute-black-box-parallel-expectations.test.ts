@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+
+import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 
-function assertGroup(name: string, actual: unknown, expected: unknown): Record<string, unknown> {
+function assertGroup(name: string, actual: ApiJsonValue, expected: ApiJsonValue): ApiJsonObject {
     return {
         name,
         steps: [{
@@ -15,9 +17,9 @@ function assertGroup(name: string, actual: unknown, expected: unknown): Record<s
 }
 
 function parallelStep(input: {
-    groups: Array<Record<string, unknown>>;
-    expectFields?: Record<string, unknown>;
-}): Record<string, unknown> {
+    groups: readonly ApiJsonObject[];
+    expectFields?: ApiJsonObject;
+}): ApiJsonObject {
     return {
         PARALLEL: {
             request: {

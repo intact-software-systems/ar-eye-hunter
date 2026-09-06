@@ -19,7 +19,6 @@ import {
 } from './execution/black-box-scenario-results.ts';
 import {
     resolveAssertActual,
-    resolvePath,
     resolvePlaceholders
 } from './execution/black-box-value-resolution.ts';
 import { executeRemoteHttpInteraction } from './execution/execute-remote-http-interaction.ts';
@@ -29,6 +28,8 @@ import {
 } from './execution/execute-ws-interaction.ts';
 import { isRallarRemoteBrowserRequest } from './execution/remote-browser-execution.ts';
 import { validateAssertValueComparators } from './expectations/assert-value-comparators.ts';
+import { monotonicComparisonFailures } from './expectations/monotonic-comparison-failures.ts';
+import { parallelAggregateFailure } from './expectations/parallel-aggregate-expectation.ts';
 import { executeHttpInteraction } from './http/execute-http-interaction.ts';
 import {
     rememberRtcCloseEvent,
@@ -446,51 +447,6 @@ function toAssertFailureStatus(config: any, interaction: any, actual: any, resul
         details,
         ...config
     };
-}
-
-function monotonicComparisonFailures(actual: any, paths: unknown): any[] {
-    if (!Array.isArray(paths)) {
-        return [];
-    }
-
-    return paths.flatMap<any>((path) => {
-        if (typeof path !== 'string' || path.length <= 0) {
-            return [{ path, error: 'Monotonic assertion paths must be non-empty strings.' }];
-        }
-
-        let values: unknown;
-        try {
-            values = resolvePath(path, actual);
-        }
-        catch (error) {
-            return [{
-                path,
-                error: error instanceof Error ? error.message : String(error)
-            }];
-        }
-
-        if (!Array.isArray(values) || values.length <= 0) {
-            return [{ path, values, error: 'Monotonic assertion path must resolve to a non-empty array.' }];
-        }
-
-        const numericValues = values.map((value) => Number(value));
-        if (numericValues.some((value) => !Number.isFinite(value))) {
-            return [{ path, values, error: 'Monotonic assertion values must be finite numbers.' }];
-        }
-
-        const regressionIndex = numericValues.findIndex((value, index) =>
-            index > 0 && value < numericValues[index - 1]
-        );
-        return regressionIndex < 0
-            ? []
-            : [{
-                path,
-                values,
-                regressionIndex,
-                previous: numericValues[regressionIndex - 1],
-                current: numericValues[regressionIndex]
-            }];
-    });
 }
 
 function toResolvedAssertActual(interaction: any, context: any): any {
@@ -1155,50 +1111,6 @@ async function executeParallelInteraction(interaction: any, config: any, context
     }
 
     return toParallelSuccessStatus(config, interaction, actual);
-}
-
-/**
- * A parallel step's `expect` is compared against its aggregate — group results,
- * counts, concurrency and timing — which is the only place a bounded outcome
- * such as "at most K of N succeeded" can be asserted. Child failures are
- * decided before this, so an aggregate expectation can never mask one.
- */
-function parallelAggregateFailure(
-    interaction: any,
-    actual: any
-): { message: string; details: any; } | undefined {
-    const expectation = interaction.response;
-    if (!expectation) {
-        return undefined;
-    }
-
-    const comparatorIssues = validateAssertValueComparators(actual, expectation.comparators);
-    if (comparatorIssues.length > 0) {
-        return {
-            message: 'Parallel step comparator failed',
-            details: { comparators: expectation.comparators, failures: comparatorIssues }
-        };
-    }
-
-    const expected = expectation.body ?? expectation.expected;
-    if (expected === undefined) {
-        return undefined;
-    }
-
-    const comparison = compareJson(
-        expected,
-        actual,
-        toConfig(
-            expectation.comparison || COMPARISON.COMPATIBLE,
-            expectation.ignoreJsonKeys || [],
-            expectation.ignoreJsonPaths || []
-        )
-    );
-
-    return comparison.isEqual ? undefined : {
-        message: 'Parallel step aggregate comparison failed',
-        details: { expected, comparison }
-    };
 }
 
 interface ExecuteBlackBoxRecursiveInput {
