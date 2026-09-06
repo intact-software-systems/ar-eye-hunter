@@ -2167,7 +2167,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 ownership transfer: the highest-authority group mutation, whose denial paths no recipe reached. A plain member is denied forbidden-role, a non-member target is the compute's 400 rather than the contract's 404, an accepted transfer swaps both roles at once so the old owner becomes admin, and a sole owner targeting themselves is denied last-owner by the governance policy before the compute's self-transfer no-op can run."
+      "description": "No-browser API-v1 ownership transfer: the highest-authority group mutation, whose denial paths no recipe reached. A plain member is denied forbidden-role, a non-member target is the compute's 400 rather than the contract's 404 (an open contract defect the plan records, not a behaviour to keep), an accepted transfer swaps both roles at once so the old owner becomes admin and a read-back proves the swap was persisted, and a sole owner targeting themselves is denied last-owner by the governance policy before the compute's self-transfer no-op can run. Each denial pins the message that separates its own rule: forbidden-role is returned both by the generic governance check and by the transfer-only check."
     }
   ]
 }

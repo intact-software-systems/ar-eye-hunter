@@ -197,7 +197,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/owntx-create-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/owntx-create-group-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
@@ -225,7 +225,7 @@
       "connection": "api",
       "request": {
         "method": "PUT",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{heirClientId}/requests/owntx-join-heir-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{heirClientId}/requests/owntx-heir-joins-group-{runId}",
         "headers": {
           "Authorization": "{heirAuthHeader}",
           "x-client-id": "{heirClientId}"
@@ -264,7 +264,8 @@
           "type": "api-mutation-failure",
           "version": "canonical.v2",
           "code": "forbidden-role",
-          "status": 403
+          "status": 403,
+          "message": "Only active group owners/admins can govern group members."
         }
       }
     },
@@ -286,8 +287,11 @@
       "expect": {
         "status": 400,
         "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
           "code": "group-mutation-rejected",
-          "status": 400
+          "status": 400,
+          "message": "Ownership target must be active."
         }
       }
     },
@@ -297,7 +301,7 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/owntx-self-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/owntx-self-transfer-attempt-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
@@ -312,7 +316,8 @@
           "type": "api-mutation-failure",
           "version": "canonical.v2",
           "code": "last-owner",
-          "status": 403
+          "status": 403,
+          "message": "Cannot leave an active group without an owner."
         }
       }
     },
@@ -322,13 +327,44 @@
       "connection": "api",
       "request": {
         "method": "POST",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/owntx-transfer-{runId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/owner/transfer/requests/owntx-transfer-to-heir-{runId}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
         },
         "body": {
           "newOwnerPrincipalId": "{heirClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "members": [
+            {
+              "principalId": "{ownerClientId}",
+              "role": "admin",
+              "status": "active"
+            },
+            {
+              "principalId": "{heirClientId}",
+              "role": "owner",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theSwappedRolesAreTheOnesThatWerePersisted",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{heirAuthHeader}",
+          "x-client-id": "{heirClientId}"
         }
       },
       "expect": {
@@ -371,7 +407,8 @@
           "type": "api-mutation-failure",
           "version": "canonical.v2",
           "code": "forbidden-role",
-          "status": 403
+          "status": 403,
+          "message": "Only active group owners can transfer group ownership."
         }
       }
     },
