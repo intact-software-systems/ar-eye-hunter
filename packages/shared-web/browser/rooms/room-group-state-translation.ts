@@ -4,27 +4,35 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { isGroupActive, isSessionInGroup, readGroupDisplayName, readGroupId } from '@shared/api/group-client-views.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
-import type { GroupTransportState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupLifecycleCommand } from '@shared/api/group-lifecycle/group-lifecycle-commands.ts';
+import type {
+    GroupTopologyReconfigureLanding,
+    GroupTransportState
+} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { isOverlayIdentity } from '@shared/repository/overlays-repository.ts';
+import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 import type {
     AcceptStateGroupInviteBody,
     BanStateGroupMemberBody,
+    ConnectStateGroupLifecycleBody,
     ConnectStateGroupPresenceSessionBody,
     CreateStateGroupBody,
     CreateStateGroupInviteBody,
     DisconnectStateGroupPresenceSessionBody,
     JoinStateGroupBody,
+    ReconfigureStateGroupLifecycleBody,
     RemoveStateGroupMemberBody,
     RevokeStateGroupInviteBody,
     RotateStateGroupJoinCodeBody,
     SetStateGroupMemberRoleBody,
     TransferStateGroupOwnershipBody,
+    TransitionStateGroupLifecycleBody,
     UnbanStateGroupMemberBody,
     UpdateStateGroupBody,
     UpsertStateGroupMemberBody
 } from '../api/state-mutation-http-contracts.ts';
 
+import { isAcceptedRoomLayoutOverlay } from './is-room-layout-overlay.ts';
 import type { RallarCreateRoomInput, RallarRoomState, RallarRoomSummary } from './rallar-room-contracts.ts';
 
 export type {
@@ -35,6 +43,7 @@ export type {
     GroupRef,
     GroupRole,
     GroupSnapshot,
+    GroupStateCausalRevision,
     GroupStatus
 } from '@shared/api/group-types.ts';
 export type { StateEventCursor, StateEventPage } from '@shared/api/state-event-types.ts';
@@ -77,16 +86,11 @@ export function resolveBrowserRoomTransportTarget(
     }
 
     const acceptedOverlay = input.acceptedOverlay;
-    const acceptedLayoutIdentity = input.snapshot.group.acceptedLayoutIdentity;
-    const hasAcceptedLayout = acceptedOverlay?.provenance === 'server' &&
-        acceptedOverlay.state === 'active' &&
-        isSameGroupRef(acceptedOverlay.groupRef, input.snapshot.group) &&
-        acceptedLayoutIdentity !== null &&
-        isOverlayIdentity(acceptedOverlay, acceptedLayoutIdentity);
+    const hasAcceptedLayout = isAcceptedRoomLayoutOverlay(acceptedOverlay, input.snapshot.group);
     const activeSessionIds = new Set(input.snapshot.activeSessions.map((session) => session.sessionId));
     return {
         transportState: input.snapshot.group.transportState,
-        ...(hasAcceptedLayout ? { acceptedLayoutIdentity } : {}),
+        ...(hasAcceptedLayout ? { acceptedLayoutIdentity: toOverlayLayoutIdentity(acceptedOverlay) } : {}),
         peerIds: hasAcceptedLayout
             ? [
                 ...new Set(
@@ -110,6 +114,7 @@ export interface RoomCreateGroupStateFields extends
         | 'metadata'
         | 'expiresAtEpochMs'
         | 'purgeAfterEpochMs'
+        | 'lifecyclePolicy'
     > {}
 
 export interface RoomJoinGroupStateFields {
@@ -156,6 +161,29 @@ export interface ToDisconnectRoomPresenceGroupStateRequestInput extends RoomGrou
     readonly generationId: string;
 }
 
+/** The six commands whose lifecycle body carries nothing beyond the audit fields. */
+export type RoomFormationTransitionCommandName = Exclude<GroupLifecycleCommand, 'connect' | 'reconfigure'>;
+
+export type RoomFormationCommand =
+    | Readonly<{ command: RoomFormationTransitionCommandName; }>
+    | Readonly<{
+        command: 'connect';
+        expectedFormationEpoch: number;
+        expectedLayout: GroupLayoutIdentity;
+    }>
+    | Readonly<{ command: 'reconfigure'; landing: GroupTopologyReconfigureLanding | undefined; }>;
+
+/** The lifecycle route a command posts to, paired with the body that route's OpenAPI schema declares. */
+export type RoomFormationGroupStateRequest =
+    | Readonly<{ command: RoomFormationTransitionCommandName; body: TransitionStateGroupLifecycleBody; }>
+    | Readonly<{ command: 'connect'; body: ConnectStateGroupLifecycleBody; }>
+    | Readonly<{ command: 'reconfigure'; body: ReconfigureStateGroupLifecycleBody; }>;
+
+export interface ToRoomFormationGroupStateRequestInput {
+    readonly command: RoomFormationCommand;
+    readonly reason: string | undefined;
+}
+
 export interface ToRallarRoomSummaryInput {
     readonly snapshot: GroupSnapshot;
     readonly sessionId?: string;
@@ -190,7 +218,8 @@ export function toCreateGroupStateRequest(
         actorSessionId: input.actorSessionId,
         metadata: room.metadata ?? {},
         ...(room.expiresAtEpochMs === undefined ? {} : { expiresAtEpochMs: room.expiresAtEpochMs }),
-        ...(room.purgeAfterEpochMs === undefined ? {} : { purgeAfterEpochMs: room.purgeAfterEpochMs })
+        ...(room.purgeAfterEpochMs === undefined ? {} : { purgeAfterEpochMs: room.purgeAfterEpochMs }),
+        ...(room.lifecyclePolicy === undefined ? {} : { lifecyclePolicy: room.lifecyclePolicy })
     };
 }
 
@@ -348,6 +377,30 @@ export function toLeaveRoomMemberGroupStateRequest(
         actorSessionId: input.actorSessionId,
         reason: 'left-group'
     };
+}
+
+export function toRoomFormationGroupStateRequest(
+    input: ToRoomFormationGroupStateRequestInput
+): RoomFormationGroupStateRequest {
+    const audit: TransitionStateGroupLifecycleBody = input.reason === undefined ? {} : { reason: input.reason };
+    switch (input.command.command) {
+        case 'connect':
+            return {
+                command: 'connect',
+                body: {
+                    ...audit,
+                    expectedFormationEpoch: input.command.expectedFormationEpoch,
+                    expectedLayout: input.command.expectedLayout
+                }
+            };
+        case 'reconfigure':
+            return {
+                command: 'reconfigure',
+                body: input.command.landing === undefined ? audit : { ...audit, landing: input.command.landing }
+            };
+        default:
+            return { command: input.command.command, body: audit };
+    }
 }
 
 export function toRallarRoomSummary(input: ToRallarRoomSummaryInput): RallarRoomSummary {

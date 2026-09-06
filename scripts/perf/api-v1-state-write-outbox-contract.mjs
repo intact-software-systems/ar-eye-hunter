@@ -65,14 +65,9 @@ export function matchesStateWriteOutboxContract(command, receipt, effects) {
         const owned = effects.filter((effect) => binding.outboxIds.includes(effect.effectId));
         const kinds = owned.map((effect) => effect.effectKind);
         if (command.kind === 'profile-instance') {
-            return kinds.filter((kind) => kind === 'principal-state:event').length ===
-                    1 &&
-                kinds.filter((kind) => kind === 'principal-state:snapshot').length >=
-                    1 &&
-                kinds.every((kind) =>
-                    kind === 'principal-state:event' ||
-                    kind === 'principal-state:snapshot'
-                );
+            const eventCount = kinds.filter((kind) => kind === 'principal-state:event').length;
+            const snapshotCount = kinds.filter((kind) => kind === 'principal-state:snapshot').length;
+            return eventCount === 1 && snapshotCount >= 1 && eventCount + snapshotCount === kinds.length;
         }
         return sameIdentities(kinds, expected);
     });

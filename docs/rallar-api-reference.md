@@ -189,8 +189,11 @@ revision-floor query, and updates only that room.
 `input` can be a display name string or an object. It does not leave the
 previous current room, so use it when multi-room membership is intentional.
 Object input can include `groupId`, `displayName`, `description`, `joinMode`,
-`maxMembers`, `maxSessionsPerMember`, `metadata`, `expiresAtEpochMs`, and
-`purgeAfterEpochMs`. `joinMode` is one of `open`, `invite-only`, or `code`.
+`maxMembers`, `maxSessionsPerMember`, `metadata`, `expiresAtEpochMs`,
+`purgeAfterEpochMs`, and `lifecyclePolicy`. `joinMode` is one of `open`,
+`invite-only`, or `code`. `lifecyclePolicy` is the sparse `GroupLifecyclePolicyInput`
+described in `docs/rallar-group-formation-architecture.md`; omitting it creates the
+group with the `optimistic` preset, exactly as before.
 
 `rooms.createAndSwitch(input)` creates a group/room, makes it current, and then
 leaves the previous current room when it is different. It accepts the same input
@@ -206,7 +209,53 @@ arena, leave the old arena" flows.
 default room, or the current room without joining.
 
 `RallarRoomSession` exposes `roomId`, `roomRef`, `snapshot()`, `summary()`,
-`leave()`, `refresh()`, `message(...)`, and `realtime(...)`.
+`leave()`, `refresh()`, `message(...)`, `realtime(...)`, and `formation`.
+
+`rooms.formation(room?)` returns a `RallarRoomFormation` bound to an explicit room, the default
+room, or the current room; `RallarRoomSession` exposes the same handle as `formation`. It carries
+the eight application-facing formation commands of the group lifecycle
+(`docs/rallar-group-formation-architecture.md`): `plan()`, `connect(options?)`, `activate()`,
+`reconfigure({ landing? })`, `pause()`, `resume()`, `reset()` and `start()`. Each resolves to the
+receipt `GroupSnapshot` once the transition committed; planning, publication and RTC readiness stay
+asynchronous. `connect()` names the room's current planned layout and the cached formation epoch;
+pass `layout` to name a specific `GroupLayoutIdentity`. When the planned slot is empty, or holds a
+layout published past the cached snapshot, `connect()` refreshes the room once (the point read and
+the topology read-through) before it posts. It throws a `RallarValidationError` without sending a
+lifecycle request when that leaves nothing to name: issue `no-planned-layout` when the read-through
+completed and nothing is published, `session-not-present` when the room does not count this session
+as present (the read-through fills the slot only for present sessions, so pass `layout`), and
+`planned-layout-read-failed` when the read-through did not complete.
+`formation.status()` is the free, in-memory view: stage, epoch, attempt count, transport state,
+which layout roles the browser dials, the accepted and planned layouts it holds, and the pushed
+activation condition. Commands reject with `ApiHttpError`; `toRoomFormationDenial(error)`
+classifies it as `{ kind: 'policy', code }` for a stage or initiator denial or
+`{ kind: 'layout', code }` for `group-connect-no-planned-layout` and
+`group-connect-planned-layout-superseded`, the two typed `409` conflicts of `connect`.
+
+`formation.waitForLayout(options?)` is the explicit wait for a published layout: it observes the
+browser's planned and accepted layout slots and resolves `ready` with the layout, or `timeout`,
+`aborted` or `not-found`. `role` selects the slot (`planned` by default). `after` is a causal
+revision fence, typically a receipt's `causalRevision`: only a layout published at or after it
+satisfies the wait, and an incomparable one never does. After `plan` the unfenced form is right;
+after `reconfigure` pass the receipt's revision, because the planned slot may still hold the
+candidate the reconfigure superseded. `formation.waitForStage(stage | stages, options?)` and
+`formation.waitForCondition(condition | conditions, options?)` resolve from the pushed group
+snapshot. The waits take `timeoutMs` and `signal`, wake only on changes naming the bound room, and
+report what they find at the deadline: a stage or layout that landed without a notification is
+still `ready`. `not-found` means this browser has never held the room's snapshot; a snapshot that
+expired from the cache keeps the wait going, and a room removed mid-wait ends as `timeout` with
+`formation` undefined. `formation.onChange(listener, options?)` emits the status on every
+observable change of the snapshot or either layout slot; a room leaving the cache emits nothing
+here, because a status cannot represent absence, and is observed through `rooms.onChange`.
+`formation.onLayout(listener)` emits `layoutPlanned`, `layoutAccepted` and `layoutRemoved` events
+as the differences between consecutive statuses: a bootstrap or tombstoned slot is no layout, a
+layout that appears and disappears before the browser observes it raises no event, and
+`layoutAccepted` fires once the accepted slot and the snapshot name the same layout.
+`formation.readView(options?)` fetches the server's `GroupFormationView` (readiness, managers,
+`layoutStale`, `pending`, the attempt budget, both status axes and the coverage basis) and decodes
+it against the bound room, rejecting a body that is malformed or names another group. Readiness
+for application traffic stays `rtc.waitForRoom(...)` and `realtime.room().wait()`, which follow
+the accepted layout only.
 
 `rooms.leave(input?)` leaves a room. It can use explicit `roomId`, `roomRef`, the default room, or the current room.
 

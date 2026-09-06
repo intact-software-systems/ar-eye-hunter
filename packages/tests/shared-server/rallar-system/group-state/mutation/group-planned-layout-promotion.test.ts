@@ -312,6 +312,7 @@ describe('topology promotion outbox entry', () => {
     it('round-trips the work through the durable entry', () => {
         const entry = computeTopologyPromotionEntry({
             work: { groupRef: GROUP_REF, formationEpoch: 2, expectedLayout: IDENTITY },
+            sourceWorkId: 'rtc-topology:promotion-group:work-1',
             senderId: 'promotion-service',
             createdAtEpochMs: 1_000,
             expireAtEpochMs: 100_000

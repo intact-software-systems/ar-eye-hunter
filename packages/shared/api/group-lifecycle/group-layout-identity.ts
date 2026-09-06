@@ -27,6 +27,28 @@ export const GROUP_LAYOUT_IDENTITY_STATES = [
     'removed'
 ] as const satisfies readonly RallarOverlayTopologySnapshot['state'][];
 
+/** The wire check a boundary decoder applies: the exact key set, integer revisions and a known state. */
+export function isGroupLayoutIdentity(value: unknown): value is GroupLayoutIdentity {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return false;
+    }
+    if (Object.keys(value).length !== GROUP_LAYOUT_IDENTITY_KEYS.length) {
+        return false;
+    }
+    return 'groupRevision' in value &&
+        isNonNegativeSafeInteger(value.groupRevision) &&
+        'presenceRevision' in value &&
+        isNonNegativeSafeInteger(value.presenceRevision) &&
+        'version' in value &&
+        isNonNegativeSafeInteger(value.version) &&
+        'state' in value &&
+        GROUP_LAYOUT_IDENTITY_STATES.some((state) => state === value.state);
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
 export function toGroupLayoutIdentity(
     snapshot: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateCausalRevision' | 'version' | 'state'>
 ): GroupLayoutIdentity {

@@ -22,6 +22,8 @@ export {
 
 export { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-realtime-facade.ts';
 
+export { toRoomFormationDenial } from '@shared-web/browser/rooms/formation/to-room-formation-denial.ts';
+
 export type {
     RallarCrdtDocument,
     RallarCrdtFacade,
@@ -151,9 +153,22 @@ export type {
     RallarReplayPeopleEventsOptions,
     RallarReplayRoomEventsInput,
     RallarReplayRoomEventsOptions,
+    RallarRoomConnectOptions,
     RallarRoomEventOptions,
+    RallarRoomFormation,
+    RallarRoomFormationCommandOptions,
+    RallarRoomFormationDenial,
+    RallarRoomFormationStatus,
+    RallarRoomFormationWaitResult,
+    RallarRoomFormationWaitStatus,
     RallarRoomGovernanceOptions,
     RallarRoomInviteOptions,
+    RallarRoomLayout,
+    RallarRoomLayoutEvent,
+    RallarRoomLayoutListener,
+    RallarRoomLayoutRole,
+    RallarRoomLayoutWaitOptions,
+    RallarRoomLayoutWaitResult,
     RallarRoomLifecycleOptions,
     RallarRoomMember,
     RallarRoomMessageChannelDefinition,
@@ -165,6 +180,7 @@ export type {
     RallarRoomRealtimeSendResult,
     RallarRoomRealtimeSendStatus,
     RallarRoomRealtimeTransportOptions,
+    RallarRoomReconfigureOptions,
     RallarRoomSession,
     RallarRoomSessionMessageDefinition,
     RallarRoomSessionRealtimeInput,

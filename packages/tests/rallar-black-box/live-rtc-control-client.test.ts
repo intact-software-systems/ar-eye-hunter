@@ -17,11 +17,13 @@ describe('live RTC control client', () => {
     let api: APIRequestContext;
     let control: LiveRtcControlClient;
     let nowMs: number;
+    let readyPeerIds: string[];
     const refreshRoom = vi.fn<LiveRtcControlClient.FormationAgent['refreshRoom']>();
     const agent = { agentId: 'agent-a', prefix: 'A' as const, refreshRoom };
 
     beforeEach(async () => {
         nowMs = 100;
+        readyPeerIds = ['session-b', 'session-c'];
         const results: LiveRtcControlClient.Result[] = [];
         server = createServer(async (incoming, response) => {
             if (incoming.method === 'POST') {
@@ -37,7 +39,7 @@ describe('live RTC control client', () => {
                 results.push({
                     commandId: command.commandId,
                     ok: true,
-                    result: { value: { rallar: { rtcStatus: { readyPeerIds: ['session-b', 'session-c'] } } } }
+                    result: { value: { rallar: { rtcStatus: { readyPeerIds } } } }
                 });
                 response.writeHead(202).end('{}');
                 return;
@@ -99,6 +101,25 @@ describe('live RTC control client', () => {
         }
         expect(await readiness).toBe(250);
         expect(roomMembers).toEqual(['session-a', 'session-b', 'session-c']);
+    });
+
+    it('rechecks readiness after every room refresh while expected peers are missing', async () => {
+        let refreshCount = 0;
+        refreshRoom.mockImplementation(async () => {
+            refreshCount += 1;
+            nowMs += 100;
+            readyPeerIds = refreshCount === 1
+                ? ['session-b']
+                : ['session-b', 'session-c'];
+        });
+
+        await expect(control.waitForPeerReadiness({
+            runId: 'run-refresh-retry',
+            agent,
+            expectedPeerIds: ['session-b', 'session-c'],
+            suffix: 'delayed-topology',
+            startedAtMs: 100
+        })).resolves.toBe(200);
     });
 
     it('rejects readiness when authoritative room refresh fails', async () => {

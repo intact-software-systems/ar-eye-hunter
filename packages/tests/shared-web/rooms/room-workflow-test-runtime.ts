@@ -2,7 +2,7 @@ import { vi } from 'vitest';
 
 import type { ApiMiddleware, RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { StateCacheChangeListener } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import { isSameGroupRef, toScopedRoomKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -26,6 +26,7 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
     return {
         operationLog,
         groupSnapshots,
+        observedRoomKeys: new Set<string>(),
         cacheListeners: new Set<StateCacheChangeListener>(),
         session: ctx.session,
         ctx,
@@ -104,6 +105,7 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), () => 
             roomWorkflowMocks.groupSnapshots.find((snapshot) => snapshot.activeSessions.some((session) => session.sessionId === sessionId))?.group
     ),
     findGroupStateSnapshotByRef: vi.fn((roomRef: GroupRef) => roomWorkflowMocks.groupSnapshots.find((snapshot) => isSameGroupRef(snapshot.group, roomRef))),
+    wasGroupStateSnapshotObservedByRef: vi.fn((roomRef: GroupRef) => roomWorkflowMocks.observedRoomKeys.has(toScopedRoomKey(roomRef))),
     getAllGroupStateSnapshots: vi.fn(() => [...roomWorkflowMocks.groupSnapshots]),
     removeGroupStateSnapshotIfUnchanged: vi.fn((roomRef: GroupRef, expected: GroupSnapshot) => {
         const index = roomWorkflowMocks.groupSnapshots.findIndex(
@@ -120,14 +122,27 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), () => 
 
 vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOriginal) => {
     const actual = await importOriginal();
+    const { isRepositoryNotFoundError } = await import('@shared/cache/RepositoryManager.ts');
+    // The rooms tests configure the overlay repositories only when a test observes
+    // them; a drain before that is the ordinary "nothing to drain".
+    const drainIfConfigured = async (drain: () => Promise<void>): Promise<void> => {
+        try {
+            await drain();
+        }
+        catch (error) {
+            if (!(error instanceof Error && isRepositoryNotFoundError(error))) {
+                throw error;
+            }
+        }
+    };
     return {
         ...actual,
-        findPlannedOverlayById: vi.fn(),
-        findAcceptedOverlayById: vi.fn(),
+        findPlannedOverlayById: vi.fn((overlayId, manager) => actual.findPlannedOverlayById(overlayId, manager)),
+        findAcceptedOverlayById: vi.fn((overlayId, manager) => actual.findAcceptedOverlayById(overlayId, manager)),
         removePlannedOverlayByIdIfUnchanged: vi.fn(() => false),
         removeAcceptedOverlayByIdIfUnchanged: vi.fn(() => false),
-        waitForPlannedOverlayChangesIdle: vi.fn(async () => undefined),
-        waitForAcceptedOverlayChangesIdle: vi.fn(async () => undefined)
+        waitForPlannedOverlayChangesIdle: vi.fn(async (manager) => await drainIfConfigured(() => actual.waitForPlannedOverlayChangesIdle(manager))),
+        waitForAcceptedOverlayChangesIdle: vi.fn(async (manager) => await drainIfConfigured(() => actual.waitForAcceptedOverlayChangesIdle(manager)))
     };
 });
 
@@ -140,6 +155,7 @@ export function resetRoomWorkflowTestRuntime(): void {
     vi.useRealTimers();
     roomWorkflowMocks.operationLog.length = 0;
     roomWorkflowMocks.groupSnapshots.length = 0;
+    roomWorkflowMocks.observedRoomKeys.clear();
     roomWorkflowMocks.cacheListeners.clear();
     resetRoomWorkflowLifecycleMocks();
     resetRoomWorkflowEntryMocks();
@@ -234,8 +250,12 @@ export function createRoomSnapshot(
     });
 }
 
+/** Seeding replaces what the cache holds; what it has ever held only grows, as in the repository. */
 export function seedRoomSnapshots(snapshots: readonly GroupSnapshot[]): void {
     roomWorkflowMocks.groupSnapshots.splice(0, Infinity, ...snapshots);
+    for (const snapshot of snapshots) {
+        roomWorkflowMocks.observedRoomKeys.add(toScopedRoomKey(snapshot.group));
+    }
 }
 
 export function resolveCreateWith(snapshot: GroupSnapshot): void {
@@ -287,6 +307,7 @@ export async function publishRoomSnapshots(snapshots: readonly GroupSnapshot[]):
 
 function upsertGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
     for (const snapshot of snapshots) {
+        roomWorkflowMocks.observedRoomKeys.add(toScopedRoomKey(snapshot.group));
         const index = roomWorkflowMocks.groupSnapshots.findIndex((candidate) => isSameGroupRef(candidate.group, snapshot.group));
         if (index < 0) {
             roomWorkflowMocks.groupSnapshots.push(snapshot);

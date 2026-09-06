@@ -148,6 +148,7 @@ export function computeRtcTopologyWorkWrite(
                 read: accepted.promotionRead,
                 serviceId: input.serviceId,
                 entry,
+                sourceWorkId: input.sourceWorkId,
                 target
             })),
             connectWrites: computePublicationConnectTriggerRequests({

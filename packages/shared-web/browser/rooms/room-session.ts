@@ -6,6 +6,7 @@ import { throwIfRallarValidationIssues } from '@shared-web/browser/rooms/rallar-
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 
+import type { RallarRoomFormation } from './formation/rallar-room-formation-contracts.ts';
 import type {
     RallarLeaveRoomOptions,
     RallarRoomSession,
@@ -28,6 +29,7 @@ export interface CreateRoomSessionInput {
         roomRef: GroupRef,
         input?: RallarScopedOperationOptions
     ) => Promise<unknown>;
+    readonly createFormation: (roomRef: GroupRef) => RallarRoomFormation;
 }
 
 export function createRoomSession(input: CreateRoomSessionInput): RallarRoomSession {
@@ -35,6 +37,7 @@ export function createRoomSession(input: CreateRoomSessionInput): RallarRoomSess
     return {
         roomId,
         roomRef: input.roomRef,
+        formation: input.createFormation(input.roomRef),
         snapshot: () => input.stateStore.findGroupSnapshot(input.roomRef),
         summary: () => findRoomSummary(input.stateStore.state().rooms, input.roomRef),
         leave: async (options = {}) =>

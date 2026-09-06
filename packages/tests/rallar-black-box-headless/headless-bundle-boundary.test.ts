@@ -58,10 +58,18 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // group's in-flight setups measures 216.6953125 KiB: the headless agent
         // runs the outbound dialing owner, the in-flight dial admission and the
         // member-policy validators itself. Persistence-ready IndexedDB writes
-        // measure 219.14453125 KiB in the release runner. The maintainer
-        // approved the smallest whole-KiB strict limit containing the current
-        // behavior.
-        expect(result.brotliKiB).toBeLessThan(220);
+        // measure 219.14453125 KiB in the release runner. The room formation
+        // handle with its eight lifecycle commands, layout slots and denial
+        // reader measures 220.846 KiB; posting the lifecycle bodies the schemas
+        // declare, keeping slot subscriptions across reconfiguration, and the
+        // coherent connect fence with its three read-through refusals measure
+        // 221.455078125 KiB; its fenced layout wait, stage and condition waits,
+        // subscriptions and validated formation view read measure
+        // 222.6103515625 KiB; settling those waits on the room's own reads,
+        // deriving layout events from status differences and decoding the view
+        // from unknown JSON measure 223.23828125 KiB. The maintainer approved the
+        // smallest whole-KiB strict limit containing the current behavior.
+        expect(result.brotliKiB).toBeLessThan(224);
     });
 });
 

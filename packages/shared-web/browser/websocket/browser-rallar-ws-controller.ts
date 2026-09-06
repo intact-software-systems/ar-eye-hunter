@@ -1,4 +1,5 @@
 import { normalizeWaitTimeoutMs } from '@shared-web/browser/connection/normalize-wait-timeout-ms.ts';
+import { waitForSettledRead } from '@shared-web/browser/connection/wait-for-settled-read.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { ApiMiddleware, RallarConnectStatus } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
@@ -186,55 +187,26 @@ export class BrowserRallarWsController implements RallarWsController {
         return undefined;
     }
 
-    private waitForWsLifecycle(
+    private async waitForWsLifecycle(
         current: RallarWsStatus,
         options: RallarWaitForOpenOptions
     ): Promise<RallarWsWaitForOpenResult> {
-        const timeoutMs = normalizeWaitTimeoutMs(options.timeoutMs);
-        return new Promise<RallarWsWaitForOpenResult>((resolve) => {
-            let settled = false;
-            let latest = current;
-            let timeout: ReturnType<typeof setTimeout> | undefined;
-            let unsubscribe: RallarUnsubscribe = () => {
-            };
-
-            const finish = (
-                status: RallarWaitForOpenStatus,
-                wsStatus: RallarWsStatus = latest
-            ): void => {
-                if (settled) {
-                    return;
-                }
-
-                settled = true;
-                if (timeout !== undefined) {
-                    clearTimeout(timeout);
-                }
-                options.signal?.removeEventListener('abort', onAbort);
-                unsubscribe();
-                resolve(toWsWaitForOpenResult(status, wsStatus));
-            };
-
-            const onAbort = (): void => finish('aborted');
-
-            unsubscribe = this.facade.onStatus(
-                (status) => {
-                    latest = status;
-                    if (status.isOpen) {
-                        finish('open', status);
-                        return;
-                    }
-
-                    if (isTerminalClosedWsStatus(status)) {
-                        finish('closed', status);
-                    }
-                },
-                {
-                    emitCurrent: false
-                }
-            );
-            options.signal?.addEventListener('abort', onAbort, { once: true });
-            timeout = setTimeout(() => finish('timeout'), timeoutMs);
+        let latest = current;
+        return await waitForSettledRead<RallarWsWaitForOpenResult>({
+            readResult: () => toWsWaitForOpenResult(toWsLifecycleWaitStatus(latest), latest),
+            isSettled: (result) => result.status === 'open' || result.status === 'closed',
+            subscribe: (listener) =>
+                this.facade.onStatus(
+                    (status) => {
+                        latest = status;
+                        return listener();
+                    },
+                    { emitCurrent: false }
+                ),
+            signal: options.signal,
+            timeoutMs: normalizeWaitTimeoutMs(options.timeoutMs),
+            toTimedOut: () => toWsWaitForOpenResult('timeout', latest),
+            toAborted: () => toWsWaitForOpenResult('aborted', latest)
         });
     }
 
@@ -335,6 +307,14 @@ function isTerminalClosedWsStatus(status: RallarWsStatus): boolean {
     return (status.readyState === 'closing' || status.readyState === 'closed') &&
         !status.reconnecting &&
         !status.reconnectEnabled;
+}
+
+/** `open` and `closed` settle a wait; anything else is still pending. */
+function toWsLifecycleWaitStatus(status: RallarWsStatus): RallarWaitForOpenStatus {
+    if (status.isOpen) {
+        return 'open';
+    }
+    return isTerminalClosedWsStatus(status) ? 'closed' : 'timeout';
 }
 
 function toPublicWsStatusUrl(url: string | undefined): string | undefined {

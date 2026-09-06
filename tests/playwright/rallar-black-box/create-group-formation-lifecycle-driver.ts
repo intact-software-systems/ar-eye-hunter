@@ -41,7 +41,11 @@ interface ReconnectFormationAgentInput {
     readonly control: LiveRtcControlPort;
     readonly runId: string;
     readonly reconnectingAgent: LiveRtcControlClient.FormationAgent;
-    readonly readinessAgent: LiveRtcControlClient.FormationAgent;
+    readonly survivingAgents: readonly [
+        LiveRtcControlClient.FormationAgent,
+        LiveRtcControlClient.FormationAgent
+    ];
+    readonly survivingSessionIds: readonly [string, string];
     readonly transport: TransportUnderTest;
     readonly groupId: string;
     readonly suffix: string;
@@ -54,7 +58,7 @@ export interface GroupFormationLifecycleDriver {
     ): Promise<GroupFormationLifecycleRun>;
     reconnectAndWaitForPeerReadiness(
         input: ReconnectFormationAgentInput
-    ): Promise<FormationAgentConnection>;
+    ): Promise<ReconnectedFormationAgent>;
 }
 
 export interface LiveRtcControlPort extends
@@ -91,6 +95,10 @@ interface ConnectFormationAgentInput {
 interface FormationAgentConnection {
     readonly commandId: string;
     readonly sessionId: string;
+}
+
+interface ReconnectedFormationAgent extends FormationAgentConnection {
+    readonly receiverReadinessDurationMs: number;
 }
 
 interface FormationConnections {
@@ -140,7 +148,6 @@ interface GroupLifecycleCommandInput {
 }
 
 interface ActivateGroupInput extends GroupLifecycleCommandInput {
-    readonly agents: readonly LiveRtcControlClient.FormationAgent[];
     readonly transport: TransportUnderTest;
 }
 
@@ -167,24 +174,49 @@ export function createGroupFormationLifecycleDriver(
     return {
         setupGroupMembership: (input) => setupGroupMembership(config, input),
         run: async (input) => await runGroupFormationLifecycle(config, input),
-        reconnectAndWaitForPeerReadiness: async (input) => {
-            const connection = await connectFormationAgent(config, {
-                control: input.control,
-                runId: input.runId,
-                agent: input.reconnectingAgent,
-                transport: input.transport,
-                groupId: input.groupId,
-                suffix: input.suffix
-            });
-            await input.control.waitForPeerReadiness({
-                runId: input.runId,
-                agent: input.readinessAgent,
-                expectedPeerIds: [connection.sessionId],
-                suffix: input.suffix,
-                startedAtMs: performance.now()
-            });
-            return connection;
-        }
+        reconnectAndWaitForPeerReadiness: async (input) => await reconnectFormationAgent(config, input)
+    };
+}
+
+async function reconnectFormationAgent(
+    config: CreateGroupFormationLifecycleDriverConfig,
+    input: ReconnectFormationAgentInput
+): Promise<ReconnectedFormationAgent> {
+    const startedAtMs = performance.now();
+    const connection = await connectFormationAgent(config, {
+        control: input.control,
+        runId: input.runId,
+        agent: input.reconnectingAgent,
+        transport: input.transport,
+        groupId: input.groupId,
+        suffix: input.suffix
+    });
+    const [firstReceiverDurationMs, secondReceiverDurationMs] = await Promise.all([
+        input.control.waitForPeerReadiness({
+            runId: input.runId,
+            agent: input.survivingAgents[0],
+            expectedPeerIds: [connection.sessionId],
+            suffix: input.suffix,
+            startedAtMs
+        }),
+        input.control.waitForPeerReadiness({
+            runId: input.runId,
+            agent: input.survivingAgents[1],
+            expectedPeerIds: [connection.sessionId],
+            suffix: input.suffix,
+            startedAtMs
+        }),
+        input.control.waitForPeerReadiness({
+            runId: input.runId,
+            agent: input.reconnectingAgent,
+            expectedPeerIds: input.survivingSessionIds,
+            suffix: `${input.suffix}-settled`,
+            startedAtMs
+        })
+    ]);
+    return {
+        ...connection,
+        receiverReadinessDurationMs: Math.max(firstReceiverDurationMs, secondReceiverDurationMs)
     };
 }
 
@@ -251,17 +283,9 @@ async function connectGroupLifecycle(
         expectedFormationEpoch: stageReceipt.formationEpoch,
         expectedLayout: plannedLayout.identity
     });
-    await refreshAgentRooms(input.run.agents);
-    await waitForFormationReadiness({
-        run: input.run,
-        sessions: input.sessions,
-        suffix: input.lifecycleSuffix,
-        startedAtMs: input.readinessStartedAtMs
-    });
-    const activateCommandId = await activateAndRefreshAcceptedLayout(config, {
+    const activateCommandId = await activateGroup(config, {
         ...input.run,
-        owner,
-        agents: input.run.agents
+        owner
     });
     const readinessDurations = await waitForFormationReadiness({
         run: input.run,
@@ -347,7 +371,6 @@ async function connectInitialPair(
         expectedFormationEpoch: stageReceipt.formationEpoch,
         expectedLayout: plannedLayout.identity
     });
-    await refreshAgentRooms(agents);
     const startedAtMs = performance.now();
     await Promise.all(agents.map(async (agent, index) =>
         await input.control.waitForPeerReadiness({
@@ -358,9 +381,8 @@ async function connectInitialPair(
             startedAtMs
         })
     ));
-    const activateCommandId = await activateAndRefreshAcceptedLayout(config, {
+    const activateCommandId = await activateGroup(config, {
         ...lifecycle,
-        agents,
         transport: input.transport
     });
     await Promise.all(agents.map(async (agent, index) =>
@@ -542,7 +564,7 @@ async function connectPublishedLayout(
     return commandId;
 }
 
-async function activateAndRefreshAcceptedLayout(
+async function activateGroup(
     config: CreateGroupFormationLifecycleDriverConfig,
     input: ActivateGroupInput
 ): Promise<string> {
@@ -569,14 +591,7 @@ async function activateAndRefreshAcceptedLayout(
             }
         }
     });
-    await refreshAgentRooms(input.agents);
     return commandId;
-}
-
-async function refreshAgentRooms(
-    agents: readonly LiveRtcControlClient.FormationAgent[]
-): Promise<void> {
-    await Promise.all(agents.map(async (agent) => await agent.refreshRoom({ timeoutMs: 15_000 })));
 }
 
 async function waitForPlannedLayout(
@@ -610,9 +625,10 @@ async function waitForPlannedLayout(
         plannedLayout = candidate.identity;
         return true;
     }, {
-        message: `Expected an epoch ${input.expectedFormationEpoch} planned topology at or after group revision ${
-            input.minimumGroupRevision
-        } with ${input.expectedSessionIds.join(', ')}`,
+        message:
+            `Expected an epoch ${input.expectedFormationEpoch} planned topology at or after group revision ${input.minimumGroupRevision} with ${
+                input.expectedSessionIds.join(', ')
+            }`,
         timeout: 30_000
     }).toBe(true);
     if (!plannedLayout) {
@@ -651,10 +667,7 @@ async function waitForPresenceRevision(
 async function waitForFormationReadiness(
     input: WaitForFormationReadinessInput
 ): Promise<Readonly<Partial<Record<AgentPrefix, number>>>> {
-    const agents = input.run.readinessScope === 'owner'
-        ? [input.run.agents[0]]
-        : input.run.agents;
-    const durations = await Promise.all(agents.map(async (agent) => ({
+    const durations = await Promise.all(input.run.agents.map(async (agent) => ({
         prefix: agent.prefix,
         durationMs: await input.run.control.waitForPeerReadiness({
             runId: input.run.runId,
@@ -666,8 +679,11 @@ async function waitForFormationReadiness(
             startedAtMs: input.startedAtMs
         })
     })));
+    const measuredDurations = input.run.readinessScope === 'owner'
+        ? durations.slice(0, 1)
+        : durations;
     return Object.fromEntries(
-        durations.map(({ prefix, durationMs }) => [prefix, durationMs])
+        measuredDurations.map(({ prefix, durationMs }) => [prefix, durationMs])
     );
 }
 

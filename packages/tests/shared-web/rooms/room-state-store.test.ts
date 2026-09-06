@@ -63,6 +63,15 @@ vi.mock('@shared/repository/group-state-snapshots-repository.ts', () => ({
     getAllGroupStateSnapshots: () => {
         requireConfiguredRepositories();
         return [...stateMocks.groups];
+    },
+    wasGroupStateSnapshotObservedByRef: (roomRef: GroupRef) => {
+        requireConfiguredRepositories();
+        return stateMocks.groups.some(
+            (snapshot) =>
+                snapshot.group.applicationId === roomRef.applicationId &&
+                snapshot.group.workspaceId === roomRef.workspaceId &&
+                snapshot.group.groupId === roomRef.groupId
+        );
     }
 }));
 
@@ -82,6 +91,14 @@ describe('room state store summaries', () => {
         expect(() => facade.rooms.state()).toThrow(
             'Repository not found: shared.repository.test-snapshots'
         );
+    });
+
+    it('reads an absent room snapshot before the cache repositories exist', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const facade = createRallarFacade();
+        const roomRef = createTestGroup({ applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' });
+
+        expect(facade.rooms.formation(roomRef).status()).toBeUndefined();
     });
 
     it('filters room state by application and workspace scope', async () => {
