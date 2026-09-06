@@ -45,6 +45,7 @@ import {
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions
 } from './queue-box-types.ts';
+import { captureResourceEntryObservations, validateResourceEntryObservation } from './resource-entry-observations.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
@@ -235,20 +236,37 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async reserveTimeoutEntries(
         typeIds: Set<string>,
         reservationInput: ResourceInboxReservationInput,
-        timeSinceStartTs: Temporal.Duration
+        timeSinceStartTs: Temporal.Duration,
+        observedEntries?: readonly ResourceEntry[]
     ): Promise<Map<Key, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
+        const observations = captureResourceEntryObservations(observedEntries);
+        if (observations?.size === 0 || maxToReserve === 0) {
+            return new Map();
+        }
         const db = await this.#connection.open();
         const now = Temporal.Now.instant();
-        const entries = await readAllStoredQueueEntries(db, this.#storeName);
+        const entries = observations === undefined
+            ? await readAllStoredQueueEntries(db, this.#storeName)
+            : (await readStoredQueueEntries(
+                db,
+                this.#storeName,
+                [...observations.values()].map((entry) => toKeyAsString(entry.key))
+            )).values();
         const reserved = new Map<Key, ResourceEntry>();
         const mutations: ComputedIndexedDbQueueMutation[] = [];
         for (const stored of entries) {
             if (reserved.size >= maxToReserve) {
                 break;
+            }
+            if (
+                observations !== undefined &&
+                validateResourceEntryObservation(decodeStoredResourceEntry(stored), observations).left
+            ) {
+                continue;
             }
             if (
                 stored.dequeueAudit.attempts >= maxAttempts ||
@@ -271,20 +289,37 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     async reserveEntries(
         typeIds: Set<string>,
         statusIds: Set<EntityStatus>,
-        reservationInput: ResourceInboxReservationInput
+        reservationInput: ResourceInboxReservationInput,
+        observedEntries?: readonly ResourceEntry[]
     ): Promise<Map<Key, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
+        const observations = captureResourceEntryObservations(observedEntries);
+        if (observations?.size === 0 || maxToReserve === 0) {
+            return new Map();
+        }
         const db = await this.#connection.open();
         const now = Temporal.Now.instant();
-        const entries = await readAllStoredQueueEntries(db, this.#storeName);
+        const entries = observations === undefined
+            ? await readAllStoredQueueEntries(db, this.#storeName)
+            : (await readStoredQueueEntries(
+                db,
+                this.#storeName,
+                [...observations.values()].map((entry) => toKeyAsString(entry.key))
+            )).values();
         const reserved = new Map<Key, ResourceEntry>();
         const mutations: ComputedIndexedDbQueueMutation[] = [];
         for (const stored of entries) {
             if (reserved.size >= maxToReserve) {
                 break;
+            }
+            if (
+                observations !== undefined &&
+                validateResourceEntryObservation(decodeStoredResourceEntry(stored), observations).left
+            ) {
+                continue;
             }
             if (
                 !isStoredQueueEntryReservable({

@@ -631,6 +631,8 @@ describe('IndexedDB AL runtime stores', () => {
     });
 
     it('does not repair from IndexedDB when an acknowledgement is accepted while timeout is claimed', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
         const dbName = `al-runtime-${crypto.randomUUID()}`;
         const namespace = 'rtc-outbound-ack-timeout-race';
         const sent: Array<OutboundTestPayload> = [];
@@ -706,6 +708,7 @@ describe('IndexedDB AL runtime stores', () => {
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
 
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.011Z'));
         await expect.poll(() => acceptedAckDuringTimeout).toBe(true);
         await expect.poll(() => admissionStore.peekNextEffectReadyAt()).toBeUndefined();
         expect(sent).toEqual([

@@ -2,7 +2,7 @@ import type { ALAdmissionBackendEntry } from '@shared/alm/al-admission-backend.t
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '@shared/alm/al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
-import { toResourceEntrySnapshot } from '@shared/queuebox/in-memory-queue-box.ts';
+import { toResourceEntrySnapshot } from '@shared/queuebox/resource-entry-observations.ts';
 import { toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';

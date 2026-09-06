@@ -24,6 +24,11 @@ import {
     toResourceInboxWorkAdvertisementOptions
 } from './queue-box-types.ts';
 import {
+    captureResourceEntryObservations,
+    toResourceEntrySnapshot,
+    validateResourceEntryObservation
+} from './resource-entry-observations.ts';
+import {
     COMPLETED_STATUSES,
     EntityStatus,
     isExpiredResourceEntry,
@@ -203,18 +208,25 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     async reserveTimeoutEntries(
         typeIds: Set<string>,
         reservationInput: ResourceInboxReservationInput,
-        timeSinceStartTs: Temporal.Duration
+        timeSinceStartTs: Temporal.Duration,
+        observedEntries?: readonly ResourceEntry[]
     ): Promise<Map<Key, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
         const timedOut = new Map<Key, ResourceEntry>();
+        const observations = captureResourceEntryObservations(observedEntries);
         const now = Temporal.Now.instant();
 
-        for (const [key, entry] of this.data) {
+        for (const candidate of observations?.values() ?? this.data.values()) {
             if (timedOut.size >= maxToReserve) {
                 break;
+            }
+            const key = toKeyAsString(candidate.key);
+            const entry = this.data.get(key);
+            if (entry === undefined || validateResourceEntryObservation(entry, observations).left) {
+                continue;
             }
 
             if (
@@ -233,18 +245,25 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     async reserveEntries(
         typeIds: Set<string>,
         statusIds: Set<EntityStatus>,
-        reservationInput: ResourceInboxReservationInput
+        reservationInput: ResourceInboxReservationInput,
+        observedEntries?: readonly ResourceEntry[]
     ): Promise<Map<Key, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
         const reserved = new Map<Key, ResourceEntry>();
+        const observations = captureResourceEntryObservations(observedEntries);
         const now = Temporal.Now.instant();
 
-        for (const [key, entry] of this.data) {
+        for (const candidate of observations?.values() ?? this.data.values()) {
             if (reserved.size >= maxToReserve) {
                 break;
+            }
+            const key = toKeyAsString(candidate.key);
+            const entry = this.data.get(key);
+            if (entry === undefined || validateResourceEntryObservation(entry, observations).left) {
+                continue;
             }
 
             if (isExpiredResourceEntry(entry)) {
@@ -583,16 +602,5 @@ function computeReleasedResourceEntry(
                 : undefined,
             attempts: entry.dequeueAudit.attempts
         }
-    };
-}
-
-export function toResourceEntrySnapshot(entry: ResourceEntry): ResourceEntry {
-    // Temporal leaves are immutable; copy the mutable records without structuredClone losing their prototypes.
-    return {
-        ...entry,
-        key: { ...entry.key },
-        audit: { ...entry.audit },
-        dequeueAudit: { ...entry.dequeueAudit },
-        db: entry.db === undefined ? undefined : { ...entry.db }
     };
 }

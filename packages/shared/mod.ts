@@ -35,6 +35,7 @@ export * from './queuebox/DequeueResourceEntryController.ts';
 export * from './queuebox/in-memory-queue-box.ts';
 export * from './queuebox/indexed-db-queue-box.ts';
 export * from './queuebox/queue-box-types.ts';
+export { toResourceEntrySnapshot } from './queuebox/resource-entry-observations.ts';
 export * from './queuebox/ResourceEntry.ts';
 
 export * from './persistence/indexed-db-string-persistence-provider.ts';

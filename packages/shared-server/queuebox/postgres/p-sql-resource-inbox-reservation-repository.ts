@@ -28,9 +28,10 @@ export class PSqlResourceInboxReservationRepository {
     async findEntriesSkipLocked(
         typeIds: ReadonlySet<string>,
         statusIds: ReadonlySet<EntityStatus>,
-        reservationInput: ResourceInboxReservationInput
+        reservationInput: ResourceInboxReservationInput,
+        observedRowIds?: readonly string[]
     ): Promise<Map<string, ResourceEntry>> {
-        if (typeIds.size === 0 || statusIds.size === 0) {
+        if (typeIds.size === 0 || statusIds.size === 0 || observedRowIds?.length === 0) {
             return new Map();
         }
 
@@ -45,6 +46,7 @@ export class PSqlResourceInboxReservationRepository {
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status in ${this.sql([...statusIds])}
               and ri_status <> ${EntityStatus.FAILED}
+              and (${observedRowIds === undefined} or ri_row_id = any(${observedRowIds ?? []}::bigint[]))
               and expire_ts > (now() at time zone 'UTC')
               and ri_attempts < ${maxAttempts}
               and (
@@ -55,7 +57,7 @@ export class PSqlResourceInboxReservationRepository {
               )
             order by next_ts asc nulls first, ri_row_id asc
                 for update skip locked
-            limit ${maxToReserve}
+            limit ${observedRowIds?.length ?? maxToReserve}
         `;
 
         return rowsToMap(rows);
@@ -94,14 +96,15 @@ export class PSqlResourceInboxReservationRepository {
     async findTimedOutReservedEntriesSkipLocked(
         typeIds: ReadonlySet<string>,
         timeSinceStartMs: number,
-        reservationInput: ResourceInboxReservationInput
+        reservationInput: ResourceInboxReservationInput,
+        observedRowIds?: readonly string[]
     ): Promise<Map<string, ResourceEntry>> {
         if (!Number.isSafeInteger(timeSinceStartMs) || timeSinceStartMs < 0) {
             throw new Error(
                 'Reserved-entry timeout must be a non-negative safe integer in milliseconds'
             );
         }
-        if (typeIds.size === 0) {
+        if (typeIds.size === 0 || observedRowIds?.length === 0) {
             return new Map();
         }
 
@@ -114,13 +117,14 @@ export class PSqlResourceInboxReservationRepository {
             from resource_inbox
             where ri_type_id in ${this.sql([...typeIds])}
               and ri_status = ${EntityStatus.RESERVED}
+              and (${observedRowIds === undefined} or ri_row_id = any(${observedRowIds ?? []}::bigint[]))
               and expire_ts > (now() at time zone 'UTC')
               and ri_attempts < ${maxAttempts}
               and start_ts is not null
               and start_ts < (now() - (${timeSinceStartMs} * interval '1 millisecond')) at time zone 'UTC'
             order by ri_row_id
                 for update skip locked
-            limit ${maxToReserve}
+            limit ${observedRowIds?.length ?? maxToReserve}
         `;
 
         return rowsToMap(rows);

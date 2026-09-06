@@ -1,5 +1,6 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
-import { InMemoryQueueBox, toResourceEntrySnapshot } from '../queuebox/in-memory-queue-box.ts';
+import { InMemoryQueueBox } from '../queuebox/in-memory-queue-box.ts';
+import { toResourceEntrySnapshot } from '../queuebox/resource-entry-observations.ts';
 import { toKeyAsString, toResourceEntryKey, type Key, type ResourceEntry } from '../queuebox/ResourceEntry.ts';
 
 import { decodeALAdmissionValue, type ALAdmissionDecoder } from './al-admission-decoder.ts';
