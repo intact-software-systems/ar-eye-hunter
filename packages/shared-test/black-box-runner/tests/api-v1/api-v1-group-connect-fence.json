@@ -1,0 +1,330 @@
+{
+  "description": "The connect fence (product decision 32 and the browser surface's settled question Q3): a manager plans a managed group, the planned layout is published, and a connect naming a stale formation epoch or a layout that is not the stored plan is refused with its own 409 code and writes nothing, so the connect that names the published layout under the current epoch still dials it. The no-planned-layout refusal only exists in the window between the plan receipt and the publication, which no recipe can hold open, so it stays pinned by the compute tests.",
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": "connect-fence-{runId}",
+    "workspaceId": "default-{runId}",
+    "fenceGroupId": "fence-room-{runId}",
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/bb-7c1f2e9a4b3d5c6e8f0a1b2c-{runId}",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createFenceGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/group-create-fence-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{fenceGroupId}",
+          "displayName": "Connect fence group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "activation": {
+              "mode": "deadline",
+              "successRate": 1,
+              "minimumViableRate": 1,
+              "deadlineMs": 3000,
+              "maxFormationAttempts": 1
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "lifecycleState": "forming",
+            "formationEpoch": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "managerPlansTheGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{fenceGroupId}/lifecycle/plan/requests/plan-fence-group-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {},
+        "outputs": {
+          "plannedEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned",
+            "formationEpoch": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "plannedLayoutIsPublished",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{fenceGroupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 2
+        },
+        "outputs": {
+          "plannedLayoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "plannedLayoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "plannedLayoutVersion": "body.snapshot.version",
+          "plannedLayoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectWithAStaleEpochIsRefused",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{fenceGroupId}/lifecycle/connect/requests/connect-fence-stale-epoch-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": 0,
+          "expectedLayout": {
+            "groupRevision": "{plannedLayoutGroupRevision}",
+            "presenceRevision": "{plannedLayoutPresenceRevision}",
+            "version": "{plannedLayoutVersion}",
+            "state": "{plannedLayoutState}"
+          }
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-connect-stale-epoch",
+          "status": 409
+        }
+      }
+    },
+    {
+      "name": "connectNamingASupersededLayoutIsRefused",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{fenceGroupId}/lifecycle/connect/requests/connect-fence-superseded-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{plannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{plannedLayoutGroupRevision}",
+            "presenceRevision": "{plannedLayoutPresenceRevision}",
+            "version": 999,
+            "state": "{plannedLayoutState}"
+          }
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-connect-planned-layout-superseded",
+          "status": 409
+        }
+      }
+    },
+    {
+      "name": "refusalsWroteNothing",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{fenceGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "planned",
+          "formationEpoch": 1
+        }
+      }
+    },
+    {
+      "name": "connectNamingThePublishedLayoutDials",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{fenceGroupId}/lifecycle/connect/requests/connect-fence-published-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": "{plannedEpoch}",
+          "expectedLayout": {
+            "groupRevision": "{plannedLayoutGroupRevision}",
+            "presenceRevision": "{plannedLayoutPresenceRevision}",
+            "version": "{plannedLayoutVersion}",
+            "state": "{plannedLayoutState}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "connecting",
+            "formationEpoch": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "singleMemberMeshActivates",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{fenceGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 30000,
+          "backoffMs": 250,
+          "backoffMultiplier": 2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lifecycleState": "active",
+          "formationEpoch": 3,
+          "lastFormationOutcome": {
+            "outcome": "activated"
+          }
+        }
+      }
+    }
+  ]
+}

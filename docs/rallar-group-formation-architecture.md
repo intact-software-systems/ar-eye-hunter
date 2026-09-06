@@ -861,7 +861,7 @@ data gate is pinned in `apps/api-v1/test/services/ws-topic-room-authorizer.test.
 
 ### Recipes and profiles
 
-Every recipe exercising lifecycle behaviour names the policy it tests. The fifteen single-server
+Every recipe exercising lifecycle behaviour names the policy it tests. The sixteen single-server
 recipes live in `packages/shared-test/black-box-runner/tests/api-v1/` and sit in the
 `api-v1-black-box` and `api-v1-black-box-recipes` profiles of `recipe-matrix.json`, so the memory
 backend runs them in the fast loop and the Postgres CI job runs them in its base phase:
@@ -873,6 +873,7 @@ backend runs them in the fast loop and the Postgres CI job runs them in its base
 | `api-v1-group-formation-criterion`    | threshold, deadline, degraded, and evidence-driven activation                                                                                                                                                                  |
 | `api-v1-group-manager-succession`     | assigned managers, succession on removal and on leave, the zero-manager fallback                                                                                                                                               |
 | `api-v1-group-admission-approval`     | parking, grant, decline, re-request, zero-manager recovery, epoch survival, park while active                                                                                                                                  |
+| `api-v1-group-connect-fence`          | the stale-epoch and superseded-layout `409`s of `connect`, that they write nothing, and the connect that names the published layout                                                                                            |
 | `api-v1-group-admission-windows`      | the binding phases of capacity, deadline, and `closed`                                                                                                                                                                         |
 | `api-v1-group-data-policy`            | the data gate, the CRDT exemption, `allowed` and default-group flows, post-activation flow, and the forming allowed-group transport valve                                                                                      |
 | `api-v1-match-preset`                 | the composed `match` preset, including all-or-nothing failure and lobby re-opening                                                                                                                                             |
@@ -900,7 +901,7 @@ a set — a scenario that disappears from either side fails.
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `held-layout`              | `api-v1-group-lifecycle-transitions` (`topologyHeldWhileForming`, `managerPlans*`, `acceptedLayoutPromotedAfterActivate`)                                                                                                                   |
 | `discovery-holds-dials`    | `packages/tests/shared/webrtc-group-dial-policy.test.ts` — the stage gate and the provenance gate, each shown load-bearing without the other; end-to-end browser behaviour is still uncovered                                               |
-| `connect-names-its-layout` | `packages/tests/shared/expected-layout-fence.test.ts` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-lifecycle-mutation.test.ts`; `api-v1-group-admission-approval` drives the stale epoch only                 |
+| `connect-names-its-layout` | `packages/tests/shared/expected-layout-fence.test.ts` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-lifecycle-mutation.test.ts`; `api-v1-group-connect-fence` drives the stale epoch and the superseded layout |
 | `connect-trigger-handoff`  | `api-v1-automatic-formation-triggers` (the commanded replan is dialed, never the candidate it replaced)                                                                                                                                     |
 | `dialing-layout-frozen`    | `api-v1-automatic-formation-triggers` and `packages/tests/shared-server/rallar-system/group-state/mutation/group-planned-layout-promotion.test.ts`                                                                                          |
 | `apply-landing`            | `packages/tests/shared-server/rallar-system/group-state/mutation/group-planned-layout-promotion.test.ts`; the restart-convergence half is unpinned                                                                                          |
