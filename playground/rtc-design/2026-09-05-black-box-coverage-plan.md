@@ -106,12 +106,18 @@ only thing separating the four denial branches, so the recipe pins it rather tha
 Two entire join paths — code-protected and invite-only — have zero coverage across all 51 recipes,
 and four denial codes have never been returned by any route.
 
-| Recipe                             | Pins                                                                                                                        |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `api-v1-group-join-code-admission` | `joinMode: "code"` end to end: `group-code-required`, `group-code-invalid`, a successful coded join, and `join-code/rotate` |
-| `api-v1-group-invite-admission`    | `joinMode: "invite-only"`: the invite branch of `canJoinGroup` and its two denial codes                                     |
-| `api-v1-group-business-status`     | archive and delete: `group-archived` and `group-deleted` returned by a real route, and what the read surface then shows     |
-| `api-v1-group-limits`              | `expiresAtEpochMs` producing `group-not-active`, and `maxSessionsPerMember` producing `member-session-limit-reached`        |
+| Recipe                             | Pins                                                                                                                                                                                                                                     |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-group-join-code-admission` | `joinMode: "code"` end to end: `group-code-required`, `group-code-invalid` for a wrong, a rotated-away and an expired code, a successful coded join, `join-code/rotate` as owner/admin-only, and the code normalization both sides apply |
+| `api-v1-group-invite-admission`    | `joinMode: "invite-only"` **through the `/join` route** — `api-v1-group-invite-revocation` already pins the same two denial codes on the self-upsert path, and the routes are registered separately                                      |
+| `api-v1-group-business-status`     | archive and delete: `group-archived` and `group-deleted` returned by a real route, and what the read surface then shows                                                                                                                  |
+| `api-v1-group-limits`              | `expiresAtEpochMs` producing `group-not-active`, and `maxSessionsPerMember` producing `member-session-limit-reached`                                                                                                                     |
+
+Rotation **rewrites** the code it is given: trim, upper-case, strip every non-alphanumeric, cut to 12
+characters, and reject anything under 4. The join side applies the same rule, so the form an operator
+typed and the form `join-code/rotate` handed back verify alike — a regression normalizing on only one
+side would lock every user out, so the recipe pins both. The plaintext code is returned **only** by the
+rotate response; group state stores a verifier.
 
 **Hazards.** A group whose clock has passed keeps `status: "active"` on the row — the denial comes
 from the liveness projection, not the stored status, so the recipe must assert the denial rather than

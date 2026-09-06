@@ -1,0 +1,620 @@
+{
+  "description": "No-browser API-v1 code-protected admission: joinMode \"code\" has zero coverage across the corpus and neither group-code-required nor group-code-invalid is returned by any recipe. A join with no code, a wrong code, a rotated-away code and an already-expired code are each refused, the current code admits, and rotation is owner/admin-only.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_JOINCODE_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-joincode"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_JOINCODE_WORKSPACE_ID",
+      "default": "workspace-joincode-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_JOINCODE_GROUP_ID",
+      "default": "joincode-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_JOINCODE_PASSWORD",
+      "default": "api-v1-joincode-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/joincode-register-owner-{runId}",
+        "body": {
+          "username": "joincode-owner-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "owner client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/joincode-login-owner-{runId}",
+        "body": {
+          "username": "joincode-owner-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "ownerClientId": "body.clientId",
+          "ownerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOwnerAuthHeader",
+      "type": "set",
+      "output": "ownerAuthHeader",
+      "secret": true,
+      "redactAs": "ownerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.ownerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerJoinerA",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/joincode-register-joinera-{runId}",
+        "body": {
+          "username": "joincode-joinera-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "joinera client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginJoinerA",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/joincode-login-joinera-{runId}",
+        "body": {
+          "username": "joincode-joinera-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "joineraClientId": "body.clientId",
+          "joineraAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveJoinerAAuthHeader",
+      "type": "set",
+      "output": "joineraAuthHeader",
+      "secret": true,
+      "redactAs": "joineraAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.joineraAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerJoinerB",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/joincode-register-joinerb-{runId}",
+        "body": {
+          "username": "joincode-joinerb-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "joinerb client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginJoinerB",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/joincode-login-joinerb-{runId}",
+        "body": {
+          "username": "joincode-joinerb-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "joinerbClientId": "body.clientId",
+          "joinerbAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveJoinerBAuthHeader",
+      "type": "set",
+      "output": "joinerbAuthHeader",
+      "secret": true,
+      "redactAs": "joinerbAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.joinerbAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerJoinerC",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/joincode-register-joinerc-{runId}",
+        "body": {
+          "username": "joincode-joinerc-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "joinerc client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginJoinerC",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/joincode-login-joinerc-{runId}",
+        "body": {
+          "username": "joincode-joinerc-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "joinercClientId": "body.clientId",
+          "joinercAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveJoinerCAuthHeader",
+      "type": "set",
+      "output": "joinercAuthHeader",
+      "secret": true,
+      "redactAs": "joinercAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.joinercAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createCodeProtectedGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/joincode-create-group-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Join code group {runId}",
+          "kind": "room",
+          "joinMode": "code",
+          "createdByPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "joinMode": "code"
+          }
+        }
+      }
+    },
+    {
+      "name": "aCodeGroupRefusesAJoinCarryingNoCode",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/joincode-no-code-join-{runId}",
+        "headers": {
+          "Authorization": "{joineraAuthHeader}",
+          "x-client-id": "{joineraClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-code-required",
+          "status": 403,
+          "message": "A join code is required to join."
+        }
+      }
+    },
+    {
+      "name": "aPlainPrincipalCannotRotateTheJoinCode",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/rotate/requests/joincode-outsider-rotates-{runId}",
+        "headers": {
+          "Authorization": "{joineraAuthHeader}",
+          "x-client-id": "{joineraClientId}"
+        },
+        "body": {
+          "joinCode": "joincode-alpha-{runId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "forbidden-role",
+          "status": 403,
+          "message": "Only active group owners/admins can govern group members."
+        }
+      }
+    },
+    {
+      "name": "theOwnerRotatesTheJoinCode",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/rotate/requests/joincode-owner-rotates-one-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "joinCode": "joincode-alpha-{runId}"
+        },
+        "outputs": {
+          "currentJoinCode": "body.joinCode"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "joinCode": "JOINCODEALPH",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "aWrongCodeIsRefused",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/joincode-wrong-code-join-{runId}",
+        "headers": {
+          "Authorization": "{joineraAuthHeader}",
+          "x-client-id": "{joineraClientId}"
+        },
+        "body": {
+          "joinCode": "NOTTHECODE01"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-code-invalid",
+          "status": 403,
+          "message": "Join code is invalid."
+        }
+      }
+    },
+    {
+      "name": "theCurrentCodeAdmits",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/joincode-right-code-join-{runId}",
+        "headers": {
+          "Authorization": "{joineraAuthHeader}",
+          "x-client-id": "{joineraClientId}"
+        },
+        "body": {
+          "joinCode": "{currentJoinCode}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{joineraClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theOwnerRotatesTheJoinCodeAgain",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/rotate/requests/joincode-owner-rotates-two-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "joinCode": "joincode-beta-{runId}"
+        },
+        "outputs": {
+          "rotatedJoinCode": "body.joinCode"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "joinCode": "JOINCODEBETA",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "theRotatedAwayCodeNoLongerAdmits",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/joincode-stale-code-join-{runId}",
+        "headers": {
+          "Authorization": "{joinerbAuthHeader}",
+          "x-client-id": "{joinerbClientId}"
+        },
+        "body": {
+          "joinCode": "{currentJoinCode}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-code-invalid",
+          "status": 403,
+          "message": "Join code is invalid."
+        }
+      }
+    },
+    {
+      "name": "theRotatedInCodeAdmits",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/joincode-new-code-join-{runId}",
+        "headers": {
+          "Authorization": "{joinerbAuthHeader}",
+          "x-client-id": "{joinerbClientId}"
+        },
+        "body": {
+          "joinCode": "{rotatedJoinCode}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{joinerbClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theTypedFormAndTheReturnedFormAreInterchangeable",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/joincode-typed-form-join-{runId}",
+        "headers": {
+          "Authorization": "{joinercAuthHeader}",
+          "x-client-id": "{joinercClientId}"
+        },
+        "body": {
+          "joinCode": "joincode-beta-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{joinercClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theOwnerRotatesToAnAlreadyExpiredCode",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/rotate/requests/joincode-owner-rotates-past-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "joinCode": "joincode-stale-{runId}",
+          "expiresAtEpochMs": 1700000000000
+        },
+        "outputs": {
+          "expiredJoinCode": "body.joinCode"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "joinCode": "JOINCODESTAL",
+          "expiresAtEpochMs": 1700000000000
+        }
+      }
+    },
+    {
+      "name": "AnExpiredCodeIsRefusedEvenForAnAlreadyActiveMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join/requests/joincode-expired-code-join-{runId}",
+        "headers": {
+          "Authorization": "{joineraAuthHeader}",
+          "x-client-id": "{joineraClientId}"
+        },
+        "body": {
+          "joinCode": "{expiredJoinCode}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-code-invalid",
+          "status": 403,
+          "message": "Join code is invalid."
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}
