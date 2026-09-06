@@ -2,8 +2,10 @@ import { AppInboxIdempotencyConflictError, AppInboxReservationConflictError } fr
 import { classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts';
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
 import { GroupAlreadyExistsError, GroupMutationRejectedError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { GroupConnectDeniedError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-rejection-codes.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { GroupTopologyConfigValidationError } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
+import { GROUP_CONNECT_REJECTION_CODES } from '@shared/api/group-lifecycle/group-connect-rejection-codes.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('AppInbox error classification', () => {
@@ -115,6 +117,22 @@ describe('AppInbox error classification', () => {
                 code: 'group-already-exists',
                 status: 409,
                 message: 'Group already exists: room-1',
+                issues: null,
+                denial: null,
+                retry: null
+            }
+        });
+    });
+
+    it.each([...GROUP_CONNECT_REJECTION_CODES])('maps the %s connect conflict to its own 409', (code) => {
+        expect(classifyAppInboxError(new GroupConnectDeniedError(code, `Rejected: ${code}`))).toEqual({
+            kind: 'terminal',
+            code,
+            result: {
+                type: 'app-inbox-failure',
+                code,
+                status: 409,
+                message: `Rejected: ${code}`,
                 issues: null,
                 denial: null,
                 retry: null

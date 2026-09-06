@@ -8,11 +8,13 @@ import { isGroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 
 describe('group connect rejection codes', () => {
-    it('names exactly the two connect conflicts product decision 32 defines', () => {
+    it('names exactly the three connect conflicts: the stale epoch and the two layouts of product decision 32', () => {
         expect([...GROUP_CONNECT_REJECTION_CODES]).toEqual([
+            'group-connect-stale-epoch',
             'group-connect-no-planned-layout',
             'group-connect-planned-layout-superseded'
         ]);
+        expect(isGroupConnectRejectionCode('group-connect-stale-epoch')).toBe(true);
         expect(isGroupConnectRejectionCode('group-connect-no-planned-layout')).toBe(true);
         expect(isGroupConnectRejectionCode('lifecycle-transition-invalid')).toBe(false);
     });

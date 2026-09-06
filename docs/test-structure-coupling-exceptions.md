@@ -184,7 +184,7 @@ moved or changed test.
         "ownedPort": "Room refresh read-through port",
         "observableEffect": "The group point read precedes the topology read, and exactly one connect POST follows carrying the refreshed epoch with the planned-slot identity.",
         "requiredConstraint": "A planned identity newer than the cached snapshot is never posted with the stale epoch; the read-through runs first and the single POST names what it returned.",
-        "failureRationale": "Posting the cached epoch with a newer identity earns the untyped stale-epoch 400 the denial reader cannot classify, and a second POST would race the fence against itself."
+        "failureRationale": "Posting the cached epoch with a newer identity earns the stale-epoch 409 instead of a connect, and a second POST would race the fence against itself."
       }
     },
     {

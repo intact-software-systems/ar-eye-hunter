@@ -1,10 +1,13 @@
 /**
- * `connect` names the exact planned layout it dials (product decision 32).
- * These two conflicts travel as `ApiMutationFailure.code` with status 409 and
- * are the only lifecycle rejections a browser must tell apart from a policy
- * denial; the server registry spreads them so the wire spelling has one owner.
+ * `connect` names the formation epoch it observed and the exact planned
+ * layout it dials (product decision 32). These three conflicts travel as
+ * `ApiMutationFailure.code` with status 409 and are the only lifecycle
+ * rejections a browser must tell apart from a policy denial: the caller
+ * re-reads the current snapshot and retries against it. The server registry
+ * spreads them so the wire spelling has one owner.
  */
 export const GROUP_CONNECT_REJECTION_CODES = [
+    'group-connect-stale-epoch',
     'group-connect-no-planned-layout',
     'group-connect-planned-layout-superseded'
 ] as const;
