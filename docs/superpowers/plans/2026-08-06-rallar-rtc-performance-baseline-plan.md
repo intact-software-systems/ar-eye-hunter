@@ -44,8 +44,11 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
   diagnostic evidence but contributes no accepted metric, and a later run does
   not overwrite or repair its identity.
 - Task 10 capture does not authorize a production change. When a failed
-  observation exposes a product defect, correct that defect in its own reviewed
-  slice and then dispatch a new observation from moving `main`.
+  observation exposes a product defect, keep one reviewed correction PR open
+  while its hypothesis is tested. Use explicitly non-publishing diagnostics
+  against that PR's exact head; do not merge test-only hypothesis slices merely
+  to learn from the next run. Merge only after the correction is proved, then
+  dispatch the accepted observation from moving `main`.
 - Apply the current repository human-readability standard: visible ownership,
   dataflow, decisions, side effects, failure paths, cognitive-load tiers,
   responsibility review, and the post-discount navigation backstop. The old
@@ -92,28 +95,32 @@ observed the new A/B sessions as ready. PR #528 archived the ninth failed
 primary with `acceptedMetrics: false`. The reused-group formation driver still
 treated absolute presence revisions `1`, `2`, and `3` as connect barriers even
 though prior lifecycle work had already advanced the same group's revision.
-PR #530 replaces those obsolete thresholds with exact
-active-session-set checks after each connect, so stale departing sessions must
-clear before the next topology is formed. There is not yet a valid B06 E3
-result. B07 remains held, and evidence ranking cannot start until a valid B06
-primary and any required repeat are archived.
+PR #530 replaces those obsolete thresholds with exact active-session-set checks
+after each connect, so stale departing sessions must clear before the next
+topology is formed. The same PR adds a non-publishing workflow mode for
+repeated exact-head diagnostics. There is not yet a valid B06 E3 result. B07
+remains held, and evidence ranking cannot start until a valid B06 primary and
+any required repeat are archived.
 
 ### Current execution horizon
 
-| Order | Slice                                                  | Completion evidence                                                                                                                                                                                                                                      |
-| ----- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | Merge PR #530's exact active-session formation barrier | A reused group cannot advance from A to B while any retired session remains active; the obsolete absolute-revision barrier is deleted; focused unit, exact default E3, type/build/style/structure, full-unit, and branch review gates pass before merge. |
-| 2     | Capture B06 E3-memory again from moving `main`         | Manually dispatch `RTC-B06 Performance Observation` after the correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.         |
+| Order | Slice                                                          | Completion evidence                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Prove and merge PR #530 without intermediate hypothesis merges | Three separate `diagnostic` workflow run IDs check out the same exact PR head and pass the default memory-mode three-browser scenario. Diagnostic artifacts retain the source commit and logs temporarily but create no observation archive or publication PR. Any change to the PR head resets the three-run count. Focused, type/build/style/structure, full-unit, review, and branch gates also pass before merge. |
+| 2     | Capture B06 E3-memory again from moving `main`                 | Manually dispatch `RTC-B06 Performance Observation` in `publish` mode after the proved correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.                                                                                                                                             |
 
 After these two slices, Task 12 will choose the B05 observation window,
 revisit whether the candidate call path requires E4-pg, and reconcile the
 unlike-environment evidence before ranking at most one candidate—or `none`.
 
-If the next B06 run fails, retain it as failed evidence and diagnose the first
-failed attempt from that run. Fix only the evidenced tooling or product defect,
-then dispatch a new observation from whatever `main` snapshot exists at that
-time. Do not pin, rebase, or wait for a quiet `main` merely to make performance
-evidence current.
+If a PR #530 diagnostic fails, diagnose the first failed attempt, update the
+same PR, and restart its three-run proof from the new exact head. Do not merge
+the hypothesis or open another correction PR merely to obtain runtime feedback.
+If the later published B06 run fails, retain it as failed evidence and diagnose
+the first failed attempt from that run. Fix only the evidenced tooling or
+product defect, then dispatch a new observation from whatever `main` snapshot
+exists at that time. Do not pin, rebase, or wait for a quiet `main` merely to
+make performance evidence current.
 
 **Roadmap:**
 [Rallar Architecture Quality And RTC Program Roadmap](../../../plans/rallar-architecture-quality-and-rtc-program-roadmap.md)
@@ -3969,7 +3976,10 @@ were already far behind the reused group's current causal revision, so they
 could not prove that retired sessions had cleared or that the currently
 expected sessions were the authoritative active set. PR #530
 waits for the exact active-session set after A, B, and C connect and deletes the
-revision-only path.
+revision-only path. Its workflow diagnostic mode runs the exact default
+memory-mode matrix from a branch head, retains only temporary Actions logs and
+source identity, and cannot invoke the observation finalizer or publication
+job.
 
 - [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
       publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
@@ -4006,11 +4016,15 @@ revision-only path.
       after PR #526 merged.
 - [x] Verify and merge observation PR #528, retaining its failed ZIP/index row
       with `acceptedMetrics: false` and no repeat.
+- [ ] Pass three independent `diagnostic` workflow runs on one exact PR #530
+      head. If that head changes, discard the earlier diagnostic count and
+      restart; do not merge an intermediate hypothesis.
 - [ ] Merge PR #530's focused exact active-session formation barrier after its
-      regression, exact default E3, type/build/style/structure, full-unit, and
-      branch review gates pass.
-- [ ] Dispatch `RTC-B06 Performance Observation` from the then-current moving
-      `main`; accept only a valid primary and any controller-required repeat.
+      regression, exact default E3, type/build/style/structure, full-unit,
+      branch review gates, and same-head diagnostic proof pass.
+- [ ] Dispatch `RTC-B06 Performance Observation` in `publish` mode from the
+      then-current moving `main`; accept only a valid primary and any
+      controller-required repeat.
 
 **Current exit:** at least one valid B06 E3-memory primary and any required
 repeat are archived. The stream remains available for later observations; no
@@ -4491,9 +4505,13 @@ first default warmup when messages agent C did not observe the new A/B sessions
 after the prior realtime trio was retired. PR #528 preserves that ninth failed
 primary. PR #530 removes absolute `1`/`2`/`3` presence-revision barriers
 that cannot prove membership on the reused group and instead waits for the
-exact active-session set after each connect. The next two slices are to merge
-that focused correction and dispatch B06 again from moving `main`. B07 remains
-held; Task 12 remains blocked on valid B06 evidence.
+exact active-session set after each connect. It also supplies an explicitly
+non-publishing diagnostic mode so this correction can absorb further runtime
+learning without a chain of test-only merges. Three independent diagnostics
+must pass on one unchanged PR head before merge; any head change restarts that
+proof. The next two slices are to prove and merge that correction, then dispatch
+B06 in publish mode from moving `main`. B07 remains held; Task 12 remains
+blocked on valid B06 evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
