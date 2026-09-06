@@ -2283,6 +2283,29 @@
         ]
       },
       "description": "No-browser API-v1 invite admission through the group join route. The self-upsert member route reaches the same two denial codes but is registered separately, so covering one proves nothing about the other and this recipe drives the join route only. Also pins that the reserved inviteToken field cannot admit anyone, because nothing in the server ever sets the token it is compared against."
+    },
+    {
+      "id": "api-v1-group-business-status",
+      "recipe": "tests/api-v1/api-v1-group-business-status.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-business-status",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 business status: group-archived and group-deleted are returned by no recipe in the corpus. An archived group refuses new joins while its own members can still read, and is terminal at the route -- assertCanUpdateGroup denies every ingress that observes it before AppInbox, regardless of actor role or requested status, so it can be neither revived nor deleted. Deletion is reachable only from active, and a deleted group refuses the read path and the mutation path with the message and the envelope that separate them."
     }
   ]
 }
