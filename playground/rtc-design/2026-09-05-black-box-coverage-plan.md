@@ -354,6 +354,23 @@ not opportunistic widening; the coverage plan should adopt them rather than rout
 Items 1 and 2 should land regardless of whether any recipe is written: **they are what stops the next
 agent from adapting a test instead of fixing the framework.**
 
+### Prerequisite delivery
+
+| Item    | State                                                                                                                                                                                                                                                                                                                                               |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1       | **Delivered** (#503). The guide's self-contradiction is gone, the four hidden primitives are documented from their implementations, the unordered-array semantics are stated with a measured table, and identifiers have a section.                                                                                                                 |
+| 2       | **Delivered** (#503). Three strict checks in `plan-preflight.ts`, ratcheted per recipe from `preflight/strict-expectation-debt.json` so a new finding fails while the 47 existing ones stay visible as debt. Its first catch was real: `aliceNeverReceivesTheBlockedMessage` is a `ws.send` carrying `expect.absent`, which the runner never reads. |
+| 5       | **Delivered.** `equals`, `notEquals` and `exists` join the comparator registry. `exists` is decided before the path is required to resolve, because an absent path is the assertion rather than a failure to make one. Deep equality reuses `jsonEquals` from `@shared/repository/state-utils.ts` rather than adding a third implementation.        |
+| 6       | **Delivered.** A `parallel` step's `expect` is now compared against its aggregate — groups, counts, concurrency, timing — through the same comparator and comparison path an `assert` uses. Child failures are still decided first, so an aggregate expectation cannot mask one.                                                                    |
+| 3, 4, 7 | Open.                                                                                                                                                                                                                                                                                                                                               |
+
+Two facts worth carrying into the remaining items. The runner may import from `@shared/**` — several
+modules already do — but only resolves the alias when the entry point is inside the workspace, so a
+probe script written to a temporary directory fails on the import rather than on the code under test.
+And a `parallel` group's steps use the runner's `{TRANSPORT: {request, response}, name: {}}` pair
+shape, not the flat `{name, type, expect}` shape recipes use at the top level; a group written the
+flat way executes nothing and reports `success: 0` rather than failing.
+
 ## Not in this plan
 
 - **WS upgrade negative paths** (reused, expired, foreign, missing ticket) — worth doing, but they
