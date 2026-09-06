@@ -101,16 +101,26 @@ returns the contracted `404`. Do not close this by editing the recipe.
 Two entire join paths — code-protected and invite-only — have zero coverage across all 51 recipes,
 and four denial codes have never been returned by any route.
 
-| Recipe                             | Pins                                                                                                                        |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `api-v1-group-join-code-admission` | `joinMode: "code"` end to end: `group-code-required`, `group-code-invalid`, a successful coded join, and `join-code/rotate` |
-| `api-v1-group-invite-admission`    | `joinMode: "invite-only"`: the invite branch of `canJoinGroup` and its two denial codes                                     |
-| `api-v1-group-business-status`     | archive and delete: `group-archived` and `group-deleted` returned by a real route, and what the read surface then shows     |
-| `api-v1-group-limits`              | `expiresAtEpochMs` producing `group-not-active`, and `maxSessionsPerMember` producing `member-session-limit-reached`        |
+| Recipe                             | Pins                                                                                                                                                                                                                                                                    |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-group-join-code-admission` | `joinMode: "code"` end to end: `group-code-required`, `group-code-invalid`, a successful coded join, and `join-code/rotate`                                                                                                                                             |
+| `api-v1-group-invite-admission`    | `joinMode: "invite-only"`: the invite branch of `canJoinGroup` and its two denial codes                                                                                                                                                                                 |
+| `api-v1-group-business-status`     | archive and delete: `group-archived` and `group-deleted` returned by a real route, that an archived group stays readable to its members, that it is **terminal at the route** — neither revivable nor deletable — and the two envelopes the read and mutation paths use |
+| `api-v1-group-limits`              | `expiresAtEpochMs` producing `group-not-active`, and `maxSessionsPerMember` producing `member-session-limit-reached`                                                                                                                                                    |
 
 **Hazards.** A group whose clock has passed keeps `status: "active"` on the row — the denial comes
 from the liveness projection, not the stored status, so the recipe must assert the denial rather than
 the field.
+
+**Archived is terminal at the route, and that is not the same as the compute being dead.**
+`assertCanUpdateGroup` runs before AppInbox and before the body is parsed
+(`register-group-state-mutation-routes.ts:67`), so `requireActiveGroup` denies `group-archived`
+regardless of actor role, flag or requested status — an already-archived group has no exit through any
+route, admin surface, WS command or worker. The `allowsArchivedDeletion` carve-out below it
+(`compute-group-aggregate-mutation.ts:130`) is **not** dead: it is the convergence branch for a delete
+admitted while the group was still active, it is reachable by racing archive against delete (both pass
+the guard on an active read), and it is already pinned green by
+`apps/api-v1/test/services/group-state-service.test.ts:344-388`. Do not describe it as dead code.
 
 **Gates:** baseline plus both black-box profiles.
 
