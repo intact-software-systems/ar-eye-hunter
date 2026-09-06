@@ -1,10 +1,26 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { describe, expect, it } from 'vitest';
+
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    NEVER_EXPIRE_TS,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
-import { describe, expect, it } from 'vitest';
+
 import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';
+
+interface QueueEntryTestOptions {
+    readonly status?: EntityStatus;
+    readonly attempts?: number;
+    readonly resource?: string;
+    readonly expiryTs?: Temporal.Instant;
+    readonly startTs?: Temporal.Instant;
+    readonly endTs?: Temporal.Instant;
+    readonly nextTs?: Temporal.Instant;
+}
 
 describe('InMemoryQueueBox', () => {
     it.each(HANDLER_FINALIZED_SUMMARY_SCENARIOS)(
@@ -38,8 +54,8 @@ describe('InMemoryQueueBox', () => {
             resource: JSON.stringify({ version: 2 })
         });
 
-        expect(await queue.enqueueIfAbsent(original)).toBe(original);
-        expect(await queue.enqueueIfAbsent(replacement)).toBe(original);
+        expect(await queue.enqueueIfAbsent(original)).toEqual(original);
+        expect(await queue.enqueueIfAbsent(replacement)).toEqual(original);
 
         const reserved = await queue.reserveEntries(
             new Set([original.typeId]),
@@ -74,7 +90,7 @@ describe('InMemoryQueueBox', () => {
                 audit: { ...observed.audit },
                 dequeueAudit: { ...observed.dequeueAudit }
             }, replacement)
-        ).toBe(replacement);
+        ).toEqual(replacement);
         expect((await queue.getItem(original.key))?.resource).toBe(replacement.resource);
 
         expect(await queue.replaceIfObserved(observed, staleReplacement)).toBeNull();
@@ -438,7 +454,7 @@ describe('InMemoryQueueBox', () => {
                 checkFinalization: RateLimiter.init(60_000, 1),
                 maxAttempts: 2,
                 finalizationStaleAfterMs: 5 * 60 * 1000
-            } as never
+            }
         );
         const reserved = entryOptions.status === EntityStatus.RETRY
             ? await queue.reserveEntries(
@@ -516,15 +532,7 @@ describe('InMemoryQueueBox', () => {
 function createEntry(
     typeId: string,
     resourceId: string,
-    options: Partial<{
-        status: EntityStatus;
-        attempts: number;
-        resource: string;
-        expiryTs: Temporal.Instant;
-        startTs: Temporal.Instant;
-        endTs: Temporal.Instant;
-        nextTs: Temporal.Instant;
-    }> = {}
+    options: QueueEntryTestOptions = {}
 ): ResourceEntry {
     return {
         key: {

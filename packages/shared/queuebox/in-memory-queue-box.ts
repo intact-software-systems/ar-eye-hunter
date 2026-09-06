@@ -1,5 +1,5 @@
-// deno-lint-ignore-file require-await
 import { Temporal } from '@js-temporal/polyfill';
+
 import { EnqueuedType } from '../api/api-config.ts';
 import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvider.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
@@ -48,7 +48,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         this.data = new Map<ResourceEntryKeyString, ResourceEntry>();
 
         for (const [key, entry] of input) {
-            this.data.set(toKeyAsString(key), entry);
+            this.data.set(toKeyAsString(key), toResourceEntrySnapshot(entry));
         }
     }
 
@@ -81,10 +81,10 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
-        const prev = this.data.get(toKeyAsString(resourceEntry.key));
-        this.data.set(toKeyAsString(resourceEntry.key), resourceEntry);
+        const previous = this.data.get(toKeyAsString(resourceEntry.key));
+        this.data.set(toKeyAsString(resourceEntry.key), toResourceEntrySnapshot(resourceEntry));
 
-        return prev;
+        return previous === undefined ? undefined : toResourceEntrySnapshot(previous);
     }
 
     async replaceIfObserved(
@@ -104,22 +104,19 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             return null;
         }
 
-        this.data.set(key, replacement);
-        return replacement;
+        this.data.set(key, toResourceEntrySnapshot(replacement));
+        return toResourceEntrySnapshot(replacement);
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
-        const prev = this.data.get(toKeyAsString(resourceEntry.key));
+        const previous = this.data.get(toKeyAsString(resourceEntry.key));
 
-        if (!prev || isExpiredResourceEntry(prev)) {
-            this.data.set(toKeyAsString(resourceEntry.key), resourceEntry);
-            return resourceEntry;
-        }
-        else {
-            console.log('Entry already exists: ', resourceEntry.key);
+        if (!previous || isExpiredResourceEntry(previous)) {
+            this.data.set(toKeyAsString(resourceEntry.key), toResourceEntrySnapshot(resourceEntry));
+            return toResourceEntrySnapshot(resourceEntry);
         }
 
-        return prev;
+        return toResourceEntrySnapshot(previous);
     }
 
     async tryWriteIfAbsentOrReplaceExpired(
@@ -131,8 +128,8 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             return null;
         }
 
-        this.data.set(key, resourceEntry);
-        return resourceEntry;
+        this.data.set(key, toResourceEntrySnapshot(resourceEntry));
+        return toResourceEntrySnapshot(resourceEntry);
     }
 
     async releaseEntries(
@@ -169,23 +166,14 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
         for (const current of currentEntries) {
             if (current.status !== EntityStatus.RESERVED) {
-                released.set(current.key, current);
+                const snapshot = toResourceEntrySnapshot(current);
+                released.set(snapshot.key, snapshot);
                 continue;
             }
-            const updated: ResourceEntry = {
-                ...current,
-                status: disposition.status,
-                dequeueAudit: {
-                    startTs: current.dequeueAudit.startTs,
-                    endTs: releasedAt,
-                    nextTs: disposition.delayMs !== null
-                        ? releasedAt.add({ milliseconds: disposition.delayMs })
-                        : undefined,
-                    attempts: current.dequeueAudit.attempts
-                }
-            };
+            const updated = computeReleasedResourceEntry(current, disposition, releasedAt);
             this.data.set(toKeyAsString(current.key), updated);
-            released.set(updated.key, updated);
+            const snapshot = toResourceEntrySnapshot(updated);
+            released.set(snapshot.key, snapshot);
         }
 
         return released;
@@ -212,19 +200,9 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 entry.dequeueAudit.attempts < maxAttempts &&
                 this.isReservedEntryTimedOut(typeIds, entry, timeSinceStartTs)
             ) {
-                entry.dequeueAudit = {
-                    startTs: now,
-                    endTs: undefined,
-                    nextTs: undefined,
-                    attempts: entry.dequeueAudit.attempts + 1
-                };
-
-                entry.status = EntityStatus.RESERVED;
-
-                timedOut.set(
-                    toResourceEntryKey(key),
-                    entry
-                );
+                const updated = computeReservedResourceEntry(entry, now);
+                this.data.set(key, updated);
+                timedOut.set(toResourceEntryKey(key), toResourceEntrySnapshot(updated));
             }
         }
 
@@ -264,16 +242,9 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             }
 
             if (typeIds.has(entry.typeId) && statusIds.has(entry.status)) {
-                entry.dequeueAudit = {
-                    startTs: Temporal.Now.instant(),
-                    endTs: undefined,
-                    nextTs: undefined,
-                    attempts: entry.dequeueAudit.attempts + 1
-                };
-
-                entry.status = EntityStatus.RESERVED;
-
-                reserved.set(toResourceEntryKey(key), entry);
+                const updated = computeReservedResourceEntry(entry, now);
+                this.data.set(key, updated);
+                reserved.set(toResourceEntryKey(key), toResourceEntrySnapshot(updated));
             }
         }
 
@@ -316,19 +287,10 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
         for (const [key, entry] of candidates) {
             const selectedNextTs = entry.dequeueAudit.nextTs;
-            const updated = {
-                ...entry,
-                status: EntityStatus.RESERVED,
-                dequeueAudit: {
-                    startTs: now,
-                    endTs: undefined,
-                    nextTs: undefined,
-                    attempts: entry.dequeueAudit.attempts + 1
-                }
-            };
+            const updated = computeReservedResourceEntry(entry, now);
             this.data.set(key, updated);
             reserved.set(toResourceEntryKey(key), {
-                entry: updated,
+                entry: toResourceEntrySnapshot(updated),
                 selectedDueTs: selectedNextTs!
             });
         }
@@ -358,17 +320,10 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         const reserved = new Map<Key, ResourceInboxFinalizationSelection>();
         for (const [key, entry] of candidates) {
             const selectedDueTs = entry.dequeueAudit.startTs!;
-            const updated: ResourceEntry = {
-                ...entry,
-                dequeueAudit: {
-                    attempts: entry.dequeueAudit.attempts + 1,
-                    startTs: now,
-                    endTs: undefined,
-                    nextTs: undefined
-                }
-            };
+            const updated = computeReservedResourceEntry(entry, now);
             this.data.set(key, updated);
-            reserved.set(updated.key, { entry: updated, selectedDueTs });
+            const snapshot = toResourceEntrySnapshot(updated);
+            reserved.set(snapshot.key, { entry: snapshot, selectedDueTs });
         }
         return reserved;
     }
@@ -484,10 +439,9 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             EntityStatus.RESERVED == entry.status &&
             entry.dequeueAudit.startTs
         ) {
-            // Result is 1 if now > deadline, 0 if equal, -1 if now < deadline
             return Temporal.Instant.compare(
-                Temporal.Now.instant(), // now
-                entry.dequeueAudit.startTs.add(duration) // deadline
+                Temporal.Now.instant(),
+                entry.dequeueAudit.startTs.add(duration)
             ) >=
                 0;
         }
@@ -506,7 +460,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             return undefined;
         }
 
-        return entry;
+        return toResourceEntrySnapshot(entry);
     }
 
     async setItem(
@@ -516,10 +470,10 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     ): Promise<void> {
         this.data.set(
             toKeyAsString(key),
-            {
+            toResourceEntrySnapshot({
                 ...value,
                 key
-            }
+            })
         );
     }
 
@@ -546,4 +500,47 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
         return removed;
     }
+}
+
+function computeReservedResourceEntry(entry: ResourceEntry, now: Temporal.Instant): ResourceEntry {
+    return {
+        ...entry,
+        status: EntityStatus.RESERVED,
+        dequeueAudit: {
+            startTs: now,
+            endTs: undefined,
+            nextTs: undefined,
+            attempts: entry.dequeueAudit.attempts + 1
+        }
+    };
+}
+
+function computeReleasedResourceEntry(
+    entry: ResourceEntry,
+    disposition: ResourceInboxReleaseDisposition,
+    releasedAt: Temporal.Instant
+): ResourceEntry {
+    return {
+        ...entry,
+        status: disposition.status,
+        dequeueAudit: {
+            startTs: entry.dequeueAudit.startTs,
+            endTs: releasedAt,
+            nextTs: disposition.delayMs !== null
+                ? releasedAt.add({ milliseconds: disposition.delayMs })
+                : undefined,
+            attempts: entry.dequeueAudit.attempts
+        }
+    };
+}
+
+function toResourceEntrySnapshot(entry: ResourceEntry): ResourceEntry {
+    // Temporal leaves are immutable; copy the mutable records without structuredClone losing their prototypes.
+    return {
+        ...entry,
+        key: { ...entry.key },
+        audit: { ...entry.audit },
+        dequeueAudit: { ...entry.dequeueAudit },
+        db: entry.db === undefined ? undefined : { ...entry.db }
+    };
 }
