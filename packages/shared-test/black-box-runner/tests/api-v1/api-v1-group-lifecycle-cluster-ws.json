@@ -1,0 +1,631 @@
+{
+  "description": "No-browser API-v1 cluster lifecycle over a non-primary socket. Exactly one lifecycle recipe runs against three nodes today. Here the group setup is written on primary and secondary only, then the connect command is served by the tertiary node, which wrote none of it, fenced on the layout the other two produced -- and both writing nodes must read the result back. The sockets are opened against RALLAR_WS_BASE_URL_SECONDARY, which the runner exports and no recipe in the corpus has ever referenced, and the connect delta is bound to the tertiary command by its own requestId. Which node executed the entry is deliberately not asserted: those counters are process-local.",
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "apiSecondary": {
+      "env": "RALLAR_API_BASE_URL_SECONDARY",
+      "default": "http://127.0.0.1:18081"
+    },
+    "apiTertiary": {
+      "env": "RALLAR_API_BASE_URL_TERTIARY",
+      "default": "http://127.0.0.1:18082"
+    },
+    "rallarWsBaseUrlSecondary": {
+      "env": "RALLAR_WS_BASE_URL_SECONDARY",
+      "default": "ws://127.0.0.1:18081"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_LCWS_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-lcws"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_LCWS_WORKSPACE_ID",
+      "default": "workspace-lcws-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_LCWS_GROUP_ID",
+      "default": "lcws-cluster-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_LCWS_PASSWORD",
+      "default": "api-v1-lcws-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "secondary": {
+      "type": "http",
+      "baseUrl": "{apiSecondary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "tertiary": {
+      "type": "http",
+      "baseUrl": "{apiTertiary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "wsAliceSecondary": {
+      "type": "ws",
+      "timeoutMs": 20000
+    },
+    "wsBobSecondary": {
+      "type": "ws",
+      "timeoutMs": 20000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/lcws-cluster-lifecycle-register-alice-{runId}",
+        "body": {
+          "username": "lcws-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/lcws-cluster-lifecycle-login-alice-{runId}",
+        "body": {
+          "username": "lcws-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/lcws-cluster-lifecycle-register-bob-{runId}",
+        "body": {
+          "username": "lcws-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/lcws-cluster-lifecycle-login-bob-{runId}",
+        "body": {
+          "username": "lcws-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheClusterGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/lcws-cluster-lifecycle-create-group-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Cluster lifecycle over WS {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
+            },
+            "admission": {
+              "mode": "open"
+            },
+            "activation": {
+              "mode": "threshold-or-deadline",
+              "successRate": 0.95,
+              "minimumViableRate": 0.5,
+              "deadlineMs": 60000,
+              "maxFormationAttempts": 3
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "lifecycleState": "forming"
+          }
+        }
+      }
+    },
+    {
+      "name": "alicePresenceOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/lcws-cluster-lifecycle-alice-presence-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "lcws-generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "bobJoinsOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/lcws-cluster-lifecycle-bob-joins-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "bobPresenceOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/lcws-cluster-lifecycle-bob-presence-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "lcws-generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "managerPlansOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/plan/requests/lcws-cluster-lifecycle-plan-group-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned"
+          }
+        }
+      }
+    },
+    {
+      "name": "theLayoutPublishes",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 10000,
+          "backoffMs": 120,
+          "backoffMultiplier": 1.25
+        },
+        "outputs": {
+          "layoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "layoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "layoutVersion": "body.snapshot.version",
+          "layoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "createAliceWsTicket",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/lcws-cluster-lifecycle-ws-ticket-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "aliceWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceSecondaryWsUrl",
+      "type": "set",
+      "output": "aliceWsUrl",
+      "secret": true,
+      "redactAs": "aliceWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrlSecondary"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.aliceSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.aliceWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openAliceSocketOnSecondary",
+      "type": "ws.open",
+      "connection": "wsAliceSecondary",
+      "request": {
+        "url": "{aliceWsUrl}",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "createBobWsTicket",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/lcws-cluster-lifecycle-ws-ticket-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobSecondaryWsUrl",
+      "type": "set",
+      "output": "bobWsUrl",
+      "secret": true,
+      "redactAs": "bobWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrlSecondary"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.bobSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.bobWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openBobSocketOnSecondary",
+      "type": "ws.open",
+      "connection": "wsBobSecondary",
+      "request": {
+        "url": "{bobWsUrl}",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "tertiaryServesTheConnectCommand",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/connect/requests/lcws-cluster-lifecycle-connect-on-tertiary-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": 1,
+          "expectedLayout": {
+            "groupRevision": "{layoutGroupRevision}",
+            "presenceRevision": "{layoutPresenceRevision}",
+            "version": "{layoutVersion}",
+            "state": "{layoutState}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "connecting",
+            "formationEpoch": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "primarySeesTheTertiaryCommand",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 10000,
+          "backoffMs": 120,
+          "backoffMultiplier": 1.25
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "connecting",
+            "formationEpoch": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "secondarySeesTheTertiaryCommand",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 10000,
+          "backoffMs": 120,
+          "backoffMultiplier": 1.25
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "connecting",
+            "formationEpoch": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "theTertiaryConnectDeltaReachesTheSecondarySocket",
+      "type": "ws.wait",
+      "connection": "wsAliceSecondary",
+      "expect": {
+        "connection": "wsAliceSecondary",
+        "withinMs": 20000,
+        "consume": true,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "route": {
+            "topicId": "group-state.event"
+          },
+          "payload": {
+            "resource": {
+              "event": {
+                "requestId": "lcws-cluster-lifecycle-connect-on-tertiary-{runId}"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "closeAliceSocket",
+      "type": "ws.close",
+      "connection": "wsAliceSecondary",
+      "request": {
+        "code": 1000,
+        "reason": "done"
+      }
+    },
+    {
+      "name": "closeBobSocket",
+      "type": "ws.close",
+      "connection": "wsBobSecondary",
+      "request": {
+        "code": 1000,
+        "reason": "done"
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

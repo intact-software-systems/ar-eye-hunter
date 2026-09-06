@@ -203,12 +203,12 @@ recipe changes the registered read population.
 Today exactly one lifecycle recipe runs against three nodes (D9). Everything else about the lifecycle
 is pinned single-node.
 
-| Recipe                                  | Pins                                                                                                                         |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `api-v1-group-lifecycle-cluster`        | a command issued to a node that handled none of the group's setup writes, read back on the two that did                      |
-| `api-v1-group-lifecycle-ws-convergence` | the first cluster recipe combining a lifecycle transition with any WebSocket; a client-to-server frame on a non-primary node |
-| `api-v1-group-governance-fencing`       | ban, admission and removal fencing across nodes; logout on node A fencing a live socket on node B                            |
-| `api-v1-group-event-cursor-paging`      | event cursor paging over HTTP at all, and continued on a second node                                                         |
+| Recipe                                  | Pins                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-group-lifecycle-cluster`        | folded into `api-v1-group-lifecycle-cluster-ws`: the setup-free node serving a lifecycle command and the two writing nodes reading it back are the same recipe's first half                                                                                                                                                                     |
+| `api-v1-group-lifecycle-ws-convergence` | **delivered** as `api-v1-group-lifecycle-cluster-ws`: the connect command served by the node that wrote none of the setup, read back on the two that did, with both sockets opened against `RALLAR_WS_BASE_URL_SECONDARY` -- the first recipe in the corpus to reference it -- and the delta bound to the tertiary command by its own requestId |
+| `api-v1-group-governance-fencing`       | ban, admission and removal fencing across nodes; logout on node A fencing a live socket on node B                                                                                                                                                                                                                                               |
+| `api-v1-group-event-cursor-paging`      | event cursor paging over HTTP at all, and continued on a second node                                                                                                                                                                                                                                                                            |
 
 **Hazards.** `RALLAR_WS_BASE_URL_SECONDARY` is exported by the runner and referenced by zero recipes;
 the only non-primary socket in the corpus is receive-only. Expect the first client-to-server frame on
