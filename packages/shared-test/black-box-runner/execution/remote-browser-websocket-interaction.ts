@@ -20,6 +20,7 @@ import {
     waitForWsClose,
     waitForWsMessage,
     waitForWsMessageAbsence,
+    waitForWsMessageCount,
     waitForWsMessages
 } from '../ws/ws-wait-expectations.ts';
 import {
@@ -310,6 +311,15 @@ async function sendRemoteWs(interaction: any, config: any, context: any): Promis
             sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs
         };
 
+        if (interaction.response?.count !== undefined) {
+            return waitWithRemoteWsEventSync({
+                remote,
+                fetchFn,
+                context,
+                wait: () => waitForWsMessageCount({ interaction, config, context, details })
+            });
+        }
+
         if (interaction.response?.messages) {
             return waitWithRemoteWsEventSync({
                 remote,
@@ -378,6 +388,17 @@ async function waitRemoteWs(interaction: any, config: any, context: any): Promis
                 });
             }
 
+            // Before `message`, which resolves on its first match and so cannot
+            // tell "exactly one" from "at least one".
+            if (interaction.response?.count !== undefined) {
+                return waitForWsMessageCount({
+                    interaction,
+                    config,
+                    context,
+                    details: { remote }
+                });
+            }
+
             if (interaction.response?.close !== undefined) {
                 return waitForWsClose(interaction, config, context, {
                     remote
@@ -399,7 +420,8 @@ async function waitRemoteWs(interaction: any, config: any, context: any): Promis
             return Promise.resolve(toRemoteWsFailure({
                 config,
                 interaction,
-                result: 'WebSocket wait expects expect.message, expect.messages, expect.absent, or expect.close'
+                result: 'WebSocket wait expects expect.message, expect.messages, expect.count, ' +
+                    'expect.absent, or expect.close'
             }));
         }
     });

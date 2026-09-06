@@ -149,7 +149,8 @@ export function executeLocalWsInteraction(interaction: any, config: any, context
             toWsFailureStatus(
                 config,
                 interaction,
-                'WebSocket wait expects expect.message, expect.messages, expect.absent, or expect.close'
+                'WebSocket wait expects expect.message, expect.messages, expect.count, ' +
+                    'expect.absent, or expect.close'
             )
         );
     }

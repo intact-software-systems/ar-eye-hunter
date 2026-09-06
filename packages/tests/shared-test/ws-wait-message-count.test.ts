@@ -29,7 +29,7 @@ function toConfig(interaction: ApiJsonObject): ApiJsonObject {
 async function runCount(input: {
     expectFields: ApiJsonObject;
     payloads: readonly ApiJsonValue[];
-}): Promise<{ status: string; matchedCount?: number; }> {
+}): Promise<{ status: string; result: string; matchedCount?: number; }> {
     const interaction = toInteraction(input.expectFields);
     const status = await waitForWsMessageCount({
         interaction,
@@ -37,7 +37,11 @@ async function runCount(input: {
         context: toContext(input.payloads)
     });
 
-    return { status: status.status, matchedCount: status.actual?.matchedCount };
+    return {
+        status: status.status,
+        result: status.result,
+        matchedCount: status.actual?.matchedCount
+    };
 }
 
 const decided = { payload: { typeId: 'admission.decided' } };
@@ -63,6 +67,7 @@ describe('waitForWsMessageCount', () => {
         });
 
         expect(result.status).toBe('FAILURE');
+        expect(result.result).toBe('WebSocket message count did not match the expectation');
         expect(result.matchedCount).toBe(2);
     });
 
@@ -107,10 +112,13 @@ describe('waitForWsMessageCount', () => {
         expect(result.matchedCount).toBe(0);
     });
 
+    // The two guards and a genuine count mismatch all report FAILURE, so each
+    // case names its own message; otherwise a broken guard passes as the other.
     it('requires a message matcher to count against', async () => {
         const result = await runCount({ expectFields: { count: 1 }, payloads: [decided] });
 
         expect(result.status).toBe('FAILURE');
+        expect(result.result).toBe('WebSocket count wait expects expect.message to match frames against.');
     });
 
     it('rejects a range whose minimum exceeds its maximum', async () => {
@@ -120,5 +128,16 @@ describe('waitForWsMessageCount', () => {
         });
 
         expect(result.status).toBe('FAILURE');
+        expect(result.result).toBe('WebSocket count wait expects expect.count to be a non-negative integer or {min,max}.');
+    });
+
+    it('rejects a count object that names no bound', async () => {
+        const result = await runCount({
+            expectFields: { message: { payload: { typeId: 'admission.decided' } }, count: {} },
+            payloads: [decided, decided]
+        });
+
+        expect(result.status).toBe('FAILURE');
+        expect(result.result).toBe('WebSocket count wait expects expect.count to be a non-negative integer or {min,max}.');
     });
 });

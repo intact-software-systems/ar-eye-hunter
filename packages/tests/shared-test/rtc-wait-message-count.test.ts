@@ -9,7 +9,7 @@ const connection = 'aliceRtc';
 async function runCount(input: {
     expectFields: ApiJsonObject;
     payloads: readonly ApiJsonValue[];
-}): Promise<{ status: string; matchedCount?: number; }> {
+}): Promise<{ status: string; result: string; matchedCount?: number; }> {
     const interaction = {
         request: {
             action: 'wait',
@@ -25,7 +25,11 @@ async function runCount(input: {
         context: { rtcMessages: { [connection]: input.payloads.map((data) => ({ data })) } }
     });
 
-    return { status: status.status, matchedCount: status.actual?.matchedCount };
+    return {
+        status: status.status,
+        result: status.result,
+        matchedCount: status.actual?.matchedCount
+    };
 }
 
 const motion = { payload: { typeId: 'motion.tick' } };
@@ -49,6 +53,7 @@ describe('waitForRtcMessageCount', () => {
         });
 
         expect(result.status).toBe('FAILURE');
+        expect(result.result).toBe('RTC message count did not match the expectation');
         expect(result.matchedCount).toBe(2);
     });
 
@@ -61,9 +66,22 @@ describe('waitForRtcMessageCount', () => {
         expect(result.status).toBe('SUCCESS');
     });
 
+    // The two guards and a genuine count mismatch all report FAILURE, so each
+    // case names its own message; otherwise a broken guard passes as the other.
     it('requires a message matcher to count against', async () => {
         const result = await runCount({ expectFields: { count: 1 }, payloads: [motion] });
 
         expect(result.status).toBe('FAILURE');
+        expect(result.result).toBe('RTC count wait expects expect.message to match frames against.');
+    });
+
+    it('rejects a count object that names no bound', async () => {
+        const result = await runCount({
+            expectFields: { message: { payload: { typeId: 'motion.tick' } }, count: {} },
+            payloads: [motion, motion]
+        });
+
+        expect(result.status).toBe('FAILURE');
+        expect(result.result).toBe('RTC count wait expects expect.count to be a non-negative integer or {min,max}.');
     });
 });
