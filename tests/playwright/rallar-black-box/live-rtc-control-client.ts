@@ -281,12 +281,21 @@ export class LiveRtcControlClient {
         const deadlineMs = this.#monotonicNow() + 60_000;
         let attempt = 0;
         await expect.poll(async () => {
+            const refreshTimeoutMs = deadlineMs - this.#monotonicNow();
+            if (refreshTimeoutMs <= 0) {
+                throw new Error(`RTC room refresh for ${input.agent.agentId} exceeded the readiness deadline.`);
+            }
+            await input.agent.refreshRoom({ timeoutMs: refreshTimeoutMs });
+            const healthTimeoutMs = Math.min(15_000, deadlineMs - this.#monotonicNow());
+            if (healthTimeoutMs <= 0) {
+                throw new Error(`RTC room refresh for ${input.agent.agentId} exceeded the readiness deadline.`);
+            }
             const result = await this.executeResult({
                 runId: input.runId,
                 agentId: input.agent.agentId,
                 commandId: `health-ready-${input.agent.prefix.toLowerCase()}-${input.suffix}-${attempt++}`,
                 command: { kind: 'health' },
-                timeoutMs: 15_000
+                timeoutMs: healthTimeoutMs
             }).catch(() => undefined);
             if (!result?.ok) {
                 return [];
@@ -302,11 +311,6 @@ export class LiveRtcControlClient {
             } for ${input.suffix}`,
             timeout: 60_000
         }).toEqual(expect.arrayContaining([...input.expectedPeerIds]));
-        const timeoutMs = deadlineMs - this.#monotonicNow();
-        if (timeoutMs <= 0) {
-            throw new Error(`RTC room refresh for ${input.agent.agentId} exceeded the readiness deadline.`);
-        }
-        await input.agent.refreshRoom({ timeoutMs });
         const readyAtMs = this.#monotonicNow();
         if (readyAtMs >= deadlineMs) {
             throw new Error(`RTC room refresh for ${input.agent.agentId} exceeded the readiness deadline.`);
