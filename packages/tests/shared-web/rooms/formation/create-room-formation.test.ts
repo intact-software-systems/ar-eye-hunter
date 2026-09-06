@@ -74,6 +74,10 @@ function failureResponse(code: string, status: number): Response {
     );
 }
 
+function toRequestLine(input: RequestInfo | URL, init?: RequestInit): string {
+    return `${init?.method ?? 'GET'} ${String(input).split('/groups/room-1')[1] ?? ''}`;
+}
+
 const explicitLayout = { groupRevision: 6, presenceRevision: 2, version: 8, state: 'active' } as const;
 const commandInvocations = {
     plan: (formation) => formation.plan(),
@@ -401,7 +405,9 @@ describe('room formation commands', () => {
             toScopedOverlayId(cached.group),
             createLayoutOverlay({ roomRef: cached.group, causalRevision: { groupRevision: 2, presenceRevision: 1 }, version: 3 })
         );
-        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const requests: string[] = [];
+        vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+            requests.push(toRequestLine(input, init));
             if (init?.method === 'POST') {
                 return failureResponse('group-connect-stale-epoch', 409);
             }
@@ -413,13 +419,11 @@ describe('room formation commands', () => {
             }
             return pointReadResponse(current);
         });
-        vi.stubGlobal('fetch', fetchMock);
         const formation = createRallarFacade().rooms.formation(cached.group);
 
         await expect(formation.connect()).rejects.toMatchObject({ status: 409 });
 
-        expect(fetchMock.mock.calls.map((call) => `${call[1]?.method ?? 'GET'} ${String(call[0]).split('/groups/room-1')[1] ?? ''}`))
-            .toEqual([expect.stringMatching(/^POST \/lifecycle\/connect\/requests\//), 'GET ', 'GET /topology']);
+        expect(requests).toEqual([expect.stringMatching(/^POST \/lifecycle\/connect\/requests\//), 'GET ', 'GET /topology']);
         expect(formation.status()?.formationEpoch).toBe(2);
         expect(formation.status()?.planned?.identity).toEqual({ groupRevision: 2, presenceRevision: 1, version: 3, state: 'active' });
     });
@@ -442,8 +446,12 @@ describe('room formation commands', () => {
             createLayoutOverlay({ roomRef: stale.group, causalRevision: { groupRevision: 4, presenceRevision: 1 }, version: 3 })
         );
         const named = { groupRevision: 4, presenceRevision: 1, version: 3, state: 'active' } as const;
-        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const requests: string[] = [];
+        let postedBody = '';
+        vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+            requests.push(toRequestLine(input, init));
             if (init?.method === 'POST') {
+                postedBody = String(init.body);
                 return new Response(JSON.stringify(fresh), { status: 200, headers: { 'content-type': 'application/json' } });
             }
             if (String(input).endsWith('/topology')) {
@@ -454,13 +462,11 @@ describe('room formation commands', () => {
             }
             return pointReadResponse(fresh);
         });
-        vi.stubGlobal('fetch', fetchMock);
 
         await createRallarFacade().rooms.formation(stale.group).connect({ layout: named });
 
-        expect(fetchMock.mock.calls.map((call) => `${call[1]?.method ?? 'GET'} ${String(call[0]).split('/groups/room-1')[1] ?? ''}`))
-            .toEqual(['GET ', 'GET /topology', expect.stringMatching(/^POST \/lifecycle\/connect\/requests\//)]);
-        expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toEqual({ expectedFormationEpoch: 2, expectedLayout: named });
+        expect(requests).toEqual(['GET ', 'GET /topology', expect.stringMatching(/^POST \/lifecycle\/connect\/requests\//)]);
+        expect(JSON.parse(postedBody)).toEqual({ expectedFormationEpoch: 2, expectedLayout: named });
     });
 
     it('keeps the planned layout when the server refuses a connect for another reason', async () => {
@@ -475,13 +481,16 @@ describe('room formation commands', () => {
             toScopedOverlayId(planned.group),
             createLayoutOverlay({ roomRef: planned.group, causalRevision: { groupRevision: 2, presenceRevision: 1 }, version: 2 })
         );
-        const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => failureResponse('group-mutation-rejected', 400));
-        vi.stubGlobal('fetch', fetchMock);
+        const requests: string[] = [];
+        vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+            requests.push(toRequestLine(input, init));
+            return failureResponse('group-mutation-rejected', 400);
+        });
         const formation = createRallarFacade().rooms.formation(planned.group);
 
         await expect(formation.connect()).rejects.toMatchObject({ status: 400 });
 
-        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(requests).toEqual([expect.stringMatching(/^POST \/lifecycle\/connect\/requests\//)]);
         expect(formation.status()?.planned?.identity).toEqual({ groupRevision: 2, presenceRevision: 1, version: 2, state: 'active' });
     });
 });
