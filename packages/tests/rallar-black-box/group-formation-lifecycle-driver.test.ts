@@ -7,13 +7,16 @@ import {
 import type { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import type { LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 
-function createAgent(prefix: LiveRtcControlClient.FormationAgent['prefix']): LiveRtcControlClient.FormationAgent {
+function createAgent(
+    prefix: LiveRtcControlClient.FormationAgent['prefix'],
+    refreshRoom: LiveRtcControlClient.FormationAgent['refreshRoom'] = async () => undefined
+): LiveRtcControlClient.FormationAgent {
     return {
         prefix,
         agentId: `agent-${prefix.toLowerCase()}`,
         actor: `actor-${prefix.toLowerCase()}`,
         connection: `connection-${prefix.toLowerCase()}`,
-        refreshRoom: async () => undefined
+        refreshRoom
     };
 }
 
@@ -43,8 +46,9 @@ function readResultValue(
 }
 
 describe('group formation lifecycle driver', () => {
-    it('waits for exact current membership and accepts a newer active publication', async () => {
+    it('waits for exact current membership and hydrates every agent before planning', async () => {
         const commands: LiveRtcControlClient.ExecuteInput[] = [];
+        const events: string[] = [];
         const topologyStates: Array<'removed' | 'active'> = ['removed', 'active'];
         const activeSessionIds = [
             ['stale-session', 'session-a'],
@@ -55,6 +59,7 @@ describe('group formation lifecycle driver', () => {
         const control: LiveRtcControlPort = {
             executeOk: async (input: LiveRtcControlClient.ExecuteInput): Promise<LiveRtcControlClient.Result> => {
                 commands.push(input);
+                events.push(`command:${input.commandId}`);
                 if (input.command.kind === 'rtc.connect') {
                     return successfulResult(input, { sessionId: `session-${input.agentId.slice(-1)}` });
                 }
@@ -73,6 +78,7 @@ describe('group formation lifecycle driver', () => {
             },
             executeResult: async (input: LiveRtcControlClient.ExecuteInput): Promise<LiveRtcControlClient.Result> => {
                 commands.push(input);
+                events.push(`command:${input.commandId}`);
                 if (input.command.kind === 'http.request' && input.command.request.path?.endsWith('/groups/group')) {
                     return successfulResult(input, {
                         body: {
@@ -108,7 +114,17 @@ describe('group formation lifecycle driver', () => {
             waitForPeerAbsence: async () => undefined,
             waitForPeerReadiness: async () => 1
         };
-        const agents = [createAgent('A'), createAgent('B'), createAgent('C')] as const;
+        const agents = [
+            createAgent('A', async () => {
+                events.push('refresh:A');
+            }),
+            createAgent('B', async () => {
+                events.push('refresh:B');
+            }),
+            createAgent('C', async () => {
+                events.push('refresh:C');
+            })
+        ] as const;
         const driver = createGroupFormationLifecycleDriver({
             apiBaseUrl: 'http://api.test',
             applicationId: 'application',
@@ -129,8 +145,17 @@ describe('group formation lifecycle driver', () => {
 
         const presenceReads = commands.filter((command) => command.commandId.startsWith('group-presence-'));
         const connectBIndex = commands.findIndex((command) => command.agentId === 'agent-b' && command.command.kind === 'rtc.connect');
+        const threeMemberTopologyIndex = events.indexOf('command:topology-mesh-realtime-removed-layout');
         expect(presenceReads).toHaveLength(4);
         expect(commands.indexOf(presenceReads[1])).toBeLessThan(connectBIndex);
+        expect(events.filter((event) => event.startsWith('refresh:'))).toEqual([
+            'refresh:A',
+            'refresh:B',
+            'refresh:C'
+        ]);
+        for (const prefix of ['A', 'B', 'C']) {
+            expect(events.indexOf(`refresh:${prefix}`)).toBeLessThan(threeMemberTopologyIndex);
+        }
         expect(commands.find((command) => lifecycleOperation(command) === 'connect')).toMatchObject({
             command: {
                 request: {

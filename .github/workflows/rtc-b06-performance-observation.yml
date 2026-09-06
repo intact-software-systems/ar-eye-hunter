@@ -42,7 +42,7 @@ jobs:
           fi
 
   capture:
-    name: Capture RTC-B06 E3-memory observation
+    name: Run RTC-B06 E3-memory
     needs: source
     runs-on: ubuntu-latest
     timeout-minutes: 360
@@ -97,6 +97,7 @@ jobs:
       - name: Exercise RTC-B06 branch candidate
         if: ${{ inputs.mode == 'diagnostic' }}
         run: |
+          set -o pipefail
           env -u DATABASE_URL \
             -u RALLAR_ICE_MODE \
             -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
@@ -121,7 +122,7 @@ jobs:
           name: rtc-b06-diagnostic-gh${{ github.run_id }}-a${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/rtc-b06-observation
-            test-results
+            apps/rallar-black-box/test-results
           if-no-files-found: error
           retention-days: 14
 
