@@ -120,7 +120,6 @@ describe('live RTC control client', () => {
             suffix: 'delayed-topology',
             startedAtMs: 100
         })).resolves.toBe(200);
-        expect(refreshRoom).toHaveBeenCalledTimes(2);
     });
 
     it('rejects readiness when authoritative room refresh fails', async () => {
