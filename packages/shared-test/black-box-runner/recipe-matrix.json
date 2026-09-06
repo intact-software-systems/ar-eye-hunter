@@ -2259,7 +2259,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 code-protected admission: joinMode 'code' has zero coverage across the corpus and neither group-code-required nor group-code-invalid is returned by any recipe. A join carrying no code, a wrong code, a rotated-away code and an already-expired code are each refused; the current code admits; and rotation is owner/admin-only. The rotated-away case is what proves rotation revokes rather than merely re-issues."
+      "description": "No-browser API-v1 code-protected admission: group-code-required and group-code-invalid are returned by no recipe in the corpus. A code group refuses a join carrying no code and a join carrying the wrong one, the current code admits, a rotation invalidates the old code while the new one admits, and an expired code is refused even for a principal who is already an active member. Rotation is refused for a non-member and again for an active regular member -- the server returns the same envelope for both, so only the second probe pins the owner/admin rule. Both sides normalise the code identically, so the typed form and the returned form are interchangeable."
     }
   ]
 }
