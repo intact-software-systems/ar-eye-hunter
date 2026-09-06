@@ -1,4 +1,5 @@
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { GroupLayoutRole } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
 import {
     onAcceptedOverlayChange,
@@ -6,7 +7,7 @@ import {
     type OverlayRepositoryChangeListener
 } from '@shared/repository/overlays-repository.ts';
 
-export type OverlaySlotRole = 'planned' | 'accepted';
+export type OverlaySlotRole = Extract<GroupLayoutRole, 'planned' | 'accepted'>;
 
 interface OverlaySlotRegistry {
     readonly listeners: Set<OverlayRepositoryChangeListener>;

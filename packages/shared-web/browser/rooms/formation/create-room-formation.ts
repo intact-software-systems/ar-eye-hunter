@@ -2,26 +2,29 @@ import type { GroupRef, RoomFormationCommand } from '../room-group-state-transla
 import {
     commandRoomFormation,
     connectRoomFormation,
-    type RoomFormationCommandPorts
+    type RoomFormationServiceDependencies
 } from './command-room-formation.ts';
 import type { RallarRoomFormation, RallarRoomFormationCommandOptions } from './rallar-room-formation-contracts.ts';
 import { readRoomFormationStatus } from './room-formation-observation.ts';
 
-export interface CreateRoomFormationInput extends RoomFormationCommandPorts {
+export interface CreateRoomFormationInput {
     readonly roomRef: GroupRef;
+    readonly dependencies: RoomFormationServiceDependencies;
 }
 
 export function createRoomFormation(input: CreateRoomFormationInput): RallarRoomFormation {
+    const { roomRef, dependencies } = input;
     const submit = async (
         command: RoomFormationCommand,
         options: RallarRoomFormationCommandOptions = {}
-    ) => await commandRoomFormation({ roomRef: input.roomRef, command, options, ports: input });
+    ) => await commandRoomFormation({ roomRef, command, options, dependencies });
 
     return {
-        roomRef: input.roomRef,
-        status: () => readRoomFormationStatus(input),
+        roomRef,
+        status: () =>
+            readRoomFormationStatus({ roomRef, stateStore: dependencies.stateStore, slots: dependencies.slots }),
         plan: async (options) => await submit({ command: 'plan' }, options),
-        connect: async (options = {}) => await connectRoomFormation({ roomRef: input.roomRef, options, ports: input }),
+        connect: async (options = {}) => await connectRoomFormation({ roomRef, options, dependencies }),
         activate: async (options) => await submit({ command: 'activate' }, options),
         reconfigure: async (options = {}) =>
             await submit({ command: 'reconfigure', landing: options.landing }, options),

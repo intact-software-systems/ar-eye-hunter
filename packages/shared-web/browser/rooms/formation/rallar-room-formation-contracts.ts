@@ -2,7 +2,7 @@ import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-co
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupConnectRejectionCode } from '@shared/api/group-lifecycle/group-connect-rejection-codes.ts';
-import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { GroupLayoutIdentity, GroupLayoutRole } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type {
     GroupFormationOutcome,
     GroupLifecycleState,
@@ -15,7 +15,7 @@ import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 
 import type { GroupRef, GroupSnapshot } from '../room-group-state-translation.ts';
 
-export type RallarRoomLayoutRole = 'planned' | 'accepted';
+export type RallarRoomLayoutRole = Extract<GroupLayoutRole, 'planned' | 'accepted'>;
 
 export interface RallarRoomLayout {
     readonly role: RallarRoomLayoutRole;
@@ -28,7 +28,7 @@ export interface RallarRoomFormationStatus {
     readonly stage: GroupLifecycleState;
     readonly formationEpoch: number;
     readonly formationAttemptCount: number;
-    readonly lastFormationOutcome: GroupFormationOutcome | null;
+    readonly lastFormationOutcome: GroupFormationOutcome | undefined;
     readonly transportState: GroupTransportState;
     readonly dialing: GroupDialLayoutRoles;
     readonly memberPolicy: GroupMemberPolicy;

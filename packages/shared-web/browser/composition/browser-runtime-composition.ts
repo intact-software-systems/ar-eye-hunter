@@ -38,11 +38,8 @@ import {
     createBrowserWebSocketInbox,
     type BrowserWebSocketInbox
 } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
-import { findAcceptedOverlayById } from '@shared/repository/overlays-repository.ts';
 
 export interface BrowserRuntimeFoundation {
     readonly runtime: RallarBrowserFacadeRuntimeContext;
@@ -164,9 +161,7 @@ export function createBrowserStateComposition(
             return resolveBrowserRoomTransportTarget({
                 sessionId: readSession()?.sessionId,
                 snapshot,
-                acceptedOverlay: snapshot
-                    ? readConfiguredValue(() => findAcceptedOverlayById(toScopedOverlayId(snapshot.group)))
-                    : undefined
+                acceptedOverlay: snapshot ? roomLayoutSlots.readAccepted(snapshot.group) : undefined
             });
         }
     };

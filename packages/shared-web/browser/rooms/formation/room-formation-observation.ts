@@ -1,12 +1,12 @@
 import type { OverlayInfo } from '@shared/api/api-config.ts';
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { resolveCoverageBasisLayoutIdentity } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupActivationStatus } from '@shared/api/group-lifecycle/activation-status/group-activation-status.ts';
 import { isSameGroupActivationSeries } from '@shared/api/group-lifecycle/activation-status/is-same-group-activation-series.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { resolveDialLayoutRoles } from '@shared/api/group-lifecycle/resolve-dial-layout-roles.ts';
-import { isOverlayIdentity, toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
+import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 
+import { isAcceptedRoomLayoutOverlay, isRoomLayoutOverlay } from '../is-room-layout-overlay.ts';
 import type { GroupRef, GroupSnapshot } from '../room-group-state-translation.ts';
 import type { RallarRoomStateStorePort } from '../room-state-store.ts';
 import type {
@@ -47,12 +47,7 @@ export function toRallarRoomLayout(
     overlay: OverlayInfo | undefined,
     roomRef: GroupRef
 ): RallarRoomLayout | undefined {
-    if (
-        overlay === undefined ||
-        overlay.provenance !== 'server' ||
-        overlay.state !== 'active' ||
-        !isSameGroupRef(overlay.groupRef, roomRef)
-    ) {
+    if (!isRoomLayoutOverlay(overlay, roomRef)) {
         return undefined;
     }
     return { role, identity: toOverlayLayoutIdentity(overlay), overlay };
@@ -62,10 +57,6 @@ export function toRallarRoomFormationStatus(
     input: ToRallarRoomFormationStatusInput
 ): RallarRoomFormationStatus {
     const { group } = input.snapshot;
-    const acceptedIdentity = group.acceptedLayoutIdentity;
-    const acceptedMatchesSnapshot = acceptedIdentity !== null &&
-        input.accepted !== undefined &&
-        isOverlayIdentity(input.accepted, acceptedIdentity);
     const planned = toRallarRoomLayout('planned', input.planned, group);
     const activation = resolveCurrentActivationStatus(group, planned?.identity);
     return {
@@ -73,11 +64,13 @@ export function toRallarRoomFormationStatus(
         stage: group.lifecycleState,
         formationEpoch: group.formationEpoch,
         formationAttemptCount: group.formationAttemptCount,
-        lastFormationOutcome: group.lastFormationOutcome,
+        lastFormationOutcome: group.lastFormationOutcome ?? undefined,
         transportState: group.transportState,
         dialing: resolveDialLayoutRoles(group.lifecycleState),
         memberPolicy: group.memberPolicy,
-        accepted: acceptedMatchesSnapshot ? toRallarRoomLayout('accepted', input.accepted, group) : undefined,
+        accepted: isAcceptedRoomLayoutOverlay(input.accepted, group)
+            ? toRallarRoomLayout('accepted', input.accepted, group)
+            : undefined,
         planned,
         condition: activation?.condition,
         coverageRate: activation?.coverageRate,

@@ -218,8 +218,13 @@ the eight application-facing formation commands of the group lifecycle
 `reconfigure({ landing? })`, `pause()`, `resume()`, `reset()` and `start()`. Each resolves to the
 receipt `GroupSnapshot` once the transition committed; planning, publication and RTC readiness stay
 asynchronous. `connect()` names the room's current planned layout and the cached formation epoch;
-pass `layout` to name a specific `GroupLayoutIdentity`. When no planned layout is published the
-call throws a `RallarValidationError` issue `no-planned-layout` before any request is sent.
+pass `layout` to name a specific `GroupLayoutIdentity`. When the planned slot is empty, or holds a
+layout published past the cached snapshot, `connect()` refreshes the room once (the point read and
+the topology read-through) before it posts. It throws a `RallarValidationError` without sending a
+lifecycle request when that leaves nothing to name: issue `no-planned-layout` when the read-through
+completed and nothing is published, `session-not-present` when the room does not count this session
+as present (the read-through fills the slot only for present sessions, so pass `layout`), and
+`planned-layout-read-failed` when the read-through did not complete.
 `formation.status()` is the free, in-memory view: stage, epoch, attempt count, transport state,
 which layout roles the browser dials, the accepted and planned layouts it holds, and the pushed
 activation condition. Commands reject with `ApiHttpError`; `toRoomFormationDenial(error)`

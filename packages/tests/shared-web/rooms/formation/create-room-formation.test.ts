@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
+import {
+    GROUP_LIFECYCLE_COMMANDS,
+    type GroupLifecycleCommand
+} from '@shared/api/group-lifecycle/group-lifecycle-commands.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import {
@@ -39,6 +44,41 @@ function stubReceipt(receipt: GroupSnapshot) {
     return fetchMock;
 }
 
+function pointReadResponse(snapshot: GroupSnapshot): Response {
+    return new Response(JSON.stringify(snapshot), {
+        status: 200,
+        headers: {
+            'cache-control': 'no-store',
+            'content-type': 'application/json',
+            'rallar-state-source': 'durable',
+            'rallar-group-revision': String(snapshot.causalRevision.groupRevision),
+            'rallar-presence-revision': String(snapshot.causalRevision.presenceRevision)
+        }
+    });
+}
+
+const explicitLayout = { groupRevision: 6, presenceRevision: 2, version: 8, state: 'active' } as const;
+const commandInvocations = {
+    plan: (formation) => formation.plan(),
+    connect: (formation) => formation.connect({ layout: explicitLayout }),
+    activate: (formation) => formation.activate(),
+    reconfigure: (formation) => formation.reconfigure({ landing: 'hold' }),
+    pause: (formation) => formation.pause(),
+    resume: (formation) => formation.resume(),
+    reset: (formation) => formation.reset(),
+    start: (formation) => formation.start()
+} satisfies Record<GroupLifecycleCommand, (formation: RallarRoomFormation) => Promise<GroupSnapshot>>;
+const commandBodies = {
+    plan: {},
+    connect: { expectedFormationEpoch: 3, expectedLayout: explicitLayout },
+    activate: {},
+    reconfigure: { landing: 'hold' },
+    pause: {},
+    resume: {},
+    reset: {},
+    start: {}
+} satisfies Record<GroupLifecycleCommand, object>;
+
 describe('room formation commands', () => {
     beforeEach(() => {
         resetRoomWorkflowTestRuntime();
@@ -71,11 +111,8 @@ describe('room formation commands', () => {
         expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(
             /^https:\/\/api\.example\.test\/api\/state\/apps\/app-1\/workspaces\/workspace-1\/groups\/room-1\/lifecycle\/plan\/requests\/[0-9a-f-]{36}$/
         );
-        expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
-            actorPrincipalId: roomWorkflowMocks.session.clientId,
-            actorSessionId: roomWorkflowMocks.session.sessionId,
-            reason: 'lobby ready'
-        });
+        expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ reason: 'lobby ready' });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(roomWorkflowMocks.operationLog).toContain('hydrate:room-1');
         expect(facade.rooms.formation('room-1').status()?.stage).toBe('planned');
     });
@@ -103,11 +140,10 @@ describe('room formation commands', () => {
         await createRallarFacade().rooms.formation(planned.group).connect();
 
         expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
-            actorPrincipalId: roomWorkflowMocks.session.clientId,
-            actorSessionId: roomWorkflowMocks.session.sessionId,
             expectedFormationEpoch: 1,
             expectedLayout: { groupRevision: 2, presenceRevision: 1, version: 3, state: 'active' }
         });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it('refuses to connect locally when no planned layout exists after a read-through', async () => {
@@ -278,7 +314,7 @@ describe('room formation commands', () => {
         expect(formation.status()?.planned).toBeUndefined();
     });
 
-    it('sends an explicit layout and a reconfigure landing verbatim', async () => {
+    it.each(GROUP_LIFECYCLE_COMMANDS)('posts %s under its own lifecycle route with the body its schema declares', async (command) => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const active = createFormationSnapshot({
             stage: 'active',
@@ -287,15 +323,61 @@ describe('room formation commands', () => {
         });
         seedRoomSnapshots([active]);
         const fetchMock = stubReceipt(active);
-        const formation = createRallarFacade().rooms.formation(active.group);
 
-        await formation.reconfigure({ landing: 'hold' });
-        await formation.connect({ layout: { groupRevision: 6, presenceRevision: 2, version: 8, state: 'active' } });
+        await commandInvocations[command](createRallarFacade().rooms.formation(active.group));
 
-        expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ landing: 'hold' });
-        expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
-            expectedFormationEpoch: 3,
-            expectedLayout: { groupRevision: 6, presenceRevision: 2, version: 8, state: 'active' }
+        const [url, init] = fetchMock.mock.calls[0] ?? [];
+        expect(String(url)).toMatch(
+            new RegExp(
+                '^https://api\\.example\\.test/api/state/apps/app-1/workspaces/workspace-1/groups/room-1' +
+                    `/lifecycle/${command}/requests/[0-9a-f-]{36}$`
+            )
+        );
+        expect(init?.method).toBe('POST');
+        expect(JSON.parse(String(init?.body))).toEqual(commandBodies[command]);
+    });
+
+    it('refuses to connect for a session the room does not count as present', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const planned = createFormationSnapshot({
+            stage: 'planned',
+            formationEpoch: 1,
+            causalRevision: { groupRevision: 2, presenceRevision: 1 },
+            sessionIds: ['other-session']
         });
+        seedRoomSnapshots([planned]);
+        vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => pointReadResponse(planned)));
+
+        await expect(createRallarFacade().rooms.formation(planned.group).connect()).rejects.toMatchObject({
+            issues: [{ path: '$.layout', code: 'session-not-present' }]
+        });
+    });
+
+    it('refuses to connect when the planned layout could not be read through', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const planned = createFormationSnapshot({
+            stage: 'planned',
+            formationEpoch: 1,
+            causalRevision: { groupRevision: 2, presenceRevision: 1 }
+        });
+        seedRoomSnapshots([planned]);
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
+                String(input).endsWith('/topology')
+                    ? new Response('unavailable', { status: 503 })
+                    : pointReadResponse(planned)
+            )
+        );
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+        try {
+            await expect(createRallarFacade().rooms.formation(planned.group).connect()).rejects.toMatchObject({
+                issues: [{ path: '$.layout', code: 'planned-layout-read-failed' }]
+            });
+        }
+        finally {
+            warn.mockRestore();
+        }
     });
 });
