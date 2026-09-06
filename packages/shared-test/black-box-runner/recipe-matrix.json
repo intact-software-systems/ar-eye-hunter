@@ -2282,7 +2282,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 invite admission through the /join route. api-v1-group-invite-revocation pins the same two denial codes on the self-upsert path; the routes are registered separately, so covering one proves nothing about the other. Also pins that the reserved inviteToken field cannot admit anyone, because nothing in the server ever sets the token it is compared against."
+      "description": "No-browser API-v1 invite admission through the group join route. The self-upsert member route reaches the same two denial codes but is registered separately, so covering one proves nothing about the other and this recipe drives the join route only. Also pins that the reserved inviteToken field cannot admit anyone, because nothing in the server ever sets the token it is compared against."
     }
   ]
 }
