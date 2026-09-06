@@ -2398,6 +2398,29 @@
         ]
       },
       "description": "No-browser API-v1 overlay topology publication: nothing in the corpus reads an overlay frame body. A published overlay.topology broadcast is compared field for field against the authoritative HTTP topology read at the same version; the row is written in the transaction that publishes, so the equality is a real invariant. The frame is selected by its own degreeLimit through expect.decodeJsonPaths, which separates it from the unicast hydration frame every socket receives on connect, and both members must receive the same body rather than a body each."
+    },
+    {
+      "id": "api-v1-group-lifecycle-command-race",
+      "recipe": "tests/api-v1/api-v1-group-lifecycle-command-race.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-lifecycle-command-race",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 lifecycle command race: no recipe in the corpus places a lifecycle command inside a parallel block. Two members command plan on one group at once, released together by a barrier so the contention is real rather than adjacent. Both must succeed -- planned to planned is the idempotent cell, so the loser is a no-op and not a conflict -- and the formation epoch must have advanced exactly once, however many principals asked."
     }
   ]
 }
