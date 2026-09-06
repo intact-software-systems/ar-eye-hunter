@@ -809,35 +809,17 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                     })
                 )
             );
-            const reconnectStartedAtMs = performance.now();
             const reconnectC = await liveRtcDeliveryOperations.reconnectAndWaitForPeerReadiness({
                 control,
                 runId,
                 reconnectingAgent: messageAgents[2],
-                readinessAgent: messageAgents[1],
+                survivingAgents: [messageAgents[0], messageAgents[1]],
+                survivingSessionIds: [messages.sessions.A, messages.sessions.B],
                 transport: 'messages.rtc',
                 groupId,
                 suffix: `${suffix}-reconnect-c`
             });
             commandIds.push(reconnectC.commandId);
-            const reconnectDurations = await Promise.all(
-                messageAgents.slice(0, 2).map((agent) =>
-                    control.waitForPeerReadiness({
-                        runId,
-                        agent,
-                        expectedPeerIds: [reconnectC.sessionId],
-                        suffix: `${suffix}-reconnect-c`,
-                        startedAtMs: reconnectStartedAtMs
-                    })
-                )
-            );
-            await control.waitForPeerReadiness({
-                runId,
-                agent: messageAgents[2],
-                expectedPeerIds: [messages.sessions.A, messages.sessions.B],
-                suffix: `${suffix}-reconnect-c-settled`,
-                startedAtMs: reconnectStartedAtMs
-            });
             timings.push({
                 kind: 'reconnect-ready',
                 transport: 'messages.rtc',
@@ -846,7 +828,7 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                     messageAgents[0].agentId,
                     messageAgents[1].agentId
                 ],
-                durationMs: Math.max(...reconnectDurations)
+                durationMs: reconnectC.receiverReadinessDurationMs
             });
             const reconnectMatrixId = `messages-rtc-reconnect-b-to-c-${suffix}`;
             const reconnectMessageStartedAtMs = performance.now();
@@ -1063,44 +1045,26 @@ test.describe('full-stack live three-browser RTC matrix', () => {
                         })
                     )
                 );
-                const reconnectStartedAtMs = performance.now();
                 const reconnected = await liveRtcDeliveryOperations.reconnectAndWaitForPeerReadiness({
                     control,
                     runId,
                     reconnectingAgent: agents[2],
-                    readinessAgent: agents[1],
+                    survivingAgents: [agents[0], agents[1]],
+                    survivingSessionIds: [
+                        initialFormation.sessions.A,
+                        initialFormation.sessions.B
+                    ],
                     transport: 'messages.rtc',
                     groupId,
                     suffix: `${suffix}-${cycle}`
                 });
                 commandIds.push(reconnected.commandId);
-                const reconnectDurations = await Promise.all(
-                    agents.slice(0, 2).map((agent) =>
-                        control.waitForPeerReadiness({
-                            runId,
-                            agent,
-                            expectedPeerIds: [reconnected.sessionId],
-                            suffix: `${suffix}-${cycle}`,
-                            startedAtMs: reconnectStartedAtMs
-                        })
-                    )
-                );
-                await control.waitForPeerReadiness({
-                    runId,
-                    agent: agents[2],
-                    expectedPeerIds: [
-                        initialFormation.sessions.A,
-                        initialFormation.sessions.B
-                    ],
-                    suffix: `${suffix}-${cycle}-settled`,
-                    startedAtMs: reconnectStartedAtMs
-                });
                 timings.push({
                     kind: 'reconnect-ready',
                     transport: 'messages.rtc',
                     senderAgentId: agents[2].agentId,
                     receiverAgentIds: [agents[0].agentId, agents[1].agentId],
-                    durationMs: Math.max(...reconnectDurations)
+                    durationMs: reconnected.receiverReadinessDurationMs
                 });
                 currentSessionId = reconnected.sessionId;
                 if (cycle % 10 === 0) {

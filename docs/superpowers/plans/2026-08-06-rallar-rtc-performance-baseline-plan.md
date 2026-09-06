@@ -65,25 +65,34 @@ observation stream, and B06 E3-memory observation tooling are merged. Five
 distinct valid B05 observations through 2026-09-05 are archived on `main`: PR
 #402 landed directly, and the four observations formerly published by PRs
 #405, #463, #474, and #494 landed through batch PRs #507 and #504 before the
-superseded PRs and branches were closed. Seven B06 observations have failed with
+superseded PRs and branches were closed. Eight B06 observations have failed with
 `acceptedMetrics: false` and are archived on `main`. The first five, their
 focused corrections in PRs #499 and #510, and the Branch Release quiescence
 correction in PR #517 are merged. Run 33991439486 produced the sixth archive in
 PR #519; its focused publication-wake identity correction merged in PR #520.
 Run 33997173287 then produced the seventh failed archive in PR #522. Its first
 default warmup exposed the same missing source-generation dimension in the
-separate topology-promotion outbox identity. PR #523 keys
-each promotion request by the existing canonical topology execution ID while
-leaving the fenced promotion command unchanged. There is not yet a valid B06 E3
-result. B07 remains held, and evidence ranking cannot start until a valid B06
-primary and any required repeat are archived.
+separate topology-promotion outbox identity. PR #523 merged the correction that
+keys each promotion request by the existing canonical topology execution ID
+while leaving the fenced promotion command unchanged. Run 34000825989 then
+passed the default warmup plus all five retained default attempts before its
+all-scenarios warmup failed during replacement-C reconnect; PR #524 archived
+that eighth failed primary. The original pre-activation readiness gap cleared,
+but the reconnect helper refreshed and waited only for survivor B while the
+replacement endpoint's refresh and two-survivor readiness check remained
+queued behind B. All three peer establishments later timed out. The current
+focused correction makes one reconnect owner concurrently prove both survivors
+observe replacement C's new session and replacement C observes both survivor
+sessions. There is not yet a valid B06 E3 result. B07 remains held, and evidence
+ranking cannot start until a valid B06 primary and any required repeat are
+archived.
 
 ### Current execution horizon
 
-| Order | Slice                                          | Completion evidence                                                                                                                                                                                                                              |
-| ----- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1     | Correct topology-promotion request identity    | PR #523 keys each promotion outbox event by the existing canonical topology execution ID, including coalescing generation, without changing the convergent fenced command; focused and relevant full-stack gates pass and the PR merges.         |
-| 2     | Capture B06 E3-memory again from moving `main` | Manually dispatch `RTC-B06 Performance Observation` after the correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived. |
+| Order | Slice                                          | Completion evidence                                                                                                                                                                                                                                                              |
+| ----- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Merge the full reconnect-readiness correction  | The reconnect helper has one explicit three-participant readiness owner, direct semantic coverage proves replacement-session identity plus concurrent A/B/C waits, and focused unit, exact E3 all-scenarios, type/build/style/structure gates pass before the correction merges. |
+| 2     | Capture B06 E3-memory again from moving `main` | Manually dispatch `RTC-B06 Performance Observation` after the correction reaches `main`. The workflow archives one verified primary with `acceptedMetrics: true`; when the controller requires a repeat, that repeat is also valid and archived.                                 |
 
 After these two slices, Task 12 will choose the B05 observation window,
 revisit whether the candidate call path requires E4-pg, and reconcile the
@@ -3873,7 +3882,7 @@ performance-observations/rtc-b06/YYYY/MM/DD/<observation-id>.zip
 performance-observations/rtc-b06/index.jsonl
 ```
 
-Current evidence contains seven failed B06 primaries and no accepted metrics.
+Current evidence contains eight failed B06 primaries and no accepted metrics.
 The fourth archive is PR #498. Its first retained default attempt timed out
 receiving `messages.rtc` multicast on agent C after the warmup passed. That run
 exposed a post-activation readiness gap: the lifecycle driver proved readiness
@@ -3919,6 +3928,20 @@ execution ID in the outbox event identity. It intentionally leaves the decoded
 `applyPlannedLayout` work unchanged so multiple source events converge on the
 same fenced command, and it retains no old identity overload or fallback.
 
+PR #523 merged, and run 34000825989 observed the resulting moving-`main`
+snapshot. The default warmup and all five retained default attempts passed; the
+all-scenarios warmup then failed during replacement-C reconnect, and PR #524
+archived that eighth failed primary. Repeated refresh/recheck cleared the
+original pre-activation readiness failure, but the reconnect helper still
+owned only survivor B's wait. Replacement C's refresh and readiness check for
+both survivor sessions ran later in the caller, behind B's blocked readiness
+poll, so signaling could not complete and all involved peer establishments
+timed out. The focused test-tooling correction gives the reconnect helper one
+explicit owner for concurrent A/B/C readiness: both survivors must observe
+replacement C's new session ID, and replacement C must observe both surviving
+session IDs. It returns the maximum receiver-observed survivor duration used by
+the existing evidence timing field and removes the callers' duplicate waits.
+
 - [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
       publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
 - [x] Preserve the first four unsuccessful primaries as failed evidence rather than
@@ -3940,10 +3963,18 @@ same fenced command, and it retains no old identity overload or fallback.
       merges.
 - [x] Verify and archive run 33997173287's failed primary through observation
       PR #522; do not accept its metrics or run a repeat.
-- [ ] Merge the focused topology-promotion request identity correction in PR
+- [x] Merge the focused topology-promotion request identity correction in PR
       #523 after relevant unit, type, full-stack, and branch validation.
+- [x] Manually dispatch run 34000825989 from the then-current `main` after that
+      correction merged.
+- [x] Verify and archive run 34000825989's failed primary through observation
+      PR #524; preserve its passed default warmup and five retained attempts,
+      and do not accept metrics or run a repeat.
+- [ ] Merge the focused full reconnect-readiness correction after direct
+      semantic, focused unit, exact E3 all-scenarios, type/build/style/structure,
+      and branch validation.
 - [ ] Manually dispatch `RTC-B06 Performance Observation` from the then-current
-      `main` after that correction merges.
+      moving `main` after that correction merges.
 - [ ] Verify that its observation-only pull request passes RTC observation
       integrity and merge the ZIP/index row. A valid primary must report
       `acceptedMetrics: true`; complete any controller-required repeat.
@@ -4408,19 +4439,25 @@ incomplete evidence milestone and do not mark this written plan complete.
 **2026-09-06 reconciliation:** Task 4B, B04, B05, both observation producers,
 and B06 E3-memory tooling are merged. Five valid B05 observations are archived
 on `main`; the overlapping source PRs and branches were consolidated and
-closed. Seven B06 primaries are archived as failed evidence with no accepted
+closed. Eight B06 primaries are archived as failed evidence with no accepted
 metrics. PRs #499 and #510 corrected the fourth and fifth failures, while PR
 #517 corrected their Branch Release regression recipe's quiescence race. Run
 33991439486 and archive PR #519 exposed the sixth failure: publication-wake
 identity omitted the generation of its mutable coalesced topology source. The
 focused correction merged in PR #520. Run 33997173287 and archive PR #522 then
 exposed the same omitted generation in the separate topology-promotion outbox
-identity. PR #523 threads the existing canonical execution ID
-into that event identity while preserving the unchanged convergent command and
-strict collision handling. After it merges, the next performance action is
-another manual Task 10 dispatch from moving `main`, followed by
-integrity-gated archive publication or evidence-led diagnosis of its first
-failed attempt. B07 remains held; Task 12 remains blocked on valid B06 evidence.
+identity. PR #523 merged the correction that threads the existing canonical
+execution ID into that event identity while preserving the unchanged
+convergent command and strict collision handling. Run 34000825989 then passed
+the default warmup and five retained default attempts before its all-scenarios
+warmup failed at replacement-C reconnect; PR #524 archived the result. The
+original readiness failure cleared, but the reconnect helper waited only for
+survivor B while replacement C's refresh/readiness remained queued behind it,
+so the three peer establishments timed out. The current correction owns the
+full reconnect readiness concurrently and proves replacement-session identity.
+The next two slices are to merge that focused correction and then dispatch B06
+again from moving `main`. B07 remains held; Task 12 remains blocked on valid
+B06 evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
