@@ -5,6 +5,7 @@ export namespace RtcDataChannelSendQueue {
         readonly payload: TPayload;
         readonly key?: string;
         readonly maxAgeMs?: number;
+        readonly expiresAtEpochMs?: number;
         readonly createdAtEpochMs: number;
     }
 
@@ -76,11 +77,21 @@ export class RtcDataChannelSendQueue<TPayload> {
         return shifted;
     }
 
+    remove(queued: RtcDataChannelSendQueue.QueuedSend<TPayload>): boolean {
+        const index = this.items.indexOf(queued);
+        if (index < 0) {
+            return false;
+        }
+        this.items.splice(index, 1);
+        this.rebuildIndexByKey();
+        return true;
+    }
+
     removeExpired(nowMs: number): readonly RtcDataChannelSendQueue.QueuedSend<TPayload>[] {
         const removed: RtcDataChannelSendQueue.QueuedSend<TPayload>[] = [];
         const retained: RtcDataChannelSendQueue.QueuedSend<TPayload>[] = [];
         for (const item of this.items) {
-            if (item.maxAgeMs !== undefined && nowMs - item.createdAtEpochMs > item.maxAgeMs) {
+            if (isRtcQueuedSendExpired(item, nowMs)) {
                 removed.push(item);
             }
             else {
@@ -98,7 +109,13 @@ export class RtcDataChannelSendQueue<TPayload> {
         let earliest = Infinity;
         for (const item of this.items) {
             if (item.maxAgeMs !== undefined) {
-                earliest = Math.min(earliest, item.createdAtEpochMs + item.maxAgeMs);
+                const dueAtMs = item.createdAtEpochMs + item.maxAgeMs + 1;
+                if (Number.isFinite(dueAtMs)) {
+                    earliest = Math.min(earliest, dueAtMs);
+                }
+            }
+            if (item.expiresAtEpochMs !== undefined && Number.isFinite(item.expiresAtEpochMs)) {
+                earliest = Math.min(earliest, item.expiresAtEpochMs);
             }
         }
         return Number.isFinite(earliest) ? earliest : undefined;
@@ -136,4 +153,12 @@ export class RtcDataChannelSendQueue<TPayload> {
             this.indexQueuedSend(this.items[index], index);
         }
     }
+}
+
+export function isRtcQueuedSendExpired<TPayload>(
+    queued: RtcDataChannelSendQueue.QueuedSend<TPayload>,
+    nowMs: number
+): boolean {
+    return (queued.expiresAtEpochMs !== undefined && nowMs >= queued.expiresAtEpochMs) ||
+        (queued.maxAgeMs !== undefined && nowMs - queued.createdAtEpochMs > queued.maxAgeMs);
 }

@@ -27,7 +27,6 @@ import type {
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     ALOutboundAckTrackingPlan,
-    ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest,
@@ -51,7 +50,11 @@ import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { QueueBoxUtilities } from '../services/QueueBoxUtilities.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
-import type { RtcDataChannelHealth, RtcDataChannelSendResult } from '../webrtc/qrtc-data-channel.ts';
+import type {
+    RtcDataChannelHealth,
+    RtcDataChannelSendOptions,
+    RtcDataChannelSendResult
+} from '../webrtc/qrtc-data-channel.ts';
 import {
     OverlayMulticastDispatchPlan,
     OverlayMulticasterContext,
@@ -63,7 +66,7 @@ import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from '
 export namespace WebRtcOverlayMulticastManager {
     export interface Channel {
         readHealth(): Pick<RtcDataChannelHealth, 'readyState'>;
-        sendJson(message: ALMessage): RtcDataChannelSendResult;
+        sendJson(message: ALMessage, options?: RtcDataChannelSendOptions): RtcDataChannelSendResult;
     }
 
     export interface Peer {
@@ -135,7 +138,7 @@ export class WebRtcOverlayMulticastManager {
                 planDequeuedMessage: (msg) => this.planDequeuedMessage(msg),
                 beforeDequeueDispatch: undefined,
                 onFallbackDequeue: undefined,
-                sendPreparedMessage: async (msg, phase) => await this.sendPreparedMessage(msg, phase),
+                sendPreparedMessage: async (msg, _phase, lifecycle) => await this.sendPreparedMessage(msg, lifecycle),
                 planRepairMessage: async (msg, request) => await this.planRepairMessage(msg, request),
                 diagnostics: dependencies.outboundDiagnostics
             }
@@ -612,8 +615,15 @@ export class WebRtcOverlayMulticastManager {
 
     private async sendPreparedMessage(
         msg: ALMessage,
-        phase: ALOutboundDispatchPhase
+        lifecycle: ALOutboundMessageRuntime.SendLifecycle
     ): Promise<ALOutboundPreparedSendResult> {
+        if (lifecycle.signal.aborted) {
+            return { status: 'cancelled', reason: 'RTC transport owner was disposed.' };
+        }
+        const nowMs = this.clock.nowMs();
+        if (lifecycle.expiresAtMs !== undefined && lifecycle.expiresAtMs <= nowMs) {
+            return { status: 'expired', reason: 'RTC message deadline elapsed before native submission.' };
+        }
         const roomRef = readALTargetGroupRef(msg);
         const overlayId = this.readOverlayId(msg);
         const admission = computeRtcRoomSnapshotAdmission({
@@ -623,7 +633,7 @@ export class WebRtcOverlayMulticastManager {
             selfPeerId: this.connectionService.input.sessionId,
             fromPeerId: undefined,
             recipientPeerId: msg.forwarding?.nextHopPeerIds?.[0],
-            nowMs: this.clock.nowMs()
+            nowMs
         });
         if (admission.kind === 'pending') {
             return { status: 'not-ready', reason: admission.reason, retryAfterMs: 50 };
@@ -633,24 +643,14 @@ export class WebRtcOverlayMulticastManager {
         }
         const peerId = msg.forwarding?.nextHopPeerIds?.[0];
         if (!peerId) {
-            const reason = 'Skipping RTC send without immediate next hop';
-            if (phase === 'immediate') {
-                console.warn(reason);
-            }
-            return { status: 'no-targets', reason };
+            return { status: 'no-targets', reason: 'Skipping RTC send without immediate next hop' };
         }
 
         const peer = this.connectionService.readPeer(peerId);
         if (!peer?.channel) {
-            const reason = `No RTC channel for peer ${peerId}`;
-            if (phase === 'immediate') {
-                console.warn(
-                    `Skipping immediate send without RTC channel for peer ${peerId}`
-                );
-            }
             return {
                 status: 'not-ready',
-                reason,
+                reason: `No RTC channel for peer ${peerId}`,
                 retryAfterMs: 50
             };
         }
@@ -664,12 +664,18 @@ export class WebRtcOverlayMulticastManager {
             };
         }
 
-        return toALOutboundRtcSendResult(peer.channel.sendJson(msg));
+        return toALOutboundRtcSendResult(peer.channel.sendJson(msg, {
+            signal: lifecycle.signal,
+            expiresAtEpochMs: lifecycle.expiresAtMs
+        }));
     }
 
     private async sendImmediately(messages: readonly ALMessage[]): Promise<void> {
         for (const message of messages) {
-            await this.sendPreparedMessage(message, 'immediate');
+            await this.sendPreparedMessage(message, {
+                signal: this.outboundRuntime.sendSignal,
+                expiresAtMs: message.constraints?.expiresAtMs
+            });
         }
     }
 
@@ -865,6 +871,9 @@ export class WebRtcOverlayMulticastManager {
 }
 
 function toALOutboundRtcSendResult(result: RtcDataChannelSendResult): ALOutboundPreparedSendResult {
+    if (result.status === 'cancelled' || result.status === 'expired') {
+        return { status: result.status, reason: result.reason };
+    }
     if (result.status === 'dropped' || result.status === 'closed') {
         return { status: 'not-ready', reason: result.reason, retryAfterMs: 50 };
     }

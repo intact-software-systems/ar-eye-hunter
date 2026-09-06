@@ -4,10 +4,9 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
-import type { RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
-import { createBrowserRtcPeerTestDouble } from '../rtc/browser-rtc-peer-test-double.ts';
+import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from '../rtc/browser-rtc-peer-test-double.ts';
 
 type StateEventHttpApiModule = typeof import('@shared-web/browser/state-read/state-event-http-api.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
@@ -22,13 +21,6 @@ type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/gro
 
 interface CallTextMessage {
     readonly text: string;
-}
-
-interface ChannelHealthFixtureInput {
-    readonly peerId: string;
-    readonly label: string;
-    readonly state: string;
-    readonly readyState: RTCDataChannelState;
 }
 
 const mocks = await vi.hoisted(async () => {
@@ -124,7 +116,7 @@ describe('Rallar calls', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        const reliableHealth = createChannelHealth({
+        const reliableHealth = createBrowserRtcChannelHealth({
             peerId: 'peer-1',
             label: 'rtc-data-channel',
             state: 'Open',
@@ -468,42 +460,6 @@ function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
         .onAnyInboxMessageDo.mock.calls
         .filter(([callbackId]) => callbackId === 'rallar:ws:any-message')
         .at(-1)?.[1];
-}
-
-function createChannelHealth(input: ChannelHealthFixtureInput): RtcDataChannelHealth {
-    return {
-        peerId: input.peerId,
-        label: input.label,
-        state: input.state,
-        role: 'Initiator',
-        readyState: input.readyState,
-        binaryType: 'arraybuffer' as const,
-        bufferedAmount: 0,
-        bufferedAmountLowThreshold: 0,
-        queuedItemCount: 0,
-        rawCallbackCount: 0,
-        messageCallbackCount: 0,
-        lifecycleCallbackCount: 0,
-        flowControl: {
-            highWatermarkBytes: 64 * 1024,
-            lowWatermarkBytes: 16 * 1024,
-            overflow: 'drop-new' as const,
-            maxQueueItems: 32
-        },
-        counters: {
-            sent: 0,
-            queued: 0,
-            dropped: 0,
-            replaced: 0,
-            closed: 0,
-            flushed: 0,
-            droppedOldest: 0,
-            droppedStale: 0,
-            receivedRaw: 0,
-            receivedString: 0,
-            receivedBinary: 0
-        }
-    };
 }
 
 function mockGroupRepositoryMissing(): void {

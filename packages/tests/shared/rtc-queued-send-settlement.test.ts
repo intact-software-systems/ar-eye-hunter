@@ -29,6 +29,140 @@ afterEach(async () => {
 });
 
 describe('RTC queued send settlement', () => {
+    it('rechecks deadlines when flushing earlier work consumes the remaining send time', async () => {
+        const { channel, native } = createChannel();
+        await native.open();
+        native.bufferedAmount = 10;
+        const deadline = Date.now() + 5;
+        const outcomes: string[] = [];
+        channel.sendRaw('first');
+        channel.sendRaw('queued-too-late', {
+            expiresAtEpochMs: deadline,
+            onSettled: (result) => {
+                outcomes.push(result.status);
+            }
+        });
+        vi.spyOn(native, 'send').mockImplementation((payload) => {
+            native.sent.push(payload);
+            vi.setSystemTime(Date.now() + 10);
+        });
+
+        native.bufferedAmount = 0;
+        const result = channel.sendRaw('new-too-late', { expiresAtEpochMs: deadline });
+        await Promise.resolve();
+        expect(result.status).toBe('expired');
+        expect(native.sent).toEqual(['first']);
+        expect(outcomes).toEqual(['expired']);
+    });
+
+    it('honors an absolute deadline over a longer queue age and rejects already-expired submissions', async () => {
+        const { channel, native } = createChannel();
+        await native.open();
+        native.bufferedAmount = 10;
+        const outcomes: string[] = [];
+        channel.sendRaw('absolute-deadline', {
+            maxAgeMs: 100,
+            expiresAtEpochMs: Date.now() + 10,
+            onSettled: (result) => {
+                outcomes.push(result.status);
+            }
+        });
+
+        await vi.advanceTimersByTimeAsync(10);
+        expect(outcomes).toEqual(['expired']);
+        expect(channel.readHealth().queuedItemCount).toBe(0);
+        native.bufferedAmount = 0;
+        const result = channel.sendRaw('already-expired', { expiresAtEpochMs: Date.now() });
+        expect(result.status).toBe('expired');
+        await native.drain();
+        expect(native.sent).toEqual([]);
+    });
+
+    it('cancels a retained send without cancelling a newer send that uses the same coalescing key', async () => {
+        const { channel, native } = createChannel({ overflow: 'replace-by-key' });
+        await native.open();
+        native.bufferedAmount = 10;
+        const oldSend = new AbortController();
+        const newSend = new AbortController();
+        const outcomes: string[] = [];
+        channel.sendRaw('old', {
+            key: 'position',
+            signal: oldSend.signal,
+            onSettled: (result) => {
+                outcomes.push(`old:${result.status}`);
+            }
+        });
+        channel.sendRaw('new', {
+            key: 'position',
+            signal: newSend.signal,
+            onSettled: (result) => {
+                outcomes.push(`new:${result.status}`);
+            }
+        });
+
+        oldSend.abort();
+        await Promise.resolve();
+        expect(outcomes).toEqual(['old:superseded']);
+        expect(channel.readHealth().queuedItemCount).toBe(1);
+        newSend.abort();
+        await Promise.resolve();
+        expect(outcomes).toEqual(['old:superseded', 'new:cancelled']);
+        expect(channel.readHealth().queuedItemCount).toBe(0);
+        native.bufferedAmount = 0;
+        await native.drain();
+        expect(native.sent).toEqual([]);
+    });
+
+    it('leaves other queued sends writable after cancellation and preserves submitted evidence', async () => {
+        const { channel, native } = createChannel();
+        await native.open();
+        native.bufferedAmount = 10;
+        const cancel = new AbortController();
+        const submitted = new AbortController();
+        const outcomes: string[] = [];
+        channel.sendRaw('cancelled', {
+            signal: cancel.signal,
+            maxAgeMs: 100,
+            onSettled: (result) => {
+                outcomes.push(result.status);
+            }
+        });
+        channel.sendRaw('submitted', {
+            signal: submitted.signal,
+            onSettled: (result) => {
+                outcomes.push(result.status);
+            }
+        });
+        cancel.abort();
+        native.bufferedAmount = 0;
+        await native.drain();
+        submitted.abort();
+        await vi.advanceTimersByTimeAsync(101);
+
+        expect(native.sent).toEqual(['submitted']);
+        expect(outcomes).toEqual(['cancelled', 'sent']);
+        expect(channel.readHealth().queuedItemCount).toBe(0);
+    });
+
+    it('rejects an already-cancelled send before submitting or retaining it', async () => {
+        const { channel, native } = createChannel();
+        await native.open();
+        const controller = new AbortController();
+        controller.abort();
+        const outcomes: string[] = [];
+        const result = channel.sendRaw('cancelled', {
+            signal: controller.signal,
+            onSettled: (settled) => {
+                outcomes.push(settled.status);
+            }
+        });
+        await Promise.resolve();
+        expect(result.status).toBe('cancelled');
+        expect(outcomes).toEqual(['cancelled']);
+        expect(native.sent).toEqual([]);
+        expect(channel.readHealth().queuedItemCount).toBe(0);
+    });
+
     it.each(['closed', 'backpressure', 'full'] as const)('reports immediate %s rejection without retaining the send', async (rejection) => {
         const { channel, native } = createChannel({ overflow: rejection === 'backpressure' ? 'drop-new' : 'queue', maxQueueItems: 1 });
         if (rejection !== 'closed') {

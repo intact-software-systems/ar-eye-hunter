@@ -15,10 +15,10 @@ import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/gr
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/web-rtc-connection-service.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/qrtc-client-callbacks.ts';
-import type { QRtcDataChannel, RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
+import type { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
-import { createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
+import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from './browser-rtc-peer-test-double.ts';
 
 const mocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import(
@@ -320,13 +320,13 @@ describe('Rallar RTC recovery', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        const reliableHealth = createChannelHealth({
+        const reliableHealth = createBrowserRtcChannelHealth({
             peerId: 'peer-1',
             label: 'rtc-data-channel',
             state: 'Open',
             readyState: 'open'
         });
-        const realtimeHealth = createChannelHealth({
+        const realtimeHealth = createBrowserRtcChannelHealth({
             peerId: 'peer-1',
             label: 'rtc-realtime',
             state: 'Closed',
@@ -376,7 +376,7 @@ describe('Rallar RTC recovery', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        const health = createChannelHealth({
+        const health = createBrowserRtcChannelHealth({
             peerId: 'peer-1',
             label: 'rtc-realtime',
             state: 'Open',
@@ -519,7 +519,7 @@ describe('Rallar RTC recovery', () => {
         const onRtcCallbacksDo = vi.fn((): QRtcDataChannel => peer.channel);
         const realtimeChannel = {
             readHealth: vi.fn(() =>
-                createChannelHealth({
+                createBrowserRtcChannelHealth({
                     peerId: 'peer-1',
                     label: 'rtc-realtime',
                     state: 'Open',
@@ -709,49 +709,6 @@ describe('Rallar RTC recovery', () => {
         });
     });
 });
-
-interface ChannelHealthInput {
-    readonly peerId: string;
-    readonly label: string;
-    readonly state: string;
-    readonly readyState: RTCDataChannelState;
-}
-
-function createChannelHealth(input: ChannelHealthInput): RtcDataChannelHealth {
-    return {
-        peerId: input.peerId,
-        label: input.label,
-        state: input.state,
-        role: 'Initiator',
-        readyState: input.readyState,
-        binaryType: 'arraybuffer',
-        bufferedAmount: 0,
-        bufferedAmountLowThreshold: 0,
-        queuedItemCount: 0,
-        rawCallbackCount: 0,
-        messageCallbackCount: 0,
-        lifecycleCallbackCount: 0,
-        flowControl: {
-            highWatermarkBytes: 64 * 1024,
-            lowWatermarkBytes: 16 * 1024,
-            overflow: 'drop-new',
-            maxQueueItems: 32
-        },
-        counters: {
-            sent: 0,
-            queued: 0,
-            dropped: 0,
-            replaced: 0,
-            closed: 0,
-            flushed: 0,
-            droppedOldest: 0,
-            droppedStale: 0,
-            receivedRaw: 0,
-            receivedString: 0,
-            receivedBinary: 0
-        }
-    };
-}
 
 function mockClientRepositoryMissing(): void {
     mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);

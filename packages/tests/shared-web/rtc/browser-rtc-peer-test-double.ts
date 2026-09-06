@@ -1,5 +1,5 @@
 import type { QRtcPeerDto } from '@shared/services/web-rtc-connection-service.ts';
-import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
+import { QRtcDataChannel, type RtcDataChannelHealth } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
@@ -28,4 +28,25 @@ export function createBrowserRtcPeerTestDouble(input: BrowserRtcPeerTestInput): 
     const channel = channels.get('reliable') ?? channels.values().next().value ??
         new QRtcDataChannel(connection, { peerId: input.peerId, dataChannelName: 'reliable' });
     return { peerId: input.peerId, connection, channel, channels, media: new QRtcMediaChannel(connection, { peerId: input.peerId }) };
+}
+
+export interface BrowserRtcChannelHealthInput {
+    readonly peerId: string;
+    readonly label: string;
+    readonly state: string;
+    readonly readyState: RTCDataChannelState;
+}
+
+/** Keep diagnostics fixtures aligned with the native channel's public health contract. */
+export function createBrowserRtcChannelHealth(input: BrowserRtcChannelHealthInput): RtcDataChannelHealth {
+    const peer = createBrowserRtcPeerTestDouble({ peerId: input.peerId, channels: [] });
+    return {
+        ...peer.channel.readHealth(),
+        label: input.label,
+        state: input.state,
+        readyState: input.readyState,
+        role: 'Initiator',
+        binaryType: 'arraybuffer',
+        bufferedAmountLowThreshold: 0
+    };
 }

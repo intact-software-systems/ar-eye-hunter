@@ -9,7 +9,7 @@ import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
-import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
+import { QRtcDataChannel, type RtcDataChannelFlowControlPolicy } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
@@ -28,6 +28,39 @@ afterEach(() => {
 });
 
 describe('RTC outbound transport results', () => {
+    it('releases native queued work when the ALM owner is disposed', async () => {
+        const channel = createChannel({ overflow: 'queue' });
+        const native = nativeRuntime.createdConnections[0].channels[0];
+        await native.open();
+        native.bufferedAmount = 128 * 1024;
+        const manager = createManager(channel, createDefaultALOutboundRuntimeResources());
+        onTestFinished(() => manager.dispose());
+
+        await manager.enqueueIfAbsent(createMessage('dispose-retained'));
+        expect(channel.readHealth().queuedItemCount).toBe(1);
+        manager.dispose();
+        expect(channel.readHealth().queuedItemCount).toBe(0);
+        native.bufferedAmount = 0;
+        await native.drain();
+        expect(native.sent).toEqual([]);
+    });
+
+    it('applies the ALM deadline while work remains in the native queue', async () => {
+        const channel = createChannel({ overflow: 'queue' });
+        const native = nativeRuntime.createdConnections[0].channels[0];
+        await native.open();
+        native.bufferedAmount = 128 * 1024;
+        const manager = createManager(channel, createDefaultALOutboundRuntimeResources());
+        onTestFinished(() => manager.dispose());
+        await manager.enqueueIfAbsent(createMessage('expire-retained'));
+
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(channel.readHealth().queuedItemCount).toBe(0);
+        native.bufferedAmount = 0;
+        await native.drain();
+        expect(native.sent).toEqual([]);
+    });
+
     it('keeps backpressured work available for retry and sends the same logical message when pressure clears', async () => {
         const channel = createChannel();
         const native = nativeRuntime.createdConnections[0].channels[0];
@@ -65,7 +98,7 @@ describe('RTC outbound transport results', () => {
     });
 });
 
-function createChannel(): QRtcDataChannel {
+function createChannel(flowControl: RtcDataChannelFlowControlPolicy = {}): QRtcDataChannel {
     const peer = new QRtcPeerConnection({ send: async () => {} }, {
         sessionId: 'self',
         peerSessionId: 'peer-1',
@@ -74,7 +107,7 @@ function createChannel(): QRtcDataChannel {
         isPolite: false
     });
     peer.connect();
-    const channel = new QRtcDataChannel(peer, { peerId: 'peer-1', dataChannelName: 'alm' });
+    const channel = new QRtcDataChannel(peer, { peerId: 'peer-1', dataChannelName: 'alm', flowControl });
     channel.connect(true);
     onTestFinished(() => {
         peer.reset();

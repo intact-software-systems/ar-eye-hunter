@@ -20,7 +20,7 @@ import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
 
-export type ALOutboundPreparedSendStatus = 'sent' | 'queued' | 'no-targets' | 'not-ready';
+export type ALOutboundPreparedSendStatus = 'sent' | 'queued' | 'no-targets' | 'not-ready' | 'cancelled' | 'expired';
 
 export interface ALOutboundPreparedSendResult {
     readonly status: ALOutboundPreparedSendStatus;
@@ -135,6 +135,12 @@ export interface ALOutboundEnqueueResult {
 }
 
 export namespace ALOutboundMessageRuntime {
+    export interface SendLifecycle {
+        /** The runtime owns this cancellation signal; disposal stops remaining local transport work. */
+        readonly signal: AbortSignal;
+        readonly expiresAtMs: number | undefined;
+    }
+
     export interface Clock {
         nowMs(): number;
     }
@@ -169,7 +175,8 @@ export namespace ALOutboundMessageRuntime {
         readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
         readonly sendPreparedMessage: (
             prepared: TPrepared,
-            phase: ALOutboundDispatchPhase
+            phase: ALOutboundDispatchPhase,
+            lifecycle: SendLifecycle
         ) => Promise<void | ALOutboundPreparedSendResult>;
         readonly planRepairMessage:
             | ((
@@ -183,6 +190,7 @@ export namespace ALOutboundMessageRuntime {
 }
 
 export class ALOutboundMessageRuntime<TPrepared> {
+    private readonly sendAbortController = new AbortController();
     private readonly readyPromise: Promise<void>;
     private readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
     private readonly repairAdmission: ALOutboundRepairAdmission<TPrepared>;
@@ -235,6 +243,11 @@ export class ALOutboundMessageRuntime<TPrepared> {
         this.disposed = true;
         this.effectDrain.dispose();
         this.dispatchAdmission.dispose();
+        this.sendAbortController.abort();
+    }
+
+    get sendSignal(): AbortSignal {
+        return this.sendAbortController.signal;
     }
 
     async enqueueIfAbsent(
@@ -354,7 +367,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         switch (effect.payload.kind) {
             case 'send-prepared': {
                 const sendResult =
-                    await this.dependencies.sendPreparedMessage(effect.payload.prepared, effect.payload.phase) ??
+                    await this.dependencies.sendPreparedMessage(effect.payload.prepared, effect.payload.phase, {
+                        signal: this.sendSignal,
+                        expiresAtMs: effect.expireAtTimestamp
+                    }) ??
                         { status: 'sent' };
                 if (sendResult.status === 'not-ready') {
                     return {

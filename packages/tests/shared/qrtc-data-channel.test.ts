@@ -115,6 +115,7 @@ describe('QRtcDataChannel', () => {
         expect(dataChannel.sendRaw('{"raw":true}').status).toBe('sent');
 
         await createdChannel.receive('{"type":"chat","body":"typed"}');
+        await createdChannel.receive('{"type":"state","body":"update"}');
         await createdChannel.receive('{"body":"plain"}');
         await createdChannel.fail();
         await createdChannel.close();
@@ -124,7 +125,11 @@ describe('QRtcDataChannel', () => {
             '{"raw":true}'
         ]);
         expect(typedMessages).toEqual(['{"type":"chat","body":"typed"}', '{"body":"plain"}']);
-        expect(plainMessages).toEqual(['{"body":"plain"}']);
+        expect(plainMessages).toEqual([
+            '{"type":"chat","body":"typed"}',
+            '{"type":"state","body":"update"}',
+            '{"body":"plain"}'
+        ]);
         expect(lifecycle).toEqual(['open', 'error', 'close']);
     });
 
