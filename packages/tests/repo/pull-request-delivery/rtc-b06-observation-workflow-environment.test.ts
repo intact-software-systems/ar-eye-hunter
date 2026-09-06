@@ -16,9 +16,62 @@ afterEach(() => {
 });
 
 describe('RTC-B06 observation workflow environment', () => {
+    it('reserves publication for main while accepting an exact branch diagnostic source', () => {
+        const validateSource = readRunCommand('Validate the requested source');
+        const sourceSha = 'a'.repeat(40);
+        const diagnostic = spawnSync('bash', ['-euo', 'pipefail', '-c', validateSource], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                DEFAULT_BRANCH: 'main',
+                RUN_MODE: 'diagnostic',
+                SOURCE_REF: 'refs/heads/codex/rtc-b06-intermittent-readiness-fix',
+                SOURCE_SHA: sourceSha
+            }
+        });
+        const branchPublication = spawnSync(
+            'bash',
+            ['-euo', 'pipefail', '-c', validateSource],
+            {
+                cwd: repoRoot,
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    DEFAULT_BRANCH: 'main',
+                    RUN_MODE: 'publish',
+                    SOURCE_REF: 'refs/heads/codex/rtc-b06-intermittent-readiness-fix',
+                    SOURCE_SHA: sourceSha
+                }
+            }
+        );
+        const mainPublication = spawnSync(
+            'bash',
+            ['-euo', 'pipefail', '-c', validateSource],
+            {
+                cwd: repoRoot,
+                encoding: 'utf8',
+                env: {
+                    ...process.env,
+                    DEFAULT_BRANCH: 'main',
+                    RUN_MODE: 'publish',
+                    SOURCE_REF: 'refs/heads/main',
+                    SOURCE_SHA: sourceSha
+                }
+            }
+        );
+
+        expect(diagnostic).toMatchObject({ status: 0, stderr: '' });
+        expect(branchPublication.status).toBe(1);
+        expect(branchPublication.stdout).toContain(
+            'Published RTC observations must start from the repository main branch'
+        );
+        expect(mainPublication).toMatchObject({ status: 0, stderr: '' });
+    });
+
     it('starts the controller with complete catalog values and a memory-only producer boundary', () => {
         const fixtureRoot = createEnvironmentCaptureFixture();
-        const capture = readCaptureCommand();
+        const capture = readRunCommand('Capture RTC-B06 E3-memory observation');
         const result = spawnSync('bash', ['-euo', 'pipefail', '-c', capture], {
             cwd: repoRoot,
             encoding: 'utf8',
@@ -52,25 +105,21 @@ describe('RTC-B06 observation workflow environment', () => {
     });
 });
 
-function readCaptureCommand(): string {
+function readRunCommand(stepName: string): string {
     const workflowPath = path.join(
         repoRoot,
         '.github/workflows/rtc-b06-performance-observation.yml'
     );
     const workflow = load(readFileSync(workflowPath, 'utf8')) as {
-        jobs: {
-            capture: {
-                steps: Array<{ name?: string; run?: string; }>;
-            };
-        };
+        jobs: Record<string, { steps?: Array<{ name?: string; run?: string; }>; }>;
     };
-    const capture = workflow.jobs.capture.steps.find(
-        ({ name }) => name === 'Capture RTC-B06 E3-memory observation'
-    )?.run;
-    if (capture === undefined) {
-        throw new Error('RTC-B06 capture command is missing.');
+    const command = Object.values(workflow.jobs)
+        .flatMap(({ steps }) => steps ?? [])
+        .find(({ name }) => name === stepName)?.run;
+    if (command === undefined) {
+        throw new Error(`RTC-B06 ${stepName} command is missing.`);
     }
-    return capture;
+    return command;
 }
 
 function createEnvironmentCaptureFixture(): string {

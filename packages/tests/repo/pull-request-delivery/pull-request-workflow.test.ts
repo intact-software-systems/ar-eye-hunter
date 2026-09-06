@@ -60,10 +60,11 @@ describe('pull-request release workflow', () => {
         expect(workflowSource).not.toMatch(/source.*(?:fresh|latest)|compare.*main|pin(?:ned)?/iu);
     });
 
-    it('captures RTC-B06 E3 only by manual dispatch with hermetic memory configuration', () => {
+    it('captures RTC-B06 E3 only by explicit publish dispatch with hermetic memory configuration', () => {
         const workflow = readWorkflow(
             '.github/workflows/rtc-b06-performance-observation.yml'
         );
+        const source = workflow.jobs.source;
         const capture = workflow.jobs.capture;
         const publication = workflow.jobs.publication;
         const observe = capture.steps.find(
@@ -79,15 +80,30 @@ describe('pull-request release workflow', () => {
             (step: Record<string, any>) => step.name === 'Publish observation pull request'
         );
 
-        expect(workflow.on).toEqual({ workflow_dispatch: null });
+        expect(workflow.on).toEqual({
+            workflow_dispatch: {
+                inputs: {
+                    mode: {
+                        description: 'Choose permanent main evidence or a non-publishing branch diagnostic',
+                        required: true,
+                        default: 'publish',
+                        type: 'choice',
+                        options: ['publish', 'diagnostic']
+                    }
+                }
+            }
+        });
         expect(workflow.concurrency).toEqual({
             group: 'rtc-b06-performance-observation',
             'cancel-in-progress': false
         });
+        expect(source.steps[0].run).toContain('$RUN_MODE" == "publish"');
+        expect(source.steps[0].run).toContain('refs/heads/main');
         expect(capture['timeout-minutes']).toBe(360);
+        expect(observe.if).toBe('${{ inputs.mode == \'publish\' }}');
         expect(observe.run).toContain('observe-live-rtc');
         expect(upload).toMatchObject({
-            if: '${{ always() }}',
+            if: '${{ always() && inputs.mode == \'publish\' }}',
             uses: 'actions/upload-artifact@v7',
             with: {
                 name: 'rtc-b06-observation-gh${{ github.run_id }}-a${{ github.run_attempt }}',
@@ -95,11 +111,44 @@ describe('pull-request release workflow', () => {
             }
         });
         expect(verify.run).toContain('verify-observation');
+        expect(publication.if).toBe('${{ inputs.mode == \'publish\' }}');
         expect(publication.steps.indexOf(publish)).toBeGreaterThan(
             publication.steps.indexOf(verify)
         );
         expect(publish.env).toEqual({
             GH_TOKEN: '${{ secrets.RTC_OBSERVATION_PR_TOKEN }}'
+        });
+    });
+
+    it('runs RTC-B06 branch diagnostics without creating publishable observation evidence', () => {
+        const workflow = readWorkflow(
+            '.github/workflows/rtc-b06-performance-observation.yml'
+        );
+        const capture = workflow.jobs.capture;
+        const diagnostic = capture.steps.find(
+            (step: Record<string, any>) => step.name === 'Exercise RTC-B06 branch candidate'
+        );
+        const upload = capture.steps.find(
+            (step: Record<string, any>) => step.name === 'Retain RTC-B06 diagnostic output'
+        );
+
+        expect(diagnostic).toMatchObject({
+            if: '${{ inputs.mode == \'diagnostic\' }}'
+        });
+        expect(diagnostic.run).toContain('npm run test:rallar:full-stack:memory:live-rtc-3');
+        expect(diagnostic.run).toContain('-u DATABASE_URL');
+        expect(diagnostic.run).toContain('-u RALLAR_ICE_MODE');
+        expect(diagnostic.run).toContain('-u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS');
+        expect(diagnostic.run).toContain('-u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK');
+        expect(diagnostic.run).toContain('-u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES');
+        expect(diagnostic.run).not.toContain('observe-live-rtc');
+        expect(upload).toMatchObject({
+            if: '${{ always() && inputs.mode == \'diagnostic\' }}',
+            uses: 'actions/upload-artifact@v7',
+            with: {
+                name: 'rtc-b06-diagnostic-gh${{ github.run_id }}-a${{ github.run_attempt }}',
+                path: expect.stringContaining('${{ runner.temp }}/rtc-b06-observation')
+            }
         });
     });
 

@@ -2,6 +2,15 @@ name: RTC-B06 Performance Observation
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Choose permanent main evidence or a non-publishing branch diagnostic
+        required: true
+        default: publish
+        type: choice
+        options:
+          - publish
+          - diagnostic
 
 permissions:
   contents: read
@@ -12,18 +21,19 @@ concurrency:
 
 jobs:
   source:
-    name: Resolve RTC-B06 observation source
+    name: Resolve RTC-B06 run source
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Require the main branch source
+      - name: Validate the requested source
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RUN_MODE: ${{ inputs.mode }}
           SOURCE_REF: ${{ github.ref }}
           SOURCE_SHA: ${{ github.sha }}
         run: |
-          if [[ "$DEFAULT_BRANCH" != "main" || "$SOURCE_REF" != "refs/heads/main" ]]; then
-            echo "::error::RTC observations must start from the repository main branch"
+          if [[ "$RUN_MODE" == "publish" && ("$DEFAULT_BRANCH" != "main" || "$SOURCE_REF" != "refs/heads/main") ]]; then
+            echo "::error::Published RTC observations must start from the repository main branch"
             exit 1
           fi
           if [[ ! "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -71,6 +81,7 @@ jobs:
         run: npm run check --workspace=packages/shared-rtc-bench
 
       - name: Capture RTC-B06 E3-memory observation
+        if: ${{ inputs.mode == 'publish' }}
         run: |
           env -u DATABASE_URL -u RALLAR_ICE_MODE \
             RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 \
@@ -83,8 +94,19 @@ jobs:
             --github-run-url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --output="$RTC_OBSERVATION_OUTPUT"
 
+      - name: Exercise RTC-B06 branch candidate
+        if: ${{ inputs.mode == 'diagnostic' }}
+        run: |
+          env -u DATABASE_URL \
+            -u RALLAR_ICE_MODE \
+            -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS \
+            -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK \
+            -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES \
+            npm run test:rallar:full-stack:memory:live-rtc-3 \
+            2>&1 | tee "$RTC_OBSERVATION_OUTPUT/diagnostic.log"
+
       - name: Retain RTC-B06 observation output
-        if: ${{ always() }}
+        if: ${{ always() && inputs.mode == 'publish' }}
         uses: actions/upload-artifact@v7
         with:
           name: rtc-b06-observation-gh${{ github.run_id }}-a${{ github.run_attempt }}
@@ -92,8 +114,20 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Retain RTC-B06 diagnostic output
+        if: ${{ always() && inputs.mode == 'diagnostic' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: rtc-b06-diagnostic-gh${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/rtc-b06-observation
+            test-results
+          if-no-files-found: error
+          retention-days: 14
+
   publication:
     name: Publish RTC-B06 observation
+    if: ${{ inputs.mode == 'publish' }}
     needs:
       - source
       - capture
