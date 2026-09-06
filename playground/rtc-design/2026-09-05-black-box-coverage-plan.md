@@ -68,7 +68,7 @@ pass every black-box gate today.
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `api-v1-group-ownership-transfer`   | a plain member's transfer is `403 forbidden-role`; the owner's transfer is `200` and swaps roles to `owner`/`admin`; a non-member target is `400 group-mutation-rejected`; a sole owner's self-transfer is `403 last-owner` |
 | `api-v1-group-governance-authority` | ban, unban, remove and role promotion each denied for a non-owner with the code named; `last-owner` returned when the sole owner is removed, demoted or leaves                                                              |
-| `api-v1-group-invite-revocation`    | revoke-then-accept is denied; `group-invite-required` and `group-invite-expired` are returned by a real join                                                                                                                |
+| `api-v1-group-invite-revocation`    | revoke-then-accept is denied `group-invite-required`; `group-invite-required` and `group-invite-expired` are both returned by a real self-join; a live invite still admits                                                  |
 | `api-v1-group-director-appoint`     | the appointment route's status mapping, actor binding, and metadata-patch containment                                                                                                                                       |
 
 **Hazards.** The demoted owner becomes `admin`, not a member, and an admin may still govern regular

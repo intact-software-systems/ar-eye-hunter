@@ -1,0 +1,570 @@
+{
+  "description": "No-browser API-v1 invite revocation and expiry: the invite denials a principal actually meets on the join path. A stranger, a revoked invitee and an expired invitee are each refused with the code and message that names their own rule, and a live invite still admits, so the denials are not a route that refuses everyone.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_INVREV_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-invrev"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_INVREV_WORKSPACE_ID",
+      "default": "workspace-invrev-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_INVREV_GROUP_ID",
+      "default": "invrev-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_INVREV_PASSWORD",
+      "default": "api-v1-invrev-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/invrev-register-owner-{runId}",
+        "body": {
+          "username": "invrev-owner-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "owner client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/invrev-login-owner-{runId}",
+        "body": {
+          "username": "invrev-owner-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "ownerClientId": "body.clientId",
+          "ownerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOwnerAuthHeader",
+      "type": "set",
+      "output": "ownerAuthHeader",
+      "secret": true,
+      "redactAs": "ownerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.ownerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerInvitee",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/invrev-register-invitee-{runId}",
+        "body": {
+          "username": "invrev-invitee-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "invitee client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginInvitee",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/invrev-login-invitee-{runId}",
+        "body": {
+          "username": "invrev-invitee-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "inviteeClientId": "body.clientId",
+          "inviteeAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveInviteeAuthHeader",
+      "type": "set",
+      "output": "inviteeAuthHeader",
+      "secret": true,
+      "redactAs": "inviteeAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.inviteeAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerExpiree",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/invrev-register-expiree-{runId}",
+        "body": {
+          "username": "invrev-expiree-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "expiree client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginExpiree",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/invrev-login-expiree-{runId}",
+        "body": {
+          "username": "invrev-expiree-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "expireeClientId": "body.clientId",
+          "expireeAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveExpireeAuthHeader",
+      "type": "set",
+      "output": "expireeAuthHeader",
+      "secret": true,
+      "redactAs": "expireeAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.expireeAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerStranger",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/invrev-register-stranger-{runId}",
+        "body": {
+          "username": "invrev-stranger-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "stranger client"
+        },
+        "outputs": {
+          "strangerClientId": "body.clientId"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginStranger",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/invrev-login-stranger-{runId}",
+        "body": {
+          "username": "invrev-stranger-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "strangerClientId": "body.clientId",
+          "strangerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveStrangerAuthHeader",
+      "type": "set",
+      "output": "strangerAuthHeader",
+      "secret": true,
+      "redactAs": "strangerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.strangerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createInviteOnlyGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/invrev-create-group-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Invite revocation group {runId}",
+          "kind": "room",
+          "joinMode": "invite-only",
+          "createdByPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "joinMode": "invite-only"
+          }
+        }
+      }
+    },
+    {
+      "name": "aStrangerCannotJoinAnInviteOnlyGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{strangerClientId}/requests/invrev-stranger-self-join-{runId}",
+        "headers": {
+          "Authorization": "{strangerAuthHeader}",
+          "x-client-id": "{strangerClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-invite-required",
+          "status": 403,
+          "message": "A valid invite is required to join."
+        }
+      }
+    },
+    {
+      "name": "theOwnerInvitesTheInvitee",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{inviteeClientId}/requests/invrev-invite-the-invitee-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{inviteeClientId}",
+              "status": "invited",
+              "invitationExpiresAtEpochMs": "integer"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theOwnerRevokesTheInvite",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{inviteeClientId}/revoke/requests/invrev-revoke-the-invite-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "reason": "revoked by the recipe"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{inviteeClientId}",
+              "status": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theRevokedInviteCannotBeAccepted",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/accept/requests/invrev-accept-revoked-invite-{runId}",
+        "headers": {
+          "Authorization": "{inviteeAuthHeader}",
+          "x-client-id": "{inviteeClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-invite-required",
+          "status": 403,
+          "message": "A valid invite is required to join."
+        }
+      }
+    },
+    {
+      "name": "theRevokedInviteeCannotJustJoinEither",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{inviteeClientId}/requests/invrev-revoked-self-join-{runId}",
+        "headers": {
+          "Authorization": "{inviteeAuthHeader}",
+          "x-client-id": "{inviteeClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-invite-required",
+          "status": 403,
+          "message": "A valid invite is required to join."
+        }
+      }
+    },
+    {
+      "name": "theOwnerInvitesTheExpireeWithAPastExpiry",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{expireeClientId}/requests/invrev-invite-the-expiree-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "invitationExpiresAtEpochMs": 1700000000000
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{expireeClientId}",
+              "status": "invited",
+              "invitationExpiresAtEpochMs": 1700000000000
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theExpiredInviteIsRefusedByARealJoin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{expireeClientId}/requests/invrev-expired-self-join-{runId}",
+        "headers": {
+          "Authorization": "{expireeAuthHeader}",
+          "x-client-id": "{expireeClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "group-invite-expired",
+          "status": 403,
+          "message": "Group invite has expired."
+        }
+      }
+    },
+    {
+      "name": "theOwnerInvitesTheInviteeAgain",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/{inviteeClientId}/requests/invrev-invite-the-invitee-again-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{inviteeClientId}",
+              "status": "invited"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "aLiveInviteStillLetsThePrincipalJoin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{inviteeClientId}/requests/invrev-live-invite-self-join-{runId}",
+        "headers": {
+          "Authorization": "{inviteeAuthHeader}",
+          "x-client-id": "{inviteeClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{inviteeClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}
