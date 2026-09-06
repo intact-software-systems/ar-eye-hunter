@@ -1,6 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { compareJson, COMPARISON, toConfig } from '../../json-compare/CompareJson.ts';
 import { toBoundedWsWaitMessages } from '../artifacts/with-bounded-artifact-report-results.ts';
+import { toWaitCountBound } from '../expectations/wait-count-bound.ts';
 import { toWsExpectedConnectionName, toWsFailureStatus, toWsSuccessStatus } from './ws-interaction-statuses.ts';
 
 export {
@@ -294,6 +295,82 @@ export function waitForWsClose(
                 }));
             }
         }, 25);
+    });
+}
+
+export interface WaitForWsMessageCountInput {
+    readonly interaction: any;
+    readonly config: any;
+    readonly context: any;
+    readonly details?: any;
+}
+
+function countMatchingWsMessages(messages: any[], expectedMessage: any, interaction: any): number {
+    return messages.filter((message) =>
+        compareJson(expectedMessage, message.data, toWsComparisonConfig(interaction)).isEqual
+    ).length;
+}
+
+/**
+ * Cardinality over the whole window. `waitForWsMessage` resolves on the first
+ * match, which cannot distinguish "exactly one" from "at least one" -- so this
+ * always waits the full `withinMs` before counting, the same reason
+ * `waitForWsMessageAbsence` does.
+ */
+export function waitForWsMessageCount(input: WaitForWsMessageCountInput): Promise<any> {
+    const { interaction, config, context } = input;
+    const details = input.details ?? {};
+    const connectionName = toWsExpectedConnectionName(interaction);
+    const expectedMessage = interaction.response.message;
+    const bound = toWaitCountBound(interaction.response.count);
+    const windowMs = Number.parseInt(
+        interaction.response.withinMs || interaction.request.timeoutMs || 5000
+    );
+    const startedAt = Date.now();
+
+    if (expectedMessage === undefined || expectedMessage === null) {
+        return Promise.resolve(toWsFailureStatus(
+            config,
+            interaction,
+            'WebSocket count wait expects expect.message to match frames against.',
+            { ...details, connection: connectionName }
+        ));
+    }
+
+    if (bound === undefined) {
+        return Promise.resolve(toWsFailureStatus(
+            config,
+            interaction,
+            'WebSocket count wait expects expect.count to be a non-negative integer or {min,max}.',
+            { ...details, connection: connectionName, count: interaction.response.count }
+        ));
+    }
+
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            const messages = context.wsMessages[connectionName] || [];
+            const matchedCount = countMatchingWsMessages(messages, expectedMessage, interaction);
+            const reported = {
+                ...details,
+                connection: connectionName,
+                expectedMessage,
+                expectedCount: interaction.response.count,
+                matchedCount,
+                observedMessageCount: messages.length,
+                waitedMs: Date.now() - startedAt
+            };
+
+            resolve(
+                matchedCount >= bound.min && matchedCount <= bound.max
+                    ? toWsSuccessStatus(config, interaction, reported)
+                    : toWsFailureStatus(
+                        config,
+                        interaction,
+                        'WebSocket message count did not match the expectation',
+                        reported
+                    )
+            );
+        }, windowMs);
     });
 }
 

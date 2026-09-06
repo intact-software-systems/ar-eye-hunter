@@ -6,6 +6,7 @@ import {
     waitForWsClose,
     waitForWsMessage,
     waitForWsMessageAbsence,
+    waitForWsMessageCount,
     waitForWsMessages
 } from '../ws/ws-wait-expectations.ts';
 import {
@@ -92,6 +93,10 @@ function sendWs(interaction: any, config: any, context: any): Promise<any> {
         sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs
     };
 
+    if (interaction.response?.count !== undefined) {
+        return waitForWsMessageCount({ interaction, config, context, details });
+    }
+
     if (interaction.response?.messages) {
         return waitForWsMessages(interaction, config, context, details);
     }
@@ -122,6 +127,12 @@ export function executeLocalWsInteraction(interaction: any, config: any, context
             return waitForWsMessageAbsence({ interaction, config, context });
         }
 
+        // Before `message`, which resolves on its first match and so cannot
+        // tell "exactly one" from "at least one".
+        if (interaction.response?.count !== undefined) {
+            return waitForWsMessageCount({ interaction, config, context });
+        }
+
         if (interaction.response?.close !== undefined) {
             return waitForWsClose(interaction, config, context);
         }
@@ -138,7 +149,8 @@ export function executeLocalWsInteraction(interaction: any, config: any, context
             toWsFailureStatus(
                 config,
                 interaction,
-                'WebSocket wait expects expect.message, expect.messages, expect.absent, or expect.close'
+                'WebSocket wait expects expect.message, expect.messages, expect.count, ' +
+                    'expect.absent, or expect.close'
             )
         );
     }

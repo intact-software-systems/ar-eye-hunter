@@ -15,6 +15,7 @@ import {
     waitForRtcHealth,
     waitForRtcMessage,
     waitForRtcMessageAbsence,
+    waitForRtcMessageCount,
     waitForRtcMessages
 } from './rtc/rtc-wait-expectations.ts';
 
@@ -283,6 +284,16 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
                 diagnostics: connection.diagnostics
             };
 
+            // Before `message`, which resolves on its first match.
+            if (interaction.response?.count !== undefined) {
+                return waitForRtcMessageCount({
+                    interaction,
+                    config,
+                    context,
+                    details: sendWaitDetails
+                });
+            }
+
             if (interaction.response?.messages) {
                 return waitForRtcMessages(interaction, config, context, sendWaitDetails);
             }
@@ -326,6 +337,11 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
                 return waitForRtcMessageAbsence({ interaction, config, context });
             }
 
+            // Before `message`, which resolves on its first match.
+            if (interaction.response?.count !== undefined) {
+                return waitForRtcMessageCount({ interaction, config, context });
+            }
+
             if (interaction.response?.diagnostics) {
                 return waitForRtcDiagnostics(interaction, config, context);
             }
@@ -349,7 +365,7 @@ export function createRtcProviderFromClientFactory(options: RtcClientProviderOpt
             return toRtcFailureStatus(
                 config,
                 interaction,
-                'RTC wait expects expect.message, expect.messages, expect.absent, ' +
+                'RTC wait expects expect.message, expect.messages, expect.count, expect.absent, ' +
                     'expect.diagnostic, expect.diagnostics, expect.health, or expect.close',
                 {
                     connection: toRtcExpectedConnectionName(interaction)

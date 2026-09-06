@@ -12,6 +12,7 @@ import {
     waitForRtcClose,
     waitForRtcMessage,
     waitForRtcMessageAbsence,
+    waitForRtcMessageCount,
     waitForRtcMessages,
     type RtcProvider
 } from './rtc-provider.ts';
@@ -74,6 +75,22 @@ export function createRallarStubRtcProvider(): RtcProvider {
                 });
             });
 
+            // Before `message`, which resolves on its first match.
+            if (interaction.response?.count !== undefined) {
+                return waitForRtcMessageCount({
+                    interaction,
+                    config,
+                    context,
+                    details: {
+                        sentConnection: connectionName,
+                        sent: payload,
+                        deliveredMessages,
+                        deliverTargets,
+                        stub: true
+                    }
+                });
+            }
+
             if (interaction.response?.messages) {
                 return waitForRtcMessages(interaction, config, context, {
                     sentConnection: connectionName,
@@ -119,6 +136,16 @@ export function createRallarStubRtcProvider(): RtcProvider {
                 });
             }
 
+            // Before `message`, which resolves on its first match.
+            if (interaction.response?.count !== undefined) {
+                return waitForRtcMessageCount({
+                    interaction,
+                    config,
+                    context,
+                    details: { stub: true }
+                });
+            }
+
             if (interaction.response?.messages) {
                 return waitForRtcMessages(interaction, config, context, {
                     stub: true
@@ -134,7 +161,8 @@ export function createRallarStubRtcProvider(): RtcProvider {
             return Promise.resolve(toRtcFailureStatus(
                 config,
                 interaction,
-                'RTC wait expects expect.message, expect.messages, expect.absent, or expect.close',
+                'RTC wait expects expect.message, expect.messages, expect.count, ' +
+                    'expect.absent, or expect.close',
                 {
                     stub: true,
                     connection: toRtcExpectedConnectionName(interaction)
