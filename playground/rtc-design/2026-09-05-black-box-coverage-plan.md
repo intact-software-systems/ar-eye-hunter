@@ -64,12 +64,12 @@ The highest-authority mutations on the group aggregate have owner-happy-path cov
 regression that let any member seize ownership, or that left a demoted owner still privileged, would
 pass every black-box gate today.
 
-| Recipe                              | Pins                                                                                                                                                                                                                        |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `api-v1-group-ownership-transfer`   | a plain member's transfer is `403 forbidden-role`; the owner's transfer is `200` and swaps roles to `owner`/`admin`; a non-member target is `400 group-mutation-rejected`; a sole owner's self-transfer is `403 last-owner` |
-| `api-v1-group-governance-authority` | ban, unban, remove and role promotion each denied for a non-owner with the code named; `last-owner` returned when the sole owner is removed, demoted or leaves                                                              |
-| `api-v1-group-invite-revocation`    | revoke-then-accept is denied; `group-invite-required` and `group-invite-expired` are returned by a real join                                                                                                                |
-| `api-v1-group-director-appoint`     | the appointment route's status mapping, actor binding, and metadata-patch containment                                                                                                                                       |
+| Recipe                              | Pins                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-group-ownership-transfer`   | a plain member's transfer is `403 forbidden-role`; the owner's transfer is `200` and swaps roles to `owner`/`admin`; a non-member target is `400 group-mutation-rejected`; a sole owner's self-transfer is `403 last-owner`                                                                               |
+| `api-v1-group-governance-authority` | ban, unban, remove and role promotion each denied for a non-owner with the code named; `last-owner` returned when the sole owner is removed, demoted or leaves                                                                                                                                            |
+| `api-v1-group-invite-revocation`    | revoke-then-accept is denied; `group-invite-required` and `group-invite-expired` are returned by a real join                                                                                                                                                                                              |
+| `api-v1-group-director-appoint`     | every eligibility branch: not-a-member, no active room session, a plain member while an owner is online, and a second member against an active fallback director are each `400 group-mutation-rejected` with the reason named; the patch touches only `rallarDirector` and the appointment epoch advances |
 
 **Hazards.** The demoted owner becomes `admin`, not a member, and an admin may still govern regular
 members — a recipe asserting "the old owner can no longer do anything" will fail for the wrong
@@ -93,6 +93,11 @@ The sibling `/director/appoint` route does declare `400`, so this reads as a con
 than a deliberate exclusion. The recipe pins the observed `400` so the behaviour is not unobserved,
 but the disagreement is real work: either the contract gains `400` for this route, or the route
 returns the contracted `404`. Do not close this by editing the recipe.
+
+Every director-appointment denial is raised as `GroupMutationRejectedError('Forbidden: ' + reason)`,
+so the route answers **`400 group-mutation-rejected`** carrying a `Forbidden:` message rather than the
+`403` the wording implies — the status mapping this slice set out to pin. The reason string is the
+only thing separating the four denial branches, so the recipe pins it rather than the shared code.
 
 **Gates:** baseline plus both black-box profiles.
 
