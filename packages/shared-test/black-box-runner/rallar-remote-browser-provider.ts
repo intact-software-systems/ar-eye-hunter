@@ -18,6 +18,7 @@ import {
     waitForRtcDiagnostics,
     waitForRtcHealth,
     waitForRtcMessage,
+    waitForRtcMessageCount,
     waitForRtcMessages,
     type RtcProvider
 } from './rtc-provider.ts';
@@ -1135,6 +1136,16 @@ export function createRallarRemoteBrowserRtcProvider(
                     sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs
                 };
 
+                // Before `message`, which resolves on its first match.
+                if (interaction.response?.count !== undefined) {
+                    return waitWithRemoteEventSync(
+                        remote,
+                        fetchFn,
+                        context,
+                        () => waitForRtcMessageCount({ interaction, config, context, details })
+                    );
+                }
+
                 if (interaction.response?.messages) {
                     return waitWithRemoteEventSync(
                         remote,
@@ -1236,16 +1247,19 @@ export function createRallarRemoteBrowserRtcProvider(
                         remote
                     });
                 }
+
                 if (interaction.response?.diagnostics) {
                     return waitForRtcDiagnostics(interaction, config, context, {
                         remote
                     });
                 }
+
                 if (interaction.response?.diagnostic) {
                     return waitForRtcDiagnostic(interaction, config, context, {
                         remote
                     });
                 }
+
                 if (interaction.response?.health !== undefined) {
                     return waitForRemoteRtcHealth(
                         remote,
@@ -1258,11 +1272,23 @@ export function createRallarRemoteBrowserRtcProvider(
                         }
                     );
                 }
+
+                // Before `message`, which resolves on its first match.
+                if (interaction.response?.count !== undefined) {
+                    return waitForRtcMessageCount({
+                        interaction,
+                        config,
+                        context,
+                        details: { remote }
+                    });
+                }
+
                 if (interaction.response?.messages) {
                     return waitForRtcMessages(interaction, config, context, {
                         remote
                     });
                 }
+
                 if (interaction.response?.message) {
                     return waitForRtcMessage(interaction, config, context, {
                         remote
@@ -1272,7 +1298,8 @@ export function createRallarRemoteBrowserRtcProvider(
                 return Promise.resolve(toRtcFailureStatus(
                     config,
                     interaction,
-                    'RTC wait expects expect.message, expect.messages, expect.diagnostic, expect.diagnostics, expect.health, or expect.close',
+                    'RTC wait expects expect.message, expect.messages, expect.count, expect.diagnostic, ' +
+                        'expect.diagnostics, expect.health, or expect.close',
                     {
                         connection: toRtcExpectedConnectionName(interaction),
                         remote

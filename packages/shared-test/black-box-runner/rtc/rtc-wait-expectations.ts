@@ -1,5 +1,6 @@
 // deno-lint-ignore-file no-explicit-any
 import { compareJson, COMPARISON, toConfig } from '../../json-compare/CompareJson.ts';
+import { toWaitCountBound } from '../expectations/wait-count-bound.ts';
 
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
@@ -714,6 +715,81 @@ export function waitForRtcClose(
                 }));
             }
         }, 25);
+    });
+}
+
+export interface WaitForRtcMessageCountInput {
+    readonly interaction: any;
+    readonly config: any;
+    readonly context: any;
+    readonly details?: any;
+}
+
+function countMatchingRtcMessages(messages: any[], expectedMessage: any, interaction: any): number {
+    return messages.filter((message) =>
+        compareJson(expectedMessage, message.data, toRtcComparisonConfig(interaction)).isEqual
+    ).length;
+}
+
+/**
+ * Cardinality over the whole window, mirroring the WebSocket wait.
+ * `waitForRtcMessage` resolves on its first match and so cannot tell "exactly
+ * one" from "at least one"; this waits the full `withinMs` before counting.
+ */
+export function waitForRtcMessageCount(input: WaitForRtcMessageCountInput): Promise<any> {
+    const { interaction, config, context } = input;
+    const details = input.details ?? {};
+    const connectionName = toRtcExpectedConnectionName(interaction);
+    const expectedMessage = interaction.response.message;
+    const bound = toWaitCountBound(interaction.response.count);
+    const windowMs = Number.parseInt(
+        interaction.response.withinMs || interaction.request.timeoutMs || 5000
+    );
+    const startedAt = Date.now();
+
+    if (expectedMessage === undefined || expectedMessage === null) {
+        return Promise.resolve(toRtcFailureStatus(
+            config,
+            interaction,
+            'RTC count wait expects expect.message to match frames against.',
+            { ...details, connection: connectionName }
+        ));
+    }
+
+    if (bound === undefined) {
+        return Promise.resolve(toRtcFailureStatus(
+            config,
+            interaction,
+            'RTC count wait expects expect.count to be a non-negative integer or {min,max}.',
+            { ...details, connection: connectionName, count: interaction.response.count }
+        ));
+    }
+
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            const messages = context.rtcMessages[connectionName] || [];
+            const matchedCount = countMatchingRtcMessages(messages, expectedMessage, interaction);
+            const reported = {
+                ...details,
+                connection: connectionName,
+                expectedMessage,
+                expectedCount: interaction.response.count,
+                matchedCount,
+                observedMessageCount: messages.length,
+                waitedMs: Date.now() - startedAt
+            };
+
+            resolve(
+                matchedCount >= bound.min && matchedCount <= bound.max
+                    ? toRtcSuccessStatus(config, interaction, reported)
+                    : toRtcFailureStatus(
+                        config,
+                        interaction,
+                        'RTC message count did not match the expectation',
+                        reported
+                    )
+            );
+        }, windowMs);
     });
 }
 
