@@ -1,75 +1,46 @@
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import {
-    toPgTimestamp,
-    toSystemDate,
-    type ResourceInboxRow
-} from './resource-inbox-row-codec.ts';
+import type { ResourceInboxEntryInsertValues } from './resource-inbox-entry-insert-values.ts';
+import type { ResourceInboxRow } from './resource-inbox-row-codec.ts';
 
-export interface ReplaceObservedResourceInboxEntryInput {
-    readonly sql: PSqlSql;
-    readonly expected: ResourceEntry;
-    readonly replacement: ResourceEntry;
+export interface ResourceInboxObservedReplacement {
+    readonly expected: ResourceInboxEntryInsertValues;
+    readonly replacement: ResourceInboxEntryInsertValues;
     readonly expectedRowId: bigint;
 }
 
 export async function replaceObservedResourceInboxEntry(
-    input: ReplaceObservedResourceInboxEntryInput
+    sql: PSqlSql,
+    computed: ResourceInboxObservedReplacement
 ): Promise<ResourceInboxRow[]> {
-    const { sql, expected, replacement, expectedRowId } = input;
+    const { expected, replacement, expectedRowId } = computed;
     return await sql<ResourceInboxRow[]>`
         update resource_inbox
-        set ri_resource = ${replacement.resource},
-            ri_type_id = ${replacement.typeId},
-            ri_status = ${replacement.status},
-            system_date = ${toSystemDate(replacement)},
-            created_by = ${replacement.audit.createdBy},
-            created_ts = ${toPgTimestamp(replacement.audit.createdTs)},
-            expire_ts = ${toPgTimestamp(replacement.audit.expiryTs)},
-            start_ts = ${
-        replacement.dequeueAudit.startTs
-            ? toPgTimestamp(replacement.dequeueAudit.startTs)
-            : null
-    },
-            end_ts = ${
-        replacement.dequeueAudit.endTs
-            ? toPgTimestamp(replacement.dequeueAudit.endTs)
-            : null
-    },
-            next_ts = ${
-        replacement.dequeueAudit.nextTs
-            ? toPgTimestamp(replacement.dequeueAudit.nextTs)
-            : null
-    },
-            ri_attempts = ${replacement.dequeueAudit.attempts}
+        set ri_resource = ${replacement.entry.resource},
+            ri_type_id = ${replacement.entry.typeId},
+            ri_status = ${replacement.entry.status},
+            system_date = ${replacement.systemDate},
+            created_by = ${replacement.entry.audit.createdBy},
+            created_ts = ${replacement.createdTimestamp},
+            expire_ts = ${replacement.expiryTimestamp},
+            start_ts = ${replacement.startTimestamp},
+            end_ts = ${replacement.endTimestamp},
+            next_ts = ${replacement.nextTimestamp},
+            ri_attempts = ${replacement.attempts}
         where ri_row_id = ${expectedRowId}
-          and ri_topic_id = ${expected.key.topicId}
-          and ri_resource_id = ${expected.key.resourceId}
-          and fk_ext_bank_id = ${expected.key.contextId}
-          and ri_type_id = ${expected.typeId}
-          and ri_resource = ${expected.resource}
-          and ri_status = ${expected.status}
-          and system_date = ${toSystemDate(expected)}
-          and created_by = ${expected.audit.createdBy}
-          and created_ts = ${toPgTimestamp(expected.audit.createdTs)}
-          and expire_ts = ${toPgTimestamp(expected.audit.expiryTs)}
-          and start_ts is not distinct from ${
-        expected.dequeueAudit.startTs
-            ? toPgTimestamp(expected.dequeueAudit.startTs)
-            : null
-    }
-          and end_ts is not distinct from ${
-        expected.dequeueAudit.endTs
-            ? toPgTimestamp(expected.dequeueAudit.endTs)
-            : null
-    }
-          and next_ts is not distinct from ${
-        expected.dequeueAudit.nextTs
-            ? toPgTimestamp(expected.dequeueAudit.nextTs)
-            : null
-    }
-          and ri_attempts = ${expected.dequeueAudit.attempts}
+          and ri_topic_id = ${expected.entry.key.topicId}
+          and ri_resource_id = ${expected.entry.key.resourceId}
+          and fk_ext_bank_id = ${expected.entry.key.contextId}
+          and ri_type_id = ${expected.entry.typeId}
+          and ri_resource = ${expected.entry.resource}
+          and ri_status = ${expected.entry.status}
+          and system_date = ${expected.systemDate}
+          and created_by = ${expected.entry.audit.createdBy}
+          and created_ts = ${expected.createdTimestamp}
+          and expire_ts = ${expected.expiryTimestamp}
+          and start_ts is not distinct from ${expected.startTimestamp}
+          and end_ts is not distinct from ${expected.endTimestamp}
+          and next_ts is not distinct from ${expected.nextTimestamp}
+          and ri_attempts = ${expected.attempts}
           and expire_ts > (now() at time zone 'UTC')
         returning *
     `;

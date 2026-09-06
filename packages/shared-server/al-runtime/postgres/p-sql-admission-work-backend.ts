@@ -8,7 +8,15 @@ import { toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/Re
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '../../queuebox/postgres/p-sql-queue-box.ts';
-import { PSqlResourceInboxEntryRepository } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import {
+    computeResourceInboxObservedReplacement,
+    PSqlResourceInboxEntryRepository
+} from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import type { ResourceInboxObservedReplacement } from '../../queuebox/postgres/replace-observed-resource-inbox-entry.ts';
+import {
+    computeResourceInboxEntryInsertValues,
+    type ResourceInboxEntryInsertValues
+} from '../../queuebox/postgres/resource-inbox-entry-insert-values.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import {
     createTransactionBoundPSqlRuntimeStateRepository,
@@ -64,9 +72,9 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
                 const work = new PSqlResourceInboxEntryRepository(sql);
                 await collector.writeMutations(transaction, mutations);
                 for (const write of workWrites) {
-                    const committed = write.expected === undefined
-                        ? await work.tryWriteIfAbsentOrReplaceExpired(write.entry)
-                        : await work.replaceIfObserved(write.expected, write.entry);
+                    const committed = write.kind === 'insert'
+                        ? await work.tryWriteComputedIfAbsentOrReplaceExpired(write.values)
+                        : await work.writeObservedReplacement(write.computed);
                     if (committed === null) {
                         throw new ALAdmissionBackendConflictError('AL admission work write conflicted');
                     }
@@ -86,10 +94,9 @@ export class PSqlAdmissionWorkBackend implements ALAdmissionWorkBackend {
     }
 }
 
-interface PSqlAdmissionWorkWrite {
-    readonly expected: ResourceEntry | undefined;
-    readonly entry: ResourceEntry;
-}
+type PSqlAdmissionWorkWrite =
+    | { readonly kind: 'insert'; readonly values: ResourceInboxEntryInsertValues; }
+    | { readonly kind: 'replace'; readonly computed: ResourceInboxObservedReplacement; };
 
 class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implements ALAdmissionWorkWriteContext {
     private readonly workQueue: PSqlQueueBox;
@@ -123,6 +130,11 @@ class PSqlAdmissionWorkWriteBuffer extends PSqlAdmissionMutationCollector implem
     }
 
     workWrites(): readonly PSqlAdmissionWorkWrite[] {
-        return [...this.pendingWork].map(([key, entry]) => ({ entry, expected: this.workObservations.get(key) }));
+        return [...this.pendingWork].map(([key, entry]) => {
+            const expected = this.workObservations.get(key);
+            return expected === undefined
+                ? { kind: 'insert', values: computeResourceInboxEntryInsertValues(entry) }
+                : { kind: 'replace', computed: computeResourceInboxObservedReplacement(expected, entry) };
+        });
     }
 }
