@@ -1257,7 +1257,9 @@ paths:
       tags: [Group State]
       summary: Connect group lifecycle
       description: |
-        Dials exactly the named planned layout from PLANNED or RECONFIGURING. Missing or superseded layouts return typed 409 failures.
+        Dials exactly the named planned layout from PLANNED or RECONFIGURING. A stale formation epoch and a missing or
+        superseded layout return typed 409 failures: group-connect-stale-epoch, group-connect-no-planned-layout and
+        group-connect-planned-layout-superseded.
         The lifecycle initiator policy governs all eight group-authority commands.
         Server-auto denies principal commands. Actor identity comes from authentication.
         Policy or stage denial returns 403; malformed requests return 400.

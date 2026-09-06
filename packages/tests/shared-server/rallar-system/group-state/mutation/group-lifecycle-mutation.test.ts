@@ -216,13 +216,18 @@ describe('group lifecycle transition computation', () => {
 
     it.each(
         [
-            ['no-planned-layout', null],
-            ['planned-layout-superseded', { ...PLANNED_LAYOUT, version: PLANNED_LAYOUT.version + 1 }]
+            { denial: 'stale-epoch', expectedFormationEpoch: 3, storedIdentity: PLANNED_LAYOUT },
+            { denial: 'no-planned-layout', expectedFormationEpoch: 4, storedIdentity: null },
+            {
+                denial: 'planned-layout-superseded',
+                expectedFormationEpoch: 4,
+                storedIdentity: { ...PLANNED_LAYOUT, version: PLANNED_LAYOUT.version + 1 }
+            }
         ] as const
-    )('rejects a %s connect with its own conflict code', (denial, storedIdentity) => {
+    )('rejects a $denial connect with its own conflict code', (row) => {
         const computed = computeGroupMutation({
-            command: connectCommand({ expectedFormationEpoch: 4, expectedLayout: PLANNED_LAYOUT }),
-            read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, storedIdentity),
+            command: connectCommand({ expectedFormationEpoch: row.expectedFormationEpoch, expectedLayout: PLANNED_LAYOUT }),
+            read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, row.storedIdentity),
             facts: createGroupAuthorityFacts()
         });
 
@@ -230,21 +235,12 @@ describe('group lifecycle transition computation', () => {
         if (computed.outcome !== 'rejected') {
             return;
         }
-        expect(computed.rejectionCode).toBe(`group-connect-${denial}`);
+        expect(computed.rejectionCode).toBe(`group-connect-${row.denial}`);
         // The handler boundary maps the code to its own 409 conflict.
         const error = toGroupMutationRejectionError(computed);
         expect(error).toBeInstanceOf(GroupConnectDeniedError);
         expect((error as GroupConnectDeniedError).status).toBe(409);
-        expect((error as GroupConnectDeniedError).code).toBe(`group-connect-${denial}`);
-    });
-
-    it('rejects a stale-epoch connect with the shared code, not a connect denial', () => {
-        const computed = computeGroupMutation({
-            command: connectCommand({ expectedFormationEpoch: 3, expectedLayout: PLANNED_LAYOUT }),
-            read: connectRead({ lifecycleState: 'planned', formationEpoch: 4 }, PLANNED_LAYOUT),
-            facts: createGroupAuthorityFacts()
-        });
-        expect(computed.outcome).toBe('rejected');
+        expect((error as GroupConnectDeniedError).code).toBe(`group-connect-${row.denial}`);
     });
 
     it('rejects a connect fence that names a removed layout', () => {
@@ -529,6 +525,8 @@ describe('group lifecycle transition computation', () => {
             return;
         }
         expect(computed.receipt.rejection).toMatch(row.rejection);
+        // Only `connect` earns the conflict codes; a criterion petition keeps the shared rejection.
+        expect(computed.rejectionCode).toBe('group-mutation-rejected');
         expect(computed.receipt.eventId).toBeNull();
         expect(computed.receipt.outboxIds).toEqual([]);
         expect('guard' in computed).toBe(false);
