@@ -98,9 +98,17 @@ though prior lifecycle work had already advanced the same group's revision.
 PR #530 replaces those obsolete thresholds with exact active-session-set checks
 after each connect, so stale departing sessions must clear before the next
 topology is formed. The same PR adds a non-publishing workflow mode for
-repeated exact-head diagnostics. There is not yet a valid B06 E3 result. B07
-remains held, and evidence ranking cannot start until a valid B06 primary and
-any required repeat are archived.
+repeated exact-head diagnostics. Its first exact-head series exposed two more
+facts before merge: run 34025502501 reproduced C's empty ready-peer state
+while topology publication preceded C's server-side connection propagation,
+showing that authoritative membership alone did not prove browser room
+hydration. A `tee` pipeline also hid that failed Playwright exit. The series is
+invalid as proof.
+PR #530 now refreshes every browser room after exact membership and before
+three-member topology planning, propagates the producer exit, and retains the
+actual Playwright failure directory. There is not yet a valid B06 E3 result.
+B07 remains held, and evidence ranking cannot start until a valid B06 primary
+and any required repeat are archived.
 
 ### Current execution horizon
 
@@ -3979,7 +3987,15 @@ waits for the exact active-session set after A, B, and C connect and deletes the
 revision-only path. Its workflow diagnostic mode runs the exact default
 memory-mode matrix from a branch head, retains only temporary Actions logs and
 source identity, and cannot invoke the observation finalizer or publication
-job.
+job. Runs 34025496535 and 34025817473 passed on exact head `f16d45e44825783761eddffba26d044cb9522fbe`,
+while run 34025502501 reproduced C's empty ready-peer state. Its Playwright log
+reported one failed test, but the `tee` pipeline discarded the producer status
+and incorrectly left the workflow green. None counts toward proof because the
+branch must change. The same PR now propagates that exit status, retains the
+real Playwright result path, and refreshes all three browser room snapshots
+after exact authoritative membership but before three-member topology planning.
+This closes the observed window where C was present in authority while its
+browser had not yet hydrated the room that would receive the new layout.
 
 - [x] Merge the B06 E3-memory producer, recovery, verifier, and observation-PR
       publication path; configure `RTC_OBSERVATION_PR_TOKEN`.
@@ -4507,11 +4523,16 @@ primary. PR #530 removes absolute `1`/`2`/`3` presence-revision barriers
 that cannot prove membership on the reused group and instead waits for the
 exact active-session set after each connect. It also supplies an explicitly
 non-publishing diagnostic mode so this correction can absorb further runtime
-learning without a chain of test-only merges. Three independent diagnostics
-must pass on one unchanged PR head before merge; any head change restarts that
-proof. The next two slices are to prove and merge that correction, then dispatch
-B06 in publish mode from moving `main`. B07 remains held; Task 12 remains
-blocked on valid B06 evidence.
+learning without a chain of test-only merges. The first series found that
+`tee` hid run 34025502501's reproduced C-readiness failure while runs
+34025496535 and 34025817473 passed. PR #530 now propagates browser failure,
+retains the real Playwright output path, and makes every browser hydrate the
+exact membership before three-member planning. The prior runs are invalidated
+by that head change. Three independent diagnostics must pass on one unchanged
+new PR head before merge; any later head change restarts that proof. The next
+two slices are to prove and merge that correction, then dispatch B06 in publish
+mode from moving `main`. B07 remains held; Task 12 remains blocked on valid B06
+evidence.
 
 | Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Next action                                                                                                                                                                                                                                                                                                                                  |
 | ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

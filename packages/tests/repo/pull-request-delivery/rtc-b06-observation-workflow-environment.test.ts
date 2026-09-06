@@ -103,6 +103,28 @@ describe('RTC-B06 observation workflow environment', () => {
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
         });
     });
+
+    it('preserves diagnostic output while propagating a failed browser execution', () => {
+        const fixtureRoot = createEnvironmentCaptureFixture();
+        const outputDirectory = path.join(fixtureRoot, 'output');
+        mkdirSync(outputDirectory);
+        const diagnostic = readRunCommand('Exercise RTC-B06 branch candidate');
+        const result = spawnSync('bash', ['-e', '-c', diagnostic], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                PATH: `${fixtureRoot}/bin:${process.env.PATH ?? ''}`,
+                RTC_B06_ENVIRONMENT_RECORD: `${fixtureRoot}/environment.json`,
+                RTC_B06_FAKE_EXIT_STATUS: '23',
+                RTC_OBSERVATION_OUTPUT: outputDirectory
+            }
+        });
+
+        expect(result.status).toBe(23);
+        expect(readFileSync(path.join(outputDirectory, 'diagnostic.log'), 'utf8'))
+            .toContain('fake RTC-B06 execution');
+    });
 });
 
 function readRunCommand(stepName: string): string {
@@ -142,6 +164,8 @@ writeFileSync(
     process.env.RTC_B06_ENVIRONMENT_RECORD,
     JSON.stringify(Object.fromEntries(names.map((name) => [name, process.env[name] ?? null])))
 );
+process.stdout.write('fake RTC-B06 execution\\n');
+process.exit(Number(process.env.RTC_B06_FAKE_EXIT_STATUS ?? '0'));
 `
     );
     chmodSync(fakeNpmPath, 0o755);

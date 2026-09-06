@@ -150,6 +150,7 @@ describe('pull-request release workflow', () => {
                 path: expect.stringContaining('${{ runner.temp }}/rtc-b06-observation')
             }
         });
+        expect(upload.with.path).toContain('apps/rallar-black-box/test-results');
     });
 
     it('runs only for current pull-request changes and cancels only superseded runs of that PR', () => {
