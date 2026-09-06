@@ -1,0 +1,706 @@
+{
+  "description": "No-browser API-v1 activation clock decay: the evidence-expiry heartbeat is asserted nowhere. The observed edge is reported with an already-stale createdAtEpochMs -- client-supplied and never compared to now at write time, so it is the one evidence deadline a recipe can set -- which still activates the group, then decays it when the heartbeat re-reads past the 60s freshness window. A count wait pins exactly two status writes, so a clock that never fires and one that republishes on every observation both fail. With a single edge, expiry takes coverage to zero and the band is failed rather than degraded; coverageRate zero proves the evidence was dropped and evidenceWatermark null is the expiry branch's signature. Reaching degraded specifically needs partial coverage -- three members with one stale edge -- which this recipe does not cover.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_DECAY_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-decay"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_DECAY_WORKSPACE_ID",
+      "default": "workspace-decay-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_DECAY_GROUP_ID",
+      "default": "activationdecay-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_DECAY_PASSWORD",
+      "default": "api-v1-decay-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "wsAlice": {
+      "type": "ws",
+      "timeoutMs": 20000
+    },
+    "wsBob": {
+      "type": "ws",
+      "timeoutMs": 20000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/activationdecay-register-alice-{runId}",
+        "body": {
+          "username": "activationdecay-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/activationdecay-login-alice-{runId}",
+        "body": {
+          "username": "activationdecay-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createAliceWsTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/activationdecay-ws-ticket-alice-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "aliceWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveAliceWsUrl",
+      "type": "set",
+      "output": "aliceWsUrl",
+      "secret": true,
+      "redactAs": "aliceWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.aliceSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.aliceWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/activationdecay-register-bob-{runId}",
+        "body": {
+          "username": "activationdecay-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/activationdecay-login-bob-{runId}",
+        "body": {
+          "username": "activationdecay-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createBobWsTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket/requests/activationdecay-ws-ticket-bob-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveBobWsUrl",
+      "type": "set",
+      "output": "bobWsUrl",
+      "secret": true,
+      "redactAs": "bobWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.bobSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.bobWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheDecayGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/activationdecay-create-group-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Activation clock decay {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "initiator": "any-member",
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
+            },
+            "admission": {
+              "mode": "open"
+            },
+            "activation": {
+              "mode": "threshold-or-deadline",
+              "successRate": 0.95,
+              "minimumViableRate": 0.5,
+              "deadlineMs": 60000,
+              "maxFormationAttempts": 3
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "lifecycleState": "forming"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/activationdecay-bob-joins-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectAlicePresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/activationdecay-alice-presence-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "activationdecay-generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectBobPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/activationdecay-bob-presence-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "activationdecay-generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "planTheLayout",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/plan/requests/activationdecay-plan-layout-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned"
+          }
+        }
+      }
+    },
+    {
+      "name": "theLayoutPublishes",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "layoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "layoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "layoutVersion": "body.snapshot.version",
+          "layoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectTheLayout",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/connect/requests/activationdecay-connect-layout-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": 1,
+          "expectedLayout": {
+            "groupRevision": "{layoutGroupRevision}",
+            "presenceRevision": "{layoutPresenceRevision}",
+            "version": "{layoutVersion}",
+            "state": "{layoutState}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "connecting"
+          }
+        }
+      }
+    },
+    {
+      "name": "openAliceWs",
+      "type": "ws.open",
+      "connection": "wsAlice",
+      "request": {
+        "url": "{aliceWsUrl}",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "openBobWs",
+      "type": "ws.open",
+      "connection": "wsBob",
+      "request": {
+        "url": "{bobWsUrl}",
+        "timeoutMs": 20000
+      }
+    },
+    {
+      "name": "deriveAnAlreadyStaleObservationTime",
+      "type": "set",
+      "output": "staleCreatedAtEpochMs",
+      "transform": {
+        "add": [
+          {
+            "timestamp": true
+          },
+          -35000
+        ]
+      }
+    },
+    {
+      "name": "deriveTheCanonicalReporter",
+      "type": "set",
+      "output": "rttReporter",
+      "transform": {
+        "if": {
+          "condition": {
+            "operator": "lexicallyBefore",
+            "values": [
+              {
+                "path": "outputs.aliceSessionId"
+              },
+              {
+                "path": "outputs.bobSessionId"
+              }
+            ]
+          },
+          "then": {
+            "connection": "wsAlice",
+            "sessionIdFrom": {
+              "path": "outputs.aliceSessionId"
+            },
+            "sessionIdTo": {
+              "path": "outputs.bobSessionId"
+            }
+          },
+          "else": {
+            "connection": "wsBob",
+            "sessionIdFrom": {
+              "path": "outputs.bobSessionId"
+            },
+            "sessionIdTo": {
+              "path": "outputs.aliceSessionId"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "deriveTheStaleRttResource",
+      "type": "set",
+      "output": "rttResource",
+      "transform": {
+        "concat": [
+          "{\"sessionIdFrom\":\"",
+          {
+            "path": "outputs.rttReporter.sessionIdFrom"
+          },
+          "\",\"sessionIdTo\":\"",
+          {
+            "path": "outputs.rttReporter.sessionIdTo"
+          },
+          "\",\"rttMs\":42,\"createdAtEpochMs\":",
+          {
+            "path": "outputs.staleCreatedAtEpochMs"
+          },
+          ",\"version\":1}"
+        ]
+      }
+    },
+    {
+      "name": "reportTheEdgeWithAlreadyStaleEvidence",
+      "type": "ws.send",
+      "connection": "{rttReporter.connection}",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "rtt-activationdecay-{runId}",
+            "ts": 0,
+            "senderId": "{rttReporter.sessionIdFrom}",
+            "sessionId": "{rttReporter.sessionIdFrom}"
+          },
+          "route": {
+            "topicId": "rtt",
+            "resourceId": "{aliceSessionId} {bobSessionId}",
+            "contextId": "1"
+          },
+          "delivery": {
+            "reliability": "best-effort",
+            "ack": "none"
+          },
+          "payload": {
+            "typeId": "rtt",
+            "contentType": "application/json",
+            "resource": "{rttResource}"
+          }
+        }
+      }
+    },
+    {
+      "name": "theStaleEvidenceStillActivates",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activationStatus": {
+              "condition": "active",
+              "coverageRate": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "theClockWritesTheStatusExactlyTwice",
+      "type": "ws.wait",
+      "connection": "wsAlice",
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 45000,
+        "count": 2,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "route": {
+            "topicId": "group-state.event"
+          },
+          "payload": {
+            "resource": {
+              "event": {
+                "eventType": "group-activation-status-changed"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "theQuietGroupFellBelowTheViableFloor",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "activationStatus": {
+              "condition": "failed",
+              "coverageRate": 0,
+              "evidenceWatermark": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "closeAliceWs",
+      "type": "ws.close",
+      "connection": "wsAlice",
+      "request": {
+        "code": 1000,
+        "reason": "done"
+      }
+    },
+    {
+      "name": "closeBobWs",
+      "type": "ws.close",
+      "connection": "wsBob",
+      "request": {
+        "code": 1000,
+        "reason": "done"
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

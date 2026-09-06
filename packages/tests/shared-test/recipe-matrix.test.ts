@@ -320,6 +320,7 @@ describe('black-box runner recipe matrix', () => {
         const apiEntries = entries.filter((entry) => entry.profiles.includes('api-v1-black-box'));
 
         expect(apiEntries.map((entry) => entry.id).sort()).toEqual([
+            'api-v1-activation-clock-decay',
             'api-v1-admin-authorization-boundary',
             'api-v1-admin-operations',
             'api-v1-admin-support',
@@ -398,6 +399,7 @@ describe('black-box runner recipe matrix', () => {
         const apiRecipeEntries = entries.filter((entry) => entry.profiles.includes('api-v1-black-box-recipes'));
 
         expect(apiRecipeEntries.map((entry) => entry.id).sort()).toEqual([
+            'api-v1-activation-clock-decay',
             'api-v1-admin-authorization-boundary',
             'api-v1-admin-operations',
             'api-v1-admin-support',

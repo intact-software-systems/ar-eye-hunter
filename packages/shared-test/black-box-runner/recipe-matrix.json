@@ -2784,6 +2784,29 @@
         ]
       },
       "description": "No-browser API-v1 admin authorization boundary: the whole admin surface against an authenticated non-admin principal. One conceptual denial reaches the client in four shapes and two are wrong -- the CRDT admin reads answer 400 rather than 403, and that guard is the only authorization on those routes and has never been executed by any test, which all run with requireAuth false; the admin operations mutations answer 500 api-mutation-unexpected rather than 403 because the guard throws a statusless Error. Every denial is compared exactly, so a refusal leaking a diagnostic payload would fail."
+    },
+    {
+      "id": "api-v1-activation-clock-decay",
+      "recipe": "tests/api-v1/api-v1-activation-clock-decay.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-activation-clock-decay",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 activation clock decay: the evidence-expiry heartbeat is asserted nowhere. The observed edge is reported with an already-stale createdAtEpochMs, which is client-supplied and never compared to now at write time, so it still activates the group and then decays it when the heartbeat re-reads past the freshness window. A count wait pins exactly two status writes, so a clock that never fires and one that republishes on every observation both fail. Read off the group row, since only a writer can put the degraded band there."
     }
   ]
 }

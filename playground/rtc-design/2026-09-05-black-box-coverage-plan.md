@@ -220,12 +220,12 @@ a non-primary node to surface wiring nobody has exercised.
 
 Durable machinery whose late-firing behaviour is asserted nowhere.
 
-| Recipe                                  | Pins                                                                                                                        |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `api-v1-group-clock-after-the-fact`     | a formation timer or activation clock firing after the group moved on; the evidence-expiry heartbeat decaying a quiet group |
-| `api-v1-group-reconnect-across-stages`  | reconnect hydration across a lifecycle stage change; reconnecting to a different node than the one that dropped you         |
-| `api-v1-group-presence-lease-lifecycle` | presence-lease expiry against a lifecycle-managed group                                                                     |
-| _(append to `api-v1-admin-support`)_    | explain against a **real** RETRY or FAILED queue entry, and the FAILED row in the queue breakdown                           |
+| Recipe                                  | Pins                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-group-clock-after-the-fact`     | **partly delivered** as `api-v1-activation-clock-decay`: an already-stale `createdAtEpochMs` activates the group and the +30s heartbeat then decays it, pinned to exactly two status writes. With one edge the band is `failed`, not `degraded` -- reaching `degraded` needs partial coverage (three members, one stale edge) and is **still uncovered** |
+| `api-v1-group-reconnect-across-stages`  | reconnect hydration across a lifecycle stage change; reconnecting to a different node than the one that dropped you                                                                                                                                                                                                                                      |
+| `api-v1-group-presence-lease-lifecycle` | presence-lease expiry against a lifecycle-managed group                                                                                                                                                                                                                                                                                                  |
+| _(append to `api-v1-admin-support`)_    | explain against a **real** RETRY or FAILED queue entry, and the FAILED row in the queue breakdown                                                                                                                                                                                                                                                        |
 
 **Hazards.** The evidence-expiry arm is the `degraded` band no read can derive — it must be asserted
 off the group row, not the formation view, because only a writer can put a status there.
