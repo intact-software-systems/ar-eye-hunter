@@ -537,7 +537,8 @@ function validateWaitCommand(command: Record<string, unknown>): ControlCommandVa
         'payloadPath',
         'equals',
         'contains',
-        'exists'
+        'exists',
+        'sinceEpochMs'
     ], 'wait.match');
     if (!result.ok) {
         return result;
@@ -576,7 +577,11 @@ function validateWaitCommand(command: Record<string, unknown>): ControlCommandVa
             return result;
         }
     }
-    return validateBooleanField(command.match, 'exists', 'wait.match');
+    result = validateBooleanField(command.match, 'exists', 'wait.match');
+    if (!result.ok) {
+        return result;
+    }
+    return validateIntegerField(command.match, 'sinceEpochMs', 'wait.match', { minimum: 0 });
 }
 
 function validateAssertCommand(command: Record<string, unknown>): ControlCommandValidationResult {

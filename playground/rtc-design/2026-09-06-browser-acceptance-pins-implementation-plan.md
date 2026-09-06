@@ -628,6 +628,10 @@ it.each([
 - The headless bundle budget moved from 224 to 226 KiB, measured at 225.107421875 KiB, under the
   maintainer's standing ruling that a crossed budget rises to the next whole KiB with the measurement
   recorded. The growth is the bridge's decode of the command input and the room it addresses.
+- The `wait` since-cursor P5 calls for was missed by slice 1's task list and landed afterwards, on
+  this branch, as `wait.match.sinceEpochMs`. It is one predicate check rather than the three
+  call-site edits R12 describes, because all three scans route through the same matcher; the two
+  schema gates and the control validation took the field as R12 said they must.
 - `formation.readiness` resolves against the room-status projection reached through both wake
   sources, as repairs R1 and R2 specify. `formation.test.ts` pins the vacuous-resolve guard and the
   formation-change wake directly, and pins that the diagnostics install only for a connection that

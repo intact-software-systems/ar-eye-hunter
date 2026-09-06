@@ -9,6 +9,82 @@ function sleepMs(ms: number): Promise<void> {
 }
 
 describe('rallar-bb-test wait absence', () => {
+    // A wait scans the whole buffer and answers with the newest match, so a scenario that
+    // legitimately produced the same event earlier — a stage the group passed through before, a
+    // dial before a reset — needs the cursor to say which occurrence it means.
+    it('ignores matching events recorded before the cursor', async () => {
+        let now = 1_000;
+        const runtime = createRallarBlackBoxTestRuntime({
+            now: () => now,
+            sleep: async (ms) => {
+                now += ms;
+            }
+        });
+
+        runtime.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.formation.changed',
+            payload: { data: { stage: 'dormant' } }
+        });
+        now = 2_000;
+
+        const result = await runtime.execute({
+            kind: 'wait',
+            commandId: 'wait-since-cursor',
+            timeoutMs: 20,
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.formation.changed',
+                sinceEpochMs: 2_000
+            }
+        });
+
+        expect(result.status).toBe('failed');
+    });
+
+    it('accepts a matching event recorded at the cursor', async () => {
+        let now = 2_000;
+        const runtime = createRallarBlackBoxTestRuntime({
+            now: () => now,
+            sleep: async (ms) => {
+                now += ms;
+            }
+        });
+
+        runtime.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.formation.changed',
+            payload: { data: { stage: 'dormant' } }
+        });
+
+        const result = await runtime.execute({
+            kind: 'wait',
+            commandId: 'wait-since-cursor-inclusive',
+            timeoutMs: 20,
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.formation.changed',
+                sinceEpochMs: 2_000
+            }
+        });
+
+        expect(result.status).toBe('ok');
+    });
+
+    it('publishes the cursor through the command schema and the control validation', () => {
+        const command = {
+            kind: 'wait',
+            commandId: 'wait-since-cursor-schema',
+            timeoutMs: 1_000,
+            match: { kind: 'diagnostic', topic: 'rallar.browser.formation.ready', sinceEpochMs: 42 }
+        } as const;
+
+        const schemaResult = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command);
+
+        expect(validateRallarBlackBoxTestCommand(command)).toEqual({ ok: true });
+        expect(formatJsonSchemaValidationErrors(schemaResult.errors)).toBe('');
+    });
+
     it('holds the full window and succeeds when nothing matches', async () => {
         let now = 1_000;
         const sleptDurations: number[] = [];

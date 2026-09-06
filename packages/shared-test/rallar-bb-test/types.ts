@@ -194,6 +194,12 @@ export type RallarBlackBoxTestWaitMatch = Readonly<{
     equals?: unknown;
     contains?: string;
     exists?: boolean;
+    /**
+     * Ignore events recorded before this wall-clock stamp. A wait scans the whole buffer and
+     * answers with the newest match, so a scenario that legitimately produced the same event
+     * earlier needs the cursor to say which occurrence it means.
+     */
+    sinceEpochMs?: number;
 }>;
 
 export type RallarBlackBoxTestWaitCommand =

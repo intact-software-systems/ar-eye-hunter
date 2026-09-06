@@ -50,6 +50,16 @@ Runtime diagnostic payloads for WS/RTC warnings and adapter recoverable
 failures are documented in
 `packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md`.
 
+## Wait Since Cursor
+
+`wait.match.sinceEpochMs` ignores events recorded before that wall-clock stamp.
+
+A wait scans the whole event buffer and answers with the newest match, so a scenario that
+legitimately produced the same event earlier cannot say which occurrence it means. The cursor is how
+it says so: capture a stamp before the step that should produce the event, and pass it on the match.
+Without it a pin can be satisfied by history rather than by the behaviour under test, which is the
+same hazard `absent: true` carries in the other direction.
+
 ## Formation Commands
 
 `formation.command` and `formation.readiness` drive the shipped browser room

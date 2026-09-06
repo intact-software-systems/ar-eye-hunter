@@ -450,7 +450,8 @@ const waitMatchSchema: JsonSchema = {
         payloadPath: stringSchema,
         equals: anySchema,
         contains: stringSchema,
-        exists: booleanSchema
+        exists: booleanSchema,
+        sinceEpochMs: { type: 'integer', minimum: 0 }
     },
     additionalProperties: false
 };
