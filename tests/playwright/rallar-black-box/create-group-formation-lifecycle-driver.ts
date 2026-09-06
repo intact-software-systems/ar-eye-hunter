@@ -340,9 +340,6 @@ async function connectFormationAgents(
         owner,
         expectedSessionIds: [connectA.sessionId, connectB.sessionId, connectC.sessionId]
     });
-    await Promise.all(
-        input.agents.map(async (agent) => await agent.refreshRoom({ timeoutMs: 30_000 }))
-    );
 
     return {
         connectResults: [connectA, connectB, connectC],
