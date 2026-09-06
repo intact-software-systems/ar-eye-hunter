@@ -363,6 +363,21 @@
           "workspaceId": "default"
         },
         {
+          "kind": "formation.command",
+          "commandId": "formation-command-v1",
+          "command": "plan",
+          "roomId": "golden-room",
+          "applicationId": "rallar-server",
+          "workspaceId": "default"
+        },
+        {
+          "kind": "formation.readiness",
+          "commandId": "formation-readiness-v1",
+          "roomId": "golden-room",
+          "applicationId": "rallar-server",
+          "workspaceId": "default"
+        },
+        {
           "kind": "health",
           "commandId": "health-v1"
         },

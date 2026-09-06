@@ -6,7 +6,7 @@ import type {
 } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
-import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
+import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarEvent,
     BlackBoxRallarFormationCommandDiagnostics,
@@ -16,7 +16,7 @@ import type {
     BlackBoxRallarFormationRoomStatus,
     BlackBoxRallarFormationRuntime,
     BlackBoxRallarFormationSummary
-} from './black-box-rallar-operation-contracts.ts';
+} from '../black-box-rallar-operation-contracts.ts';
 
 export const BLACK_BOX_RALLAR_FORMATION_TOPICS = {
     changed: 'rallar.browser.formation.changed',

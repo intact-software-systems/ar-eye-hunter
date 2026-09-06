@@ -2,6 +2,11 @@ import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browse
 import type { BlackBoxRallarRuntimeInstallationTarget } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
 import { isBlackBoxCommandRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
 import { decodeBlackBoxRallarConnectionConfig } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts';
+import {
+    decodeBlackBoxRallarFormationCommandInput,
+    decodeBlackBoxRallarFormationRoom,
+    type BlackBoxRallarFormationInputIssue
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation/decode-black-box-rallar-formation-input.ts';
 import type {
     RallarBlackBoxBrowserRallarRuntime,
     RallarBlackBoxBrowserTestRuntime,
@@ -49,6 +54,46 @@ async function resolveBrowserRallarDirectorRuntime(): Promise<
     return runtime.director;
 }
 
+async function resolveBrowserRallarFormationRuntime(): Promise<BlackBoxRallarRuntime['formation']> {
+    const runtime = await resolveBrowserRallarRuntime();
+    if (!runtime.formation) {
+        throw new Error('browser-rallar provider did not expose formation runtime commands.');
+    }
+    return runtime.formation;
+}
+
+/** The decode the boundary owes the controller; issues become one thrown error the adapter records. */
+function requireDecoded<T>(
+    decoding: { left?: readonly BlackBoxRallarFormationInputIssue[]; right?: T; }
+): T {
+    if (decoding.right !== undefined) {
+        return decoding.right;
+    }
+    const issues = (decoding.left ?? []).map((issue) => `${issue.path}: ${issue.message}`).join('; ');
+    throw new Error(`browser-rallar formation command input is not valid. ${issues}`);
+}
+
+/** The command payload the decoder owns, lifted out of the wire command's room and base fields. */
+function toFormationCommandInput(value: unknown): unknown {
+    if (!isBlackBoxCommandRecord(value)) {
+        return value;
+    }
+    const record = value as Record<string, unknown>;
+    return {
+        command: record['command'],
+        ...(record['layout'] === undefined ? {} : { layout: record['layout'] }),
+        ...(record['landing'] === undefined ? {} : { landing: record['landing'] })
+    };
+}
+
+function readOptionalReason(value: unknown): string | undefined {
+    if (!isBlackBoxCommandRecord(value)) {
+        return undefined;
+    }
+    const reason = (value as Record<string, unknown>)['reason'];
+    return typeof reason === 'string' ? reason : undefined;
+}
+
 export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRuntime {
     return {
         async authenticate(config) {
@@ -91,6 +136,25 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
             },
             async relayStop(input) {
                 return await (await resolveBrowserRallarDirectorRuntime()).relayStop(input);
+            }
+        },
+        formation: {
+            async command(input) {
+                const room = requireDecoded(decodeBlackBoxRallarFormationRoom(input));
+                const commandInput = requireDecoded(decodeBlackBoxRallarFormationCommandInput(
+                    toFormationCommandInput(input)
+                ));
+                const reason = readOptionalReason(input);
+                return await (await resolveBrowserRallarFormationRuntime()).command({
+                    ...room,
+                    input: commandInput,
+                    ...(reason === undefined ? {} : { reason })
+                });
+            },
+            async readiness(input) {
+                return await (await resolveBrowserRallarFormationRuntime()).readiness(
+                    requireDecoded(decodeBlackBoxRallarFormationRoom(input))
+                );
             }
         },
         async close() {

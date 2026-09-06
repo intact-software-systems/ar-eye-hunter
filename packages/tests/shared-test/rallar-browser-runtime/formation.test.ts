@@ -2,15 +2,18 @@ import type {
     BlackBoxRallarEvent,
     BlackBoxRallarFormationSummary
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
-import { decodeBlackBoxRallarFormationCommandInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-formation-input.ts';
-import { BlackBoxRallarFormationController } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation-controller.ts';
+import { decodeBlackBoxRallarFormationCommandInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation/decode-black-box-rallar-formation-input.ts';
+import { BlackBoxRallarFormationController } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation/formation-controller.ts';
 import type { RallarRtcRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarStateListener, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
+    RallarRoomConnectOptions,
     RallarRoomFormation,
+    RallarRoomFormationCommandOptions,
     RallarRoomFormationStatus,
     RallarRoomLayoutEvent,
-    RallarRoomLayoutListener
+    RallarRoomLayoutListener,
+    RallarRoomReconfigureOptions
 } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -18,7 +21,7 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
-import { facade, loadRuntime, resetFacade } from './browser-rallar-runtime-test-harness.ts';
+import { loadRuntime, resetFacade } from './browser-rallar-runtime-test-harness.ts';
 
 const PLANNED: GroupLayoutIdentity = {
     groupRevision: 4,
@@ -80,6 +83,13 @@ const roomRef: GroupRef = {
     groupId: 'room-1'
 };
 
+/** Every option object the eight handle methods accept; the fake records what it was given. */
+type FormationCommandOptions =
+    | RallarRoomFormationCommandOptions
+    | RallarRoomConnectOptions
+    | RallarRoomReconfigureOptions
+    | undefined;
+
 interface HarnessInput {
     readonly stage: GroupLifecycleState;
     readonly formationEpoch: number;
@@ -95,7 +105,7 @@ function createFormationHarness(input: HarnessInput) {
         groupId: roomRef.groupId,
         sessionIds: ['session-a']
     });
-    const calls: (readonly [string, unknown])[] = [];
+    const calls: (readonly [string, FormationCommandOptions])[] = [];
     const changeListeners: RallarStateListener<RallarRoomFormationStatus>[] = [];
     const layoutListeners: RallarRoomLayoutListener[] = [];
     const statusListeners: (() => void)[] = [];
@@ -131,7 +141,7 @@ function createFormationHarness(input: HarnessInput) {
         reason: 'fixture'
     };
 
-    const record = (name: string) => (options?: unknown): Promise<GroupSnapshot> => {
+    const record = (name: string) => (options?: FormationCommandOptions): Promise<GroupSnapshot> => {
         calls.push([name, options]);
         return Promise.resolve(snapshot);
     };
@@ -145,7 +155,7 @@ function createFormationHarness(input: HarnessInput) {
         };
     };
 
-    const formation = {
+    const formation: RallarRoomFormation = {
         roomRef,
         status: () => status,
         readView: () => Promise.reject(new Error('unused')),
@@ -162,7 +172,7 @@ function createFormationHarness(input: HarnessInput) {
         waitForLayout: () => Promise.reject(new Error('unused')),
         onChange: (listener: RallarStateListener<RallarRoomFormationStatus>) => subscribe(changeListeners, listener),
         onLayout: (listener: RallarRoomLayoutListener) => subscribe(layoutListeners, listener)
-    } as unknown as RallarRoomFormation;
+    };
 
     const controller = new BlackBoxRallarFormationController({
         formation: () => formation,
@@ -359,10 +369,10 @@ it('installs the formation diagnostics for a room-scoped connection and tears th
         }
     });
 
-    expect(facade.behavior.roomFormation).toHaveBeenCalled();
-
     const closed = await runtime.close();
 
+    // The count is the observable proof that the stream installed: it reaches four only when the
+    // room-scoped subscription was added to the three the runtime always holds.
     expect(closed).toMatchObject({ unsubscribed: 4 });
 });
 

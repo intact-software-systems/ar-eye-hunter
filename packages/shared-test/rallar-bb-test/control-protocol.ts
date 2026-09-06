@@ -895,7 +895,7 @@ function validateRtcStreamCommand(command: Record<string, unknown>): ControlComm
     return validateRtcStreamThresholds(command.thresholds);
 }
 
-function validateDirectorRoomFields(
+function validateRoomFields(
     command: Record<string, unknown>,
     path: string
 ): ControlCommandValidationResult {
@@ -929,7 +929,7 @@ function validateDirectorRoomFields(
 function validateDirectorRelayStartCommand(
     command: Record<string, unknown>
 ): ControlCommandValidationResult {
-    let result = validateDirectorRoomFields(command, 'director.relay.start');
+    let result = validateRoomFields(command, 'director.relay.start');
     if (!result.ok) {
         return result;
     }
@@ -968,10 +968,82 @@ function validateDirectorRelayStartCommand(
     return { ok: true };
 }
 
+/** The eight commands the browser's room formation handle exposes. */
+const FORMATION_COMMAND_NAMES = [
+    'plan',
+    'connect',
+    'activate',
+    'reconfigure',
+    'pause',
+    'resume',
+    'reset',
+    'start'
+];
+
+/**
+ * A formation command addresses one room, so unlike `rtc.connect` it refuses to validate without
+ * one: an exact `roomRef`, or an `applicationId` the runtime can pair with a room id.
+ */
+function validateFormationRoomIdentity(
+    command: Record<string, unknown>,
+    path: string
+): ControlCommandValidationResult {
+    const result = validateRoomFields(command, path);
+    if (!result.ok) {
+        return result;
+    }
+    if (command.roomRef !== undefined) {
+        return { ok: true };
+    }
+    if (typeof command.applicationId === 'string' && typeof command.roomId === 'string') {
+        return { ok: true };
+    }
+    return fail(`${path} must name its room with roomRef, or with applicationId and roomId.`);
+}
+
+function validateFormationCommand(command: Record<string, unknown>): ControlCommandValidationResult {
+    switch (command.kind) {
+        case 'formation.command': {
+            const room = validateFormationRoomIdentity(command, 'formation.command');
+            if (!room.ok) {
+                return room;
+            }
+            const name = validateStringField(command, 'command', 'formation.command', true);
+            if (!name.ok) {
+                return name;
+            }
+            if (!FORMATION_COMMAND_NAMES.includes(String(command.command))) {
+                return fail(
+                    `formation.command.command must be one of ${FORMATION_COMMAND_NAMES.join(', ')}.`
+                );
+            }
+            if (command.layout !== undefined && command.command !== 'connect') {
+                return fail(`formation.command ${String(command.command)} does not take layout.`);
+            }
+            if (command.landing !== undefined && command.command !== 'reconfigure') {
+                return fail(`formation.command ${String(command.command)} does not take landing.`);
+            }
+            const layout = validateObjectField(command, 'layout', 'formation.command');
+            if (!layout.ok) {
+                return layout;
+            }
+            const landing = validateStringField(command, 'landing', 'formation.command');
+            if (!landing.ok) {
+                return landing;
+            }
+            return validateStringField(command, 'reason', 'formation.command');
+        }
+        case 'formation.readiness':
+            return validateFormationRoomIdentity(command, 'formation.readiness');
+        default:
+            return fail('Command kind is not supported.');
+    }
+}
+
 function validateDirectorCommand(command: Record<string, unknown>): ControlCommandValidationResult {
     switch (command.kind) {
         case 'director.appoint': {
-            const roomFields = validateDirectorRoomFields(command, 'director.appoint');
+            const roomFields = validateRoomFields(command, 'director.appoint');
             if (!roomFields.ok) {
                 return roomFields;
             }
@@ -980,9 +1052,9 @@ function validateDirectorCommand(command: Record<string, unknown>): ControlComma
             });
         }
         case 'director.resign':
-            return validateDirectorRoomFields(command, 'director.resign');
+            return validateRoomFields(command, 'director.resign');
         case 'director.status': {
-            let result = validateDirectorRoomFields(command, 'director.status');
+            let result = validateRoomFields(command, 'director.status');
             if (!result.ok) {
                 return result;
             }
@@ -1248,6 +1320,30 @@ export function validateRallarBlackBoxTestCommand(
         case 'http.request':
             result = validateKeys(command, [...base, 'request', 'response'], 'http.request');
             return !result.ok ? result : validateHttpCommand(command);
+        case 'formation.command':
+            result = validateKeys(command, [
+                ...base,
+                'roomId',
+                'applicationId',
+                'workspaceId',
+                'scope',
+                'roomRef',
+                'command',
+                'layout',
+                'landing',
+                'reason'
+            ], 'formation.command');
+            return !result.ok ? result : validateFormationCommand(command);
+        case 'formation.readiness':
+            result = validateKeys(command, [
+                ...base,
+                'roomId',
+                'applicationId',
+                'workspaceId',
+                'scope',
+                'roomRef'
+            ], 'formation.readiness');
+            return !result.ok ? result : validateFormationCommand(command);
         case 'director.appoint':
             result = validateKeys(command, [
                 ...base,

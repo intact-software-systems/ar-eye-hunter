@@ -47,7 +47,7 @@ import {
     type BlackBoxBrowserRallarRuntimeDependency
 } from './browser-rallar-runtime-composition.ts';
 import { BlackBoxRallarDirectorController } from './director-controller.ts';
-import { BlackBoxRallarFormationController } from './formation-controller.ts';
+import { BlackBoxRallarFormationController } from './formation/formation-controller.ts';
 import {
     createBlackBoxRallarLifecycleController,
     type BlackBoxRallarLifecycleOperationContext

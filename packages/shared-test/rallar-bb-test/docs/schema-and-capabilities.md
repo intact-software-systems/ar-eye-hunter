@@ -50,6 +50,31 @@ Runtime diagnostic payloads for WS/RTC warnings and adapter recoverable
 failures are documented in
 `packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md`.
 
+## Formation Commands
+
+`formation.command` and `formation.readiness` drive the shipped browser room
+formation handle, so both are browser-only and both address exactly one room.
+
+`formation.command` issues one of the eight lifecycle commands (`plan`,
+`connect`, `activate`, `reconfigure`, `pause`, `resume`, `reset`, `start`) and
+returns the group snapshot receipt beside the room formation summary. `layout`
+belongs to `connect` and `landing` to `reconfigure`; naming either on any other
+command is refused rather than dropped, so a mis-addressed field is reported
+instead of silently losing the fence or the landing it asked for.
+
+`formation.readiness` awaits the browser's own room readiness and returns the
+summary captured in the tick it resolved. It observes only: it never refreshes
+the room and never opens lanes, which is what makes it evidence about the
+browser rather than about the harness that drove it. It resolves when the
+room's transport state is `open` **and** the room has at least one desired
+peer, because an accepted layout with no desired peers reads `open` on the
+first tick and would satisfy a bare state check vacuously.
+
+Unlike `rtc.connect`, whose room fields are each independently optional, a
+formation command must name its room: an exact `roomRef`, or an
+`applicationId` together with a `roomId`. `workspaceId` defaults to `default`
+in the browser runtime's own room resolution, not in the control protocol.
+
 ## Capability Metadata
 
 `RALLAR_BLACK_BOX_COMMAND_CAPABILITIES` has one entry for every
