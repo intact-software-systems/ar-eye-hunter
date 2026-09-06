@@ -4,31 +4,35 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { isGroupActive, isSessionInGroup, readGroupDisplayName, readGroupId } from '@shared/api/group-client-views.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { GroupLifecycleCommand } from '@shared/api/group-lifecycle/group-lifecycle-commands.ts';
 import type {
     GroupTopologyReconfigureLanding,
     GroupTransportState
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { GroupConnectRequest, GroupReconfigureRequest, MutationActorInput } from '@shared/api/state-types.ts';
-import { isOverlayIdentity } from '@shared/repository/overlays-repository.ts';
+import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 import type {
     AcceptStateGroupInviteBody,
     BanStateGroupMemberBody,
+    ConnectStateGroupLifecycleBody,
     ConnectStateGroupPresenceSessionBody,
     CreateStateGroupBody,
     CreateStateGroupInviteBody,
     DisconnectStateGroupPresenceSessionBody,
     JoinStateGroupBody,
+    ReconfigureStateGroupLifecycleBody,
     RemoveStateGroupMemberBody,
     RevokeStateGroupInviteBody,
     RotateStateGroupJoinCodeBody,
     SetStateGroupMemberRoleBody,
     TransferStateGroupOwnershipBody,
+    TransitionStateGroupLifecycleBody,
     UnbanStateGroupMemberBody,
     UpdateStateGroupBody,
     UpsertStateGroupMemberBody
 } from '../api/state-mutation-http-contracts.ts';
 
+import { isAcceptedRoomLayoutOverlay } from './is-room-layout-overlay.ts';
 import type { RallarCreateRoomInput, RallarRoomState, RallarRoomSummary } from './rallar-room-contracts.ts';
 
 export type {
@@ -82,16 +86,11 @@ export function resolveBrowserRoomTransportTarget(
     }
 
     const acceptedOverlay = input.acceptedOverlay;
-    const acceptedLayoutIdentity = input.snapshot.group.acceptedLayoutIdentity;
-    const hasAcceptedLayout = acceptedOverlay?.provenance === 'server' &&
-        acceptedOverlay.state === 'active' &&
-        isSameGroupRef(acceptedOverlay.groupRef, input.snapshot.group) &&
-        acceptedLayoutIdentity !== null &&
-        isOverlayIdentity(acceptedOverlay, acceptedLayoutIdentity);
+    const hasAcceptedLayout = isAcceptedRoomLayoutOverlay(acceptedOverlay, input.snapshot.group);
     const activeSessionIds = new Set(input.snapshot.activeSessions.map((session) => session.sessionId));
     return {
         transportState: input.snapshot.group.transportState,
-        ...(hasAcceptedLayout ? { acceptedLayoutIdentity } : {}),
+        ...(hasAcceptedLayout ? { acceptedLayoutIdentity: toOverlayLayoutIdentity(acceptedOverlay) } : {}),
         peerIds: hasAcceptedLayout
             ? [
                 ...new Set(
@@ -162,8 +161,11 @@ export interface ToDisconnectRoomPresenceGroupStateRequestInput extends RoomGrou
     readonly generationId: string;
 }
 
+/** The six commands whose lifecycle body carries nothing beyond the audit fields. */
+export type RoomFormationTransitionCommandName = Exclude<GroupLifecycleCommand, 'connect' | 'reconfigure'>;
+
 export type RoomFormationCommand =
-    | Readonly<{ command: 'plan' | 'activate' | 'pause' | 'resume' | 'reset' | 'start'; }>
+    | Readonly<{ command: RoomFormationTransitionCommandName; }>
     | Readonly<{
         command: 'connect';
         expectedFormationEpoch: number;
@@ -171,11 +173,13 @@ export type RoomFormationCommand =
     }>
     | Readonly<{ command: 'reconfigure'; landing: GroupTopologyReconfigureLanding | undefined; }>;
 
-export type RoomFormationCommandName = RoomFormationCommand['command'];
+/** The lifecycle route a command posts to, paired with the body that route's OpenAPI schema declares. */
+export type RoomFormationGroupStateRequest =
+    | Readonly<{ command: RoomFormationTransitionCommandName; body: TransitionStateGroupLifecycleBody; }>
+    | Readonly<{ command: 'connect'; body: ConnectStateGroupLifecycleBody; }>
+    | Readonly<{ command: 'reconfigure'; body: ReconfigureStateGroupLifecycleBody; }>;
 
-export type RoomFormationGroupStateRequest = MutationActorInput | GroupConnectRequest | GroupReconfigureRequest;
-
-export interface ToRoomFormationGroupStateRequestInput extends RoomGroupStateMutationActorInput {
+export interface ToRoomFormationGroupStateRequestInput {
     readonly command: RoomFormationCommand;
     readonly reason: string | undefined;
 }
@@ -378,26 +382,24 @@ export function toLeaveRoomMemberGroupStateRequest(
 export function toRoomFormationGroupStateRequest(
     input: ToRoomFormationGroupStateRequestInput
 ): RoomFormationGroupStateRequest {
-    const actor = {
-        ...toActorRequest(input),
-        ...(input.reason === undefined ? {} : { reason: input.reason })
-    };
+    const audit: TransitionStateGroupLifecycleBody = input.reason === undefined ? {} : { reason: input.reason };
     switch (input.command.command) {
         case 'connect':
             return {
-                ...actor,
-                expectedFormationEpoch: input.command.expectedFormationEpoch,
-                expectedLayout: input.command.expectedLayout
+                command: 'connect',
+                body: {
+                    ...audit,
+                    expectedFormationEpoch: input.command.expectedFormationEpoch,
+                    expectedLayout: input.command.expectedLayout
+                }
             };
         case 'reconfigure':
-            return input.command.landing === undefined ? actor : { ...actor, landing: input.command.landing };
-        case 'plan':
-        case 'activate':
-        case 'pause':
-        case 'resume':
-        case 'reset':
-        case 'start':
-            return actor;
+            return {
+                command: 'reconfigure',
+                body: input.command.landing === undefined ? audit : { ...audit, landing: input.command.landing }
+            };
+        default:
+            return { command: input.command.command, body: audit };
     }
 }
 

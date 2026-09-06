@@ -218,8 +218,13 @@ the eight application-facing formation commands of the group lifecycle
 `reconfigure({ landing? })`, `pause()`, `resume()`, `reset()` and `start()`. Each resolves to the
 receipt `GroupSnapshot` once the transition committed; planning, publication and RTC readiness stay
 asynchronous. `connect()` names the room's current planned layout and the cached formation epoch;
-pass `layout` to name a specific `GroupLayoutIdentity`. When no planned layout is published the
-call throws a `RallarValidationError` issue `no-planned-layout` before any request is sent.
+pass `layout` to name a specific `GroupLayoutIdentity`. When the planned slot is empty, or holds a
+layout published past the cached snapshot, `connect()` refreshes the room once (the point read and
+the topology read-through) before it posts. It throws a `RallarValidationError` without sending a
+lifecycle request when that leaves nothing to name: issue `no-planned-layout` when the read-through
+completed and nothing is published, `session-not-present` when the room does not count this session
+as present (the read-through fills the slot only for present sessions, so pass `layout`), and
+`planned-layout-read-failed` when the read-through did not complete.
 `formation.status()` is the free, in-memory view: stage, epoch, attempt count, transport state,
 which layout roles the browser dials, the accepted and planned layouts it holds, and the pushed
 activation condition. Commands reject with `ApiHttpError`; `toRoomFormationDenial(error)`
@@ -235,13 +240,22 @@ satisfies the wait, and an incomparable one never does. After `plan` the unfence
 after `reconfigure` pass the receipt's revision, because the planned slot may still hold the
 candidate the reconfigure superseded. `formation.waitForStage(stage | stages, options?)` and
 `formation.waitForCondition(condition | conditions, options?)` resolve from the pushed group
-snapshot. `formation.onChange(listener, options?)` emits the status on every observable change of
-the snapshot or either layout slot; `formation.onLayout(listener)` emits `layoutPlanned`,
-`layoutAccepted` and `layoutRemoved` events for the bound room. `formation.readView(options?)`
-fetches the server's `GroupFormationView` (readiness, managers, `layoutStale`, `pending`, the
-attempt budget, both status axes and the coverage basis) and validates it against the bound room.
-Readiness for application traffic stays `rtc.waitForRoom(...)` and `realtime.room().wait()`, which
-follow the accepted layout only.
+snapshot. The waits take `timeoutMs` and `signal`, wake only on changes naming the bound room, and
+report what they find at the deadline: a stage or layout that landed without a notification is
+still `ready`. `not-found` means this browser has never held the room's snapshot; a snapshot that
+expired from the cache keeps the wait going, and a room removed mid-wait ends as `timeout` with
+`formation` undefined. `formation.onChange(listener, options?)` emits the status on every
+observable change of the snapshot or either layout slot; a room leaving the cache emits nothing
+here, because a status cannot represent absence, and is observed through `rooms.onChange`.
+`formation.onLayout(listener)` emits `layoutPlanned`, `layoutAccepted` and `layoutRemoved` events
+as the differences between consecutive statuses: a bootstrap or tombstoned slot is no layout, a
+layout that appears and disappears before the browser observes it raises no event, and
+`layoutAccepted` fires once the accepted slot and the snapshot name the same layout.
+`formation.readView(options?)` fetches the server's `GroupFormationView` (readiness, managers,
+`layoutStale`, `pending`, the attempt budget, both status axes and the coverage basis) and decodes
+it against the bound room, rejecting a body that is malformed or names another group. Readiness
+for application traffic stays `rtc.waitForRoom(...)` and `realtime.room().wait()`, which follow
+the accepted layout only.
 
 `rooms.leave(input?)` leaves a room. It can use explicit `roomId`, `roomRef`, the default room, or the current room.
 

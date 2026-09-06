@@ -1,5 +1,6 @@
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 
@@ -37,13 +38,14 @@ export interface LayoutOverlayFixtureInput {
     readonly causalRevision: GroupStateCausalRevision;
     readonly version: number;
     readonly state?: OverlayInfo['state'];
+    readonly provenance?: OverlayInfo['provenance'];
     readonly peerIds?: readonly string[];
 }
 
 export function createLayoutOverlay(input: LayoutOverlayFixtureInput): OverlayInfo {
     return {
         sourceGroupStateCausalRevision: input.causalRevision,
-        provenance: 'server',
+        provenance: input.provenance ?? 'server',
         state: input.state ?? 'active',
         overlayId: toScopedOverlayId(input.roomRef),
         groupRef: input.roomRef,
@@ -55,5 +57,25 @@ export function createLayoutOverlay(input: LayoutOverlayFixtureInput): OverlayIn
         degreeLimit: 2,
         overlayVersion: input.version,
         updatedAtEpochMs: 1
+    };
+}
+
+export function createFormationView(groupRef: GroupRef, overrides: Partial<GroupFormationView> = {}): GroupFormationView {
+    return {
+        groupRef,
+        lifecycleState: 'planned',
+        formationEpoch: 1,
+        formationAttemptCount: 0,
+        lastFormationOutcome: null,
+        establishmentStartedAtEpochMs: null,
+        readiness: { plannedEdgeCount: 1, observedEdgeCount: 0, observedRate: 0 },
+        managerPrincipalIds: ['principal-1'],
+        layoutStale: false,
+        pending: null,
+        maxFormationAttempts: 2,
+        condition: 'inactive',
+        remediation: 'none',
+        coverageBasisLayoutIdentity: null,
+        ...overrides
     };
 }

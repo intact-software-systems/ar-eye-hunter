@@ -195,6 +195,13 @@ export type GroupFormationOutcome = Readonly<{
     formationEpoch: number;
 }>;
 
+/** The runtime registry the validators check against. */
+export const GROUP_FORMATION_OUTCOME_KINDS = [
+    'activated',
+    'activated-degraded',
+    'below-floor'
+] as const satisfies readonly GroupFormationOutcome['outcome'][];
+
 export type GroupLifecyclePolicy = Readonly<{
     formation: GroupFormationMode;
     initiator: GroupLifecycleInitiator;

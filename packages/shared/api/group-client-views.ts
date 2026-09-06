@@ -114,6 +114,18 @@ export function compareGroupCausalRevision(
     return 'incomparable';
 }
 
+/**
+ * A causal fence admits what is at or after it; `incomparable` is refused
+ * rather than folded into either answer (product decision 29).
+ */
+export function isGroupCausalRevisionAtOrAfter(
+    candidate: GroupStateCausalRevision,
+    fence: GroupStateCausalRevision
+): boolean {
+    const order = compareGroupCausalRevision(candidate, fence);
+    return order === 'equal' || order === 'dominates';
+}
+
 export function readClientVersion(snapshot: ClientSnapshot): number {
     return snapshot.principal.snapshotVersion;
 }

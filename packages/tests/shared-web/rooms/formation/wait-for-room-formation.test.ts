@@ -27,7 +27,7 @@ describe('room formation stage and condition waits', () => {
 
         const result = await createRallarFacade().rooms.formation(planned.group).waitForStage(
             ['planned', 'connecting'],
-            { timeoutMs: 10 }
+            { timeoutMs: 0 }
         );
 
         expect(result.status).toBe('ready');
@@ -54,10 +54,47 @@ describe('room formation stage and condition waits', () => {
         ]);
 
         await expect(wait).resolves.toMatchObject({ status: 'ready', formation: { stage: 'connecting', formationEpoch: 2 } });
-        await expect(formation.waitForStage('active', { timeoutMs: 10 })).resolves.toMatchObject({
+        await expect(formation.waitForStage('active', { timeoutMs: 0 })).resolves.toMatchObject({
             status: 'timeout',
             formation: { stage: 'connecting' }
         });
+    });
+
+    it('reports a stage reached before the deadline even when its notification never arrived', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const planned = createFormationSnapshot({
+            stage: 'planned',
+            formationEpoch: 1,
+            causalRevision: { groupRevision: 2, presenceRevision: 1 }
+        });
+        seedRoomSnapshots([planned]);
+        const wait = createRallarFacade().rooms.formation(planned.group).waitForStage('active', { timeoutMs: 20 });
+        // A write is readable before its notification arrives; seeding without
+        // publishing is that window.
+        seedRoomSnapshots([
+            createFormationSnapshot({
+                stage: 'active',
+                formationEpoch: 2,
+                causalRevision: { groupRevision: 3, presenceRevision: 1 }
+            })
+        ]);
+
+        await expect(wait).resolves.toMatchObject({ status: 'ready', formation: { stage: 'active' } });
+    });
+
+    it('keeps waiting on an expired snapshot instead of settling as not-found', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const planned = createFormationSnapshot({
+            stage: 'planned',
+            formationEpoch: 1,
+            causalRevision: { groupRevision: 2, presenceRevision: 1 }
+        });
+        seedRoomSnapshots([planned]);
+        const wait = createRallarFacade().rooms.formation(planned.group).waitForStage('active', { timeoutMs: 20 });
+        // The cache forgets an expired snapshot but remembers that it held the room.
+        seedRoomSnapshots([]);
+
+        await expect(wait).resolves.toMatchObject({ status: 'timeout', formation: undefined });
     });
 
     it('reports not-found for a room that is not cached and aborted on an aborted signal', async () => {
@@ -71,7 +108,7 @@ describe('room formation stage and condition waits', () => {
         controller.abort();
 
         await expect(
-            createRallarFacade().rooms.formation(missing.group).waitForStage('active', { timeoutMs: 10 })
+            createRallarFacade().rooms.formation(missing.group).waitForStage('active', { timeoutMs: 0 })
         ).resolves.toMatchObject({ status: 'not-found', formation: undefined });
         seedRoomSnapshots([missing]);
         await expect(
@@ -87,6 +124,16 @@ describe('room formation stage and condition waits', () => {
             causalRevision: { groupRevision: 3, presenceRevision: 1 }
         });
         seedRoomSnapshots([connecting]);
+        // The status describes the layout the room is dialing; without that
+        // planned layout in the slot it belongs to no current series.
+        setPlannedOverlayById(
+            toScopedOverlayId(connecting.group),
+            createLayoutOverlay({
+                roomRef: connecting.group,
+                causalRevision: { groupRevision: 3, presenceRevision: 1 },
+                version: 2
+            })
+        );
         const wait = createRallarFacade().rooms.formation(connecting.group).waitForCondition('active', {
             timeoutMs: 1_000
         });
@@ -170,14 +217,14 @@ describe('room formation layout waits', () => {
             })
         );
 
-        await expect(formation.waitForLayout({ after: receipt.causalRevision, timeoutMs: 10 })).resolves.toMatchObject({
+        await expect(formation.waitForLayout({ after: receipt.causalRevision, timeoutMs: 0 })).resolves.toMatchObject({
             status: 'timeout',
             layout: undefined
         });
         await expect(
-            formation.waitForLayout({ after: { groupRevision: 6, presenceRevision: 1 }, timeoutMs: 10 })
+            formation.waitForLayout({ after: { groupRevision: 6, presenceRevision: 1 }, timeoutMs: 0 })
         ).resolves.toMatchObject({ status: 'timeout' });
-        await expect(formation.waitForLayout({ timeoutMs: 10 })).resolves.toMatchObject({
+        await expect(formation.waitForLayout({ timeoutMs: 0 })).resolves.toMatchObject({
             status: 'ready',
             layout: { identity: { version: 4 } }
         });

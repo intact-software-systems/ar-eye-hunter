@@ -1,4 +1,5 @@
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type {
     RallarOnChangeOptions,
     RallarStateListener,
@@ -8,7 +9,7 @@ import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupConnectRejectionCode } from '@shared/api/group-lifecycle/group-connect-rejection-codes.ts';
 import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
-import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { GroupLayoutIdentity, GroupLayoutRole } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type {
     GroupFormationOutcome,
     GroupLifecycleState,
@@ -21,7 +22,7 @@ import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '../room-group-state-translation.ts';
 
-export type RallarRoomLayoutRole = 'planned' | 'accepted';
+export type RallarRoomLayoutRole = Extract<GroupLayoutRole, 'planned' | 'accepted'>;
 
 export interface RallarRoomLayout {
     readonly role: RallarRoomLayoutRole;
@@ -34,7 +35,7 @@ export interface RallarRoomFormationStatus {
     readonly stage: GroupLifecycleState;
     readonly formationEpoch: number;
     readonly formationAttemptCount: number;
-    readonly lastFormationOutcome: GroupFormationOutcome | null;
+    readonly lastFormationOutcome: GroupFormationOutcome | undefined;
     readonly transportState: GroupTransportState;
     readonly dialing: GroupDialLayoutRoles;
     readonly memberPolicy: GroupMemberPolicy;
@@ -44,6 +45,32 @@ export interface RallarRoomFormationStatus {
     readonly coverageRate: number | undefined;
     readonly snapshot: GroupSnapshot;
 }
+
+export type RallarRoomFormationWaitStatus = 'ready' | 'timeout' | 'aborted' | 'not-found';
+
+export interface RallarRoomFormationWaitResult {
+    readonly status: RallarRoomFormationWaitStatus;
+    readonly roomRef: GroupRef;
+    readonly formation: RallarRoomFormationStatus | undefined;
+}
+
+export interface RallarRoomLayoutWaitOptions extends RallarOperationOptions {
+    /** The slot to wait on; the planned slot when omitted. */
+    readonly role?: RallarRoomLayoutRole;
+    /** Accept only a layout published at or after this revision; any layout when omitted. */
+    readonly after?: GroupStateCausalRevision;
+}
+
+export interface RallarRoomLayoutWaitResult extends RallarRoomFormationWaitResult {
+    readonly layout: RallarRoomLayout | undefined;
+}
+
+export type RallarRoomLayoutEvent =
+    | Readonly<{ kind: 'layoutPlanned'; roomRef: GroupRef; layout: RallarRoomLayout; }>
+    | Readonly<{ kind: 'layoutAccepted'; roomRef: GroupRef; layout: RallarRoomLayout; }>
+    | Readonly<{ kind: 'layoutRemoved'; roomRef: GroupRef; role: RallarRoomLayoutRole; previous: RallarRoomLayout; }>;
+
+export type RallarRoomLayoutListener = RallarStateListener<RallarRoomLayoutEvent>;
 
 export interface RallarRoomFormationCommandOptions extends RallarScopedOperationOptions {
     readonly reason?: string;
@@ -59,40 +86,6 @@ export interface RallarRoomReconfigureOptions extends RallarRoomFormationCommand
     readonly landing?: GroupTopologyReconfigureLanding;
 }
 
-export type RallarRoomFormationWaitStatus = 'ready' | 'timeout' | 'aborted' | 'not-found';
-
-export interface RallarRoomFormationWaitResult {
-    readonly status: RallarRoomFormationWaitStatus;
-    readonly roomRef: GroupRef;
-    readonly formation: RallarRoomFormationStatus | undefined;
-}
-
-export interface RallarRoomLayoutWaitOptions extends RallarScopedOperationOptions {
-    /** The slot to wait on; the planned slot when omitted. */
-    readonly role?: RallarRoomLayoutRole;
-    /** Accept only a layout published at or after this revision; any layout when omitted. */
-    readonly after?: GroupStateCausalRevision;
-}
-
-export interface RallarRoomLayoutWaitResult {
-    readonly status: RallarRoomFormationWaitStatus;
-    readonly roomRef: GroupRef;
-    readonly layout: RallarRoomLayout | undefined;
-    readonly formation: RallarRoomFormationStatus | undefined;
-}
-
-export type RallarRoomLayoutEvent =
-    | Readonly<{ kind: 'layoutPlanned'; roomRef: GroupRef; layout: RallarRoomLayout; }>
-    | Readonly<{ kind: 'layoutAccepted'; roomRef: GroupRef; layout: RallarRoomLayout; }>
-    | Readonly<{
-        kind: 'layoutRemoved';
-        roomRef: GroupRef;
-        role: RallarRoomLayoutRole;
-        previous: RallarRoomLayout | undefined;
-    }>;
-
-export type RallarRoomLayoutListener = (event: RallarRoomLayoutEvent) => void | Promise<void>;
-
 export interface RallarRoomFormation {
     readonly roomRef: GroupRef;
     status(): RallarRoomFormationStatus | undefined;
@@ -107,11 +100,11 @@ export interface RallarRoomFormation {
     start(options?: RallarRoomFormationCommandOptions): Promise<GroupSnapshot>;
     waitForStage(
         stage: GroupLifecycleState | readonly GroupLifecycleState[],
-        options?: RallarScopedOperationOptions
+        options?: RallarOperationOptions
     ): Promise<RallarRoomFormationWaitResult>;
     waitForCondition(
         condition: GroupActivationCondition | readonly GroupActivationCondition[],
-        options?: RallarScopedOperationOptions
+        options?: RallarOperationOptions
     ): Promise<RallarRoomFormationWaitResult>;
     waitForLayout(options?: RallarRoomLayoutWaitOptions): Promise<RallarRoomLayoutWaitResult>;
     onChange(

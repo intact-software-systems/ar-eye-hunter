@@ -5,7 +5,9 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import {
     configureOverlayRepositories,
     removePlannedOverlayById,
+    setAcceptedOverlayById,
     setPlannedOverlayById,
+    waitForAcceptedOverlayChangesIdle,
     waitForPlannedOverlayChangesIdle
 } from '@shared/repository/overlays-repository.ts';
 
@@ -94,10 +96,55 @@ describe('room formation subscriptions', () => {
                 version: 2
             })
         );
+        await waitForPlannedOverlayChangesIdle();
         removePlannedOverlayById(toScopedOverlayId(room.group));
         await waitForPlannedOverlayChangesIdle();
 
         expect(events.map((event) => event.kind)).toEqual(['layoutPlanned', 'layoutRemoved']);
         expect(events[1]).toMatchObject({ role: 'planned', previous: { identity: { version: 2 } } });
+    });
+
+    it('ignores a bootstrap slot write and reports an accepted layout only once the snapshot names it', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const connecting = createFormationSnapshot({
+            stage: 'connecting',
+            formationEpoch: 2,
+            causalRevision: { groupRevision: 3, presenceRevision: 1 }
+        });
+        seedRoomSnapshots([connecting]);
+        const overlayId = toScopedOverlayId(connecting.group);
+        const identity = { groupRevision: 3, presenceRevision: 1, version: 2, state: 'active' as const };
+        const events: RallarRoomLayoutEvent[] = [];
+        createRallarFacade().rooms.formation(connecting.group).onLayout((event) => {
+            events.push(event);
+        });
+
+        setPlannedOverlayById(
+            overlayId,
+            createLayoutOverlay({
+                roomRef: connecting.group,
+                causalRevision: { groupRevision: 3, presenceRevision: 1 },
+                version: 2,
+                provenance: 'bootstrap'
+            })
+        );
+        await waitForPlannedOverlayChangesIdle();
+        setAcceptedOverlayById(
+            overlayId,
+            createLayoutOverlay({
+                roomRef: connecting.group,
+                causalRevision: { groupRevision: 3, presenceRevision: 1 },
+                version: 2
+            })
+        );
+        await waitForAcceptedOverlayChangesIdle();
+        const beforeTheSnapshot = events.map((event) => event.kind);
+        await publishRoomSnapshots([{
+            ...connecting,
+            group: { ...connecting.group, lifecycleState: 'active', formationEpoch: 3, acceptedLayoutIdentity: identity }
+        }]);
+
+        expect(beforeTheSnapshot).toEqual([]);
+        expect(events).toMatchObject([{ kind: 'layoutAccepted', layout: { role: 'accepted', identity } }]);
     });
 });

@@ -22,7 +22,12 @@ import type {
     UpdateStateGroupBody,
     UpsertStateGroupMemberBody
 } from '../api/state-mutation-http-contracts.ts';
-import type { GroupJoinCodeResponse, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
+import type {
+    GroupJoinCodeResponse,
+    GroupSnapshot,
+    RoomFormationGroupStateRequest,
+    StateScope
+} from './room-group-state-translation.ts';
 
 interface RoomGroupRequestInput<TRequest> {
     readonly groupId: string;
@@ -65,6 +70,7 @@ export interface UnbanStateGroupMemberHttpInput extends TargetRoomGroupRequestIn
 export interface SetStateGroupMemberRoleHttpInput extends TargetRoomGroupRequestInput<SetStateGroupMemberRoleBody> {}
 export interface TransferStateGroupOwnershipHttpInput extends RoomGroupRequestInput<TransferStateGroupOwnershipBody> {}
 export interface UpsertStateGroupMemberHttpInput extends TargetRoomGroupRequestInput<UpsertStateGroupMemberBody> {}
+export interface CommandStateGroupLifecycleHttpInput extends RoomGroupRequestInput<RoomFormationGroupStateRequest> {}
 export interface ConnectStateGroupPresenceSessionHttpInput
     extends RoomPresenceRequestInput<ConnectStateGroupPresenceSessionBody> {}
 export interface HeartbeatStateGroupPresenceSessionHttpInput
@@ -209,6 +215,10 @@ async function disconnectStateGroupPresenceSession(
     );
 }
 
+async function commandStateGroupLifecycle(input: CommandStateGroupLifecycleHttpInput): Promise<GroupSnapshot> {
+    return await postRoomGroupState({ ...input, request: input.request.body }, `/lifecycle/${input.request.command}`);
+}
+
 function postRoomGroupState<TRequest, TResponse>(
     input: RoomGroupRequestInput<TRequest>,
     suffix: string
@@ -266,5 +276,6 @@ export const roomGroupStateHttpApi = Object.freeze({
     upsertMember: upsertStateGroupMember,
     connectPresence: connectStateGroupPresenceSession,
     heartbeatPresence: heartbeatStateGroupPresenceSession,
-    disconnectPresence: disconnectStateGroupPresenceSession
+    disconnectPresence: disconnectStateGroupPresenceSession,
+    commandLifecycle: commandStateGroupLifecycle
 });

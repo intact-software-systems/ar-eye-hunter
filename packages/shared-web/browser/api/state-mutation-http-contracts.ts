@@ -3,6 +3,7 @@ import type {
     PutGroupTopologyOverrideRequest,
     ReconfigureGroupTopologyRequest
 } from '@shared/api/graph-topology-management-types.ts';
+import type { GroupTopologyReconfigureLanding } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type {
     AcceptGroupInviteRequest,
     AppointGroupDirectorRequest,
@@ -12,9 +13,11 @@ import type {
     CreateGroupInviteRequest,
     CreateGroupRequest,
     DisconnectGroupPresenceSessionRequest,
+    GroupConnectRequest,
     HeartbeatClientSessionRequest,
     HeartbeatGroupPresenceSessionRequest,
     JoinGroupRequest,
+    MutationActorInput,
     RemoveGroupMemberRequest,
     RevokeGroupInviteRequest,
     RotateGroupJoinCodeRequest,
@@ -46,6 +49,18 @@ export type UpsertStateGroupMemberBody = Omit<UpsertGroupMemberRequest, 'request
 export type ConnectStateGroupPresenceSessionBody = Omit<ConnectGroupPresenceSessionRequest, 'requestId'>;
 export type HeartbeatStateGroupPresenceSessionBody = Omit<HeartbeatGroupPresenceSessionRequest, 'requestId'>;
 export type DisconnectStateGroupPresenceSessionBody = Omit<DisconnectGroupPresenceSessionRequest, 'requestId'>;
+
+/**
+ * The lifecycle routes take the actor from authentication and declare
+ * `additionalProperties: false`, so their bodies carry only the audit fields
+ * beside a command's own arguments.
+ */
+type GroupLifecycleActorFields = 'requestId' | 'actorPrincipalId' | 'actorSessionId';
+export type TransitionStateGroupLifecycleBody = Omit<MutationActorInput, GroupLifecycleActorFields>;
+export type ConnectStateGroupLifecycleBody = Omit<GroupConnectRequest, GroupLifecycleActorFields>;
+export type ReconfigureStateGroupLifecycleBody =
+    & TransitionStateGroupLifecycleBody
+    & Readonly<{ landing?: GroupTopologyReconfigureLanding; }>;
 
 export type ConnectStateClientSessionBody = Omit<ConnectClientSessionRequest, 'requestId'>;
 export type HeartbeatStateClientSessionBody = Omit<HeartbeatClientSessionRequest, 'requestId'>;

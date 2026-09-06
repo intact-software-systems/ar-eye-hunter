@@ -9,7 +9,10 @@ import type {
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import type { RallarRoomStateStorePort } from '@shared-web/browser/rooms/room-state-store.ts';
-import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import {
+    browserStateCacheLifecycle,
+    type StateCacheChangeListener
+} from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type { AuthSession, ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { readActiveClientSessionIds } from '@shared/api/group-client-views.ts';
@@ -24,9 +27,11 @@ interface BrowserStateScopeValue extends Pick<StateScope, 'applicationId'> {
 }
 
 export interface RallarStateCacheReadPort {
-    onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe;
+    onCacheChange(listener: StateCacheChangeListener): RallarUnsubscribe;
     readGroupSnapshots(): readonly GroupSnapshot[];
     findGroupSnapshotByRef(roomRef: GroupRef): GroupSnapshot | undefined;
+    /** Whether the cache ever held the room, which outlives the snapshot's TTL. */
+    wasGroupSnapshotObserved(roomRef: GroupRef): boolean;
     findFirstGroupRefForSession(sessionId: string): GroupRef | undefined;
     readClientSnapshots(): readonly ClientSnapshot[];
     findClientSnapshot(principalId: string): ClientSnapshot | undefined;
@@ -58,6 +63,8 @@ export function createRallarStateCacheReadPort(): RallarStateCacheReadPort {
         onCacheChange: (listener) => browserStateCacheLifecycle.onChange(listener),
         readGroupSnapshots: () => groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
         findGroupSnapshotByRef: (roomRef) => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(roomRef),
+        wasGroupSnapshotObserved: (roomRef) =>
+            groupStateSnapshotsRepository.wasGroupStateSnapshotObservedByRef(roomRef),
         findFirstGroupRefForSession: (sessionId) =>
             groupStateSnapshotsRepository.findFirstGroupStateSnapshotRefSessionIdIsIn(sessionId),
         readClientSnapshots: () => clientStateSnapshotsRepository.getAllClientStateSnapshots(),
