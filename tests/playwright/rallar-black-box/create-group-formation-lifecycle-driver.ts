@@ -610,9 +610,10 @@ async function waitForPlannedLayout(
         plannedLayout = candidate.identity;
         return true;
     }, {
-        message: `Expected an epoch ${input.expectedFormationEpoch} planned topology at or after group revision ${
-            input.minimumGroupRevision
-        } with ${input.expectedSessionIds.join(', ')}`,
+        message:
+            `Expected an epoch ${input.expectedFormationEpoch} planned topology at or after group revision ${input.minimumGroupRevision} with ${
+                input.expectedSessionIds.join(', ')
+            }`,
         timeout: 30_000
     }).toBe(true);
     if (!plannedLayout) {
