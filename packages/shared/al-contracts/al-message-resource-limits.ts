@@ -16,6 +16,12 @@ export const AL_MESSAGE_RESOURCE_LIMITS = {
     bufferedBytes: 1024 * 1024
 } as const;
 
+/** Byte policy is selected by a trusted protocol owner, never by envelope fields. */
+export interface ALMessageByteLimits {
+    readonly envelopeBytes: number;
+    readonly payloadBytes: number;
+}
+
 export interface ALMessageResourceIssue {
     readonly code: 'malformed' | 'oversized';
     readonly message: string;
@@ -47,16 +53,28 @@ type ALMessageResourceLocation =
     | 'visited-peers'
     | 'other';
 
-export function validateSerializedALMessageSize(serialized: string): readonly ALMessageResourceIssue[] {
-    return exceedsUtf8Limit(serialized, AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes)
+export function validateSerializedALMessageSize(
+    serialized: string,
+    byteLimits: ALMessageByteLimits = AL_MESSAGE_RESOURCE_LIMITS
+): readonly ALMessageResourceIssue[] {
+    if (!isValidALMessageByteLimits(byteLimits)) {
+        return [{ code: 'malformed', message: 'AL envelope byte policy is invalid' }];
+    }
+    return exceedsUtf8Limit(serialized, byteLimits.envelopeBytes)
         ? [{ code: 'oversized', message: 'AL envelope exceeds the byte limit' }]
         : [];
 }
 
 /** Counts JSON bytes without invoking getters/toJSON or recursively visiting untrusted objects. */
-export function validateALMessageResourceLimits(value: unknown): readonly ALMessageResourceIssue[] {
+export function validateALMessageResourceLimits(
+    value: unknown,
+    byteLimits: ALMessageByteLimits = AL_MESSAGE_RESOURCE_LIMITS
+): readonly ALMessageResourceIssue[] {
+    if (!isValidALMessageByteLimits(byteLimits)) {
+        return [{ code: 'malformed', message: 'AL envelope byte policy is invalid' }];
+    }
     try {
-        const measured = computeALMessageEnvelopeSize(value);
+        const measured = computeALMessageEnvelopeSize(value, byteLimits);
         return measured.left ? [measured.left] : [];
     }
     catch {
@@ -64,7 +82,10 @@ export function validateALMessageResourceLimits(value: unknown): readonly ALMess
     }
 }
 
-function computeALMessageEnvelopeSize(value: unknown): Either<ALMessageResourceIssue, number> {
+function computeALMessageEnvelopeSize(
+    value: unknown,
+    byteLimits: ALMessageByteLimits
+): Either<ALMessageResourceIssue, number> {
     const pending: ALMessageMeasurement[] = [{ kind: 'value', entry: { value, location: 'envelope' } }];
     const ancestors = new Set<object>();
     let bytes = 0;
@@ -74,13 +95,13 @@ function computeALMessageEnvelopeSize(value: unknown): Either<ALMessageResourceI
             ancestors.delete(current.value);
             continue;
         }
-        const measured = computeALMessageValueSize(current.entry);
+        const measured = computeALMessageValueSize(current.entry, byteLimits);
         if (measured.left) {
             return Either.ofLeft(measured.left);
         }
         const size = measured.right!;
         bytes += size.bytes;
-        if (bytes > AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes) {
+        if (bytes > byteLimits.envelopeBytes) {
             return Either.ofLeft({ code: 'oversized', message: 'AL envelope exceeds the byte limit' });
         }
         const object = current.entry.value;
@@ -98,9 +119,12 @@ function computeALMessageEnvelopeSize(value: unknown): Either<ALMessageResourceI
     return Either.ofRight(bytes);
 }
 
-function computeALMessageValueSize(entry: ALMessageValue): Either<ALMessageResourceIssue, ALMessageValueSize> {
+function computeALMessageValueSize(
+    entry: ALMessageValue,
+    byteLimits: ALMessageByteLimits
+): Either<ALMessageResourceIssue, ALMessageValueSize> {
     if (typeof entry.value === 'string') {
-        const issues = validateALMessageString(entry.value, entry.location);
+        const issues = validateALMessageString(entry.value, entry.location, byteLimits);
         if (issues.length > 0) {
             return Either.ofLeft(issues[0]);
         }
@@ -121,12 +145,13 @@ function computeALMessageValueSize(entry: ALMessageValue): Either<ALMessageResou
     if (entry.value === null || typeof entry.value !== 'object') {
         return Either.ofLeft({ code: 'malformed', message: 'AL envelope contains a non-JSON value' });
     }
-    return computeALMessageCollectionSize(entry.value, entry.location);
+    return computeALMessageCollectionSize(entry.value, entry.location, byteLimits);
 }
 
 function computeALMessageCollectionSize(
     value: object,
-    location: ALMessageResourceLocation
+    location: ALMessageResourceLocation,
+    byteLimits: ALMessageByteLimits
 ): Either<ALMessageResourceIssue, ALMessageValueSize> {
     const array = Array.isArray(value);
     if (Object.getPrototypeOf(value) !== (array ? Array.prototype : Object.prototype)) {
@@ -161,7 +186,7 @@ function computeALMessageCollectionSize(
         if (!array && descriptor.value === undefined) {
             continue;
         }
-        if (exceedsUtf8Limit(key, AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes)) {
+        if (exceedsUtf8Limit(key, byteLimits.envelopeBytes)) {
             return Either.ofLeft({ code: 'oversized', message: 'AL envelope key exceeds the byte limit' });
         }
         bytes += (array ? 0 : new TextEncoder().encode(JSON.stringify(key)).length + 1) + (children.length > 0 ? 1 : 0);
@@ -175,18 +200,19 @@ function computeALMessageCollectionSize(
 
 function validateALMessageString(
     value: string,
-    location: ALMessageResourceLocation
+    location: ALMessageResourceLocation,
+    byteLimits: ALMessageByteLimits
 ): readonly ALMessageResourceIssue[] {
     if (location === 'route-identifier' && value.length > AL_MESSAGE_RESOURCE_LIMITS.routeIdCharacters) {
         return [{ code: 'oversized', message: 'AL route identifier exceeds the character limit' }];
     }
-    if (exceedsUtf8Limit(value, AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes)) {
+    if (exceedsUtf8Limit(value, byteLimits.envelopeBytes)) {
         return [{ code: 'oversized', message: 'AL envelope string exceeds the byte limit' }];
     }
     if (location !== 'payload-json') {
         return [];
     }
-    if (exceedsUtf8Limit(value, AL_MESSAGE_RESOURCE_LIMITS.payloadBytes)) {
+    if (exceedsUtf8Limit(value, byteLimits.payloadBytes)) {
         return [{ code: 'oversized', message: 'AL payload exceeds the byte limit' }];
     }
     try {
@@ -219,4 +245,10 @@ function resolveALMessageResourceLocation(parent: ALMessageResourceLocation, key
 
 function exceedsUtf8Limit(value: string, limit: number): boolean {
     return value.length > limit || new TextEncoder().encode(value).length > limit;
+}
+
+function isValidALMessageByteLimits(byteLimits: ALMessageByteLimits): boolean {
+    return Number.isSafeInteger(byteLimits.envelopeBytes) &&
+        Number.isSafeInteger(byteLimits.payloadBytes) &&
+        byteLimits.payloadBytes > 0 && byteLimits.envelopeBytes >= byteLimits.payloadBytes;
 }

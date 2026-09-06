@@ -1,8 +1,10 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
+import { EnqueuedType } from '../api/api-config.ts';
 import type { DequeueResourceEntryOptions, ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import { readRtcTopologyWorkEntry, RTC_TOPOLOGY_OUTBOX_TOPIC } from '../queuebox/rtc-topology-work-entry-contract.ts';
 
 import type { OnMessageCallback } from './queue-message-callbacks.ts';
 import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
@@ -49,7 +51,9 @@ export class QueueMessageReader {
     }
 
     private async dispatchQueuedMessage(entry: ResourceEntry): Promise<void> {
-        const message = decodePersistedALMessage(entry.resource);
+        const message = entry.typeId === EnqueuedType.APP_OUTBOX && entry.key.topicId === RTC_TOPOLOGY_OUTBOX_TOPIC
+            ? readRtcTopologyWorkEntry(entry)
+            : decodePersistedALMessage(entry.resource);
         const callback = this.callbacks.get(message.payload.typeId);
         if (!callback) {
             throw new Error(`No ${this.config.enqueueType} callback registered for type ${message.payload.typeId}`);

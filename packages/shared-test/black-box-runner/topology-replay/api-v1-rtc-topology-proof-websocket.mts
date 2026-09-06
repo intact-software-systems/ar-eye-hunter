@@ -64,7 +64,9 @@ export class ApiV1RtcTopologyProofSocket {
 
     static async open(session: ProofSession, ticket: string, groupRef: GroupRef): Promise<ApiV1RtcTopologyProofSocket> {
         const url = `${session.wsBaseUrl}/api/ws/${encodeURIComponent(session.sessionId)}` +
-            `?ticket=${encodeURIComponent(ticket)}`;
+            `?ticket=${encodeURIComponent(ticket)}` +
+            `&applicationId=${encodeURIComponent(groupRef.applicationId)}` +
+            `&workspaceId=${encodeURIComponent(groupRef.workspaceId)}`;
         const socket = new WebSocket(url);
         const client = new ApiV1RtcTopologyProofSocket(socket, session.label, groupRef);
         await waitForOpen(socket, session.label);
@@ -319,7 +321,7 @@ export function matchesProofTopologyExpectation(
 }
 
 function readProofTopologyDeliveryKind(messageId: string): ProofTopologyDeliveryKind {
-    let identity;
+    let identity: unknown;
     try {
         identity = JSON.parse(messageId);
     }

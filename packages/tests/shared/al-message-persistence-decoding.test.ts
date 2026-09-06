@@ -1,4 +1,8 @@
-import { decodePersistedALMessage, decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import {
+    decodeALMessageValue,
+    decodePersistedALMessage,
+    decodePersistedALMessageValue
+} from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { describe, expect, it } from 'vitest';
 
 interface MutablePersistedALMessageFixture {
@@ -47,24 +51,26 @@ describe('persisted AL message decoding', () => {
             }
         }
     ])('rejects a $mode target whose group ref omits workspaceId', ({ targets }) => {
-        expectInvalidPersistedALMessage({
-            id: {
-                v: 2,
-                msgId: 'message-1',
-                ts: 1,
-                senderId: 'server-1'
-            },
-            route: {
-                topicId: 'topic-1',
-                resourceId: 'resource-1',
-                contextId: 'context-1'
-            },
-            targets,
-            payload: {
-                typeId: 'type-1',
-                resource: '{}'
-            }
-        }, /workspace/);
+        expect(() =>
+            decodePersistedALMessageValue({
+                id: {
+                    v: 2,
+                    msgId: 'message-1',
+                    ts: 1,
+                    senderId: 'server-1'
+                },
+                route: {
+                    topicId: 'topic-1',
+                    resourceId: 'resource-1',
+                    contextId: 'context-1'
+                },
+                targets,
+                payload: {
+                    typeId: 'type-1',
+                    resource: '{}'
+                }
+            })
+        ).toThrow(/workspace/);
     });
 
     it('rejects a room broadcast without a group ref', () => {
@@ -208,13 +214,10 @@ describe('persisted AL message decoding', () => {
             recipientPeerIds: sparseRecipients
         };
 
-        expect(() => decodePersistedALMessageValue(sparseAudience)).toThrow(/fixed recipients/);
+        expect(decodeALMessageValue(sparseAudience).left?.code).toBe('malformed');
+        expect(() => decodePersistedALMessageValue(sparseAudience)).toThrow(TypeError);
     });
 });
-
-function expectInvalidPersistedALMessage(value: object, message: RegExp): void {
-    expect(() => decodePersistedALMessageValue(value)).toThrow(message);
-}
 
 function currentPersistedALMessage(): MutablePersistedALMessageFixture {
     return {

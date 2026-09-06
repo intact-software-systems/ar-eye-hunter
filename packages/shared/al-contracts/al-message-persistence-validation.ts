@@ -15,7 +15,12 @@ import {
     type PersistedALRecord,
     type PersistedALValue
 } from './al-message-persistence/persisted-al-value-validation.ts';
-import { validateALMessageResourceLimits, validateSerializedALMessageSize } from './al-message-resource-limits.ts';
+import {
+    AL_MESSAGE_RESOURCE_LIMITS,
+    validateALMessageResourceLimits,
+    validateSerializedALMessageSize,
+    type ALMessageByteLimits
+} from './al-message-resource-limits.ts';
 
 export interface ALMessageRejection {
     readonly code: 'malformed' | 'oversized' | 'unauthorized' | 'unsupported';
@@ -37,9 +42,27 @@ const MESSAGE_SECTIONS = [
     'diagnostics'
 ] as const;
 
+interface ALMessageEnvelopeValueInput {
+    readonly value: unknown;
+    readonly byteLimits: ALMessageByteLimits;
+}
+
+interface ALMessageEnvelopeInput {
+    readonly serialized: string;
+    readonly byteLimits: ALMessageByteLimits;
+}
+
 export function decodeALMessageValue(value: unknown): Either<ALMessageRejection, ALMessage> {
+    return decodeALMessageEnvelopeValue({ value, byteLimits: AL_MESSAGE_RESOURCE_LIMITS });
+}
+
+/** Canonical shape validation with an explicit byte policy supplied by the owning protocol. */
+export function decodeALMessageEnvelopeValue(
+    input: ALMessageEnvelopeValueInput
+): Either<ALMessageRejection, ALMessage> {
+    const { value, byteLimits } = input;
     try {
-        const resourceIssues = validateALMessageResourceLimits(value);
+        const resourceIssues = validateALMessageResourceLimits(value, byteLimits);
         if (resourceIssues.length > 0) {
             return Either.ofLeft(resourceIssues[0]);
         }
@@ -72,7 +95,13 @@ export function decodeALMessageValue(value: unknown): Either<ALMessageRejection,
 }
 
 export function decodeALMessage(serialized: string): Either<ALMessageRejection, ALMessage> {
-    const resourceIssues = validateSerializedALMessageSize(serialized);
+    return decodeALMessageEnvelope({ serialized, byteLimits: AL_MESSAGE_RESOURCE_LIMITS });
+}
+
+/** Applies the selected envelope ceiling before parsing any persisted or live JSON. */
+export function decodeALMessageEnvelope(input: ALMessageEnvelopeInput): Either<ALMessageRejection, ALMessage> {
+    const { serialized, byteLimits } = input;
+    const resourceIssues = validateSerializedALMessageSize(serialized, byteLimits);
     if (resourceIssues.length > 0) {
         return Either.ofLeft(resourceIssues[0]);
     }
@@ -83,7 +112,7 @@ export function decodeALMessage(serialized: string): Either<ALMessageRejection, 
     catch {
         return Either.ofLeft({ code: 'malformed', message: 'AL envelope must contain valid JSON' });
     }
-    return decodeALMessageValue(value);
+    return decodeALMessageEnvelopeValue({ value, byteLimits });
 }
 
 /** Persisted invalid envelopes are invariant corruption, not a recoverable live-ingress rejection. */

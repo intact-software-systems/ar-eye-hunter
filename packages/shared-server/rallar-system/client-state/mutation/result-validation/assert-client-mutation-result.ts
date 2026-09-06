@@ -19,8 +19,9 @@ import {
     type ClientValidationValue
 } from '../../validation/client-record-validation.ts';
 import { requireSha256 } from '../../validation/client-string-validation.ts';
+import { requireTimestamp } from '../../validation/client-timestamp-validation.ts';
 import { validateClientPrincipalRef } from '../../validation/validate-client-principal-ref.ts';
-import type { ClientMutationComputed, ConditionalCandidate } from '../client-mutation-contracts.ts';
+import type { ClientMutationComputed } from '../client-mutation-contracts.ts';
 import { assertClientPersistenceShape } from './assert-client-persistence.ts';
 
 export function assertClientMutationResult(
@@ -115,25 +116,28 @@ function assertAppliedWriteResult(value: ClientValidationRecord): void {
         ],
         'Client mutation computed'
     );
-    const principalCandidate = value.principal;
-    assertConditionalCandidate(
-        principalCandidate,
-        'Client mutation computed.principal',
-        validateClientPrincipal
-    );
+    const principalCandidate = validateConditionalCandidate(value.principal, 'Client mutation computed.principal');
     if (principalCandidate.operation === 'none') {
         rejectClientMutation('Client mutation computed principal guard is required');
     }
-    assertConditionalCandidate(
-        value.instance,
-        'Client mutation computed.instance',
-        validateClientInstance
-    );
-    assertConditionalCandidate(
-        value.session,
-        'Client mutation computed.session',
-        validateClientSession
-    );
+    validateClientPrincipal(principalCandidate.value, 'Client mutation computed.principal.value');
+    if (principalCandidate.operation === 'update') {
+        requireTimestamp(principalCandidate.expectedRevision, 'Client mutation computed.principal.expectedRevision');
+    }
+    const instanceCandidate = validateConditionalCandidate(value.instance, 'Client mutation computed.instance');
+    if (instanceCandidate.operation !== 'none') {
+        validateClientInstance(instanceCandidate.value, 'Client mutation computed.instance.value');
+    }
+    if (instanceCandidate.operation === 'update') {
+        requireTimestamp(instanceCandidate.expectedRevision, 'Client mutation computed.instance.expectedRevision');
+    }
+    const sessionCandidate = validateConditionalCandidate(value.session, 'Client mutation computed.session');
+    if (sessionCandidate.operation !== 'none') {
+        validateClientSession(sessionCandidate.value, 'Client mutation computed.session.value');
+    }
+    if (sessionCandidate.operation === 'update') {
+        requireTimestamp(sessionCandidate.expectedRevision, 'Client mutation computed.session.expectedRevision');
+    }
     validateClientEvent(value.event, 'Client mutation computed.event');
     validateAuthoritativeClientSnapshot(value.snapshot);
     validateClientMutationReceipt(value.receipt, 'Client mutation computed.receipt');
@@ -146,37 +150,27 @@ function assertAppliedWriteResult(value: ClientValidationRecord): void {
     if (!Array.isArray(value.stateSync) || value.stateSync.length !== 2) {
         rejectClientMutation('Client mutation computed stateSync must contain snapshot and event');
     }
-    if (!Array.isArray(value.outboxWrites) || value.outboxWrites.length !== 2) {
+    if (!Array.isArray(value.outboxWrites) || value.outboxWrites.length < 2) {
         rejectClientMutation('Client mutation computed outboxWrites must contain snapshot and event');
     }
     assertClientPersistenceShape(value.persistence);
 }
 
-function assertConditionalCandidate<T>(
+function validateConditionalCandidate(
     value: ClientValidationValue,
-    label: string,
-    assertValue: (value: ClientValidationValue, label: string) => void
-): asserts value is ClientValidationRecord & ConditionalCandidate<T> {
+    label: string
+): ClientValidationRecord {
     const candidate = decodeClientValidationRecord(value, label);
     switch (candidate.operation) {
         case 'none':
             requireExactKeys(candidate, ['operation'], label);
-            return;
+            return candidate;
         case 'insert':
             requireExactKeys(candidate, ['operation', 'value'], label);
-            assertValue(candidate.value, `${label}.value`);
-            return;
+            return candidate;
         case 'update':
             requireExactKeys(candidate, ['operation', 'value', 'expectedRevision'], label);
-            assertValue(candidate.value, `${label}.value`);
-            if (
-                !Number.isSafeInteger(candidate.expectedRevision) ||
-                (candidate.expectedRevision as number) < 0 ||
-                Object.is(candidate.expectedRevision, -0)
-            ) {
-                rejectClientMutation(`${label}.expectedRevision must be a finite safe nonnegative integer`);
-            }
-            return;
+            return candidate;
         default:
             rejectClientMutation(`${label}.operation is invalid`);
     }

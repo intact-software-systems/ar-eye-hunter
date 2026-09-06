@@ -1,7 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
@@ -13,6 +12,7 @@ import {
 } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { readRtcTopologyWorkEntry } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
@@ -20,7 +20,6 @@ import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     computeCoalescedAppOutboxWork,
     isMutableCoalescedStatus,
-    tryReadCoalescedAppOutboxWorkEnvelope,
     type CoalescedAppOutboxWorkData,
     type CoalescedAppOutboxWorkEnvelope,
     type CoalescedAppOutboxWorkMetadata,
@@ -31,7 +30,7 @@ import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../mutation/rtc-topology-outbo
 import type { RtcTopologyGroupRevisionWork } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { TopologyWorkOrigin } from '../../planning/resolve-topology-plan-action.ts';
 import type { TopologyReplanWindow } from '../../planning/resolve-topology-replan-window.ts';
-import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
+import { readRtcTopologyWorkEnvelope, type PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
 
 /** The timing facts a replan's due time is computed from (product decision 31, I28 and I29). */
 export interface TopologyReplanTiming {
@@ -154,16 +153,19 @@ function toMergedCoalescedGroupRevisionEntry(
     previousEntry: ResourceEntry,
     incoming: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>
 ): ResourceEntry {
-    const previous = readPreviousCoalescedGroupRevisionEnvelope(previousEntry);
+    const previous = readPreviousCoalescedGroupRevisionWork(previousEntry);
+    if (previous.envelope.data.overlayId !== incoming.overlayId) {
+        throw new TypeError('Coalesced group-revision predecessor belongs to another room');
+    }
     const carriesPreviousLifecycle = isMutableCoalescedStatus(previousEntry.status);
     const merged = carriesPreviousLifecycle
-        ? mergeRtcTopologyGroupRevisionWork(previous.data, incoming, input.timing)
+        ? mergeRtcTopologyGroupRevisionWork(previous.envelope.data, incoming, input.timing)
         : incoming;
     const nextData: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork> = {
         ...merged,
         [COALESCED_APP_OUTBOX_WORK_FIELD]: {
             ...merged[COALESCED_APP_OUTBOX_WORK_FIELD],
-            generation: previous.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation + 1,
+            generation: previous.envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation + 1,
             requestedAtEpochMs: input.requestedAtEpochMs
         }
     };
@@ -175,24 +177,8 @@ function toMergedCoalescedGroupRevisionEntry(
             attempts: carriesPreviousLifecycle ? previousEntry.dequeueAudit.attempts : 0
         },
         entryAudit: previousEntry.audit,
-        messageIdentity: readPreviousMessageIdentity(previousEntry)
+        messageIdentity: previous.messageIdentity
     });
-}
-
-/**
- * A stored coalesced row never rewrites its created-audit columns — both the
- * pending merge and the terminal revival compare-and-set update the resource
- * and lifecycle only. Every later generation must therefore keep the original
- * message creation and expiry identity, or the row stops satisfying the
- * canonical work contract that release idempotency checks. The latest request
- * and due times live in the coalesced metadata, not the message identity.
- */
-function readPreviousMessageIdentity(previousEntry: ResourceEntry): CoalescedMessageIdentity {
-    const message = decodePersistedALMessage(previousEntry.resource);
-    return {
-        tsEpochMs: message.id.ts,
-        expiresAtEpochMs: message.constraints?.expiresAtMs ?? null
-    };
 }
 
 export interface PendingTopologyReplanReader {
@@ -231,8 +217,7 @@ export async function readPendingTopologyReplan(
     if (entry === null || !isPendingCoalescedStatus(entry.status)) {
         return null;
     }
-    const metadata = tryReadCoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork>(entry)
-        ?.data[COALESCED_APP_OUTBOX_WORK_FIELD];
+    const metadata = readPendingCoalescedMetadata(entry);
     return {
         reconfigureQueued: true,
         dueAtEpochMs: metadata?.dueAtEpochMs ?? null,
@@ -318,20 +303,58 @@ function toRtcTopologyCoalescedGroupRevisionSuccessorResourceId(
     return `${overlayId}:group-revision:group=${causalRevision.groupRevision};presence=${causalRevision.presenceRevision}`;
 }
 
-function readPreviousCoalescedGroupRevisionEnvelope(
-    previousEntry: ResourceEntry
-): CoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork> {
-    const envelope = tryReadCoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork>(previousEntry);
-    if (!envelope || envelope.data.kind !== 'group-revision') {
+interface PreviousCoalescedGroupRevisionWork {
+    readonly envelope: CoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork>;
+    readonly messageIdentity: CoalescedMessageIdentity;
+}
+
+/**
+ * A stored coalesced row never rewrites its created-audit columns — both the
+ * pending merge and the terminal revival compare-and-set update the resource
+ * and lifecycle only. Every later generation must therefore keep the original
+ * message sender, creation and expiry identity, or the row stops satisfying the
+ * canonical work contract that release idempotency checks. The latest request
+ * and due times live in the coalesced metadata, not the message identity.
+ */
+function readPreviousCoalescedGroupRevisionWork(previousEntry: ResourceEntry): PreviousCoalescedGroupRevisionWork {
+    try {
+        const message = readRtcTopologyWorkEntry(previousEntry);
+        const envelope = readRtcTopologyWorkEnvelope(message, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE);
+        const work = envelope.data;
+        if (work.kind !== 'group-revision' || !work[COALESCED_APP_OUTBOX_WORK_FIELD]) {
+            throw new TypeError('Coalesced group-revision predecessor lacks group-revision metadata');
+        }
+        return {
+            envelope: {
+                ...envelope,
+                data: { ...work, [COALESCED_APP_OUTBOX_WORK_FIELD]: work[COALESCED_APP_OUTBOX_WORK_FIELD] }
+            },
+            messageIdentity: {
+                senderId: message.id.senderId,
+                tsEpochMs: message.id.ts,
+                expiresAtEpochMs: message.constraints?.expiresAtMs ?? null
+            }
+        };
+    }
+    catch (cause) {
         throw new TypeError(
-            'Coalesced group-revision predecessor is not coalesced topology work: ' +
-                previousEntry.key.resourceId
+            'Coalesced group-revision predecessor is not coalesced topology work: ' + previousEntry.key.resourceId,
+            { cause }
         );
     }
-    return envelope;
+}
+
+function readPendingCoalescedMetadata(entry: ResourceEntry): CoalescedAppOutboxWorkMetadata | null {
+    try {
+        return readPreviousCoalescedGroupRevisionWork(entry).envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD];
+    }
+    catch {
+        return null;
+    }
 }
 
 interface CoalescedMessageIdentity {
+    readonly senderId: string;
     readonly tsEpochMs: number;
     readonly expiresAtEpochMs: number | null;
 }
@@ -340,7 +363,7 @@ interface ToCoalescedGroupRevisionEntryInput {
     readonly input: RtcTopologyCoalescedGroupRevisionInput;
     readonly resourceId: string;
     readonly data: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>;
-    readonly dequeueAudit: Readonly<{ attempts: number; }>;
+    readonly dequeueAudit: Pick<ResourceEntry['dequeueAudit'], 'attempts'>;
     readonly entryAudit: ResourceEntry['audit'] | null;
     readonly messageIdentity: CoalescedMessageIdentity | null;
 }
@@ -349,7 +372,7 @@ function toCoalescedGroupRevisionEntry(
     entryInput: ToCoalescedGroupRevisionEntryInput
 ): ResourceEntry {
     const { input, resourceId, data } = entryInput;
-    const createdBy = toAppQueueCreatedBy(input.senderId);
+    const createdBy = entryInput.messageIdentity?.senderId ?? toAppQueueCreatedBy(input.senderId);
     const key = toAppQueueKey({
         topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
         resourceId,
@@ -392,7 +415,7 @@ function toCoalescedGroupRevisionMessage(
     messageTsEpochMs: number
 ): ALMessage {
     const { input, resourceId, data } = entryInput;
-    const createdBy = toAppQueueCreatedBy(input.senderId);
+    const createdBy = entryInput.messageIdentity?.senderId ?? toAppQueueCreatedBy(input.senderId);
     const messageExpiresAtEpochMs = entryInput.messageIdentity
         ? entryInput.messageIdentity.expiresAtEpochMs
         : input.expireAtEpochMs;
