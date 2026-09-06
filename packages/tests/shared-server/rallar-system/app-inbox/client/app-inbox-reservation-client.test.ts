@@ -1,4 +1,10 @@
-import { AppInboxType, type AppInboxEnqueueInput, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { describe, expect, it } from 'vitest';
+
+import {
+    AppInboxType,
+    type AppInboxEnqueueInput,
+    type AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toAppInboxResourceEntry } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-entry.ts';
 import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { AppInboxReservationClient } from '@shared-server/rallar-system/app-inbox/client/app-inbox-reservation-client.ts';
@@ -6,7 +12,6 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it } from 'vitest';
 
 const ENQUEUE: AppInboxEnqueueInput = {
     type: AppInboxType.GROUP_CREATE,
@@ -52,7 +57,7 @@ describe('AppInboxReservationClient authority persistence', () => {
 
         await expect(client.persistAuthority(context, { principalId: 'owner' })).rejects
             .toMatchObject({ code: 'app-inbox-reservation-conflict' });
-        expect(await queue.getItem(context.entry.key)).toBe(winner);
+        expect(await queue.getItem(context.entry.key)).toEqual(winner);
     });
 });
 

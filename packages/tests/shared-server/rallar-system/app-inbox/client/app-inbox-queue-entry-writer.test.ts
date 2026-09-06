@@ -3,7 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxQueueEntryWriter } from '@shared-server/rallar-system/app-inbox/client/app-inbox-queue-entry-writer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus, isExpiredResourceEntry, toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    isExpiredResourceEntry,
+    toKeyAsString,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 const COMMAND = {
@@ -61,7 +67,7 @@ describe('AppInbox durable enqueue', () => {
 
         const entry = await service.enqueue(COMMAND);
 
-        expect(entry).toBe(await queue.getItem(entry.key));
+        expect(entry).toEqual(await queue.getItem(entry.key));
         expect(entry.key).toEqual({
             topicId: 'app-inbox.client-state',
             resourceId: COMMAND.resourceId,
@@ -92,7 +98,7 @@ describe('AppInbox durable enqueue', () => {
         const first = await service.enqueue(COMMAND);
         const duplicate = await service.enqueue(COMMAND);
 
-        expect(duplicate).toBe(first);
+        expect(duplicate).toEqual(first);
         expect(wakeSignals).toBe(2);
     });
 

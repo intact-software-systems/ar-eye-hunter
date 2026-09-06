@@ -14,12 +14,12 @@ import type { QueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pu
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import {
-    InMemoryQueueBox,
     newALRoute,
     newALUntargetedMessage,
     type ALMessage
-} from '@shared/mod.ts';
+} from '@shared/al-contracts/al-contract.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, type ResourceInboxRetryPolicy } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
@@ -239,13 +239,13 @@ describe('createRallarMiddleware', () => {
         const receivedMessages: ALMessage[] = [];
         const message = newALUntargetedMessage(
             'api-v1',
-            newALRoute('app-outbox.rtc-topology', 'group-1', 'group-1'),
-            'RTC_TOPOLOGY_RECOMPUTE',
-            { groupId: 'group-1' }
+            newALRoute('app-outbox.worker-test', 'message-1', 'worker-1'),
+            'worker-test.message.v1',
+            { message: 'outbox work' }
         );
 
         runtime.outboxQueueReader.onOutboxMessageDo(
-            'RTC_TOPOLOGY_RECOMPUTE',
+            'worker-test.message.v1',
             {
                 onMessage: async (receivedMessage) => {
                     receivedMessages.push(receivedMessage);
@@ -267,7 +267,7 @@ describe('createRallarMiddleware', () => {
             }
         });
         const runtime = createRallarMiddleware(testRuntime.options);
-        const queue = testRuntime.inbox;
+        const queue = testRuntime.outbox;
         const outboxBlocked = Promise.withResolvers<void>();
         const receivedInboxMessages: ALMessage[] = [];
         const receivedOutboxMessages: ALMessage[] = [];
@@ -277,7 +277,7 @@ describe('createRallarMiddleware', () => {
             }
         });
         runtime.outboxQueueReader.onOutboxMessageDo(
-            'RTC_TOPOLOGY_RECOMPUTE',
+            'worker-test.message.v1',
             {
                 onMessage: async (receivedMessage) => {
                     receivedOutboxMessages.push(receivedMessage);
@@ -288,25 +288,29 @@ describe('createRallarMiddleware', () => {
         const outboxEntry = await runtime.outboxQueueReader.enqueueIfAbsent(
             newALUntargetedMessage(
                 'api-v1',
-                newALRoute('app-outbox.rtc-topology', 'group-1', 'group-1'),
-                'RTC_TOPOLOGY_RECOMPUTE',
-                { groupId: 'group-1' }
+                newALRoute('app-outbox.worker-test', 'message-1', 'worker-1'),
+                'worker-test.message.v1',
+                { message: 'outbox work' }
             )
         );
-        await runtime.qboxEngine.executeOnce();
-        await vi.waitFor(() => expect(receivedOutboxMessages).toHaveLength(1));
-        await runtime.inboxQueueReader.enqueueIfAbsent(
-            newALUntargetedMessage(
-                'api-v1',
-                newALRoute('app-inbox.group-state', 'group-1', 'request-1'),
-                'group-state.create.v1',
-                { requestId: 'request-1' }
-            )
-        );
-        await runtime.qboxEngine.executeOnce();
+        try {
+            await runtime.qboxEngine.executeOnce();
+            await vi.waitFor(() => expect(receivedOutboxMessages).toHaveLength(1));
+            await runtime.inboxQueueReader.enqueueIfAbsent(
+                newALUntargetedMessage(
+                    'api-v1',
+                    newALRoute('app-inbox.group-state', 'group-1', 'request-1'),
+                    'group-state.create.v1',
+                    { requestId: 'request-1' }
+                )
+            );
+            await runtime.qboxEngine.executeOnce();
 
-        await vi.waitFor(() => expect(receivedInboxMessages).toHaveLength(1));
-        outboxBlocked.resolve();
+            await vi.waitFor(() => expect(receivedInboxMessages).toHaveLength(1));
+        }
+        finally {
+            outboxBlocked.resolve();
+        }
         await vi.waitFor(async () => {
             expect((await queue.getItem(outboxEntry.key))?.status).toBe(EntityStatus.COMPLETED);
         });
