@@ -3416,13 +3416,13 @@ browsers: `plan` on one, `waitForLayout` on all three, `connect`, `activate`, `r
 ---
 
 **Typed stale-epoch rejection (settled question Q3).** A `connect` whose `expectedFormationEpoch` no
-longer matches the group reaches the wire as the generic `group-mutation-rejected` `400`
+longer matched the group reached the wire as the generic `group-mutation-rejected` `400`
 (`packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-lifecycle-fence-rejection.ts`,
-`packages/shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts`). A separate
-mutation-path PR adds `group-connect-stale-epoch` to `GROUP_CONNECT_REJECTION_CODES`, maps it to `409`
-beside the two layout conflicts, extends `toRoomFormationDenial`'s `layout` kind with it, and carries the
-medium-scale gate. Until it lands, the facade reports the case as an unclassified `ApiHttpError` and the
-API reference says so.
+`packages/shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts`). PR #533
+(2026-09-06, the separate mutation-path PR this answer called for) adds `group-connect-stale-epoch` to
+`GROUP_CONNECT_REJECTION_CODES`, maps it to `409` beside the two layout conflicts, reads it through
+`toRoomFormationDenial` as the `layout` kind, drives it from the admission-approval recipe and carried
+the medium-scale gate; every other fenced command keeps the shared rejection.
 
 ## Questions settled in review (2026-09-05)
 
@@ -3434,7 +3434,7 @@ record is the only durable explanation of why the code looks as it does.
 | -- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Q1 | Where the surface lives: `rooms.formation(room?)` plus `session.formation` (B1), flat `rooms.plan(room)` methods, or a top-level `rallar.formation`.                                                                                                                                                                                      | B1. The bound handle is the only shape that gives layout events a home and keeps `BrowserRallarRooms` under the split-review threshold.                               |
 | Q2 | Failure style on the eight commands: throw `ApiHttpError` like every room mutation (B3), or return typed `Either` values as the code standard prefers for expected failures.                                                                                                                                                              | B3, with `toRoomFormationDenial`. Consistency with `rooms.join` beats a lone value-returning capability; revisit only if the whole rooms facade moves to values.      |
-| Q3 | The epoch mismatch on `connect` reaches the wire as the generic `group-mutation-rejected` `400`, so a browser cannot distinguish "someone else moved the group" from a malformed request without string matching. Should the server add a typed `group-connect-stale-epoch` `409`?                                                        | Yes, as a separate mutation-path PR carrying the medium-scale gate; until then the facade reports it as an unclassified `ApiHttpError` and the docs say so.           |
+| Q3 | The epoch mismatch on `connect` reaches the wire as the generic `group-mutation-rejected` `400`, so a browser cannot distinguish "someone else moved the group" from a malformed request without string matching. Should the server add a typed `group-connect-stale-epoch` `409`?                                                        | Yes, as a separate mutation-path PR carrying the medium-scale gate; landed as PR #533 on 2026-09-06.                                                                  |
 | Q4 | The layout fence assumes a receipt's `causalRevision` strictly precedes every publication the transition causes (B6, verified by reading the transition compute and one recipe in Task 2.3 Step 1). If a live check shows a publication with an older `groupRevision`, the fence cannot be expressed with the fields the overlay carries. | Verify in Task 2.3. If it fails, ship `waitForLayout` without `after`, document the reconfiguring caveat, and open a server issue to stamp the epoch on publications. |
 | Q5 | Should waits perform one read-through when the slot is empty at wait start (against a lost publication), or stay pure cache observers (B5)?                                                                                                                                                                                               | B5. Reconnect hydration and `session.refresh()` already own anti-entropy; a wait that does HTTP must decide what a failed GET means, and neither answer is clean.     |
 | Q6 | Bundle budgets: the maintainer has ruled they are adjustable. The plan raises each crossed budget to the smallest whole KiB above the measurement in the same task (Tasks 1.6 and 2.6). Confirm that convention, or name a fixed headroom.                                                                                                | Smallest whole KiB above the measurement, measurement recorded beside the budget and in the PR body, as the headless test already does.                               |
