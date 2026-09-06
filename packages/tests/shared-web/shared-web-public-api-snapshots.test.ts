@@ -243,7 +243,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'matchesRallarMessageSelector',
                 'normalizeApiBaseUrl',
                 'normalizeRallarMessageSelector',
-                'readApiBaseUrl'
+                'readApiBaseUrl',
+                'toRoomFormationDenial'
             ],
             types: [
                 'ApiMiddleware',
