@@ -417,10 +417,18 @@
         "connection": "wsBob",
         "withinMs": 10000,
         "message": {
+          "id": {
+            "senderId": "default-qbox-server"
+          },
+          "route": {
+            "topicId": "al-control",
+            "resourceId": "data-policy-blocked-{runId}:al.control.nack.v1"
+          },
           "payload": {
             "typeId": "al.control.nack.v1"
           }
-        }
+        },
+        "consume": true
       }
     },
     {
@@ -1183,6 +1191,106 @@
             "typeId": "room.match.v1",
             "contentType": "application/json",
             "resource": "{\"move\":\"paused\",\"runId\":\"{runId}\"}"
+          }
+        },
+        "outputs": {
+          "pausedNackResource": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsBob",
+        "withinMs": 10000,
+        "message": {
+          "id": {
+            "senderId": "default-qbox-server"
+          },
+          "route": {
+            "topicId": "al-control",
+            "resourceId": "data-policy-paused-{runId}:al.control.nack.v1"
+          },
+          "payload": {
+            "typeId": "al.control.nack.v1"
+          }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "parsePausedNack",
+      "type": "set",
+      "output": "pausedNack",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.pausedNackResource"
+        }
+      }
+    },
+    {
+      "name": "assertPausedNackShape",
+      "type": "assert",
+      "actual": {
+        "msgId": "{pausedNack.msgId}",
+        "reason": "{pausedNack.reason}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "msgId": "data-policy-paused-{runId}",
+          "reason": "unauthorized"
+        }
+      }
+    },
+    {
+      "name": "crdtSyncStillFlowsWhileTransportIsHalted",
+      "type": "ws.send",
+      "connection": "wsBob",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "data-policy-crdt-halted-{runId}",
+            "ts": 0,
+            "senderId": "{bobSessionId}",
+            "sessionId": "{bobSessionId}",
+            "traceId": "data-policy-crdt-halted-trace-{runId}"
+          },
+          "route": {
+            "topicId": "room.crdt",
+            "resourceId": "data-policy-crdt-halted-doc-{runId}",
+            "contextId": "{applicationId}:{workspaceId}"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "room",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{allowedGroupId}"
+            }
+          },
+          "delivery": {
+            "reliability": "best-effort",
+            "ack": "none"
+          },
+          "payload": {
+            "typeId": "rallar.crdt.sync-request.v1",
+            "contentType": "application/json",
+            "resource": "{\"protocolVersion\":1,\"document\":{\"applicationId\":\"{applicationId}\",\"workspaceId\":\"{workspaceId}\",\"scope\":\"room\",\"documentType\":\"black-box-map\",\"documentId\":\"data-policy-crdt-halted-doc-{runId}\",\"roomRef\":{\"applicationId\":\"{applicationId}\",\"workspaceId\":\"{workspaceId}\",\"groupId\":\"{allowedGroupId}\"}},\"requestId\":\"crdt-sync-halted-{runId}\",\"replicaId\":\"{bobSessionId}\",\"createdAtEpochMs\":1,\"knownUpdateIds\":[]}"
+          }
+        }
+      },
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 10000,
+        "message": {
+          "id": {
+            "msgId": "data-policy-crdt-halted-{runId}"
+          },
+          "route": {
+            "topicId": "room.crdt"
+          },
+          "payload": {
+            "typeId": "rallar.crdt.sync-request.v1"
           }
         }
       }

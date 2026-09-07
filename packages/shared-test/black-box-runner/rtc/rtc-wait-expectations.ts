@@ -1,5 +1,6 @@
 // deno-lint-ignore-file no-explicit-any
 import { compareJson, COMPARISON, toConfig } from '../../json-compare/CompareJson.ts';
+import { toDecodedJsonStringPaths } from '../expectations/to-decoded-json-string-paths.ts';
 import { toWaitCountBound } from '../expectations/wait-count-bound.ts';
 
 const SUCCESS = 'SUCCESS';
@@ -213,6 +214,11 @@ function toLatencyMs(startedAtEpochMs: any, endedAtEpochMs: any): number | undef
     return endedAtEpochMs - startedAtEpochMs;
 }
 
+/** Applied to every observed frame before comparison, never to the expectation. */
+function toDecodedFrame(data: any, interaction: any): any {
+    return toDecodedJsonStringPaths(data, interaction.response?.decodeJsonPaths || []);
+}
+
 function toRtcComparisonConfig(interaction: any): any {
     return toConfig(
         interaction.response?.comparison || COMPARISON.COMPATIBLE,
@@ -234,7 +240,7 @@ function findRtcMessageIndex(
 
         const result = compareJson(
             expectedMessage,
-            message.data,
+            toDecodedFrame(message.data, interaction),
             toRtcComparisonConfig(interaction)
         );
 
@@ -256,7 +262,7 @@ function findRtcMessageIndexFrom(
 
         const result = compareJson(
             expectedMessage,
-            messages[index].data,
+            toDecodedFrame(messages[index].data, interaction),
             toRtcComparisonConfig(interaction)
         );
 
@@ -727,7 +733,8 @@ export interface WaitForRtcMessageCountInput {
 
 function countMatchingRtcMessages(messages: any[], expectedMessage: any, interaction: any): number {
     return messages.filter((message) =>
-        compareJson(expectedMessage, message.data, toRtcComparisonConfig(interaction)).isEqual
+        compareJson(expectedMessage, toDecodedFrame(message.data, interaction), toRtcComparisonConfig(interaction))
+            .isEqual
     ).length;
 }
 

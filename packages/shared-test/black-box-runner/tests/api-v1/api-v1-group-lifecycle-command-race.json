@@ -1,0 +1,420 @@
+{
+  "description": "No-browser API-v1 lifecycle command race: no recipe in the corpus places a lifecycle command inside a parallel block. Two members command plan on one group at once, released together by a barrier so the contention is real rather than adjacent. Both are required to succeed -- planned to planned is the idempotent cell, so the loser is a no-op and not a conflict -- and the formation epoch is required to have advanced exactly once, however many principals asked. initiator any-member is what makes the race expressible; manual plan and connect triggers keep the automation from moving the stage underneath it.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_CMDRACE_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-cmdrace"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_CMDRACE_WORKSPACE_ID",
+      "default": "workspace-cmdrace-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_CMDRACE_GROUP_ID",
+      "default": "cmdrace-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_CMDRACE_PASSWORD",
+      "default": "api-v1-cmdrace-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/cmdrace-register-alice-{runId}",
+        "body": {
+          "username": "cmdrace-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/cmdrace-login-alice-{runId}",
+        "body": {
+          "username": "cmdrace-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/cmdrace-register-bob-{runId}",
+        "body": {
+          "username": "cmdrace-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/cmdrace-login-bob-{runId}",
+        "body": {
+          "username": "cmdrace-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheRaceGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/cmdrace-create-group-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Lifecycle command race {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "initiator": "any-member",
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
+            },
+            "admission": {
+              "mode": "open"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "lifecycleState": "forming"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/cmdrace-bob-joins-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectAlicePresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/cmdrace-alice-presence-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "cmdrace-generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectBobPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/cmdrace-bob-presence-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "cmdrace-generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "twoMembersPlanTheSameGroupAtOnce",
+      "type": "parallel",
+      "request": {
+        "barrier": true,
+        "timeoutMs": 60000
+      },
+      "groups": [
+        {
+          "name": "alicePlans",
+          "steps": [
+            {
+              "name": "alicePlansTheGroup",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "POST",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/plan/requests/cmdrace-alice-plans-{runId}",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "body": {}
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "group": {
+                    "groupId": "{groupId}",
+                    "lifecycleState": "planned"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "bobPlans",
+          "steps": [
+            {
+              "name": "bobPlansTheGroup",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "POST",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/plan/requests/cmdrace-bob-plans-{runId}",
+                "headers": {
+                  "Authorization": "{bobAuthHeader}",
+                  "x-client-id": "{bobClientId}"
+                },
+                "body": {}
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "group": {
+                    "groupId": "{groupId}",
+                    "lifecycleState": "planned"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "barrier": true,
+        "body": {
+          "groupCount": 2,
+          "failure": 0
+        }
+      }
+    },
+    {
+      "name": "theGroupSettledInPlannedExactlyOnce",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 15,
+          "maxDurationMs": 10000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.3
+        },
+        "outputs": {
+          "settledEpoch": "body.group.formationEpoch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned"
+          }
+        }
+      }
+    },
+    {
+      "name": "theRaceAdvancedTheFormationEpochOnce",
+      "type": "assert",
+      "actual": {
+        "epoch": "{settledEpoch}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "epoch": 1
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

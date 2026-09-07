@@ -1,0 +1,617 @@
+{
+  "description": "No-browser API-v1 group event cursor paging across a three-node cluster. The corpus requests /events/page twice and asserts only its status: no limit, no cursor, and hasMore is read nowhere. Six events are written across all three nodes, then a bounded page is opened on the primary and CONTINUED on the secondary and again on the tertiary, because the cursor is three durable event columns rather than node-local state. The pages must not overlap and the remainder must end. Two silent fallbacks are pinned as well: the three cursor parameters are required together and a partial cursor is dropped rather than rejected, so a caller sending only the event id re-reads page one forever; and a zero or non-numeric limit falls back to the default 100 instead of answering 400. Finally the node that wrote none of the events must serve the identical first page.",
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "apiSecondary": {
+      "env": "RALLAR_API_BASE_URL_SECONDARY",
+      "default": "http://127.0.0.1:18081"
+    },
+    "apiTertiary": {
+      "env": "RALLAR_API_BASE_URL_TERTIARY",
+      "default": "http://127.0.0.1:18082"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_EVENTPAGING_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-eventpaging"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_EVENTPAGING_WORKSPACE_ID",
+      "default": "workspace-eventpaging-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_EVENTPAGING_GROUP_ID",
+      "default": "eventpaging-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_EVENTPAGING_PASSWORD",
+      "default": "api-v1-eventpaging-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "secondary": {
+      "type": "http",
+      "baseUrl": "{apiSecondary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "tertiary": {
+      "type": "http",
+      "baseUrl": "{apiTertiary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/eventpaging-register-alice-{runId}",
+        "body": {
+          "username": "eventpaging-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/eventpaging-login-alice-{runId}",
+        "body": {
+          "username": "eventpaging-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/eventpaging-register-bob-{runId}",
+        "body": {
+          "username": "eventpaging-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/eventpaging-login-bob-{runId}",
+        "body": {
+          "username": "eventpaging-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheGroupOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/eventpaging-create-group-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Event cursor paging {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "bobJoinsOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/eventpaging-bob-joins-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectAlicePresenceOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/eventpaging-alice-presence-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "eventpaging-generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectBobPresenceOnTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/eventpaging-bob-presence-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "eventpaging-generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "heartbeatAliceOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/heartbeat/requests/eventpaging-alice-heartbeat-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "eventpaging-generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "heartbeatBobOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/heartbeat/requests/eventpaging-bob-heartbeat-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "eventpaging-generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "theFirstPageIsBoundedAndKnowsThereIsMore",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events/page?limit=2",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "pageOneEvents": "body.events",
+          "pageOneFirstEventId": "body.events.0.eventId",
+          "pageOneHasMore": "body.hasMore",
+          "pageOneCursorSnapshotVersion": "body.nextCursor.snapshotVersion",
+          "pageOneCursorOccurredAtEpochMs": "body.nextCursor.occurredAtEpochMs",
+          "pageOneCursorEventId": "body.nextCursor.eventId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "hasMore": true
+        }
+      }
+    },
+    {
+      "name": "theFirstPageHeldExactlyTheRequestedTwo",
+      "type": "assert",
+      "actual": {
+        "events": "{pageOneEvents}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "events",
+            "length": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "theSecondPageContinuesOnAnotherNode",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events/page?limit=2&afterSnapshotVersion={pageOneCursorSnapshotVersion}&afterOccurredAtEpochMs={pageOneCursorOccurredAtEpochMs}&afterEventId={pageOneCursorEventId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "pageTwoEvents": "body.events",
+          "pageTwoFirstEventId": "body.events.0.eventId",
+          "pageTwoHasMore": "body.hasMore",
+          "pageTwoCursorSnapshotVersion": "body.nextCursor.snapshotVersion",
+          "pageTwoCursorOccurredAtEpochMs": "body.nextCursor.occurredAtEpochMs",
+          "pageTwoCursorEventId": "body.nextCursor.eventId"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "theSecondPageDoesNotRepeatTheFirst",
+      "type": "assert",
+      "actual": {
+        "events": "{pageTwoEvents}",
+        "first": "{pageTwoFirstEventId}",
+        "cursor": "{pageTwoCursorEventId}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "events",
+            "length": 2
+          },
+          {
+            "path": "first",
+            "notEquals": "{pageOneFirstEventId}"
+          },
+          {
+            "path": "first",
+            "notEquals": "{pageOneCursorEventId}"
+          },
+          {
+            "path": "cursor",
+            "notEquals": "{pageOneCursorEventId}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "theRemainderFitsInOnePageOnAThirdNode",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events/page?limit=500&afterSnapshotVersion={pageTwoCursorSnapshotVersion}&afterOccurredAtEpochMs={pageTwoCursorOccurredAtEpochMs}&afterEventId={pageTwoCursorEventId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "pageThreeEvents": "body.events",
+          "pageThreeFirstEventId": "body.events.0.eventId",
+          "pageThreeHasMore": "body.hasMore"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "hasMore": false
+        }
+      }
+    },
+    {
+      "name": "aPartialCursorIsSilentlyIgnored",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events/page?limit=2&afterEventId={pageOneCursorEventId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "partialCursorPageEvents": "body.events",
+          "partialCursorPageFirstEventId": "body.events.0.eventId",
+          "partialCursorPageHasMore": "body.hasMore"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "hasMore": true
+        }
+      }
+    },
+    {
+      "name": "aZeroLimitFallsBackToTheDefault",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events/page?limit=0",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "zeroLimitPageEvents": "body.events",
+          "zeroLimitPageFirstEventId": "body.events.0.eventId",
+          "zeroLimitPageHasMore": "body.hasMore"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "hasMore": false
+        }
+      }
+    },
+    {
+      "name": "ANonNumericLimitFallsBackToTheDefault",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events/page?limit=not-a-number",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "textLimitPageEvents": "body.events",
+          "textLimitPageFirstEventId": "body.events.0.eventId",
+          "textLimitPageHasMore": "body.hasMore"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "hasMore": false
+        }
+      }
+    },
+    {
+      "name": "everyIgnoredQueryStartedFromTheTop",
+      "type": "assert",
+      "actual": {
+        "partialCursor": "{partialCursorPageFirstEventId}",
+        "zeroLimit": "{zeroLimitPageFirstEventId}",
+        "textLimit": "{textLimitPageFirstEventId}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "partialCursor",
+            "equals": "{pageOneFirstEventId}"
+          },
+          {
+            "path": "zeroLimit",
+            "equals": "{pageOneFirstEventId}"
+          },
+          {
+            "path": "textLimit",
+            "equals": "{pageOneFirstEventId}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "everyNodeServesTheSameFirstPage",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events/page?limit=2",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "tertiaryPageOneEvents": "body.events",
+          "tertiaryPageOneFirstEventId": "body.events.0.eventId",
+          "tertiaryPageOneHasMore": "body.hasMore",
+          "tertiaryPageOneCursorSnapshotVersion": "body.nextCursor.snapshotVersion",
+          "tertiaryPageOneCursorOccurredAtEpochMs": "body.nextCursor.occurredAtEpochMs",
+          "tertiaryPageOneCursorEventId": "body.nextCursor.eventId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "hasMore": true
+        }
+      }
+    },
+    {
+      "name": "theThirdNodeAgreedOnTheFirstPage",
+      "type": "assert",
+      "actual": {
+        "first": "{tertiaryPageOneFirstEventId}",
+        "cursor": "{tertiaryPageOneCursorEventId}",
+        "hasMore": "{tertiaryPageOneHasMore}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparison": "exact",
+        "body": {
+          "first": "{pageOneFirstEventId}",
+          "cursor": "{pageOneCursorEventId}",
+          "hasMore": true
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

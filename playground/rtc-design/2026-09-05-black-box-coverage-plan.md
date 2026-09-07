@@ -1,7 +1,16 @@
 # API-v1 Black-Box Coverage — Implementation Plan (2026-09-05)
 
-Status: **planned, not started.** Written after the group-activation workstream merged (slices 0–14,
-PRs #483–#493), when the corpus could be audited as a finished whole rather than slice by slice.
+Status: **slices 1–5 and 7 delivered, slice 6 partly delivered.** Slices 1, 2 and 4 landed in earlier
+merged PRs; slices 3, 5, 6 and 7 are on branch `codex/black-box-slice3-socket-contents`. Written after
+the group-activation workstream merged (slices 0–14, PRs #483–#493), when the corpus could be audited
+as a finished whole rather than slice by slice. Each slice table below marks its own rows; the three
+cluster-profile recipes and the presence-lease recipe are authored and preflight-clean but not yet
+verified against a live cluster.
+
+Slice 6's one remaining gap is the RETRY/FAILED half of the `api-v1-admin-support` append, which no
+sequence of HTTP requests can reach; it is recorded under **Not in this plan** with the reason. Two framework defects
+found while writing the slices were fixed here (open findings 13 and 14); one product contract
+divergence is open for a maintainer (finding 12).
 
 Implements nothing new in the server. Every slice below is **recipe authoring plus matrix
 registration** — see D1, which is the finding that shapes the whole plan.
@@ -140,16 +149,40 @@ the guard on an active read), and it is already pinned green by
 The corpus proves frames _arrive_. It does not prove what is _in_ them. This slice is sequenced third
 because the assertion shapes it establishes are reused by slices 4 and 5.
 
-| Recipe                                   | Pins                                                                                                                     |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `api-v1-overlay-topology-publication`    | the published `overlay.topology` body equals the authoritative HTTP topology read for the same layout                    |
-| `api-v1-group-state-delta-contents`      | the delta envelope's causal chain and its **removal** sets — the stronger and entirely uncovered half                    |
-| `api-v1-group-lifecycle-events`          | a `group-state.event` waited for by named `eventType`, including `group-activation-status-changed` observed on a socket  |
-| _(append to `api-v1-group-data-policy`)_ | the transport-halt NACK to the **sender** (today's step has no `expect` at all), and that a pause is topic-**selective** |
+| Recipe                                   | Pins                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-overlay-topology-publication`    | **delivered**: the published broadcast body compared field for field against the authoritative HTTP topology at the same version, selected by its own `degreeLimit` so the unicast hydration frame cannot satisfy it, and both members required to receive the same body               |
+| `api-v1-group-state-delta-contents`      | **delivered**: `removedSessionIds` from the one route that populates it, observed on a second peer because the disconnecting session never sees its own removal; `removedMemberPrincipalIds` pinned empty; and a member removal dropping a live session while naming it in neither set |
+| `api-v1-group-lifecycle-events`          | **delivered** as an append to `api-v1-group-status-lifecycle`: the route-less `group-activation-status-changed` selected on the socket by `eventType` via `expect.decodeJsonPaths`, asserted service-authored and causally chained                                                     |
+| _(append to `api-v1-group-data-policy`)_ | **delivered**: the transport-halt NACK is parsed and its shape asserted on the **sender**, and CRDT sync still flows while data is halted, which is the pause being topic-selective                                                                                                    |
 
 **Hazards.** `aliceDoesNotReceivePausedData` is currently indistinguishable from the whole room going
 dark — the selective-pause assertion needs a frame that is _supposed_ to survive the halt. Cross-topic
 ordering is not guaranteed, so no assertion may depend on a total order across topics.
+
+**Two blockers found while researching this slice, both verified against the server.**
+
+`eventType` **cannot be selected by a `ws.wait`**, so `api-v1-group-lifecycle-events` cannot be
+written as the plan describes. The event sits inside `payload.resource`, which is a JSON _string_
+(`state-sync-entry-computation.ts:199` does `JSON.stringify(effect.payload)`), and the recorder
+parses only the outer frame (`local-websocket-state.ts:40`). `CompareJson` has no substring,
+regex or decode step — only whole-value tokens and `a|b` alternation — so no `expect.message` can
+reach the field. A recipe can already `set`/`jsonParse` a frame it has _matched_, but it cannot
+_select_ which frame to wait for. **The fix is a framework capability, not a weaker recipe:** the
+wait matcher needs to decode a declared JSON-string field before comparing. Until it exists this
+recipe stays unwritten; nothing in the corpus should pretend to pin an `eventType`.
+
+Separately, **no HTTP command produces `group-activation-status-changed`** — it is route-less by
+design, driven by the criterion. The recipe must reach it by walking the managed lifecycle, the
+way `api-v1-group-status-lifecycle` already does.
+
+`removedMemberPrincipalIds` **can never be populated**. It is a hard-coded `[]` literal at
+`group-presence-summary-effects.ts:346`; member removal is expressed instead as a `members[]` row
+carrying `removed`/`left`/`banned` status and audit. So `api-v1-group-state-delta-contents` pins
+the one reachable removal — `removedSessionIds`, populated only by the self-disconnect route and
+at most one entry — plus the asymmetry worth having: a member removal shrinks `activeSessionIds`
+while `removedSessionIds` stays empty. The empty literal is pinned as a standing invariant, and
+recorded here as a product question rather than absorbed silently.
 
 **Gates:** baseline plus both black-box profiles.
 
@@ -160,11 +193,11 @@ of these: several are settle-sequenced, not raced.
 
 | Recipe                                   | Pins                                                                                                                                                                                                                                                                                                                                                          |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `api-v1-group-lifecycle-command-race`    | two authorized principals commanding one group at once — the `planned --plan--> planned` idempotent cell and `initiator: 'any-member'`                                                                                                                                                                                                                        |
-| `api-v1-group-admission-decision-race`   | grant vs decline on the same pending principal (asymmetric: `400` vs `200` no-op, exactly one decision event); two grants for one seat                                                                                                                                                                                                                        |
+| `api-v1-group-lifecycle-command-race`    | **delivered**: two members command `plan` on one group at once behind a `barrier`, both required to succeed because `planned --plan--> planned` is the idempotent cell, and the formation epoch required to advance exactly once                                                                                                                              |
+| `api-v1-group-admission-decision-race`   | **delivered**, and it corrected this row: grant and decline raced on one pending seat both answer `200`, not the `400` vs `200` predicted here. The losing decision is a silent no-op. The seat is pinned to hold exactly one outcome                                                                                                                         |
 | `api-v1-connect-layout-fence`            | landed 2026-09-06 as `api-v1-group-connect-fence` (#535): a second member's presence replans the published layout and `connect` naming the first identity is the typed `409`; the stale-epoch `409` #533 added and the group row across both refusals ride along. `no-planned-layout` stays with the compute tests: the forming tombstone precedes every plan |
-| `api-v1-activation-command-race`         | a principal's `activate` racing the criterion's own fenced `activate`; a `join` racing the transition that closes the lobby                                                                                                                                                                                                                                   |
-| `api-v1-reconfigure-landing-concurrency` | two concurrent `reconfigure`s — and the `apply` landing, which has **no** coverage at all, concurrent or sequential                                                                                                                                                                                                                                           |
+| `api-v1-activation-command-race`         | **delivered**: a latecomer's join raced against the activation that closes the lobby, behind a barrier. Activation is manual on purpose -- the criterion has no HTTP surface, so racing it would be settle-sequenced (D7). Neither side asserts an outcome; the lobby must be closed whichever way it went                                                    |
+| `api-v1-reconfigure-landing-concurrency` | **delivered**: two reconfigures asking different degree limits released together by a barrier, under `reconfigureLanding: "apply"` -- which no recipe in the corpus had ever set, so a landing had never been observed. The row settles on exactly one of the two limits and the layout version must advance                                                  |
 
 **Hazards.** The connect-trigger latch and the deadline arm have no HTTP surface, so those legs are
 settle-sequenced (D7). The `managed` preset auto-connects after plan since slice 11a — every recipe
@@ -179,12 +212,12 @@ recipe changes the registered read population.
 Today exactly one lifecycle recipe runs against three nodes (D9). Everything else about the lifecycle
 is pinned single-node.
 
-| Recipe                                  | Pins                                                                                                                         |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `api-v1-group-lifecycle-cluster`        | a command issued to a node that handled none of the group's setup writes, read back on the two that did                      |
-| `api-v1-group-lifecycle-ws-convergence` | the first cluster recipe combining a lifecycle transition with any WebSocket; a client-to-server frame on a non-primary node |
-| `api-v1-group-governance-fencing`       | ban, admission and removal fencing across nodes; logout on node A fencing a live socket on node B                            |
-| `api-v1-group-event-cursor-paging`      | event cursor paging over HTTP at all, and continued on a second node                                                         |
+| Recipe                                  | Pins                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-group-lifecycle-cluster`        | folded into `api-v1-group-lifecycle-cluster-ws`: the setup-free node serving a lifecycle command and the two writing nodes reading it back are the same recipe's first half                                                                                                                                                                     |
+| `api-v1-group-lifecycle-ws-convergence` | **delivered** as `api-v1-group-lifecycle-cluster-ws`: the connect command served by the node that wrote none of the setup, read back on the two that did, with both sockets opened against `RALLAR_WS_BASE_URL_SECONDARY` -- the first recipe in the corpus to reference it -- and the delta bound to the tertiary command by its own requestId |
+| `api-v1-group-governance-fencing`       | **partly delivered**: ban, unban, removal and both admission decisions each written on one node and enforced on the others, every denial named by code. The logout-fences-a-live-socket half is NOT delivered -- `/api/ws/:sessionId` authenticates only at upgrade -- unverified                                                               |
+| `api-v1-group-event-cursor-paging`      | **delivered**: a bounded page opened on the primary, continued on the secondary and again on the tertiary. Two silent fallbacks fall out of it -- a partial cursor is dropped rather than rejected, and a zero or non-numeric limit falls back to 100                                                                                           |
 
 **Hazards.** `RALLAR_WS_BASE_URL_SECONDARY` is exported by the runner and referenced by zero recipes;
 the only non-primary socket in the corpus is receive-only. Expect the first client-to-server frame on
@@ -196,12 +229,12 @@ a non-primary node to surface wiring nobody has exercised.
 
 Durable machinery whose late-firing behaviour is asserted nowhere.
 
-| Recipe                                  | Pins                                                                                                                        |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `api-v1-group-clock-after-the-fact`     | a formation timer or activation clock firing after the group moved on; the evidence-expiry heartbeat decaying a quiet group |
-| `api-v1-group-reconnect-across-stages`  | reconnect hydration across a lifecycle stage change; reconnecting to a different node than the one that dropped you         |
-| `api-v1-group-presence-lease-lifecycle` | presence-lease expiry against a lifecycle-managed group                                                                     |
-| _(append to `api-v1-admin-support`)_    | explain against a **real** RETRY or FAILED queue entry, and the FAILED row in the queue breakdown                           |
+| Recipe                                  | Pins                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-group-clock-after-the-fact`     | **delivered** in two recipes: `api-v1-activation-clock-decay` for the evidence-expiry arm (an already-stale `createdAtEpochMs` activates and the +30s heartbeat decays it, pinned to two status writes), and `api-v1-group-activation-partial-coverage` for the `degraded` band it cannot reach -- one observed edge of two or three, held by the dwell |
+| `api-v1-group-reconnect-across-stages`  | **delivered**: the socket is dropped during `connecting`, the group is activated from a third node while the client is offline, and the client reconnects on a node that never held the socket it replaces. The layout version must not move -- a stage change is not a replan                                                                          |
+| `api-v1-group-presence-lease-lifecycle` | **delivered**: the two things that make a lapsed lease vanish, separated -- the read-time filter moves the roster with no write and no change token, and only the later sweep deletes the row, names itself `expired` in the events, and advances the revision                                                                                          |
+| _(append to `api-v1-admin-support`)_    | **partly delivered**: a real client, a real group and the never-requested `explain/crdt-document` are driven, and a resolved narrative must carry facts a missing-target one does not. The RETRY and FAILED arms are not reachable -- see **Not in this plan**                                                                                          |
 
 **Hazards.** The evidence-expiry arm is the `degraded` band no read can derive — it must be asserted
 off the group row, not the formation view, because only a writer can put a status there.
@@ -212,12 +245,12 @@ off the group row, not the formation view, because only a writer can put a statu
 
 Lower product risk, real coverage debt. Batched last deliberately.
 
-| Recipe                                  | Pins                                                                                                           |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `api-v1-admin-authorization-boundary`   | the whole admin surface against an authenticated **non-admin** principal, centred on the CRDT admin read guard |
-| `api-v1-crdt-admin-write-surface`       | backup-export, rebuild-projection and a successful erase                                                       |
-| `api-v1-graph-diagnostics-read`         | the two graph diagnostic reads the OpenAPI assertion covers but no recipe requests                             |
-| _(append to `api-v1-admin-operations`)_ | the six admin read/reset routes and the three unexercised explain routes                                       |
+| Recipe                                  | Pins                                                                                                                                                                                                                                                    |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-v1-admin-authorization-boundary`   | **delivered**: one conceptual denial reaching the client in four shapes, two of them wrong -- the CRDT admin reads answer `400` and the admin operations mutations answer `500`, both for what is an authorization refusal. Every body compared exactly |
+| `api-v1-crdt-admin-write-surface`       | **delivered**: backup-export, rebuild-projection and erase against an absent document. The documented `result: null` arm turns out to be unreachable -- the key is dropped instead (finding 12)                                                         |
+| `api-v1-graph-diagnostics-read`         | **delivered**: both reads as cache state machines. `never` on a cold cache is the only 404 for a group that exists; `always` must advance a version the compute itself never advances                                                                   |
+| _(append to `api-v1-admin-operations`)_ | **delivered**: the four unexercised scoped/unscoped state and CRDT reads, `system`, and the two CRDT admin operations. `metrics/reset` is excluded on purpose -- it is server-wide                                                                      |
 
 **Gates:** baseline plus both black-box profiles.
 
@@ -414,6 +447,30 @@ And a `parallel` group's steps use the runner's `{TRANSPORT: {request, response}
 shape, not the flat `{name, type, expect}` shape recipes use at the top level; a group written the
 flat way executes nothing and reports `success: 0` rather than failing.
 
+## Open findings
+
+Raised while writing the slices. Each is a product or contract question that a recipe
+surfaced and could not itself resolve, recorded here rather than absorbed into a weaker
+assertion. None is fixed by the recipes that found them.
+
+| #  | Finding                                                                                                                                                                                                                                                                                                                                                      | Where                                                                                                    | Status                                                           |
+| -- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 1  | The transfer route returns `400 group-mutation-rejected` for a non-member target, a status its OpenAPI entry does not declare (it lists 200/401/403/404/409). The sibling `/director/appoint` route does declare 400, so the omission reads as a contract gap.                                                                                               | `api-v1-openapi.yaml:1108-1139`; pinned by `api-v1-group-ownership-transfer`                             | open — contract or route must change                             |
+| 2  | `removedMemberPrincipalIds` in the group-state delta envelope is a hard-coded `[]` literal that no HTTP mutation can populate. Member removal is expressed as a `members[]` row instead.                                                                                                                                                                     | `group-presence-summary-effects.ts:346`                                                                  | open — dead field, or a missing write                            |
+| 3  | `eventType` is not selectable by a `ws.wait` without `expect.decodeJsonPaths`, because the envelope is a JSON string and the comparator has no decode step. The capability was added; the underlying shape is still that a socket frame hides its own type inside a string.                                                                                  | `state-sync-entry-computation.ts:199`                                                                    | capability added; shape question open                            |
+| 4  | No HTTP command produces `group-activation-status-changed`. It is route-less by design, reachable only by walking the managed lifecycle, which makes it observable in exactly one recipe.                                                                                                                                                                    | criterion-driven, `group-activation-status-observer.ts`                                                  | open — accepted design, noted so no one hunts for a route        |
+| 5  | A room denial reaches the wire as `reason: 'unauthorized'` for every cause. `toPolicyDeniedDecision` flattens the policy code and message into the server log only, so a transport halt and an authorization failure are indistinguishable to a client.                                                                                                      | `ws-topic-room-authorizer.ts:200-211`                                                                    | open — clients cannot tell why they were refused                 |
+| 6  | The two `api-v1-group-formation-burst-*` recipes fail under `pglite-memory` at `captureFormationMetricsT0Secondary`; they need a secondary server that backend does not start. With this branch's recipes the green baseline for that profile is **passed=57 failed=2**, not 59/0.                                                                           | matrix profile `api-v1-black-box`                                                                        | open — profile/recipe mismatch                                   |
+| 7  | `api-v1-crdt-append-history-recipe`'s strict expansion fails on pristine `main`: a `"sequenceGaps": []` asserted under a partial-match comparison, which the strict preflight rejects. The per-recipe debt ratchet tolerates it but the test invokes the CLI directly, which does not.                                                                       | `api-v1-crdt-append-history.json:733`                                                                    | open — red on main                                               |
+| 8  | Grant and decline raced against the same pending principal **both answer `200`**. The losing decision is a silent no-op, so a caller cannot tell whether its decision took effect. Slice 4 predicted `400` vs `200`; the server does not distinguish them.                                                                                                   | raced admission routes; pinned by `api-v1-group-admission-decision-race`                                 | open — a losing decision is indistinguishable from a winning one |
+| 9  | An unauthorized **admin operations mutation** answers `500 api-mutation-unexpected`, not `403`. `requireApiAdminSession` throws a statusless `Error`, so `readStatus` returns undefined and the unexpected-failure fallback claims a server fault for what is a refusal.                                                                                     | `register-admin-operation-mutation-routes.ts` error map; pinned by `api-v1-admin-authorization-boundary` | open — a refusal reported as a server fault                      |
+| 10 | An unauthorized **CRDT admin read** answers `400`, not `403`. `forbidden()` carries 403 but `toAuthErrorResponse` honours only `RequestAuthFailure`. That middleware is the **only** authorization on those four routes, and every existing unit test of them runs with `requireAuth: false`, so it had never been executed by any test or recipe until now. | `request-auth-service.ts:133`; `register-crdt-admin-routes.ts:98`                                        | open — wrong status, and the guard was untested                  |
+| 11 | The strict preflight's produced-output collector read only top-level steps, so any output declared inside a `parallel` group was reported `MISSING_OUTPUT_REFERENCE` even though it resolves correctly at runtime. **Fixed** on this branch; the collector now descends into group steps and a test pins it.                                                 | `plan-preflight.ts` `producedOutputsFromSteps`                                                           | closed — fixed here                                              |
+| 12 | Backup-export of an absent document answers `{"ok":true}` with no `result` key. `RallarCrdtBackupBundleApiResponse` declares `result` **required** and nullable -- "or null when no document exists" -- but the export returns `undefined` and `withAdminError` hands that to `context.json`, which drops it. The documented null arm is unreachable.        | `register-crdt-admin-routes.ts:262`; pinned by `api-v1-crdt-admin-write-surface`                         | open — the declared response shape is not served                 |
+| 13 | An assert comparator `{path, equals}` was never template-resolved: both are transform-operator keys, so the placeholder resolver read the entry as a transform spec and skipped it, leaving the comparator to compare against the literal `"{token}"`. `gt` resolved, which is what made it look like a recipe bug. **Fixed** here; two tests pin it.        | `black-box-value-resolution.ts` `resolvePlaceholders`                                                    | closed — fixed here                                              |
+| 14 | `expect.anyOf` on an HTTP step is read by nothing: statuses come from `status`/`statusCodes` and bodies from `bodyAnyOf`, and a 2xx answer with no expected status passes, so six steps across three recipes on this branch asserted nothing while staying green. Converted to `expect.statusCodes`; the strict preflight now reports it.                    | `http-response-expectations.ts` `expectedHttpStatusCodes`                                                | closed — gate added, recipes corrected                           |
+| 15 | A lapsed presence lease leaves `activeSessions` at READ time -- `toActiveSessions` filters on the observation instant -- with no write and no change to `causalRevision.presenceRevision`. Until the 60s sweep lands, a client keyed on `minPresenceRevision` sees a different roster from a plain read of the same group. The sweep then does advance it.   | `assemble-group-state-snapshot.ts` `toActiveSessions`; pinned by `api-v1-group-presence-lease-lifecycle` | open — a read-time filter the change token cannot see            |
+
 ## Not in this plan
 
 - **WS upgrade negative paths** (reused, expired, foreign, missing ticket) — worth doing, but they
@@ -425,6 +482,17 @@ flat way executes nothing and reports `success: 0` rather than failing.
   `unauthorized` on the wire, so the code cannot be observed there. Asserting it requires a wire
   change the group-activation plan deliberately deferred (its "Typed WS NACK reasons" entry), so this
   is blocked on that decision, not on a recipe.
+- **`POST /api/admin/operations/metrics/reset`.** It resets the server-wide RTC-topology and
+  group-formation metric owners, and the formation burst and churn recipes read exactly those
+  counters off the same server under the same run id. Exercising it inside either black-box profile
+  would corrupt their measurements, so it needs a profile of its own — the same shape of problem as
+  the AppInbox wait-budget entry above, and it should be costed with it.
+- **Explaining a RETRY or FAILED queue entry.** `DequeueController` needs five consecutive handler
+  throws to fail an entry, and a typed rejection is a value that completes it successfully, so no
+  sequence of HTTP requests can produce either state. There is no fault-injection surface, and
+  hard-coding an internal queue key to explain someone else's entry would test the key format rather
+  than the narrative. The reachable half — real client, group and CRDT-document targets — is
+  delivered on `api-v1-admin-support`; this half needs a fault-injection seam that does not exist.
 - **The four acceptance scenarios** the group-activation plan records as needing live-RTC, headless or
   browser-side infrastructure. Unchanged by this plan.
 

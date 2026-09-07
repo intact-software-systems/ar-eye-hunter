@@ -1,0 +1,799 @@
+{
+  "description": "No-browser API-v1 group governance fencing across a three-node cluster. Ban, unban, removal and the two admission decisions are each WRITTEN on one node and ENFORCED or read back on the nodes that never saw the write. That is the whole point: group snapshots are served through a node-local cache, so a fence that is only correct on the writing node is exactly the regression this catches, and no existing recipe crosses a node with any of these. Every denial names its code rather than its status (D8): a banned principal is refused with member-banned on both non-writing nodes, an unban written on the tertiary lets the rejoin through on the secondary, and a removal written on the secondary refuses presence on the tertiary. The admission half parks a request on one node, decides it on another, and requires the decision to be visible on the node that parked it -- once as a grant and once as a decline, with both landing on one roster read.",
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "apiSecondary": {
+      "env": "RALLAR_API_BASE_URL_SECONDARY",
+      "default": "http://127.0.0.1:18081"
+    },
+    "apiTertiary": {
+      "env": "RALLAR_API_BASE_URL_TERTIARY",
+      "default": "http://127.0.0.1:18082"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_GOVFENCING_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-govfencing"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_GOVFENCING_WORKSPACE_ID",
+      "default": "workspace-govfencing-{runId}"
+    },
+    "openGroupId": {
+      "env": "RALLAR_BB_GOVFENCING_OPEN_GROUP_ID",
+      "default": "govfencing-open-group-{runId}"
+    },
+    "gatedGroupId": {
+      "env": "RALLAR_BB_GOVFENCING_GATED_GROUP_ID",
+      "default": "govfencing-gated-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_GOVFENCING_PASSWORD",
+      "default": "api-v1-govfencing-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "secondary": {
+      "type": "http",
+      "baseUrl": "{apiSecondary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "tertiary": {
+      "type": "http",
+      "baseUrl": "{apiTertiary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerFounder",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/govfencing-register-founder-{runId}",
+        "body": {
+          "username": "govfencing-founder-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "founder client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginFounder",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/govfencing-login-founder-{runId}",
+        "body": {
+          "username": "govfencing-founder-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "founderClientId": "body.clientId",
+          "founderSessionId": "body.sessionId",
+          "founderAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveFounderAuthHeader",
+      "type": "set",
+      "output": "founderAuthHeader",
+      "secret": true,
+      "redactAs": "founderAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.founderAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerOffender",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/govfencing-register-offender-{runId}",
+        "body": {
+          "username": "govfencing-offender-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "offender client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOffender",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/govfencing-login-offender-{runId}",
+        "body": {
+          "username": "govfencing-offender-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "offenderClientId": "body.clientId",
+          "offenderSessionId": "body.sessionId",
+          "offenderAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOffenderAuthHeader",
+      "type": "set",
+      "output": "offenderAuthHeader",
+      "secret": true,
+      "redactAs": "offenderAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.offenderAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerNewcomer",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/govfencing-register-newcomer-{runId}",
+        "body": {
+          "username": "govfencing-newcomer-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "newcomer client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginNewcomer",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/govfencing-login-newcomer-{runId}",
+        "body": {
+          "username": "govfencing-newcomer-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "newcomerClientId": "body.clientId",
+          "newcomerSessionId": "body.sessionId",
+          "newcomerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveNewcomerAuthHeader",
+      "type": "set",
+      "output": "newcomerAuthHeader",
+      "secret": true,
+      "redactAs": "newcomerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.newcomerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheOpenGroupOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/govfencing-create-open-group-{runId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "groupId": "{openGroupId}",
+          "displayName": "Governance fencing open {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{founderClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{openGroupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "theOffenderJoinsOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{openGroupId}/members/{offenderClientId}/requests/govfencing-offender-joins-{runId}",
+        "headers": {
+          "Authorization": "{offenderAuthHeader}",
+          "x-client-id": "{offenderClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{offenderClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theNewcomerJoinsOnTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{openGroupId}/members/{newcomerClientId}/requests/govfencing-newcomer-joins-{runId}",
+        "headers": {
+          "Authorization": "{newcomerAuthHeader}",
+          "x-client-id": "{newcomerClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "theFounderBansTheOffenderOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{openGroupId}/members/{offenderClientId}/ban/requests/govfencing-ban-offender-{runId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{offenderClientId}",
+              "status": "banned"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theBanFencesTheOffenderOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{openGroupId}/members/{offenderClientId}/requests/govfencing-offender-rejoins-secondary-{runId}",
+        "headers": {
+          "Authorization": "{offenderAuthHeader}",
+          "x-client-id": "{offenderClientId}"
+        },
+        "body": {
+          "status": "active"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "member-banned",
+          "status": 403
+        }
+      }
+    },
+    {
+      "name": "theBanFencesTheOffenderOnTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{openGroupId}/members/{offenderClientId}/requests/govfencing-offender-leaves-tertiary-{runId}",
+        "headers": {
+          "Authorization": "{offenderAuthHeader}",
+          "x-client-id": "{offenderClientId}"
+        },
+        "body": {
+          "status": "left"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "member-banned",
+          "status": 403
+        }
+      }
+    },
+    {
+      "name": "theFounderUnbansOnTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{openGroupId}/members/{offenderClientId}/unban/requests/govfencing-unban-offender-{runId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{offenderClientId}",
+              "status": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theLiftedBanLetsTheRejoinThroughOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{openGroupId}/members/{offenderClientId}/requests/govfencing-offender-returns-secondary-{runId}",
+        "headers": {
+          "Authorization": "{offenderAuthHeader}",
+          "x-client-id": "{offenderClientId}"
+        },
+        "body": {
+          "status": "active"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{offenderClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theFounderRemovesTheNewcomerOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{openGroupId}/members/{newcomerClientId}/remove/requests/govfencing-remove-newcomer-{runId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{newcomerClientId}",
+              "status": "removed"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theRemovalFencesTheNewcomerOnTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{openGroupId}/members/{newcomerClientId}/requests/govfencing-newcomer-returns-tertiary-{runId}",
+        "headers": {
+          "Authorization": "{newcomerAuthHeader}",
+          "x-client-id": "{newcomerClientId}"
+        },
+        "body": {
+          "status": "active"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "type": "api-mutation-failure",
+          "version": "canonical.v2",
+          "code": "member-removed",
+          "status": 403
+        }
+      }
+    },
+    {
+      "name": "createTheGatedGroupOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/govfencing-create-gated-group-{runId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "groupId": "{gatedGroupId}",
+          "displayName": "Governance fencing gated {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{founderClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "activation": {
+              "mode": "manual"
+            },
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{gatedGroupId}",
+            "lifecycleState": "forming"
+          }
+        }
+      }
+    },
+    {
+      "name": "theNewcomerParksPendingOnTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{gatedGroupId}/join/requests/govfencing-newcomer-parks-{runId}",
+        "headers": {
+          "Authorization": "{newcomerAuthHeader}",
+          "x-client-id": "{newcomerClientId}"
+        },
+        "body": {},
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{newcomerClientId}",
+              "status": "pending",
+              "joined": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theFounderGrantsOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{gatedGroupId}/admissions/{newcomerClientId}/grant/requests/govfencing-grant-newcomer-{runId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {},
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{newcomerClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theGrantIsVisibleOnTheNodeThatParkedIt",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{gatedGroupId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "grantedMembers": "body.members"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{newcomerClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theOffenderParksPendingOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{gatedGroupId}/join/requests/govfencing-offender-parks-{runId}",
+        "headers": {
+          "Authorization": "{offenderAuthHeader}",
+          "x-client-id": "{offenderClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{offenderClientId}",
+              "status": "pending"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theFounderDeclinesOnTertiary",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{gatedGroupId}/admissions/{offenderClientId}/decline/requests/govfencing-decline-offender-{runId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {},
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{offenderClientId}",
+              "status": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theDeclineIsVisibleOnTheNodeThatParkedIt",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{gatedGroupId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "poll": {
+          "maxAttempts": 30,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "decidedMembers": "body.members"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "members": [
+            {
+              "principalId": "{offenderClientId}",
+              "status": "left"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "oneRosterCarriesBothDecisions",
+      "type": "assert",
+      "actual": {
+        "granted": "{grantedMembers}",
+        "decided": "{decidedMembers}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "granted",
+            "length": 2
+          },
+          {
+            "path": "decided",
+            "length": 3
+          }
+        ]
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}
