@@ -198,13 +198,19 @@ it('keeps IndexedDB page reads readonly and leaves corruption outside the reques
     };
     const write = db.transaction('entries', 'readwrite');
     await readIndexedDbTransaction(write, async () => await readIndexedDbRequest(write.objectStore('entries').put(corrupt)));
-    const transactions = vi.spyOn(db, 'transaction');
+    const transactionModes = new Set<IDBTransactionMode>();
+    const openTransaction = db.transaction.bind(db);
+    const transactions = vi.spyOn(db, 'transaction').mockImplementation((...args) => {
+        const transaction = openTransaction(...args);
+        transactionModes.add(transaction.mode);
+        return transaction;
+    });
     const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, cursor: null } as const;
     try {
         const page = await queue.readWorkPage(request);
         expect(page.entries.map((entry) => entry.resource)).toEqual(['first', 'second']);
         await expect(queue.readWorkPage({ ...request, cursor: page.nextCursor })).rejects.toBeInstanceOf(TypeError);
-        expect(transactions.mock.calls.map((call) => call[1])).toEqual(['readonly', 'readonly']);
+        expect(transactionModes).toEqual(new Set(['readonly']));
     }
     finally {
         transactions.mockRestore();

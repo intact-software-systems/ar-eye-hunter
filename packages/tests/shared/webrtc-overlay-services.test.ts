@@ -47,12 +47,12 @@ describe('WebRtc overlay services', () => {
         vi.restoreAllMocks();
     });
 
-    it('unregisters owned queue work and stops its timer when disposed', async () => {
+    it.each([false, true])('retains eligible queue work only when its owner is disposed (disposed=%s)', async (disposed) => {
         vi.useFakeTimers();
-        const channel = createOpenRtcChannel();
-        const connectionService = createConnectionService(['peer-1'], { 'peer-1': { channel } });
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+        const peer: { channel: CapturedRtcChannel | undefined; } = { channel: undefined };
+        const connectionService = createConnectionService(['peer-1'], { 'peer-1': peer });
         const resources = createDefaultALOutboundRuntimeResources();
-        const claim = vi.spyOn(resources.admissionStore, 'claimReadyEffects');
         const manager = new WebRtcOverlayMulticastManager({
             connectionService,
             groupCache: new LatestRepository(),
@@ -65,17 +65,40 @@ describe('WebRtc overlay services', () => {
             rateLimiter: toRateLimiter()
         });
         onTestFinished(() => manager.dispose());
-        await manager.enqueueIfAbsent(createUnicastRtcMessage('self', 'dispose-owned-work'));
-        await vi.advanceTimersByTimeAsync(0);
-        expect(claim).toHaveBeenCalled();
+        const message = newALUnicastMessage(
+            'self',
+            { topicId: 'chat', resourceId: 'dispose-owned-work', contextId: 'conversation-1' },
+            'peer-1',
+            'chat.private-text.v1',
+            { text: 'wait for the channel' },
+            { ttlMs: 120_000, qos: { durability: { algo: 'local-outbox' } } }
+        );
+        await manager.enqueueIfAbsent(message);
+        const key = (await manager.outbox.getAllKeys()).find((candidate) => candidate.topicId === 'AL_OUTBOUND');
+        expect(key).toBeDefined();
+        const waiting = await manager.outbox.getItem(key!);
+        expect(waiting).toMatchObject({ status: EntityStatus.RETRY, dequeueAudit: { attempts: 0 } });
+        expect(waiting!.dequeueAudit.nextTs).toBeDefined();
+        const nowMs = Date.now();
+        const readyAtMs = waiting!.dequeueAudit.nextTs!.epochMilliseconds;
+        expect(readyAtMs).toBeGreaterThan(nowMs);
+        expect(readyAtMs).toBeLessThan(message.constraints!.expiresAtMs!);
         expect(vi.getTimerCount()).toBeGreaterThan(0);
-        manager.dispose();
-        claim.mockClear();
-        const sends = channel.sendCalls.length;
-        await vi.advanceTimersByTimeAsync(60_000);
+        if (disposed) {
+            manager.dispose();
+        }
+        peer.channel = createOpenRtcChannel();
+        await vi.advanceTimersByTimeAsync(readyAtMs - nowMs + 1);
         await resources.queueEngine.executeOnce();
-        expect(claim).not.toHaveBeenCalled();
-        expect(channel.sendCalls).toHaveLength(sends);
+        if (disposed) {
+            expect(peer.channel.sendCalls).toEqual([]);
+            expect(await manager.outbox.getItem(key!)).toEqual(waiting);
+        }
+        else {
+            expect(peer.channel.sendCalls).toHaveLength(1);
+            expect(peer.channel.sendCalls[0]?.[0]).toMatchObject({ id: message.id });
+            manager.dispose();
+        }
         expect(vi.getTimerCount()).toBe(0);
     });
 

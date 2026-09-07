@@ -149,7 +149,9 @@ it.each(['payload', 'source', 'scope', 'deadline'] as const)('refuses a conflict
 
 it('never retains malformed, forged, unknown-control or planner-rejected ingress', async () => {
     const store = createDefaultInMemoryALInboundRuntimeStores().admissionStore;
-    const dependencies = runtimeDependencies(store, [], []);
+    const delivered: ALMessage[] = [];
+    const controls: ALMessage[] = [];
+    const dependencies = runtimeDependencies(store, delivered, controls);
     const runtime = new ALInboundMessageRuntime({
         ...dependencies,
         planIncomingMessage: (msg, source, observations) => ({
@@ -158,7 +160,6 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
         })
     });
     onTestFinished(() => runtime.dispose());
-    const commit = vi.spyOn(store, 'commitBundle');
     const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {});
     const untrackedAck = newALAckControlMessage({ v: 2, senderId: 'sender', msgId: 'unknown-control', ts: Date.now() }, {
         ackedMsgId: 'unknown',
@@ -167,12 +168,33 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
         status: 'delivered',
         observedAtEpochMs: Date.now()
     });
-    await runtime.handleIncomingMessage({}, { kind: 'trusted-server' });
-    await runtime.handleIncomingMessage(message, { kind: 'rtc-peer', peerId: 'forger' });
-    await runtime.handleIncomingMessage(untrackedAck, { kind: 'rtc-peer', peerId: 'sender' });
-    expect(commit).not.toHaveBeenCalled();
-    await runtime.handleIncomingMessage(message, { kind: 'rtc-peer', peerId: 'sender' });
+    const source = { kind: 'rtc-peer' as const, peerId: 'sender' };
+    const malformed = await runtime.handleIncomingMessage({}, { kind: 'trusted-server' });
+    expect(malformed.left).toMatchObject({ code: 'malformed' });
+    const forged = await runtime.handleIncomingMessage(message, { kind: 'rtc-peer', peerId: 'forger' });
+    expect(forged.left).toMatchObject({ code: 'unauthorized' });
+    const unknownControl = await runtime.handleIncomingMessage(untrackedAck, source);
+    expect(unknownControl.right).toEqual({ kind: 'control', handled: false });
+    const rejected = await runtime.handleIncomingMessage(message, source);
+    expect(rejected.right).toEqual({ kind: 'not-admitted', reason: 'Room authorization was revoked' });
+
+    const nowMs = Date.now();
+    const read = await store.readIncomingMessage({
+        msg: message,
+        source,
+        nowMs,
+        prePlan: dependencies.planIncomingMessage(message, source, { nowMs })
+    });
+    expect(read.observations).toMatchObject({
+        messageOwner: undefined,
+        dedup: { expiresAtTimestamp: undefined },
+        pendingAck: undefined,
+        acks: [],
+        controlOwners: undefined
+    });
     expect(await store.workQueue.getAllKeys()).toEqual([]);
+    expect(delivered).toEqual([]);
+    expect(controls).toEqual([]);
 });
 
 async function retainConflictedAdmission(store: ALInboundAdmissionStore) {

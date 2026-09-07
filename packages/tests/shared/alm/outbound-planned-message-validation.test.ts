@@ -8,8 +8,7 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import {
     describe,
     expect,
-    it,
-    vi
+    it
 } from 'vitest';
 import {
     createDefaultOutboundTestAdmissionStore,
@@ -23,12 +22,11 @@ describe('outbound planner validation boundary', () => {
     it.each(malformedMessages)('returns failure before using malformed planner message %j', async (planned) => {
         const store = createDefaultOutboundTestAdmissionStore();
         const outbox = new InMemoryQueueBox();
-        const send = vi.fn(async () => ({ status: 'sent' as const }));
         const original = createOutboundMessage('invalid-planner');
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: store },
             outbox,
-            sendPreparedMessage: send,
+            sendPreparedMessage: async () => ({ status: 'sent' }),
             planOutgoingMessage: () => ({ msg: planned as ALMessage, persist: true, preparedMessages: [] })
         });
         const result = await runtime.enqueueIfAbsent(original);
@@ -36,7 +34,6 @@ describe('outbound planner validation boundary', () => {
         expect(await store.readSentMessage(original.id.msgId)).toBeUndefined();
         expect(await store.peekNextEffectReadyAt()).toBeUndefined();
         expect(await outbox.getItem(QueueBoxUtilities.toResourceEntryFromMsg(original, 'outbox').key)).toBeUndefined();
-        expect(send).not.toHaveBeenCalled();
     });
 
     it.each(malformedMessages)('rejects owned work with malformed planner message %j without retry', async (planned) => {

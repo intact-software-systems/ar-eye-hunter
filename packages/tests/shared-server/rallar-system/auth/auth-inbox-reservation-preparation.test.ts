@@ -34,7 +34,7 @@ describe('auth reservation preparation', () => {
             return await digest(...args);
         });
         const write = auth.queue.writeMaterializedIfAbsentOrReplaceExpired.bind(auth.queue);
-        const writeSpy = vi.spyOn(auth.queue, 'writeMaterializedIfAbsentOrReplaceExpired')
+        vi.spyOn(auth.queue, 'writeMaterializedIfAbsentOrReplaceExpired')
             .mockImplementation(async (...args) => {
                 writing = true;
                 try {
@@ -61,8 +61,9 @@ describe('auth reservation preparation', () => {
             reader: auth.reader
         });
         expect(result.right).toEqual({ loggedOut: true });
+        const retainedEntries = JSON.stringify(await auth.queue.readEntries());
         await expect(auth.service.logoutSession(input)).resolves.toEqual(result);
-        expect(writeSpy).toHaveBeenCalledTimes(1);
+        expect(JSON.stringify(await auth.queue.readEntries())).toBe(retainedEntries);
         expect(hashObservations.length).toBeGreaterThan(0);
         expect(hashObservations.every((insideWrite) => !insideWrite)).toBe(true);
     });

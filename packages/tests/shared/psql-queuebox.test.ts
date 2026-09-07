@@ -366,6 +366,13 @@ describe('PSqlQueueBox', () => {
             ...createEntry('owned-release-clock', EntityStatus.RESERVED),
             dequeueAudit: { attempts: 3, startTs: observedAt.subtract({ seconds: 1 }) }
         };
+        const expectedReservation: ResourceEntry = {
+            ...entry,
+            key: { ...entry.key },
+            audit: { ...entry.audit },
+            dequeueAudit: { ...entry.dequeueAudit },
+            db: entry.db === undefined ? undefined : { ...entry.db }
+        };
         const releaseReserved = vi.fn<PSqlResourceInboxReservationRepository['releaseReserved']>(async (candidate) => candidate.replacement.entry);
         const repo = createRepo({ releaseReserved });
         let insideTransaction = false;
@@ -384,7 +391,9 @@ describe('PSqlQueueBox', () => {
         expect(released.dequeueAudit.endTs?.toString()).toBe('2025-01-01T00:00:00.123Z');
         expect(released.dequeueAudit.nextTs?.toString()).toBe('2025-01-01T00:00:00.16Z');
         expect(released.dequeueAudit.attempts).toBe(3);
-        expect(releaseReserved.mock.calls[0][0].expected.entry).toEqual(entry);
+        expect(releaseReserved).toHaveBeenCalledWith(
+            expect.objectContaining({ expected: expect.objectContaining({ entry: expectedReservation }) })
+        );
     });
 
     it('surfaces a typed conflict when a stale PostgreSQL reservation loses release', async () => {
