@@ -253,10 +253,12 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
                 connection: input.agent.connection,
                 groupId: input.groupId
             });
-            // The accepted layout names sessions as its peers, so a reopen that mints a new session
-            // moves the returning member's identity out of the layout and every pin downstream reads
-            // a member the group has never heard of. The caller only learns about the page it gets
-            // back, so a failing guard closes the context it was handed rather than leaking it.
+            // Half of the same-session proof: the seed survived the page load. It says nothing about
+            // what the runtime will authenticate with, because that is decided later inside
+            // `rtc.connect` — the connect asserts its own session against this same stored value, and
+            // the two together are what prove the returning member is the one the accepted layout
+            // names. The caller only learns about the page it gets back, so a failing guard closes the
+            // context it was handed rather than leaking it.
             try {
                 const restored = await readRestoredSession(reopened);
                 expect(
@@ -314,8 +316,14 @@ async function readAgentEvents(input: FormationAgentInput): Promise<readonly For
         });
 }
 
-/** The session the page holds, read before it closes so the reopen restores it rather than re-logging in. */
-async function readRestoredSession(agent: LiveRtcControlClient.Agent): Promise<LiveRtcRestoredSession> {
+/**
+ * The session the page holds. A reopen reads it before the page closes so the returning page restores
+ * it rather than logging in again, and a connect reads it to state which session the runtime is
+ * required to come back as.
+ */
+export async function readRestoredSession(
+    agent: Pick<LiveRtcControlClient.Agent, 'page' | 'prefix'>
+): Promise<LiveRtcRestoredSession> {
     const stored = await agent.page.evaluate(() => window.localStorage.getItem('auth.session'));
     expect(stored, `Agent ${agent.prefix} holds no auth.session to restore`).not.toBeNull();
     const session = record(JSON.parse(String(stored)));
