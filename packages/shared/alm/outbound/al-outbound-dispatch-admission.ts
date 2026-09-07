@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { NonRetryableException } from '../../queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
 import type {
@@ -34,6 +34,12 @@ export namespace ALOutboundDispatchAdmission {
         readonly intent: ALOutboundComputeIntent;
         readonly phase: ALOutboundDispatchPhase;
         readonly options: ALOutboundCommitDispatchOptions;
+    }
+
+    export interface CommitResultInput<TPrepared> {
+        readonly computed: ALOutboundComputedDto<TPrepared>;
+        readonly msg: ALMessage;
+        readonly intent: ALOutboundComputeIntent;
     }
 
     export interface Dependencies<TPrepared> {
@@ -118,10 +124,17 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             computed.bundle,
             this.dependencies.decodePreparedMessage
         );
+        return this.toCommitResult(status, { computed, msg: input.read.msg, intent: dispatch.intent });
+    }
+
+    private toCommitResult(
+        status: 'committed' | 'conflict' | 'expired',
+        { computed, msg, intent }: ALOutboundDispatchAdmission.CommitResultInput<TPrepared>
+    ): ALOutboundDispatchAdmission.Result<TPrepared> {
         if (status === 'expired') {
             return {
                 computed: {
-                    msg: input.read.msg,
+                    msg: msg,
                     status: 'expired',
                     reason: 'Message expired before commit',
                     entries: []
@@ -130,10 +143,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             };
         }
         if (status === 'conflict') {
-            if (dispatch.intent === 'enqueue') {
+            if (intent === 'enqueue') {
                 return {
                     computed: {
-                        msg: input.read.msg,
+                        msg: msg,
                         status: 'failed',
                         reason: 'Outbound commit conflict',
                         entries: []

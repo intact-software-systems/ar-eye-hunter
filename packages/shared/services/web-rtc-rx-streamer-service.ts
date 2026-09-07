@@ -14,7 +14,7 @@ import {
     type RttMeasurementInfo
 } from '../api/api-config.ts';
 import type { WebRtcOverlayMulticastManager } from '../multicast/web-rtc-overlay-multicast-manager.ts';
-import { NonRetryableException } from '../queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { toError } from '../resilience/to-error.ts';
 import type { QRtcClientCallbacks } from '../webrtc/qrtc-client-callbacks.ts';

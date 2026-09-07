@@ -14,7 +14,7 @@ import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.t
 import { createDefaultALOutboundRuntimeResources } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as shared from '@shared/mod.ts';
-import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnQRtcMessageCallback } from '@shared/webrtc/qrtc-client-callbacks.ts';
 

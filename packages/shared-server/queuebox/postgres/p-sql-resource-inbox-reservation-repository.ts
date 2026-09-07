@@ -1,6 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
 import {
-    toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
     type ResourceInboxReleaseDisposition,
     type ResourceInboxReservationInput,
@@ -12,15 +11,29 @@ import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceIn
 import { Either } from '@shared/resilience/Either.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { PSqlResourceInboxEntryRepository } from './p-sql-resource-inbox-entry-repository.ts';
+import type { ResourceInboxObservedReplacement } from './replace-observed-resource-inbox-entry.ts';
 import { requeueObservedResourceInboxDeliveryFailure } from './requeue-observed-resource-inbox-delivery-failure.ts';
 import { rowsToMap, toDomain, type ResourceInboxRow } from './resource-inbox-row-codec.ts';
 
-export type StartProcessingEntitySkipped = Readonly<{
-    kind: 'expired-or-missing';
-    key: Key;
-}>;
+export interface StartProcessingEntitySkipped {
+    readonly kind: 'expired-or-missing';
+    readonly key: Key;
+}
 
 export namespace PSqlResourceInboxReservationRepository {
+    export interface ReservationRead {
+        readonly typeIds: ReadonlySet<string>;
+        readonly statusIds: ReadonlySet<EntityStatus>;
+        readonly reservationInput: ResourceInboxReservationInput;
+        readonly observedRowIds?: readonly string[];
+    }
+    export interface TimeoutReservationRead {
+        readonly typeIds: ReadonlySet<string>;
+        readonly timeSinceStartMs: number;
+        readonly reservationInput: ResourceInboxReservationInput;
+        readonly observedRowIds?: readonly string[];
+    }
+
     export interface WorkPosition {
         readonly createdAt: string;
         readonly rowId: bigint;
@@ -74,10 +87,7 @@ export class PSqlResourceInboxReservationRepository {
     }
 
     async findEntriesSkipLocked(
-        typeIds: ReadonlySet<string>,
-        statusIds: ReadonlySet<EntityStatus>,
-        reservationInput: ResourceInboxReservationInput,
-        observedRowIds?: readonly string[]
+        { typeIds, statusIds, reservationInput, observedRowIds }: PSqlResourceInboxReservationRepository.ReservationRead
     ): Promise<Map<string, ResourceEntry>> {
         if (typeIds.size === 0 || statusIds.size === 0 || observedRowIds?.length === 0) {
             return new Map();
@@ -162,10 +172,8 @@ export class PSqlResourceInboxReservationRepository {
     }
 
     async findTimedOutReservedEntriesSkipLocked(
-        typeIds: ReadonlySet<string>,
-        timeSinceStartMs: number,
-        reservationInput: ResourceInboxReservationInput,
-        observedRowIds?: readonly string[]
+        { typeIds, timeSinceStartMs, reservationInput, observedRowIds }:
+            PSqlResourceInboxReservationRepository.TimeoutReservationRead
     ): Promise<Map<string, ResourceEntry>> {
         if (!Number.isSafeInteger(timeSinceStartMs) || timeSinceStartMs < 0) {
             throw new Error(
@@ -309,31 +317,12 @@ export class PSqlResourceInboxReservationRepository {
     }
 
     async releaseReserved(
-        expected: ResourceEntry,
-        options: Readonly<{
-            releasedAt: Temporal.Instant;
-            disposition: ResourceInboxReleaseDisposition;
-        }>
+        computed: ResourceInboxObservedReplacement
     ): Promise<ResourceEntry | null> {
-        const disposition = toResourceInboxReleaseDisposition(options.disposition);
-        if (expected.status !== EntityStatus.RESERVED) {
+        if (computed.expected.entry.status !== EntityStatus.RESERVED) {
             return null;
         }
-        const persistedReleasedAt = Temporal.Instant.fromEpochMilliseconds(
-            Number(options.releasedAt.epochMilliseconds)
-        );
-        const computed: ResourceEntry = {
-            ...expected,
-            status: disposition.status,
-            dequeueAudit: {
-                ...expected.dequeueAudit,
-                endTs: persistedReleasedAt,
-                nextTs: disposition.delayMs !== null
-                    ? persistedReleasedAt.add({ milliseconds: disposition.delayMs })
-                    : undefined
-            }
-        };
-        return await new PSqlResourceInboxEntryRepository(this.sql).replaceIfObserved(expected, computed);
+        return await new PSqlResourceInboxEntryRepository(this.sql).writeObservedReplacement(computed);
     }
 
     async requeueObservedDeliveryFailure(

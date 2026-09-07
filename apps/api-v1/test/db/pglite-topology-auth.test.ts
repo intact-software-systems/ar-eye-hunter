@@ -37,7 +37,7 @@ import {
 import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { PGliteTestSocket } from './pglite-test-socket.ts';
@@ -165,7 +165,7 @@ Deno.test(
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             const firstResult = await firstPending;
             assert.ok(firstResult.right);
@@ -262,7 +262,7 @@ Deno.test(
                 await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
                 await inboxReader.dequeueInbox(
                     InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                    toResilienceDto()
+                    createApiV1TestQueueResilience()
                 );
                 const result = await pending;
                 assert.ok(result.right, `${payload.operation} did not complete`);
@@ -377,7 +377,7 @@ Deno.test(
                 await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
                 await inboxReader.dequeueInbox(
                     InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                    toResilienceDto()
+                    createApiV1TestQueueResilience()
                 );
                 return { command, result: await pending };
             };
@@ -532,7 +532,7 @@ Deno.test(
                 await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
                 await inboxReader.dequeueInbox(
                     InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                    toResilienceDto()
+                    createApiV1TestQueueResilience()
                 );
                 await rttPending;
                 await new Promise((resolve) => setTimeout(resolve, 2));
@@ -615,7 +615,7 @@ Deno.test(
                 await authSessions.deleteSession(authority);
                 await inboxReader.dequeueInbox(
                     InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                    toResilienceDto()
+                    createApiV1TestQueueResilience()
                 );
                 const revokedResult = await revokedPending;
                 assert.match(revokedResult.left?.message ?? '', /revoked|authority|session/i);

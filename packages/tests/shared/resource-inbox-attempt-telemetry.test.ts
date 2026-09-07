@@ -1,9 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { Reservator } from '@shared/queuebox/DequeueController.ts';
-import { DequeueResourceEntryController, ResilienceDto, ResourceInboxHandlerEntryError } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import type { DequeueResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import { createDefaultResourceInboxDequeuer, ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { inspect } from 'node:util';
@@ -118,18 +119,17 @@ describe('ResourceInbox attempt release telemetry', () => {
 });
 
 function dequeuer(repository: DequeueResourceEntryRepository, observations: ResourceInboxAttemptReleaseTelemetry[]) {
-    return DequeueResourceEntryController.toDequeuer<string>(
-        repository,
-        () => new Set(['APP_INBOX']),
-        () => 1,
-        20,
-        10,
-        resilience(),
-        {
+    return createDefaultResourceInboxDequeuer<string>({
+        repository: repository,
+        typesToDequeue: () => new Set(['APP_INBOX']),
+        maxToReserve: () => 1,
+        maxNumToDequeue: 10,
+        resilience: resilience(),
+        options: {
             jitterUnit: () => 0.5,
             onAttemptReleaseTelemetry: (event) => observations.push(event)
         }
-    );
+    });
 }
 
 function entry(resourceId: string, status: EntityStatus, attempts: number): ResourceEntry {
@@ -160,15 +160,15 @@ function createQueueRepository(overrides: Partial<DequeueResourceEntryRepository
     };
 }
 
-function resilience(): ResilienceDto {
+function resilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(10, duration, duration, duration),
-        1,
-        10,
-        1,
-        1,
-        ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
-        DEFAULT_RESOURCE_INBOX_RETRY_POLICY
-    );
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1,
+        maxFairnessSelectionsInWindow: ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW,
+        retryPolicy: DEFAULT_RESOURCE_INBOX_RETRY_POLICY
+    });
 }

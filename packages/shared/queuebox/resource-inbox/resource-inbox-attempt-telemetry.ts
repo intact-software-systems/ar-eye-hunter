@@ -1,5 +1,5 @@
-import { Reservator } from './DequeueController.ts';
-import { EntityStatus, type Key, type ResourceEntry } from './ResourceEntry.ts';
+import { Reservator } from '../dequeue/dequeue-controller.ts';
+import { EntityStatus, type Key, type ResourceEntry } from '../ResourceEntry.ts';
 
 export interface ResourceInboxAttemptTelemetry {
     readonly selectedLane: Reservator;
@@ -17,16 +17,18 @@ export interface ResourceInboxAttemptReleaseTelemetry {
     readonly selectedLane: Reservator;
     readonly queueAgeMs: number;
     readonly dueAgeMs: number;
-    readonly classification: 'accepted' | 'retryable' | 'non-retryable';
+    readonly classification: 'accepted' | 'not-ready' | 'retryable' | 'non-retryable';
     readonly status: EntityStatus;
     readonly retryDelayMs: number;
     readonly failure:
         | Readonly<{ kind: 'none'; }>
-        | Readonly<{
-            kind: 'retryable' | 'non-retryable';
-            code: string;
-            name: string;
-        }>;
+        | ResourceInboxAttemptFailure;
+}
+
+export interface ResourceInboxAttemptFailure {
+    readonly kind: 'retryable' | 'non-retryable';
+    readonly code: string;
+    readonly name: string;
 }
 
 export interface ResourceInboxAttempt {
@@ -96,23 +98,23 @@ function computeResourceInboxAttemptRelease(
         key: reserved.key,
         type: reserved.typeId,
         resource: reserved.resource,
-        attempt: reserved.dequeueAudit.attempts,
+        attempt: classification === 'not-ready' ? released.dequeueAudit.attempts : reserved.dequeueAudit.attempts,
         selectedLane: selection.selectedLane,
         queueAgeMs: selection.queueAgeMs,
         dueAgeMs: selection.dueAgeMs,
         classification,
         status: released.status,
         retryDelayMs,
-        failure: classification === 'accepted'
+        failure: classification === 'accepted' || classification === 'not-ready'
             ? { kind: 'none' }
             : toReleaseFailure(classification, exception)
     };
 }
 
 function toReleaseFailure(
-    classification: Exclude<ResourceInboxAttemptReleaseTelemetry['classification'], 'accepted'>,
+    classification: Exclude<ResourceInboxAttemptReleaseTelemetry['classification'], 'accepted' | 'not-ready'>,
     exception: Error | undefined
-): Extract<ResourceInboxAttemptReleaseTelemetry['failure'], { kind: 'retryable' | 'non-retryable'; }> {
+): ResourceInboxAttemptFailure {
     if (exception === undefined) {
         throw new Error('Resource inbox failed release telemetry is missing its exception');
     }

@@ -4,9 +4,9 @@ import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-trans
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { Reservator } from '@shared/queuebox/DequeueController.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { computeResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import { describe, expect, it } from 'vitest';
 
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
@@ -300,22 +300,7 @@ function createTransactionSql(
         const query = normalizeQuery(stringsOrValues);
 
         if (query.includes('insert into runtime_state_store')) {
-            const [namespace, key, value, expireAt] = values;
-            const storageKey = `${readString(namespace, 'runtime namespace')}::${
-                readString(
-                    key,
-                    'runtime key'
-                )
-            }`;
-            if (state.runtime.has(storageKey)) {
-                return [];
-            }
-            state.runtime.set(storageKey, {
-                value: readString(value, 'runtime value'),
-                expireAt: readDate(expireAt, 'runtime expiry'),
-                revision: 0
-            });
-            return [{ revision: 0 }];
+            return insertTransactionRuntimeState(state, values);
         }
 
         if (query.includes('insert into client_state_events')) {
@@ -344,26 +329,7 @@ function createTransactionSql(
             if (options.failCompletion) {
                 throw new Error('completion-failed');
             }
-            const [status, completedAt, topicId, resourceId, contextId, attempts] = values;
-            const row = state.inbox.get(
-                `${readString(contextId, 'context id')}::${
-                    readString(
-                        topicId,
-                        'topic id'
-                    )
-                }::${readString(resourceId, 'resource id')}`
-            );
-            if (
-                !row ||
-                row.ri_status !== EntityStatus.RESERVED ||
-                row.ri_attempts !== BigInt(readNumber(attempts, 'attempt count'))
-            ) {
-                return [];
-            }
-            row.ri_status = readString(status, 'completion status');
-            row.end_ts = readDate(completedAt, 'completion time').toISOString();
-            row.next_ts = null;
-            return [{ ri_row_id: row.ri_row_id }];
+            return completeTransactionInbox(state, values);
         }
 
         throw new Error(`Unhandled transaction SQL: ${query}`);
@@ -373,6 +339,48 @@ function createTransactionSql(
         begin: async () => await Promise.reject(new Error('nested-transaction'))
     });
     return transaction;
+}
+
+function insertTransactionRuntimeState(state: TransactionState, values: readonly SqlValue[]): ReturnType<PSqlSql> {
+    const [namespace, key, value, expireAt] = values;
+    const storageKey = `${readString(namespace, 'runtime namespace')}::${
+        readString(
+            key,
+            'runtime key'
+        )
+    }`;
+    if (state.runtime.has(storageKey)) {
+        return [];
+    }
+    state.runtime.set(storageKey, {
+        value: readString(value, 'runtime value'),
+        expireAt: readDate(expireAt, 'runtime expiry'),
+        revision: 0
+    });
+    return [{ revision: 0 }];
+}
+
+function completeTransactionInbox(state: TransactionState, values: readonly SqlValue[]): ReturnType<PSqlSql> {
+    const [status, completedAt, topicId, resourceId, contextId, attempts] = values;
+    const row = state.inbox.get(
+        `${readString(contextId, 'context id')}::${
+            readString(
+                topicId,
+                'topic id'
+            )
+        }::${readString(resourceId, 'resource id')}`
+    );
+    if (
+        !row ||
+        row.ri_status !== EntityStatus.RESERVED ||
+        row.ri_attempts !== BigInt(readNumber(attempts, 'attempt count'))
+    ) {
+        return [];
+    }
+    row.ri_status = readString(status, 'completion status');
+    row.end_ts = readDate(completedAt, 'completion time').toISOString();
+    row.next_ts = null;
+    return [{ ri_row_id: row.ri_row_id }];
 }
 
 function createState(): TransactionState {

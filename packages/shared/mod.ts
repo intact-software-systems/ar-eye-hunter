@@ -30,12 +30,14 @@ export * from './rallar-motion/mod.ts';
 
 export * from './rtc/rtt-reporting-policy.ts';
 
-export * from './queuebox/DequeueController.ts';
-export * from './queuebox/DequeueResourceEntryController.ts';
+export * from './queuebox/dequeue/dequeue-controller.ts';
 export * from './queuebox/in-memory-queue-box.ts';
 export * from './queuebox/indexed-db-queue-box.ts';
 export * from './queuebox/queue-box-types.ts';
 export { toResourceEntrySnapshot } from './queuebox/resource-entry-observations.ts';
+export * from './queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+export * from './queuebox/resource-inbox/not-ready-exception.ts';
+export * from './queuebox/resource-inbox/resource-inbox-resilience.ts';
 export * from './queuebox/ResourceEntry.ts';
 
 export * from './persistence/indexed-db-string-persistence-provider.ts';

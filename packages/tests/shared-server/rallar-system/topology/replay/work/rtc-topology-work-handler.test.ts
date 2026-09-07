@@ -612,11 +612,11 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(submittedCommands).toEqual([]);
         expect((await queue.getItem(entry.key))?.status).toBe(EntityStatus.RESERVED);
 
-        const redelivered = [...(await queue.reserveTimeoutEntries(
-            OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-            { maxToReserve: 1, maxAttempts: 2 },
-            Temporal.Duration.from({ milliseconds: 0 })
-        )).values()][0];
+        const redelivered = [...(await queue.reserveTimeoutEntries({
+            typeIds: OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+            timeSinceStartTs: Temporal.Duration.from({ milliseconds: 0 })
+        })).values()][0];
         if (!redelivered) {
             throw new Error('Expected the outer queue to redeliver RTC RTT work');
         }
@@ -748,11 +748,11 @@ async function enqueueAndReserveRtt(input: EnqueueAndReserveRttInput) {
         group,
         rtt('session-a', 'session-b', version)
     );
-    const reserved = await queue.reserveEntries(
-        OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-        new Set([EntityStatus.NEW]),
-        1
-    );
+    const reserved = await queue.reserveEntries({
+        typeIds: OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: 1
+    });
     const entry = [...reserved.values()][0];
     if (!entry) {
         throw new Error('Expected reserved RTC RTT work');

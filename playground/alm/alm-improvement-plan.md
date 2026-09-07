@@ -134,15 +134,16 @@ answer. A failed database finalization still requires ordinary QueueBox redelive
 
 Use a distinct not-ready disposition for a valid message whose required readiness is temporarily
 missing. Pure policy/validation returns this as an `Either` value; an exception-based QueueBox
-boundary may translate it to `NotReadyException`. Release as `RETRY` with a future `nextTs`, without
-consuming the processing failure-attempt budget or recording a circuit-breaker failure. Prefer
-skipping known ineligible work before reservation. Recheck after reservation to handle readiness
+boundary may translate it to `NotReadyException`. QueueBox already supports `RETRY` with a future
+`nextTs`; reuse that release and scheduling path. The extension is readiness classification and
+accounting: waiting consumes no processing attempt and records neither a resilience failure nor a
+success. Prefer skipping known ineligible work before reservation. Recheck after reservation to handle readiness
 changes, preserving the original message deadline and existing database reservation checks. The
 database row remains authoritative: `RESERVED` is claimed work, and `RETRY` is available when
 `nextTs` is reached. Do not add ownership fencing, reservation tokens or generations, or controller
-ownership state for not-ready deferral. QueueBox currently increments attempts when reserving, so
-this needs an explicit canonical deferral operation and cross-backend tests; throwing a differently
-named exception alone does not establish those semantics.
+ownership state for not-ready deferral. QueueBox increments attempts when reserving, so its canonical
+release computation must account for readiness separately, with cross-backend tests. Throwing a
+differently named exception alone does not establish those semantics.
 Use bounded readiness backoff and existing engine wakes, without another scheduler or a tight retry loop.
 
 Lifecycle subscriptions, transport callbacks, and existing QueueBox transaction callbacks belong

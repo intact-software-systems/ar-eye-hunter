@@ -1,4 +1,4 @@
-import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
@@ -8,17 +8,17 @@ export interface RegisterRallarMiddlewareQueueTasksInput {
     readonly wsQBoxServerService: WsQueueBoxServerService;
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
-    readonly wsOutboxResilience: ResilienceDto;
-    readonly appInboxResilience: ResilienceDto;
-    readonly appOutboxResilience: ResilienceDto;
+    readonly wsOutboxResilience: ResourceInboxResilience;
+    readonly appInboxResilience: ResourceInboxResilience;
+    readonly appOutboxResilience: ResourceInboxResilience;
 }
 
 export interface RegisterApplicationQueueReaderTasksInput {
     readonly engine: Pick<InboxOutboxEngine, 'includeTask'>;
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
-    readonly appInboxResilience: ResilienceDto;
-    readonly appOutboxResilience: ResilienceDto;
+    readonly appInboxResilience: ResourceInboxResilience;
+    readonly appOutboxResilience: ResourceInboxResilience;
 }
 
 export class RegisteredRallarMiddlewareQueueHandle {

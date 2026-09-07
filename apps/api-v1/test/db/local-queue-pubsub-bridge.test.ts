@@ -91,8 +91,7 @@ function createMessage(
         },
         channel: 'ws-channel',
         publisherId: options.publisherId,
-        typeId: 'WS_INBOX',
-        delivery: 'entry',
-        payload: JSON.stringify({ ok: true })
+        typeId: 'WS_OUTBOX',
+        delivery: 'key'
     };
 }

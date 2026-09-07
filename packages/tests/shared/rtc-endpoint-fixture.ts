@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 
-import { toResilienceDto } from '@shared-web/browser/resilience-config.ts';
+import { createBrowserQueueResilience } from '@shared-web/browser/resilience-config.ts';
 import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -130,7 +130,7 @@ export class RtcEndpointFixture {
     private async receiveMessage(senderId: string, message: ALMessage): Promise<void> {
         this.received.push(message);
         await this.messageCallbacks.get(senderId)!.receive(message);
-        await this.multicast.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, toResilienceDto());
+        await this.multicast.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createBrowserQueueResilience());
     }
 
     observe(version: number, ref: GroupRef = room, sessionIds: readonly string[] = ['sender', 'receiver']): void {

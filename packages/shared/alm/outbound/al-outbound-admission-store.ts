@@ -8,7 +8,7 @@ import type {
     ALReadyable,
     ALSupersedenceInput
 } from '../../al-contracts/al-runtime.ts';
-import { NonRetryableException } from '../../queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { Key, ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
@@ -362,6 +362,10 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         if (messageValidation.left) {
             throw new NonRetryableException(messageValidation.left.message);
         }
+        const clientRecord = await this.backend.read(
+            this.toVersionKey(msg.id.senderId),
+            (value) => decodeALAdmissionClientRecord(value, msg.id.senderId)
+        );
         const supersedenceInput = toSupersedenceInput(msg, plan);
         const supersedence = await this.readSupersedenceState(supersedenceInput?.key, msg.id.msgId);
         const latestSnapshot = supersedence.latest?.latestMsgId
@@ -377,10 +381,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
             originalMsg: msg,
             msg: plan.msg,
             nowMs,
-            clientRecord: await this.backend.read(
-                this.toVersionKey(msg.id.senderId),
-                (value) => decodeALAdmissionClientRecord(value, msg.id.senderId)
-            ),
+            clientRecord,
             plan,
             sentSnapshot,
             pendingAck: await this.getPendingAck(msg.id.msgId),
@@ -409,7 +410,15 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         msgId: string,
         planner: ALOutboundPlanner<TPrepared>
     ): Promise<ALOutboundRepairReadDto<TPrepared>> {
-        const sentSnapshot = await this.getSentMessage(msgId);
+        const discovered = await this.getSentMessage(msgId);
+        const senderId = discovered?.msg.id.senderId;
+        const clientRecord = senderId
+            ? await this.backend.read(
+                this.toVersionKey(senderId),
+                (value) => decodeALAdmissionClientRecord(value, senderId)
+            )
+            : undefined;
+        const sentSnapshot = senderId ? await this.getSentMessage(msgId) : undefined;
         const msg = sentSnapshot?.msg;
         const plan = msg ? planner(msg) : undefined;
         if (msg && plan) {
@@ -422,12 +431,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
             kind: 'repair',
             msgId,
             nowMs: Date.now(),
-            clientRecord: msg
-                ? await this.backend.read(
-                    this.toVersionKey(msg.id.senderId),
-                    (value) => decodeALAdmissionClientRecord(value, msg.id.senderId)
-                )
-                : undefined,
+            clientRecord,
             sentSnapshot,
             pendingAck: await this.getPendingAck(msgId),
             repairAttempt: await this.backend.read(

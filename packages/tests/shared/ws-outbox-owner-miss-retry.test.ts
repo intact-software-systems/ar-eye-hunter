@@ -20,8 +20,8 @@ import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendC
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/al-outbound-admission-store.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -550,17 +550,17 @@ function createDelayedSecondSubscriberBridgeBus(): DelayedBridgeBus {
     };
 }
 
-function createResilience(): ResilienceDto {
+function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(10, duration, duration, duration),
-        1,
-        10,
-        1,
-        1,
-        10,
-        { maxAttempts: 3, delaysAfterAttemptMs: [1, 1], maxDelayMs: 1, jitterRatio: 0, staleDueThresholdMs: 1 }
-    );
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1,
+        maxFairnessSelectionsInWindow: 10,
+        retryPolicy: { maxAttempts: 3, delaysAfterAttemptMs: [1, 1], maxDelayMs: 1, jitterRatio: 0, staleDueThresholdMs: 1 }
+    });
 }
 
 async function readEntry(queue: InMemoryQueueBox): Promise<ResourceEntry> {

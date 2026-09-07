@@ -11,8 +11,8 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
     isCanonicalRtcTopologyWorkEntry,
@@ -79,13 +79,13 @@ describe('durable topology work for large rooms', () => {
         const duration = Temporal.Duration.from({ seconds: 10 });
         await reader.dequeueOutbox(
             OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-            ResilienceDto.toResilienceDto(
-                new CircuitBreakerPolicy(10, duration, duration, duration),
-                1,
-                10,
-                1,
-                1
-            )
+            ResourceInboxResilience.createDefault({
+                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+                initialRate: 1,
+                maxRate: 10,
+                concurrencyIncreaseStep: 1,
+                concurrencyReduceStep: 1
+            })
         );
 
         expect(deliveredSnapshots.map((snapshot) => snapshot.memberCount)).toEqual([1500]);

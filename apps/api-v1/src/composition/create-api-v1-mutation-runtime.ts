@@ -57,7 +57,8 @@ import {
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
-import type { DequeueResourceEntryOptions, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createApiCrdtDocumentAuthorizer } from '../crdt/create-api-crdt-document-authorizer.ts';
@@ -68,9 +69,9 @@ import {
 } from '../services/create-api-mutation-inbox-factories.ts';
 
 export interface ApiV1MutationRuntimeResilience {
-    readonly inbox: ResilienceDto;
-    readonly outbox: ResilienceDto;
-    readonly appOutbox: ResilienceDto;
+    readonly inbox: ResourceInboxResilience;
+    readonly outbox: ResourceInboxResilience;
+    readonly appOutbox: ResourceInboxResilience;
 }
 
 export interface CreateApiV1MutationRuntimeInput {
@@ -159,36 +160,7 @@ export function createApiV1MutationRuntime(
     const resources = createApiV1MutationResources(input.database);
     const stateDependencies = createApiV1StateMutationDependencies(input, resources);
     const mutationFactories = createApiV1MutationInboxFactories(input, resources);
-    const plannedSnapshotRepository = new RtcTopologySnapshotRepository(
-        resources.runtimeStateRepository
-    );
-    const acceptedSnapshotRepository = new RtcTopologySnapshotRepository(
-        resources.runtimeStateRepository,
-        RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
-    );
-    const groupStateService = createCachedGroupStateService({
-        durable: createGroupStateService({
-            runtimeRepository: resources.runtimeStateRepository,
-            capacity: input.groupCapacity,
-            authSessionRepository: resources.authSessionRepository,
-            groupStateEventStore: resources.groupStateEventStore,
-            serviceId: input.serviceId,
-            timing: input.timing,
-            readPlannedLayoutRow: async (ref) => {
-                const planned = await plannedSnapshotRepository.findSnapshotEntry(ref);
-                return planned
-                    ? { snapshot: planned.value, revision: planned.entry.revision }
-                    : null;
-            },
-            readAcceptedLayoutRow: async (ref) => {
-                const accepted = await acceptedSnapshotRepository.findSnapshotEntry(ref);
-                return accepted
-                    ? { snapshot: accepted.value, revision: accepted.entry.revision }
-                    : null;
-            }
-        }),
-        cache: resources.groupSnapshotCache
-    });
+    const groupStateService = createMutationGroupStateService(input, resources);
 
     return {
         database: input.database,
@@ -221,6 +193,42 @@ export function createApiV1MutationRuntime(
         ...mutationFactories,
         resilience: input.resilience
     };
+}
+
+function createMutationGroupStateService(
+    input: CreateApiV1MutationRuntimeInput,
+    resources: ApiV1MutationResources
+): CachedGroupStateService {
+    const plannedSnapshotRepository = new RtcTopologySnapshotRepository(
+        resources.runtimeStateRepository
+    );
+    const acceptedSnapshotRepository = new RtcTopologySnapshotRepository(
+        resources.runtimeStateRepository,
+        RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE
+    );
+    return createCachedGroupStateService({
+        durable: createGroupStateService({
+            runtimeRepository: resources.runtimeStateRepository,
+            capacity: input.groupCapacity,
+            authSessionRepository: resources.authSessionRepository,
+            groupStateEventStore: resources.groupStateEventStore,
+            serviceId: input.serviceId,
+            timing: input.timing,
+            readPlannedLayoutRow: async (ref) => {
+                const planned = await plannedSnapshotRepository.findSnapshotEntry(ref);
+                return planned
+                    ? { snapshot: planned.value, revision: planned.entry.revision }
+                    : null;
+            },
+            readAcceptedLayoutRow: async (ref) => {
+                const accepted = await acceptedSnapshotRepository.findSnapshotEntry(ref);
+                return accepted
+                    ? { snapshot: accepted.value, revision: accepted.entry.revision }
+                    : null;
+            }
+        }),
+        cache: resources.groupSnapshotCache
+    });
 }
 
 function createApiV1MutationResources(

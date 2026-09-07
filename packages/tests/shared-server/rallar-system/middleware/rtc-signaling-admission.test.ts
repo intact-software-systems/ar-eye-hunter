@@ -8,7 +8,7 @@ import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.t
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { isStateSnapshotTopic } from '@shared/api/state-snapshot-page.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
@@ -41,7 +41,13 @@ describe('middleware pre-admission', () => {
             socket.addConnection(new ConnectionContext({ id: 'sender', socket: sender }));
             socket.addConnection(new ConnectionContext({ id: 'receiver', socket: receiver }));
             const duration = Temporal.Duration.from({ seconds: 10 });
-            const resilience = ResilienceDto.toResilienceDto(new CircuitBreakerPolicy(10, duration, duration, duration), 1, 10, 1, 1);
+            const resilience = ResourceInboxResilience.createDefault({
+                circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+                initialRate: 1,
+                maxRate: 10,
+                concurrencyIncreaseStep: 1,
+                concurrencyReduceStep: 1
+            });
             const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, appOutbox: resilience } });
             const runtime = createRallarMiddleware({
                 ...fixture.options,

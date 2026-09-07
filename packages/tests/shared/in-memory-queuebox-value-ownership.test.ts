@@ -37,11 +37,7 @@ describe('InMemoryQueueBox value ownership', () => {
         const observed = await queue.getItem(entry.key);
 
         const reserved = firstValue(
-            await queue.reserveEntries(
-                new Set([entry.typeId]),
-                new Set([EntityStatus.NEW]),
-                1
-            )
+            await queue.reserveEntries({ typeIds: new Set([entry.typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 })
         );
 
         expect(entry).toEqual(createEntry());
@@ -72,11 +68,11 @@ describe('InMemoryQueueBox value ownership', () => {
         await queue.enqueue(entry);
         const observed = await queue.getItem(entry.key);
         const reclaimed = firstValue(
-            await queue.reserveTimeoutEntries(
-                new Set([entry.typeId]),
-                { maxToReserve: 1, maxAttempts: 3 },
-                Temporal.Duration.from({ minutes: 5 })
-            )
+            await queue.reserveTimeoutEntries({
+                typeIds: new Set([entry.typeId]),
+                reservationInput: { maxToReserve: 1, maxAttempts: 3 },
+                timeSinceStartTs: Temporal.Duration.from({ minutes: 5 })
+            })
         );
 
         expect(observed?.dequeueAudit.attempts).toBe(1);
@@ -191,20 +187,16 @@ describe('InMemoryQueueBox value ownership', () => {
             switch (operation) {
                 case 'reservation':
                     reserved = firstValue(
-                        await queue.reserveEntries(
-                            new Set([entry.typeId]),
-                            new Set([EntityStatus.NEW]),
-                            1
-                        )
+                        await queue.reserveEntries({ typeIds: new Set([entry.typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 })
                     );
                     break;
                 case 'timeout':
                     reserved = firstValue(
-                        await queue.reserveTimeoutEntries(
-                            new Set([entry.typeId]),
-                            1,
-                            Temporal.Duration.from({ minutes: 5 })
-                        )
+                        await queue.reserveTimeoutEntries({
+                            typeIds: new Set([entry.typeId]),
+                            reservationInput: 1,
+                            timeSinceStartTs: Temporal.Duration.from({ minutes: 5 })
+                        })
                     );
                     break;
                 case 'fairness':

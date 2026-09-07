@@ -172,7 +172,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             await service.enqueueOutboxIfAbsent(msg);
             await service.dequeueOutbox(
                 shared.WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
-                createResilienceDto()
+                createResourceInboxResilience()
             );
 
             expect(socket.sentJsonStrings).toHaveLength(1);
@@ -358,7 +358,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         await service.dequeueOutbox(
             shared.WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
-            createResilienceDto()
+            createResourceInboxResilience()
         );
 
         expect(socket.sentJsonStrings).toHaveLength(1);
@@ -721,17 +721,17 @@ function groupRef(groupId: string) {
     };
 }
 
-function createResilienceDto() {
-    return shared.ResilienceDto.toResilienceDto(
-        new shared.CircuitBreakerPolicy(
+function createResourceInboxResilience() {
+    return shared.ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new shared.CircuitBreakerPolicy(
             10,
             Temporal.Duration.from({ seconds: 10 }),
             Temporal.Duration.from({ seconds: 10 }),
             Temporal.Duration.from({ seconds: 10 })
         ),
-        1,
-        10,
-        1,
-        1
-    );
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }

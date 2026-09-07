@@ -5,7 +5,7 @@ import { writeResourceInboxResultReplacement } from '@shared-server/queuebox/pos
 import type {
     ResourceInboxRetryExhaustion,
     ResourceInboxRetryExhaustionRecovery
-} from '@shared/queuebox/DequeueResourceEntryController.ts';
+} from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { timeRallarAsync, type RallarTimingDetails, type RallarTimingSink } from '../observability/timing.ts';
 import { validateAppInboxCommandIdentity } from './app-inbox-command-identity.ts';

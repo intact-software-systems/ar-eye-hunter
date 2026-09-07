@@ -1,6 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
-import { NonRetryableException } from '../../queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type {
     ALInboundAdmissionStore,

@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { Reservator } from '@shared/queuebox/DequeueController.ts';
-import { computeResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -30,7 +30,10 @@ import {
     computeClientMutationOperation,
     validateClientMutationOperation
 } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-computation.ts';
-import { ClientStateInboxHandler } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
+import {
+    ClientStateInboxHandler,
+    type ClientStateInboxHandlerDependencies
+} from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
 import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
 import {
     toClientMutationIssuedSessionAuthority,
@@ -442,7 +445,7 @@ interface HandlerFixtureOptions {
     readonly sessionPresent: boolean;
 }
 
-function createHandlerFixture(options: HandlerFixtureOptions): {
+interface ClientHandlerFixture {
     readonly actions: string[];
     readonly continuationEntries: readonly ResourceEntry[];
     readonly continuationWriteCount: () => number;
@@ -450,14 +453,75 @@ function createHandlerFixture(options: HandlerFixtureOptions): {
     readonly pageReads: readonly ClientExpiredSessionPageInput[];
     readonly pageReadCount: () => number;
     readonly writesByTransaction: number[];
-} {
+}
+
+function createHandlerFixture(options: HandlerFixtureOptions): ClientHandlerFixture {
     const actions: string[] = [];
     const continuationEntries: ResourceEntry[] = [];
     const pageReads: ClientExpiredSessionPageInput[] = [];
     const writesByTransaction: number[] = [];
-    let continuationWriteCount = 0;
-    let pageReadCount = 0;
-    const mutationService = {
+    const handler = new ClientStateInboxHandler({
+        mutationService: createHandlerMutationService(options, { actions, writesByTransaction }),
+        sessionGenerationLifecycle: {
+            read: async (identity) => {
+                actions.push('lifecycle.read');
+                return lifecycleRead(identity, options.generationClosed);
+            },
+            write: async () => {
+                actions.push('lifecycle.write');
+            }
+        },
+        expiryCandidates: {
+            readExpiredSessionPage: async (input) => {
+                actions.push('expiry.read');
+                pageReads.push(input);
+                return {
+                    candidates: options.expiryCandidates ?? [],
+                    nextAfterKey: options.nextAfterKey ?? null
+                };
+            }
+        },
+        expiryContinuationWriter: {
+            write: async (_transaction, computed) => {
+                actions.push('continuation.write');
+                continuationEntries.push(computed.entry);
+            }
+        },
+        snapshotObserver: {
+            observeSnapshot: async (snapshot) => {
+                actions.push('observe');
+                return snapshot;
+            }
+        },
+        transactionWriter: createHandlerTransactionWriter({ actions, writesByTransaction }),
+        mutationTiming: {
+            serviceId: SERVICE_ID,
+            sink: (event) => actions.push(event.operation)
+        },
+        wakeQueue: () => actions.push('wake'),
+        serviceId: SERVICE_ID
+    });
+    return {
+        actions,
+        continuationEntries,
+        continuationWriteCount: () => continuationEntries.length,
+        handler,
+        pageReads,
+        pageReadCount: () => pageReads.length,
+        writesByTransaction
+    };
+}
+
+interface ClientHandlerMutationObservations {
+    readonly actions: string[];
+    readonly writesByTransaction: number[];
+}
+
+function createHandlerMutationService(
+    options: HandlerFixtureOptions,
+    { actions, writesByTransaction }: ClientHandlerMutationObservations
+): ClientStateInboxHandlerDependencies['mutationService'] {
+    return {
         read: async (command: ClientMutationCommand): Promise<ClientMutationRead> => {
             actions.push('domain.read');
             const read = clientMutationRead(command, options.sessionPresent);
@@ -485,69 +549,23 @@ function createHandlerFixture(options: HandlerFixtureOptions): {
             return computed.receipt;
         }
     };
-    const handler = new ClientStateInboxHandler({
-        mutationService,
-        sessionGenerationLifecycle: {
-            read: async (identity) => {
-                actions.push('lifecycle.read');
-                return lifecycleRead(identity, options.generationClosed);
-            },
-            write: async () => {
-                actions.push('lifecycle.write');
-            }
-        },
-        expiryCandidates: {
-            readExpiredSessionPage: async (input) => {
-                actions.push('expiry.read');
-                pageReadCount += 1;
-                pageReads.push(input);
-                return {
-                    candidates: options.expiryCandidates ?? [],
-                    nextAfterKey: options.nextAfterKey ?? null
-                };
-            }
-        },
-        expiryContinuationWriter: {
-            write: async (_transaction, computed) => {
-                actions.push('continuation.write');
-                continuationWriteCount += 1;
-                continuationEntries.push(computed.entry);
-            }
-        },
-        snapshotObserver: {
-            observeSnapshot: async (snapshot) => {
-                actions.push('observe');
-                return snapshot;
-            }
-        },
-        transactionWriter: {
-            readCompletionFacts: (context) => {
-                actions.push('completion.read');
-                return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS };
-            },
-            writeComputedMutation: async (_context, computed, write) => {
-                actions.push('transaction');
-                writesByTransaction.push(0);
-                await write({} as PSqlSql);
-                actions.push('commit');
-                return computed.durableResult;
-            }
-        },
-        mutationTiming: {
-            serviceId: SERVICE_ID,
-            sink: (event) => actions.push(event.operation)
-        },
-        wakeQueue: () => actions.push('wake'),
-        serviceId: SERVICE_ID
-    });
+}
+
+function createHandlerTransactionWriter(
+    { actions, writesByTransaction }: ClientHandlerMutationObservations
+): ClientStateInboxHandlerDependencies['transactionWriter'] {
     return {
-        actions,
-        continuationEntries,
-        continuationWriteCount: () => continuationWriteCount,
-        handler,
-        pageReads,
-        pageReadCount: () => pageReadCount,
-        writesByTransaction
+        readCompletionFacts: (context) => {
+            actions.push('completion.read');
+            return { entry: context.entry, completedAtEpochMs: NOW_EPOCH_MS };
+        },
+        writeComputedMutation: async (_context, computed, write) => {
+            actions.push('transaction');
+            writesByTransaction.push(0);
+            await write({} as PSqlSql);
+            actions.push('commit');
+            return computed.durableResult;
+        }
     };
 }
 

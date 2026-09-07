@@ -13,7 +13,7 @@ import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-w
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import assert from 'node:assert/strict';
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
 
@@ -68,7 +68,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
         await inboxReader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            toResilienceDto()
+            createApiV1TestQueueResilience()
         );
         const login = await loginPending;
         assert.ok(login.right);
@@ -99,7 +99,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
         await inboxReader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            toResilienceDto()
+            createApiV1TestQueueResilience()
         );
         const issuedTicket = await ticketPending;
         assert.ok(issuedTicket.right);
@@ -132,11 +132,11 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
         });
         await inboxReader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            toResilienceDto()
+            createApiV1TestQueueResilience()
         );
         await inboxReader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            toResilienceDto()
+            createApiV1TestQueueResilience()
         );
         const consumed = await Promise.all(consumers);
         assert.equal(consumed.filter((result) => result.right !== undefined).length, 1);
@@ -153,7 +153,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
         await inboxReader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            toResilienceDto()
+            createApiV1TestQueueResilience()
         );
         assert.deepEqual((await logoutPending).right, { loggedOut: true });
         assert.equal(
@@ -277,7 +277,7 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
         });
         await inboxReader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
-            toResilienceDto()
+            createApiV1TestQueueResilience()
         );
 
         const result = await pending;
@@ -367,7 +367,7 @@ Deno.test(
             authFactNowEpochMs = 9_000;
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             const [firstResult, secondResult] = await Promise.all([first, second]);
             assert.ok(firstResult.right);

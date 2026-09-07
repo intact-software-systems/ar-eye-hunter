@@ -1,4 +1,4 @@
-import { Reservator } from '@shared/queuebox/DequeueController.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import {
     describe,
     expect,

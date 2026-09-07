@@ -5,7 +5,7 @@ import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvid
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { computeIndexedDbFairnessReservation } from './compute-indexed-db-fairness-reservation.ts';
 import { computeIndexedDbQueueRelease } from './compute-indexed-db-queue-release.ts';
-import { ResilienceDto } from './DequeueResourceEntryController.ts';
+import { validateResourceInboxReleaseDisposition } from './compute-resource-inbox-release.ts';
 import {
     decodeStoredResourceEntry,
     type StoredResourceEntry
@@ -42,9 +42,10 @@ import {
     ResourceInboxWorkPage,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxFinalizationReservationOptions,
-    toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
-    toResourceInboxWorkAdvertisementOptions
+    toResourceInboxWorkAdvertisementOptions,
+    type ResourceInboxReservationRequest,
+    type ResourceInboxTimeoutReservationRequest
 } from './queue-box-types.ts';
 import {
     captureResourceEntryObservations,
@@ -52,6 +53,7 @@ import {
     validateResourceEntryObservation,
     validateResourceInboxWorkPageRequest
 } from './resource-entry-observations.ts';
+import { ResourceInboxResilience } from './resource-inbox/resource-inbox-resilience.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
@@ -91,8 +93,8 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     readonly #storeName: string;
 
     readonly #cleanupRateLimiter: RateLimiter = RateLimiter.init(
-        ResilienceDto.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
-        ResilienceDto.MAX_NUM_IS_ENTRY_CHECK
+        ResourceInboxResilience.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
+        ResourceInboxResilience.MAX_NUM_IS_ENTRY_CHECK
     );
 
     constructor(options: IndexedDbQueueBoxOptions = {}) {
@@ -233,7 +235,12 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         resources: ResourceEntry[],
         releaseInput: ResourceInboxReleaseDisposition
     ): Promise<Map<Key, ResourceEntry>> {
-        const disposition = toResourceInboxReleaseDisposition(releaseInput);
+        const disposition = validateResourceInboxReleaseDisposition(releaseInput).fold(
+            (error) => {
+                throw error;
+            },
+            (value) => value
+        );
         if (resources.length === 0) {
             return new Map<Key, ResourceEntry>();
         }
@@ -259,10 +266,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async reserveTimeoutEntries(
-        typeIds: Set<string>,
-        reservationInput: ResourceInboxReservationInput,
-        timeSinceStartTs: Temporal.Duration,
-        observedEntries?: readonly ResourceEntry[]
+        { typeIds, reservationInput, timeSinceStartTs, observedEntries }: ResourceInboxTimeoutReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
@@ -312,10 +316,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async reserveEntries(
-        typeIds: Set<string>,
-        statusIds: Set<EntityStatus>,
-        reservationInput: ResourceInboxReservationInput,
-        observedEntries?: readonly ResourceEntry[]
+        { typeIds, statusIds, reservationInput, observedEntries }: ResourceInboxReservationRequest
     ): Promise<Map<Key, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,

@@ -7,7 +7,7 @@ import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-o
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { Command } from '@shared/cache/Command.ts';
-import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import WsQueueBoxClientService, {
     createDefaultWsQueueBoxClientService,
@@ -20,7 +20,7 @@ export namespace CreateBrowserWebSocketQueueBox {
         readonly qboxEngine: InboxOutboxEngine;
         readonly socket: JsonWebSocketClient;
         readonly clientData: ClientInfo;
-        readonly resilience: ResilienceDto;
+        readonly resilience: ResourceInboxResilience;
         readonly signal?: AbortSignal;
         readonly connectTimeoutMs?: number;
         readonly newConnectionRequestId?: () => string;
@@ -69,7 +69,7 @@ function createBrowserWebSocketQueueBoxService(
 interface RegisterBrowserWebSocketQueueTaskInput {
     readonly qboxEngine: InboxOutboxEngine;
     readonly wsQueueBox: WsQueueBoxClientService;
-    readonly resilience: ResilienceDto;
+    readonly resilience: ResourceInboxResilience;
 }
 
 function registerBrowserWebSocketOutboxTask(

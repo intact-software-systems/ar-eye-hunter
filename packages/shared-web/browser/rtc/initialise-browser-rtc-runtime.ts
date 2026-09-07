@@ -13,7 +13,7 @@ import type {
 import type { WebRtcOverlayMulticaster } from '@shared/multicast/overlay-multicast-contracts.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
-import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
@@ -36,7 +36,7 @@ import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signal
 export interface InitialiseRtcOverlayMulticastManagerInput {
     readonly webRtcConnectionService: WebRtcConnectionService;
     readonly qboxEngine: InboxOutboxEngine;
-    readonly resilience: ResilienceDto;
+    readonly resilience: ResourceInboxResilience;
     readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
 }
 

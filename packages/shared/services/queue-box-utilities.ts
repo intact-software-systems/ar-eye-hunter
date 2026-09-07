@@ -1,21 +1,22 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { resolveALMessageExpireAtMs } from '../al-contracts/al-policy.ts';
-import { DequeueController } from '../queuebox/DequeueController.ts';
-import {
-    DequeueResourceEntryController,
-    ResilienceDto,
-    type DequeueResourceEntryOptions
-} from '../queuebox/DequeueResourceEntryController.ts';
+import { DequeueController } from '../queuebox/dequeue/dequeue-controller.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
+import {
+    createDefaultResourceInboxDequeuer,
+    type DequeueResourceEntryOptions
+} from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { isNotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
+import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, type Key, type ResourceEntry } from '../queuebox/ResourceEntry.ts';
-import type { ResourceInboxAttemptTelemetry } from '../queuebox/ResourceInboxAttemptTelemetry.ts';
 
 export namespace QueueBoxUtilities {
     export interface DequeueInput {
         readonly qbox: QueueBoxResourceEntryRepository;
         readonly typesToDequeue: Set<string>;
-        readonly resilience: ResilienceDto;
+        readonly resilience: ResourceInboxResilience;
         readonly onDequeuedDo: (entry: ResourceEntry, attemptTelemetry: ResourceInboxAttemptTelemetry) => Promise<void>;
         readonly options: DequeueResourceEntryOptions;
     }
@@ -30,20 +31,27 @@ export class QueueBoxUtilities {
             return;
         }
 
-        await DequeueResourceEntryController.toDequeuer<Key>(
-            qbox,
-            () => typesToDequeue,
-            () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
-            resilience.retryPolicy.maxAttempts,
-            DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE,
-            resilience,
-            options
-        )
+        await createDefaultResourceInboxDequeuer<Key>({
+            repository: qbox,
+            typesToDequeue: () => typesToDequeue,
+            maxToReserve: () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
+            maxNumToDequeue: DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE,
+            resilience: resilience,
+            options: options
+        })
             .onFailedEntries(
-                (_) => resilience.failure()
+                (failures) => {
+                    if ([...failures.values()].some((failure) => !isNotReadyException(failure.exception))) {
+                        resilience.failure();
+                    }
+                }
             )
             .onCompletedEntries(
-                (_) => resilience.success()
+                (completed) => {
+                    if (completed.size > 0) {
+                        resilience.success();
+                    }
+                }
             )
             .dequeueForCompute(
                 async (key, attempt) => {

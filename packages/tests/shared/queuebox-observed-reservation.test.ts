@@ -30,7 +30,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s observed QueueBox 
         const before = observations.map((entry) => ({ ...entry, dequeueAudit: { ...entry.dequeueAudit } }));
         await queue.replaceIfObserved(observations[0], { ...observations[0], resource: 'replacement' });
 
-        const claimed = await queue.reserveEntries(new Set(['ordered-work']), new Set([EntityStatus.NEW]), 1, observations);
+        const claimed = await queue.reserveEntries({
+            typeIds: new Set(['ordered-work']),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 1,
+            observedEntries: observations
+        });
 
         expect([...claimed.values()]).toMatchObject([{
             key: eligible.key,
@@ -40,7 +45,14 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s observed QueueBox 
         expect(observations).toEqual(before);
         expect(await queue.getItem(stale.key)).toMatchObject({ resource: 'replacement', dequeueAudit: { attempts: 0 } });
         expect(await queue.getItem(waiting.key)).toMatchObject({ status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
-        expect(await queue.reserveEntries(new Set(['ordered-work']), new Set([EntityStatus.NEW]), 10, [])).toEqual(new Map());
+        expect(
+            await queue.reserveEntries({
+                typeIds: new Set(['ordered-work']),
+                statusIds: new Set([EntityStatus.NEW]),
+                reservationInput: 10,
+                observedEntries: []
+            })
+        ).toEqual(new Map());
     });
 
     it('reclaims only unchanged selected timed-out reservations', async () => {
@@ -59,12 +71,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s observed QueueBox 
         const observations = [(await queue.getItem(stale.key))!, (await queue.getItem(eligible.key))!];
         await queue.replaceIfObserved(observations[0], { ...observations[0], resource: 'replacement' });
 
-        const claimed = await queue.reserveTimeoutEntries(
-            new Set(['ordered-work']),
-            1,
-            Temporal.Duration.from({ seconds: 10 }),
-            observations
-        );
+        const claimed = await queue.reserveTimeoutEntries({
+            typeIds: new Set(['ordered-work']),
+            reservationInput: 1,
+            timeSinceStartTs: Temporal.Duration.from({ seconds: 10 }),
+            observedEntries: observations
+        });
 
         expect([...claimed.values()]).toMatchObject([{
             key: eligible.key,
@@ -73,7 +85,14 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s observed QueueBox 
         }]);
         expect(await queue.getItem(stale.key)).toMatchObject({ resource: 'replacement', dequeueAudit: { attempts: 1 } });
         expect(await queue.getItem(waiting.key)).toMatchObject({ dequeueAudit: { attempts: 1 } });
-        expect(await queue.reserveTimeoutEntries(new Set(['ordered-work']), 10, Temporal.Duration.from({ seconds: 10 }), []))
+        expect(
+            await queue.reserveTimeoutEntries({
+                typeIds: new Set(['ordered-work']),
+                reservationInput: 10,
+                timeSinceStartTs: Temporal.Duration.from({ seconds: 10 }),
+                observedEntries: []
+            })
+        )
             .toEqual(new Map());
     });
 
@@ -83,7 +102,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s observed QueueBox 
         await queue.enqueue(entry);
         const observed = (await queue.getItem(entry.key))!;
 
-        const claim = queue.reserveEntries(new Set(['ordered-work']), new Set([EntityStatus.NEW]), 10, [observed, observed]);
+        const claim = queue.reserveEntries({
+            typeIds: new Set(['ordered-work']),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 10,
+            observedEntries: [observed, observed]
+        });
         observed.status = EntityStatus.NON_RETRYABLE;
         observed.dequeueAudit = { ...observed.dequeueAudit, attempts: 19 };
 
@@ -122,12 +146,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s observed QueueBox 
             observations.push((await queue.getItem(entry.key))!);
         }
 
-        const claimed = await queue.reserveEntries(
-            new Set(['ordered-work']),
-            new Set([EntityStatus.NEW, EntityStatus.RETRY]),
-            { maxToReserve: 1, maxAttempts: 20 },
-            selection === 'observed' ? observations : undefined
-        );
+        const claimed = await queue.reserveEntries({
+            typeIds: new Set(['ordered-work']),
+            statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]),
+            reservationInput: { maxToReserve: 1, maxAttempts: 20 },
+            observedEntries: selection === 'observed' ? observations : undefined
+        });
 
         expect([...claimed.values()]).toMatchObject([{ key: eligible.key, dequeueAudit: { attempts: 1 } }]);
         for (const observed of observations.slice(0, -1)) {
@@ -141,10 +165,24 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s observed QueueBox 
         await queue.enqueue(entry);
         const observed = (await queue.getItem(entry.key))!;
         await queue.removeItem(entry.key);
-        expect(await queue.reserveEntries(new Set(['ordered-work']), new Set([EntityStatus.NEW]), 1, [observed])).toEqual(new Map());
+        expect(
+            await queue.reserveEntries({
+                typeIds: new Set(['ordered-work']),
+                statusIds: new Set([EntityStatus.NEW]),
+                reservationInput: 1,
+                observedEntries: [observed]
+            })
+        ).toEqual(new Map());
         await queue.enqueue({ ...entry, resource: 'later-message' });
 
-        expect(await queue.reserveEntries(new Set(['ordered-work']), new Set([EntityStatus.NEW]), 1, [observed])).toEqual(new Map());
+        expect(
+            await queue.reserveEntries({
+                typeIds: new Set(['ordered-work']),
+                statusIds: new Set([EntityStatus.NEW]),
+                reservationInput: 1,
+                observedEntries: [observed]
+            })
+        ).toEqual(new Map());
         expect(await queue.getItem(entry.key)).toMatchObject({ resource: 'later-message', dequeueAudit: { attempts: 0 } });
     });
 });
@@ -163,7 +201,12 @@ it('reads only selected IndexedDB rows, leaving unrelated malformed storage outs
     const transaction = db.transaction('entries', 'readwrite');
     await readIndexedDbTransaction(transaction, async () => await readIndexedDbRequest(transaction.objectStore('entries').put(corrupt)));
 
-    const claimed = await queue.reserveEntries(new Set(['ordered-work']), new Set([EntityStatus.NEW]), 1, [observed]);
+    const claimed = await queue.reserveEntries({
+        typeIds: new Set(['ordered-work']),
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: 1,
+        observedEntries: [observed]
+    });
 
     expect([...claimed.values()]).toMatchObject([{ key: entry.key, dequeueAudit: { attempts: 1 } }]);
     const readback = db.transaction('entries', 'readonly');

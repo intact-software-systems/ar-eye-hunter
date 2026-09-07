@@ -12,7 +12,7 @@ import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-ad
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
-import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -58,7 +58,11 @@ it('terminalizes a malformed reservation without starving independent timeout re
     const queue = resources.admissionStore.workQueue;
     const keys = await queue.getAllKeys();
     const first = (await queue.getItem(keys[0]))!;
-    const claimed = await queue.reserveEntries(new Set([first.typeId]), new Set([EntityStatus.NEW]), { maxToReserve: 2, maxAttempts: 20 });
+    const claimed = await queue.reserveEntries({
+        typeIds: new Set([first.typeId]),
+        statusIds: new Set([EntityStatus.NEW]),
+        reservationInput: { maxToReserve: 2, maxAttempts: 20 }
+    });
     const [broken, sibling] = [...claimed.values()];
     expect(
         await queue.replaceIfObserved(broken, {

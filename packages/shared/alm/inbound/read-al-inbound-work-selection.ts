@@ -1,4 +1,4 @@
-import { NonRetryableException } from '../../queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';

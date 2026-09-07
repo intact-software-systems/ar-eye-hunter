@@ -1,4 +1,4 @@
-import { NonRetryableException } from '../../queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
@@ -14,6 +14,7 @@ import type {
 
 export type ALOutboundWorkDisposition =
     | Readonly<{ status: 'completed'; }>
+    | Readonly<{ status: 'not-ready'; readyAtMs: number; }>
     | Readonly<{ status: 'reschedule'; readyAtMs: number; }>;
 
 export type ALOutboundWorkAttemptResult =
@@ -165,7 +166,7 @@ export class ALOutboundWorkHandler<TPrepared> {
                 return;
             }
             await this.release(effect, result);
-            if (result.status === 'reschedule') {
+            if (result.status !== 'completed') {
                 counts.rescheduledCount += 1;
             }
             else {
@@ -212,10 +213,11 @@ export class ALOutboundWorkHandler<TPrepared> {
         effect: ALClaimedOutboundEffect<TPrepared>,
         result: ALOutboundWorkDisposition
     ): Promise<void> {
-        if (result.status === 'reschedule') {
+        if (result.status !== 'completed') {
             await this.dependencies.admissionStore.rescheduleEffect({
                 reservation: effect.entry,
-                retryAtMs: result.readyAtMs
+                retryAtMs: result.readyAtMs,
+                reason: result.status === 'not-ready' ? 'not-ready' : undefined
             });
         }
         else {

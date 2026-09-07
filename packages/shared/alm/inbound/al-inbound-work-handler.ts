@@ -1,5 +1,5 @@
-import { NonRetryableException } from '../../queuebox/DequeueResourceEntryController.ts';
 import type { ResourceInboxWorkPage } from '../../queuebox/queue-box-types.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';

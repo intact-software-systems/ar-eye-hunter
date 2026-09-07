@@ -28,6 +28,22 @@ afterEach(() => {
 });
 
 describe('RTC outbound transport results', () => {
+    it('waits through more readiness cycles than the processing budget and sends when the actual channel opens', async () => {
+        const channel = createChannel();
+        const native = nativeRuntime.createdConnections[0].channels[0];
+        const resources = createDefaultALOutboundRuntimeResources();
+        const manager = createManager([channel], resources);
+        onTestFinished(() => manager.dispose());
+        const message = createMessage('long-readiness');
+        await manager.enqueueIfAbsent(message);
+        await vi.advanceTimersByTimeAsync(1_250);
+        expect(native.sent).toEqual([]);
+        await native.open();
+        await vi.advanceTimersByTimeAsync(50);
+        expect(native.sent).toHaveLength(1);
+        expect(JSON.parse(String(native.sent[0]))).toMatchObject({ id: message.id, constraints: message.constraints });
+        expect(await resources.admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+    });
     it('retains queued send work until submission without blocking an available peer', async () => {
         const blocked = createChannel({ overflow: 'queue' });
         const available = createChannel({}, 'peer-2');

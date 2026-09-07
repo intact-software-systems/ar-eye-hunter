@@ -14,7 +14,7 @@ import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC
 
 import { toAuthorisedWsClientConnection } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import {
     assertPGliteQueuedTypes as assertQueuedTypes,
@@ -401,11 +401,11 @@ async function createRoom(
 }
 
 async function processNext(reader: InboxQueueReader): Promise<void> {
-    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
 }
 
 async function processNextOutbox(reader: OutboxQueueReader): Promise<void> {
-    await reader.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, toResilienceDto());
+    await reader.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
 }
 
 interface QueueKey {

@@ -35,7 +35,7 @@ import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-
 import { createApiCrdtDocumentAuthorizer } from '../../src/crdt/create-api-crdt-document-authorizer.ts';
 import { createApiCrdtInboxService } from '../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../db/pglite-app-inbox-test-runtime.ts';
 import { toPersistedAuthSessionFixture, withPGliteSql } from '../db/pglite-auth-test-harness.ts';
 import { PGliteTestSocket } from '../db/pglite-test-socket.ts';
@@ -278,7 +278,7 @@ async function drain(
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
     await fixture.inboxQueueReader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
-        toResilienceDto()
+        createApiV1TestQueueResilience()
     );
     for (let attempt = 0; attempt < 50; attempt += 1) {
         if ((await readResults(sql)).length >= expectedResults) {

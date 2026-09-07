@@ -30,7 +30,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { assertGroupPresenceSummaryAppToWsLifecycle } from '../../../../packages/tests/shared-server/rallar-system/app-outbox/postgres/worker-outbox-lifecycle-assertions.ts';
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { readPGliteAppInboxFailure, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
@@ -306,7 +306,7 @@ Deno.test(
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             const result = await pending;
             assert.equal(result.right !== undefined, true);
@@ -331,7 +331,7 @@ Deno.test(
                 await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
                 await inboxReader.dequeueInbox(
                     InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                    toResilienceDto()
+                    createApiV1TestQueueResilience()
                 );
                 assert.equal((await join).left, undefined);
             }
@@ -354,7 +354,7 @@ Deno.test(
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             const duplicateJoinResult = await duplicateJoin;
             assert.equal(duplicateJoinResult.left, undefined);
@@ -398,7 +398,7 @@ Deno.test(
 
             await outboxReader.dequeueOutbox(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             const afterSummary = await sql<ResourceInboxLifecycleRow[]>`
       select ri_resource_id, ri_topic_id, ri_type_id, ri_status, ri_resource
@@ -496,7 +496,7 @@ Deno.test(
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
             await inboxReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
+                createApiV1TestQueueResilience()
             );
             assert.equal((await pending).right !== undefined, true);
 

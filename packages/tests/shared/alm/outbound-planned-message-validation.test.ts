@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -42,13 +42,18 @@ describe('outbound planner validation boundary', () => {
         });
         await runtime.dequeue(
             new Set(['outbox']),
-            ResilienceDto.toResilienceDto(
-                new CircuitBreakerPolicy(10, Temporal.Duration.from('PT1S'), Temporal.Duration.from('PT1S'), Temporal.Duration.from('PT1S')),
-                1,
-                10,
-                1,
-                1
-            )
+            ResourceInboxResilience.createDefault({
+                circuitBreakerPolicy: new CircuitBreakerPolicy(
+                    10,
+                    Temporal.Duration.from('PT1S'),
+                    Temporal.Duration.from('PT1S'),
+                    Temporal.Duration.from('PT1S')
+                ),
+                initialRate: 1,
+                maxRate: 10,
+                concurrencyIncreaseStep: 1,
+                concurrencyReduceStep: 1
+            })
         );
         expect((await outbox.getItem(entry.key))?.status).toBe(EntityStatus.NON_RETRYABLE);
     });

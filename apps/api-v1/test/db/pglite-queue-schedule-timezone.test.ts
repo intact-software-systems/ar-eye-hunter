@@ -32,11 +32,11 @@ Deno.test('PGlite scheduled entries stay invisible until next_ts under a skewed 
         await repository.entries.writeIfAbsentOrMatch(future);
         await repository.entries.writeIfAbsentOrMatch(due);
 
-        const reserved = await queueBox.reserveEntries(
-            new Set(['TYPE_A']),
-            new Set([EntityStatus.NEW]),
-            { maxToReserve: 10, maxAttempts: 20 }
-        );
+        const reserved = await queueBox.reserveEntries({
+            typeIds: new Set(['TYPE_A']),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: { maxToReserve: 10, maxAttempts: 20 }
+        });
         assert.deepEqual(
             [...reserved.keys()].map((key) => key.resourceId),
             ['scheduled-due']
@@ -44,11 +44,11 @@ Deno.test('PGlite scheduled entries stay invisible until next_ts under a skewed 
 
         // The opposite skew direction must not hold a due entry hostage either.
         await sql.exec('set time zone \'Etc/GMT+5\'');
-        const reservedOpposite = await queueBox.reserveEntries(
-            new Set(['TYPE_A']),
-            new Set([EntityStatus.NEW]),
-            { maxToReserve: 10, maxAttempts: 20 }
-        );
+        const reservedOpposite = await queueBox.reserveEntries({
+            typeIds: new Set(['TYPE_A']),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: { maxToReserve: 10, maxAttempts: 20 }
+        });
         assert.deepEqual([...reservedOpposite.keys()], []);
     });
 });
@@ -60,22 +60,22 @@ Deno.test('PGlite retry release delay is honored under a skewed session time zon
         const queueBox = new PSqlQueueBox(repository);
 
         await repository.entries.writeIfAbsentOrMatch(createResourceEntry('retry-delayed'));
-        const reserved = await queueBox.reserveEntries(
-            new Set(['TYPE_A']),
-            new Set([EntityStatus.NEW]),
-            { maxToReserve: 10, maxAttempts: 20 }
-        );
+        const reserved = await queueBox.reserveEntries({
+            typeIds: new Set(['TYPE_A']),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: { maxToReserve: 10, maxAttempts: 20 }
+        });
         assert.equal(reserved.size, 1);
 
         await queueBox.releaseEntries(
             [...reserved.values()],
             { status: EntityStatus.RETRY, delayMs: 60_000 }
         );
-        const retryReserved = await queueBox.reserveEntries(
-            new Set(['TYPE_A']),
-            new Set([EntityStatus.RETRY]),
-            { maxToReserve: 10, maxAttempts: 20 }
-        );
+        const retryReserved = await queueBox.reserveEntries({
+            typeIds: new Set(['TYPE_A']),
+            statusIds: new Set([EntityStatus.RETRY]),
+            reservationInput: { maxToReserve: 10, maxAttempts: 20 }
+        });
         assert.deepEqual([...retryReserved.keys()], []);
     });
 });

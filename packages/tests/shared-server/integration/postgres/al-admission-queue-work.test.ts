@@ -9,11 +9,11 @@ import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outboun
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import {
-    DequeueResourceEntryController,
+    createDefaultResourceInboxDequeuer,
     NonRetryableException,
-    ResilienceDto,
     ResourceInboxHandlerEntryError
-} from '@shared/queuebox/DequeueResourceEntryController.ts';
+} from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 
@@ -72,16 +72,21 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             dequeueAudit: { attempts: 19, startTs: dueAt, endTs: dueAt, nextTs: dueAt }
         });
         const duration = Temporal.Duration.from({ seconds: 10 });
-        const resilience = ResilienceDto.toResilienceDto(new CircuitBreakerPolicy(10, duration, duration, duration), 1, 10, 1, 1);
+        const resilience = ResourceInboxResilience.createDefault({
+            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+            initialRate: 1,
+            maxRate: 10,
+            concurrencyIncreaseStep: 1,
+            concurrencyReduceStep: 1
+        });
         const types = new Set([entry.typeId]);
-        const controller = DequeueResourceEntryController.toDequeuer<string>(
-            backend.workQueue,
-            () => types,
-            () => 1,
-            20,
-            10,
-            resilience
-        );
+        const controller = createDefaultResourceInboxDequeuer<string>({
+            repository: backend.workQueue,
+            typesToDequeue: () => types,
+            maxToReserve: () => 1,
+            maxNumToDequeue: 10,
+            resilience: resilience
+        });
 
         await controller.dequeueForCompute(async () => {
             throw new NonRetryableException('Malformed persisted message');
@@ -93,13 +98,19 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         });
         const reservation = { maxToReserve: 1, maxAttempts: 21 };
         expect(
-            await other.workQueue.reserveEntries(
-                types,
-                new Set([EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.FAILED]),
-                reservation
-            )
+            await other.workQueue.reserveEntries({
+                typeIds: types,
+                statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.FAILED]),
+                reservationInput: reservation
+            })
         ).toEqual(new Map());
-        expect(await other.workQueue.reserveTimeoutEntries(types, reservation, Temporal.Duration.from({ milliseconds: 0 })))
+        expect(
+            await other.workQueue.reserveTimeoutEntries({
+                typeIds: types,
+                reservationInput: reservation,
+                timeSinceStartTs: Temporal.Duration.from({ milliseconds: 0 })
+            })
+        )
             .toEqual(new Map());
         expect(
             await other.workQueue.reserveRetryExhaustionFinalizations(types, {
@@ -114,15 +125,20 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         const { backend, other, entry } = await createStorage();
         await backend.workQueue.enqueue(entry);
         const duration = Temporal.Duration.from({ seconds: 10 });
-        const resilience = ResilienceDto.toResilienceDto(new CircuitBreakerPolicy(10, duration, duration, duration), 1, 10, 1, 1);
-        const controller = DequeueResourceEntryController.toDequeuer<string>(
-            backend.workQueue,
-            () => new Set([entry.typeId]),
-            () => 1,
-            20,
-            10,
-            resilience
-        );
+        const resilience = ResourceInboxResilience.createDefault({
+            circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+            initialRate: 1,
+            maxRate: 10,
+            concurrencyIncreaseStep: 1,
+            concurrencyReduceStep: 1
+        });
+        const controller = createDefaultResourceInboxDequeuer<string>({
+            repository: backend.workQueue,
+            typesToDequeue: () => new Set([entry.typeId]),
+            maxToReserve: () => 1,
+            maxNumToDequeue: 10,
+            resilience: resilience
+        });
         const accepted: string[] = [];
         await expect.poll(async () => {
             await controller.dequeueForCompute(async (_key, attempt) => {
@@ -220,7 +236,11 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             transaction.writeWork(entry);
         });
         expect(await other.read('admitted', (value) => value)).toBe('accepted');
-        const reserved = await other.workQueue.reserveEntries(new Set([entry.typeId]), new Set([EntityStatus.NEW]), 1);
+        const reserved = await other.workQueue.reserveEntries({
+            typeIds: new Set([entry.typeId]),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 1
+        });
         expect([...reserved.values()]).toMatchObject([{
             key: entry.key,
             resource: entry.resource,
@@ -248,7 +268,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         await expect(backend.write(async (transaction) => {
             await transaction.readWork(entry.key);
             await transaction.readWork(second.key);
-            await other.workQueue.reserveEntries(new Set([entry.typeId]), new Set([EntityStatus.NEW]), 1);
+            await other.workQueue.reserveEntries({ typeIds: new Set([entry.typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 });
             await transaction.set('admitted', 'stale');
             transaction.writeWork(entry);
             transaction.writeWork({ ...second, resource: 'stale' });
@@ -276,10 +296,13 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
     postgresIt('fences an old worker after terminal work is reused at the same key', async () => {
         const { backend, other, entry } = await createStorage();
         await backend.workQueue.enqueue(entry);
-        const [old] = (await backend.workQueue.reserveEntries(new Set([entry.typeId]), new Set([EntityStatus.NEW]), 1)).values();
+        const [old] =
+            (await backend.workQueue.reserveEntries({ typeIds: new Set([entry.typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 }))
+                .values();
         await backend.workQueue.releaseEntries([old], { status: EntityStatus.COMPLETED, delayMs: null });
         await other.workQueue.enqueue({ ...entry, resource: 'later-work' });
-        const [current] = (await other.workQueue.reserveEntries(new Set([entry.typeId]), new Set([EntityStatus.NEW]), 1)).values();
+        const [current] =
+            (await other.workQueue.reserveEntries({ typeIds: new Set([entry.typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 })).values();
         expect(old.dequeueAudit.attempts).toBe(current.dequeueAudit.attempts);
         await expect(backend.workQueue.releaseEntries([old], { status: EntityStatus.COMPLETED, delayMs: null }))
             .rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });

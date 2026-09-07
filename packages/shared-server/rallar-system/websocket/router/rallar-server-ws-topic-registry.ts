@@ -1,7 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import { assertValidRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
-import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
     RallarServerWsFanout,

@@ -26,7 +26,7 @@ import type { OnMessageCallback } from '@shared/services/queue-message-callbacks
 import { createApiCrdtInboxFactory } from '../../../src/crdt/create-api-crdt-inbox-factory.ts';
 import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
-import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
 import { readPGliteDatabaseEpochMs, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
@@ -114,7 +114,7 @@ Deno.test(
             const service = factory({
                 inboxQueueReader,
                 outboxQueueReader,
-                appInboxResilience: toResilienceDto(),
+                appInboxResilience: createApiV1TestQueueResilience(),
                 wakeQueueEngine: () => {
                     wakes += 1;
                 }
@@ -435,7 +435,7 @@ async function drainCrdtInbox(
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
     await inboxQueueReader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
-        toResilienceDto()
+        createApiV1TestQueueResilience()
     );
 }
 

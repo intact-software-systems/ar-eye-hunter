@@ -21,13 +21,15 @@ import { createDefaultALInboundRuntimeResources } from '../../alm/inbound/create
 import type {
     ALOutboundEnqueueResult,
     ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundRuntimeStores
+    ALOutboundRuntimeStores,
+    ALOutboundSettledSendResult
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundRuntimeResources } from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
-import { NonRetryableException, type ResilienceDto } from '../../queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import { JsonWebSocketServer, type ConnectionContext } from '../../websocket/json-web-socket-server.ts';
@@ -329,7 +331,7 @@ export class WsQueueBoxServerService {
 
     async dequeueOutbox(
         typesToDequeue: Set<string>,
-        resilience: ResilienceDto
+        resilience: ResourceInboxResilience
     ): Promise<void> {
         await this.outboundRuntime.dequeue(typesToDequeue, resilience);
     }
@@ -529,12 +531,19 @@ export class WsQueueBoxServerService {
 
     private async sendPreparedMessage(
         prepared: WsQueueBoxServerPreparedMessage
-    ): Promise<Readonly<{ status: 'sent' | 'no-targets'; }>> {
+    ): Promise<ALOutboundSettledSendResult> {
         if (prepared.kind === 'cluster-local-complete') {
             return { status: 'sent' };
         }
         try {
             const encoded = this.socket.encode(prepared.message);
+            if (!this.socket.connections.get(prepared.connectionId)?.isOpen) {
+                return {
+                    status: 'not-ready',
+                    retryAfterMs: 50,
+                    reason: 'WS connection is not open before native submission'
+                };
+            }
             this.socket.sendEncoded(prepared.connectionId, encoded);
             this.deliveryReporting.recordOutcome({
                 status: 'sent',

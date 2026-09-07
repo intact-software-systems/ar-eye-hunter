@@ -49,6 +49,7 @@ export interface ClaimALOutboundEffectsInput {
 export interface RescheduleALOutboundEffectInput {
     readonly reservation: ResourceEntry;
     readonly retryAtMs: number;
+    readonly reason?: 'not-ready';
 }
 
 export interface CreateALOutboundAdmissionEffectStoreInput {
@@ -168,14 +169,22 @@ export class ALOutboundAdmissionEffectStore {
         if (remaining === 0) {
             return [];
         }
-        const pending = await queue.reserveEntries(types, new Set(NEW_AND_RETRY_STATUSES), {
-            maxToReserve: remaining,
-            maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+        const pending = await queue.reserveEntries({
+            typeIds: types,
+            statusIds: new Set(NEW_AND_RETRY_STATUSES),
+            reservationInput: {
+                maxToReserve: remaining,
+                maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+            }
         });
-        const recovered = await queue.reserveTimeoutEntries(types, {
-            maxToReserve: Math.max(0, remaining - pending.size),
-            maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-        }, Temporal.Duration.from({ milliseconds: AL_OUTBOUND_WORK_LEASE_MS }));
+        const recovered = await queue.reserveTimeoutEntries({
+            typeIds: types,
+            reservationInput: {
+                maxToReserve: Math.max(0, remaining - pending.size),
+                maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+            },
+            timeSinceStartTs: Temporal.Duration.from({ milliseconds: AL_OUTBOUND_WORK_LEASE_MS })
+        });
         const claimed: ALClaimedOutboundEffect<TPrepared>[] = [];
         for (const entry of [...pending.values(), ...recovered.values()]) {
             const effect = await this.acceptClaimedEffect(entry, decodePrepared);
@@ -221,9 +230,14 @@ export class ALOutboundAdmissionEffectStore {
             input.reservation.dequeueAudit.attempts,
             0.5
         );
-        const disposition: ResourceInboxReleaseDisposition = decision.status === 'failed'
-            ? { status: EntityStatus.FAILED, delayMs: null }
-            : { status: EntityStatus.RETRY, delayMs: Math.max(1, Math.ceil(input.retryAtMs - Date.now())) };
+        const disposition: ResourceInboxReleaseDisposition =
+            decision.status === 'failed' && input.reason !== 'not-ready'
+                ? { status: EntityStatus.FAILED, delayMs: null }
+                : {
+                    status: EntityStatus.RETRY,
+                    delayMs: Math.max(1, Math.ceil(input.retryAtMs - Date.now())),
+                    reason: input.reason
+                };
         await this.releaseEffect(input.reservation, disposition);
     }
 

@@ -1,6 +1,6 @@
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { Reservator } from '@shared/queuebox/DequeueController.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';

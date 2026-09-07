@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
@@ -99,15 +99,15 @@ export function createPostgresAppInboxWorkerRuntime(
     };
 }
 
-function createWorkerResilience(): ResilienceDto {
+function createWorkerResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(100, duration, duration, duration),
-        1,
-        1,
-        1,
-        1
-    );
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(100, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 1,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }
 
 function yieldEventLoop(): Promise<void> {

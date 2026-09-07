@@ -1,7 +1,8 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
-import { NonRetryableException, type ResilienceDto } from '../../queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceInboxResilience } from '../../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
@@ -25,7 +26,7 @@ import { isALOutboundReceiptComplete } from './transition-al-outbound-pending-ac
 export type ALOutboundDispatchPhase = 'immediate' | 'dequeue';
 
 export interface ALOutboundSettledSendResult {
-    readonly status: 'sent' | 'no-targets' | 'not-ready' | 'cancelled' | 'expired' | 'superseded';
+    readonly status: 'sent' | 'no-targets' | 'not-ready' | 'failed' | 'cancelled' | 'expired' | 'superseded';
     readonly reason?: string;
     readonly retryAfterMs?: number;
 }
@@ -292,7 +293,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     async dequeue(
         typesToDequeue: Set<string>,
-        resilience: ResilienceDto
+        resilience: ResourceInboxResilience
     ): Promise<void> {
         if (this.disposed) {
             return;
@@ -450,11 +451,19 @@ export class ALOutboundMessageRuntime<TPrepared> {
             return {
                 status: 'retained',
                 settled: sendResult.settled.then((settled) =>
-                    computeALOutboundSendDisposition(settled, this.readNowMs(), retry.delayMs ?? 0)
+                    computeALOutboundSendDisposition(settled, {
+                        observedAtMs: this.readNowMs(),
+                        retryDelayMs: retry.delayMs ?? 0,
+                        expiresAtMs: lifecycle.expiresAtMs
+                    })
                 )
             };
         }
-        return computeALOutboundSendDisposition(sendResult, this.readNowMs(), retry.delayMs ?? 0);
+        return computeALOutboundSendDisposition(sendResult, {
+            observedAtMs: this.readNowMs(),
+            retryDelayMs: retry.delayMs ?? 0,
+            expiresAtMs: lifecycle.expiresAtMs
+        });
     }
 
     private readNowMs(): number {
@@ -462,15 +471,27 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 }
 
+interface ALOutboundSettlementTiming {
+    readonly observedAtMs: number;
+    readonly retryDelayMs: number;
+    readonly expiresAtMs: number | undefined;
+}
+
 function computeALOutboundSendDisposition(
     result: ALOutboundSettledSendResult,
-    observedAtMs: number,
-    retryDelayMs: number
+    timing: ALOutboundSettlementTiming
 ): ALOutboundWorkDisposition {
-    return result.status === 'not-ready'
-        ? {
-            status: 'reschedule',
-            readyAtMs: observedAtMs + Math.max(0, result.retryAfterMs ?? retryDelayMs)
-        }
-        : { status: 'completed' };
+    if (timing.expiresAtMs !== undefined && timing.observedAtMs >= timing.expiresAtMs) {
+        return { status: 'completed' };
+    }
+    if (result.status !== 'not-ready' && result.status !== 'failed') {
+        return { status: 'completed' };
+    }
+    const retryAtMs = timing.observedAtMs + Math.max(1, result.retryAfterMs ?? timing.retryDelayMs);
+    return {
+        status: result.status === 'not-ready' ? 'not-ready' : 'reschedule',
+        readyAtMs: result.status === 'not-ready' && timing.expiresAtMs !== undefined
+            ? Math.min(retryAtMs, timing.expiresAtMs)
+            : retryAtMs
+    };
 }

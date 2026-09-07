@@ -148,10 +148,14 @@ const createInitialCounters = (): Record<keyof RtcDataChannelCounters, number> =
 
 export namespace QRtcDataChannel {
     /** Local ownership outcome. `sent` establishes native submission, not receiver acknowledgement. */
-    export interface SendSettlement {
+    export interface SendDisposition {
+        readonly submissionAttempted: boolean;
         readonly status: 'sent' | 'dropped' | 'superseded' | 'expired' | 'closed' | 'failed' | 'cancelled';
-        readonly key: string | undefined;
         readonly reason: string | undefined;
+    }
+
+    export interface SendSettlement extends SendDisposition {
+        readonly key: string | undefined;
         readonly bufferedAmount: number;
     }
 
@@ -297,7 +301,12 @@ export class QRtcDataChannel {
         }
         const dc = this.status.dc;
         if (!dc || dc.readyState !== 'open') {
-            this.settleSend(options.onSettled, 'closed', 'Data channel not open', options.key);
+            this.settleSend(options.onSettled, {
+                status: 'closed',
+                reason: 'Data channel not open',
+                key: options.key,
+                submissionAttempted: false
+            });
             return this.recordSendResult('closed', 'Data channel not open', options.key);
         }
 
@@ -322,14 +331,32 @@ export class QRtcDataChannel {
             return this.enqueueBackPressuredSend(data, options);
         }
 
+        return this.submitNativeSend(dc, data, options);
+    }
+
+    private submitNativeSend(
+        dc: RTCDataChannel,
+        data: RtcDataChannelPayload,
+        options: RtcDataChannelSendOptions
+    ): RtcDataChannelSendResult {
         try {
             this.sendPayload(dc, data);
         }
         catch (error) {
-            this.settleSend(options.onSettled, 'failed', 'Native data channel send failed', options.key);
+            this.settleSend(options.onSettled, {
+                status: 'failed',
+                reason: 'Native data channel send failed',
+                key: options.key,
+                submissionAttempted: true
+            });
             throw error;
         }
-        this.settleSend(options.onSettled, 'sent', undefined, options.key);
+        this.settleSend(options.onSettled, {
+            status: 'sent',
+            reason: undefined,
+            key: options.key,
+            submissionAttempted: true
+        });
         return this.recordSendResult('sent', undefined, options.key);
     }
 
@@ -699,12 +726,20 @@ export class QRtcDataChannel {
         if (offerResult.displaced) {
             this.settleQueuedSend(
                 offerResult.displaced,
-                offerResult.status === 'replaced' ? 'superseded' : 'dropped',
-                offerResult.status === 'replaced' ? 'Replaced queued payload' : 'Queue capacity exceeded'
+                {
+                    status: offerResult.status === 'replaced' ? 'superseded' : 'dropped',
+                    reason: offerResult.status === 'replaced' ? 'Replaced queued payload' : 'Queue capacity exceeded',
+                    submissionAttempted: false
+                }
             );
         }
         if (offerResult.status === 'dropped') {
-            this.settleSend(options.onSettled, 'dropped', offerResult.reason, options.key);
+            this.settleSend(options.onSettled, {
+                status: 'dropped',
+                reason: offerResult.reason,
+                key: options.key,
+                submissionAttempted: false
+            });
         }
         else {
             this.observeQueuedCancellation(queued, options.signal);
@@ -732,18 +767,26 @@ export class QRtcDataChannel {
             }
             if (isRtcQueuedSendExpired(next, this.now())) {
                 this.counters.droppedStale += 1;
-                this.settleQueuedSend(next, 'expired', 'Queued payload expired');
+                this.settleQueuedSend(next, {
+                    status: 'expired',
+                    reason: 'Queued payload expired',
+                    submissionAttempted: false
+                });
                 continue;
             }
             try {
                 this.sendPayload(dc, next.payload.data);
                 this.counters.flushed += 1;
                 this.counters.sent += 1;
-                this.settleQueuedSend(next, 'sent', undefined);
+                this.settleQueuedSend(next, { status: 'sent', reason: undefined, submissionAttempted: true });
             }
             catch {
                 this.counters.dropped += 1;
-                this.settleQueuedSend(next, 'failed', 'Native data channel send failed');
+                this.settleQueuedSend(next, {
+                    status: 'failed',
+                    reason: 'Native data channel send failed',
+                    submissionAttempted: true
+                });
             }
         }
         this.scheduleQueueExpiry();
@@ -774,7 +817,11 @@ export class QRtcDataChannel {
     private expireQueuedSends(): void {
         for (const expired of this.sendQueue.removeExpired(this.now())) {
             this.counters.droppedStale += 1;
-            this.settleQueuedSend(expired, 'expired', 'Queued payload expired');
+            this.settleQueuedSend(expired, {
+                status: 'expired',
+                reason: 'Queued payload expired',
+                submissionAttempted: false
+            });
         }
     }
 
@@ -799,7 +846,7 @@ export class QRtcDataChannel {
         const removed = this.sendQueue.clear();
         this.scheduleQueueExpiry();
         for (const queued of removed) {
-            this.settleQueuedSend(queued, status, reason);
+            this.settleQueuedSend(queued, { status, reason, submissionAttempted: false });
         }
     }
 
@@ -813,7 +860,11 @@ export class QRtcDataChannel {
         const onAbort = () => {
             if (this.sendQueue.remove(queued)) {
                 this.counters.cancelled += 1;
-                this.settleQueuedSend(queued, 'cancelled', 'Send cancelled before native submission');
+                this.settleQueuedSend(queued, {
+                    status: 'cancelled',
+                    reason: 'Send cancelled before native submission',
+                    submissionAttempted: false
+                });
                 this.scheduleQueueExpiry();
             }
         };
@@ -826,27 +877,22 @@ export class QRtcDataChannel {
 
     private settleQueuedSend(
         queued: RtcDataChannelSendQueue.QueuedSend<RtcQueuedPayload>,
-        status: QRtcDataChannel.SendSettlement['status'],
-        reason: string | undefined
+        disposition: QRtcDataChannel.SendDisposition
     ): void {
         this.queuedSendCancellations.get(queued)?.();
         this.queuedSendCancellations.delete(queued);
-        this.settleSend(queued.payload.onSettled, status, reason, queued.key);
+        this.settleSend(queued.payload.onSettled, { ...disposition, key: queued.key });
     }
 
     private settleSend(
         observer: RtcDataChannelSendOptions['onSettled'],
-        status: QRtcDataChannel.SendSettlement['status'],
-        reason: string | undefined,
-        key: string | undefined
+        disposition: QRtcDataChannel.SendDisposition & Readonly<{ key: string | undefined; }>
     ): void {
         if (!observer) {
             return;
         }
         const settlement: QRtcDataChannel.SendSettlement = {
-            status,
-            reason,
-            key,
+            ...disposition,
             bufferedAmount: this.status.dc?.bufferedAmount ?? 0
         };
         void Promise.resolve().then(() => observer(settlement)).catch((error) => {
@@ -855,7 +901,7 @@ export class QRtcDataChannel {
     }
 
     private rejectSend(rejection: RtcSendRejection, options: RtcDataChannelSendOptions): RtcDataChannelSendResult {
-        this.settleSend(options.onSettled, rejection.status, rejection.reason, options.key);
+        this.settleSend(options.onSettled, { ...rejection, key: options.key, submissionAttempted: false });
         return this.recordSendResult(rejection.status, rejection.reason, options.key);
     }
 

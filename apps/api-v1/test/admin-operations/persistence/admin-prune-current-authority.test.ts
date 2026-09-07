@@ -8,7 +8,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import assert from 'node:assert/strict';
 import { createApiAdminInboxService } from '../../../src/admin-operations/create-api-admin-inbox-service.ts';
-import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
 import { readPGliteDatabaseEpochMs, withUtcPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
@@ -59,7 +59,7 @@ Deno.test('production admin prune rereads current admin authority before creatin
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
         await waitForWakeCount(() => wakeCount, 1);
         wakeCount = 0;
-        await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+        await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
         await pending;
 
         const [work] = await sql<{ count: string | number; }[]>`
@@ -130,7 +130,7 @@ Deno.test('committed initial admin page work wakes the queue after its transacti
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
         await waitForWakeCount(() => wakeCount, 1);
         wakeCount = 0;
-        await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+        await inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
 
         assert.equal(wakeCount, 1);
         const [page] = await sql<{ future: boolean; }[]>`
@@ -141,7 +141,7 @@ Deno.test('committed initial admin page work wakes the queue after its transacti
     `;
         assert.equal(page?.future, true);
         await waitForPGliteQueueRow(sql, 'APP_OUTBOX', 'NEW');
-        await outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, toResilienceDto());
+        await outbox.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
         await pending;
     });
 });

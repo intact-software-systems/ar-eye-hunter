@@ -57,11 +57,7 @@ describe('InMemoryQueueBox', () => {
         expect(await queue.enqueueIfAbsent(original)).toEqual(original);
         expect(await queue.enqueueIfAbsent(replacement)).toEqual(original);
 
-        const reserved = await queue.reserveEntries(
-            new Set([original.typeId]),
-            new Set([EntityStatus.NEW]),
-            1
-        );
+        const reserved = await queue.reserveEntries({ typeIds: new Set([original.typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 });
 
         expect(firstValue(reserved).resource).toBe(original.resource);
     });
@@ -125,16 +121,12 @@ describe('InMemoryQueueBox', () => {
 
         expect(queue.cleanup()).toBe(true);
 
-        const completed = await queue.reserveEntries(
-            new Set(['chat.message.v1']),
-            new Set([EntityStatus.COMPLETED]),
-            10
-        );
-        const active = await queue.reserveEntries(
-            new Set(['chat.message.v1']),
-            new Set([EntityStatus.NEW]),
-            10
-        );
+        const completed = await queue.reserveEntries({
+            typeIds: new Set(['chat.message.v1']),
+            statusIds: new Set([EntityStatus.COMPLETED]),
+            reservationInput: 10
+        });
+        const active = await queue.reserveEntries({ typeIds: new Set(['chat.message.v1']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
 
         expect(completed.size).toBe(0);
         expect(active.size).toBe(1);
@@ -160,11 +152,7 @@ describe('InMemoryQueueBox', () => {
         ).toBeUndefined();
         expect(await queue.deleteExpired()).toBe(0);
 
-        const active = await queue.reserveEntries(
-            new Set(['chat.message.v1']),
-            new Set([EntityStatus.NEW]),
-            10
-        );
+        const active = await queue.reserveEntries({ typeIds: new Set(['chat.message.v1']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
 
         expect(active.size).toBe(1);
     });
@@ -417,11 +405,11 @@ describe('InMemoryQueueBox', () => {
         });
         await queue.enqueue(exhausted);
 
-        const reserved = await queue.reserveEntries(
-            new Set([exhausted.typeId]),
-            new Set([EntityStatus.RETRY]),
-            { maxToReserve: 1, maxAttempts: 2 }
-        );
+        const reserved = await queue.reserveEntries({
+            typeIds: new Set([exhausted.typeId]),
+            statusIds: new Set([EntityStatus.RETRY]),
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+        });
 
         expect(reserved.size).toBe(0);
         expect((await queue.getItem(exhausted.key))?.dequeueAudit.attempts).toBe(2);
@@ -457,16 +445,16 @@ describe('InMemoryQueueBox', () => {
             }
         );
         const reserved = entryOptions.status === EntityStatus.RETRY
-            ? await queue.reserveEntries(
-                new Set([exhausted.typeId]),
-                new Set([EntityStatus.RETRY]),
-                { maxToReserve: 1, maxAttempts: 2 }
-            )
-            : await queue.reserveTimeoutEntries(
-                new Set([exhausted.typeId]),
-                { maxToReserve: 1, maxAttempts: 2 },
-                Temporal.Duration.from({ minutes: 5 })
-            );
+            ? await queue.reserveEntries({
+                typeIds: new Set([exhausted.typeId]),
+                statusIds: new Set([EntityStatus.RETRY]),
+                reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+            })
+            : await queue.reserveTimeoutEntries({
+                typeIds: new Set([exhausted.typeId]),
+                reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+                timeSinceStartTs: Temporal.Duration.from({ minutes: 5 })
+            });
 
         expect(advertised).toBe(false);
         expect(reserved.size).toBe(0);
@@ -482,11 +470,11 @@ describe('InMemoryQueueBox', () => {
         });
         await queue.enqueue(recoverable);
 
-        const reclaimed = await queue.reserveTimeoutEntries(
-            new Set([recoverable.typeId]),
-            { maxToReserve: 1, maxAttempts: 2 },
-            Temporal.Duration.from({ minutes: 5 })
-        );
+        const reclaimed = await queue.reserveTimeoutEntries({
+            typeIds: new Set([recoverable.typeId]),
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+            timeSinceStartTs: Temporal.Duration.from({ minutes: 5 })
+        });
 
         expect(firstValue(reclaimed).dequeueAudit.attempts).toBe(2);
         expect(firstValue(reclaimed).dequeueAudit.startTs?.toString())
@@ -494,11 +482,11 @@ describe('InMemoryQueueBox', () => {
         expect(firstValue(reclaimed).dequeueAudit.endTs).toBeUndefined();
 
         expect(
-            (await queue.reserveTimeoutEntries(
-                new Set([recoverable.typeId]),
-                { maxToReserve: 1, maxAttempts: 2 },
-                Temporal.Duration.from({ milliseconds: 0 })
-            )).size
+            (await queue.reserveTimeoutEntries({
+                typeIds: new Set([recoverable.typeId]),
+                reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+                timeSinceStartTs: Temporal.Duration.from({ milliseconds: 0 })
+            })).size
         ).toBe(0);
     });
 

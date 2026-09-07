@@ -21,8 +21,8 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import type { OverlayMulticasterContext } from '@shared/multicast/overlay-multicast-contracts.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
@@ -111,12 +111,12 @@ describe('WebRtc overlay services', () => {
             expect(manager.planIncomingMessage(message, { kind: 'rtc-peer', peerId: 'peer-1' }).dropReason).toBeUndefined();
             expect(await manager.forwardIfRequired(message, 'peer-1')).toHaveLength(1);
             groups.accept('group-1', { ...current, group: { ...current.group, snapshotVersion: 4 } });
-            await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResilienceDto());
+            await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResourceInboxResilience());
             expect(channel.sendCalls).toEqual([]);
 
             groups.accept('group-1', current);
             await vi.advanceTimersByTimeAsync(1_000);
-            await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResilienceDto());
+            await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResourceInboxResilience());
             expect(channel.sendCalls).toHaveLength(1);
         }
         finally {
@@ -217,11 +217,11 @@ describe('WebRtc overlay services', () => {
             entries: []
         });
 
-        const reserved = await queue.reserveEntries(
-            new Set([EnqueuedType.RTC_OUTBOX]),
-            new Set([EntityStatus.NEW]),
-            10
-        );
+        const reserved = await queue.reserveEntries({
+            typeIds: new Set([EnqueuedType.RTC_OUTBOX]),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 10
+        });
 
         expect(reserved.size).toBe(0);
     });
@@ -658,7 +658,7 @@ describe('WebRtc overlay services', () => {
             resource: JSON.stringify({ ...message, id: { ...message.id, v: 1 }, forwarding: { nextHopPeerIds: ['peer-1'] } })
         });
 
-        await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResilienceDto());
+        await manager.dequeue(WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES, createResourceInboxResilience());
 
         expect(channel.sendCalls).toEqual([]);
         expect((await queue.getItem(message.route))?.status).not.toBe(EntityStatus.COMPLETED);
@@ -879,7 +879,7 @@ describe('WebRtc overlay services', () => {
         await manager.enqueueIfAbsent(msg);
         await manager.dequeue(
             WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-            createResilienceDto()
+            createResourceInboxResilience()
         );
 
         const storedEntry = await queue.getItem(msg.route);
@@ -896,11 +896,11 @@ describe('WebRtc overlay services', () => {
 async function reserveRtcOutbox(queue: InMemoryQueueBox): Promise<readonly ResourceEntry[]> {
     return [
         ...(
-            await queue.reserveEntries(
-                WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-                new Set([EntityStatus.NEW]),
-                10
-            )
+            await queue.reserveEntries({
+                typeIds: WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
+                statusIds: new Set([EntityStatus.NEW]),
+                reservationInput: 10
+            })
         ).values()
     ];
 }
@@ -1048,12 +1048,12 @@ function createCircuitBreakerPolicy(maxConsecutiveFailures: number = 10) {
     );
 }
 
-function createResilienceDto() {
-    return ResilienceDto.toResilienceDto(
-        createCircuitBreakerPolicy(),
-        1,
-        10,
-        1,
-        1
-    );
+function createResourceInboxResilience() {
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: createCircuitBreakerPolicy(),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }

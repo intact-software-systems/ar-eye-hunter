@@ -34,7 +34,11 @@ describe('atomic admission and QueueBox work', () => {
             expect(await transaction.readWork(entry.key)).toMatchObject({ resource: 'backend-work' });
         });
         expect(await backend.read('admitted', (value) => value)).toBe('accepted');
-        const reserved = await backend.workQueue.reserveEntries(new Set(['alm-work']), new Set([EntityStatus.NEW]), 1);
+        const reserved = await backend.workQueue.reserveEntries({
+            typeIds: new Set(['alm-work']),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 1
+        });
         expect([...reserved.values()]).toMatchObject([{ key: entry.key, resource: 'backend-work', status: EntityStatus.RESERVED }]);
     });
 
@@ -84,7 +88,7 @@ describe('atomic admission and QueueBox work', () => {
         await backend.workQueue.enqueue(entry);
         await expect(backend.write(async (transaction) => {
             await transaction.readWork(entry.key);
-            await backend.workQueue.reserveEntries(new Set(['alm-work']), new Set([EntityStatus.NEW]), 1);
+            await backend.workQueue.reserveEntries({ typeIds: new Set(['alm-work']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 });
             transaction.writeWork({ ...entry, resource: 'stale-repair' });
             await transaction.set('admitted', 'stale');
         })).rejects.toMatchObject({ name: 'ALAdmissionBackendConflictError' });
@@ -119,7 +123,7 @@ describe('atomic admission and QueueBox work', () => {
         await backend.workQueue.enqueue(entry);
         await expect(backend.write(async (transaction) => {
             expect((await transaction.readWork(entry.key))?.status).toBe(EntityStatus.NEW);
-            await backend.workQueue.reserveEntries(new Set(['alm-work']), new Set([EntityStatus.NEW]), 1);
+            await backend.workQueue.reserveEntries({ typeIds: new Set(['alm-work']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 });
             await transaction.set('admitted', 'stale-decision');
         })).rejects.toMatchObject({ name: 'ALAdmissionBackendConflictError' });
         expect(await backend.read('admitted', (value) => value)).toBeUndefined();
@@ -153,10 +157,11 @@ describe('atomic admission and QueueBox work', () => {
         const queue = createWorkBackend(storage).workQueue;
         const entry = createEntry('reused');
         await queue.enqueue(entry);
-        const [old] = (await queue.reserveEntries(new Set(['alm-work']), new Set([EntityStatus.NEW]), 1)).values();
+        const [old] = (await queue.reserveEntries({ typeIds: new Set(['alm-work']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 })).values();
         await queue.releaseEntries([old], { status: EntityStatus.COMPLETED, delayMs: null });
         await queue.enqueue({ ...entry, resource: 'later-work' });
-        const [current] = (await queue.reserveEntries(new Set(['alm-work']), new Set([EntityStatus.NEW]), 1)).values();
+        const [current] = (await queue.reserveEntries({ typeIds: new Set(['alm-work']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 }))
+            .values();
         expect(old.dequeueAudit.attempts).toBe(current.dequeueAudit.attempts);
         await expect(queue.releaseEntries([old], { status: EntityStatus.COMPLETED, delayMs: null }))
             .rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
@@ -173,7 +178,7 @@ describe('atomic admission and QueueBox work', () => {
         expect(await writeIndexedDbAdmissionMutations(write)).toBe(true);
         expect((await readIndexedDbAdmissionSnapshot(db, admissionStore, { kind: 'key', key: 'admitted' })).stored)
             .toHaveLength(1);
-        const reserved = await queue.reserveEntries(new Set(['alm-work']), new Set([EntityStatus.NEW]), 1);
+        const reserved = await queue.reserveEntries({ typeIds: new Set(['alm-work']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 });
         expect([...reserved.values()]).toMatchObject([{ key: entry.key, resource: entry.resource, status: EntityStatus.RESERVED }]);
         expect(write.queueMutations[0]).toMatchObject({ kind: 'put', value: { status: EntityStatus.NEW } });
     });

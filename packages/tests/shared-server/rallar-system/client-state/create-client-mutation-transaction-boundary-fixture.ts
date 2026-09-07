@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { Reservator } from '@shared/queuebox/DequeueController.ts';
-import { computeResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 
 import {
     AppInboxType,
@@ -99,14 +99,7 @@ export async function createClientMutationTransactionBoundaryFixture(
         },
         serviceId: 'client-inbox-service'
     });
-    return {
-        actions,
-        computedSnapshots,
-        context,
-        handler,
-        observedSnapshots,
-        results
-    };
+    return { actions, computedSnapshots, context, handler, observedSnapshots, results };
 }
 
 interface ObservedMutationEffects {

@@ -43,7 +43,7 @@ import {
     CircuitBreakerPolicy,
     EnqueuedType,
     InMemoryQueueBox,
-    ResilienceDto
+    ResourceInboxResilience
 } from '@shared/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -710,19 +710,19 @@ class RecordingJsonWebSocketServer extends JsonWebSocketServer {
     }
 }
 
-function createResilience(): ResilienceDto {
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(
+function createResilience(): ResourceInboxResilience {
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(
             10,
             Temporal.Duration.from({ seconds: 10 }),
             Temporal.Duration.from({ seconds: 10 }),
             Temporal.Duration.from({ seconds: 10 })
         ),
-        1,
-        10,
-        1,
-        1
-    );
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }
 
 function createGroupSnapshot(): GroupSnapshot {

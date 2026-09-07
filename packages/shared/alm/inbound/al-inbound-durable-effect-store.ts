@@ -52,19 +52,24 @@ export class ALInboundDurableEffectStore {
     async claimReadyEffects(input: ClaimALInboundEffectsInput): Promise<readonly ALPersistedInboundEffect[]> {
         const queue = this.backend.workQueue;
         const types = new Set([toALInboundWorkType(this.namespace)]);
-        const pending = await queue.reserveEntries(types, new Set(NEW_AND_RETRY_STATUSES), {
-            maxToReserve: input.maxCount,
-            maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-        }, input.entries);
-        const recovered = await queue.reserveTimeoutEntries(
-            types,
-            {
+        const pending = await queue.reserveEntries({
+            typeIds: types,
+            statusIds: new Set(NEW_AND_RETRY_STATUSES),
+            reservationInput: {
+                maxToReserve: input.maxCount,
+                maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
+            },
+            observedEntries: input.entries
+        });
+        const recovered = await queue.reserveTimeoutEntries({
+            typeIds: types,
+            reservationInput: {
                 maxToReserve: Math.max(0, input.maxCount - pending.size),
                 maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
             },
-            Temporal.Duration.from({ milliseconds: AL_INBOUND_WORK_LEASE_MS }),
-            input.entries
-        );
+            timeSinceStartTs: Temporal.Duration.from({ milliseconds: AL_INBOUND_WORK_LEASE_MS }),
+            observedEntries: input.entries
+        });
         const claimed: ALPersistedInboundEffect[] = [];
         for (const entry of [...pending.values(), ...recovered.values()]) {
             try {

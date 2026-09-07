@@ -12,7 +12,7 @@ import {
     type PersistedALValue
 } from '../../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { fnv1a64, toAppQueueKey } from '../../queuebox/AppQueueIdentity.ts';
-import { NonRetryableException } from '../../queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus, isKeysEqual, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';

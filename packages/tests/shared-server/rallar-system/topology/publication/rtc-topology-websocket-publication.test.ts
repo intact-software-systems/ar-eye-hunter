@@ -27,7 +27,7 @@ import {
     JsonWebSocketServer,
     newALBroadcastMessage,
     newALEventRoute,
-    ResilienceDto,
+    ResourceInboxResilience,
     WsQueueBoxServerService,
     type ALMessage
 } from '@shared/mod.ts';
@@ -486,15 +486,15 @@ function createUnusedDatabase(): PSqlSql {
     );
 }
 
-function createResilience(): ResilienceDto {
+function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(10, duration, duration, duration),
-        1,
-        10,
-        1,
-        1
-    );
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }
 
 function audit(atEpochMs: number): AuditStamp {

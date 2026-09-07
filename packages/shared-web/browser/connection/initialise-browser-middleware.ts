@@ -40,7 +40,7 @@ import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/rallar-r
 import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
 import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
 import { refreshStateSnapshots, type StateSnapshots } from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
-import { toResilienceDto } from '../resilience-config.ts';
+import { createBrowserQueueResilience } from '../resilience-config.ts';
 
 import { initBrowserALRuntimeExpiryEviction } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
@@ -219,7 +219,7 @@ async function initialiseBrowserWebSocketTransport(
         qboxEngine,
         socket,
         clientData: input.clientData,
-        resilience: toResilienceDto(),
+        resilience: createBrowserQueueResilience(),
         signal: input.options.signal,
         connectTimeoutMs: input.options.timeoutMs ??
             DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
@@ -272,7 +272,7 @@ async function initialiseBrowserRtcTransport(
         {
             webRtcConnectionService,
             qboxEngine: input.webSocketTransport.qboxEngine,
-            resilience: toResilienceDto(),
+            resilience: createBrowserQueueResilience(),
             outboundDiagnostics: input.options.outboundDiagnostics
         }
     );

@@ -1,7 +1,8 @@
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
-import type { DequeueResourceEntryOptions, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import type { DequeueResourceEntryOptions } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type {
@@ -36,35 +37,35 @@ export interface RallarGroupStateInboxServiceFactoryInput {
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
     readonly wsQBoxServerService: WsQueueBoxServerService;
-    readonly appInboxResilience: ResilienceDto;
-    readonly appOutboxResilience: ResilienceDto;
+    readonly appInboxResilience: ResourceInboxResilience;
+    readonly appOutboxResilience: ResourceInboxResilience;
     readonly wakeQueueEngine: () => void;
 }
 
 export interface RallarTopologyInboxServiceFactoryInput {
     readonly inboxQueueReader: InboxQueueReader;
-    readonly appInboxResilience: ResilienceDto;
+    readonly appInboxResilience: ResourceInboxResilience;
     readonly wakeQueueEngine: () => void;
 }
 
 export interface RallarRtcRttInboxServiceFactoryInput {
     readonly inboxQueueReader: InboxQueueReader;
-    readonly appInboxResilience: ResilienceDto;
+    readonly appInboxResilience: ResourceInboxResilience;
     readonly wakeQueueEngine: () => void;
 }
 
 export interface RallarAppClientInboxServiceFactoryInput {
     readonly inboxQueueReader: InboxQueueReader;
     readonly wsQBoxServerService: WsQueueBoxServerService;
-    readonly appInboxResilience: ResilienceDto;
+    readonly appInboxResilience: ResourceInboxResilience;
     readonly wakeQueueEngine: () => void;
 }
 
 export interface RallarMiddlewareResilience {
-    readonly inbox: ResilienceDto;
-    readonly outbox?: ResilienceDto;
-    readonly appInbox?: ResilienceDto;
-    readonly appOutbox: ResilienceDto;
+    readonly inbox: ResourceInboxResilience;
+    readonly outbox?: ResourceInboxResilience;
+    readonly appInbox?: ResourceInboxResilience;
+    readonly appOutbox: ResourceInboxResilience;
 }
 
 export interface CreateRallarMiddlewareOptions {
@@ -111,8 +112,8 @@ export interface RallarMiddlewareInfrastructure {
     readonly wsQBoxServerService: WsQueueBoxServerService;
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
-    readonly appInboxResilience: ResilienceDto;
-    readonly appOutboxResilience: ResilienceDto;
+    readonly appInboxResilience: ResourceInboxResilience;
+    readonly appOutboxResilience: ResourceInboxResilience;
     readonly queuePubSubBridgeReadiness: Promise<void>;
     readonly wakeQueueEngine: () => void;
 }

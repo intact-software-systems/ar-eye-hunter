@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
-import { toResilienceDto } from '@shared-web/browser/resilience-config.ts';
+import { createBrowserQueueResilience } from '@shared-web/browser/resilience-config.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
@@ -42,7 +42,7 @@ describe('createBrowserWebSocketQueueBox', () => {
             qboxEngine,
             socket,
             clientData,
-            resilience: toResilienceDto(),
+            resilience: createBrowserQueueResilience(),
             connectTimeoutMs: 25,
             signal: controller.signal
         });
@@ -87,7 +87,7 @@ describe('createBrowserWebSocketQueueBox', () => {
             qboxEngine,
             socket,
             clientData,
-            resilience: toResilienceDto(),
+            resilience: createBrowserQueueResilience(),
             connectTimeoutMs,
             signal: controller.signal
         });
@@ -120,7 +120,7 @@ describe('createBrowserWebSocketQueueBox', () => {
             qboxEngine,
             socket,
             clientData,
-            resilience: toResilienceDto(),
+            resilience: createBrowserQueueResilience(),
             connectTimeoutMs: 0,
             signal: controller.signal
         });
@@ -167,7 +167,7 @@ describe('createBrowserWebSocketQueueBox', () => {
             qboxEngine,
             socket,
             clientData,
-            resilience: toResilienceDto(),
+            resilience: createBrowserQueueResilience(),
             connectTimeoutMs,
             signal: controller.signal
         });

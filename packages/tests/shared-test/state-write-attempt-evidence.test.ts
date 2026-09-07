@@ -1,4 +1,4 @@
-import { Reservator } from '@shared/queuebox/DequeueController.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 import { deriveAppInboxAttemptObservations } from '../../../scripts/perf/api-v1-state-write-attempt-evidence.ts';

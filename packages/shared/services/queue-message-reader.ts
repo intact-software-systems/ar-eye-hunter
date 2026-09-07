@@ -1,15 +1,15 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '../api/api-config.ts';
+import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import {
     NonRetryableException,
     ResourceInboxHandlerEntryError,
-    type DequeueResourceEntryOptions,
-    type ResilienceDto
-} from '../queuebox/DequeueResourceEntryController.ts';
-import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
+    type DequeueResourceEntryOptions
+} from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
+import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
-import type { ResourceInboxAttemptTelemetry } from '../queuebox/ResourceInboxAttemptTelemetry.ts';
 import { readRtcTopologyWorkEntry, RTC_TOPOLOGY_OUTBOX_TOPIC } from '../queuebox/rtc-topology-work-entry-contract.ts';
 
 import { QueueBoxUtilities } from './queue-box-utilities.ts';
@@ -51,7 +51,7 @@ export class QueueMessageReader {
         );
     }
 
-    async dequeue(typesToDequeue: Set<string>, resilience: ResilienceDto): Promise<void> {
+    async dequeue(typesToDequeue: Set<string>, resilience: ResourceInboxResilience): Promise<void> {
         await QueueBoxUtilities.defaultDequeue(
             {
                 qbox: this.repository,

@@ -12,7 +12,8 @@ describe('PSqlQueueBox', () => {
     it.each(HANDLER_FINALIZED_SUMMARY_SCENARIOS)(
         'fences handler-finalized summary release: $name',
         async ({ accepted, entries }) => {
-            const { reserved, current } = entries();
+            const { reserved: original, current } = entries();
+            const reserved = { ...original, db: { id: '1' } };
             const queue = new PSqlQueueBox(createRepo({
                 releaseReserved: vi.fn(async () => null),
                 findAnyByKey: vi.fn(async () => current)
@@ -117,11 +118,7 @@ describe('PSqlQueueBox', () => {
         });
 
         const queue = new PSqlQueueBox(repo as never);
-        const reserved = await queue.reserveEntries(
-            new Set(['type-1']),
-            new Set([EntityStatus.NEW]),
-            10
-        );
+        const reserved = await queue.reserveEntries({ typeIds: new Set(['type-1']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
 
         expect(reserved.size).toBe(1);
         expect(reserved.get(first.key)?.status).toBe(EntityStatus.RESERVED);
@@ -143,11 +140,11 @@ describe('PSqlQueueBox', () => {
         });
 
         const queue = new PSqlQueueBox(repo as never);
-        const reserved = await queue.reserveTimeoutEntries(
-            new Set(['type-1']),
-            10,
-            Temporal.Duration.from({ seconds: 30 })
-        );
+        const reserved = await queue.reserveTimeoutEntries({
+            typeIds: new Set(['type-1']),
+            reservationInput: 10,
+            timeSinceStartTs: Temporal.Duration.from({ seconds: 30 })
+        });
 
         expect(reserved.size).toBe(0);
     });
@@ -219,11 +216,11 @@ describe('PSqlQueueBox', () => {
         });
         const queue = new PSqlQueueBox(repo as never);
 
-        const reserved = await queue.reserveEntries(
-            new Set(['type-1']),
-            new Set([EntityStatus.RETRY]),
-            { maxToReserve: 1, maxAttempts: 2 }
-        );
+        const reserved = await queue.reserveEntries({
+            typeIds: new Set(['type-1']),
+            statusIds: new Set([EntityStatus.RETRY]),
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 }
+        });
 
         expect(reserved.size).toBe(0);
         expect(startProcessingEntity).toHaveBeenCalledWith(exhausted, 2);
@@ -253,11 +250,11 @@ describe('PSqlQueueBox', () => {
         });
         const queue = new PSqlQueueBox(repo as never);
 
-        const reserved = await queue.reserveTimeoutEntries(
-            new Set(['type-1']),
-            { maxToReserve: 1, maxAttempts: 2 },
-            Temporal.Duration.from({ seconds: 30 })
-        );
+        const reserved = await queue.reserveTimeoutEntries({
+            typeIds: new Set(['type-1']),
+            reservationInput: { maxToReserve: 1, maxAttempts: 2 },
+            timeSinceStartTs: Temporal.Duration.from({ seconds: 30 })
+        });
 
         expect(reserved.size).toBe(0);
         expect(startProcessingEntity).toHaveBeenCalledWith(exhausted, 2);
@@ -321,9 +318,9 @@ describe('PSqlQueueBox', () => {
         };
         const persistedEndTs = Temporal.Instant.from('2026-01-01T00:00:00.123Z');
         const persistedNextTs = persistedEndTs.add({ milliseconds: 37 });
-        const releaseReserved = vi.fn<PSqlResourceInboxReservationRepository['releaseReserved']>(async (_expected, options) => ({
+        const releaseReserved = vi.fn<PSqlResourceInboxReservationRepository['releaseReserved']>(async (computed) => ({
             ...entry,
-            status: options.disposition.status,
+            status: computed.replacement.entry.status,
             dequeueAudit: {
                 ...entry.dequeueAudit,
                 endTs: persistedEndTs,
@@ -340,9 +337,9 @@ describe('PSqlQueueBox', () => {
         const [updated] = released.values();
 
         expect(releaseReserved).toHaveBeenCalledWith(
-            entry,
             expect.objectContaining({
-                disposition: { status: EntityStatus.RETRY, delayMs: 37 }
+                expected: expect.objectContaining({ entry }),
+                replacement: expect.objectContaining({ entry: expect.objectContaining({ status: EntityStatus.RETRY }) })
             })
         );
         expect(updated?.dequeueAudit.endTs?.toString()).toBe(persistedEndTs.toString());
@@ -483,7 +480,7 @@ describe('PSqlQueueBox', () => {
     });
 });
 
-function createRepo(overrides: {
+interface PSqlQueueBoxTestRepositoryOverrides {
     isEntriesToLock?: (
         typeIds: ReadonlySet<string>,
         statusIds: ReadonlySet<EntityStatus>,
@@ -514,7 +511,9 @@ function createRepo(overrides: {
         }, ResourceEntry>
     >;
     startFinalizationRecovery?: (entry: ResourceEntry, processingAttempts: number) => Promise<Either<{ kind: 'expired-or-missing'; key: Key; }, ResourceEntry>>;
-}) {
+}
+
+function createRepo(overrides: PSqlQueueBoxTestRepositoryOverrides) {
     const entries = {
         findAnyByKey: overrides.findAnyByKey ?? vi.fn(async () => null),
         replace: overrides.replace ?? vi.fn(async (entry: ResourceEntry) => entry),
@@ -587,6 +586,7 @@ function createEntry(
         },
         dequeueAudit: {
             attempts: 0
-        }
+        },
+        db: { id: '1' }
     };
 }

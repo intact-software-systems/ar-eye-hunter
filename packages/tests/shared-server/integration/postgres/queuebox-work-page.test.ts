@@ -42,7 +42,12 @@ describe('Postgres QueueBox work pages', () => {
         expect(next.nextCursor).toBeNull();
 
         await queue.replaceIfObserved(page.entries[0], { ...page.entries[0], resource: 'replacement' });
-        const claimed = await queue.reserveEntries(new Set([typeId]), new Set([EntityStatus.NEW]), 2, page.entries);
+        const claimed = await queue.reserveEntries({
+            typeIds: new Set([typeId]),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 2,
+            observedEntries: page.entries
+        });
         expect([...claimed.values()]).toMatchObject([{ resource: 'second', dequeueAudit: { attempts: 1 } }]);
         expect(await queue.getItem(next.entries[0].key)).toMatchObject({ status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
 

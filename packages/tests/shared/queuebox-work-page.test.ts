@@ -88,7 +88,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
 
         const changed = await queue.replaceIfObserved(page.entries[0], { ...page.entries[0], resource: 'newer-value' });
         expect(changed).not.toBeNull();
-        const claimed = await queue.reserveEntries(new Set(['ordered-work']), new Set([EntityStatus.NEW]), 2, page.entries);
+        const claimed = await queue.reserveEntries({
+            typeIds: new Set(['ordered-work']),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 2,
+            observedEntries: page.entries
+        });
         expect([...claimed.values()]).toMatchObject([{ key: second.key, dequeueAudit: { attempts: 1 } }]);
         expect(await queue.getItem(first.key)).toMatchObject({ resource: 'newer-value', dequeueAudit: { attempts: 0 } });
         expect(await queue.getItem(third.key)).toMatchObject({ status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
@@ -104,7 +109,12 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
         expect((await queue.readWorkPage(pending)).entries).toEqual([]);
         const page = await queue.readWorkPage({ ...pending, status: EntityStatus.RETRY });
         expect(page.entries).toMatchObject([{ key: entry.key, status: EntityStatus.RETRY }]);
-        const claimed = await queue.reserveEntries(new Set(['ordered-work']), new Set([EntityStatus.RETRY]), 1, page.entries);
+        const claimed = await queue.reserveEntries({
+            typeIds: new Set(['ordered-work']),
+            statusIds: new Set([EntityStatus.RETRY]),
+            reservationInput: 1,
+            observedEntries: page.entries
+        });
         expect((await queue.readWorkPage({ ...pending, status: EntityStatus.RETRY })).entries).toEqual([]);
         expect((await queue.readWorkPage({ ...pending, status: EntityStatus.RESERVED })).entries)
             .toMatchObject([{ key: entry.key, dequeueAudit: { attempts: 2 } }]);

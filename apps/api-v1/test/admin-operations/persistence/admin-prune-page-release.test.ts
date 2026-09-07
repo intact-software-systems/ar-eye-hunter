@@ -48,9 +48,13 @@ Deno.test('PSQL queue release accepts the exact admin page completed in its dele
         await results.replace(aggregate);
         await sql`insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, revision)
             values ('prune-release', 'expired', '{}', ${new Date(now - 1)}, 1)`;
-        const reserved = await queue.reserveEntries(new Set([EnqueuedType.APP_OUTBOX]), new Set([EntityStatus.NEW]), {
-            maxToReserve: 1,
-            maxAttempts: 20
+        const reserved = await queue.reserveEntries({
+            typeIds: new Set([EnqueuedType.APP_OUTBOX]),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: {
+                maxToReserve: 1,
+                maxAttempts: 20
+            }
         });
         const page = [...reserved.values()][0];
         assert.ok(page);
@@ -135,11 +139,11 @@ Deno.test('admin prune conflicts and preserves runtime state replaced after the 
             insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts, revision)
             values ('stale-runtime-page', 'same-identity', '{"version":1}', ${new Date(now - 1)}, 1)
         `;
-        const reserved = (await queue.reserveEntries(
-            new Set([EnqueuedType.APP_OUTBOX]),
-            new Set([EntityStatus.NEW]),
-            { maxToReserve: 1, maxAttempts: 20 }
-        )).values().next().value;
+        const reserved = (await queue.reserveEntries({
+            typeIds: new Set([EnqueuedType.APP_OUTBOX]),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: { maxToReserve: 1, maxAttempts: 20 }
+        })).values().next().value;
         assert.ok(reserved);
         const worker = new AdminPrunePageWorker({
             database: sql,

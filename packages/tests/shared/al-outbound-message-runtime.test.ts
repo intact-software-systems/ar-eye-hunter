@@ -79,6 +79,33 @@ describe('ALOutboundMessageRuntime', () => {
         expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
     });
 
+    it.each([30_000, 30_001])('expires an asynchronous readiness settlement at %s ms without sending or acknowledging', async (elapsedMs) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_000);
+        const admissionStore = createDefaultOutboundTestAdmissionStore();
+        const reschedule = vi.spyOn(admissionStore, 'rescheduleEffect');
+        const complete = vi.spyOn(admissionStore, 'completeEffect');
+        const settlement = Promise.withResolvers<{ status: 'not-ready'; retryAfterMs: number; }>();
+        const send = vi.fn(async () => ({ status: 'queued' as const, settled: settlement.promise }));
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: { admissionStore },
+            sendPreparedMessage: send,
+            planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] })
+        });
+        onTestFinished(() => runtime.dispose());
+        const message = createOutboundMessage('async-expiry', { ttlMs: 30_000 });
+        await runtime.enqueueIfAbsent(message);
+        vi.setSystemTime(1_000 + elapsedMs);
+        settlement.resolve({ status: 'not-ready', retryAfterMs: 60_000 });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(reschedule).not.toHaveBeenCalled();
+        expect(complete).toHaveBeenCalledTimes(1);
+        expect(complete.mock.calls[0][0].audit.expiryTs.epochMilliseconds).toBe(31_000);
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(await admissionStore.readReceiptState(message.id.msgId)).toBeUndefined();
+        expect(await admissionStore.peekNextEffectReadyAt()).toBeUndefined();
+    });
+
     it('returns no-route when the outbound planner drops enqueue', async () => {
         const runtime = createDefaultOutboundTestRuntime({
             sendPreparedMessage: async () => ({ status: 'sent' as const }),
@@ -837,11 +864,7 @@ describe('ALOutboundMessageRuntime', () => {
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
-        const reserved = await outbox.reserveEntries(
-            new Set(['outbox']),
-            new Set([EntityStatus.NEW]),
-            10
-        );
+        const reserved = await outbox.reserveEntries({ typeIds: new Set(['outbox']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
         expect(reserved.size).toBe(1);
         const stored = firstValue(reserved);
         const storedMsg = decodePersistedALMessage(stored.resource);
@@ -1017,11 +1040,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         expect(secondEntry.key).toEqual(firstEntry.key);
 
-        const reserved = await outbox.reserveEntries(
-            new Set(['outbox']),
-            new Set([EntityStatus.NEW]),
-            10
-        );
+        const reserved = await outbox.reserveEntries({ typeIds: new Set(['outbox']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
 
         expect(reserved.size).toBe(1);
         const stored = firstValue(reserved);
@@ -1094,11 +1113,7 @@ describe('ALOutboundMessageRuntime', () => {
             enqueueOutboundOrThrow(runtime, second)
         ]);
 
-        const reserved = await outbox.reserveEntries(
-            new Set(['outbox']),
-            new Set([EntityStatus.NEW]),
-            10
-        );
+        const reserved = await outbox.reserveEntries({ typeIds: new Set(['outbox']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
         expect(reserved.size).toBe(1);
         const stored = firstValue(reserved);
         const storedMsg = decodePersistedALMessage(stored.resource);
@@ -1243,11 +1258,7 @@ describe('ALOutboundMessageRuntime', () => {
         );
 
         await expect.poll(() => outbox.getItem(msg.route)).toBeDefined();
-        const reserved = await outbox.reserveEntries(
-            new Set(['outbox']),
-            new Set([EntityStatus.NEW]),
-            10
-        );
+        const reserved = await outbox.reserveEntries({ typeIds: new Set(['outbox']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 });
         expect(reserved.size).toBe(1);
         const stored = firstValue(reserved);
         const storedMsg = decodePersistedALMessage(stored.resource);

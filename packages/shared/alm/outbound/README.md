@@ -59,7 +59,8 @@ foreign namespace, wrong queue slot, or inconsistent prepared message is release
 `NON_RETRYABLE`. Its stored content is retained, and valid claims from the same batch
 continue. This applies to normal claims, timeout recovery, and exhausted-attempt
 finalization. If the terminal write fails, the reservation remains recoverable through
-ordinary QueueBox claims. A lost-reservation rejection cannot overwrite a newer worker.
+ordinary QueueBox claims. Release uses the existing observed-entry comparison and
+expiry conditions; a failed comparison returns a lost-reservation result.
 
 Readiness reads queue status and timestamps only. It never needs a transport decoder
 or reparses terminal payloads. Payload validation occurs on the claimed item before
@@ -80,10 +81,19 @@ Transport adapters return an explicit result; a void return never establishes a 
 RTC registration uses the existing native queue's `onSettled` callback. Its local
 attempt expires at the earlier of the message deadline and its durable claim lease.
 An attempt lease ending before the message deadline permits another attempt with
-the same identity; it does not expire the logical message. Native failure or closure
-requests a retry. Expiry, cancellation, and supersedence end that attempt without a
-retry. Submission remains separate from receiver acknowledgement and application
-completion.
+the same identity; it does not expire the logical message. Settlement carries factual
+per-message evidence of whether native submission was attempted. Closed or unavailable
+channels, backpressure rejection, and untouched queued siblings cleared by a channel
+error return readiness. A native send that throws remains an attempted failure with
+an uncertain delivery outcome.
+
+Readiness uses the existing `RETRY` and future `nextTs`: release refunds only the
+current reservation's attempt, preserving earlier failed attempts. It records neither
+adaptive success nor adaptive failure. Actual processing failures retain their normal
+retry budget. Readiness rechecks are bounded by the original message deadline, and
+settlement at or after that deadline completes physical work without sending or creating
+an acknowledgement. Cancellation and supersedence also end the attempt. Submission
+remains separate from receiver acknowledgement and application completion.
 
 The RTC Promise executor captures its resolver synchronously before `sendJson`
 registers the callback. Native completion invokes it after queue mutation. This is
@@ -110,15 +120,15 @@ queue API.
 [`ALAdmissionWorkBackend`](../al-admission-work-backend.ts) connects admission to its
 QueueBox. Memory, IndexedDB, and PostgreSQL implementations commit the work and its
 admission decision together. Browser composition supplies its existing engine to the
-outbound runtime. Namespace cleanup and bounded due-work queries remain part of the
-broader persistence work.
+outbound runtime. Due-work inspection uses the bounded QueueBox `readWorkPage` port;
+namespace cleanup and remaining storage/performance work stay in the broader roadmap.
 
 An existing incompatible database is rejected without changing its schema or data.
 Cutover requires stopping the affected producers and workers before an explicit reset
 of incompatible ALM-owned browser storage. Unrelated application storage is preserved.
 
-Outbound execution uses QueueBox and InboxOutboxEngine; the separate outbound effect
-scheduler has been removed. Physical transport outboxes still repeat envelope storage,
-and due-work inspection still enumerates queue keys. Inbound work ownership, canonical
-envelope storage, bounded scheduling queries, and the application-facing delivery
-handle remain roadmap work.
+Inbound and outbound execution use their direct ALM owners with QueueBox and
+InboxOutboxEngine. The separate outbound effect scheduler has been removed. Physical
+transport outboxes still repeat envelope storage; canonical envelope storage and the
+application-facing delivery handle remain roadmap work. Existing paged due-work reads
+do not establish that every backend query or cleanup path has met its performance goal.

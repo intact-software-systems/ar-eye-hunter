@@ -48,11 +48,7 @@ export async function enqueueOutboundOrThrow(
 export async function reserveOutbox(outbox: InMemoryQueueBox): Promise<readonly ResourceEntry[]> {
     return [
         ...(
-            await outbox.reserveEntries(
-                new Set(['outbox']),
-                new Set([EntityStatus.NEW]),
-                10
-            )
+            await outbox.reserveEntries({ typeIds: new Set(['outbox']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 10 })
         ).values()
     ];
 }

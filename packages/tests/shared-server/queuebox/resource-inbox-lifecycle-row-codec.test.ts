@@ -22,6 +22,20 @@ const NEW_ROW: ResourceInboxRow = {
 };
 
 describe('resource inbox lifecycle row codec', () => {
+    it('accepts a completed readiness reservation without a processing attempt and rejects incomplete timestamps', () => {
+        const waiting = {
+            ...NEW_ROW,
+            ri_status: EntityStatus.RETRY,
+            start_ts: '2026-05-20 10:00:01.000000',
+            end_ts: '2026-05-20 10:00:02.000000',
+            next_ts: '2026-05-20 10:00:03.000000'
+        };
+        expect(isValidResourceInboxLifecycle(waiting)).toBe(true);
+        expect(isValidResourceInboxLifecycle({ ...waiting, start_ts: null })).toBe(false);
+        expect(isValidResourceInboxLifecycle({ ...waiting, end_ts: null })).toBe(false);
+        expect(isValidResourceInboxLifecycle({ ...waiting, next_ts: null })).toBe(false);
+        expect(isValidResourceInboxLifecycle({ ...waiting, ri_attempts: -1n })).toBe(false);
+    });
     it('accepts a current new row with no dequeue timestamps', () => {
         expect(isValidResourceInboxLifecycle(NEW_ROW)).toBe(true);
     });

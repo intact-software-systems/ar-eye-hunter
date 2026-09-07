@@ -1,9 +1,9 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundMessageRuntime } from '../alm/outbound/al-outbound-message-runtime.ts';
-import type { NonRetryableException } from '../queuebox/DequeueResourceEntryController.ts';
+import type { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceInboxAttemptTelemetry } from '../queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
-import type { ResourceInboxAttemptTelemetry } from '../queuebox/ResourceInboxAttemptTelemetry.ts';
 import type { JsonWebSocketClient } from '../websocket/json-web-socket-client.ts';
 import type { JsonWebSocketServer } from '../websocket/json-web-socket-server.ts';
 

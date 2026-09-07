@@ -1,15 +1,15 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { ResourceInboxHandlerEntryError } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { ResourceInboxHandlerEntryError } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type {
+    ResourceInboxAttempt,
+    ResourceInboxAttemptTelemetry
+} from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import {
     EntityStatus,
     toResourceEntryWithUpdatedResource,
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
-import type {
-    ResourceInboxAttempt,
-    ResourceInboxAttemptTelemetry
-} from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 
 import {
     recordRallarTiming,

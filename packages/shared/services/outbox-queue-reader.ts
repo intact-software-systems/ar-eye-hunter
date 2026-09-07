@@ -1,7 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
+import type { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 import { QueueMessageReader } from './queue-message-reader.ts';
@@ -39,7 +39,7 @@ export class OutboxQueueReader {
 
     async dequeueOutbox(
         typesToDequeue: Set<string>,
-        resilience: ResilienceDto
+        resilience: ResourceInboxResilience
     ): Promise<void> {
         await this.reader.dequeue(typesToDequeue, resilience);
     }

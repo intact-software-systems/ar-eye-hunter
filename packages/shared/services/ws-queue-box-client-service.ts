@@ -37,8 +37,9 @@ import { createDefaultALOutboundRuntimeResources } from '../alm/outbound/create-
 import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import { Command } from '../cache/Command.ts';
-import { NonRetryableException, type ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
+import { NonRetryableException } from '../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { Either } from '../resilience/Either.ts';
 import {
@@ -564,7 +565,7 @@ export class WsQueueBoxClientService {
         return await this.outboundRuntime.enqueueIfAbsent(message);
     }
 
-    async dequeueOutbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {
+    async dequeueOutbox(typesToDequeue: Set<string>, resilience: ResourceInboxResilience) {
         if (this.closed) {
             return;
         }

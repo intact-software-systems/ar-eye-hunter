@@ -180,11 +180,7 @@ export function toInstant(ts: string | Date): Temporal.Instant {
 const RESOURCE_INBOX_STATUSES = new Set<string>(Object.values(EntityStatus));
 
 export function isValidResourceInboxLifecycle(row: ResourceInboxRow): boolean {
-    if (row.ri_attempts === null) {
-        return false;
-    }
-
-    const attempts = Number(row.ri_attempts);
+    const attempts = row.ri_attempts === null ? NaN : Number(row.ri_attempts);
     if (
         !RESOURCE_INBOX_STATUSES.has(row.ri_status) ||
         !Number.isSafeInteger(attempts) ||
@@ -224,7 +220,7 @@ export function isValidResourceInboxLifecycle(row: ResourceInboxRow): boolean {
             return attempts === 0 && !startTs && !endTs && !nextTs;
         case EntityStatus.RETRY:
             return attempts === 0
-                ? !startTs && !endTs && nextTs !== null
+                ? ((startTs === null && endTs === null) || (startTs !== null && endTs !== null)) && nextTs !== null
                 : startTs !== null && endTs !== null && nextTs !== null;
         case EntityStatus.RESERVED:
             return attempts > 0 && startTs !== null && !endTs && !nextTs;

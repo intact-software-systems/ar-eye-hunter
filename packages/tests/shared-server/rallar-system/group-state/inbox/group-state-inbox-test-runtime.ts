@@ -2,8 +2,8 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { Either } from '@shared/resilience/Either.ts';
@@ -79,20 +79,7 @@ export async function createAuthorityHarness(
     const nowEpochMs = Date.now();
     const runtimeRepository = options.runtimeRepository ?? new FakeRuntimeStateRepository();
     const authSessions = new AuthSessionRepository(runtimeRepository);
-    const sessions = Object.fromEntries(
-        principalIds.map((principalId) => [
-            principalId,
-            authSession({
-                clientId: principalId,
-                sessionId: `${principalId}-session`,
-                accessToken: `${principalId}-token`,
-                nowEpochMs
-            })
-        ])
-    );
-    for (const session of Object.values(sessions)) {
-        await authSessions.putSession(session);
-    }
+    const sessions = await provisionAuthoritySessions(principalIds, authSessions, nowEpochMs);
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
@@ -139,6 +126,28 @@ export async function createAuthorityHarness(
             return entries.filter((entry): entry is ResourceEntry => entry !== undefined);
         }
     };
+}
+
+async function provisionAuthoritySessions(
+    principalIds: readonly string[],
+    authSessions: AuthSessionRepository,
+    nowEpochMs: number
+) {
+    const sessions = Object.fromEntries(
+        principalIds.map((principalId) => [
+            principalId,
+            authSession({
+                clientId: principalId,
+                sessionId: `${principalId}-session`,
+                accessToken: `${principalId}-token`,
+                nowEpochMs
+            })
+        ])
+    );
+    for (const session of Object.values(sessions)) {
+        await authSessions.putSession(session);
+    }
+    return sessions;
 }
 
 interface AuthorityAppInboxServiceInput {
@@ -261,13 +270,13 @@ export async function waitForQueueEntry(
     throw new Error('Expected authenticated app inbox entry to be enqueued');
 }
 
-export function createResilience(): ResilienceDto {
+export function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(10, duration, duration, duration),
-        1,
-        10,
-        1,
-        1
-    );
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }

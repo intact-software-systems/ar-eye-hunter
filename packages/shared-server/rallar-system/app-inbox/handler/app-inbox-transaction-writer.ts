@@ -1,5 +1,5 @@
+import type { ResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import type { ResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import {

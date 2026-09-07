@@ -1,5 +1,5 @@
 import type { GroupTopologyValidationIssue } from '@shared/api/graph-topology-management-types.ts';
-import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { AdminPruneValidationError } from '../admin-operations/inbox/admin-prune-inbox-validation.ts';
 import { AuthMutationRejectedError } from '../auth/mutation/auth-mutation-rejected-error.ts';
 import { CrdtHttpAdminRejectionError } from '../crdt/inbox/crdt-http-admin-rejection-error.ts';

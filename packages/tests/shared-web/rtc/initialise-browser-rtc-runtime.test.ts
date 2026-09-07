@@ -12,7 +12,7 @@ import '../../setup-browser-indexeddb.ts';
 
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
-import { toResilienceDto } from '@shared-web/browser/resilience-config.ts';
+import { createBrowserQueueResilience } from '@shared-web/browser/resilience-config.ts';
 import {
     initialiseRtcConnectionService,
     initialiseRtcOverlayMulticastManager
@@ -168,7 +168,7 @@ describe('browser RTC runtime composition', () => {
         const manager = initialiseRtcOverlayMulticastManager({
             webRtcConnectionService: fixture.service,
             qboxEngine: new InboxOutboxEngine(),
-            resilience: toResilienceDto()
+            resilience: createBrowserQueueResilience()
         });
         onTestFinished(() => manager.dispose());
 

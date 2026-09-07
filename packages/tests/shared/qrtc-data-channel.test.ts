@@ -21,6 +21,68 @@ afterEach(() => {
 });
 
 describe('QRtcDataChannel', () => {
+    it.each(['channel-error', 'native-send-error'])('reports per-message native submission evidence for %s', async (failure) => {
+        const fixture = createNativeDataChannelFixture();
+        const channel = new QRtcDataChannel(fixture.peerConnection, { peerId: 'peer-1', dataChannelName: 'room', flowControl: { overflow: 'queue' } });
+        channel.connect(true);
+        const native = fixture.native.channels[0];
+        await native.open();
+        native.bufferedAmount = 128 * 1024;
+        const settlements: QRtcDataChannel.SendSettlement[] = [];
+        channel.sendJson({ message: 'waiting' }, {
+            onSettled: (settlement) => {
+                settlements.push(settlement);
+            }
+        });
+        if (failure === 'channel-error') {
+            await native.fail();
+        }
+        else {
+            vi.spyOn(native, 'send').mockImplementation(() => {
+                throw new Error('Native carrier rejected submission');
+            });
+            native.bufferedAmount = 0;
+            await native.drain();
+        }
+        await Promise.resolve();
+        expect(settlements).toEqual([expect.objectContaining({ status: 'failed', submissionAttempted: failure === 'native-send-error' })]);
+        expect(native.sent).toEqual([]);
+    });
+    it('distinguishes an uncertain attempted send from untouched siblings cleared by its channel error', async () => {
+        const fixture = createNativeDataChannelFixture();
+        const channel = new QRtcDataChannel(fixture.peerConnection, {
+            peerId: 'peer-1',
+            dataChannelName: 'room',
+            flowControl: { overflow: 'queue' }
+        });
+        channel.connect(true);
+        const native = fixture.native.channels[0];
+        await native.open();
+        native.bufferedAmount = 128 * 1024;
+        const settlements: QRtcDataChannel.SendSettlement[] = [];
+        for (const key of ['attempted', 'untouched']) {
+            channel.sendJson({ key }, {
+                key,
+                onSettled: (settlement) => {
+                    settlements.push(settlement);
+                }
+            });
+        }
+        const send = vi.spyOn(native, 'send').mockImplementation(() => {
+            void native.fail();
+            throw new Error('Native send outcome is uncertain');
+        });
+        native.bufferedAmount = 0;
+        await native.drain();
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(settlements).toHaveLength(2);
+        expect(settlements).toEqual(expect.arrayContaining([
+            expect.objectContaining({ key: 'attempted', status: 'failed', submissionAttempted: true }),
+            expect.objectContaining({ key: 'untouched', status: 'failed', submissionAttempted: false })
+        ]));
+        expect(native.sent).toEqual([]);
+    });
+
     it('bounds decoded subscriptions before parsing while preserving the raw lane', async () => {
         const fixture = createNativeDataChannelFixture();
         const channel = new QRtcDataChannel(fixture.peerConnection, { peerId: 'peer-1', dataChannelName: 'room' });

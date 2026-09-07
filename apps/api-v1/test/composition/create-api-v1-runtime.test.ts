@@ -10,7 +10,7 @@ import type { ApiV1MutationRuntime } from '../../src/composition/create-api-v1-m
 import { constructApiV1Runtime, type ApiV1RuntimeConstructionOperations, type CreateApiV1RuntimeInput } from '../../src/composition/create-api-v1-runtime.ts';
 import type { ApiV1TopologyServices } from '../../src/composition/create-api-v1-topology-services.ts';
 import { createLocalQueuePubSubBus } from '../../src/db/local-queue-pubsub-bridge.ts';
-import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
+import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 
 Deno.test('runtime construction preserves the owned startup sequence', () => {
     const events: string[] = [];
@@ -100,19 +100,7 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
             mode: 'disabled',
             queueWorkers: 'disabled'
         },
-        topologyDelivery: {
-            publicationRetentionMs: 86_400_000,
-            heartbeatIntervalMs: 10_000,
-            leaseDurationMs: 30_000,
-            antiEntropyIntervalMs: 1_000,
-            pageSize: 100,
-            maxPagesPerTurn: 10,
-            maxEntriesPerTurn: 1_000,
-            compactionIntervalMs: 60_000,
-            compactionPageSize: 1_000,
-            reconnectBatchWindowMs: 25,
-            consumerRetentionMs: 86_400_000
-        },
+        topologyDelivery: TEST_TOPOLOGY_DELIVERY,
         adminClientIds: ['admin'],
         rtcTopologyOptions: {},
         rttRefinementGateConfig: {
@@ -121,9 +109,9 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         },
         crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
         resilience: {
-            inbox: toResilienceDto(),
-            outbox: toResilienceDto(),
-            appOutbox: toResilienceDto()
+            inbox: createApiV1TestQueueResilience(),
+            outbox: createApiV1TestQueueResilience(),
+            appOutbox: createApiV1TestQueueResilience()
         },
         backgroundTasks: {
             beginStartupGeneration: () => {
@@ -142,6 +130,20 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         }
     };
 }
+const TEST_TOPOLOGY_DELIVERY: CreateApiV1RuntimeInput['topologyDelivery'] = {
+    publicationRetentionMs: 86_400_000,
+    heartbeatIntervalMs: 10_000,
+    leaseDurationMs: 30_000,
+    antiEntropyIntervalMs: 1_000,
+    pageSize: 100,
+    maxPagesPerTurn: 10,
+    maxEntriesPerTurn: 1_000,
+    compactionIntervalMs: 60_000,
+    compactionPageSize: 1_000,
+    reconnectBatchWindowMs: 25,
+    consumerRetentionMs: 86_400_000
+};
+
 const RTC_STOP = () => Promise.resolve();
 
 function createOperations(

@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { EntityStatus, isExpiredResourceEntry, toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 
@@ -134,24 +134,21 @@ export class TestResourceInboxResults {
     }
 }
 
-export function createAppInboxTestResilience(firstRetryDelayMs?: number): ResilienceDto {
+export function createAppInboxTestResilience(firstRetryDelayMs?: number): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    const resilienceArguments = [
-        new CircuitBreakerPolicy(10, duration, duration, duration),
-        1,
-        10,
-        1,
-        1
-    ] as const;
-    if (firstRetryDelayMs === undefined) {
-        return ResilienceDto.toResilienceDto(...resilienceArguments);
-    }
-    return ResilienceDto.toResilienceDto(...resilienceArguments, 10, {
-        maxAttempts: 20,
-        delaysAfterAttemptMs: [firstRetryDelayMs],
-        maxDelayMs: firstRetryDelayMs,
-        jitterRatio: 0,
-        staleDueThresholdMs: 30_000
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1,
+        retryPolicy: firstRetryDelayMs === undefined ? undefined : {
+            maxAttempts: 20,
+            delaysAfterAttemptMs: [firstRetryDelayMs],
+            maxDelayMs: firstRetryDelayMs,
+            jitterRatio: 0,
+            staleDueThresholdMs: 30_000
+        }
     });
 }
 

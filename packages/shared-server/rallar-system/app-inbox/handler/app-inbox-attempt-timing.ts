@@ -1,5 +1,5 @@
+import type { ResourceInboxAttemptTelemetry } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { ResourceInboxAttemptTelemetry } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 
 import type { RallarTimingDetails } from '../../observability/timing.ts';
 import type { AppInboxEnqueueInput } from '../app-inbox-contracts.ts';

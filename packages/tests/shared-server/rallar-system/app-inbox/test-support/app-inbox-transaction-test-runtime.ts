@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { computeResourceInboxAttempt } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
+import { computeResourceInboxAttempt } from '@shared/queuebox/resource-inbox/resource-inbox-attempt-telemetry.ts';
 
 import type {
     PSqlParameter,
@@ -28,13 +28,13 @@ import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-s
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { Reservator } from '@shared/queuebox/DequeueController.ts';
+import { Reservator } from '@shared/queuebox/dequeue/dequeue-controller.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
-    ResilienceDto,
     type ResourceInboxRetryExhaustion,
     type ResourceInboxRetryExhaustionRecovery
-} from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+} from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import {
     EntityStatus,
     isExpiredResourceEntry,
@@ -619,6 +619,11 @@ export function createAtomicHarness(
         }
     );
 
+    const context = createAtomicMessageContext(entry);
+    return { context, database, entry, service };
+}
+
+function createAtomicMessageContext(entry: ResourceEntry): AppInboxMessageContext<JsonWireValue> {
     const enqueue: AppInboxEnqueueInput = {
         type: AppInboxType.GROUP_CREATE,
         resourceId: entry.key.resourceId,
@@ -642,7 +647,7 @@ export function createAtomicHarness(
         }).telemetry,
         encodeResult: (result) => result
     };
-    return { context, database, entry, service };
+    return context;
 }
 
 function toAtomicResultEntry(values: readonly PSqlParameter[]): ResourceEntry {
@@ -800,13 +805,13 @@ function cloneState(state: AtomicState): AtomicState {
     };
 }
 
-export function createResilience(): ResilienceDto {
+export function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(10, duration, duration, duration),
-        1,
-        1,
-        1,
-        1
-    );
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 1,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1
+    });
 }

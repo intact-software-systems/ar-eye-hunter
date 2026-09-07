@@ -3,8 +3,8 @@ import {
     createRallarMiddlewareQueueRegistration,
     type RegisterRallarMiddlewareQueueTasksInput
 } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
-import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { ResourceInboxResilience } from '@shared/queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -81,15 +81,15 @@ function createQueueTaskInput(): RegisterRallarMiddlewareQueueTasksInput {
     };
 }
 
-function createResilience(): ResilienceDto {
+function createResilience(): ResourceInboxResilience {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    return ResilienceDto.toResilienceDto(
-        new CircuitBreakerPolicy(10, duration, duration, duration),
-        1,
-        10,
-        1,
-        1,
-        ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
-        DEFAULT_RESOURCE_INBOX_RETRY_POLICY
-    );
+    return ResourceInboxResilience.createDefault({
+        circuitBreakerPolicy: new CircuitBreakerPolicy(10, duration, duration, duration),
+        initialRate: 1,
+        maxRate: 10,
+        concurrencyIncreaseStep: 1,
+        concurrencyReduceStep: 1,
+        maxFairnessSelectionsInWindow: ResourceInboxResilience.MAX_NUM_DEQUEUE_IN_WINDOW,
+        retryPolicy: DEFAULT_RESOURCE_INBOX_RETRY_POLICY
+    });
 }
