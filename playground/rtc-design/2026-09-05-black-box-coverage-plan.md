@@ -1,7 +1,16 @@
 # API-v1 Black-Box Coverage — Implementation Plan (2026-09-05)
 
-Status: **planned, not started.** Written after the group-activation workstream merged (slices 0–14,
-PRs #483–#493), when the corpus could be audited as a finished whole rather than slice by slice.
+Status: **slices 1–5 and 7 delivered, slice 6 partly delivered.** Slices 1, 2 and 4 landed in earlier
+merged PRs; slices 3, 5, 6 and 7 are on branch `codex/black-box-slice3-socket-contents`. Written after
+the group-activation workstream merged (slices 0–14, PRs #483–#493), when the corpus could be audited
+as a finished whole rather than slice by slice. Each slice table below marks its own rows; the three
+cluster-profile recipes and the presence-lease recipe are authored and preflight-clean but not yet
+verified against a live cluster.
+
+Still open in slice 6: the `degraded` band from partial coverage,
+`api-v1-group-reconnect-across-stages`, and the `api-v1-admin-support` append. Two framework defects
+found while writing the slices were fixed here (open findings 13 and 14); one product contract
+divergence is open for a maintainer (finding 12).
 
 Implements nothing new in the server. Every slice below is **recipe authoring plus matrix
 registration** — see D1, which is the finding that shapes the whole plan.
@@ -145,7 +154,7 @@ because the assertion shapes it establishes are reused by slices 4 and 5.
 | `api-v1-overlay-topology-publication`    | **delivered**: the published broadcast body compared field for field against the authoritative HTTP topology at the same version, selected by its own `degreeLimit` so the unicast hydration frame cannot satisfy it, and both members required to receive the same body               |
 | `api-v1-group-state-delta-contents`      | **delivered**: `removedSessionIds` from the one route that populates it, observed on a second peer because the disconnecting session never sees its own removal; `removedMemberPrincipalIds` pinned empty; and a member removal dropping a live session while naming it in neither set |
 | `api-v1-group-lifecycle-events`          | **delivered** as an append to `api-v1-group-status-lifecycle`: the route-less `group-activation-status-changed` selected on the socket by `eventType` via `expect.decodeJsonPaths`, asserted service-authored and causally chained                                                     |
-| _(append to `api-v1-group-data-policy`)_ | the transport-halt NACK to the **sender** (today's step has no `expect` at all), and that a pause is topic-**selective**                                                                                                                                                               |
+| _(append to `api-v1-group-data-policy`)_ | **delivered**: the transport-halt NACK is parsed and its shape asserted on the **sender**, and CRDT sync still flows while data is halted, which is the pause being topic-selective                                                                                                    |
 
 **Hazards.** `aliceDoesNotReceivePausedData` is currently indistinguishable from the whole room going
 dark — the selective-pause assertion needs a frame that is _supposed_ to survive the halt. Cross-topic
@@ -207,8 +216,8 @@ is pinned single-node.
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `api-v1-group-lifecycle-cluster`        | folded into `api-v1-group-lifecycle-cluster-ws`: the setup-free node serving a lifecycle command and the two writing nodes reading it back are the same recipe's first half                                                                                                                                                                     |
 | `api-v1-group-lifecycle-ws-convergence` | **delivered** as `api-v1-group-lifecycle-cluster-ws`: the connect command served by the node that wrote none of the setup, read back on the two that did, with both sockets opened against `RALLAR_WS_BASE_URL_SECONDARY` -- the first recipe in the corpus to reference it -- and the delta bound to the tertiary command by its own requestId |
-| `api-v1-group-governance-fencing`       | **partly delivered**: ban, unban, removal and both admission decisions each written on one node and enforced on the others, every denial named by code. The logout-fences-a-live-socket half is NOT delivered -- `/api/ws/:sessionId` authenticates only at upgrade -- unverified                                                                 |
-| `api-v1-group-event-cursor-paging`      | **delivered**: a bounded page opened on the primary, continued on the secondary and again on the tertiary. Two silent fallbacks fall out of it -- a partial cursor is dropped rather than rejected, and a zero or non-numeric limit falls back to 100                                                                                             |
+| `api-v1-group-governance-fencing`       | **partly delivered**: ban, unban, removal and both admission decisions each written on one node and enforced on the others, every denial named by code. The logout-fences-a-live-socket half is NOT delivered -- `/api/ws/:sessionId` authenticates only at upgrade -- unverified                                                               |
+| `api-v1-group-event-cursor-paging`      | **delivered**: a bounded page opened on the primary, continued on the secondary and again on the tertiary. Two silent fallbacks fall out of it -- a partial cursor is dropped rather than rejected, and a zero or non-numeric limit falls back to 100                                                                                           |
 
 **Hazards.** `RALLAR_WS_BASE_URL_SECONDARY` is exported by the runner and referenced by zero recipes;
 the only non-primary socket in the corpus is receive-only. Expect the first client-to-server frame on
@@ -224,7 +233,7 @@ Durable machinery whose late-firing behaviour is asserted nowhere.
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `api-v1-group-clock-after-the-fact`     | **partly delivered** as `api-v1-activation-clock-decay`: an already-stale `createdAtEpochMs` activates the group and the +30s heartbeat then decays it, pinned to exactly two status writes. With one edge the band is `failed`, not `degraded` -- reaching `degraded` needs partial coverage (three members, one stale edge) and is **still uncovered** |
 | `api-v1-group-reconnect-across-stages`  | reconnect hydration across a lifecycle stage change; reconnecting to a different node than the one that dropped you                                                                                                                                                                                                                                      |
-| `api-v1-group-presence-lease-lifecycle` | **delivered**: the sweep DELETES the lapsed row rather than marking it disconnected, and `expired` is a reason no recipe had observed. Membership and stage must be untouched. Waits out the 60s sweep interval, which has no configuration knob                                                                                                           |
+| `api-v1-group-presence-lease-lifecycle` | **delivered**: the sweep DELETES the lapsed row rather than marking it disconnected, and `expired` is a reason no recipe had observed. Membership and stage must be untouched. Waits out the 60s sweep interval, which has no configuration knob                                                                                                         |
 | _(append to `api-v1-admin-support`)_    | explain against a **real** RETRY or FAILED queue entry, and the FAILED row in the queue breakdown                                                                                                                                                                                                                                                        |
 
 **Hazards.** The evidence-expiry arm is the `degraded` band no read can derive — it must be asserted
