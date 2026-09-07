@@ -1,0 +1,574 @@
+{
+  "description": "No-browser API-v1 presence lease expiry against a lifecycle-managed group. The corpus asserts the lease BOUNDS (api-v1-presence-lease-bound rejects future timestamps) and never the expiry itself: `disconnectReason` appears in no recipe and the internal `expired` reason has never been observed. Bob connects with a lease that lapses seconds later while Alice takes the default 24h one, the group is driven to connecting, and the 60s reconciliation sweep is then allowed to fire. The sweep DELETES the expired row rather than marking it disconnected, so the assertion is that exactly one session survives and it is Alice's; membership and lifecycleState must be untouched, because a lapsed lease is a presence fact and not a roster or stage change; and Bob must be able to take a fresh lease without rejoining. The sweep has no HTTP surface, so this is settle-sequenced rather than raced (D7).",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_PRESENCELEASE_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-presencelease"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_PRESENCELEASE_WORKSPACE_ID",
+      "default": "workspace-presencelease-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_PRESENCELEASE_GROUP_ID",
+      "default": "presencelease-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_PRESENCELEASE_PASSWORD",
+      "default": "api-v1-presencelease-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/presencelease-register-alice-{runId}",
+        "body": {
+          "username": "presencelease-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/presencelease-login-alice-{runId}",
+        "body": {
+          "username": "presencelease-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/presencelease-register-bob-{runId}",
+        "body": {
+          "username": "presencelease-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/presencelease-login-bob-{runId}",
+        "body": {
+          "username": "presencelease-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheManagedGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/presencelease-create-group-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Presence lease lifecycle {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}",
+          "lifecyclePolicy": {
+            "preset": "managed",
+            "initiator": "manager",
+            "establishment": {
+              "planTrigger": {
+                "kind": "manual"
+              },
+              "connectTrigger": {
+                "kind": "manual"
+              }
+            },
+            "admission": {
+              "mode": "open"
+            },
+            "activation": {
+              "mode": "manual"
+            },
+            "topology": {
+              "reconfigureLanding": "hold"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "lifecycleState": "forming"
+          }
+        }
+      }
+    },
+    {
+      "name": "bobJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/presencelease-bob-joins-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "deriveTheLeaseWindow",
+      "type": "set",
+      "output": "leaseStartEpochMs",
+      "transform": {
+        "add": [
+          {
+            "timestamp": true
+          },
+          0
+        ]
+      }
+    },
+    {
+      "name": "deriveTheShortLeaseExpiry",
+      "type": "set",
+      "output": "shortLeaseExpiryEpochMs",
+      "transform": {
+        "add": [
+          {
+            "path": "outputs.leaseStartEpochMs"
+          },
+          5000
+        ]
+      }
+    },
+    {
+      "name": "connectAlicePresenceWithTheDefaultLease",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/presencelease-alice-presence-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "presencelease-generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectBobPresenceWithAShortLease",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/presencelease-bob-presence-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "presencelease-generation-{runId}",
+          "principalId": "{bobClientId}",
+          "connectedAtEpochMs": "{leaseStartEpochMs}",
+          "lastHeartbeatAtEpochMs": "{leaseStartEpochMs}",
+          "expiresAtEpochMs": "{shortLeaseExpiryEpochMs}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "onlineMemberCount": 2
+        }
+      }
+    },
+    {
+      "name": "planTheLayout",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/plan/requests/presencelease-plan-layout-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "planned"
+          }
+        }
+      }
+    },
+    {
+      "name": "theLayoutPublishes",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "layoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
+          "layoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
+          "layoutVersion": "body.snapshot.version",
+          "layoutState": "body.snapshot.state"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectTheLayout",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/lifecycle/connect/requests/presencelease-connect-layout-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "expectedFormationEpoch": 1,
+          "expectedLayout": {
+            "groupRevision": "{layoutGroupRevision}",
+            "presenceRevision": "{layoutPresenceRevision}",
+            "version": "{layoutVersion}",
+            "state": "{layoutState}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "lifecycleState": "connecting"
+          }
+        }
+      }
+    },
+    {
+      "name": "bothLeasesAreLiveBeforeTheSweep",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "presenceRevisionBeforeSweep": "body.causalRevision.presenceRevision",
+          "lifecycleStateBeforeSweep": "body.group.lifecycleState"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "onlineMemberCount": 2,
+          "memberCount": 2
+        }
+      }
+    },
+    {
+      "name": "theLapsedLeaseIsSweptAway",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 60,
+          "maxDurationMs": 95000,
+          "backoffMs": 2000,
+          "backoffMultiplier": 1
+        },
+        "outputs": {
+          "sessionsAfterSweep": "body.activeSessions",
+          "membersAfterSweep": "body.members",
+          "presenceRevisionAfterSweep": "body.causalRevision.presenceRevision",
+          "lifecycleStateAfterSweep": "body.group.lifecycleState"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "onlineMemberCount": 1,
+          "memberCount": 2
+        }
+      }
+    },
+    {
+      "name": "onlyTheLapsedLeaseWasSwept",
+      "type": "assert",
+      "actual": {
+        "sessions": "{sessionsAfterSweep}",
+        "members": "{membersAfterSweep}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "sessions",
+            "length": 1
+          },
+          {
+            "path": "sessions.0.sessionId",
+            "equals": "{aliceSessionId}"
+          },
+          {
+            "path": "sessions.0.status",
+            "equals": "active"
+          },
+          {
+            "path": "members",
+            "length": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "theExpiryDroppedPresenceNotMembershipOrTheLifecycle",
+      "type": "assert",
+      "actual": {
+        "lifecycleBefore": "{lifecycleStateBeforeSweep}",
+        "lifecycleAfter": "{lifecycleStateAfterSweep}",
+        "presenceRevisionAfter": "{presenceRevisionAfterSweep}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "lifecycleBefore": "connecting",
+          "lifecycleAfter": "connecting"
+        },
+        "comparators": [
+          {
+            "path": "presenceRevisionAfter",
+            "gt": "{presenceRevisionBeforeSweep}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "theExpiryIsNamedInTheGroupEvents",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events?eventType=session-disconnected&limit=1",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "expiryEventReason": "body.0.reason",
+          "expiryEventType": "body.0.eventType"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "theSweepNamedItselfExpired",
+      "type": "assert",
+      "actual": {
+        "reason": "{expiryEventReason}",
+        "eventType": "{expiryEventType}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparison": "exact",
+        "body": {
+          "reason": "expired",
+          "eventType": "session-disconnected"
+        }
+      }
+    },
+    {
+      "name": "bobCanTakeAFreshLeaseWithoutRejoining",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/presencelease-bob-release-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "presencelease-generation-two-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "onlineMemberCount": 2
+        }
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

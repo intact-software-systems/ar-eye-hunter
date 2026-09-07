@@ -2899,6 +2899,29 @@
         ]
       },
       "description": "No-browser API-v1 graph diagnostic reads: the two GET routes the OpenAPI assertion covers and no recipe requests. Both are cache state machines with three refresh modes and the corpus pins none of them: never on a cold cache is the only 404 for a group that exists, if-missing computes once and then serves the same snapshot, and always must advance a version the compute itself never advances. Also pins includeMeasured defaulting to absent, an unknown refresh mode rejected by the route rather than the schema, and the scoped global graph as a separate cache entry."
+    },
+    {
+      "id": "api-v1-group-presence-lease-lifecycle",
+      "recipe": "tests/api-v1/api-v1-group-presence-lease-lifecycle.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-presence-lease-lifecycle",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 presence lease expiry against a lifecycle-managed group. The corpus asserts the lease bounds and never the expiry: disconnectReason appears in no recipe and the internal expired reason has never been observed. One member takes a lease that lapses seconds later, the group is driven to connecting, and the 60s reconciliation sweep is allowed to fire. The sweep deletes the expired row rather than marking it disconnected, so exactly one session must survive and it must be the other member; membership and lifecycleState must be untouched, and the expired member must be able to take a fresh lease without rejoining. Waits out one full sweep interval."
     }
   ]
 }
