@@ -110,7 +110,16 @@ describe('inbound admission preparation boundary', () => {
         expect(first.durableEffects.every((effect) => Number.isSafeInteger(effect.expireAtTimestamp))).toBe(true);
     });
 
-    it.each([undefined, 500, 2_000])('carries the admitted freshness deadline into every message when caller TTL is %s', async (callerTtlMs) => {
+    it.each(
+        [
+            { algo: 'fresh-until', callerTtlMs: undefined },
+            { algo: 'fresh-until', callerTtlMs: 500 },
+            { algo: 'fresh-until', callerTtlMs: 2_000 },
+            { algo: 'expires-at', callerTtlMs: undefined },
+            { algo: 'expires-at', callerTtlMs: 500 },
+            { algo: 'expires-at', callerTtlMs: 2_000 }
+        ] as const
+    )('carries the admitted $algo deadline into every message when caller TTL is $callerTtlMs', async ({ algo, callerTtlMs }) => {
         vi.useFakeTimers({ toFake: ['Date'] });
         const admittedAtMs = 1_800_000_000_000;
         vi.setSystemTime(admittedAtMs);
@@ -128,7 +137,10 @@ describe('inbound admission preparation boundary', () => {
             ...prepared.plan,
             effective: {
                 ...prepared.plan.effective,
-                expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 1_000 } }
+                expiry: {
+                    algo,
+                    opts: algo === 'fresh-until' ? { maxStalenessMs: 1_000 } : { expiresAtMs: admittedAtMs + 1_000 }
+                }
             },
             forwarding: { ...prepared.plan.forwarding, enabled: true, nextHopPeerIds: ['peer-b'] }
         };
@@ -157,7 +169,7 @@ describe('inbound admission preparation boundary', () => {
         if (!read) {
             throw new Error('The admitted message must survive for ordered replay');
         }
-        // Removing the old topic freshness policy must not renew the admitted message.
+        // Removing the old topic expiry policy must not renew the admitted message.
         const replayPlan = planIncomingMessage(read.snapshot.msg, read.source, { nowMs: Date.now() });
         const replay = computeALInboundBufferedRelease({
             read,

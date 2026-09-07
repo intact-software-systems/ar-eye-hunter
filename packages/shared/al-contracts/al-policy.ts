@@ -368,20 +368,23 @@ export function resolveALMessageExpireAtMs(
     msg: ALMessage,
     effective?: ALQosEffectivePolicy
 ): number | undefined {
+    const expiry = effective?.expiry ?? msg.qos?.expiry;
+    const messageHops = msg.constraints?.ttlHops;
+    const policyHops = expiry?.opts?.ttlHops;
+    if ((messageHops !== undefined && messageHops <= 0) || (policyHops !== undefined && policyHops <= 0)) {
+        return 0;
+    }
+
     const candidates: number[] = [];
-    const ttlHops = msg.constraints?.ttlHops ?? effective?.expiry.opts.ttlHops;
-    if (ttlHops !== undefined && ttlHops <= 0) {
-        candidates.push(0);
+    if (msg.constraints?.expiresAtMs !== undefined) {
+        candidates.push(msg.constraints.expiresAtMs);
     }
-
-    const expiresAtMs = msg.constraints?.expiresAtMs ?? effective?.expiry.opts.expiresAtMs;
-    if (expiresAtMs !== undefined) {
-        candidates.push(expiresAtMs);
+    if (expiry?.opts?.expiresAtMs !== undefined) {
+        candidates.push(expiry.opts.expiresAtMs);
     }
-
-    if (effective?.expiry.algo === 'fresh-until' && effective.expiry.opts.maxStalenessMs !== undefined) {
+    if (expiry?.algo === 'fresh-until' && expiry.opts?.maxStalenessMs !== undefined) {
         const createdTs = msg.audit?.createdTs ?? msg.id.ts;
-        candidates.push(createdTs + effective.expiry.opts.maxStalenessMs);
+        candidates.push(createdTs + expiry.opts.maxStalenessMs);
     }
 
     return candidates.length === 0
@@ -719,17 +722,8 @@ function isExpired(
     effective: ALQosEffectivePolicy,
     nowMs: number
 ): boolean {
-    const ttlHops = msg.constraints?.ttlHops ?? effective.expiry.opts.ttlHops;
-    if (ttlHops !== undefined && ttlHops <= 0) {
-        return true;
-    }
-
     const expiresAtMs = resolveALMessageExpireAtMs(msg, effective);
-    if (expiresAtMs !== undefined && nowMs > expiresAtMs) {
-        return true;
-    }
-
-    return false;
+    return expiresAtMs !== undefined && nowMs >= expiresAtMs;
 }
 
 function toDedupKey(
