@@ -345,7 +345,7 @@ describe('API-v1 RTC topology replay proof semantics', () => {
 
     it('observes a large trusted topology only after every page arrives and retains original publication identity', async () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
-        const opening = ApiV1RtcTopologyProofSocket.open(proofSession, 'ticket', proofGroup);
+        const opening = ApiV1RtcTopologyProofSocket.open({ session: proofSession, ticket: 'ticket', groupRef: proofGroup, now: Date.now });
         const native = TestWebSocket.instances.at(-1)!;
         native.open();
         const socket = await opening;
@@ -373,9 +373,70 @@ describe('API-v1 RTC topology replay proof semantics', () => {
         }
     });
 
+    it('uses the owned clock for the unchanged ten-second topology deadline', async () => {
+        vi.useFakeTimers();
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        let now = 0;
+        const opening = ApiV1RtcTopologyProofSocket.open({ session: proofSession, ticket: 'ticket', groupRef: proofGroup, now: () => now });
+        TestWebSocket.instances.at(-1)!.open();
+        const socket = await opening;
+        let settled = false;
+        const waiting = socket.waitForTopology({ causalRevision: { groupRevision: 1, presenceRevision: 1 }, causalMatch: 'exact' })
+            .then(() => undefined, (error: unknown) => error).finally(() => {
+                settled = true;
+            });
+        try {
+            await vi.advanceTimersByTimeAsync(10_000);
+            expect(settled).toBe(false);
+            now = 9_999;
+            await vi.advanceTimersByTimeAsync(10_000);
+            expect(settled).toBe(false);
+            now = 10_000;
+            await vi.advanceTimersByTimeAsync(1);
+            expect(await waiting).toMatchObject({ message: expect.stringContaining('10000ms') });
+        }
+        finally {
+            socket.close();
+            await waiting;
+        }
+    });
+
+    it('uses the same owned clock to reject expired topology pages before diagnostics claim an observation', async () => {
+        vi.useFakeTimers();
+        vi.stubGlobal('WebSocket', TestWebSocket);
+        const now = Date.now();
+        const pages = topologyPages({
+            messageId: JSON.stringify(['rtc-topology-publication', 'expired']),
+            revision: { groupRevision: 7, presenceRevision: 9 },
+            version: 12,
+            sessionCount: 1
+        });
+        const opening = ApiV1RtcTopologyProofSocket.open({ session: proofSession, ticket: 'ticket', groupRef: proofGroup, now: () => now + 60_000 });
+        const native = TestWebSocket.instances.at(-1)!;
+        native.open();
+        const socket = await opening;
+        try {
+            for (const page of pages) {
+                native.receive(JSON.stringify(page));
+            }
+            await expect(socket.waitForTopology({ causalRevision: { groupRevision: 7, presenceRevision: 9 }, causalMatch: 'exact' })).rejects.toThrow(
+                'expired'
+            );
+            expect(socket.readDiagnostics().topologyTuples).toEqual([]);
+        }
+        finally {
+            socket.close();
+        }
+    });
+
     it('rejects a trusted page from another proof room before recording authority', async () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
-        const opening = ApiV1RtcTopologyProofSocket.open(proofSession, 'ticket', { ...proofGroup, workspaceId: 'another' });
+        const opening = ApiV1RtcTopologyProofSocket.open({
+            session: proofSession,
+            ticket: 'ticket',
+            groupRef: { ...proofGroup, workspaceId: 'another' },
+            now: Date.now
+        });
         const native = TestWebSocket.instances.at(-1)!;
         native.open();
         const socket = await opening;
@@ -408,13 +469,13 @@ describe('API-v1 RTC topology replay proof semantics', () => {
             version: 12,
             sessionCount: 1500
         });
-        const firstOpening = ApiV1RtcTopologyProofSocket.open(proofSession, 'ticket', proofGroup);
+        const firstOpening = ApiV1RtcTopologyProofSocket.open({ session: proofSession, ticket: 'ticket', groupRef: proofGroup, now: Date.now });
         const firstNative = TestWebSocket.instances.at(-1)!;
         firstNative.open();
         const first = await firstOpening;
         firstNative.receive(JSON.stringify(pages[0]));
         first.close();
-        const nextOpening = ApiV1RtcTopologyProofSocket.open(proofSession, 'ticket', proofGroup);
+        const nextOpening = ApiV1RtcTopologyProofSocket.open({ session: proofSession, ticket: 'ticket', groupRef: proofGroup, now: Date.now });
         const nextNative = TestWebSocket.instances.at(-1)!;
         nextNative.open();
         const next = await nextOpening;
@@ -552,16 +613,19 @@ describe('API-v1 RTC topology replay proof semantics', () => {
         let failure: Error | undefined;
         void ApiV1RtcTopologyProofSocket.open(
             {
-                label: 'N5',
-                principal: 'alice',
-                clientId: 'alice-client',
-                sessionId: 'alice-session',
-                accessToken: 'token',
-                apiBaseUrl: 'http://127.0.0.1:18082',
-                wsBaseUrl: 'ws://127.0.0.1:18082'
-            },
-            'ticket',
-            proofGroup
+                session: {
+                    label: 'N5',
+                    principal: 'alice',
+                    clientId: 'alice-client',
+                    sessionId: 'alice-session',
+                    accessToken: 'token',
+                    apiBaseUrl: 'http://127.0.0.1:18082',
+                    wsBaseUrl: 'ws://127.0.0.1:18082'
+                },
+                ticket: 'ticket',
+                groupRef: proofGroup,
+                now: Date.now
+            }
         ).catch((error) => {
             failure = error instanceof Error ? error : new Error(String(error));
         });
@@ -626,7 +690,12 @@ interface ReplayMetricsInput {
     readonly replayedEntryCount: number;
 }
 
-function replayMetrics(input: ReplayMetricsInput) {
+interface ReplayMetricsEvidence {
+    readonly wakeCountBySource: Readonly<Record<'poll' | 'notification' | 'local-commit', number>>;
+    readonly replayedEntryCount: number;
+}
+
+function replayMetrics(input: ReplayMetricsInput): ReplayMetricsEvidence {
     return {
         wakeCountBySource: {
             poll: input.poll,

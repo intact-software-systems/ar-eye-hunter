@@ -25,7 +25,7 @@ it.each([
     { applicationId: 'app &/?=é', workspaceId: 'workspace #+&', groupId: 'room' }
 ])('binds the proof socket authorization URL to its expected snapshot scope $applicationId', async (groupRef) => {
     vi.stubGlobal('WebSocket', TestWebSocket);
-    const opening = ApiV1RtcTopologyProofSocket.open(session, 'ticket?&=+', groupRef);
+    const opening = ApiV1RtcTopologyProofSocket.open({ session: session, ticket: 'ticket?&=+', groupRef: groupRef, now: Date.now });
     const socket = TestWebSocket.instances.at(-1)!;
     socket.open();
     const proof = await opening;

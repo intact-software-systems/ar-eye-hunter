@@ -82,11 +82,12 @@ export async function attachAllSessions(
     sessions: readonly ProofSession[],
     groupRef: GroupRef
 ): Promise<readonly ApiV1RtcTopologyProofSocket[]> {
+    const now = Date.now;
     const sockets: ApiV1RtcTopologyProofSocket[] = [];
     try {
         for (const session of sessions) {
             const ticket = await api.issueWebSocketTicket(session);
-            sockets.push(await ApiV1RtcTopologyProofSocket.open(session, ticket, groupRef));
+            sockets.push(await ApiV1RtcTopologyProofSocket.open({ session, ticket, groupRef, now }));
         }
         return sockets;
     }

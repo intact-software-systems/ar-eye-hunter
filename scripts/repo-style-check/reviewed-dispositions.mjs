@@ -3,6 +3,43 @@ import path from 'node:path';
 import { findingMagnitude } from './finding-magnitude.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Native WebSocket data and open expectations are validated at these
+    // exact ingress owners. Completed scoped snapshots have named results;
+    // unscoped application values remain opaque capture data.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/execution/local-websocket-frame.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/execution/local-websocket-frame.ts',
+        rule: 'boundary.unknown',
+        symbol: 'acceptLocalWsFrame'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/ws/ws-open-expectation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateWsOpenExpectation'
+    }),
+    // One proof socket owns native events, scoped assembly, causal observation
+    // and wait cleanup. Its JSON identity decoder and rejected-promise test
+    // capture are raw boundaries; emitted diagnostics use named contracts.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-websocket.mts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 56
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-websocket.mts',
+        rule: 'boundary.unknown',
+        symbol: 'readProofTopologyDeliveryKind'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/api-v1-rtc-topology-replay-proof.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // Scenario composition, provider selection, recipe expansion, execution
     // and reporting have distinct linked owners beneath this public runner
     // root. Five navigation probes support retaining the current entry files.

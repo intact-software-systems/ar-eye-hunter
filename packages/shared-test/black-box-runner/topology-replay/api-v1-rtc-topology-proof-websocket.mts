@@ -8,7 +8,6 @@ import type { CompletedStateSnapshot } from '@shared/api/state-snapshot-page.ts'
 import { StateSnapshotAssembly } from '@shared/services/state-snapshot-assembly.ts';
 import type {
     ProofCausalRevision,
-    ProofJsonObject,
     ProofSession
 } from './api-v1-rtc-topology-proof-api.mts';
 
@@ -34,7 +33,31 @@ export interface ProofTopologyObservation {
     readonly deliveryKind: ProofTopologyDeliveryKind;
 }
 
+export namespace ApiV1RtcTopologyProofSocket {
+    export interface OpenInput {
+        readonly session: ProofSession;
+        readonly ticket: string;
+        readonly groupRef: GroupRef;
+        readonly now: () => number;
+    }
+    export interface Input {
+        readonly socket: WebSocket;
+        readonly label: string;
+        readonly groupRef: GroupRef;
+        readonly now: () => number;
+    }
+    export interface TopologyTuple
+        extends ProofCausalRevision, Pick<ProofTopologyObservation, 'version' | 'deliveryKind' | 'messageId'> {}
+    export interface Diagnostics {
+        readonly label: string;
+        readonly frameTypeCounts: Readonly<Record<string, number>>;
+        readonly topicCounts: Readonly<Record<string, number>>;
+        readonly topologyTuples: readonly TopologyTuple[];
+    }
+}
+
 export class ApiV1RtcTopologyProofSocket {
+    readonly #now: () => number;
     readonly #socket: WebSocket;
     readonly #groupRef: GroupRef;
     readonly #assembly = new StateSnapshotAssembly();
@@ -45,7 +68,9 @@ export class ApiV1RtcTopologyProofSocket {
     readonly #frameTypeCounts = new Map<string, number>();
     #failure: Error | undefined;
 
-    private constructor(socket: WebSocket, label: string, groupRef: GroupRef) {
+    private constructor(input: ApiV1RtcTopologyProofSocket.Input) {
+        const { socket, label, groupRef, now } = input;
+        this.#now = now;
         this.#socket = socket;
         this.#groupRef = groupRef;
         this.#label = label;
@@ -62,19 +87,20 @@ export class ApiV1RtcTopologyProofSocket {
         });
     }
 
-    static async open(session: ProofSession, ticket: string, groupRef: GroupRef): Promise<ApiV1RtcTopologyProofSocket> {
+    static async open(input: ApiV1RtcTopologyProofSocket.OpenInput): Promise<ApiV1RtcTopologyProofSocket> {
+        const { session, ticket, groupRef, now } = input;
         const url = `${session.wsBaseUrl}/api/ws/${encodeURIComponent(session.sessionId)}` +
             `?ticket=${encodeURIComponent(ticket)}` +
             `&applicationId=${encodeURIComponent(groupRef.applicationId)}` +
             `&workspaceId=${encodeURIComponent(groupRef.workspaceId)}`;
         const socket = new WebSocket(url);
-        const client = new ApiV1RtcTopologyProofSocket(socket, session.label, groupRef);
+        const client = new ApiV1RtcTopologyProofSocket({ socket, label: session.label, groupRef, now });
         await waitForOpen(socket, session.label);
         return client;
     }
 
     async waitForTopology(expectation: ProofTopologyExpectation): Promise<ProofTopologyObservation> {
-        const deadline = Date.now() + RTC_TOPOLOGY_PROOF_ASSERTION_TIMEOUT_MS;
+        const deadline = this.#now() + RTC_TOPOLOGY_PROOF_ASSERTION_TIMEOUT_MS;
         while (true) {
             if (this.#failure) {
                 throw this.#failure;
@@ -85,7 +111,7 @@ export class ApiV1RtcTopologyProofSocket {
             if (observation) {
                 return observation;
             }
-            const remaining = deadline - Date.now();
+            const remaining = deadline - this.#now();
             if (remaining <= 0) {
                 throw new Error(
                     `WebSocket ${this.#label} did not receive a matching topology for revision ` +
@@ -109,7 +135,7 @@ export class ApiV1RtcTopologyProofSocket {
         }
     }
 
-    readDiagnostics(): ProofJsonObject {
+    readDiagnostics(): ApiV1RtcTopologyProofSocket.Diagnostics {
         return {
             label: this.#label,
             frameTypeCounts: Object.fromEntries(this.#frameTypeCounts),
@@ -144,7 +170,7 @@ export class ApiV1RtcTopologyProofSocket {
             if (topic !== 'overlay.topology' || message.payload.typeId !== 'overlay.topology') {
                 return;
             }
-            const accepted = this.#assembly.accept({ message, scope: this.#groupRef, nowMs: Date.now() });
+            const accepted = this.#assembly.accept({ message, scope: this.#groupRef, nowMs: this.#now() });
             if (accepted.left) {
                 throw new TypeError(accepted.left.message);
             }
