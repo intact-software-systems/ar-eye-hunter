@@ -174,6 +174,25 @@ only when its durable evidence also establishes the facts on which remaining act
 an existing key alone does not prove that the same message or action completed. This permits
 independent messages and independent derived updates to make progress despite a conflict elsewhere.
 
+Cover the first admission attempt as well as already-admitted effects, in both directions. A valid
+message that loses a conditional write must retain an owner for bounded redelivery; returning a
+conflict to a socket or signaling callback that ignores it loses the message. Reuse the existing
+inbound and outbound QueueBox work owners, preserve the immutable message, authenticated source,
+and original deadline, and rerun read/compute/validate on redelivery. Pending admission is not
+accepted delivery and earns no success receipt. Revalidate current authority before admission;
+malformed, unauthorized, and unknown control traffic must not create pending work. Prove restart
+and cleanup for that work too.
+
+For outgoing pending admission, retain one canonical payload with its full identity and a compact
+dispatch descriptor. Preserve the original expiry request separately from the selected deadline,
+so later carrier attempts can prove equal message intent without extending that deadline. Retain
+explicit forwarding intent and its source authority; an ordinary outgoing planner cannot recreate
+an incoming relay decision. Retry fresh admission from these facts, never the failed mutation
+bundle. Report pending only after durable retention succeeds, and verify full identity/content
+when a competing writer already retained the work. Queue-only retention may use the existing
+QueueBox atomic observation checks; a decision that reads admission metadata must still guard
+those observations, even when it writes only queue rows.
+
 Separate execution eligibility from a failed attempt. An ordered message waiting for its predecessor
 must not consume QueueBox's processing retry budget just because a worker sees it again. Read the
 required ordering facts, select eligible work, and wake the existing engine when a predecessor
@@ -373,6 +392,11 @@ may grant itself authority or reserve its claimed deduplication identity.
   from incomplete pages. Test page loss, duplicate/reordered pages, expiry, and cancelled assembly.
 - Prove pure computation/validation from captured values and unchanged read/computed inputs after
   a rejected candidate, conditional-write conflict, and send failure.
+- Send and receive concurrent valid frames through the actual socket and RTC signaling consumers
+  using both memory and IndexedDB admission, including simultaneous traffic in both directions.
+  Prove that storage contention cannot silently discard them;
+  pending work redelivers through QueueBox with fresh observations and the original deadline.
+  Include receipt/control contention without granting authority to an unknown control.
 - Extend [decoding tests](../../packages/tests/shared/al-message-persistence-decoding.test.ts),
   [validation tests](../../packages/tests/shared/al-message-validation.test.ts),
   [snapshot-floor admission](../../packages/tests/shared/rtc-snapshot-floor-admission.test.ts), and
@@ -507,10 +531,11 @@ CRDT, game, and room authority rather than adding competing owners.
 
 ## Requirement-to-evidence matrix
 
-Existing coverage below was inspected, not verified as passing in this worktree. The matrix is a
-requirement map, not an execution ledger. When implementing, attach actual evidence to the affected
-test and delivery review. F identifiers refer to the audit; PC numbers match the product description's
-ten completion criteria. A listed test establishes only its existing assertions, not the entire row.
+The coverage anchors below locate maintained tests; their presence does not certify that the
+matrix passes. The matrix is a requirement map, not an execution ledger. When implementing,
+attach actual evidence to the affected test and delivery review. F identifiers refer to the
+audit baseline; PC numbers match the product description's ten completion criteria. A listed
+test establishes only its existing assertions, not the entire row.
 
 ### Existing coverage anchors
 
@@ -653,6 +678,50 @@ measured baselines before claiming improvement. Keep generated artifacts under `
 the retired static transaction count is not a baseline and no improvement is claimed here.
 
 ## Rollout, maintenance, and completion
+
+### Merge boundaries
+
+Deliver the roadmap through independently usable releases. The first release ends with the
+bounded admission and QueueBox storage/retry cutover: canonical outgoing messages, retained
+admission work, readiness-neutral retry accounting, finite original deadlines, and coordinated
+RTC/WS/server consumers. Finish the correctness repairs and affected release checks for that
+cutover, then merge it before starting another product capability. A complete ALM roadmap is
+not a prerequisite for this release.
+
+Keep the existing receipt guarantees and their documented limitations explicit at this boundary.
+Delivery handles, dependable complete-audience receipts, shared receiver deduplication, and the
+zero-IndexedDB volatile path belong to subsequent pull requests from the merged base. They remain
+required roadmap outcomes; do not report them complete or change reliability defaults early.
+
+After the release scope is fixed, add work only when required for its correctness, compatibility,
+touched-file standards closure, or acceptance evidence. Keep independent improvements for the
+next release. Preserve coordinated contracts and their verified consumers in the same release;
+do not split that dependency solely to reduce the file count. Every release must pass its affected
+checks and document its actual guarantees before merge.
+
+### Continuing from a fresh session
+
+Read this roadmap and the current pull request's Goal, Acceptance, Validation, and Follow-up
+sections before selecting work. The first release is [PR #521](https://github.com/intact-software-systems/ar-eye-hunter/pull/521).
+Inspect the current branch, uncommitted changes, and affected production owners, then run
+`npm run pr:delivery -- status`. The PR carries current delivery evidence; this roadmap defines
+the intended capabilities and their acceptance requirements.
+
+While the first release remains open, finish its storage/retry corrections, full affected-file
+review, and selected release checks. In particular, verify first-admission contention recovery,
+current authority on replay, expiry after asynchronous reads/writes, signaling failure propagation,
+server queue activation, restart, and cleanup through the real owners. Run the unchanged
+three-browser workload and required storage/package/PostgreSQL/performance checks against the
+final candidate. Inspect actual results and their source/workload scope; a historical passing
+checkpoint or an artifact named `green` does not prove the current release passes.
+
+After merge, use the merged source as the starting point for a new branch and PR. Reassess the
+next useful delivery/receipt capability from current code, keeping only two slices concrete.
+Preserve the remaining requirement-to-evidence matrix rather than treating this first release as
+completion of the roadmap. No ignored local report or prior conversation is required to discover
+the release boundary, next capability, or acceptance requirements.
+
+### Deployment and final completion
 
 Use coordinated deployment for incompatible public or wire contracts. Update verified repository
 consumers and examples together, remove obsolete APIs, and reject unsupported versions explicitly.
