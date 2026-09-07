@@ -79,7 +79,7 @@ export interface LiveRtcControlPort extends
  * itself, so the stage triggers would dial the layout before it does; the admission and activation
  * modes are part of the same literal and moving either changes what the matrix exercises.
  */
-export const MANUAL_TRIGGER_POLICY: Readonly<Record<string, unknown>> = {
+export const MANUAL_TRIGGER_POLICY = {
     preset: 'managed',
     admission: {
         mode: 'open'
@@ -101,7 +101,7 @@ export interface SetupGroupMembershipInput {
     readonly groupId: string;
     readonly suffix: string;
     /** The policy the group is created with; the matrix's own literal when omitted. */
-    readonly lifecyclePolicy?: Readonly<Record<string, unknown>>;
+    readonly lifecyclePolicy?: typeof MANUAL_TRIGGER_POLICY;
 }
 
 interface ConnectFormationAgentInput {

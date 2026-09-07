@@ -190,7 +190,11 @@ function decodeFormationTimeout(value: unknown): number | undefined {
     return Math.max(1_000, value - ADAPTER_DEADLINE_MARGIN_MS);
 }
 
-function decodeFormationRoomRef(record: Readonly<Record<string, unknown>>): GroupRef | undefined {
+function decodeFormationRoomRef(value: unknown): GroupRef | undefined {
+    if (!isBlackBoxCommandRecord(value)) {
+        return undefined;
+    }
+    const record = value;
     const explicit = record.roomRef;
     if (
         isBlackBoxCommandRecord(explicit) &&

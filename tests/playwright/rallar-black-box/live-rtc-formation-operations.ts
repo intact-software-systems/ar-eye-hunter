@@ -13,6 +13,7 @@ import {
     type LiveRtcRestoredSession
 } from './live-rtc-browser-agents.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
+import { jsonRecord, type LiveRtcJsonRecord } from './live-rtc-evidence-json.ts';
 
 /**
  * The browser-side formation surface as the acceptance spec drives it.
@@ -83,7 +84,7 @@ export interface FormationDiagnosticsInput extends FormationAgentInput {
 export interface FormationDiagnosticEvent {
     readonly topic: string;
     readonly atEpochMs: number;
-    readonly data: Readonly<Record<string, unknown>>;
+    readonly data: LiveRtcJsonRecord;
 }
 
 export interface FormationReopenInput extends FormationAgentInput {
@@ -234,7 +235,7 @@ export function createLiveRtcFormationOperations(): LiveRtcFormationOperations {
 }
 
 /** The room every formation command addresses, named exactly so the protocol's rule is satisfied. */
-function toWireRoom(input: FormationAgentInput): Readonly<Record<string, unknown>> {
+function toWireRoom(input: FormationAgentInput): LiveRtcJsonRecord {
     return {
         roomId: input.groupId,
         applicationId: 'rallar-server',
@@ -243,7 +244,7 @@ function toWireRoom(input: FormationAgentInput): Readonly<Record<string, unknown
 }
 
 /** The wire command is flat: `command`, `layout` and `landing` sit on it, and the bridge lifts them. */
-function toWireCommandFields(input: BlackBoxRallarFormationCommandInput): Readonly<Record<string, unknown>> {
+function toWireCommandFields(input: BlackBoxRallarFormationCommandInput): LiveRtcJsonRecord {
     if (input.command === 'connect') {
         return input.layout === undefined
             ? { command: input.command }
@@ -290,10 +291,9 @@ async function readRestoredSession(agent: LiveRtcControlClient.Agent): Promise<L
     };
 }
 
-function record(value: unknown): Readonly<Record<string, unknown>> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
-        ? value as Readonly<Record<string, unknown>>
-        : {};
+/** The harness's own narrowing helper; an absent or non-record value reads as an empty record. */
+function record(value: RtcBaselineJson | undefined): LiveRtcJsonRecord {
+    return jsonRecord(value) ?? {};
 }
 
 function stringArray(value: unknown): readonly string[] {

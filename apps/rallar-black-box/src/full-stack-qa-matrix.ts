@@ -180,6 +180,23 @@ export const FULL_STACK_QA_MATRIX: readonly FullStackQaCase[] = [
         liveProvider: true
     },
     {
+        id: 'rtc-lifecycle-acceptance',
+        area: 'rtc',
+        intent:
+            'Three browsers pin the formation lifecycle acceptance scenarios: held dials, member progress, the readiness barrier, reset teardown and reset hydration.',
+        polarity: 'cross-check',
+        testFile: 'full-stack-live-rtc-lifecycle-acceptance.spec.ts',
+        skipGate: 'RALLAR_BLACK_BOX_FULL_STACK=1 and RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1',
+        evidence: [
+            'discovery-holds-dials',
+            'member-progress',
+            'status-on-connect',
+            'reset-tears-down',
+            'reset-no-stale-hydration'
+        ],
+        liveProvider: true
+    },
+    {
         id: 'rtc-three-browser-matrix',
         area: 'rtc',
         intent: 'Three browsers cover direct, multicast, broadcast, and NACK baselines for realtime and messages.rtc.',

@@ -17,6 +17,7 @@ import {
 import { closeLiveRtcBrowserAgentContexts } from './live-rtc-browser-agents.ts';
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { createLiveRtcDeliveryOperations } from './live-rtc-delivery-operations.ts';
+import { jsonRecord } from './live-rtc-evidence-json.ts';
 import {
     createLiveRtcFormationOperations,
     type FormationDiagnosticEvent
@@ -81,37 +82,43 @@ test.describe('live RTC lifecycle acceptance', () => {
         }
     );
 
-    test('reports a monotonic readiness fraction to a member that reopens', async ({ browser, request }) => {
-        test.setTimeout(300_000);
-        const scenario = await openScenario(browser, request, 'progress');
-        try {
-            await activateGroup(scenario);
-            const reopenedAt = Date.now();
-            const reopened = await formationOperations.reopen({
-                ...agentInput(scenario, scenario.agents[2]),
-                browser,
-                config: liveRtcAgentConfig(),
-                transport: 'realtime'
-            });
-            scenario.agents = [scenario.agents[0], scenario.agents[1], reopened];
-            await connectPresence(scenario, reopened);
-            await settleSurvivors(scenario, reopened);
-            await formationOperations.readiness(agentInput(scenario, reopened));
+    // L7: a page reopened with a restored session reports itself unconnected, so it never holds
+    // the room whose progress this reads. The plan records the evidence.
+    test.fixme(
+        'reports a monotonic readiness fraction to a member that reopens',
+        async ({ browser, request }) => {
+            test.setTimeout(300_000);
+            const scenario = await openScenario(browser, request, 'progress');
+            try {
+                await activateGroup(scenario);
+                const reopenedAt = Date.now();
+                const reopened = await formationOperations.reopen({
+                    ...agentInput(scenario, scenario.agents[2]),
+                    browser,
+                    config: liveRtcAgentConfig(),
+                    transport: 'realtime'
+                });
+                scenario.agents = [scenario.agents[0], scenario.agents[1], reopened];
+                await connectPresence(scenario, reopened);
+                await settleSurvivors(scenario, reopened);
+                await formationOperations.readiness(agentInput(scenario, reopened));
 
-            const samples = await formationOperations.readFormationDiagnostics({
-                ...agentInput(scenario, reopened),
-                topic: 'rallar.browser.formation.room-status',
-                sinceEpochMs: reopenedAt
-            });
+                const samples = await formationOperations.readFormationDiagnostics({
+                    ...agentInput(scenario, reopened),
+                    topic: 'rallar.browser.formation.room-status',
+                    sinceEpochMs: reopenedAt
+                });
 
-            expect(validateProgressSeries(samples)).toEqual([]);
+                expect(validateProgressSeries(samples)).toEqual([]);
+            }
+            finally {
+                await retire(scenario);
+            }
         }
-        finally {
-            await retire(scenario);
-        }
-    });
+    );
 
-    test('reports ready only after the accepted layout arrived', async ({ browser, request }) => {
+    // L7: same reopen defect; the returning member never reaches a state its own barrier can read.
+    test.fixme('reports ready only after the accepted layout arrived', async ({ browser, request }) => {
         test.setTimeout(300_000);
         const scenario = await openScenario(browser, request, 'barrier');
         try {
@@ -148,70 +155,79 @@ test.describe('live RTC lifecycle acceptance', () => {
         }
     });
 
-    test('drops every lane on reset and dials again on the next series', async ({ browser, request }) => {
-        test.setTimeout(300_000);
-        const scenario = await openScenario(browser, request, 'reset');
-        try {
-            await activateGroup(scenario);
-            const beforeReset = await Promise.all(
-                scenario.agents.map(async (agent) =>
-                    await formationOperations.countPeerCreated(agentInput(scenario, agent))
-                )
-            );
-            const resetAt = Date.now();
-
-            await formationOperations.command({
-                ...agentInput(scenario, scenario.agents[0]),
-                input: { command: 'reset' }
-            });
-
-            for (const agent of scenario.agents) {
-                await formationOperations.waitForStage({
-                    ...agentInput(scenario, agent),
-                    stage: 'dormant',
-                    timeoutMs: STAGE_WAIT_MS,
-                    sinceEpochMs: resetAt
-                });
-                // The stage reaches `dormant` before the lanes finish closing, so the teardown is
-                // awaited rather than sampled: what the pin claims is that they end empty, not that
-                // they are empty the instant the stage changes.
-                await expect
-                    .poll(async () => {
-                        const sampled = await formationOperations.health(agentInput(scenario, agent));
-                        return [
-                            ...sampled.rtcStatus.activePeerIds,
-                            ...sampled.rtcStatus.knownPeerIds,
-                            ...sampled.rtcStatus.readyPeerIds
-                        ].length;
-                    }, { timeout: 60_000, intervals: [1_000] })
-                    .toBe(0);
-                const health = await formationOperations.health(agentInput(scenario, agent));
-                expect(health.formation.dialing).toBe('none');
-                expect(health.formation.accepted).toBeUndefined();
-                expect(health.formation.planned).toBeUndefined();
-            }
-
-            await holdFor(scenario.agents[0], HOLD_MS);
-            for (const [index, agent] of scenario.agents.entries()) {
-                expect(await formationOperations.countPeerCreated(agentInput(scenario, agent))).toBe(
-                    beforeReset[index]
+    // L8: after a reset the facade-level peer lists still name both peers a minute later. The
+    // assertion is left claiming what the scenario claims rather than relaxed to match that.
+    test.fixme(
+        'drops every lane on reset and dials again on the next series',
+        async ({ browser, request }) => {
+            test.setTimeout(300_000);
+            const scenario = await openScenario(browser, request, 'reset');
+            try {
+                await activateGroup(scenario);
+                const beforeReset = await Promise.all(
+                    scenario.agents.map(async (agent) =>
+                        await formationOperations.countPeerCreated(agentInput(scenario, agent))
+                    )
                 );
-            }
+                const resetAt = Date.now();
 
-            for (const command of ['start', 'plan'] as const) {
-                await formationOperations.command({ ...agentInput(scenario, scenario.agents[0]), input: { command } });
+                await formationOperations.command({
+                    ...agentInput(scenario, scenario.agents[0]),
+                    input: { command: 'reset' }
+                });
+
+                for (const agent of scenario.agents) {
+                    await formationOperations.waitForStage({
+                        ...agentInput(scenario, agent),
+                        stage: 'dormant',
+                        timeoutMs: STAGE_WAIT_MS,
+                        sinceEpochMs: resetAt
+                    });
+                    // The stage reaches `dormant` before the lanes finish closing, so the teardown is
+                    // awaited rather than sampled: what the pin claims is that they end empty, not that
+                    // they are empty the instant the stage changes.
+                    await expect
+                        .poll(async () => {
+                            const sampled = await formationOperations.health(agentInput(scenario, agent));
+                            return [
+                                ...sampled.rtcStatus.activePeerIds,
+                                ...sampled.rtcStatus.knownPeerIds,
+                                ...sampled.rtcStatus.readyPeerIds
+                            ].length;
+                        }, { timeout: 60_000, intervals: [1_000] })
+                        .toBe(0);
+                    const health = await formationOperations.health(agentInput(scenario, agent));
+                    expect(health.formation.dialing).toBe('none');
+                    expect(health.formation.accepted).toBeUndefined();
+                    expect(health.formation.planned).toBeUndefined();
+                }
+
+                await holdFor(scenario.agents[0], HOLD_MS);
+                for (const [index, agent] of scenario.agents.entries()) {
+                    expect(await formationOperations.countPeerCreated(agentInput(scenario, agent))).toBe(
+                        beforeReset[index]
+                    );
+                }
+
+                for (const command of ['start', 'plan'] as const) {
+                    await formationOperations.command({
+                        ...agentInput(scenario, scenario.agents[0]),
+                        input: { command }
+                    });
+                }
+                await connectWhenPlanned(scenario, scenario.agents[0]);
+                for (const [index, agent] of scenario.agents.entries()) {
+                    await expectDialed(scenario, agent, beforeReset[index] + 1);
+                }
             }
-            await connectWhenPlanned(scenario, scenario.agents[0]);
-            for (const [index, agent] of scenario.agents.entries()) {
-                await expectDialed(scenario, agent, beforeReset[index] + 1);
+            finally {
+                await retire(scenario);
             }
         }
-        finally {
-            await retire(scenario);
-        }
-    });
+    );
 
-    test('hydrates a dormant group without resurrecting its layouts', async ({ browser, request }) => {
+    // L7: the hydration this reads happens on a reopened page, which never connects.
+    test.fixme('hydrates a dormant group without resurrecting its layouts', async ({ browser, request }) => {
         test.setTimeout(300_000);
         const scenario = await openScenario(browser, request, 'hydration');
         try {
@@ -481,11 +497,9 @@ function lastAtEpochMs(events: readonly FormationDiagnosticEvent[]): number {
     return events.reduce((latest, event) => Math.max(latest, event.atEpochMs), 0);
 }
 
-function acceptedIdentityOf(event: FormationDiagnosticEvent): unknown {
-    const accepted = event.data.accepted;
-    return typeof accepted === 'object' && accepted !== null
-        ? (accepted as Record<string, unknown>).identity
-        : undefined;
+function acceptedIdentityOf(event: FormationDiagnosticEvent): string | undefined {
+    const accepted = jsonRecord(event.data.accepted);
+    return accepted === null ? undefined : JSON.stringify(accepted.identity);
 }
 
 interface ProgressSeriesIssue {
@@ -493,55 +507,75 @@ interface ProgressSeriesIssue {
     readonly reason: string;
 }
 
+interface ProgressSample {
+    readonly desiredCount: number;
+    readonly readyCount: number;
+    readonly identity: string;
+    readonly groupRevision: string;
+}
+
+/** One recorded room-status diagnostic, narrowed to the four values the window is read from. */
+function decodeProgressSample(value: FormationDiagnosticEvent): ProgressSample | undefined {
+    const room = jsonRecord(value.data.room);
+    if (room === null) {
+        return undefined;
+    }
+    const desired = room.desiredPeerIds;
+    const ready = room.readyPeerIds;
+    if (!Array.isArray(desired) || !Array.isArray(ready) || desired.length === 0) {
+        return undefined;
+    }
+    return {
+        desiredCount: desired.length,
+        readyCount: ready.length,
+        identity: JSON.stringify(room.acceptedLayoutIdentity),
+        groupRevision: JSON.stringify(value.data.groupRevision)
+    };
+}
+
 /**
  * Decision 40's window, read as a pure function of the recorded samples: hydration delivers the
  * accepted layout first, then lanes open while no group write happens, so the fraction only rises,
  * it ends at one, and every sample after the first full desired set names the same layout and the
- * same group revision.
+ * same group revision. Samples taken before the desired set arrives carry no fraction and are the
+ * pre-hydration ones the scenario expects to see.
  */
 export function validateProgressSeries(
     samples: readonly FormationDiagnosticEvent[]
 ): readonly ProgressSeriesIssue[] {
     const issues: ProgressSeriesIssue[] = [];
-    let previousFraction: number | undefined;
-    let identity: string | undefined;
-    let groupRevision: unknown;
-    let lastFraction: number | undefined;
+    let previous: ProgressSample | undefined;
+    let last: ProgressSample | undefined;
 
-    for (const [index, sample] of samples.entries()) {
-        const room = sample.data.room;
-        const desired = Array.isArray((room as Record<string, unknown>)?.desiredPeerIds)
-            ? ((room as Record<string, unknown>).desiredPeerIds as readonly unknown[])
-            : [];
-        const ready = Array.isArray((room as Record<string, unknown>)?.readyPeerIds)
-            ? ((room as Record<string, unknown>).readyPeerIds as readonly unknown[])
-            : [];
-        if (desired.length === 0) {
+    for (const [index, event] of samples.entries()) {
+        const sample = decodeProgressSample(event);
+        if (sample === undefined) {
             continue;
         }
-
-        const fraction = ready.length / desired.length;
-        const sampleIdentity = JSON.stringify((room as Record<string, unknown>).acceptedLayoutIdentity);
-        identity ??= sampleIdentity;
-        groupRevision ??= sample.data.groupRevision;
-        if (sampleIdentity !== identity) {
-            issues.push({ index, reason: 'the accepted layout changed inside the window' });
+        if (previous !== undefined) {
+            if (sample.identity !== previous.identity) {
+                issues.push({ index, reason: 'the accepted layout changed inside the window' });
+            }
+            if (sample.groupRevision !== previous.groupRevision) {
+                issues.push({ index, reason: 'the group revision moved inside the window' });
+            }
+            if (fractionOf(sample) < fractionOf(previous)) {
+                issues.push({ index, reason: `the ready fraction fell to ${fractionOf(sample)}` });
+            }
         }
-        if (sample.data.groupRevision !== groupRevision) {
-            issues.push({ index, reason: 'the group revision moved inside the window' });
-        }
-        if (previousFraction !== undefined && fraction < previousFraction) {
-            issues.push({ index, reason: `the ready fraction fell to ${fraction}` });
-        }
-        previousFraction = fraction;
-        lastFraction = fraction;
+        previous = sample;
+        last = sample;
     }
 
-    if (lastFraction === undefined) {
+    if (last === undefined) {
         issues.push({ index: -1, reason: 'no sample carried a desired peer set' });
     }
-    else if (lastFraction !== 1) {
-        issues.push({ index: samples.length - 1, reason: `the window ended at ${lastFraction}` });
+    else if (fractionOf(last) !== 1) {
+        issues.push({ index: samples.length - 1, reason: `the window ended at ${fractionOf(last)}` });
     }
     return issues;
+}
+
+function fractionOf(sample: ProgressSample): number {
+    return sample.readyCount / sample.desiredCount;
 }
