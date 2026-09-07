@@ -31,9 +31,10 @@ drives is `docs/rallar-api-reference.md` ("Room formation") as delivered by
 `2026-09-05-browser-lifecycle-command-surface-implementation-plan.md`; that plan's settled question
 Q8 is the mandate for this one.
 
-Status: **slice 1 delivered on `codex/browser-acceptance-pins`; slice 2 written, with one of its
-`discovery-holds-dials` green and the other four blocked on two candidate defects, L7 and L8. The five
-review questions were settled with the maintainer on 2026-09-06.** Written 2026-09-06 against `main` @ `9b3bea7e0`, with the stale-epoch conflict PR #533
+Status: **both slices delivered on `codex/browser-acceptance-pins` (PR #542). Of the five acceptance
+scenarios, `discovery-holds-dials` is green against three real browsers; the other four are declared
+`test.fixme` against two candidate defects, L7 and L8, which the spec itself found. The five review
+questions were settled with the maintainer on 2026-09-06.** Written 2026-09-06 against `main` @ `9b3bea7e0`, with the stale-epoch conflict PR #533
 and the connect-fence recipe PR #535 open; nothing here depends on either. Amended the same day after
 a max-effort review of the first draft (the review moved the read side onto the runtime's evidence
 roots, corrected the RTC status source to `rtc.roomStatus`, rewrote the scenario windows, and took the
