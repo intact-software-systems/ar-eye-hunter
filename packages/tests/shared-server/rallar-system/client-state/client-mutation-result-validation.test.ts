@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import { computeAppOutboxInsert } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
@@ -7,7 +11,13 @@ import { validateClientMutation } from '@shared-server/rallar-system/client-stat
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/validation/client-mutation-rejection.ts';
 import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 
-import { emptyRead, entryValue, principalCommand, readAfterWrite, requireWrite } from './client-mutation-compute-test-fixtures.ts';
+import {
+    emptyRead,
+    entryValue,
+    principalCommand,
+    readAfterWrite,
+    requireWrite
+} from './client-mutation-compute-test-fixtures.ts';
 
 describe('client mutation result validation', () => {
     it('accepts the canonical computed result', async () => {
@@ -16,6 +26,33 @@ describe('client mutation result validation', () => {
         const computed = requireWrite(computeClientMutation({ command, read }));
 
         expect(validateClientMutation({ command, read, computed })).toEqual([]);
+    });
+
+    it('rejects altered outbox values, page membership, and receipt identities', async () => {
+        const command = await principalCommand();
+        const read = emptyRead(command);
+        const computed = requireWrite(computeClientMutation({ command, read }));
+        const [first, ...remaining] = computed.outboxWrites;
+        if (!first || remaining.length === 0) {
+            throw new Error('Expected snapshot and event outbox writes');
+        }
+        const variants = [
+            { name: 'payload', outboxWrites: [{ ...first, entry: { ...first.entry, resource: 'altered' } }, ...remaining] },
+            {
+                name: 'physical key',
+                outboxWrites: [{ ...first, entry: { ...first.entry, key: { ...first.entry.key, resourceId: 'another-message' } } }, ...remaining]
+            },
+            { name: 'prepared timestamp', outboxWrites: [{ ...first, createdAt: '2020-01-01 00:00:00' }, ...remaining] },
+            { name: 'missing page', outboxWrites: remaining },
+            { name: 'duplicate page', outboxWrites: [first, first, ...remaining] },
+            { name: 'reordered pages', outboxWrites: [...remaining, first] },
+            { name: 'receipt identities', receipt: { ...computed.receipt, outboxIds: ['another-message'] } }
+        ];
+
+        for (const { name, ...changes } of variants) {
+            expect(() => validateClientMutation({ command, read, computed: { ...computed, ...changes } }), name)
+                .toThrowError(ClientMutationRejectedError);
+        }
     });
 
     it('rejects an accessor-backed computed result without invoking the accessor', async () => {

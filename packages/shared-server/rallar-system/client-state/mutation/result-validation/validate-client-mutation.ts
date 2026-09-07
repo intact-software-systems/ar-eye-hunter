@@ -1,9 +1,4 @@
-import {
-    computeAppOutboxInsert,
-    isExactAppOutboxInsert
-} from '../../../app-outbox/app-outbox-insert.ts';
 import { validateComputedProjection } from '../../../computed-data-validation.ts';
-import { computeClientStateSyncEntries } from '../../../state-sync/state-sync-entry-computation.ts';
 import {
     ClientMutationRejectedError,
     type ClientMutationValidationIssue
@@ -65,7 +60,7 @@ export function validateClientMutation(
         assertClientMutationReceiptIdentity(command, computed);
         assertExactClientPersistence(computed);
         if (computed.outcome === 'write') {
-            assertEffectfulClientMutation(command, read, computed);
+            assertEffectfulClientMutation(read, computed);
         }
     }
     return validateClientMutationAuthorityPolicy(command, read);
@@ -136,7 +131,6 @@ function assertClientMutationReceiptIdentity(
 }
 
 function assertEffectfulClientMutation(
-    command: ClientMutationCommand,
     read: ClientMutationRead,
     computed: Extract<ClientMutationComputed, { outcome: 'write'; }>
 ): void {
@@ -148,29 +142,9 @@ function assertEffectfulClientMutation(
     ) {
         throw new ClientMutationRejectedError('Invalid effectful client mutation');
     }
-    assertClientMutationOutbox(command, computed);
     assertClientPrincipalGuard(read, computed);
     assertClientSessionGuard(read, computed);
     assertClientInstanceGuard(read, computed);
-}
-
-function assertClientMutationOutbox(
-    command: ClientMutationCommand,
-    computed: Extract<ClientMutationComputed, { outcome: 'write'; }>
-): void {
-    const expectedOutboxWrites = computed.stateSync
-        .flatMap((stateSync) => computeClientStateSyncEntries(stateSync, command.facts.serviceId))
-        .map(computeAppOutboxInsert);
-    if (
-        expectedOutboxWrites.length !== computed.outboxWrites.length ||
-        expectedOutboxWrites.some((expected, index) =>
-            !isExactAppOutboxInsert(expected.entry, computed.outboxWrites[index]!)
-        ) ||
-        JSON.stringify(computed.receipt.outboxIds) !==
-            JSON.stringify(expectedOutboxWrites.map((write) => write.entry.key.resourceId))
-    ) {
-        throw new ClientMutationRejectedError('Client mutation WS outbox differs');
-    }
 }
 
 function assertClientPrincipalGuard(
