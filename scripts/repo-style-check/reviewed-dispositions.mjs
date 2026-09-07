@@ -806,6 +806,159 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 80
     }),
+    // These exact ingress owners decode socket/envelope values before admission
+    // or any domain mutation. The snapshot discriminator returns only a boolean;
+    // its parsed value never leaves the nested payload boundary. The scanner
+    // assigns the three methods to their module owner, not the class name.
+    Object.freeze({
+        path: 'packages/shared/alm/inbound/al-inbound-message-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-client-service.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/middleware/create-rallar-middleware-infrastructure.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isStateSnapshotPageResource'
+    }),
+    // Each ALM owner below keeps one policy, consistency, or lifecycle boundary
+    // visible. Concrete stores delegate canonical facts and effects; runtime
+    // shells delegate computation and repair. Full-file and navigation review
+    // found that further metric-only splits would obscure original observations,
+    // atomic decisions, work ownership, and settlement. Caps are exact reviewed
+    // magnitudes, not permission to grow or retain a standards violation.
+    Object.freeze({
+        path: 'packages/shared/al-contracts/normalize-al-qos-policy.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 79
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/inbound/al-inbound-admission-store.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 54
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/inbound/al-inbound-work-handler.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 51
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/inbound/compute-al-inbound-admission.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 65
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/inbound/prepare-al-inbound-commit-bundle.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 50
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/inbound/validate-al-inbound-commit-bundle.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 51
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/al-outbound-admission-effect-store.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 68
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/al-outbound-admission-store.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 124
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/al-outbound-message-runtime.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 55
+    }),
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/al-outbound-repair-admission.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 60
+    }),
+    // The transport shells preserve visible decode/identity/authority/admission
+    // sequencing. Queue reservation/release, auth intent/replay, and topology
+    // hydration likewise each share one owned operation and lifecycle. Their
+    // clocks and ID generation are explicit dependencies at composition.
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-client-service.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 57
+    }),
+    Object.freeze({
+        path: 'packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 81
+    }),
+    Object.freeze({
+        path: 'packages/shared-server/queuebox/postgres/p-sql-queue-box.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 56
+    }),
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 53
+    }),
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydration.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 56
+    }),
+    // This persisted scalar guard rejects non-booleans immediately. Algorithm
+    // fields in its containing decoder use strict literal checks independently.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/al-outbound-admission-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireEnabled'
+    }),
+    // The named default resource factory is already the composition root. It
+    // resolves optional resources once before constructing the runtime; another
+    // default wrapper would not expose a new responsibility.
+    Object.freeze({
+        path: 'packages/shared/alm/outbound/create-default-al-outbound-message-runtime.ts',
+        rule: 'factory.defaults',
+        symbol: undefined
+    }),
+    // One native channel lifecycle binds receive callbacks, pressure, queued
+    // settlement, cancellation and reset. Pure queue policy has its own owner.
+    // The test's raw/decoded captures observe that native boundary for assertions.
+    Object.freeze({
+        path: 'packages/shared/webrtc/qrtc-data-channel.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 118
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared/qrtc-data-channel.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // Cohesion review kept these lifecycle/decoder owners and their directory
     // together. Bounds describe only the reviewed signal and never change the
     // global thresholds or authorize a refactor-or-register tier exception.

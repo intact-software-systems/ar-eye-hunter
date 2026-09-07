@@ -140,6 +140,43 @@ describe('outbound admission persisted-record validation', () => {
             .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
+    it.each([
+        { field: 'repairTracking', algo: ['none'] },
+        { field: 'repairTracking', algo: ['retransmit'] },
+        { field: 'supersedenceTracking', algo: ['none'] },
+        { field: 'supersedenceTracking', algo: ['latest-wins'] }
+    ])('rejects a persisted $field array algorithm $algo without changing storage', async ({ field, algo }) => {
+        const { backend, store, state } = createAdmission();
+        const msg = createMessage();
+        const effect = createEffect(msg);
+        await writeRawOutboundWork(backend, effect.effectId, effect);
+        await backend.write(async (tx) => {
+            await tx.set(`outbound:sent:${msg.id.msgId}`, {
+                msgId: msg.id.msgId,
+                reference: effect.payload.message,
+                unicastPeerId: 'peer',
+                orderingTrackKey: null,
+                orderingSeq: null,
+                creationExpiry: captureALOutboundCreationExpiry(msg),
+                policy: {
+                    persist: true,
+                    ackTracking: null,
+                    retryTracking: null,
+                    repairTracking: null,
+                    supersedenceTracking: null,
+                    [field]: field === 'repairTracking' ? { enabled: true, algo, maxAttempts: 3 } : { enabled: true, algo }
+                }
+            });
+        });
+        const before = structuredClone(state.data);
+
+        await expect(store.readSentMessage(msg.id.msgId)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+
+        expect(state.data).toEqual(before);
+        expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))?.status)
+            .toBe(EntityStatus.NEW);
+    });
+
     it('decodes a saved prepared message without planning or dropping its persisted content', async () => {
         const { backend, store } = createAdmission();
         const msg = createMessage();

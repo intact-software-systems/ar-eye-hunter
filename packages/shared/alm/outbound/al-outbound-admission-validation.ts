@@ -129,7 +129,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         const repair = decodeALAdmissionRecord(policy.repairTracking, ['enabled', 'algo', 'maxAttempts']);
         requireEnabled(repair.enabled);
         requirePersistedALSafeInteger(repair.maxAttempts, 0, 'captured repair attempts');
-        if (!['none', 'retransmit'].includes(String(repair.algo))) {
+        if (repair.algo !== 'none' && repair.algo !== 'retransmit') {
             throw new TypeError('Captured repair algorithm is invalid');
         }
     }
@@ -141,7 +141,7 @@ export function decodeALOutboundCapturedPolicy(value: unknown): ALOutboundCaptur
         requireEnabled(supersedence.enabled);
         requireOptionalPersistedALNonEmptyString(supersedence.key, 'captured supersedence key');
         requireOptionalPersistedALNonEmptyString(supersedence.replacesMsgId, 'captured replaced message');
-        if (!['none', 'latest-wins'].includes(String(supersedence.algo))) {
+        if (supersedence.algo !== 'none' && supersedence.algo !== 'latest-wins') {
             throw new TypeError('Captured supersedence algorithm is invalid');
         }
     }

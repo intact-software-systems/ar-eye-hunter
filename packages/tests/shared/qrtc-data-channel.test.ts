@@ -1,9 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
-import { installNativeRtcRuntime, NativeRtcRuntime, SimulatedNativeRtcPeerConnection } from './native-rtc-connection-fixture.ts';
+import {
+    installNativeRtcRuntime,
+    NativeRtcRuntime,
+    SimulatedNativeRtcPeerConnection
+} from './native-rtc-connection-fixture.ts';
 
 let runtime: NativeRtcRuntime;
 const peers: QRtcPeerConnection[] = [];
