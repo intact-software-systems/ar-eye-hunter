@@ -724,6 +724,8 @@ function runnerStepForCommand(
         case 'director.intent':
         case 'director.sync.request':
         case 'director.relay.stop':
+        case 'formation.command':
+        case 'formation.readiness':
             return {
                 ...base,
                 type: command.kind,

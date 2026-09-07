@@ -33,7 +33,7 @@ interface BlackBoxRallarConnectionPolicyInput {
     readonly rallar: BlackBoxRallarConfig;
 }
 
-const DEFAULT_WORKSPACE_ID = 'default';
+export const DEFAULT_WORKSPACE_ID = 'default';
 
 function normalizedRoomRef(roomRef: BlackBoxRallarRoomRef | undefined): GroupRef | undefined {
     return roomRef

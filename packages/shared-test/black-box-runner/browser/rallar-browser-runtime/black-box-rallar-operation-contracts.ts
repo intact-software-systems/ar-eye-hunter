@@ -1,3 +1,4 @@
+import type { RallarRtcRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type {
     RallarConnectStatus,
     RallarDirectorRelaySendResult,
@@ -10,8 +11,20 @@ import type {
     RallarRtcStatus,
     RallarWsStatus
 } from '@shared-web/browser/rallar.ts';
+import type { RallarRoomLayout } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type {
+    GroupFormationOutcome,
+    GroupLifecycleState,
+    GroupMemberPolicy,
+    GroupTopologyReconfigureLanding,
+    GroupTransportState
+} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupDialLayoutRoles } from '@shared/api/group-lifecycle/resolve-dial-layout-roles.ts';
+import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type {
     RallarCrdtDocumentHealth,
     RallarCrdtDocumentRef,
@@ -265,6 +278,7 @@ export interface BlackBoxRallarHealthDiagnostics {
     readonly rtcDiagnosticsError?: BlackBoxRallarSerializedError;
     readonly crdt?: BlackBoxRallarCrdtRuntimeSummary;
     readonly director?: BlackBoxRallarDirectorRelaySummary;
+    readonly formation?: BlackBoxRallarFormationSummary;
 }
 
 export interface BlackBoxRallarHealthInput {
@@ -534,4 +548,71 @@ export interface BlackBoxRallarDirectorRelayStatus {
     snapshotCount: number;
     syncRequestCount: number;
     status: RallarDirectorStatus;
+}
+
+export interface BlackBoxRallarFormationRoomInput {
+    readonly roomRef: GroupRef;
+    readonly timeoutMs: number;
+}
+
+export type BlackBoxRallarFormationCommandInput =
+    | Readonly<{ command: 'connect'; layout?: GroupLayoutIdentity; }>
+    | Readonly<{ command: 'reconfigure'; landing?: GroupTopologyReconfigureLanding; }>
+    | Readonly<{ command: 'plan' | 'activate' | 'pause' | 'resume' | 'reset' | 'start'; }>;
+
+export interface BlackBoxRallarFormationCommandRequest extends BlackBoxRallarFormationRoomInput {
+    readonly input: BlackBoxRallarFormationCommandInput;
+    readonly reason?: string;
+}
+
+/**
+ * `RallarRoomFormationStatus` without its `snapshot`, carrying the causal revision lifted out of it
+ * and the six fields of the room's transport status the pins read. The status declares its
+ * absent-capable fields as required-with-`undefined`, so this record is built field by field: a
+ * spread would carry explicit `undefined` keys that a recipe's `exists` operator then sees.
+ */
+export interface BlackBoxRallarFormationSummary {
+    readonly roomRef: GroupRef;
+    readonly stage: GroupLifecycleState;
+    readonly formationEpoch: number;
+    readonly formationAttemptCount: number;
+    readonly lastFormationOutcome?: GroupFormationOutcome;
+    readonly causalRevision: GroupStateCausalRevision;
+    readonly transportState: GroupTransportState;
+    readonly dialing: GroupDialLayoutRoles;
+    readonly memberPolicy: GroupMemberPolicy;
+    readonly accepted?: RallarRoomLayout;
+    readonly planned?: RallarRoomLayout;
+    readonly condition?: GroupActivationCondition;
+    readonly coverageRate?: number;
+    readonly room: BlackBoxRallarFormationRoomStatus;
+}
+
+/** The room transport status projected to what a pin may assert on. */
+export type BlackBoxRallarFormationRoomStatus =
+    & Pick<
+        RallarRtcRoomTransportStatus,
+        'state' | 'desiredPeerIds' | 'readyPeerIds' | 'activePeerIds' | 'failedPeerIds'
+    >
+    & {
+        readonly acceptedLayoutIdentity?: GroupLayoutIdentity;
+    };
+
+export interface BlackBoxRallarFormationCommandDiagnostics {
+    readonly receipt: GroupSnapshot;
+    readonly formation: BlackBoxRallarFormationSummary;
+}
+
+export interface BlackBoxRallarFormationReadinessDiagnostics {
+    readonly readyAtEpochMs: number;
+    readonly formation: BlackBoxRallarFormationSummary;
+}
+
+export interface BlackBoxRallarFormationRuntime {
+    command(
+        request: BlackBoxRallarFormationCommandRequest
+    ): Promise<BlackBoxRallarFormationCommandDiagnostics>;
+    readiness(
+        room: BlackBoxRallarFormationRoomInput
+    ): Promise<BlackBoxRallarFormationReadinessDiagnostics>;
 }
