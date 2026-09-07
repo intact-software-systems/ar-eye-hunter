@@ -7,8 +7,8 @@ as a finished whole rather than slice by slice. Each slice table below marks its
 cluster-profile recipes and the presence-lease recipe are authored and preflight-clean but not yet
 verified against a live cluster.
 
-Still open in slice 6: the `degraded` band from partial coverage,
-`api-v1-group-reconnect-across-stages`, and the `api-v1-admin-support` append. Two framework defects
+Still open in slice 6: the `degraded` band from partial coverage, and the `api-v1-admin-support`
+append. Two framework defects
 found while writing the slices were fixed here (open findings 13 and 14); one product contract
 divergence is open for a maintainer (finding 12).
 
@@ -232,7 +232,7 @@ Durable machinery whose late-firing behaviour is asserted nowhere.
 | Recipe                                  | Pins                                                                                                                                                                                                                                                                                                                                                     |
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `api-v1-group-clock-after-the-fact`     | **partly delivered** as `api-v1-activation-clock-decay`: an already-stale `createdAtEpochMs` activates the group and the +30s heartbeat then decays it, pinned to exactly two status writes. With one edge the band is `failed`, not `degraded` -- reaching `degraded` needs partial coverage (three members, one stale edge) and is **still uncovered** |
-| `api-v1-group-reconnect-across-stages`  | reconnect hydration across a lifecycle stage change; reconnecting to a different node than the one that dropped you                                                                                                                                                                                                                                      |
+| `api-v1-group-reconnect-across-stages`  | **delivered**: the socket is dropped during `connecting`, the group is activated from a third node while the client is offline, and the client reconnects on a node that never held the socket it replaces. The layout version must not move -- a stage change is not a replan                                                                             |
 | `api-v1-group-presence-lease-lifecycle` | **delivered**: the sweep DELETES the lapsed row rather than marking it disconnected, and `expired` is a reason no recipe had observed. Membership and stage must be untouched. Waits out the 60s sweep interval, which has no configuration knob                                                                                                         |
 | _(append to `api-v1-admin-support`)_    | explain against a **real** RETRY or FAILED queue entry, and the FAILED row in the queue breakdown                                                                                                                                                                                                                                                        |
 

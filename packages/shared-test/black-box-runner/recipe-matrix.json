@@ -2992,6 +2992,41 @@
         ]
       },
       "description": "No-browser API-v1 group governance fencing across three nodes. Ban, unban, removal and the two admission decisions are each written on one node and enforced or read back on the nodes that never saw the write; group snapshots are served through a node-local cache, so a fence that is only correct on the writing node is the regression this catches, and no existing recipe crosses a node with any of these. Every denial names its code rather than its status: member-banned on both non-writing nodes, member-removed after a removal written elsewhere, and an unban that lets the rejoin through on a third node. The admission half parks a request on one node, decides it on another, and requires the decision visible on the node that parked it."
+    },
+    {
+      "id": "api-v1-group-reconnect-across-stages",
+      "recipe": "tests/api-v1/api-v1-group-reconnect-across-stages.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-reconnect-across-stages",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 reconnect hydration across a lifecycle stage change and across nodes. api-v1-group-state-reconnect-resync already drops a socket, mutates the group and reopens, but it reopens on the same node and the group never changes stage. Here the socket is dropped during connecting, the group is activated from the tertiary while the client is offline, and the client reconnects on the secondary with a fresh ws-ticket for the same session. The reconnect must be hydrated by a unicast overlay.topology frame from a node that never held the socket it replaces, a floored read on the third node must reach the post-change revision, and the layout version must not have moved: a stage change is not a replan."
     }
   ]
 }
