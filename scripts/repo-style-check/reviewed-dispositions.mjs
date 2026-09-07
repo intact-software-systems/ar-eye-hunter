@@ -3,6 +3,28 @@ import path from 'node:path';
 import { findingMagnitude } from './finding-magnitude.mjs';
 
 export const reviewedDispositions = Object.freeze([
+    // Scenario composition, provider selection, recipe expansion, execution
+    // and reporting have distinct linked owners beneath this public runner
+    // root. Five navigation probes support retaining the current entry files.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner',
+        rule: 'layout.directory-density',
+        symbol: 'black-box-runner',
+        maximumMagnitude: 22
+    }),
+    // The receipt validator accepts raw artifact input before narrowing its
+    // fields. Its malformed-artifact test deliberately crosses that same
+    // JSON boundary and checks exact validation/comparison diagnostics.
+    Object.freeze({
+        path: 'scripts/perf/api-v1-state-write-result-binding.mjs',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-server/performance/state-write/state-write-malformed-evidence.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // The reviewed black-box execution owners retain raw native errors, decoded
     // application payloads and deliberately malformed test inputs at their
     // transport/comparison boundaries. Generated control fields are decoded
@@ -1286,7 +1308,7 @@ export const reviewedDispositions = Object.freeze([
     }),
     // One native channel lifecycle binds receive callbacks, pressure, queued
     // settlement, cancellation and reset. Pure queue policy has its own owner.
-    // The test's raw/decoded captures observe that native boundary for assertions.
+    // Raw and decoded test captures observe that native boundary for assertions.
     Object.freeze({
         path: 'packages/shared/webrtc/qrtc-data-channel.ts',
         rule: 'file.cognitive-load',
@@ -1301,8 +1323,8 @@ export const reviewedDispositions = Object.freeze([
     // Performance artifacts enter these raw validators before any arithmetic,
     // string operation, linking, or aggregate derivation. Rejected shapes keep
     // their field diagnostics through both comparison roles; guarded derivation
-    // still reports semantic mismatches. The benchmark's sole unknown is an
-    // opaque rejected promise reason rethrown after its existing drain settles.
+    // still reports semantic mismatches. The benchmark retains an opaque
+    // rejected promise reason rethrown after its existing drain settles.
     Object.freeze({
         path: 'scripts/perf/api-v1-state-write-artifact-validation.mjs',
         rule: 'boundary.unknown',

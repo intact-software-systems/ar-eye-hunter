@@ -758,6 +758,12 @@ Recipe expansion preserves quoted and escaped variable strings, and finite traff
 not overflow into biased workload selection. Keep these corrections within the existing owners
 and verify the supported recipe behavior; they do not expand the ALM feature horizon.
 
+Preserve supplied control values through compilation so validation can reject malformed options;
+apply defaults only under the documented absence policy. Generated result indexes must accept
+all supported step names without inheriting JavaScript prototype keys. Remote command preparation
+must return its existing typed failure before queueing invalid control fields. The topology proof
+uses one owned clock for wait eligibility and fragment expiry, with unchanged assertion bounds.
+
 After merge, use the merged source as the starting point for a new branch and PR. Reassess the
 next useful delivery/receipt capability from current code, keeping only two slices concrete.
 Preserve the remaining requirement-to-evidence matrix rather than treating this first release as

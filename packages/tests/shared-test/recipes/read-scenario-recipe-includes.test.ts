@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 import { readScenarioRecipeIncludes, type ScenarioRecipe } from '../../../shared-test/black-box-runner/recipes/read-scenario-recipe-includes.ts';
 
 describe('recipe include expansion', () => {
