@@ -15,6 +15,7 @@ import type {
 } from '../../al-contracts/al-runtime.ts';
 import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { jsonEquals } from '../../repository/state-utils.ts';
 import { Either } from '../../resilience/Either.ts';
 import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
@@ -189,6 +190,7 @@ export type ALInboundAdmissionMutation =
     | Readonly<{
         kind: 'set-supersedence-latest';
         supersedenceKey: string;
+        expected: ALLatestSupersedenceValue | undefined;
         value: ALLatestSupersedenceValue;
     }>
     | Readonly<{
@@ -420,10 +422,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     }
 
     async readIncomingMessage(input: ReadALInboundMessageInput): Promise<ALInboundAdmissionRead> {
-        return await this.readAdmissionState(input);
-    }
-
-    private async readAdmissionState(input: ReadALInboundMessageInput): Promise<ALInboundAdmissionRead> {
         const { msg, source, nowMs, prePlan } = input;
         const clientRecord = await this.backend.read(
             this.toVersionKey(msg.id.senderId),
@@ -812,12 +810,20 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                 );
             case 'delete-ordering':
                 return await tx.remove(this.toOrderingKey(mutation.trackKey));
-            case 'set-supersedence-latest':
+            case 'set-supersedence-latest': {
+                const current = await tx.read(
+                    this.toSupersedenceLatestKey(mutation.supersedenceKey),
+                    (value) => decodeALAdmissionSupersedenceValue(value, 'latest')
+                );
+                if (!jsonEquals(current, mutation.expected)) {
+                    throw new ALAdmissionBackendConflictError('Inbound shared supersedence observation changed');
+                }
                 return await tx.set(
                     this.toSupersedenceLatestKey(mutation.supersedenceKey),
                     mutation.value,
                     mutation.value.updatedAtMs + this.supersedenceTrackTtlMs
                 );
+            }
             case 'set-supersedence-replacement':
                 return await tx.set(
                     this.toSupersedenceReplacementKey(mutation.msgId),

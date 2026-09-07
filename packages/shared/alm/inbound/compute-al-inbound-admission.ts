@@ -4,6 +4,7 @@ import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al
 import { resolveExpireAtTimestampWithFallback } from '../ALStoreRetention.ts';
 import {
     acceptALSupersedenceObservation,
+    type ALLatestSupersedenceValue,
     type ALSupersedenceAcceptance
 } from '../compute-al-supersedence-observation.ts';
 import type {
@@ -199,7 +200,11 @@ function computeALInboundBufferedReleaseChanges(
                 ? [{ kind: 'delete-buffered' as const, trackKey: read.snapshot.trackKey, seq: read.snapshot.seq }]
                 : []),
             ...(deliverable
-                ? toSupersedenceMutations(supersedenceAcceptance, read.snapshot.plan.supersedence.key)
+                ? toSupersedenceMutations(
+                    supersedenceAcceptance,
+                    read.snapshot.plan.supersedence.key,
+                    read.supersedence.latest
+                )
                 : []),
             ...acknowledgements.mutations
         ],
@@ -246,7 +251,7 @@ function toIncomingDeliveryMutations(read: ALInboundMessageReadDto): readonly AL
     const plan = read.plan;
     const mutations = plan.localDelivery.deferred
         ? []
-        : [...toSupersedenceMutations(read.supersedenceAcceptance, plan.supersedence.key)];
+        : [...toSupersedenceMutations(read.supersedenceAcceptance, plan.supersedence.key, read.supersedence.latest)];
     if (
         (!plan.localDelivery.enabled && !plan.localDelivery.deferred) ||
         plan.orderingRuntime.trackKey === undefined || plan.orderingRuntime.seq === undefined
@@ -280,13 +285,14 @@ function toIncomingDeliveryMutations(read: ALInboundMessageReadDto): readonly AL
 
 function toSupersedenceMutations(
     acceptance: ALInboundMessageReadDto['supersedenceAcceptance'],
-    supersedenceKey: string | undefined
+    supersedenceKey: string | undefined,
+    expected: ALLatestSupersedenceValue | undefined
 ): readonly ALInboundAdmissionMutation[] {
     if (!acceptance?.latestWrite || !supersedenceKey) {
         return [];
     }
     return [
-        { kind: 'set-supersedence-latest', supersedenceKey, value: acceptance.latestWrite },
+        { kind: 'set-supersedence-latest', supersedenceKey, expected, value: acceptance.latestWrite },
         ...acceptance.replacementWrites.map((replacement): ALInboundAdmissionMutation => ({
             kind: 'set-supersedence-replacement',
             msgId: replacement.msgId,
