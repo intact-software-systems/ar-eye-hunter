@@ -127,6 +127,17 @@ export function agentAuth(prefix: AgentPrefix): LiveRtcBrowserAgentAuth {
     return auth;
 }
 
+/**
+ * The credentials the agent's page was opened with, when it was opened by logging in. A page opened
+ * by restoring a session has no login of its own, so a command that must authenticate carries these.
+ */
+export function agentCredentials(
+    prefix: AgentPrefix
+): Readonly<{ username: string; password: string; }> | undefined {
+    const auth = prefix === 'A' ? agentAAuth : prefix === 'B' ? agentBAuth : agentCAuth;
+    return auth?.kind === 'login' ? { username: auth.username, password: auth.password } : undefined;
+}
+
 export function actorFor(prefix: AgentPrefix, suffix: string): string {
     return firstEnvValue(`VITE_RALLAR_AGENT_${prefix}_ACTOR`, `VITE_RALLAR_${prefix}_ACTOR`) ??
         `agent-${prefix.toLowerCase()}-${suffix}`;

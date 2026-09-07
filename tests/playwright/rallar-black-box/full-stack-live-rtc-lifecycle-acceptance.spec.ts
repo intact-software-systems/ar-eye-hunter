@@ -3,6 +3,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 
 import { MANUAL_TRIGGER_POLICY } from './create-group-formation-lifecycle-driver.ts';
 import {
+    agentCredentials,
     apiBaseUrl,
     applicationId,
     CONTROL_BASE_URL,
@@ -330,6 +331,11 @@ async function connectPresence(
             rallar: {
                 apiBaseUrl: apiBaseUrl ?? '',
                 restoreSession: true,
+                // A page opened by restoring a session never logged in, so the runtime has no
+                // credentials of its own; a fresh page got them from its sign-in. Without these the
+                // reopened runtime stays unauthenticated and reports itself unconnected while this
+                // command still succeeds.
+                ...(agentCredentials(agent.prefix) ?? {}),
                 // Closing a page for a reopen must not end the session it is about to restore, nor
                 // drop its membership: without these the returning page holds a token the server has
                 // already logged out, and reports itself unconnected while its command reports ok.
