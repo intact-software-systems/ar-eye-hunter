@@ -626,6 +626,67 @@
       }
     },
     {
+      "name": "theActivationStatusChangeIsObservedOnTheSocket",
+      "type": "ws.wait",
+      "connection": "wsAlice",
+      "request": {
+        "outputs": {
+          "activationEventEnvelope": "matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 20000,
+        "consume": true,
+        "decodeJsonPaths": [
+          "payload.resource"
+        ],
+        "message": {
+          "route": {
+            "topicId": "group-state.event"
+          },
+          "payload": {
+            "resource": {
+              "event": {
+                "eventType": "group-activation-status-changed"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "parseTheActivationEvent",
+      "type": "set",
+      "output": "activationEvent",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.activationEventEnvelope"
+        }
+      }
+    },
+    {
+      "name": "theActivationEventIsServiceAuthoredAndCausallyChained",
+      "type": "assert",
+      "actual": {
+        "eventType": "{activationEvent.event.eventType}",
+        "groupId": "{activationEvent.event.groupId}",
+        "actorKind": "{activationEvent.event.actor.kind}",
+        "eventRevision": "{activationEvent.event.causalRevision.groupRevision}",
+        "resultingRevision": "{activationEvent.resultingCausalRevision.groupRevision}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "eventType": "group-activation-status-changed",
+          "groupId": "{statusGroupId}",
+          "actorKind": "service",
+          "eventRevision": "integer",
+          "resultingRevision": "{activationEvent.event.causalRevision.groupRevision}"
+        }
+      }
+    },
+    {
       "name": "theWriterStoredTheActiveStatusOnTheRow",
       "type": "http",
       "connection": "primary",

@@ -19,6 +19,7 @@ import {
 } from './execution/black-box-scenario-results.ts';
 import {
     resolveAssertActual,
+    resolveComparators,
     resolvePlaceholders
 } from './execution/black-box-value-resolution.ts';
 import { executeRemoteHttpInteraction } from './execution/execute-remote-http-interaction.ts';
@@ -929,6 +930,9 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
     const rawResponse = interaction.response || {};
     const { actual: rawAssertActual, ...responseWithoutAssertActual } = rawResponse;
     interaction.response = resolvePlaceholders(responseWithoutAssertActual, context);
+    if (rawResponse.comparators !== undefined) {
+        interaction.response.comparators = resolveComparators(rawResponse.comparators, context);
+    }
     if (interactionWithConfig.ASSERT && rawAssertActual !== undefined) {
         interaction.response.actual = rawAssertActual;
     }

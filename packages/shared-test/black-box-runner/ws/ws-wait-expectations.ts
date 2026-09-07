@@ -1,6 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { compareJson, COMPARISON, toConfig } from '../../json-compare/CompareJson.ts';
 import { toBoundedWsWaitMessages } from '../artifacts/with-bounded-artifact-report-results.ts';
+import { toDecodedJsonStringPaths } from '../expectations/to-decoded-json-string-paths.ts';
 import { toWaitCountBound } from '../expectations/wait-count-bound.ts';
 import { toWsExpectedConnectionName, toWsFailureStatus, toWsSuccessStatus } from './ws-interaction-statuses.ts';
 
@@ -10,6 +11,11 @@ export {
     toWsFailureStatus,
     toWsSuccessStatus
 } from './ws-interaction-statuses.ts';
+
+/** Applied to every observed frame before comparison, never to the expectation. */
+function toDecodedFrame(data: any, interaction: any): any {
+    return toDecodedJsonStringPaths(data, interaction.response?.decodeJsonPaths || []);
+}
 
 function toWsComparisonConfig(interaction: any): any {
     return toConfig(
@@ -32,7 +38,7 @@ function findWsMessageIndex(
 
         const result = compareJson(
             expectedMessage,
-            message.data,
+            toDecodedFrame(message.data, interaction),
             toWsComparisonConfig(interaction)
         );
 
@@ -54,7 +60,7 @@ function findWsMessageIndexFrom(
 
         const result = compareJson(
             expectedMessage,
-            messages[index].data,
+            toDecodedFrame(messages[index].data, interaction),
             toWsComparisonConfig(interaction)
         );
 
@@ -307,7 +313,8 @@ export interface WaitForWsMessageCountInput {
 
 function countMatchingWsMessages(messages: any[], expectedMessage: any, interaction: any): number {
     return messages.filter((message) =>
-        compareJson(expectedMessage, message.data, toWsComparisonConfig(interaction)).isEqual
+        compareJson(expectedMessage, toDecodedFrame(message.data, interaction), toWsComparisonConfig(interaction))
+            .isEqual
     ).length;
 }
 

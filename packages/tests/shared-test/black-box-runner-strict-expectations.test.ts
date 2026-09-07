@@ -57,4 +57,73 @@ describe('strict preflight expectation checks', () => {
             expect: { body: { managerPrincipalIds: [] } }
         })).toContain('STRICT_EXPECT_VACUOUS');
     });
+
+    // The HTTP evaluator reads only status/statusCode/statusCodes and bodyAnyOf,
+    // and a 2xx answer with no expected status passes, so an HTTP `anyOf` used
+    // to assert nothing without ever failing.
+    it('reports an anyOf on an HTTP step, which the HTTP evaluator never reads', () => {
+        expect(strictIssueCodes({
+            name: 'raceOneCommand',
+            type: 'http',
+            request: { method: 'POST', path: '/api/thing/requests/http-any-of-probe-aaaa' },
+            expect: { anyOf: [{ status: 200 }, { status: 409 }] }
+        })).toContain('STRICT_EXPECT_IGNORED');
+    });
+
+    it('accepts the statusCodes list that expresses the same thing', () => {
+        expect(strictIssueCodes({
+            name: 'raceOneCommand',
+            type: 'http',
+            request: { method: 'POST', path: '/api/thing/requests/http-status-codes-probe-aaaa' },
+            expect: { statusCodes: [200, 409] }
+        })).not.toContain('STRICT_EXPECT_IGNORED');
+    });
+
+    it('leaves anyOf on an assert step alone', () => {
+        expect(strictIssueCodes({
+            name: 'theCommandWasAnswered',
+            type: 'assert',
+            actual: { status: 200 },
+            expect: { anyOf: [{ status: 200 }, { status: 409 }] }
+        })).not.toContain('STRICT_EXPECT_IGNORED');
+    });
+
+    // An output declared inside a parallel group resolves for every later step
+    // exactly as a top-level one does; the collector read only the top level and
+    // reported every such output as missing.
+    it('sees an output produced inside a parallel group', () => {
+        const plan = explainBlackBoxRunnerPlan({
+            rawConfig: {
+                steps: [
+                    {
+                        name: 'raceTwoCommands',
+                        type: 'parallel',
+                        groups: [{
+                            name: 'first',
+                            steps: [{
+                                name: 'commandOne',
+                                type: 'http',
+                                request: {
+                                    method: 'POST',
+                                    path: '/api/thing/requests/parallel-output-probe-aaaa',
+                                    outputs: { firstStatus: 'statusCode' }
+                                },
+                                expect: { status: 200 }
+                            }]
+                        }]
+                    },
+                    {
+                        name: 'readTheCapturedStatus',
+                        type: 'assert',
+                        actual: { seen: '{firstStatus}' },
+                        expect: { body: { seen: 200 } }
+                    }
+                ]
+            },
+            profile: 'strict'
+        } as never);
+
+        expect((plan.issues ?? []).map((issue: { code: string; }) => issue.code))
+            .not.toContain('MISSING_OUTPUT_REFERENCE');
+    });
 });

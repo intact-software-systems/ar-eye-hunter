@@ -104,6 +104,28 @@ export function resolvePlaceholders(value: any, context: any): any {
     return value;
 }
 
+/**
+ * A comparator entry is `{ path, <comparator> }` and never a transform, but
+ * `path` plus `equals` is also a valid transform-only spec, so the generic
+ * resolver skips the whole entry and the comparator ends up comparing against
+ * the literal placeholder text. Comparator lists are resolved value by value
+ * instead, without that exemption.
+ */
+export function resolveComparators(comparators: any, context: any): any {
+    if (!Array.isArray(comparators)) {
+        return comparators;
+    }
+
+    return comparators.map((entry) =>
+        entry && typeof entry === 'object' && !Array.isArray(entry)
+            ? Object.fromEntries(
+                Object.entries(entry)
+                    .map(([key, value]) => [key, resolvePlaceholders(value, context)])
+            )
+            : resolvePlaceholders(entry, context)
+    );
+}
+
 export function resolveAssertActual(value: any, context: any, missingActualValue: any): any {
     if (typeof value === 'string') {
         try {
