@@ -100,7 +100,6 @@ async function readDecision(store: ALOutboundAdmissionStore, message: ALMessage,
     return computeALOutboundDispatch({
         read,
         outboxEntry: undefined,
-        canFallback: false,
         dispatchAtMs: Date.now(),
         intent: 'enqueue',
         phase: 'immediate',

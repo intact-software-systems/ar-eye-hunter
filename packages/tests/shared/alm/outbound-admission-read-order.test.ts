@@ -22,7 +22,6 @@ describe('outbound admission observation order', () => {
             new ALOutboundDispatchAdmission<OutboundTestPayload>({
                 admissionStore: store,
                 toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-                canFallback: false,
                 decodePreparedMessage: decodeOutboundTestPayload,
                 clock: { nowMs: Date.now },
                 browserLocks: undefined,
@@ -84,7 +83,6 @@ describe('outbound admission observation order', () => {
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             admissionStore: store,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
-            canFallback: false,
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,

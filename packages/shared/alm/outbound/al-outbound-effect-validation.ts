@@ -34,12 +34,7 @@ type StoredALOutboundDurableEffect<TPrepared> =
         entry: StoredALAdmissionResourceEntry;
         replaceExisting: boolean;
     }>
-    | Readonly<{
-        kind: 'fallback-dispatch';
-        msg: ALMessage;
-        entry: StoredALAdmissionResourceEntry;
-    }>
-    | Exclude<ALOutboundDurableEffect<TPrepared>, { kind: 'enqueue-outbox' | 'fallback-dispatch'; }>;
+    | Exclude<ALOutboundDurableEffect<TPrepared>, { kind: 'enqueue-outbox'; }>;
 
 interface RequireALOutboundSendEffectIdentityInput {
     readonly effectId: string;
@@ -53,7 +48,6 @@ export function encodeALOutboundEffectPayload<TPrepared>(
 ): StoredALOutboundDurableEffect<TPrepared> {
     switch (payload.kind) {
         case 'enqueue-outbox':
-        case 'fallback-dispatch':
             return { ...payload, entry: encodeALAdmissionResourceEntry(payload.entry) };
         default:
             return payload;
@@ -123,33 +117,10 @@ export function decodeALOutboundEffectPayload<TPrepared>(
         'reason'
     ]);
     switch (payload.kind) {
-        case 'send-prepared': {
-            decodeALAdmissionRecord(value, ['kind', 'msg', 'prepared', 'preparedFingerprint', 'phase']);
-            const msg = decodePersistedALMessageValue(payload.msg);
-            requirePersistedALNonEmptyString(payload.preparedFingerprint, 'prepared message fingerprint');
-            if (payload.preparedFingerprint !== toALOutboundPreparedFingerprint(payload.prepared)) {
-                throw new TypeError('Persisted AL prepared message fingerprint does not match its payload');
-            }
-            if (payload.phase !== 'immediate' && payload.phase !== 'dequeue') {
-                throw new TypeError('Persisted AL outbound send phase is invalid');
-            }
-            requireALOutboundSendEffectIdentity({
-                effectId,
-                msgId: msg.id.msgId,
-                phase: payload.phase,
-                preparedFingerprint: payload.preparedFingerprint
-            });
-            return {
-                kind: 'send-prepared',
-                msg,
-                prepared: decodePrepared(payload.prepared, msg),
-                preparedFingerprint: payload.preparedFingerprint,
-                phase: payload.phase
-            };
-        }
+        case 'send-prepared':
+            return decodeALOutboundSendEffect(value, effectId, decodePrepared);
         case 'enqueue-outbox':
-        case 'fallback-dispatch':
-            return decodeALOutboundQueueEffect(value);
+            return decodeALOutboundEnqueueEffect(value);
         case 'ack-timeout':
             decodeALAdmissionRecord(value, ['kind', 'msgId']);
             requirePersistedALNonEmptyString(payload.msgId, 'acknowledgement timeout message id');
@@ -174,6 +145,35 @@ export function decodeALOutboundEffectPayload<TPrepared>(
         default:
             throw new TypeError('Persisted AL outbound effect kind is invalid');
     }
+}
+
+function decodeALOutboundSendEffect<TPrepared>(
+    value: unknown,
+    effectId: string,
+    decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>
+): Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'send-prepared'; }> {
+    const payload = decodeALAdmissionRecord(value, ['kind', 'msg', 'prepared', 'preparedFingerprint', 'phase']);
+    const msg = decodePersistedALMessageValue(payload.msg);
+    requirePersistedALNonEmptyString(payload.preparedFingerprint, 'prepared message fingerprint');
+    if (payload.preparedFingerprint !== toALOutboundPreparedFingerprint(payload.prepared)) {
+        throw new TypeError('Persisted AL prepared message fingerprint does not match its payload');
+    }
+    if (payload.phase !== 'immediate' && payload.phase !== 'dequeue') {
+        throw new TypeError('Persisted AL outbound send phase is invalid');
+    }
+    requireALOutboundSendEffectIdentity({
+        effectId,
+        msgId: msg.id.msgId,
+        phase: payload.phase,
+        preparedFingerprint: payload.preparedFingerprint
+    });
+    return {
+        kind: 'send-prepared',
+        msg,
+        prepared: decodePrepared(payload.prepared, msg),
+        preparedFingerprint: payload.preparedFingerprint,
+        phase: payload.phase
+    };
 }
 
 function requireALOutboundNotYetInSyncRetryEffectIdentity(
@@ -217,10 +217,10 @@ function requireALOutboundSendEffectIdentity(
     }
 }
 
-function decodeALOutboundQueueEffect(
+function decodeALOutboundEnqueueEffect(
     value: unknown
-): Extract<ALOutboundDurableEffect<never>, { kind: 'enqueue-outbox' | 'fallback-dispatch'; }> {
-    const payload = decodeALAdmissionRecord(value, ['kind', 'msg', 'entry'], ['replaceExisting']);
+): Extract<ALOutboundDurableEffect<never>, { kind: 'enqueue-outbox'; }> {
+    const payload = decodeALAdmissionRecord(value, ['kind', 'msg', 'entry', 'replaceExisting']);
     const msg = decodePersistedALMessageValue(payload.msg);
     const entry = decodeALAdmissionResourceEntry(payload.entry);
     const entryMessage = decodePersistedALMessage(entry.resource);
@@ -229,9 +229,6 @@ function decodeALOutboundQueueEffect(
     }
     if (payload.kind === 'enqueue-outbox' && typeof payload.replaceExisting === 'boolean') {
         return { kind: 'enqueue-outbox', msg, entry, replaceExisting: payload.replaceExisting };
-    }
-    if (payload.kind === 'fallback-dispatch' && payload.replaceExisting === undefined) {
-        return { kind: 'fallback-dispatch', msg, entry };
     }
     throw new TypeError('Persisted AL outbound queue effect is invalid');
 }

@@ -45,7 +45,6 @@ export namespace ALOutboundDispatchAdmission {
     export interface Dependencies<TPrepared> {
         readonly admissionStore: ALOutboundAdmissionStore;
         readonly toOutboxEntry: (msg: ALMessage) => ResourceEntry;
-        readonly canFallback: boolean;
         readonly decodePreparedMessage: ALOutboundPreparedMessageDecoder<TPrepared>;
         readonly clock: ALOutboundMessageRuntime.Clock;
         readonly browserLocks: ALOutboundMessageRuntime.BrowserLocks | undefined;
@@ -192,9 +191,8 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         return {
             read,
             outboxEntry: needsEntry
-                ? dispatch.options.fallbackEntry ?? this.dependencies.toOutboxEntry(read.msg)
+                ? dispatch.options.observedOutboxEntry ?? this.dependencies.toOutboxEntry(read.msg)
                 : undefined,
-            canFallback: this.dependencies.canFallback,
             dispatchAtMs: this.readNowMs(),
             intent: dispatch.intent,
             phase: dispatch.phase,

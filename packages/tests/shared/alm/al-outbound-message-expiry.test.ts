@@ -35,7 +35,6 @@ describe('outbound message expiry', () => {
         const candidate = computeALOutboundDispatch({
             read,
             outboxEntry: undefined,
-            canFallback: false,
             dispatchAtMs: 2_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -83,7 +82,6 @@ describe('outbound message expiry', () => {
         const candidate = computeALOutboundDispatch({
             read,
             outboxEntry: undefined,
-            canFallback: false,
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -113,7 +111,6 @@ describe('outbound message expiry', () => {
         const candidate = computeALOutboundDispatch({
             read,
             outboxEntry: undefined,
-            canFallback: false,
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -166,7 +163,6 @@ describe('outbound message expiry', () => {
             const candidate = computeALOutboundDispatch({
                 read,
                 outboxEntry: undefined,
-                canFallback: false,
                 dispatchAtMs: 1_000,
                 intent: 'enqueue',
                 phase: 'immediate',
@@ -204,7 +200,6 @@ describe('outbound message expiry', () => {
         const candidate = computeALOutboundDispatch({
             read,
             outboxEntry: undefined,
-            canFallback: false,
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',
@@ -241,7 +236,6 @@ describe('outbound message expiry', () => {
         const candidate = computeALOutboundDispatch({
             read,
             outboxEntry: undefined,
-            canFallback: false,
             dispatchAtMs: 2_000,
             intent,
             phase: 'immediate',
@@ -251,7 +245,7 @@ describe('outbound message expiry', () => {
         expect(validateALOutboundDispatch(read, candidate).right).toBe(candidate);
     });
 
-    it.each(['enqueue-outbox', 'fallback-dispatch'] as const)('uses the same expiry for %s and the QueueBox entry', async (kind) => {
+    it('uses the same expiry for enqueue-outbox work and its QueueBox entry', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_000);
         const store = createDefaultOutboundTestAdmissionStore();
@@ -261,22 +255,21 @@ describe('outbound message expiry', () => {
         };
         const read = await store.readOutgoingMessage<OutboundTestPayload>(msg, () => ({
             msg: msg,
-            persist: kind === 'enqueue-outbox',
+            persist: true,
             preparedMessages: []
         }));
         const entry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox');
         const candidate = computeALOutboundDispatch({
             read,
             outboxEntry: entry,
-            canFallback: true,
             dispatchAtMs: 1_000,
-            intent: kind === 'enqueue-outbox' ? 'enqueue' : 'dequeue',
+            intent: 'enqueue',
             phase: 'immediate',
             options: {}
         });
         expect(entry.audit.expiryTs.epochMilliseconds).toBe(2_000);
         expect(candidate.bundle?.durableEffects).toHaveLength(1);
-        expect(candidate.bundle?.durableEffects[0]).toMatchObject({ expireAtTimestamp: 2_000, payload: { kind, msg, entry } });
+        expect(candidate.bundle?.durableEffects[0]).toMatchObject({ expireAtTimestamp: 2_000, payload: { kind: 'enqueue-outbox', msg, entry } });
         expect(validateALOutboundDispatch(read, candidate).right).toBe(candidate);
     });
 
@@ -293,7 +286,6 @@ describe('outbound message expiry', () => {
         const candidate = computeALOutboundDispatch({
             read,
             outboxEntry: undefined,
-            canFallback: false,
             dispatchAtMs: 1_000,
             intent: 'enqueue',
             phase: 'immediate',

@@ -193,7 +193,6 @@ export namespace ALOutboundMessageRuntime {
                 request: ALOutboundRepairRequest
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
-        readonly onFallbackDequeue: ((msg: ALMessage, entry: ResourceEntry) => Promise<void>) | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     }
 }
@@ -213,7 +212,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
         this.dispatchAdmission = new ALOutboundDispatchAdmission({
             admissionStore: dependencies.admissionStore,
             toOutboxEntry: dependencies.toOutboxEntry,
-            canFallback: dependencies.onFallbackDequeue !== undefined,
             decodePreparedMessage: dependencies.decodePreparedMessage,
             clock: dependencies.clock,
             browserLocks: dependencies.browserLocks,
@@ -319,7 +317,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                         intent: 'dequeue',
                         phase: 'dequeue',
                         options: {
-                            fallbackEntry: entry
+                            observedOutboxEntry: entry
                         }
                     });
                     if (computed.status === 'failed' || (computed.status === 'no-route' && !clusterPublished)) {
@@ -403,11 +401,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 }
 
                 await this.dependencies.outbox.enqueueIfAbsent(effect.payload.entry);
-                return { status: 'completed' };
-            case 'fallback-dispatch':
-                if (this.dependencies.onFallbackDequeue) {
-                    await this.dependencies.onFallbackDequeue(effect.payload.msg, effect.payload.entry);
-                }
                 return { status: 'completed' };
             case 'ack-timeout':
                 await this.repairAdmission.handlePendingAckTimeout(effect.payload.msgId);

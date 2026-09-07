@@ -26,7 +26,6 @@ export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
                 | 'planDequeuedMessage'
                 | 'beforeDequeueDispatch'
                 | 'planRepairMessage'
-                | 'onFallbackDequeue'
                 | 'diagnostics'
             >
         > {}
@@ -40,7 +39,6 @@ export function createDefaultALOutboundMessageRuntime<TPrepared>(
         planDequeuedMessage: dependencies.planDequeuedMessage ?? dependencies.planOutgoingMessage,
         beforeDequeueDispatch: dependencies.beforeDequeueDispatch,
         planRepairMessage: dependencies.planRepairMessage,
-        onFallbackDequeue: dependencies.onFallbackDequeue,
         diagnostics: dependencies.diagnostics
     });
 }

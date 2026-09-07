@@ -56,7 +56,6 @@ describe('ALOutboundMessageRuntime', () => {
             planDequeuedMessage: (msg) => ({ msg: msg, persist: false, preparedMessages: [] }),
             beforeDequeueDispatch: undefined,
             planRepairMessage: undefined,
-            onFallbackDequeue: undefined,
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared.resourceId);
                 return sent.length === 1 ? { status: 'not-ready', retryAfterMs: 25 } : { status: 'sent' };

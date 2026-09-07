@@ -339,9 +339,9 @@ describe('outbound IndexedDB durable queue replay', () => {
         expect(await store.peekNextEffectReadyAt()).toBeUndefined();
     });
 
-    it('keeps fallback entry timestamps across a persisted lease and rejects old empty timestamp objects', async () => {
+    it('keeps enqueue-outbox entry timestamps across a persisted lease and rejects old empty timestamp objects', async () => {
         const { backend, store } = createAdmission();
-        const msg = createOutboundMessage('fallback');
+        const msg = createOutboundMessage('queued-timestamps');
         const originalEntry = QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox');
         const timestamp = Temporal.Now.instant();
         const entry = {
@@ -351,11 +351,11 @@ describe('outbound IndexedDB durable queue replay', () => {
         await store.commitBundle({
             senderId: msg.id.senderId,
             mutations: [],
-            durableEffects: [{ effectId: 'fallback', payload: { kind: 'fallback-dispatch', msg, entry } }]
+            durableEffects: [{ effectId: 'queued-timestamps', payload: { kind: 'enqueue-outbox', replaceExisting: false, msg, entry } }]
         }, decodeOutboundTestPayload);
         const [claimed] = await store.claimReadyEffects({ maxCount: 1 }, decodeOutboundTestPayload);
-        if (claimed.payload.kind !== 'fallback-dispatch') {
-            throw new Error('Expected the durable fallback effect');
+        if (claimed.payload.kind !== 'enqueue-outbox') {
+            throw new Error('Expected the durable enqueue-outbox effect');
         }
         expect(claimed.payload.entry.dequeueAudit.startTs?.toString()).toBe(timestamp.toString());
         expect(claimed.payload.entry.dequeueAudit.endTs?.toString()).toBe(timestamp.toString());
@@ -369,7 +369,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             dequeueAudit: { attempts: 0 },
             resource: JSON.stringify({
                 ...JSON.parse(claimed.entry.resource),
-                payload: { kind: 'fallback-dispatch', msg, entry: { ...entry, audit: { ...entry.audit, expiryTs: {} } } }
+                payload: { kind: 'enqueue-outbox', replaceExisting: false, msg, entry: { ...entry, audit: { ...entry.audit, expiryTs: {} } } }
             })
         };
         await backend.workQueue.setItem(corrupt.key, corrupt, { expireAtTimestamp: claimed.expireAtTimestamp });

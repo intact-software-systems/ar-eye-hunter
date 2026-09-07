@@ -385,7 +385,6 @@ async function readSupersedenceDecision(store: ALOutboundAdmissionStore, message
     return computeALOutboundDispatch({
         read,
         outboxEntry: undefined,
-        canFallback: false,
         dispatchAtMs: Date.now(),
         intent: 'enqueue',
         phase: 'immediate',

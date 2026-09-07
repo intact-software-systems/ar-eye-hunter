@@ -179,11 +179,6 @@ export type ALOutboundDurableEffect<TPrepared> =
         replaceExisting: boolean;
     }>
     | Readonly<{
-        kind: 'fallback-dispatch';
-        msg: ALMessage;
-        entry: ResourceEntry;
-    }>
-    | Readonly<{
         kind: 'ack-timeout';
         msgId: string;
     }>

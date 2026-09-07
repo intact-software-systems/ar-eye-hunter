@@ -17,7 +17,6 @@ describe('outbound dispatch value ownership', () => {
         const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
             admissionStore: store,
             toOutboxEntry: () => wrongEntry,
-            canFallback: false,
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
@@ -53,7 +52,6 @@ describe('outbound dispatch value ownership', () => {
         const input = freezeValues({
             read,
             outboxEntry,
-            canFallback: false,
             dispatchAtMs: 1_000,
             intent: 'enqueue' as const,
             phase: 'immediate' as const,
@@ -87,6 +85,37 @@ describe('outbound dispatch value ownership', () => {
         expect(await store.getSentMessage(message.id.msgId)).toMatchObject({ msg: message, outboxKey: outboxEntry.key });
     });
 
+    it.each(['enqueue', 'dequeue'] as const)('retains the observed outbox entry instead of rebuilding it during %s', async (intent) => {
+        const store = createDefaultOutboundTestAdmissionStore();
+        const message = createOutboundMessage('observed-outbox');
+        const observedOutboxEntry = freezeValues(QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'));
+        const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
+            admissionStore: store,
+            toOutboxEntry: () => {
+                throw new Error('Captured entries must not be rebuilt');
+            },
+            decodePreparedMessage: decodeOutboundTestPayload,
+            clock: { nowMs: Date.now },
+            browserLocks: undefined,
+            diagnostics: undefined
+        });
+        const result = await admission.commit({
+            msg: message,
+            planner: () => ({ msg: message, persist: true, preparedMessages: [{ resourceId: message.route.resourceId }] }),
+            intent,
+            phase: intent === 'enqueue' ? 'immediate' : 'dequeue',
+            options: { observedOutboxEntry }
+        });
+        expect(result.committed).toBe(true);
+        expect(result.computed.status).toBe(intent === 'enqueue' ? 'enqueued' : 'accepted');
+        if (intent === 'enqueue') {
+            expect(result.computed.entries).toEqual([observedOutboxEntry]);
+            expect(result.computed.entries[0]).toBe(observedOutboxEntry);
+        }
+        expect(result.computed.bundle?.durableEffects[0].expireAtTimestamp).toBe(observedOutboxEntry.audit.expiryTs.epochMilliseconds);
+        admission.dispose();
+    });
+
     it('uses the fresh repair count to stop an exhausted repair without creating work', async () => {
         const store = createDefaultOutboundTestAdmissionStore();
         const message = createOutboundMessage('exhausted-repair');
@@ -103,7 +132,6 @@ describe('outbound dispatch value ownership', () => {
         const computed = computeALOutboundDispatch({
             read,
             outboxEntry: undefined,
-            canFallback: false,
             dispatchAtMs: 1_000,
             intent: 'repair',
             phase: 'immediate',

@@ -196,8 +196,7 @@ export class WsQueueBoxServerService {
             },
             sendPreparedMessage: async (prepared) => await this.sendPreparedMessage(prepared),
             planRepairMessage: (message, request) =>
-                Promise.resolve(this.outboundPlanning.planRepairMessage(message, request)),
-            onFallbackDequeue: undefined
+                Promise.resolve(this.outboundPlanning.planRepairMessage(message, request))
         });
     }
 

@@ -184,7 +184,6 @@ export class WsQueueBoxClientService {
                 planDequeuedMessage: (msg) => this.planOutgoingMessage(msg),
                 beforeDequeueDispatch: undefined,
                 planRepairMessage: undefined,
-                onFallbackDequeue: undefined,
                 sendPreparedMessage: async (msg, _phase, lifecycle) => {
                     return await this.dispatchOutboxEntry(
                         QueueBoxUtilities.toResourceEntryFromMsg(

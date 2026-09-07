@@ -141,7 +141,6 @@ export class WebRtcOverlayMulticastManager {
                 planOutgoingMessage: (msg) => this.planOutgoingMessage(msg),
                 planDequeuedMessage: (msg) => this.planDequeuedMessage(msg),
                 beforeDequeueDispatch: undefined,
-                onFallbackDequeue: undefined,
                 sendPreparedMessage: async (msg, _phase, lifecycle) => await this.sendPreparedMessage(msg, lifecycle),
                 planRepairMessage: async (msg, request) => await this.planRepairMessage(msg, request),
                 diagnostics: dependencies.outboundDiagnostics

@@ -101,7 +101,7 @@ function validateDispatchEffects<TPrepared>(
         if (!messageMatches) {
             return { code: 'malformed', message: 'Outbound effect candidate differs from its message' };
         }
-        if (payload.kind === 'enqueue-outbox' || payload.kind === 'fallback-dispatch') {
+        if (payload.kind === 'enqueue-outbox') {
             const rejection = validateQueueMessage(payload.entry, msg);
             if (rejection) {
                 return rejection;

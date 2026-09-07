@@ -19,7 +19,7 @@ import {
 export type ALOutboundComputeIntent = 'enqueue' | 'dequeue' | 'repair';
 
 export interface ALOutboundCommitDispatchOptions {
-    readonly fallbackEntry?: ResourceEntry;
+    readonly observedOutboxEntry?: ResourceEntry;
     readonly replaceExistingOutbox?: boolean;
     readonly repairBudget?: Readonly<{ priorAttempts: number; maxAttempts: number; }>;
 }
@@ -35,7 +35,6 @@ export interface ALOutboundComputedDto<TPrepared> {
 export interface ComputeALOutboundDispatchInput<TPrepared> {
     readonly read: ALOutboundMessageReadDto<TPrepared>;
     readonly outboxEntry: ResourceEntry | undefined;
-    readonly canFallback: boolean;
     readonly dispatchAtMs: number;
     readonly intent: ALOutboundComputeIntent;
     readonly phase: ALOutboundDispatchPhase;
@@ -44,7 +43,6 @@ export interface ComputeALOutboundDispatchInput<TPrepared> {
 
 interface ALOutboundDispatchStrategy {
     readonly dispatchPrepared: boolean;
-    readonly fallback: boolean;
     readonly enqueueOutbox: boolean;
 }
 
@@ -128,7 +126,6 @@ function toALOutboundDispatchStrategy<TPrepared>(
         : preparedMessagesAvailable;
     return {
         dispatchPrepared,
-        fallback: !dispatchPrepared && input.intent !== 'enqueue' && input.canFallback,
         enqueueOutbox: (input.intent === 'enqueue' || (input.intent === 'repair' && input.read.plan.persist)) &&
             !dispatchPrepared
     };
@@ -189,11 +186,9 @@ function appendALOutboundDispatchEffects<TPrepared>(
             }
         });
     }
-    if (input.strategy.dispatchPrepared || input.strategy.fallback) {
+    if (input.strategy.dispatchPrepared) {
         input.mutations.push(toSentMessageMutation(read.msg));
         appendAckTrackingMutationsAndEffects(input.mutations, input.effects, read);
-    }
-    if (input.strategy.dispatchPrepared) {
         read.plan.preparedMessages.forEach((prepared, index) => {
             const preparedFingerprint = toALOutboundPreparedFingerprint(prepared);
             input.effects.push({
@@ -209,17 +204,6 @@ function appendALOutboundDispatchEffects<TPrepared>(
             });
         });
     }
-    else if (input.strategy.fallback) {
-        input.effects.push({
-            effectId: toALOutboundEffectId(['fallback', read.msg.id.msgId, phase]),
-            expireAtTimestamp: resolveALMessageExpireAtMs(read.msg),
-            payload: {
-                kind: 'fallback-dispatch',
-                msg: read.msg,
-                entry: options.fallbackEntry ?? requireOutboxEntry(outboxEntry)
-            }
-        });
-    }
 }
 
 function toALOutboundComputedResult<TPrepared>(
@@ -227,7 +211,7 @@ function toALOutboundComputedResult<TPrepared>(
 ): ALOutboundComputedDto<TPrepared> {
     const status: ALOutboundEnqueueStatus = input.strategy.enqueueOutbox
         ? 'enqueued'
-        : input.strategy.dispatchPrepared || input.strategy.fallback
+        : input.strategy.dispatchPrepared
         ? 'accepted'
         : 'no-route';
     const reason = status === 'no-route'
