@@ -6,7 +6,10 @@ import {
     vi
 } from 'vitest';
 
-import { ApiV1RtcTopologyProofApi } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-api.mts';
+import {
+    ApiV1RtcTopologyProofApi,
+    type ProofJsonObject
+} from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-api.mts';
 import {
     assertPollDrivenReplayMetricDelta,
     assertSharedPublicationIdentity,
@@ -690,7 +693,7 @@ interface ReplayMetricsInput {
     readonly replayedEntryCount: number;
 }
 
-interface ReplayMetricsEvidence {
+interface ReplayMetricsEvidence extends ProofJsonObject {
     readonly wakeCountBySource: Readonly<Record<'poll' | 'notification' | 'local-commit', number>>;
     readonly replayedEntryCount: number;
 }

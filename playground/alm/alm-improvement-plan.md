@@ -527,6 +527,13 @@ Cancellation, basic lifecycle observation, practical topic policy, full room-not
 and zero-IDB volatile execution land in slice 2. Milestones 4, 6, and 7 harden or extend them; they
 must not defer these foundations. Instrumentation accompanies the first slice that needs it.
 
+The first release brings the canonical-message and retained-work foundations of milestone 5
+forward because admission recovery depends on them. Continue from the existing QueueBox owners;
+do not rebuild those foundations when reaching that milestone. Its remaining exit requirements
+still include bounded selection and cleanup under unrelated-row/session growth, browser
+multi-context recovery, and quota/eviction evidence. The matrix below retains those complete
+requirements; it does not mean every listed behavior remains unimplemented.
+
 Milestones 6 and 7 keep every named capability visible for product review, but a declaration in
 an old envelope is not evidence of product demand. Identify a real consumer before committing to
 new general messaging machinery. If no consumer justifies a capability, bring that decision back
