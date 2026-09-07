@@ -12,6 +12,7 @@ import {
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementOptions,
+    ResourceInboxWorkPage,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReleaseDisposition,
@@ -49,6 +50,10 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         void this.deleteExpired().catch((error) => {
             console.error('Failed to cleanup expired resource_inbox rows', toError(error));
         });
+    }
+
+    async readWorkPage(request: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
+        return await this.resourceInbox.reservations.readWorkPage(request);
     }
 
     async isAnyEntryToLock(
@@ -295,11 +300,12 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                     if (!updated) {
                         const current = await txRepo.entries.findAnyByKey(entry.key);
                         if (
-                            !current || !isIdempotentHandlerFinalizedRelease(
+                            !current || !isIdempotentHandlerFinalizedRelease({
                                     current,
-                                    entry,
-                                    disposition
-                                ) && !isAdminPruneHandlerFinalizedRelease(current, entry, disposition)
+                                    reserved: entry,
+                                    disposition,
+                                    observedAt: releasedAt
+                                }) && !isAdminPruneHandlerFinalizedRelease(current, entry, disposition)
                         ) {
                             throw new ResourceInboxLostReservationError(
                                 entry.key,

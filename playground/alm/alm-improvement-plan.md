@@ -58,6 +58,24 @@ and transport preference remain independent. A preferred transport may change; a
 must not be silently weakened. The existing two-second receipt timeout, three receipt retries, and
 proposed 30-second interactive deadline are initial defaults, with explicit channel/caller overrides.
 
+Give every queued logical message a finite delivery deadline of its own. Resolve the channel/caller
+TTL once when constructing the message and carry the absolute deadline in `constraints.expiresAtMs`.
+Retry, deferral, restart, and carrier fallback preserve that captured value; receiving a message must
+not restart its TTL. A topic may choose a different finite lifetime for its purpose. The message
+is expired when the observed time reaches the deadline. Check this again at the actual send/delivery
+boundary after asynchronous readiness or authority work. Expiry stops new attempts; it cannot undo
+an application action that already began.
+
+Capture policy-derived freshness limits as well as an explicit caller TTL. Carry the admitted
+deadline through application routers and derived delivery/forwarding work; rereading a changed
+policy must not remove or extend the earlier bound. Preserve the caller's value when computing
+the immutable message passed downstream. Test policy changes and restart as well as explicit TTLs.
+
+Keep that deadline distinct from QueueBox's next-attempt timestamp and storage retention. Schedule
+a readiness recheck no later than the deadline, and expire the work instead of delivering it when
+the deadline is reached. Retained completion, ordering, and deduplication facts may live longer under
+their bounded recovery policy; their presence never extends the message's permission to execute.
+
 Admission distinguishes accepted work, permitted no-ops, bounded deferral, and typed rejection.
 Matching duplicates do not redeliver; repeat their receipt when needed without growing history.
 Older replaceable state is a no-op. Temporarily missing authority or a route can trigger bounded
@@ -113,6 +131,16 @@ or another clock sample. Durable queue status and cross-message resilience remai
 Malformed persisted messages use `NonRetryableException` and terminate as `NON_RETRYABLE`; AppInbox records
 the failure result and finalizes the reservation atomically so the waiting caller receives a terminal
 answer. A failed database finalization still requires ordinary QueueBox redelivery.
+
+Use a distinct not-ready disposition for a valid message whose required readiness is temporarily
+missing. Pure policy/validation returns this as an `Either` value; an exception-based QueueBox
+boundary may translate it to `NotReadyException`. Release as `RETRY` with a future `nextTs`, without
+consuming the processing failure-attempt budget or recording a circuit-breaker failure. Prefer
+skipping known ineligible work before reservation. Recheck after reservation to handle readiness
+changes, preserving the original message deadline and exact reservation ownership. QueueBox currently
+increments attempts when reserving, so this needs an explicit canonical deferral operation and
+cross-backend tests; throwing a differently named exception alone does not establish those semantics.
+Use bounded readiness backoff and existing engine wakes, without another scheduler or a tight retry loop.
 
 Lifecycle subscriptions, transport callbacks, and existing QueueBox transaction callbacks belong
 to the imperative shell. Keep ALM computation and validation callback-free; do not rewrite
@@ -426,6 +454,11 @@ complete room-audience confirmation ships only when its receipt behavior is depe
 - Preserve receipt state and expiry semantics across the promised durable restart boundary. A
   volatile result must not imply crash survival. No exactly-once application-execution guarantee is
   introduced; applications still own idempotency and completion replies.
+- Prove repeated not-ready deferrals leave the processing failure count unchanged and cannot extend
+  the message deadline. Cover expiry exactly at the boundary, expiry during an asynchronous read,
+  restart while waiting, late readiness/receipts, and stale reservation release after another worker
+  claims the message. Ordinary failures still consume their declared retry budget; malformed work
+  remains `NON_RETRYABLE` and expiry remains a distinct logical terminal result.
 - Prove a message received with a lost ACK ends as unconfirmed if recovery is exhausted, without
   claiming non-delivery. Cancellation after submission preserves prior recipient progress.
   One unavailable recipient cannot block others; retry only that missing obligation. Contrast a

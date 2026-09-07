@@ -2,6 +2,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -29,12 +30,119 @@ import {
     newALRoute,
     parseALControlMessage,
     type ALInboundRuntimeStores,
+    type ALQosInputProvider,
     type WsServerTargetResolver
 } from '@shared/mod.ts';
 
 import { createTestGroup } from '../../create-test-group.ts';
 
 describe('RallarServerWsRouter', () => {
+    it.each([-1, 0, 1])('retains the admitted policy deadline between handlers at deadline %+i ms', async (offsetMs) => {
+        let nowMs = 10_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+        const expiresAtMs = nowMs + 1_000;
+        const fixture = createIngressRouter({ defaultFanout: 'none' }, undefined, {
+            defaultsForMessage: () => ({ expiry: { algo: 'fresh-until', opts: { maxStalenessMs: 1_000 } } })
+        });
+        const delivered: string[] = [];
+        const observedDeadlines: (number | undefined)[] = [];
+        fixture.router.on({ topicId: 'app.deadline' }, async (message) => {
+            observedDeadlines.push(message.raw.constraints?.expiresAtMs);
+            await Promise.resolve();
+            nowMs = expiresAtMs + offsetMs;
+        });
+        fixture.router.on({ topicId: 'app.deadline' }, async (message) => {
+            delivered.push(message.raw.id.msgId);
+        });
+        fixture.router.install();
+        const message = newALBroadcastMessage('peer-1', newALRoute('app.deadline', 'message', 'all'), 'all', 'app.deadline.v1', {});
+
+        await fixture.socket.receive(message);
+
+        expect(observedDeadlines).toEqual([expiresAtMs]);
+        expect(delivered).toEqual(offsetMs < 0 ? [message.id.msgId] : []);
+        expect(message.constraints?.expiresAtMs).toBeUndefined();
+    });
+
+    it.each(['handler', 'proxy'] as const)('retries a failing public %s through the existing admission owner', async (consumer) => {
+        vi.useFakeTimers();
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const fixture = createIngressRouter({ defaultFanout: 'none' }, stores);
+        fixture.router.install();
+        let available = false;
+        const attempts: string[] = [];
+        if (consumer === 'handler') {
+            fixture.router.on({ topicId: 'app.retry' }, async (message) => {
+                attempts.push(message.raw.id.msgId);
+                if (!available) {
+                    throw new Error('Application unavailable');
+                }
+            });
+        }
+        else {
+            fixture.router.proxy({
+                from: { topicId: 'app.retry' },
+                transform: async (message) => {
+                    attempts.push(message.raw.id.msgId);
+                    if (!available) {
+                        throw new Error('Proxy dependency unavailable');
+                    }
+                    return message.raw;
+                }
+            });
+        }
+        const message = newALBroadcastMessage('peer-1', newALRoute('app.retry', 'message', 'all'), 'all', 'app.retry.v1', {});
+
+        await fixture.socket.receive(message);
+
+        const keys = await stores.admissionStore.workQueue.getAllKeys();
+        expect(keys).toHaveLength(1);
+        expect(await stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'RETRY', dequeueAudit: { attempts: 1 } });
+        available = true;
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(await stores.admissionStore.workQueue.getItem(keys[0])).toMatchObject({ status: 'COMPLETED', dequeueAudit: { attempts: 2 } });
+        expect(attempts).toEqual([message.id.msgId, message.id.msgId]);
+    });
+
+    it.each([-1, 0, 1])('checks expiry after the installed router authorizes at deadline %+i ms', async (offsetMs) => {
+        let nowMs = 10_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+        const expiresAtMs = nowMs + 1_000;
+        const fixture = createIngressRouter({ defaultFanout: 'none', nowEpochMs: () => nowMs });
+        let authorizations = 0;
+        fixture.router.defineTopic({
+            topicId: 'app.deadline',
+            authorize: async () => {
+                authorizations += 1;
+                if (authorizations === 3) {
+                    await Promise.resolve();
+                    nowMs = expiresAtMs + offsetMs;
+                }
+                return true;
+            }
+        });
+        const delivered: string[] = [];
+        fixture.router.on({ topicId: 'app.deadline' }, async (message) => {
+            delivered.push(message.raw.id.msgId);
+        });
+        fixture.router.install();
+        const message = newALBroadcastMessage('peer-1', newALRoute('app.deadline', 'message', 'all'), 'all', 'app.deadline.v1', {}, { ttlMs: 1_000 });
+
+        await fixture.socket.receive(message);
+
+        expect(authorizations).toBe(3);
+        expect(delivered).toEqual(offsetMs < 0 ? [message.id.msgId] : []);
+    });
+
     it('does not route a recognized state-sync payload on a user topic', async () => {
         const { router, socket, outbox } = createRouter();
         let handlerRan = false;
@@ -716,39 +824,38 @@ function createRouter(
     options?: ConstructorParameters<typeof RallarServerWsRouter>[1]
 ) {
     const socket = createRecordingWsServer();
-    const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
     const service = createDefaultWsQueueBoxServerService({
-        inbox: inbox,
         outbox: outbox,
         socket,
         name: 'server-1',
         targetResolver: createTargetResolver()
     });
     const router = new RallarServerWsRouter(service, options);
+    onTestFinished(() => service.dispose());
 
     return {
         router,
         service,
         socket,
-        inbox,
         outbox
     };
 }
 
 function createIngressRouter(
     options: ConstructorParameters<typeof RallarServerWsRouter>[1],
-    inboundStores?: ALInboundRuntimeStores
+    inboundStores?: ALInboundRuntimeStores,
+    qosProvider?: ALQosInputProvider
 ) {
     const server = new JsonWebSocketServer();
     const socket = new RouterIngressWebSocket();
     server.addConnection(new ConnectionContext({ id: 'conn-1', socket }));
     const service = createDefaultWsQueueBoxServerService({
-        inbox: new InMemoryQueueBox(new Map()),
         outbox: new InMemoryQueueBox(new Map()),
         socket: server,
         name: 'server-1',
         inboundStores,
+        qosProvider,
         targetResolver: {
             resolvePeerIdForConnection: () => 'peer-1',
             resolvePeerRecipients: (peerId) =>
@@ -758,6 +865,7 @@ function createIngressRouter(
             resolveBroadcastRecipients: () => []
         }
     });
+    onTestFinished(() => service.dispose());
     return { router: new RallarServerWsRouter(service, options), service, socket };
 }
 
@@ -821,10 +929,8 @@ function createPublicRouterFixture(options: PublicRouterFixtureInput = {}) {
     const socket = createRecordingWsServer({
         failingConnectionIds: options.failingConnectionIds
     });
-    const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
     const service = createDefaultWsQueueBoxServerService({
-        inbox: inbox,
         outbox: outbox,
         socket,
         name: 'server-1',
@@ -837,6 +943,7 @@ function createPublicRouterFixture(options: PublicRouterFixtureInput = {}) {
             this.wakeRequested = true;
         }
     };
+    onTestFinished(() => service.dispose());
     const server = {
         ws: new RallarServerWsRouter(service, {
             wakeOutbox: () => qboxEngine.wake()
@@ -847,7 +954,6 @@ function createPublicRouterFixture(options: PublicRouterFixtureInput = {}) {
         server,
         service,
         socket,
-        inbox,
         outbox,
         qboxEngine
     };

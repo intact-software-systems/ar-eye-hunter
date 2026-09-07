@@ -32,7 +32,6 @@ export function createRallarMiddlewareInfrastructure(
         });
     const wsQBoxServerService = createDefaultWsQueueBoxServerService({
         queueEngine,
-        inbox: options.inbox,
         outbox: options.outbox ?? options.inbox,
         socket: webSocketServer,
         name: options.wsRuntimeName ?? 'default-qbox-server',

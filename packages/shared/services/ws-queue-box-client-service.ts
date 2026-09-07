@@ -35,7 +35,7 @@ import {
 import { createDefaultALOutboundRuntimeResources } from '../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import { Command } from '../cache/Command.ts';
-import type { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException, type ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { Either } from '../resilience/Either.ts';
@@ -97,7 +97,6 @@ export namespace WsQueueBoxClientService {
 
     export interface Input {
         readonly queueEngine?: InboxOutboxEngine;
-        readonly inbox: QueueBoxResourceEntryRepository;
         readonly outbox: QueueBoxResourceEntryRepository;
         readonly socket: JsonWebSocketClient;
         readonly sessionId: string;
@@ -110,7 +109,6 @@ export namespace WsQueueBoxClientService {
     }
 
     export interface Dependencies {
-        readonly inbox: QueueBoxResourceEntryRepository;
         readonly outbox: QueueBoxResourceEntryRepository;
         readonly socket: JsonWebSocketClient;
         readonly sessionId: string;
@@ -129,11 +127,6 @@ export class WsQueueBoxClientService {
     public static readonly OUTBOX_ENQUEUE_TYPE = EnqueuedType.WS_OUTBOX;
     public static readonly OUTBOX_DEQUEUE_TYPES = new Set<string>([
         this.OUTBOX_ENQUEUE_TYPE
-    ]);
-
-    public static readonly INBOX_ENQUEUE_TYPE = EnqueuedType.WS_INBOX;
-    public static readonly INBOX_DEQUEUE_TYPES = new Set<string>([
-        this.INBOX_ENQUEUE_TYPE
     ]);
 
     private readonly onOutboxMessageCallbacks: Map<string, OnOutboxWebSocketMessageCallback> = new Map<
@@ -157,14 +150,12 @@ export class WsQueueBoxClientService {
         exhausted: false
     };
 
-    public readonly inbox: QueueBoxResourceEntryRepository;
     public readonly outbox: QueueBoxResourceEntryRepository;
     public readonly socket: JsonWebSocketClient;
     public readonly sessionId: string;
     private readonly dependencies: WsQueueBoxClientService.Dependencies;
 
     constructor(dependencies: WsQueueBoxClientService.Dependencies) {
-        this.inbox = dependencies.inbox;
         this.outbox = dependencies.outbox;
         this.socket = dependencies.socket;
         this.sessionId = dependencies.sessionId;
@@ -208,8 +199,8 @@ export class WsQueueBoxClientService {
         return new ALInboundMessageRuntime(
             {
                 ...resources,
-                inbox: this.inbox,
                 planIncomingMessage: (msg, source, observations) => this.planIncomingMessage(msg, source, observations),
+                canDispatchMessage: (message) => this.hasInboxConsumer(message),
                 readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
                 dispatchInboxEntry: async (entry, plan) => await this.dispatchInboxEntry(entry, plan),
                 sendControlMessage: async (msg) => {
@@ -303,6 +294,7 @@ export class WsQueueBoxClientService {
         callback: OnMessageCallback
     ): WsQueueBoxClientService {
         this.onInboxMessageCallbacks.set(id, callback);
+        this.dependencies.inboundRuntime.queueEngine.wake();
         return this;
     }
 
@@ -318,6 +310,7 @@ export class WsQueueBoxClientService {
         }
 
         this.onInboxMessageCallbacks.set(WsQueueBoxClientService.ALL_IN, callback);
+        this.dependencies.inboundRuntime.queueEngine.wake();
         return this;
     }
 
@@ -326,6 +319,7 @@ export class WsQueueBoxClientService {
         callback: OnMessageCallback
     ): WsQueueBoxClientService {
         this.onAnyInboxMessageCallbacks.set(id, callback);
+        this.dependencies.inboundRuntime.queueEngine.wake();
         return this;
     }
 
@@ -574,54 +568,52 @@ export class WsQueueBoxClientService {
         await this.outboundRuntime.dequeue(typesToDequeue, resilience);
     }
 
-    async dequeueInbox(typesToDequeue: Set<string>, resilience: ResilienceDto) {
-        await QueueBoxUtilities.defaultDequeue(
-            this.inbox,
-            typesToDequeue,
-            resilience,
-            QueueBoxUtilities.withRetryDisposition(
-                async (entry) => await this.inboundRuntime.dispatchStoredEntry(entry)
-            )
-        );
+    private hasInboxConsumer(message: ALMessage): boolean {
+        return this.onInboxMessageCallbacks.has(message.payload.typeId) ||
+            this.onInboxMessageCallbacks.has(WsQueueBoxClientService.ALL_IN) ||
+            this.onAnyInboxMessageCallbacks.size > 0;
     }
 
     private async dispatchInboxEntry(
         entry: ResourceEntry,
-        plan?: ALMessageHandlingPlan
-    ): Promise<void> {
+        plan: ALMessageHandlingPlan
+    ): Promise<void | 'retry'> {
         const message = decodePersistedALMessage(entry.resource);
-
-        let exclusiveCallback;
-        let wildcard = undefined;
-
-        if (plan?.ownership.exclusive) {
-            exclusiveCallback = this.onInboxMessageCallbacks.get(message.payload.typeId) ??
-                this.onInboxMessageCallbacks.get(WsQueueBoxClientService.ALL_IN);
-
-            await exclusiveCallback?.onMessage(message, entry);
+        this.requireInboxDeliveryTime(entry);
+        const selected = this.onInboxMessageCallbacks.get(message.payload.typeId) ??
+            (plan.ownership.exclusive ? this.onInboxMessageCallbacks.get(WsQueueBoxClientService.ALL_IN) : undefined);
+        await selected?.onMessage(message, entry);
+        if (this.closed) {
+            return 'retry';
         }
-        else {
-            exclusiveCallback = this.onInboxMessageCallbacks.get(
-                message.payload.typeId
-            );
-            await exclusiveCallback?.onMessage(message, entry);
-
-            wildcard = this.onInboxMessageCallbacks.get(
-                WsQueueBoxClientService.ALL_IN
-            );
-            await wildcard?.onMessage(message, entry);
+        const wildcard = plan.ownership.exclusive
+            ? undefined
+            : this.onInboxMessageCallbacks.get(WsQueueBoxClientService.ALL_IN);
+        if (wildcard !== undefined) {
+            this.requireInboxDeliveryTime(entry);
+            await wildcard.onMessage(message, entry);
         }
 
         for (const callback of this.onAnyInboxMessageCallbacks.values()) {
+            if (this.closed) {
+                return 'retry';
+            }
+            this.requireInboxDeliveryTime(entry);
             await callback.onMessage(message, entry);
         }
 
         if (
-            exclusiveCallback === undefined &&
+            selected === undefined &&
             wildcard === undefined &&
             this.onAnyInboxMessageCallbacks.size === 0
         ) {
-            console.warn('No callback for typeId ', message.payload.typeId);
+            return 'retry';
+        }
+    }
+
+    private requireInboxDeliveryTime(entry: ResourceEntry): void {
+        if (entry.audit.expiryTs.epochMilliseconds <= Date.now()) {
+            throw new NonRetryableException('Inbound message expired before consumer delivery');
         }
     }
 
@@ -691,16 +683,15 @@ export class WsQueueBoxClientService {
 
 export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientService.Input): WsQueueBoxClientService {
     return new WsQueueBoxClientService({
-        inbox: input.inbox,
         outbox: input.outbox,
         socket: input.socket,
         sessionId: input.sessionId,
         qosProvider: input.qosProvider,
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
+            queueEngine: input.queueEngine,
             selfPeerId: input.sessionId,
-            toInboxEntry: (message) =>
-                QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxClientService.INBOX_ENQUEUE_TYPE)
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX)
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
             stores: input.outboundStores,

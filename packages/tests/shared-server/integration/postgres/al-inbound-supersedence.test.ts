@@ -7,8 +7,10 @@ import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore, type ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
+import { toALInboundWorkKey, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { computeALInboundAdmission } from '@shared/alm/inbound/compute-al-inbound-admission.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 
 import { createRuntimeStatePostgresSql, requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
@@ -28,7 +30,13 @@ describe('Postgres inbound shared supersedence', () => {
             ])
         ).toEqual(['committed', 'committed']);
 
-        const effects = await first.claimReadyEffects({ workerId: 'observer', maxCount: 10, leaseMs: 10_000, nowMs: Date.now() });
+        const page = await first.workQueue.readWorkPage({
+            typeId: toALInboundWorkType(first.namespace),
+            status: EntityStatus.NEW,
+            maxToRead: 10,
+            cursor: null
+        });
+        const effects = await first.claimReadyEffects({ entries: page.entries, maxCount: 10 });
         expect(effects).toHaveLength(2);
     });
 
@@ -43,7 +51,13 @@ describe('Postgres inbound shared supersedence', () => {
             second.commitBundle(secondDecision.bundle)
         ])).sort()).toEqual(['committed', 'conflict']);
 
-        const effects = await first.claimReadyEffects({ workerId: 'observer', maxCount: 10, leaseMs: 10_000, nowMs: Date.now() });
+        const page = await first.workQueue.readWorkPage({
+            typeId: toALInboundWorkType(first.namespace),
+            status: EntityStatus.NEW,
+            maxToRead: 10,
+            cursor: null
+        });
+        const effects = await first.claimReadyEffects({ entries: page.entries, maxCount: 10 });
         expect(effects).toHaveLength(1);
     });
     postgresIt('rejects an earlier observation even when its commit starts after another connection commits', async () => {
@@ -60,7 +74,13 @@ describe('Postgres inbound shared supersedence', () => {
         expect(refreshed.read.observations.messageOwner).toBeUndefined();
         expect(refreshed.read.dedupExpiresAt).toBeUndefined();
         expect(refreshed.plan.supersedence.status).toBe('superseded');
-        const effects = await first.claimReadyEffects({ workerId: 'observer', maxCount: 10, leaseMs: 10_000, nowMs: Date.now() });
+        const page = await first.workQueue.readWorkPage({
+            typeId: toALInboundWorkType(first.namespace),
+            status: EntityStatus.NEW,
+            maxToRead: 10,
+            cursor: null
+        });
+        const effects = await first.claimReadyEffects({ entries: page.entries, maxCount: 10 });
         expect(effects.map((effect) =>
             effect.payload.kind === 'dispatch-local'
                 ? decodePersistedALMessage(effect.payload.entry.resource).id.msgId
@@ -92,9 +112,11 @@ describe('Postgres inbound shared supersedence', () => {
 
 async function createStores(): Promise<readonly [ALInboundAdmissionStore, ALInboundAdmissionStore]> {
     const namespace = `inbound-supersedence-${crypto.randomUUID()}`;
+    const queueContext = toALInboundWorkKey(namespace, '').contextId;
     const first = await createRuntimeStatePostgresSql(requirePostgresDatabaseUrl());
     onTestFinished(async () => {
         try {
+            await first`delete from resource_inbox where fk_ext_bank_id = ${queueContext}`;
             await first`delete from runtime_state_store where store_namespace = ${namespace}`;
         }
         finally {

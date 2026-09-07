@@ -3,7 +3,6 @@ import { CircuitBreaker, CircuitBreakerPolicy } from '../resilience/circuit-brea
 import { Either, EitherCollectors } from '../resilience/Either.ts';
 import { RateAdjuster, RateAdjusterPolicy, RateLimiter } from '../resilience/Resilience.ts';
 import { DequeueController, FailureDto, Reservator, SuccessDto } from './DequeueController.ts';
-import { hasSameResourceEntryValue } from './has-same-resource-entry-value.ts';
 import {
     DequeueResourceEntryRepository,
     toSaturatedResourceInboxFairnessScanBudget,
@@ -11,6 +10,7 @@ import {
     type ResourceInboxReleaseDisposition,
     type ResourceInboxWorkAdvertisementOptions
 } from './queue-box-types.ts';
+import { hasSameResourceEntryValue } from './resource-entry-observations.ts';
 import * as Resource from './ResourceEntry.ts';
 import { EntityStatus, isKeysEqual, ResourceEntry } from './ResourceEntry.ts';
 import {

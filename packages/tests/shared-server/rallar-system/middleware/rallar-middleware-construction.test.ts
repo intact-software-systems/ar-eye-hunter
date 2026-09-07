@@ -50,7 +50,6 @@ describe('createRallarMiddleware', () => {
         const constructionTimeline = [...constructionEvents, 'worker-exposed'];
 
         expect(runtime.wsQBoxServerService).toBeInstanceOf(WsQueueBoxServerService);
-        expect(runtime.wsQBoxServerService.inbox).toBe(testRuntime.inbox);
         expect(runtime.wsQBoxServerService.outbox).toBe(outbox);
         expect(runtime.wsQBoxServerService.name).toBe('server-1');
         expect(runtime.inboxQueueReader).toBeInstanceOf(InboxQueueReader);

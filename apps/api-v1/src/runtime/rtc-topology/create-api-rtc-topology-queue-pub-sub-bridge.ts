@@ -8,7 +8,6 @@ import type { ApiV1DatabaseConfiguration } from '../../configuration/api-v1-conf
 import type { ApiV1DatabaseNotificationPort } from '../../db/api-v1-database-lifecycle.ts';
 import {
     createApiV1QueuePubSubBridge,
-    queuePubSubDeliveryForMode,
     shouldInstallQueuePubSubBridge
 } from '../../db/api-v1-queue-pubsub-bridge.ts';
 import type { LocalQueuePubSubBus } from '../../db/local-queue-pubsub-bridge.ts';
@@ -40,7 +39,6 @@ export function createApiRtcTopologyQueuePubSubBridge(
         }),
         channel: input.channel,
         publisherId: input.publisherId,
-        delivery: queuePubSubDeliveryForMode(input.mode),
         timing: input.timing,
         onValidatedOutboxKeyReceived: (entry) => {
             if (isRtcTopologyPublicationOutboxEntry(entry)) {

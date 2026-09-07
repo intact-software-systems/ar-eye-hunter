@@ -6,7 +6,6 @@ import { RateLimiter } from '../resilience/Resilience.ts';
 import { computeIndexedDbFairnessReservation } from './compute-indexed-db-fairness-reservation.ts';
 import { computeIndexedDbQueueRelease } from './compute-indexed-db-queue-release.ts';
 import { ResilienceDto } from './DequeueResourceEntryController.ts';
-import { hasSameResourceEntryValue } from './has-same-resource-entry-value.ts';
 import {
     decodeStoredResourceEntry,
     type StoredResourceEntry
@@ -27,6 +26,7 @@ import {
     readFairnessStoredQueueEntries,
     readStoredQueueEntries,
     readStoredQueueEntry,
+    readStoredQueueWorkPage,
     toIndexedDbQueueStoreDefinition
 } from './indexed-db-queue-box-store.ts';
 import { IndexedDbQueueWriteConflictError } from './indexed-db-queue-write-conflict-error.ts';
@@ -39,13 +39,19 @@ import {
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementOptions,
+    ResourceInboxWorkPage,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions
 } from './queue-box-types.ts';
-import { captureResourceEntryObservations, validateResourceEntryObservation } from './resource-entry-observations.ts';
+import {
+    captureResourceEntryObservations,
+    hasSameResourceEntryValue,
+    validateResourceEntryObservation,
+    validateResourceInboxWorkPageRequest
+} from './resource-entry-observations.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
@@ -102,6 +108,22 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     static isSupported(): boolean {
         return typeof indexedDB !== 'undefined';
+    }
+
+    async readWorkPage(input: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
+        const request = { ...input, cursor: input.cursor === null ? null : { ...input.cursor } };
+        const validated = validateResourceInboxWorkPageRequest(request);
+        if (validated.left) {
+            throw validated.left;
+        }
+        const db = await this.#connection.open();
+        const stored = await readStoredQueueWorkPage(db, this.#storeName, request);
+        return {
+            entries: stored.map(decodeStoredResourceEntry),
+            nextCursor: stored.length === request.maxToRead
+                ? { typeId: request.typeId, status: request.status, position: stored[stored.length - 1].keyString }
+                : null
+        };
     }
 
     cleanup(): void {
@@ -230,7 +252,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             resources,
             storedEntries
         });
-        return await this.#write(db, computed);
+        if (computed.right === undefined) {
+            throw computed.left;
+        }
+        return await this.#write(db, computed.right);
     }
 
     async reserveTimeoutEntries(

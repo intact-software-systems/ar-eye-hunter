@@ -8,7 +8,6 @@ export interface RegisterRallarMiddlewareQueueTasksInput {
     readonly wsQBoxServerService: WsQueueBoxServerService;
     readonly inboxQueueReader: InboxQueueReader;
     readonly outboxQueueReader: OutboxQueueReader;
-    readonly wsInboxResilience: ResilienceDto;
     readonly wsOutboxResilience: ResilienceDto;
     readonly appInboxResilience: ResilienceDto;
     readonly appOutboxResilience: ResilienceDto;
@@ -62,7 +61,7 @@ export class RallarMiddlewareQueueRegistration {
         if (this.#state !== 'unregistered') {
             throw new Error('Rallar middleware queue tasks have already been registered');
         }
-        registerWsQueueBoxTasks(this.#engine, input);
+        registerWsQueueBoxOutboxTask(this.#engine, input);
         registerApplicationQueueReaderTasks({
             engine: this.#engine,
             inboxQueueReader: input.inboxQueueReader,
@@ -125,25 +124,10 @@ export function registerApplicationQueueReaderTasks(
     });
 }
 
-function registerWsQueueBoxTasks(
+function registerWsQueueBoxOutboxTask(
     engine: Pick<InboxOutboxEngine, 'includeTask'>,
     input: RegisterRallarMiddlewareQueueTasksInput
 ): void {
-    engine.includeTask(WsQueueBoxServerService.INBOX_ENQUEUE_TYPE, {
-        name: WsQueueBoxServerService.INBOX_ENQUEUE_TYPE,
-        maxConcurrency: () => 1,
-        isWork: () =>
-            input.wsQBoxServerService.inbox.isAnyEntryToLock(
-                WsQueueBoxServerService.INBOX_DEQUEUE_TYPES,
-                input.wsInboxResilience.toWorkAdvertisementOptions()
-            ),
-        runnable: () =>
-            input.wsQBoxServerService.dequeueInbox(
-                WsQueueBoxServerService.INBOX_DEQUEUE_TYPES,
-                input.wsInboxResilience
-            ),
-        ongoingTasks: []
-    });
     engine.includeTask(WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE, {
         name: WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE,
         maxConcurrency: () => 1,

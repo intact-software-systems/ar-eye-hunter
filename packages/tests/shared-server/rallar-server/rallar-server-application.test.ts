@@ -18,7 +18,8 @@ import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-
 import {
     describe,
     expect,
-    it
+    it,
+    onTestFinished
 } from 'vitest';
 
 interface App {
@@ -30,11 +31,11 @@ describe('RallarServerApplication', () => {
     it('exposes direct owners and invokes each explicit application phase once', async () => {
         const events: string[] = [];
         const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
             outbox: new InMemoryQueueBox(),
             socket: new JsonWebSocketServer(),
             name: 'server-1'
         });
+        onTestFinished(() => service.dispose());
         const runtime = {
             wsQBoxServerService: service,
             qboxEngine: {

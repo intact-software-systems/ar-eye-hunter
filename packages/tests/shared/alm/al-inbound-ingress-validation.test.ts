@@ -1,7 +1,10 @@
+import { describe, expect, it } from 'vitest';
+
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
@@ -9,7 +12,6 @@ import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import { describe, expect, it } from 'vitest';
 
 describe('AL inbound canonical validation', () => {
     it('bounds retained ordered message bytes and admits the rejected identity when capacity becomes available', async () => {
@@ -36,11 +38,17 @@ describe('AL inbound canonical validation', () => {
             };
             const rejected = await fixture.runtime.handleIncomingMessage(overflow, { kind: 'rtc-peer', peerId: 'sender' });
             expect(rejected.right?.kind).toBe('resync-required');
+            const repeated = await fixture.runtime.handleIncomingMessage(overflow, { kind: 'rtc-peer', peerId: 'sender' });
+            expect(repeated.right?.kind).toBe('resync-required');
             expect(fixture.delivered).toEqual([]);
             await fixture.runtime.handleIncomingMessage({
                 ...base,
                 ordering: { orderingKey: 'ordered', seq: 1 }
             }, { kind: 'rtc-peer', peerId: 'sender' });
+            const trackKey = toALOrderingTrackKey({ ...base, ordering: { orderingKey: 'ordered', seq: 2 } })!;
+            await expect.poll(async () => {
+                return (await fixture.admissionStore.readOrderedDelivery(trackKey, 3)).completedThrough;
+            }, { timeout: 4_000 }).toBeGreaterThanOrEqual(2);
             const retried = await fixture.runtime.handleIncomingMessage(overflow, { kind: 'rtc-peer', peerId: 'sender' });
             expect(retried.right?.kind).toBe('admitted');
             expect(fixture.delivered).toContain('message');
@@ -184,7 +192,7 @@ function createFixture() {
             stores: { admissionStore },
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
         }),
-        inbox: new InMemoryQueueBox(),
+
         planIncomingMessage: (message, source, observations) =>
             planALMessageHandling(message, {
                 ...observations,
@@ -199,5 +207,5 @@ function createFixture() {
             controls.push(message);
         }
     });
-    return { runtime, delivered, controls, state };
+    return { runtime, admissionStore, delivered, controls, state };
 }

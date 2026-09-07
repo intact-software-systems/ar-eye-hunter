@@ -1,6 +1,6 @@
 import '../../setup-browser-indexeddb.ts';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -14,9 +14,11 @@ import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundPlanningObservations
 } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
+import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { computeALInboundAdmission, computeALInboundBufferedRelease } from '@shared/alm/inbound/compute-al-inbound-admission.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 
 import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
@@ -149,7 +151,11 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supers
             ...computeALInboundBufferedReleasePlanningObservations(read)
         });
         expect(plan.localDelivery.enabled).toBe(true);
-        const buffered = computeALInboundBufferedRelease({ read, plan, facts: readEffectFacts(older, read.nowMs) });
+        const buffered = computeALInboundBufferedRelease({
+            read,
+            plan,
+            facts: readEffectFacts(older, read.nowMs)
+        });
         const originalCandidate = JSON.stringify(buffered);
         const newDecision = await readDecision(store, newer);
         expect(newDecision.plan.dropReason).toBeUndefined();
@@ -166,6 +172,16 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supers
 
 async function createStore(storage: 'memory' | 'indexeddb' | 'pglite') {
     const namespace = `inbound-supersedence-${crypto.randomUUID()}`;
+    if (storage === 'indexeddb') {
+        onTestFinished(() =>
+            new Promise<void>((resolve, reject) => {
+                const deletion = indexedDB.deleteDatabase(namespace);
+                deletion.onsuccess = () => resolve();
+                deletion.onerror = () => reject(deletion.error);
+                deletion.onblocked = () => reject(new Error('Owned admission database deletion is blocked'));
+            })
+        );
+    }
     const backend = storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : storage === 'indexeddb'
@@ -222,14 +238,14 @@ function readEffectFacts(message: ALMessage, nowMs: number) {
 }
 
 async function completeEffects(store: ALInboundAdmissionStore): Promise<string[]> {
-    const workerId = crypto.randomUUID();
-    const effects = await store.claimReadyEffects({ workerId, maxCount: 10, leaseMs: 10_000, nowMs: Date.now() });
+    const page = await store.workQueue.readWorkPage({ typeId: toALInboundWorkType(store.namespace), status: EntityStatus.NEW, maxToRead: 10, cursor: null });
+    const effects = await store.claimReadyEffects({ entries: page.entries, maxCount: 10 });
     const deliveries: string[] = [];
     for (const effect of effects) {
         if (effect.payload.kind === 'dispatch-local') {
             deliveries.push(decodePersistedALMessage(effect.payload.entry.resource).id.msgId);
         }
-        await store.completeEffect(effect.effectId, workerId);
+        await store.completeEffect(effect.entry);
     }
     return deliveries;
 }

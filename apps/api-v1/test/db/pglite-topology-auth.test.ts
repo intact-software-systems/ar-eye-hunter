@@ -502,136 +502,140 @@ Deno.test(
             const wsSocket = new PGliteTestSocket();
             wsServer.addConnection(new ConnectionContext({ id: authority.sessionId, socket: wsSocket }));
             const wsService = createDefaultWsQueueBoxServerService({
-                inbox: new InMemoryQueueBox(new Map()),
                 outbox: new InMemoryQueueBox(new Map()),
                 socket: wsServer,
                 name: 'pglite-ws-ingress'
             });
-            const wsIngressCapturedAt: number[] = [];
-            installRtcRttSystemTopic(wsService, {
-                enqueueMutation: async (input) => {
-                    wsIngressCapturedAt.push(input.capturedAtEpochMs);
-                    return await rtcRttInbox.enqueue(input);
-                }
-            });
-            const rtt = {
-                sessionIdFrom: authority.sessionId,
-                sessionIdTo: 'peer-session',
-                rttMs: 12,
-                createdAtEpochMs: nowEpochMs,
-                version: 1
-            };
-            const dispatchRtt = () =>
-                wsSocket.dispatchMessage(newALUntargetedMessage(
-                    authority.sessionId,
-                    newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay'),
-                    AppTopics.rtt,
-                    rtt
-                ));
-            const rttPending = dispatchRtt();
-            await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-            await inboxReader.dequeueInbox(
-                InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
-            );
-            await rttPending;
-            await new Promise((resolve) => setTimeout(resolve, 2));
-            await dispatchRtt();
-            assert.equal(wsIngressCapturedAt.length, 2);
-            assert.ok(wsIngressCapturedAt[1]! > wsIngressCapturedAt[0]!);
+            try {
+                const wsIngressCapturedAt: number[] = [];
+                installRtcRttSystemTopic(wsService, {
+                    enqueueMutation: async (input) => {
+                        wsIngressCapturedAt.push(input.capturedAtEpochMs);
+                        return await rtcRttInbox.enqueue(input);
+                    }
+                });
+                const rtt = {
+                    sessionIdFrom: authority.sessionId,
+                    sessionIdTo: 'peer-session',
+                    rttMs: 12,
+                    createdAtEpochMs: nowEpochMs,
+                    version: 1
+                };
+                const dispatchRtt = () =>
+                    wsSocket.dispatchMessage(newALUntargetedMessage(
+                        authority.sessionId,
+                        newALEventRoute(AppTopics.rtt, groupRef.groupId, 'pglite-rtt-replay'),
+                        AppTopics.rtt,
+                        rtt
+                    ));
+                const rttPending = dispatchRtt();
+                await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+                await inboxReader.dequeueInbox(
+                    InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                    toResilienceDto()
+                );
+                await rttPending;
+                await new Promise((resolve) => setTimeout(resolve, 2));
+                await dispatchRtt();
+                assert.equal(wsIngressCapturedAt.length, 2);
+                assert.ok(wsIngressCapturedAt[1]! > wsIngressCapturedAt[0]!);
 
-            assert.equal(
-                Number(
-                    (await sql<NumericCountRow[]>`
+                assert.equal(
+                    Number(
+                        (await sql<NumericCountRow[]>`
         select count(*) as count from resource_inbox
         where ri_type_id = 'APP_INBOX' and ri_status = 'COMPLETED'
       `)[0]?.count
-                ),
-                12
-            );
+                    ),
+                    12
+                );
 
-            const otherPrincipal = {
-                ...authority,
-                clientId: 'other-principal',
-                sessionId: 'other-principal-session',
-                accessToken: 'other-principal-token'
-            };
-            await authSessions.putSession(otherPrincipal);
-            const actorDivergent = await toTopologyAppInboxCommand({
-                actor: {
-                    principalId: otherPrincipal.clientId,
-                    sessionId: otherPrincipal.sessionId
-                },
-                groupRef,
-                requestId: first.requestId,
-                capturedAtEpochMs: 15_000,
-                payload: { operation: 'putConfig', config: { topologyKind: 'tree' } }
-            });
-            await assert.rejects(
-                () => submitPGliteTopologyCommand(appGroup, otherPrincipal, actorDivergent),
-                (error) =>
-                    error instanceof Error &&
-                    'code' in error && error.code === 'app-inbox-idempotency-conflict'
-            );
-
-            const renewedAuthority = {
-                ...authority,
-                sessionId: 'owner-second-session',
-                accessToken: 'owner-second-token'
-            };
-            await authSessions.putSession(renewedAuthority);
-            const renewedSessionReplay = await toTopologyAppInboxCommand({
-                actor: {
-                    principalId: renewedAuthority.clientId,
-                    sessionId: renewedAuthority.sessionId
-                },
-                groupRef,
-                requestId: first.requestId,
-                capturedAtEpochMs: 15_000,
-                payload: { operation: 'putConfig', config: { topologyKind: 'tree' } }
-            });
-            assert.deepEqual(
-                (await submitPGliteTopologyCommand(
-                    appGroup,
-                    renewedAuthority,
-                    renewedSessionReplay
-                )).right,
-                firstResult.right
-            );
-
-            const revokedCommand = await toTopologyAppInboxCommand({
-                actor: first.actor,
-                groupRef,
-                requestId: 'revoked-before-topology-write',
-                capturedAtEpochMs: nowEpochMs,
-                payload: { operation: 'putConfig', config: { topologyKind: 'mesh' } }
-            });
-            const revokedPending = submitPGliteTopologyCommand(
-                appGroup,
-                authority,
-                revokedCommand
-            );
-            await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-            await authSessions.deleteSession(authority);
-            await inboxReader.dequeueInbox(
-                InboxQueueReader.INBOX_DEQUEUE_TYPES,
-                toResilienceDto()
-            );
-            const revokedResult = await revokedPending;
-            assert.match(revokedResult.left?.message ?? '', /revoked|authority|session/i);
-            await assert.rejects(
-                () => submitPGliteTopologyCommand(appGroup, authority, first),
-                (error) =>
-                    error instanceof Error &&
-                    'code' in error && error.code === 'group-mutation-authority-denied'
-            );
-            assert.equal(
-                await new GroupTopologyConfigRepository(runtime).findMutationRecord(
+                const otherPrincipal = {
+                    ...authority,
+                    clientId: 'other-principal',
+                    sessionId: 'other-principal-session',
+                    accessToken: 'other-principal-token'
+                };
+                await authSessions.putSession(otherPrincipal);
+                const actorDivergent = await toTopologyAppInboxCommand({
+                    actor: {
+                        principalId: otherPrincipal.clientId,
+                        sessionId: otherPrincipal.sessionId
+                    },
                     groupRef,
-                    revokedCommand.requestId
-                ),
-                undefined
-            );
+                    requestId: first.requestId,
+                    capturedAtEpochMs: 15_000,
+                    payload: { operation: 'putConfig', config: { topologyKind: 'tree' } }
+                });
+                await assert.rejects(
+                    () => submitPGliteTopologyCommand(appGroup, otherPrincipal, actorDivergent),
+                    (error) =>
+                        error instanceof Error &&
+                        'code' in error && error.code === 'app-inbox-idempotency-conflict'
+                );
+
+                const renewedAuthority = {
+                    ...authority,
+                    sessionId: 'owner-second-session',
+                    accessToken: 'owner-second-token'
+                };
+                await authSessions.putSession(renewedAuthority);
+                const renewedSessionReplay = await toTopologyAppInboxCommand({
+                    actor: {
+                        principalId: renewedAuthority.clientId,
+                        sessionId: renewedAuthority.sessionId
+                    },
+                    groupRef,
+                    requestId: first.requestId,
+                    capturedAtEpochMs: 15_000,
+                    payload: { operation: 'putConfig', config: { topologyKind: 'tree' } }
+                });
+                assert.deepEqual(
+                    (await submitPGliteTopologyCommand(
+                        appGroup,
+                        renewedAuthority,
+                        renewedSessionReplay
+                    )).right,
+                    firstResult.right
+                );
+
+                const revokedCommand = await toTopologyAppInboxCommand({
+                    actor: first.actor,
+                    groupRef,
+                    requestId: 'revoked-before-topology-write',
+                    capturedAtEpochMs: nowEpochMs,
+                    payload: { operation: 'putConfig', config: { topologyKind: 'mesh' } }
+                });
+                const revokedPending = submitPGliteTopologyCommand(
+                    appGroup,
+                    authority,
+                    revokedCommand
+                );
+                await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+                await authSessions.deleteSession(authority);
+                await inboxReader.dequeueInbox(
+                    InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                    toResilienceDto()
+                );
+                const revokedResult = await revokedPending;
+                assert.match(revokedResult.left?.message ?? '', /revoked|authority|session/i);
+                await assert.rejects(
+                    () => submitPGliteTopologyCommand(appGroup, authority, first),
+                    (error) =>
+                        error instanceof Error &&
+                        'code' in error && error.code === 'group-mutation-authority-denied'
+                );
+                assert.equal(
+                    await new GroupTopologyConfigRepository(runtime).findMutationRecord(
+                        groupRef,
+                        revokedCommand.requestId
+                    ),
+                    undefined
+                );
+            }
+            finally {
+                wsService.dispose();
+            }
         });
     }
 );

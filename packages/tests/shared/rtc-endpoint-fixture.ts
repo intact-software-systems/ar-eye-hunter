@@ -85,7 +85,6 @@ export class RtcEndpointFixture {
             rateLimiter: toRateLimiter()
         });
         this.streamer = createDefaultWebRtcRxStreamerService({
-            inbox: new InMemoryQueueBox(),
             multicast: this.multicast,
             sessionId,
             inboundStores: createDefaultInMemoryALInboundRuntimeStores(),

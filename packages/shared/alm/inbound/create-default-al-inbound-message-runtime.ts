@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '../al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '../ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from './al-inbound-admission-store.ts';
@@ -9,6 +10,7 @@ export interface DefaultALInboundRuntimeResourceInput {
     readonly selfPeerId: string;
     readonly toInboxEntry: (msg: ALMessage) => ResourceEntry;
     readonly stores?: ALInboundRuntimeStores;
+    readonly queueEngine?: InboxOutboxEngine;
 }
 
 export interface CreateDefaultALInboundMessageRuntimeDependencies
@@ -43,11 +45,7 @@ export function createDefaultALInboundRuntimeResources(
             createInboxEntry: input.toInboxEntry
         },
         clock: { nowMs: () => Date.now() },
-        scheduler: {
-            schedule: (callback, delayMs) => {
-                const timer = setTimeout(callback, delayMs);
-                return () => clearTimeout(timer);
-            }
-        }
+        queueEngine: input.queueEngine ?? new InboxOutboxEngine(),
+        ownsQueueEngine: input.queueEngine === undefined
     };
 }

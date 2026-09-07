@@ -280,8 +280,7 @@ async function initialiseBrowserRtcTransport(
         {
             webRtcOverlayMulticastManager,
             qboxEngine: input.webSocketTransport.qboxEngine,
-            clientData: input.clientData,
-            resilience: toResilienceDto()
+            clientData: input.clientData
         }
     );
     registerBrowserRttEgress(input, rtcRxStreamer);

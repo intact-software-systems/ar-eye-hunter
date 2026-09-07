@@ -22,7 +22,6 @@ describe('WS server inbound identity', () => {
         const socket = new FakeSocket();
         server.addConnection(new ConnectionContext({ id: 'session-attacker', socket }));
         const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
             outbox: new InMemoryQueueBox(),
             socket: server,
             name: 'server-1'
@@ -46,6 +45,7 @@ describe('WS server inbound identity', () => {
             expect(received).toEqual([matching]);
         }
         finally {
+            service.dispose();
             consoleError.mockRestore();
         }
     });
@@ -55,8 +55,7 @@ describe('WS server inbound identity', () => {
         const socket = new FakeSocket();
         server.addConnection(new ConnectionContext({ id: 'session-1', socket }));
         const admittedMessages: ALMessage[] = [];
-        createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
+        const service = createDefaultWsQueueBoxServerService({
             outbox: new InMemoryQueueBox(),
             socket: server,
             name: 'server-1',
@@ -84,6 +83,7 @@ describe('WS server inbound identity', () => {
             expect(admittedMessages).toEqual([]);
         }
         finally {
+            service.dispose();
             consoleError.mockRestore();
         }
     });

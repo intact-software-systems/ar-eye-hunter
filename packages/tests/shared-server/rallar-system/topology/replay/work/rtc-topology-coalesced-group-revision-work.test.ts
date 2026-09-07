@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
@@ -223,9 +224,11 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             dequeueAudit: { attempts: 1 }
         };
         expect(
-            isIdempotentHandlerFinalizedRelease(finalized, reserved, {
-                status: EntityStatus.COMPLETED,
-                delayMs: null
+            isIdempotentHandlerFinalizedRelease({
+                current: finalized,
+                reserved,
+                disposition: { status: EntityStatus.COMPLETED, delayMs: null },
+                observedAt: Temporal.Instant.fromEpochMilliseconds(unexpiredBaseEpochMs + 1_000)
             })
         ).toBe(true);
     });

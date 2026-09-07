@@ -89,40 +89,20 @@ export interface InitialiseRtcRxStreamerInput {
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
     readonly qboxEngine: InboxOutboxEngine;
     readonly clientData: ClientInfo;
-    readonly resilience: ResilienceDto;
 }
 
 export function initialiseRtcRxStreamer(
     input: InitialiseRtcRxStreamerInput
 ): WebRtcRxStreamerService {
-    const { webRtcOverlayMulticastManager, qboxEngine, clientData, resilience } = input;
-    const rtcRxStreamer = createDefaultWebRtcRxStreamerService({
-        inbox: createBrowserQueueBox(`rtc-inbox-${clientData.sessionId}`),
+    const { webRtcOverlayMulticastManager, qboxEngine, clientData } = input;
+    return createDefaultWebRtcRxStreamerService({
+        queueEngine: qboxEngine,
         multicast: webRtcOverlayMulticastManager,
         sessionId: clientData.sessionId,
         inboundStores: resolveBrowserRtcRxALInboundRuntimeStores(clientData.sessionId),
         nowEpochMs: Date.now,
         heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs }
     });
-
-    qboxEngine.includeTask(
-        WebRtcRxStreamerService.ENQUEUE_TYPE,
-        {
-            name: WebRtcRxStreamerService.ENQUEUE_TYPE,
-            maxConcurrency: () => 1,
-            isWork: () =>
-                rtcRxStreamer
-                    .inbox
-                    .isAnyEntryToLock(
-                        WebRtcRxStreamerService.INBOX_DEQUEUE_TYPES,
-                        resilience.toWorkAdvertisementOptions()
-                    ),
-            runnable: () => rtcRxStreamer.dequeueInbox(WebRtcRxStreamerService.INBOX_DEQUEUE_TYPES, resilience),
-            ongoingTasks: []
-        }
-    );
-
-    return rtcRxStreamer;
 }
 
 export interface InitialiseRtcConnectionServiceInput {

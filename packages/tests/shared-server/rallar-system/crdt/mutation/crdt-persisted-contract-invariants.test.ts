@@ -1,7 +1,8 @@
 import {
     describe,
     expect,
-    it
+    it,
+    onTestFinished
 } from 'vitest';
 
 import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
@@ -148,11 +149,11 @@ describe('CRDT persisted mutation contract invariants', () => {
     it('never configures update topics for live-only fanout without mutation ingress', () => {
         const socket = new JsonWebSocketServer();
         const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
             outbox: new InMemoryQueueBox(),
             socket: socket,
             name: 'server-1'
         });
+        onTestFinished(() => service.dispose());
         const bridge = installRallarCrdtWsTopics(new RallarServerWsRouter(service));
 
         expect(

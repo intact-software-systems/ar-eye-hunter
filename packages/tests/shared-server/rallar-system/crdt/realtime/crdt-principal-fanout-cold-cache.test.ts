@@ -1,7 +1,8 @@
 import {
     describe,
     expect,
-    it
+    it,
+    onTestFinished
 } from 'vitest';
 
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
@@ -54,7 +55,6 @@ describe('CRDT principal fanout from a cold cache', () => {
         }
         const queue = new InMemoryQueueBox();
         const service = createDefaultWsQueueBoxServerService({
-            inbox: queue,
             outbox: queue,
             socket: webSocketServer,
             name: 'server-1',
@@ -63,6 +63,7 @@ describe('CRDT principal fanout from a cold cache', () => {
                 now: () => NOW
             })
         });
+        onTestFinished(() => service.dispose());
         const message = principalMessage();
 
         expect(service.sendToTargetsWithResult(message).sentCount).toBe(0);

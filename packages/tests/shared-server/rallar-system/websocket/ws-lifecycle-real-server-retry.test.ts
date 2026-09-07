@@ -2,6 +2,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -17,11 +18,11 @@ describe('real websocket close lifecycle retry ownership', () => {
         const oldSocket = new CloseSocket();
         const newSocket = new CloseSocket();
         const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
             name: 'server-1'
         });
+        onTestFinished(() => service.dispose());
         const oldFailure = Promise.withResolvers<void>();
         const oldStarted = Promise.withResolvers<void>();
         const trusted = new Set(['session-1:generation-old', 'session-1:generation-new']);
@@ -56,6 +57,7 @@ describe('real websocket close lifecycle retry ownership', () => {
                     }
                 }
             });
+            onTestFinished(() => runtime.stop());
             server.addConnection(server.createConnectionContext(
                 { id: 'session-1', socket: oldSocket, generationId: 'generation-old', observedAtEpochMs: 1_000 }
             ));
@@ -74,7 +76,6 @@ describe('real websocket close lifecycle retry ownership', () => {
             expect(runtime.getPendingCloseCount()).toBe(0);
             expect(scheduled).toEqual([]);
             expect(trusted).toEqual(new Set());
-            runtime.stop();
         }
         finally {
             process.off('unhandledRejection', onUnhandled);
@@ -90,11 +91,11 @@ describe('real websocket close lifecycle retry ownership', () => {
         );
         const durableRows = new InMemoryQueueBox(new Map());
         const service = createDefaultWsQueueBoxServerService({
-            inbox: durableRows,
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
             name: 'server-1'
         });
+        onTestFinished(() => service.dispose());
         const trusted = new Set([closeKey(connection)]);
         const scheduled: Array<() => Promise<void>> = [];
         let clientAttempts = 0;
@@ -130,6 +131,7 @@ describe('real websocket close lifecycle retry ownership', () => {
                     }
                 }
             });
+            onTestFinished(() => runtime.stop());
             server.addConnection(connection);
 
             socket.dispatchClose();
@@ -154,7 +156,6 @@ describe('real websocket close lifecycle retry ownership', () => {
             );
             expect(trusted).toEqual(new Set());
             expect(runtime.getPendingCloseCount()).toBe(0);
-            runtime.stop();
         }
         finally {
             process.off('unhandledRejection', onUnhandled);
@@ -168,12 +169,12 @@ describe('real websocket close lifecycle retry ownership', () => {
         const newSocket = new CloseSocket();
         const closed: string[] = [];
         const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(new Map()),
             outbox: new InMemoryQueueBox(new Map()),
             socket: server,
             name: 'server-1'
         });
-        initWsLifecycle(service, {
+        onTestFinished(() => service.dispose());
+        const runtime = initWsLifecycle(service, {
             now: () => 1_100,
             enqueueClientSessionDisconnect: (input) => {
                 closed.push(`client:${input.generationId}`);
@@ -190,6 +191,7 @@ describe('real websocket close lifecycle retry ownership', () => {
                 schedule: () => () => undefined
             }
         });
+        onTestFinished(() => runtime.stop());
         server.addConnection(server.createConnectionContext(
             { id: 'session-1', socket: oldSocket, generationId: 'generation-old', observedAtEpochMs: 1_000 }
         ));

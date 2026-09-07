@@ -62,17 +62,7 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'decodeResourceEntryRecord'
     }),
     Object.freeze({
-        path: 'packages/shared/alm/inbound/al-inbound-durable-effect-codec.ts',
-        rule: 'boundary.unknown',
-        symbol: 'assertControlMessage'
-    }),
-    Object.freeze({
         path: 'packages/shared/alm/indexed-db-admission-backend.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/tests/shared/alm/al-inbound-persistence-validation.test.ts',
         rule: 'boundary.unknown',
         symbol: undefined
     }),

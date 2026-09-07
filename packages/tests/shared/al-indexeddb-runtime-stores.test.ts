@@ -11,6 +11,7 @@ import {
 
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
+import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
@@ -18,6 +19,7 @@ import {
     ALOutboundMessageRuntime,
     createDefaultIndexedDbALInboundRuntimeStores,
     createDefaultIndexedDbALOutboundRuntimeStores,
+    EntityStatus,
     IndexedDbQueueBox,
     IndexedDbStringPersistenceProvider,
     InMemoryQueueBox,
@@ -43,10 +45,13 @@ import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbo
 
 describe('IndexedDB AL runtime stores', () => {
     afterEach(() => {
+        vi.restoreAllMocks();
         vi.useRealTimers();
     });
 
     it('keeps the default AL schema separate from generic persistence', async () => {
+        onTestFinished(() => deleteTestDatabase('rallar-al-runtime'));
+        onTestFinished(() => deleteTestDatabase(IndexedDbStringPersistenceProvider.DEFAULT_DB_NAME));
         const persistence = new IndexedDbStringPersistenceProvider<string>();
         await persistence.setItem(
             'generic-entry',
@@ -64,10 +69,12 @@ describe('IndexedDB AL runtime stores', () => {
                 observations: (await readInboundAdmission(inboundStores.admissionStore, message)).observations,
                 mutations: [{
                     kind: 'set-msg-owner',
-                    msgId: 'message-default-schema',
-                    senderId: 'peer-default-schema',
-                    source: { kind: 'ws-client', peerId: 'peer-default-schema' },
-                    supersedenceKey: null,
+                    value: {
+                        msgId: 'message-default-schema',
+                        senderId: 'peer-default-schema',
+                        source: { kind: 'ws-client', peerId: 'peer-default-schema' },
+                        supersedenceKey: null
+                    },
                     expireAtTimestamp: Date.now() + 60_000
                 }]
             })
@@ -77,7 +84,7 @@ describe('IndexedDB AL runtime stores', () => {
     });
 
     it('keeps inbound dedup state across runtime instances', async () => {
-        const dbName = `al-runtime-${crypto.randomUUID()}`;
+        const dbName = createTestDatabaseName();
         const namespace = 'ws-client';
         const dispatchedMsgIds: string[] = [];
         const msg = newALUnicastMessage(
@@ -111,7 +118,7 @@ describe('IndexedDB AL runtime stores', () => {
     });
 
     it('releases buffered ordered messages after restart', async () => {
-        const dbName = `al-runtime-${crypto.randomUUID()}`;
+        const dbName = createTestDatabaseName();
         const namespace = 'rtc-inbound';
         const dispatchedMsgIds: string[] = [];
         const runtime1 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
@@ -120,17 +127,19 @@ describe('IndexedDB AL runtime stores', () => {
 
         await runtime1.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([]);
+        runtime1.dispose();
 
         const runtime2 = createDefaultInboundRuntime({ dbName: dbName, namespace: namespace, dispatchedMsgIds: dispatchedMsgIds });
         await runtime2.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
-        expect(dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
+        await expect.poll(() => dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
     });
 
     it('keeps admission state and inbox queue data in owner-specific databases', async () => {
-        const dbName = `al-runtime-${crypto.randomUUID()}`;
+        const dbName = createTestDatabaseName();
         const namespace = 'shared-browser-db';
         const inboxStoreName = 'queuebox:inbox';
+        onTestFinished(() => deleteTestDatabase(`${dbName}:${inboxStoreName}`));
         const inbox = new IndexedDbQueueBox({
             dbName: `${dbName}:${inboxStoreName}`,
             storeName: inboxStoreName
@@ -138,7 +147,7 @@ describe('IndexedDB AL runtime stores', () => {
         const dispatchedMsgIds: string[] = [];
         const runtime = createDefaultALInboundMessageRuntime({
             selfPeerId: 'self',
-            inbox,
+
             stores: createDefaultIndexedDbALInboundRuntimeStores({
                 dbName,
                 namespace
@@ -181,22 +190,18 @@ describe('IndexedDB AL runtime stores', () => {
     });
 
     it('persists inbound local-inbox effects without leaking Temporal values into IndexedDB', async () => {
-        const dbName = `al-runtime-${crypto.randomUUID()}`;
+        const dbName = createTestDatabaseName();
         const namespace = 'rtc-inbound-local-inbox';
         const stores = createDefaultIndexedDbALInboundRuntimeStores({
             dbName,
             namespace
         });
+        const pausedClaims = vi.spyOn(stores.admissionStore, 'claimReadyEffects').mockResolvedValue([]);
         const runtime = createDefaultInboundRuntime({
             dbName: dbName,
             namespace: namespace,
             dispatchedMsgIds: [],
-            stores: {
-                ...stores,
-                admissionStore: createFlakyInboundAdmissionStore(stores.admissionStore, {
-                    claimReadyEffects: async () => []
-                })
-            }
+            stores
         });
         const msg = newALUnicastMessage(
             'peer-1',
@@ -221,36 +226,41 @@ describe('IndexedDB AL runtime stores', () => {
 
         await runtime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         runtime.dispose();
+        pausedClaims.mockRestore();
 
-        const claimed = await stores.admissionStore.claimReadyEffects({
-            workerId: 'inspector',
-            maxCount: 10,
-            leaseMs: 1_000,
-            nowMs: Date.now()
+        const page = await stores.admissionStore.workQueue.readWorkPage({
+            typeId: toALInboundWorkType(stores.admissionStore.namespace),
+            status: EntityStatus.NEW,
+            maxToRead: 10,
+            cursor: null
         });
-        const inboxEffect = claimed.find((effect) => effect.payload.kind === 'enqueue-inbox');
+        const claimed = await stores.admissionStore.claimReadyEffects({
+            maxCount: 10,
+            entries: page.entries
+        });
+        const delivery = claimed.find((effect) => effect.payload.kind === 'dispatch-local');
 
-        expect(inboxEffect).toBeDefined();
-        expect(inboxEffect?.payload.kind).toBe('enqueue-inbox');
-        if (!inboxEffect || inboxEffect.payload.kind !== 'enqueue-inbox') {
-            throw new Error('Expected an enqueue-inbox effect');
+        expect(delivery).toBeDefined();
+        expect(delivery?.payload.kind).toBe('dispatch-local');
+        if (!delivery || delivery.payload.kind !== 'dispatch-local') {
+            throw new Error('Expected admitted local delivery work');
         }
 
-        expect(JSON.parse(inboxEffect.payload.entry.resource)).toMatchObject({
+        expect(JSON.parse(delivery.payload.entry.resource)).toMatchObject({
             id: {
                 msgId: msg.id.msgId
             }
         });
-        expect(typeof inboxEffect.payload.entry.audit.date).toBe('object');
-        expect(typeof inboxEffect.payload.entry.audit.createdTs).toBe('object');
-        expect(typeof inboxEffect.payload.entry.audit.expiryTs).toBe('object');
+        expect(typeof delivery.payload.entry.audit.date).toBe('object');
+        expect(typeof delivery.payload.entry.audit.createdTs).toBe('object');
+        expect(typeof delivery.payload.entry.audit.expiryTs).toBe('object');
     });
 
     it('expires inbound control history and message provenance before rejecting late controls', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
-        const dbName = `al-runtime-${crypto.randomUUID()}`;
+        const dbName = createTestDatabaseName();
         const namespace = 'rtc-inbound-retention';
         const stores = createDefaultIndexedDbALInboundRuntimeStores({
             dbName,
@@ -282,10 +292,12 @@ describe('IndexedDB AL runtime stores', () => {
                 mutations: [
                     {
                         kind: 'set-msg-owner',
-                        msgId: msg.id.msgId,
-                        senderId: msg.id.senderId,
-                        source: { kind: 'ws-client', peerId: msg.id.senderId },
-                        supersedenceKey: null,
+                        value: {
+                            msgId: msg.id.msgId,
+                            senderId: msg.id.senderId,
+                            source: { kind: 'ws-client', peerId: msg.id.senderId },
+                            supersedenceKey: null
+                        },
                         expireAtTimestamp: Date.now() + 20
                     },
                     {
@@ -374,7 +386,7 @@ describe('IndexedDB AL runtime stores', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
-        const dbName = `al-runtime-${crypto.randomUUID()}`;
+        const dbName = createTestDatabaseName();
         const namespace = 'rtc-outbound-retention-defaults';
         const sent: Array<OutboundTestPayload> = [];
         const stores = createDefaultIndexedDbALOutboundRuntimeStores({
@@ -398,7 +410,7 @@ describe('IndexedDB AL runtime stores', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
-        const dbName = `al-runtime-${crypto.randomUUID()}`;
+        const dbName = createTestDatabaseName();
         const namespace = 'rtc-outbound-retention-ephemeral';
         const stores = createDefaultIndexedDbALOutboundRuntimeStores({
             dbName,
@@ -470,7 +482,7 @@ describe('IndexedDB AL runtime stores', () => {
     });
 
     it('retransmits cached ordered outbound messages after restart', async () => {
-        const dbName = `al-runtime-${crypto.randomUUID()}`;
+        const dbName = createTestDatabaseName();
         const namespace = 'rtc-outbound';
         const sent: Array<OutboundTestPayload> = [];
         const runtime1 = createDefaultOutboundRuntime({ dbName: dbName, namespace: namespace, sent: sent });
@@ -540,7 +552,7 @@ describe('IndexedDB AL runtime stores', () => {
     });
 
     it('drains committed outbound effects from IndexedDB after restart', async () => {
-        const dbName = `al-runtime-${crypto.randomUUID()}`;
+        const dbName = createTestDatabaseName();
         const namespace = 'rtc-outbound-crash-before-drain';
         const sent: Array<OutboundTestPayload> = [];
         const stores = createDefaultIndexedDbALOutboundRuntimeStores({
@@ -575,7 +587,7 @@ describe('IndexedDB AL runtime stores', () => {
     });
 
     it('lets only one runtime claim the same IndexedDB outbound effect', async () => {
-        const dbName = `al-runtime-${crypto.randomUUID()}`;
+        const dbName = createTestDatabaseName();
         const namespace = 'rtc-outbound-single-claim';
         const sent: Array<OutboundTestPayload> = [];
         const stores = createDefaultIndexedDbALOutboundRuntimeStores({
@@ -631,7 +643,7 @@ describe('IndexedDB AL runtime stores', () => {
     it('does not repair from IndexedDB when an acknowledgement is accepted while timeout is claimed', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
-        const dbName = `al-runtime-${crypto.randomUUID()}`;
+        const dbName = createTestDatabaseName();
         const namespace = 'rtc-outbound-ack-timeout-race';
         const sent: Array<OutboundTestPayload> = [];
         const stores = createDefaultIndexedDbALOutboundRuntimeStores({
@@ -727,7 +739,7 @@ function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput) {
     const { dbName, namespace, dispatchedMsgIds } = input;
     const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'self',
-        inbox: new InMemoryQueueBox(new Map()),
+
         stores: input.stores ?? createDefaultIndexedDbALInboundRuntimeStores({
             dbName,
             namespace
@@ -757,35 +769,6 @@ function createInboundPlanner(): ALInboundPlanner {
             fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
             ...observations
         });
-}
-
-function createFlakyInboundAdmissionStore(
-    inner: ALInboundAdmissionStore,
-    hooks: Partial<Pick<ALInboundAdmissionStore, 'claimReadyEffects' | 'commitBundle' | 'commitMutations'>>
-): ALInboundAdmissionStore {
-    return {
-        ready: () => inner.ready(),
-        readIncomingMessage: (input) => inner.readIncomingMessage(input),
-        readBufferedRelease: (input) => inner.readBufferedRelease(input),
-        readDeliveryPredecessors: (trackKey, beforeSeq) => inner.readDeliveryPredecessors(trackKey, beforeSeq),
-        readStoredPlanningState: (input) => inner.readStoredPlanningState(input),
-        commitMutations: (request) =>
-            hooks.commitMutations
-                ? hooks.commitMutations(request)
-                : inner.commitMutations(request),
-        commitBundle: (bundle) =>
-            hooks.commitBundle
-                ? hooks.commitBundle(bundle)
-                : inner.commitBundle(bundle),
-        claimReadyEffects: (input) =>
-            hooks.claimReadyEffects
-                ? hooks.claimReadyEffects(input)
-                : inner.claimReadyEffects(input),
-        completeEffect: (effectId, workerId) => inner.completeEffect(effectId, workerId),
-        rescheduleEffect: (input) => inner.rescheduleEffect(input),
-        peekNextEffectReadyAt: () => inner.peekNextEffectReadyAt(),
-        acceptControlMessage: (msg) => inner.acceptControlMessage(msg)
-    };
 }
 
 interface IndexedDbOutboundFixtureInput {
@@ -908,5 +891,20 @@ async function readInboundAdmission(store: ALInboundAdmissionStore, msg: ALMessa
         source,
         nowMs,
         prePlan: createInboundPlanner()(msg, source, { nowMs })
+    });
+}
+
+function createTestDatabaseName(): string {
+    const dbName = `al-runtime-${crypto.randomUUID()}`;
+    onTestFinished(() => deleteTestDatabase(dbName));
+    return dbName;
+}
+
+function deleteTestDatabase(dbName: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const deletion = indexedDB.deleteDatabase(dbName);
+        deletion.onsuccess = () => resolve();
+        deletion.onerror = () => reject(deletion.error);
+        deletion.onblocked = () => reject(new Error('Owned runtime test database deletion is blocked'));
     });
 }

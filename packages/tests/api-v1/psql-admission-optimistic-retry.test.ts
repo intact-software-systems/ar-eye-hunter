@@ -49,10 +49,12 @@ describe('PSql admission optimistic retry', () => {
             observations: (await readIncoming(store, message)).observations,
             mutations: [{
                 kind: 'set-msg-owner',
-                msgId: 'inbound-conflict',
-                senderId: 'peer-1',
-                source: { kind: 'ws-client', peerId: 'peer-1' },
-                supersedenceKey: null,
+                value: {
+                    msgId: 'inbound-conflict',
+                    senderId: 'peer-1',
+                    source: { kind: 'ws-client', peerId: 'peer-1' },
+                    supersedenceKey: null
+                },
                 expireAtTimestamp: Date.now() + 60_000
             }]
         })).resolves.toBe('conflict');
@@ -77,10 +79,12 @@ describe('PSql admission optimistic retry', () => {
             observations: (await readIncoming(store, message)).observations,
             mutations: [{
                 kind: 'set-msg-owner',
-                msgId: 'inbound-error',
-                senderId: 'peer-1',
-                source: { kind: 'ws-client', peerId: 'peer-1' },
-                supersedenceKey: null,
+                value: {
+                    msgId: 'inbound-error',
+                    senderId: 'peer-1',
+                    source: { kind: 'ws-client', peerId: 'peer-1' },
+                    supersedenceKey: null
+                },
                 expireAtTimestamp: Date.now() + 60_000
             }]
         })).rejects.toThrow('inbound storage unavailable');
@@ -105,7 +109,7 @@ describe('PSql admission optimistic retry', () => {
         const deliveredMessageIds: string[] = [];
         const runtime = createDefaultALInboundMessageRuntime({
             selfPeerId: 'self',
-            inbox: new InMemoryQueueBox(new Map()),
+
             stores: {
                 admissionStore: createALInboundAdmissionStore({
                     namespace: `${namespace}:inbound:admission`,

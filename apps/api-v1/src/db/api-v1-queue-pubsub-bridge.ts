@@ -1,7 +1,4 @@
-import type {
-    QueueBoxPubSubBridge,
-    QueueBoxPubSubDelivery
-} from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
+import type { QueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import type { ApiV1DatabaseConfiguration } from '../configuration/api-v1-configuration.ts';
 import type { ApiV1DatabaseNotificationPort } from './api-v1-database-lifecycle.ts';
 import { createPostgresQueuePubSubBridge } from './create-postgres-queue-pub-sub-bridge.ts';
@@ -41,10 +38,4 @@ export function shouldInstallQueuePubSubBridge(
     mode: ApiV1DatabaseConfiguration['pubSub']
 ): boolean {
     return mode !== 'disabled';
-}
-
-export function queuePubSubDeliveryForMode(
-    mode: ApiV1DatabaseConfiguration['pubSub']
-): QueueBoxPubSubDelivery {
-    return mode === 'postgres' ? 'key' : 'entry';
 }

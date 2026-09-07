@@ -3,6 +3,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -105,7 +106,11 @@ function createMediaFixture(): MediaFixture {
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter()
     });
-    const service = createDefaultWebRtcRxStreamerService({ inbox: new InMemoryQueueBox(new Map()), multicast, sessionId: 'self' });
+    const service = createDefaultWebRtcRxStreamerService({ multicast, sessionId: 'self' });
+    onTestFinished(() => {
+        service.dispose();
+        multicast.dispose();
+    });
     service.setRttReportingPeerIds([]);
     return { service, ...createMediaPeerFixture() };
 }

@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { hasSameResourceEntryValue } from './has-same-resource-entry-value.ts';
+import { Either } from '../resilience/Either.ts';
 import type { StoredResourceEntry } from './indexed-db-queue-box-entry-codec.ts';
 import {
     computeIndexedDbQueuePut,
@@ -11,6 +11,7 @@ import {
     ResourceInboxLostReservationError,
     type ResourceInboxReleaseDisposition
 } from './queue-box-types.ts';
+import { hasSameResourceEntryValue } from './resource-entry-observations.ts';
 import { EntityStatus, toKeyAsString, type Key, type ResourceEntry } from './ResourceEntry.ts';
 
 type ComputeIndexedDbQueueReleaseInput = Readonly<{
@@ -28,7 +29,7 @@ type ComputedIndexedDbQueueRelease = Readonly<{
 
 export function computeIndexedDbQueueRelease(
     input: ComputeIndexedDbQueueReleaseInput
-): ComputedIndexedDbQueueRelease {
+): Either<ResourceInboxLostReservationError, ComputedIndexedDbQueueRelease> {
     const result = new Map<Key, ResourceEntry>();
     const mutations: ComputedIndexedDbQueueMutation[] = [];
     for (const resource of input.resources) {
@@ -43,12 +44,19 @@ export function computeIndexedDbQueueRelease(
                     stored.status !== EntityStatus.RESERVED ||
                     !hasSameResourceEntryValue(current, resource)
                 ) &&
-                !isIdempotentHandlerFinalizedRelease(current, resource, input.disposition)
+                !isIdempotentHandlerFinalizedRelease({
+                    current,
+                    reserved: resource,
+                    disposition: input.disposition,
+                    observedAt: input.releasedAt
+                })
             )
         ) {
-            throw new ResourceInboxLostReservationError(
-                resource.key,
-                resource.dequeueAudit.attempts
+            return Either.ofLeft(
+                new ResourceInboxLostReservationError(
+                    resource.key,
+                    resource.dequeueAudit.attempts
+                )
             );
         }
         if (current.status !== EntityStatus.RESERVED) {
@@ -70,5 +78,5 @@ export function computeIndexedDbQueueRelease(
         result.set(updated.key, updated);
         mutations.push(computeIndexedDbQueuePut(stored, updated));
     }
-    return { mutations, result };
+    return Either.ofRight({ mutations, result });
 }

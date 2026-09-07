@@ -11,8 +11,10 @@ import {
 } from '../compute-al-supersedence-observation.ts';
 import type {
     ALInboundBufferedReleaseReadDto,
+    ALInboundOrderedDeliveryRead,
     ALInboundSupersedenceReadState
 } from './al-inbound-admission-store.ts';
+import type { ALInboundOrderedDelivery } from './al-inbound-ordered-delivery.ts';
 
 export interface ALInboundPlannerSnapshot {
     readonly msg: ALMessage;
@@ -148,4 +150,26 @@ function canRetainOrderedMessage(read: ALInboundPlannerSnapshot): boolean {
         }
     }
     return bytes <= AL_MESSAGE_RESOURCE_LIMITS.bufferedBytes;
+}
+
+export interface ALInboundPredecessorRead {
+    readonly orderedDelivery: ALInboundOrderedDeliveryRead;
+    readonly seq: number;
+}
+
+export function computeALInboundPredecessorReadiness(
+    read: ALInboundPredecessorRead
+): ALInboundOrderedDelivery.Readiness {
+    const { orderedDelivery, seq } = read;
+    if (seq <= orderedDelivery.completedThrough) {
+        return { kind: 'completed' };
+    }
+    const predecessor = orderedDelivery.predecessor;
+    if (predecessor === undefined) {
+        return { kind: 'ready' };
+    }
+    if (predecessor.kind === 'effect') {
+        return { kind: 'waiting' };
+    }
+    return { kind: 'resync-required', completedThrough: orderedDelivery.completedThrough };
 }

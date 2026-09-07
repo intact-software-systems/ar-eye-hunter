@@ -1,4 +1,4 @@
-import { hasSameResourceEntryValue } from '@shared/queuebox/has-same-resource-entry-value.ts';
+import { hasSameResourceEntryValue } from '@shared/queuebox/resource-entry-observations.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
@@ -439,19 +439,32 @@ function validateResourceInboxPendingReplacement(
     next: ResourceEntry,
     expectedGeneration: number
 ): Either<string, ResourceEntry> {
-    return (
-            expected.key.topicId !== next.key.topicId ||
-            expected.key.resourceId !== next.key.resourceId ||
-            expected.key.contextId !== next.key.contextId ||
-            expected.typeId !== next.typeId ||
-            !([EntityStatus.NEW, EntityStatus.RETRY] as readonly EntityStatus[])
-                .includes(expected.status) ||
-            !([EntityStatus.NEW, EntityStatus.RETRY] as readonly EntityStatus[])
-                .includes(next.status) ||
-            next.dequeueAudit.attempts !== expected.dequeueAudit.attempts ||
-            !Number.isSafeInteger(expectedGeneration) ||
-            expectedGeneration < 1
-        )
-        ? Either.ofLeft('Resource inbox pending replacement identity or lifecycle differs')
+    const issues: string[] = [];
+    if (expected.key.topicId !== next.key.topicId) {
+        issues.push('Topic identity differs');
+    }
+    if (expected.key.resourceId !== next.key.resourceId) {
+        issues.push('Resource identity differs');
+    }
+    if (expected.key.contextId !== next.key.contextId) {
+        issues.push('Context identity differs');
+    }
+    if (expected.typeId !== next.typeId) {
+        issues.push('Entry type differs');
+    }
+    if (expected.status !== EntityStatus.NEW && expected.status !== EntityStatus.RETRY) {
+        issues.push('Observed entry must be NEW or RETRY');
+    }
+    if (next.status !== EntityStatus.NEW && next.status !== EntityStatus.RETRY) {
+        issues.push('Replacement entry must be NEW or RETRY');
+    }
+    if (next.dequeueAudit.attempts !== expected.dequeueAudit.attempts) {
+        issues.push('Attempt count differs');
+    }
+    if (!Number.isSafeInteger(expectedGeneration) || expectedGeneration < 1) {
+        issues.push('Observed generation must be a positive safe integer');
+    }
+    return issues.length > 0
+        ? Either.ofLeft(`Resource inbox pending replacement is invalid: ${issues.join('; ')}`)
         : Either.ofRight(next);
 }

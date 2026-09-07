@@ -1,5 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { normalizeALQosPolicy, resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import { assertValidRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
+import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
     RallarServerWsFanout,
@@ -119,15 +121,8 @@ export class RallarServerWsTopicRegistry {
             if (!matchesRallarServerWsSelector(registered.selector, message.raw)) {
                 continue;
             }
-            try {
-                await registered.handler(message, context);
-            }
-            catch (error) {
-                console.error(
-                    `Error in Rallar WS handler for ${toSelectorKey(registered.selector)}`,
-                    error
-                );
-            }
+            this.requireDeliveryTime(message.raw);
+            await registered.handler(message, context);
         }
     }
 
@@ -139,16 +134,8 @@ export class RallarServerWsTopicRegistry {
             if (!matchesRallarServerWsSelector(rule.from, input.message.raw)) {
                 continue;
             }
-            try {
-                suppressDefaultFanout = await this.dispatchProxyRule(
-                    rule,
-                    input,
-                    suppressDefaultFanout
-                );
-            }
-            catch (error) {
-                console.error(`Error in Rallar WS proxy for ${toSelectorKey(rule.from)}`, error);
-            }
+            this.requireDeliveryTime(input.message.raw);
+            suppressDefaultFanout = await this.dispatchProxyRule(rule, input, suppressDefaultFanout);
         }
         return suppressDefaultFanout;
     }
@@ -161,20 +148,30 @@ export class RallarServerWsTopicRegistry {
         if (rule.authorize && !await rule.authorize(input.message, input.context)) {
             return suppressDefaultFanout;
         }
+        this.requireDeliveryTime(input.message.raw);
         const transformed = rule.transform
             ? await rule.transform(input.message, input.context)
             : input.message.raw;
+        this.requireDeliveryTime(input.message.raw);
         const targets = rule.targets
             ? await rule.targets(input.message, input.context)
             : transformed.targets;
         if (!targets) {
             return suppressDefaultFanout;
         }
+        this.requireDeliveryTime(input.message.raw);
         await input.publish(
             { ...transformed, targets },
             rule.fanout ?? input.context.definition?.fanout ?? input.defaultFanout
         );
         return suppressDefaultFanout || (rule.suppressDefaultFanout ?? false);
+    }
+
+    private requireDeliveryTime(message: ALMessage): void {
+        const expiresAtMs = resolveALMessageExpireAtMs(message, normalizeALQosPolicy(message).effective);
+        if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
+            throw new NonRetryableException('Inbound message expired before its next application action');
+        }
     }
 }
 

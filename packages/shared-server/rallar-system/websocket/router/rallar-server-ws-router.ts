@@ -104,7 +104,11 @@ export class RallarServerWsRouter {
             authorize: async (message) => await this.authorizeBeforeAdmission(message)
         });
         this.service.onAnyInboxMessageDo(ROUTER_CALLBACK_ID, {
-            onMessage: async (message, _entry, context) => await this.route(message, context.source)
+            onMessage: async (message, entry, context) =>
+                await this.route(
+                    computeAdmittedRallarServerWsMessage(message, entry.audit.expiryTs.epochMilliseconds),
+                    context.source
+                )
         });
         this.installed = true;
         return this;
@@ -429,4 +433,15 @@ function toRallarServerWsMessage<T extends RallarServerWsPayload>(
     receivedAtEpochMs: number
 ): RallarServerWsMessage<T> {
     return { payload, raw, receivedAtEpochMs };
+}
+
+/** Carries the retained admission deadline into handlers and downstream publications. */
+function computeAdmittedRallarServerWsMessage(message: ALMessage, expiresAtMs: number): ALMessage {
+    return {
+        ...message,
+        constraints: {
+            ...message.constraints,
+            expiresAtMs: Math.min(message.constraints?.expiresAtMs ?? expiresAtMs, expiresAtMs)
+        }
+    };
 }

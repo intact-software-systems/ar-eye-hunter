@@ -1,7 +1,9 @@
 import {
+    decodeALAdmissionArray,
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
+import type { ALInboundControlOwnerIndex, ALInboundMessageOwner } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 
 export const AL_INBOUND_PROVENANCE_LIMITS = {
@@ -56,4 +58,63 @@ function decodeFrozenRoomAudience(value: unknown): readonly string[] {
         audience.push(peerId);
     }
     return audience;
+}
+
+export interface ALInboundMessageOwnerSlot {
+    readonly namespace: string;
+    readonly key: string;
+    readonly expectedMsgId: string;
+    readonly expectedSenderId: string;
+}
+
+export function toALInboundMessageOwnerKey(namespace: string, msgId: string, senderId: string): string {
+    return `${namespace}:msg-owner:${encodeURIComponent(msgId)}:${encodeURIComponent(senderId)}`;
+}
+
+export function decodeALInboundMessageOwner(value: unknown, slot: ALInboundMessageOwnerSlot): ALInboundMessageOwner {
+    const owner = decodeALAdmissionRecord(value, ['msgId', 'senderId', 'source', 'supersedenceKey']);
+    const msgId = decodeALAdmissionString(owner.msgId);
+    const senderId = decodeALAdmissionString(owner.senderId);
+    if (
+        msgId !== slot.expectedMsgId || senderId !== slot.expectedSenderId ||
+        slot.key !== toALInboundMessageOwnerKey(slot.namespace, msgId, senderId)
+    ) {
+        throw new TypeError('Stored inbound message owner identity does not match its slot');
+    }
+    if (owner.supersedenceKey !== null && typeof owner.supersedenceKey !== 'string') {
+        throw new TypeError('Stored inbound message owner supersedence key is invalid');
+    }
+    return {
+        msgId,
+        senderId,
+        source: decodeALInboundSource(owner.source),
+        supersedenceKey: owner.supersedenceKey
+    };
+}
+
+export function decodeALInboundControlOwnerIndex(value: unknown): ALInboundControlOwnerIndex {
+    const record = decodeALAdmissionRecord(value, ['ambiguous', 'values']);
+    if (typeof record.ambiguous !== 'boolean') {
+        throw new TypeError('Stored inbound control owner ambiguity is invalid');
+    }
+    const peerIds = new Set<string>();
+    const values = decodeALAdmissionArray(record.values, (entry) => {
+        const owner = decodeALAdmissionRecord(entry, ['peerId', 'senderId']);
+        const peerId = decodeALAdmissionString(owner.peerId);
+        if (
+            peerId.length === 0 || peerIds.has(peerId) ||
+            (owner.senderId !== null && (typeof owner.senderId !== 'string' || owner.senderId.length === 0))
+        ) {
+            throw new TypeError('Stored inbound control owner entry is invalid');
+        }
+        peerIds.add(peerId);
+        return {
+            peerId,
+            senderId: owner.senderId
+        };
+    });
+    if (record.ambiguous && values.length !== 0) {
+        throw new TypeError('Ambiguous inbound control owner index must not retain entries');
+    }
+    return { ambiguous: record.ambiguous, values };
 }

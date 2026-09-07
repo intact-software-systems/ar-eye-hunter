@@ -3,6 +3,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -436,12 +437,12 @@ describe('direct resource outbox writes', () => {
             }
         ]);
         const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: socket,
             name: 'server-1',
             targetResolver: { resolveBroadcastRecipients }
         });
+        onTestFinished(() => service.dispose());
 
         expect(socket.sent).toEqual([]);
 
@@ -470,13 +471,13 @@ describe('direct resource outbox writes', () => {
         const resolveBroadcastRecipients = vi.fn(() => []);
         const deliveryOutcomes: WsOutboxDeliveryOutcome[] = [];
         const service = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: socket,
             name: 'server-1',
             targetResolver: { resolveBroadcastRecipients },
             outboundDeliveryOutcome: (outcome) => deliveryOutcomes.push(outcome)
         });
+        onTestFinished(() => service.dispose());
         await outbox.enqueue(entry);
         await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
         vi.useRealTimers();

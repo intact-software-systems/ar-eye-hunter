@@ -11,7 +11,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 describe('Rallar middleware queue registration completeness', () => {
     it('does not expose caller-supplied task registration', () => {
@@ -65,16 +65,16 @@ describe('Rallar middleware queue registration completeness', () => {
 function createQueueTaskInput(): RegisterRallarMiddlewareQueueTasksInput {
     const queue = new InMemoryQueueBox();
     const resilience = createResilience();
+    const wsQBoxServerService = createDefaultWsQueueBoxServerService({
+        outbox: queue,
+        socket: new JsonWebSocketServer(),
+        name: 'queue-registration-test'
+    });
+    onTestFinished(() => wsQBoxServerService.dispose());
     return {
-        wsQBoxServerService: createDefaultWsQueueBoxServerService({
-            inbox: queue,
-            outbox: queue,
-            socket: new JsonWebSocketServer(),
-            name: 'queue-registration-test'
-        }),
+        wsQBoxServerService,
         inboxQueueReader: new InboxQueueReader(queue),
         outboxQueueReader: new OutboxQueueReader(queue),
-        wsInboxResilience: resilience,
         wsOutboxResilience: resilience,
         appInboxResilience: resilience,
         appOutboxResilience: resilience

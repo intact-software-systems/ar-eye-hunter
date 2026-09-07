@@ -83,50 +83,55 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const fixture = await createCrdtWebSocketAuthorityFixture(sql);
-            await fixture.addCurrentSession(SESSION_A);
-            await fixture.addCurrentSession(SESSION_B);
+            try {
+                await fixture.addCurrentSession(SESSION_A);
+                await fixture.addCurrentSession(SESSION_B);
 
-            await fixture.send(
-                SESSION_B,
-                message(SESSION_A, 'forged-transport', update('forged-update'))
-            );
-            assert.deepEqual(await readDurableEffects(sql), { mutations: 0, work: 0 });
+                await fixture.send(
+                    SESSION_B,
+                    message(SESSION_A, 'forged-transport', update('forged-update'))
+                );
+                assert.deepEqual(await readDurableEffects(sql), { mutations: 0, work: 0 });
 
-            await fixture.send(SESSION_A, message(SESSION_A, 'transport-1', update('update-1')));
-            await drain(fixture, sql, 1);
+                await fixture.send(SESSION_A, message(SESSION_A, 'transport-1', update('update-1')));
+                await drain(fixture, sql, 1);
 
-            const [persisted] = await sql<PersistedActorRow[]>`
+                const [persisted] = await sql<PersistedActorRow[]>`
             select actor_id, principal_id, session_id from crdt_updates
         `;
-            assert.deepEqual(persisted, {
-                actor_id: CLIENT_ID,
-                principal_id: USERNAME,
-                session_id: SESSION_A
-            });
+                assert.deepEqual(persisted, {
+                    actor_id: CLIENT_ID,
+                    principal_id: USERNAME,
+                    session_id: SESSION_A
+                });
 
-            await fixture.send(SESSION_B, message(SESSION_B, 'transport-2', update('update-1')));
-            await drain(fixture, sql, 2);
-            const replayResults = await readResults(sql);
-            assert.deepEqual(
-                replayResults.map((result) => ({
-                    commandId: result.commandId,
-                    status: result.status
-                })),
-                [
-                    { commandId: 'update-1', status: 'accepted' },
-                    { commandId: 'update-1', status: 'replay' }
-                ]
-            );
+                await fixture.send(SESSION_B, message(SESSION_B, 'transport-2', update('update-1')));
+                await drain(fixture, sql, 2);
+                const replayResults = await readResults(sql);
+                assert.deepEqual(
+                    replayResults.map((result) => ({
+                        commandId: result.commandId,
+                        status: result.status
+                    })),
+                    [
+                        { commandId: 'update-1', status: 'accepted' },
+                        { commandId: 'update-1', status: 'replay' }
+                    ]
+                );
 
-            await fixture.send(SESSION_B, message(SESSION_B, 'transport-3', update('update-2')));
-            await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-            await fixture.revokeAuthSession(SESSION_B);
-            await drain(fixture, sql, 3);
-            const revoked = (await readResults(sql)).at(-1);
-            assert.equal(revoked?.status, 'rejected');
-            assert.match(String(revoked?.code), /authentication|authorization/);
-            const [count] = await sql<CountRow[]>`select count(*) as count from crdt_updates`;
-            assert.equal(Number(count?.count), 1);
+                await fixture.send(SESSION_B, message(SESSION_B, 'transport-3', update('update-2')));
+                await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+                await fixture.revokeAuthSession(SESSION_B);
+                await drain(fixture, sql, 3);
+                const revoked = (await readResults(sql)).at(-1);
+                assert.equal(revoked?.status, 'rejected');
+                assert.match(String(revoked?.code), /authentication|authorization/);
+                const [count] = await sql<CountRow[]>`select count(*) as count from crdt_updates`;
+                assert.equal(Number(count?.count), 1);
+            }
+            finally {
+                fixture.dispose();
+            }
         });
     }
 );
@@ -134,29 +139,35 @@ Deno.test(
 Deno.test('production app-scope authorization rejects a foreign application context', async () => {
     await withPGliteSql(async (sql) => {
         const fixture = await createCrdtWebSocketAuthorityFixture(sql);
-        await fixture.addCurrentSession(SESSION_A);
-        const foreign = {
-            ...DOCUMENT,
-            applicationId: 'foreign-app',
-            documentId: 'foreign-document'
-        };
+        try {
+            await fixture.addCurrentSession(SESSION_A);
+            const foreign = {
+                ...DOCUMENT,
+                applicationId: 'foreign-app',
+                documentId: 'foreign-document'
+            };
 
-        await fixture.send(
-            SESSION_A,
-            message(SESSION_A, 'foreign-transport', update('foreign-update', foreign))
-        );
-        await drain(fixture, sql, 1);
+            await fixture.send(
+                SESSION_A,
+                message(SESSION_A, 'foreign-transport', update('foreign-update', foreign))
+            );
+            await drain(fixture, sql, 1);
 
-        const [result] = await readResults(sql);
-        assert.equal(result?.status, 'rejected');
-        assert.match(String(result?.code), /scope|authorization/);
-        const [count] = await sql<CountRow[]>`select count(*) as count from crdt_updates`;
-        assert.equal(Number(count?.count), 0);
+            const [result] = await readResults(sql);
+            assert.equal(result?.status, 'rejected');
+            assert.match(String(result?.code), /scope|authorization/);
+            const [count] = await sql<CountRow[]>`select count(*) as count from crdt_updates`;
+            assert.equal(Number(count?.count), 0);
+        }
+        finally {
+            fixture.dispose();
+        }
     });
 });
 
 interface CrdtWebSocketAuthorityFixture {
     readonly inboxQueueReader: InboxQueueReader;
+    dispose(): void;
     send(connectionId: string, message: ALMessage): Promise<void>;
     addCurrentSession(sessionId: string): Promise<void>;
     revokeAuthSession(sessionId: string): Promise<void>;
@@ -213,7 +224,6 @@ async function createCrdtWebSocketAuthorityFixture(
     const socketServer = new JsonWebSocketServer();
     const sockets = new Map<string, PGliteTestSocket>();
     const wsService = createDefaultWsQueueBoxServerService({
-        inbox: queue,
         outbox: queue,
         socket: socketServer,
         name: 'server-1'
@@ -230,6 +240,7 @@ async function createCrdtWebSocketAuthorityFixture(
     });
     return {
         inboxQueueReader,
+        dispose: () => wsService.dispose(),
         send: async (connectionId: string, value: ALMessage) => {
             const socket = sockets.get(connectionId);
             assert.ok(socket);

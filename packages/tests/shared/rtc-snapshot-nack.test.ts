@@ -2,13 +2,13 @@ import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-c
 import { newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
-import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
 interface SnapshotObservation {
@@ -21,7 +21,7 @@ interface SnapshotAdmissionFixture {
     readonly delivered: string[];
     readonly controls: ALMessage[];
     readonly message: ALMessage;
-    readonly inbox: InMemoryQueueBox;
+    readonly stores: ALInboundRuntimeStores;
 }
 
 const source: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: 'sender' };
@@ -67,21 +67,24 @@ describe('RTC snapshot rejection controls', () => {
         }
     });
 
-    it('rechecks current authority and retained ingress for an admitted inbox entry', async () => {
+    it('rechecks current authority and retained ingress before retrying admitted work', async () => {
+        vi.useFakeTimers();
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+            vi.useRealTimers();
+        });
         const fixture = createSnapshotAdmissionFixture(1, true);
+        const claim = vi.spyOn(fixture.stores.admissionStore, 'claimReadyEffects').mockResolvedValue([]);
         try {
             fixture.observed.snapshot = createCurrentSnapshot();
             await fixture.runtime.handleIncomingMessage(fixture.message, source);
-            const entry = await fixture.inbox.getItem(fixture.message.route);
-            expect(entry).toBeDefined();
-            if (!entry) {
-                throw new Error('Expected the admitted inbox entry');
-            }
+            expect(await fixture.stores.admissionStore.workQueue.getAllKeys()).not.toHaveLength(0);
             fixture.observed.snapshot = undefined;
-            expect(await fixture.runtime.dispatchStoredEntry(entry)).toBe('retry');
+            claim.mockRestore();
+            await vi.advanceTimersByTimeAsync(1_000);
             expect(fixture.delivered).toEqual([]);
             fixture.observed.snapshot = createCurrentSnapshot();
-            expect(await fixture.runtime.dispatchStoredEntry(entry)).toBe('completed');
+            await vi.advanceTimersByTimeAsync(1_000);
             expect(fixture.delivered).toEqual([fixture.message.id.msgId]);
         }
         finally {
@@ -94,7 +97,7 @@ function createSnapshotAdmissionFixture(seq: number, persist: boolean): Snapshot
     const observed: SnapshotObservation = { snapshot: undefined };
     const delivered: string[] = [];
     const controls: ALMessage[] = [];
-    const inbox = new InMemoryQueueBox(new Map());
+    const stores = createDefaultInMemoryALInboundRuntimeStores();
     const message = newALMulticastMessage('sender', { topicId: 'room.messages', contextId: 'room', resourceId: 'probe' }, roomRef, 'snapshot.probe.v1', {
         probe: true
     }, {
@@ -106,7 +109,7 @@ function createSnapshotAdmissionFixture(seq: number, persist: boolean): Snapshot
     });
     const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'receiver',
-        inbox,
+        stores,
         planIncomingMessage: (incoming, ingress, observations) => {
             const fromPeerId = ingress.kind === 'trusted-server' ? undefined : ingress.peerId;
             return planRtcRoomSnapshotAdmission({
@@ -129,7 +132,7 @@ function createSnapshotAdmissionFixture(seq: number, persist: boolean): Snapshot
             controls.push(control);
         }
     });
-    return { runtime, observed, delivered, controls, message, inbox };
+    return { runtime, observed, delivered, controls, message, stores };
 }
 
 function createCurrentSnapshot(): GroupSnapshot {

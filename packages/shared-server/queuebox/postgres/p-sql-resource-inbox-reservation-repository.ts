@@ -3,8 +3,10 @@ import {
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
     type ResourceInboxReleaseDisposition,
-    type ResourceInboxReservationInput
+    type ResourceInboxReservationInput,
+    type ResourceInboxWorkPage
 } from '@shared/queuebox/queue-box-types.ts';
+import { validateResourceInboxWorkPageRequest } from '@shared/queuebox/resource-entry-observations.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -18,11 +20,57 @@ export type StartProcessingEntitySkipped = Readonly<{
     key: Key;
 }>;
 
+export namespace PSqlResourceInboxReservationRepository {
+    export interface WorkPosition {
+        readonly createdAt: string;
+        readonly rowId: bigint;
+    }
+}
+
 export class PSqlResourceInboxReservationRepository {
     private readonly sql: PSqlSql;
 
     constructor(sql: PSqlSql) {
         this.sql = sql;
+    }
+
+    async readWorkPage(input: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
+        const request = { ...input, cursor: input.cursor === null ? null : { ...input.cursor } };
+        const validated = validateResourceInboxWorkPageRequest(request);
+        if (validated.left) {
+            throw validated.left;
+        }
+        const validatedPosition = validateWorkPosition(request.cursor?.position ?? null);
+        if (validatedPosition.left) {
+            throw validatedPosition.left;
+        }
+        const position = validatedPosition.right!;
+        const rows = position === null
+            ? await this.sql<ResourceInboxRow[]>`
+                select * from resource_inbox
+                where ri_type_id = ${request.typeId} and ri_status = ${request.status}
+                order by created_ts, ri_row_id
+                limit ${request.maxToRead}
+            `
+            : await this.sql<ResourceInboxRow[]>`
+                select * from resource_inbox
+                where ri_type_id = ${request.typeId} and ri_status = ${request.status}
+                  and (created_ts, ri_row_id) > (${position.createdAt}::timestamp, ${position.rowId}::bigint)
+                order by created_ts, ri_row_id
+                limit ${request.maxToRead}
+            `;
+        const entries = rows.map(toDomain);
+        const last = entries.at(-1);
+        return {
+            entries,
+            nextCursor: entries.length === request.maxToRead && last !== undefined
+                ? {
+                    typeId: request.typeId,
+                    status: request.status,
+                    position: `${last.audit.createdTs.toString()}/${last.db!.id}`
+                }
+                : null
+        };
     }
 
     async findEntriesSkipLocked(
@@ -298,4 +346,41 @@ export class PSqlResourceInboxReservationRepository {
             disposition
         );
     }
+}
+
+function validateWorkPosition(
+    position: string | null
+): Either<TypeError, PSqlResourceInboxReservationRepository.WorkPosition | null> {
+    if (position === null) {
+        return Either.ofRight(null);
+    }
+    if (position.length > 128) {
+        return Either.ofLeft(
+            new TypeError('PostgreSQL queue work cursor exceeds its timestamp and row identity bound')
+        );
+    }
+    const value = position.split('/');
+    if (value.length !== 2) {
+        return Either.ofLeft(
+            new TypeError('PostgreSQL queue work cursor requires a timestamp and positive row identity')
+        );
+    }
+    const issues: string[] = [];
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?$/u.test(value[0])) {
+        issues.push('PostgreSQL queue work cursor timestamp is invalid');
+    }
+    else {
+        try {
+            Temporal.PlainDateTime.from(value[0]);
+        }
+        catch {
+            issues.push('PostgreSQL queue work cursor timestamp is invalid');
+        }
+    }
+    if (!/^[1-9]\d{0,18}$/u.test(value[1]) || BigInt(value[1]) > 9_223_372_036_854_775_807n) {
+        issues.push('PostgreSQL queue work cursor requires a positive row identity within bigint range');
+    }
+    return issues.length > 0
+        ? Either.ofLeft(new TypeError(issues.join('; ')))
+        : Either.ofRight({ createdAt: value[0], rowId: BigInt(value[1]) });
 }

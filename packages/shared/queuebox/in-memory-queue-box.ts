@@ -5,7 +5,7 @@ import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvid
 import { Either } from '../resilience/Either.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { ResilienceDto } from './DequeueResourceEntryController.ts';
-import { hasSameResourceEntryValue } from './has-same-resource-entry-value.ts';
+import { InMemoryQueueWorkIndex } from './in-memory-queue-work-index.ts';
 import {
     isIdempotentHandlerFinalizedRelease,
     QueueBoxResourceEntryRepository,
@@ -17,6 +17,7 @@ import {
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementOptions,
+    ResourceInboxWorkPage,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReleaseDisposition,
@@ -25,6 +26,7 @@ import {
 } from './queue-box-types.ts';
 import {
     captureResourceEntryObservations,
+    hasSameResourceEntryValue,
     toResourceEntrySnapshot,
     validateResourceEntryObservation
 } from './resource-entry-observations.ts';
@@ -43,6 +45,14 @@ import {
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from './ResourceInboxRetryPolicy.ts';
 
 export namespace InMemoryQueueBox {
+    export interface ReservationRead {
+        readonly entry: ResourceEntry;
+        readonly typeIds: ReadonlySet<string>;
+        readonly statusIds: ReadonlySet<EntityStatus>;
+        readonly maxAttempts: number;
+        readonly now: Temporal.Instant;
+    }
+
     export interface ComputedWrite {
         readonly expected: ResourceEntry | undefined;
         readonly entry: ResourceEntry;
@@ -58,6 +68,7 @@ export namespace InMemoryQueueBox {
 
 export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     private readonly data: Map<ResourceEntryKeyString, ResourceEntry>;
+    private readonly workIndex = new InMemoryQueueWorkIndex();
 
     private readonly cleanupRateLimiter: RateLimiter = RateLimiter.init(
         ResilienceDto.RATE_LIMITER_RESERVED_TIMEOUT_SLIDING_WINDOW_DURATION_MS,
@@ -68,8 +79,26 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         this.data = new Map<ResourceEntryKeyString, ResourceEntry>();
 
         for (const [key, entry] of input) {
-            this.data.set(toKeyAsString(key), toResourceEntrySnapshot(entry));
+            this.storeEntry(toKeyAsString(key), toResourceEntrySnapshot(entry));
         }
+    }
+
+    async readWorkPage(request: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
+        const page = this.workIndex.read(request);
+        return {
+            entries: page.keys.map((key) => toResourceEntrySnapshot(this.data.get(key)!)),
+            nextCursor: page.nextCursor
+        };
+    }
+
+    private storeEntry(key: string, entry: ResourceEntry): void {
+        this.workIndex.replace(key, this.data.get(key), entry);
+        this.data.set(key, entry);
+    }
+
+    private removeEntry(key: string): void {
+        this.workIndex.remove(key, this.data.get(key));
+        this.data.delete(key);
     }
 
     async cleanupAsync(): Promise<boolean> {
@@ -90,7 +119,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         }
 
         for (const key of keysToRemove) {
-            this.data.delete(key);
+            this.removeEntry(key);
         }
 
         if (keysToRemove.length > 0) {
@@ -102,7 +131,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
 
     async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
         const previous = this.data.get(toKeyAsString(resourceEntry.key));
-        this.data.set(toKeyAsString(resourceEntry.key), toResourceEntrySnapshot(resourceEntry));
+        this.storeEntry(toKeyAsString(resourceEntry.key), toResourceEntrySnapshot(resourceEntry));
 
         return previous === undefined ? undefined : toResourceEntrySnapshot(previous);
     }
@@ -144,7 +173,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         }
         for (const write of validated.right!) {
             if (write.entry !== undefined) {
-                this.data.set(write.key, write.entry);
+                this.storeEntry(write.key, write.entry);
             }
         }
         return true;
@@ -163,21 +192,23 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         releaseInput: ResourceInboxReleaseDisposition
     ): Promise<Map<Key, ResourceEntry>> {
         const disposition = toResourceInboxReleaseDisposition(releaseInput);
+        const releasedAt = Temporal.Now.instant();
         const currentEntries = resources.map((resource) => {
             const current = this.data.get(toKeyAsString(resource.key));
             if (
                 !current ||
                 (
                     (
-                        isExpiredResourceEntry(current) ||
+                        isExpiredResourceEntry(current, releasedAt) ||
                         current.status !== EntityStatus.RESERVED ||
                         !hasSameResourceEntryValue(current, resource)
                     ) &&
-                    !isIdempotentHandlerFinalizedRelease(
+                    !isIdempotentHandlerFinalizedRelease({
                         current,
-                        resource,
-                        disposition
-                    )
+                        reserved: resource,
+                        disposition,
+                        observedAt: releasedAt
+                    })
                 )
             ) {
                 throw new ResourceInboxLostReservationError(
@@ -187,7 +218,6 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             }
             return current;
         });
-        const releasedAt = Temporal.Now.instant();
         const released = new Map<Key, ResourceEntry>();
 
         for (const current of currentEntries) {
@@ -197,7 +227,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 continue;
             }
             const updated = computeReleasedResourceEntry(current, disposition, releasedAt);
-            this.data.set(toKeyAsString(current.key), updated);
+            this.storeEntry(toKeyAsString(current.key), updated);
             const snapshot = toResourceEntrySnapshot(updated);
             released.set(snapshot.key, snapshot);
         }
@@ -234,7 +264,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 this.isReservedEntryTimedOut(typeIds, entry, timeSinceStartTs)
             ) {
                 const updated = computeReservedResourceEntry(entry, now);
-                this.data.set(key, updated);
+                this.storeEntry(key, updated);
                 timedOut.set(toResourceEntryKey(key), toResourceEntrySnapshot(updated));
             }
         }
@@ -266,26 +296,12 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 continue;
             }
 
-            if (isExpiredResourceEntry(entry)) {
+            if (!isInMemoryQueueEntryReservable({ entry, typeIds, statusIds, maxAttempts, now })) {
                 continue;
             }
-
-            if (
-                entry.status === EntityStatus.FAILED ||
-                entry.dequeueAudit.attempts >= maxAttempts
-            ) {
-                continue;
-            }
-
-            if (entry.dequeueAudit.nextTs && Temporal.Instant.compare(now, entry.dequeueAudit.nextTs) < 0) {
-                continue;
-            }
-
-            if (typeIds.has(entry.typeId) && statusIds.has(entry.status)) {
-                const updated = computeReservedResourceEntry(entry, now);
-                this.data.set(key, updated);
-                reserved.set(toResourceEntryKey(key), toResourceEntrySnapshot(updated));
-            }
+            const updated = computeReservedResourceEntry(entry, now);
+            this.storeEntry(key, updated);
+            reserved.set(toResourceEntryKey(key), toResourceEntrySnapshot(updated));
         }
 
         return reserved;
@@ -328,7 +344,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         for (const [key, entry] of candidates) {
             const selectedNextTs = entry.dequeueAudit.nextTs;
             const updated = computeReservedResourceEntry(entry, now);
-            this.data.set(key, updated);
+            this.storeEntry(key, updated);
             reserved.set(toResourceEntryKey(key), {
                 entry: toResourceEntrySnapshot(updated),
                 selectedDueTs: selectedNextTs!
@@ -361,7 +377,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         for (const [key, entry] of candidates) {
             const selectedDueTs = entry.dequeueAudit.startTs!;
             const updated = computeReservedResourceEntry(entry, now);
-            this.data.set(key, updated);
+            this.storeEntry(key, updated);
             const snapshot = toResourceEntrySnapshot(updated);
             reserved.set(snapshot.key, { entry: snapshot, selectedDueTs });
         }
@@ -496,7 +512,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         }
 
         if (isExpiredResourceEntry(entry)) {
-            this.data.delete(toKeyAsString(key));
+            this.removeEntry(toKeyAsString(key));
             return undefined;
         }
 
@@ -508,7 +524,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         value: ResourceEntry,
         _options: PersistenceSetItemOptions
     ): Promise<void> {
-        this.data.set(
+        this.storeEntry(
             toKeyAsString(key),
             toResourceEntrySnapshot({
                 ...value,
@@ -518,7 +534,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async removeItem(key: Key): Promise<void> {
-        this.data.delete(toKeyAsString(key));
+        this.removeEntry(toKeyAsString(key));
     }
 
     async getAllKeys(): Promise<Key[]> {
@@ -534,7 +550,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
                 continue;
             }
 
-            this.data.delete(key);
+            this.removeEntry(key);
             removed += 1;
         }
 
@@ -554,14 +570,18 @@ function validateInMemoryQueueWrites(
     observedAt: Temporal.Instant
 ): Either<Error | 'conflict', readonly InMemoryQueueWrite[]> {
     const keys = new Set<string>();
+    const issues: string[] = [];
     for (const write of writes) {
         if (keys.has(write.key)) {
-            return Either.ofLeft(new TypeError('Queue writes contain a duplicate key'));
+            issues.push('Queue writes contain a duplicate key');
         }
         if (write.expected !== undefined && toKeyAsString(write.expected.key) !== write.key) {
-            return Either.ofLeft(new TypeError('Queue replacement key differs from its observation'));
+            issues.push('Queue replacement key differs from its observation');
         }
         keys.add(write.key);
+    }
+    if (issues.length > 0) {
+        return Either.ofLeft(new TypeError(issues.join('; ')));
     }
     return writes.some(({ expected, existing }) =>
             expected === undefined
@@ -603,4 +623,12 @@ function computeReleasedResourceEntry(
             attempts: entry.dequeueAudit.attempts
         }
     };
+}
+
+function isInMemoryQueueEntryReservable(read: InMemoryQueueBox.ReservationRead): boolean {
+    const { entry, now } = read;
+    return read.typeIds.has(entry.typeId) && read.statusIds.has(entry.status) &&
+        !isExpiredResourceEntry(entry, now) && entry.status !== EntityStatus.FAILED &&
+        entry.dequeueAudit.attempts < read.maxAttempts &&
+        (entry.dequeueAudit.nextTs === undefined || Temporal.Instant.compare(now, entry.dequeueAudit.nextTs) >= 0);
 }

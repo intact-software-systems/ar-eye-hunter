@@ -78,7 +78,12 @@ describe('coalesced revival release contract', () => {
         });
         const revived = toCoalescedEntry({ generation: 3, status: EntityStatus.NEW, attempts: 0 });
 
-        expect(isIdempotentHandlerFinalizedRelease(revived, reserved, COMPLETED_DISPOSITION)).toBe(
+        expect(isIdempotentHandlerFinalizedRelease({
+            current: revived,
+            reserved,
+            disposition: COMPLETED_DISPOSITION,
+            observedAt: Temporal.Instant.fromEpochMilliseconds(2_000)
+        })).toBe(
             true
         );
     });
@@ -91,7 +96,12 @@ describe('coalesced revival release contract', () => {
         });
         const revived = toCoalescedEntry({ generation: 3, status: EntityStatus.RETRY, attempts: 0 });
 
-        expect(isIdempotentHandlerFinalizedRelease(revived, reserved, COMPLETED_DISPOSITION)).toBe(
+        expect(isIdempotentHandlerFinalizedRelease({
+            current: revived,
+            reserved,
+            disposition: COMPLETED_DISPOSITION,
+            observedAt: Temporal.Instant.fromEpochMilliseconds(2_000)
+        })).toBe(
             true
         );
     });
@@ -104,7 +114,12 @@ describe('coalesced revival release contract', () => {
         });
         const rewritten = toCoalescedEntry({ generation: 2, status: EntityStatus.NEW, attempts: 0 });
 
-        expect(isIdempotentHandlerFinalizedRelease(rewritten, reserved, COMPLETED_DISPOSITION)).toBe(
+        expect(isIdempotentHandlerFinalizedRelease({
+            current: rewritten,
+            reserved,
+            disposition: COMPLETED_DISPOSITION,
+            observedAt: Temporal.Instant.fromEpochMilliseconds(2_000)
+        })).toBe(
             false
         );
     });
@@ -117,7 +132,12 @@ describe('coalesced revival release contract', () => {
         });
         const revived = toCoalescedEntry({ generation: 3, status: EntityStatus.NEW, attempts: 1 });
 
-        expect(isIdempotentHandlerFinalizedRelease(revived, reserved, COMPLETED_DISPOSITION)).toBe(
+        expect(isIdempotentHandlerFinalizedRelease({
+            current: revived,
+            reserved,
+            disposition: COMPLETED_DISPOSITION,
+            observedAt: Temporal.Instant.fromEpochMilliseconds(2_000)
+        })).toBe(
             false
         );
     });
@@ -131,7 +151,12 @@ describe('coalesced revival release contract', () => {
         });
         const revived = toCoalescedEntry({ generation: 3, status: EntityStatus.NEW, attempts: 0 });
 
-        expect(isIdempotentHandlerFinalizedRelease(revived, reserved, COMPLETED_DISPOSITION)).toBe(
+        expect(isIdempotentHandlerFinalizedRelease({
+            current: revived,
+            reserved,
+            disposition: COMPLETED_DISPOSITION,
+            observedAt: Temporal.Instant.fromEpochMilliseconds(2_000)
+        })).toBe(
             false
         );
     });
@@ -145,9 +170,11 @@ describe('coalesced revival release contract', () => {
         const revived = toCoalescedEntry({ generation: 3, status: EntityStatus.NEW, attempts: 0 });
 
         expect(
-            isIdempotentHandlerFinalizedRelease(revived, reserved, {
-                status: EntityStatus.RETRY,
-                delayMs: 1_000
+            isIdempotentHandlerFinalizedRelease({
+                current: revived,
+                reserved,
+                disposition: { status: EntityStatus.RETRY, delayMs: 1_000 },
+                observedAt: Temporal.Instant.fromEpochMilliseconds(2_000)
             })
         ).toBe(false);
     });
@@ -166,7 +193,12 @@ describe('coalesced revival release contract', () => {
             typeId: EnqueuedType.WS_OUTBOX
         });
 
-        expect(isIdempotentHandlerFinalizedRelease(revived, reserved, COMPLETED_DISPOSITION)).toBe(
+        expect(isIdempotentHandlerFinalizedRelease({
+            current: revived,
+            reserved,
+            disposition: COMPLETED_DISPOSITION,
+            observedAt: Temporal.Instant.fromEpochMilliseconds(2_000)
+        })).toBe(
             false
         );
     });

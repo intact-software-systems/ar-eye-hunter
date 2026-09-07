@@ -2,17 +2,17 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, isALControlTypeId, type ALControlAcceptance } from '../../al-contracts/al-control.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
-import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
+import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type {
     ALInboundAdmissionStore,
     ALInboundPlanner
 } from './al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
-import { ALInboundDurableEffectWorker } from './al-inbound-durable-effect-worker.ts';
 import { computeALInboundPlanningObservations } from './al-inbound-planner-snapshot.ts';
+import { ALInboundWorkHandler } from './al-inbound-work-handler.ts';
 import { computeALInboundAdmission } from './compute-al-inbound-admission.ts';
 import {
     readALInboundEffectFacts,
@@ -39,21 +39,16 @@ export namespace ALInboundMessageRuntime {
         nowMs(): number;
     }
 
-    export interface Scheduler {
-        /** Runs the callback once after the delay; the returned operation cancels it before invocation. */
-        schedule(callback: () => void, delayMs: number): () => void;
-    }
-
     export interface Resources {
         readonly admissionStore: ALInboundAdmissionStore;
         readonly effectPreparation: ALInboundEffectPreparationDependencies;
         readonly effectWorkerId: string;
         readonly clock: Clock;
-        readonly scheduler: Scheduler;
+        readonly queueEngine: InboxOutboxEngine;
+        readonly ownsQueueEngine: boolean;
     }
 
     export interface Dependencies extends Resources {
-        readonly inbox: QueueBoxResourceEntryRepository;
         readonly planIncomingMessage: ALInboundPlanner;
         readonly readStoredEntry: (entry: ResourceEntry) => Readonly<ALMessage>;
         readonly dispatchInboxEntry: (
@@ -61,6 +56,8 @@ export namespace ALInboundMessageRuntime {
             plan: ALMessageHandlingPlan,
             source: Source
         ) => Promise<void | 'completed' | 'retry'>;
+        /** Absence means the supplied dispatcher is ready for every local message. */
+        readonly canDispatchMessage?: (msg: ALMessage) => boolean;
         readonly sendControlMessage: (msg: ALMessage) => Promise<void>;
         readonly onControlMessage?: (msg: ALMessage, acceptance: ALControlAcceptance) => Promise<void>;
         readonly forwardMessage?: (
@@ -78,7 +75,7 @@ export class ALInboundMessageRuntime {
     private readonly readyPromise: Promise<void>;
 
     private readonly delivery: ALInboundAdmittedDelivery;
-    private readonly effects: ALInboundDurableEffectWorker;
+    private readonly effects: ALInboundWorkHandler;
     private disposed = false;
 
     private readonly dependencies: ALInboundMessageRuntime.Dependencies;
@@ -88,7 +85,10 @@ export class ALInboundMessageRuntime {
         this.admissionStore = dependencies.admissionStore;
         this.readyPromise = this.admissionStore.ready();
         this.delivery = new ALInboundAdmittedDelivery(dependencies);
-        this.effects = new ALInboundDurableEffectWorker({ ...dependencies, delivery: this.delivery });
+        this.effects = new ALInboundWorkHandler({ ...dependencies, delivery: this.delivery });
+        if (dependencies.ownsQueueEngine) {
+            void this.ready().catch((error) => console.error('Inbound QueueBox startup failed', error));
+        }
     }
 
     async ready(): Promise<void> {
@@ -142,7 +142,7 @@ export class ALInboundMessageRuntime {
             throw error;
         }
         const waitForEffects = !this.effects.hasActiveDrain();
-        const effectDrain = this.effects.start();
+        const effectDrain = this.effects.committed();
         if (waitForEffects) {
             await effectDrain;
         }
@@ -168,7 +168,7 @@ export class ALInboundMessageRuntime {
         const canForward = !plan.dropReason && this.dependencies.forwardMessage !== undefined &&
             (this.dependencies.canForwardMessage?.(msg) ?? true);
         const computed = computeALInboundAdmission({ read, plan, canForward, facts });
-        const validated = validateALInboundCommitBundle(computed);
+        const validated = validateALInboundCommitBundle(computed, read.namespace);
         if (validated.left) {
             return Either.ofLeft(validated.left);
         }
@@ -176,7 +176,7 @@ export class ALInboundMessageRuntime {
         if (status === 'conflict') {
             return Either.ofRight({ kind: 'not-admitted', reason: 'conflict' });
         }
-        await this.effects.start();
+        await this.effects.committed();
         if (plan.orderingRuntime.status === 'resync-required') {
             return Either.ofRight({ kind: 'resync-required' });
         }
@@ -188,11 +188,6 @@ export class ALInboundMessageRuntime {
                 ? { kind: 'not-admitted', reason: plan.dropReason }
                 : { kind: 'admitted' }
         );
-    }
-
-    async dispatchStoredEntry(entry: ResourceEntry): Promise<'completed' | 'retry'> {
-        await this.ready();
-        return await this.delivery.dispatchAdmittedEntry(entry);
     }
 }
 

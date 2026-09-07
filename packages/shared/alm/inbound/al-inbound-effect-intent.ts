@@ -13,7 +13,7 @@ export interface ALInboundEffectIntent {
     readonly expireAtTimestamp: number | undefined;
     readonly payload:
         | {
-            readonly kind: 'dispatch-local' | 'enqueue-inbox';
+            readonly kind: 'dispatch-local';
             readonly msg: ALMessage;
             readonly plan: ALMessageHandlingPlan;
         }
@@ -88,12 +88,11 @@ export function toALInboundLocalDeliveryEffects(
     if (!input.plan.localDelivery.enabled) {
         return [];
     }
-    const queued = shouldDeferALInboundLocalDelivery(input.plan) || input.plan.localDelivery.persist;
     return [{
-        effectId: toEffectId([queued ? 'inbox' : 'dispatch', input.msg.id.senderId, input.msg.id.msgId]),
+        effectId: toEffectId(['dispatch', input.msg.id.senderId, input.msg.id.msgId]),
         expireAtTimestamp: resolveALMessageExpireAtMs(input.msg, input.plan.effective),
         payload: {
-            kind: queued ? 'enqueue-inbox' : 'dispatch-local',
+            kind: 'dispatch-local',
             msg: input.msg,
             plan: input.plan
         }
@@ -193,4 +192,10 @@ export function shouldDeferALInboundLocalDelivery(
     return plan.localDelivery.enabled &&
         plan.congestion.overloaded &&
         plan.congestion.action === 'defer';
+}
+
+export function shouldRetryALInboundDelivery(plan: ALMessageHandlingPlan): boolean {
+    return plan.dropReason === 'not-yet-in-sync' ||
+        (Boolean(plan.dropReason) && plan.nack.reason === 'overloaded') ||
+        (!plan.dropReason && shouldDeferALInboundLocalDelivery(plan));
 }

@@ -4,6 +4,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -205,7 +206,11 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter()
     });
-    const streamer = createDefaultWebRtcRxStreamerService({ inbox: new InMemoryQueueBox(new Map()), multicast, sessionId });
+    const streamer = createDefaultWebRtcRxStreamerService({ multicast, sessionId });
+    onTestFinished(() => {
+        streamer.dispose();
+        multicast.dispose();
+    });
     const measurements: RttMeasurementInfo[] = [];
     streamer.onRttMeasurementDo('observations', {
         onHeartbeat: async (measurement) => {

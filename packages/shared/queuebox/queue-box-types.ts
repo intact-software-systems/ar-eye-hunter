@@ -16,6 +16,30 @@ import { isCanonicalRtcTopologyWorkEntry } from './rtc-topology-work-entry-contr
 
 export type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 
+export namespace ResourceInboxWorkPage {
+    export interface Cursor {
+        readonly typeId: string;
+        readonly status: Resource.EntityStatus;
+        /** Opaque position owned by the repository that returned this cursor. */
+        readonly position: string;
+    }
+
+    export interface Request {
+        readonly typeId: string;
+        readonly status: Resource.EntityStatus;
+        readonly maxToRead: number;
+        /** Restart with null to discover work inserted or moved behind the previous cursor. */
+        readonly cursor: Cursor | null;
+    }
+}
+
+export interface ResourceInboxWorkPage {
+    /** Observations in backend order, including expired entries; reading never claims, releases or removes work. */
+    readonly entries: readonly ResourceEntry[];
+    /** A full page may require one final empty read to discover the end. */
+    readonly nextCursor: ResourceInboxWorkPage.Cursor | null;
+}
+
 export type ResourceInboxReservationOptions = Readonly<{
     maxToReserve: number;
     maxAttempts: number;
@@ -106,11 +130,15 @@ export class ResourceInboxInvalidReleaseDispositionError extends Error {
     }
 }
 
-export function isIdempotentHandlerFinalizedRelease(
-    current: ResourceEntry,
-    reserved: ResourceEntry,
-    disposition: ResourceInboxReleaseDisposition
-): boolean {
+export interface HandlerFinalizedReleaseObservation {
+    readonly current: ResourceEntry;
+    readonly reserved: ResourceEntry;
+    readonly disposition: ResourceInboxReleaseDisposition;
+    readonly observedAt: Temporal.Instant;
+}
+
+export function isIdempotentHandlerFinalizedRelease(input: HandlerFinalizedReleaseObservation): boolean {
+    const { current, reserved, disposition, observedAt } = input;
     try {
         if (isCoalescedRevivalAfterHandlerFinalization(current, reserved, disposition)) {
             return true;
@@ -124,7 +152,7 @@ export function isIdempotentHandlerFinalizedRelease(
             current.resource === reserved.resource &&
             Resource.isKeysEqual(current.key, reserved.key) &&
             current.dequeueAudit.attempts === reserved.dequeueAudit.attempts &&
-            !Resource.isExpiredResourceEntry(current);
+            !Resource.isExpiredResourceEntry(current, observedAt);
         if (remoteDeliveryRequeue) {
             return true;
         }
@@ -135,7 +163,7 @@ export function isIdempotentHandlerFinalizedRelease(
             current.status === Resource.EntityStatus.COMPLETED &&
             Resource.isKeysEqual(current.key, reserved.key) &&
             current.dequeueAudit.attempts === reserved.dequeueAudit.attempts &&
-            !Resource.isExpiredResourceEntry(current);
+            !Resource.isExpiredResourceEntry(current, observedAt);
         if (!commonFinalization) {
             return false;
         }
@@ -389,4 +417,5 @@ export interface QueueBoxResourceEntryRepository
         DequeueResourceEntryRepository,
         EnqueueResourceEntryController,
         PersistenceProvider<Resource.Key, Resource.ResourceEntry> {
+    readWorkPage(request: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage>;
 }

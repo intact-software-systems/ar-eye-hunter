@@ -45,21 +45,22 @@ for (const cacheState of ['cold', 'older-empty', 'same-tuple-expired'] as const)
     Deno.test(`API authorized room fanout survives ${cacheState} cache`, async () => {
         const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
         const runtime = createLiveRoomRuntime();
-        await putRoomSnapshot(runtime.repository, snapshot);
-        const cached = cacheState === 'cold' ? undefined : cacheState === 'older-empty'
-            ? createGroupSnapshot(1, [])
-            : {
-                ...snapshot,
-                activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: 1 }))
-            };
-        if (cached) {
-            assert.equal(runtime.cache.observe(cached), 'inserted');
-            if (cacheState === 'same-tuple-expired') {
-                assert.equal(runtime.cache.observe(snapshot), 'duplicate');
-            }
-        }
-        const message = roomMessage(snapshot);
         try {
+            await putRoomSnapshot(runtime.repository, snapshot);
+            const cached = cacheState === 'cold' ? undefined : cacheState === 'older-empty'
+                ? createGroupSnapshot(1, [])
+                : {
+                    ...snapshot,
+                    activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: 1 }))
+                };
+            if (cached) {
+                assert.equal(runtime.cache.observe(cached), 'inserted');
+                if (cacheState === 'same-tuple-expired') {
+                    assert.equal(runtime.cache.observe(snapshot), 'duplicate');
+                }
+            }
+            const message = roomMessage(snapshot);
+
             await runtime.router.route(message);
             assert.deepEqual(runtime.sent.map((send) => send.sessionId), [
                 'session-1',
@@ -71,6 +72,7 @@ for (const cacheState of ['cold', 'older-empty', 'same-tuple-expired'] as const)
             assert.deepEqual(findGroupStateSnapshotByRef(snapshot.group, runtime.manager), cached);
         }
         finally {
+            runtime.service.dispose();
             await runtime.manager.clear();
         }
     });
@@ -79,23 +81,25 @@ for (const cacheState of ['cold', 'older-empty', 'same-tuple-expired'] as const)
 Deno.test('API authorized broadcast keeps exclusions and closed connections out of the live audience', async () => {
     const snapshot = createGroupSnapshot(2, ['closed-session', 'session-1', 'session-2']);
     const runtime = createLiveRoomRuntime();
-    await putRoomSnapshot(runtime.repository, snapshot);
-    const closedSocket = createOpenTestWebSocket();
-    Object.defineProperty(closedSocket, 'readyState', { value: WebSocket.CLOSED });
-    runtime.socket.addConnection(new ConnectionContext({ id: 'closed-session', socket: closedSocket }));
-    const message = newALBroadcastMessage(
-        'session-1',
-        newALEventRoute('room.chat', 'group-1', 'broadcast-1'),
-        'room',
-        'chat.message.v1',
-        { text: 'hello' },
-        { groupRef: snapshot.group, exceptPeerIds: ['session-1'] }
-    );
     try {
+        await putRoomSnapshot(runtime.repository, snapshot);
+        const closedSocket = createOpenTestWebSocket();
+        Object.defineProperty(closedSocket, 'readyState', { value: WebSocket.CLOSED });
+        runtime.socket.addConnection(new ConnectionContext({ id: 'closed-session', socket: closedSocket }));
+        const message = newALBroadcastMessage(
+            'session-1',
+            newALEventRoute('room.chat', 'group-1', 'broadcast-1'),
+            'room',
+            'chat.message.v1',
+            { text: 'hello' },
+            { groupRef: snapshot.group, exceptPeerIds: ['session-1'] }
+        );
+
         await runtime.router.route(message);
         assert.deepEqual(runtime.sent, [{ sessionId: 'session-2', encoded: JSON.stringify(message) }]);
     }
     finally {
+        runtime.service.dispose();
         await runtime.manager.clear();
     }
 });
@@ -103,8 +107,9 @@ Deno.test('API authorized broadcast keeps exclusions and closed connections out 
 Deno.test('authorized room authority requires the exact application, workspace, and room identity', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
     const runtime = createLiveRoomRuntime();
-    await putRoomSnapshot(runtime.repository, snapshot);
     try {
+        await putRoomSnapshot(runtime.repository, snapshot);
+
         for (
             const groupRef of [
                 { ...snapshot.group, applicationId: 'other-app' },
@@ -121,6 +126,7 @@ Deno.test('authorized room authority requires the exact application, workspace, 
         );
     }
     finally {
+        runtime.service.dispose();
         await runtime.manager.clear();
     }
 });
@@ -128,17 +134,19 @@ Deno.test('authorized room authority requires the exact application, workspace, 
 Deno.test('room authority checks leases again after asynchronous topic handlers', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
     const runtime = createLiveRoomRuntime();
-    await putRoomSnapshot(runtime.repository, snapshot);
-    runtime.router.on({ topicId: 'room.chat' }, async () => {
-        await Promise.resolve();
-        runtime.deliveryClock.atEpochMs = 4_000_000_000_000;
-    });
     try {
+        await putRoomSnapshot(runtime.repository, snapshot);
+        runtime.router.on({ topicId: 'room.chat' }, async () => {
+            await Promise.resolve();
+            runtime.deliveryClock.atEpochMs = 4_000_000_000_000;
+        });
+
         await runtime.router.route(roomMessage(snapshot));
         assert.deepEqual(runtime.sent, []);
         assert.equal(runtime.reads.snapshots, 1);
     }
     finally {
+        runtime.service.dispose();
         await runtime.manager.clear();
     }
 });
@@ -146,26 +154,28 @@ Deno.test('room authority checks leases again after asynchronous topic handlers'
 Deno.test('same-tuple authoritative disconnect removes a recipient despite the cached summary', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
     const runtime = createLiveRoomRuntime();
-    await putRoomSnapshot(runtime.repository, snapshot);
-    runtime.cache.observe(snapshot);
-    const presence = await runtime.repository.findPresenceEntry({ ...snapshot.group, sessionId: 'session-2' });
-    assert.ok(presence);
-    assert.equal(
-        (await runtime.repository.updatePresence({
-            ...presence.value,
-            status: 'disconnected',
-            disconnectedAtEpochMs: Date.now(),
-            disconnectReason: 'client-disconnect'
-        }, presence.entry.revision)).status,
-        'applied'
-    );
     try {
+        await putRoomSnapshot(runtime.repository, snapshot);
+        runtime.cache.observe(snapshot);
+        const presence = await runtime.repository.findPresenceEntry({ ...snapshot.group, sessionId: 'session-2' });
+        assert.ok(presence);
+        assert.equal(
+            (await runtime.repository.updatePresence({
+                ...presence.value,
+                status: 'disconnected',
+                disconnectedAtEpochMs: Date.now(),
+                disconnectReason: 'client-disconnect'
+            }, presence.entry.revision)).status,
+            'applied'
+        );
+
         await runtime.router.route(roomMessage(snapshot));
         assert.deepEqual(runtime.sent.map((send) => send.sessionId), ['session-1']);
         assert.deepEqual(findGroupStateSnapshotByRef(snapshot.group, runtime.manager), snapshot);
         assert.equal(runtime.reads.snapshots, 1);
     }
     finally {
+        runtime.service.dispose();
         await runtime.manager.clear();
     }
 });
@@ -173,13 +183,14 @@ Deno.test('same-tuple authoritative disconnect removes a recipient despite the c
 Deno.test('transformed proxy targets and public publishes never inherit room authority', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
     const runtime = createLiveRoomRuntime();
-    await putRoomSnapshot(runtime.repository, snapshot);
-    runtime.router.proxy({
-        from: { topicId: 'room.chat' },
-        targets: () => ({ mode: 'unicast', toPeerId: 'outsider' })
-    });
-    const message = roomMessage(snapshot);
     try {
+        await putRoomSnapshot(runtime.repository, snapshot);
+        runtime.router.proxy({
+            from: { topicId: 'room.chat' },
+            targets: () => ({ mode: 'unicast', toPeerId: 'outsider' })
+        });
+        const message = roomMessage(snapshot);
+
         await runtime.router.route(message);
         assert.deepEqual(runtime.sent.map((send) => send.sessionId), ['outsider', 'session-1', 'session-2']);
         assert.equal(
@@ -194,6 +205,7 @@ Deno.test('transformed proxy targets and public publishes never inherit room aut
         assert.deepEqual(runtime.sent, []);
     }
     finally {
+        runtime.service.dispose();
         await runtime.manager.clear();
     }
 });
@@ -201,19 +213,20 @@ Deno.test('transformed proxy targets and public publishes never inherit room aut
 Deno.test('outbox fanout keeps the original message and uses its existing queue path', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
     const runtime = createLiveRoomRuntime();
-    await putRoomSnapshot(runtime.repository, snapshot);
-    runtime.router.defineTopic({ topicId: 'room.chat', fanout: 'outbox' });
-    const enqueued: ALMessage[] = [];
-    const enqueue = runtime.service.enqueueOutboxIfAbsent.bind(runtime.service);
-    runtime.service.enqueueOutboxIfAbsent = (message) => {
-        enqueued.push(message);
-        return enqueue(message);
-    };
-    const message: ALMessage = {
-        ...roomMessage(snapshot),
-        delivery: { reliability: 'at-least-once', ack: 'receiver' }
-    };
     try {
+        await putRoomSnapshot(runtime.repository, snapshot);
+        runtime.router.defineTopic({ topicId: 'room.chat', fanout: 'outbox' });
+        const enqueued: ALMessage[] = [];
+        const enqueue = runtime.service.enqueueOutboxIfAbsent.bind(runtime.service);
+        runtime.service.enqueueOutboxIfAbsent = (message) => {
+            enqueued.push(message);
+            return enqueue(message);
+        };
+        const message: ALMessage = {
+            ...roomMessage(snapshot),
+            delivery: { reliability: 'at-least-once', ack: 'receiver' }
+        };
+
         await runtime.router.route(message);
         assert.deepEqual(enqueued, [message]);
         assert.equal((await runtime.service.outbox.getAllKeys()).length, 1);
@@ -224,20 +237,21 @@ Deno.test('outbox fanout keeps the original message and uses its existing queue 
         assert.equal(runtime.reads.snapshots, 1);
     }
     finally {
+        runtime.service.dispose();
         await runtime.manager.clear();
     }
 });
 
 Deno.test('generic custom authorization retains its configured resolver without group storage', async () => {
     const runtime = createLiveRoomRuntime();
+    const service = createDefaultWsQueueBoxServerService({
+        name: 'custom-policy-test',
+        outbox: new InMemoryQueueBox(),
+        socket: runtime.socket,
+        targetResolver: { resolveGroupRecipients: () => [{ peerId: 'outsider', connectionId: 'outsider' }] }
+    });
     const router = new RallarServerWsRouter(
-        createDefaultWsQueueBoxServerService({
-            name: 'custom-policy-test',
-            inbox: new InMemoryQueueBox(),
-            outbox: new InMemoryQueueBox(),
-            socket: runtime.socket,
-            targetResolver: { resolveGroupRecipients: () => [{ peerId: 'outsider', connectionId: 'outsider' }] }
-        }),
+        service,
         { authorizeRoomMessage: () => true }
     );
     try {
@@ -246,6 +260,8 @@ Deno.test('generic custom authorization retains its configured resolver without 
         assert.equal(runtime.reads.snapshots, 0);
     }
     finally {
+        service.dispose();
+        runtime.service.dispose();
         await runtime.manager.clear();
     }
 });
@@ -265,7 +281,7 @@ function createLiveRoomRuntime(): LiveRoomTestRuntime {
     }
     const service = createDefaultWsQueueBoxServerService({
         name: 'api-live-room-test',
-        inbox: new InMemoryQueueBox(),
+
         outbox: new InMemoryQueueBox(),
         socket,
         forwardsRoomScopedMessages: false,

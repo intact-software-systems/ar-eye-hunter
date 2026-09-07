@@ -21,7 +21,7 @@ import {
     type ALInboundEffectFacts,
     type ALInboundEffectPreparationDependencies
 } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,7 +33,7 @@ describe('inbound admission preparation boundary', () => {
 
     it.each(['msgId', 'senderId', 'dedup', 'ordering'] as const)('rejects a candidate with original observations from another %s scope', async (scope) => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
-        const prepared = await readAdmission(stores.admissionStore, createMessage(1));
+        const prepared = await readAdmission({ store: stores.admissionStore, message: createMessage(1) });
         const bundle = computeALInboundAdmission({ ...prepared, canForward: false });
         const observations = {
             ...bundle.observations,
@@ -50,7 +50,7 @@ describe('inbound admission preparation boundary', () => {
 
     it('computes one repeatable final bundle from captured read, policy, and effect facts', async () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
-        const prepared = await readAdmission(stores.admissionStore, createMessage(1));
+        const prepared = await readAdmission({ store: stores.admissionStore, message: createMessage(1) });
         vi.spyOn(Date, 'now').mockReturnValue(100);
         vi.spyOn(Temporal.Now, 'plainDateTimeISO').mockImplementation(() => {
             throw new Error('Admission computation must not read the clock');
@@ -68,14 +68,22 @@ describe('inbound admission preparation boundary', () => {
         ]);
         expect(first.durableEffects.every((effect) => Number.isSafeInteger(effect.expireAtTimestamp))).toBe(true);
         expect(first.observations).toEqual(prepared.read.observations);
+        expect(first.mutations.find((mutation) => mutation.kind === 'set-msg-owner')?.value).toEqual({
+            msgId: prepared.read.msg.id.msgId,
+            senderId: 'sender',
+            source: { kind: 'ws-client', peerId: 'sender' },
+            supersedenceKey: null
+        });
     });
 
     it('computes a repeatable final buffered-release bundle from captured values', async () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const message = createMessage(1);
-        const prepared = await readAdmission(stores.admissionStore, message);
+        const prepared = await readAdmission({ store: stores.admissionStore, message });
         const read = {
             kind: 'buffered-release' as const,
+            orderingTrackTtlMs: prepared.read.orderingTrackTtlMs,
+            namespace: prepared.read.namespace,
             nowMs: prepared.read.nowMs,
             source: prepared.read.source,
             observations: prepared.read.observations,
@@ -117,10 +125,17 @@ describe('inbound admission preparation boundary', () => {
             peerId: 'sender',
             roomRecipientPeerIds: ['receiver', 'peer-b']
         };
-        const prepared = await readAdmission(stores.admissionStore, message, source, admittedAtMs);
+        const prepared = await readAdmission({ store: stores.admissionStore, message, source, nowMs: admittedAtMs });
         const bundle = computeALInboundAdmission({ ...prepared, canForward: false });
-        expect(await stores.admissionStore.commitBundle(bundle)).toBe('committed');
         const ownerMutation = bundle.mutations.find((mutation) => mutation.kind === 'set-msg-owner');
+        if (!ownerMutation) {
+            throw new Error('Admission must compute the message provenance before writing');
+        }
+        Object.freeze(source.roomRecipientPeerIds);
+        Object.freeze(ownerMutation.value.source);
+        Object.freeze(ownerMutation.value);
+        Object.freeze(ownerMutation);
+        expect(await stores.admissionStore.commitBundle(bundle)).toBe('committed');
         const ownedWorkExpiry = Math.max(...bundle.durableEffects.map((effect) => effect.expireAtTimestamp));
         expect(ownerMutation?.expireAtTimestamp).toBeGreaterThanOrEqual(ownedWorkExpiry);
 
@@ -183,17 +198,13 @@ describe('inbound admission preparation boundary', () => {
         }
     });
 
-    it('retries a durable control envelope unchanged using the injected worker clock and scheduler', async () => {
-        vi.useFakeTimers();
+    it('retries the same durable control envelope through QueueBox after a transport failure', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(1_800_000_000_000);
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const controls: ALMessage[] = [];
-        const scheduler = new TestEffectScheduler();
-        let nowMs = Date.now();
         const runtime = new ALInboundMessageRuntime({
             ...createRuntimeDependencies(stores.admissionStore),
-            clock: { nowMs: () => nowMs },
-            scheduler,
             sendControlMessage: async (message) => {
                 controls.push(message);
                 if (controls.length === 1) {
@@ -205,16 +216,9 @@ describe('inbound admission preparation boundary', () => {
             await runtime.handleIncomingMessage(createMessage(1), { kind: 'ws-client', peerId: 'sender' });
             const firstAck = controls.find((message) => message.payload.typeId === 'al.control.ack.v1');
             expect(firstAck).toBeDefined();
-            expect(scheduler.pending?.delayMs).toBeGreaterThan(0);
-            nowMs += 10_000;
-            scheduler.pending?.callback();
-
-            await vi.waitFor(() => {
-                expect(controls.filter((message) => message.payload.typeId === 'al.control.ack.v1')).toEqual([firstAck, firstAck]);
-            });
-            await vi.waitFor(async () => {
-                expect(await stores.admissionStore.peekNextEffectReadyAt()).toBeUndefined();
-            });
+            vi.setSystemTime(Date.now() + 10_000);
+            await expect.poll(() => controls.filter((message) => message.payload.typeId === 'al.control.ack.v1'))
+                .toEqual([firstAck, firstAck]);
         }
         finally {
             runtime.dispose();
@@ -223,7 +227,7 @@ describe('inbound admission preparation boundary', () => {
 
     it('materializes controls through the strict canonical decoder', async () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
-        const prepared = await readAdmission(stores.admissionStore, createMessage(1));
+        const prepared = await readAdmission({ store: stores.admissionStore, message: createMessage(1) });
         const bundle = computeALInboundAdmission({ ...prepared, canForward: false });
         const controls = bundle.durableEffects.flatMap((effect) => effect.payload.kind === 'send-control' ? [decodeALControlMessage(effect.payload.msg)] : []);
 
@@ -238,12 +242,15 @@ interface PreparedAdmission {
     readonly facts: ALInboundEffectFacts;
 }
 
-async function readAdmission(
-    store: ALInboundAdmissionStore,
-    message: ALMessage,
-    source: ALInboundMessageRuntime.Source = { kind: 'ws-client', peerId: 'sender' },
-    nowMs = Date.now()
-): Promise<PreparedAdmission> {
+interface AdmissionReadInput {
+    readonly store: ALInboundAdmissionStore;
+    readonly message: ALMessage;
+    readonly source?: ALInboundMessageRuntime.Source;
+    readonly nowMs?: number;
+}
+
+async function readAdmission(input: AdmissionReadInput): Promise<PreparedAdmission> {
+    const { store, message, source = { kind: 'ws-client', peerId: 'sender' }, nowMs = Date.now() } = input;
     const prePlan = planIncomingMessage(message, source, { nowMs });
     const read = await store.readIncomingMessage({ msg: message, source, nowMs, prePlan });
     const plan = planIncomingMessage(message, source, computeALInboundPlanningObservations(read));
@@ -252,24 +259,6 @@ async function readAdmission(
         plan,
         facts: readALInboundEffectFacts(message, nowMs, createPreparationDependencies())
     };
-}
-
-namespace TestEffectScheduler {
-    export interface Pending {
-        readonly callback: () => void;
-        readonly delayMs: number;
-    }
-}
-
-class TestEffectScheduler implements ALInboundMessageRuntime.Scheduler {
-    pending: TestEffectScheduler.Pending | undefined;
-
-    schedule(callback: () => void, delayMs: number): () => void {
-        this.pending = { callback, delayMs };
-        return () => {
-            this.pending = undefined;
-        };
-    }
 }
 
 function createPreparationDependencies(): ALInboundEffectPreparationDependencies {
@@ -282,7 +271,6 @@ function createPreparationDependencies(): ALInboundEffectPreparationDependencies
 function createRuntimeDependencies(admissionStore: ALInboundAdmissionStore): ALInboundMessageRuntime.Dependencies {
     return {
         admissionStore,
-        inbox: new InMemoryQueueBox(new Map()),
         planIncomingMessage,
         readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
         dispatchInboxEntry: async () => {},
@@ -290,7 +278,8 @@ function createRuntimeDependencies(admissionStore: ALInboundAdmissionStore): ALI
         effectPreparation: createPreparationDependencies(),
         effectWorkerId: 'test-worker',
         clock: { nowMs: () => Date.now() },
-        scheduler: new TestEffectScheduler()
+        queueEngine: new InboxOutboxEngine(),
+        ownsQueueEngine: true
     };
 }
 

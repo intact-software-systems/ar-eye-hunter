@@ -31,12 +31,12 @@ import {
     type ResourceEntry
 } from '@shared/mod.ts';
 
-describe('ALInboundMessageRuntime', () => {
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
+afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+});
 
+describe('ALInboundMessageRuntime', () => {
     it('buffers ordered gaps, emits negative controls, and releases buffered messages in order', async () => {
         const { runtime, dispatchedTexts, controlMessages, forwardedIds } = createInboundHarness();
 
@@ -97,7 +97,7 @@ describe('ALInboundMessageRuntime', () => {
 
         await runtime.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
-        expect(dispatchedTexts).toEqual(['one', 'two']);
+        await expect.poll(() => dispatchedTexts).toEqual(['one', 'two']);
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
     });
 
@@ -126,7 +126,7 @@ describe('ALInboundMessageRuntime', () => {
     });
 
     it('returns a stale optimistic write to the caller and admits a fresh redelivery', async () => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['Date'] });
 
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const baseAdmission = stores.admissionStore;
@@ -156,7 +156,7 @@ describe('ALInboundMessageRuntime', () => {
         await runtime.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
         expect(rejectedFirstCommit).toBe(true);
-        expect(dispatchedTexts).toEqual(['one', 'two']);
+        await expect.poll(() => dispatchedTexts).toEqual(['one', 'two']);
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
     });
 
@@ -217,11 +217,11 @@ describe('ALInboundMessageRuntime', () => {
         releaseFirstDelivery.resolve();
         await Promise.all([firstAdmission, secondAdmission]);
 
-        expect(deliveredSenderIds).toEqual(['peer-1', 'peer-2']);
+        await expect.poll(() => deliveredSenderIds).toEqual(['peer-1', 'peer-2']);
     });
 
     it('returns control conflicts without an inner retry and accepts a later redelivery', async () => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['Date'] });
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const expireAtTimestamp = Date.now() + 300000;
         const original = createOrderedMessage(1, 'pending');
@@ -237,10 +237,12 @@ describe('ALInboundMessageRuntime', () => {
             observations: read.observations,
             mutations: [{
                 kind: 'set-msg-owner',
-                msgId: 'missing-msg',
-                senderId: 'peer-1',
-                source: { kind: 'ws-client', peerId: 'peer-1' },
-                supersedenceKey: null,
+                value: {
+                    msgId: 'missing-msg',
+                    senderId: 'peer-1',
+                    source: { kind: 'ws-client', peerId: 'peer-1' },
+                    supersedenceKey: null
+                },
                 expireAtTimestamp
             }, {
                 kind: 'set-control-pending',
@@ -298,7 +300,7 @@ describe('ALInboundMessageRuntime', () => {
     });
 
     it('redelivers buffered work when a downstream ack changes its original pending receipt', async () => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['Date'] });
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const baseAdmission = stores.admissionStore;
         const commitBundle = baseAdmission.commitBundle.bind(baseAdmission);
@@ -310,10 +312,7 @@ describe('ALInboundMessageRuntime', () => {
         let releaseConflictObserved = false;
 
         vi.spyOn(baseAdmission, 'commitBundle').mockImplementation(async (bundle) => {
-            const releasesSecondMessage = bundle.durableEffects.some(({ payload }) =>
-                (payload.kind === 'dispatch-local' || payload.kind === 'enqueue-inbox') &&
-                decodePersistedALMessage(payload.entry.resource).id.msgId === seq2.id.msgId
-            );
+            const releasesSecondMessage = bundle.observations.buffered?.msg.id.msgId === seq2.id.msgId;
             if (!didBlock && releasesSecondMessage) {
                 didBlock = true;
                 releaseCommitReady.resolve();
@@ -350,7 +349,9 @@ describe('ALInboundMessageRuntime', () => {
 
         releaseCommitBlocked.resolve();
         await pendingRelease;
-        await vi.advanceTimersByTimeAsync(100);
+        await expect.poll(() => releaseConflictObserved).toBe(true);
+        vi.setSystemTime(Date.now() + 100);
+        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(1);
 
         const ackPayloads = readAckPayloads(controlMessages);
 
@@ -423,31 +424,20 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         });
     });
 
-    it('drains a completed subtree ack accepted while the current drain is finishing', async () => {
-        const stores = createDefaultInMemoryALInboundRuntimeStores();
-        const { runtime, controlMessages } = createInboundHarness(stores);
-        await runtime.ready();
-        const emptyRead = Promise.withResolvers<void>();
-        const releaseEmptyRead = Promise.withResolvers<void>();
-        const controlStored = Promise.withResolvers<void>();
-        const readNextReadyAt = stores.admissionStore.peekNextEffectReadyAt.bind(stores.admissionStore);
-        const acceptControlMessage = stores.admissionStore.acceptControlMessage.bind(stores.admissionStore);
-        vi.spyOn(stores.admissionStore, 'peekNextEffectReadyAt').mockImplementation(async () => {
-            const readyAt = await readNextReadyAt();
-            emptyRead.resolve();
-            await releaseEmptyRead.promise;
-            return readyAt;
-        });
-        vi.spyOn(stores.admissionStore, 'acceptControlMessage').mockImplementation(async (message) => {
-            const acceptance = await acceptControlMessage(message);
-            controlStored.resolve();
-            return acceptance;
+    it('sends an upstream receipt accepted while forwarding is still in progress', async () => {
+        const forwardingStarted = Promise.withResolvers<void>();
+        const releaseForwarding = Promise.withResolvers<void>();
+        onTestFinished(() => releaseForwarding.resolve());
+        const { runtime, controlMessages } = createInboundHarness(undefined, {
+            forwardMessage: async () => {
+                forwardingStarted.resolve();
+                await releaseForwarding.promise;
+            }
         });
         const msg = createOrderedMessage(1, 'one', 'all-logical-recipients');
-
         const admission = runtime.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
-        await emptyRead.promise;
-        const acceptControl = runtime.handleIncomingMessage(
+        await forwardingStarted.promise;
+        const accepted = await runtime.handleIncomingMessage(
             newALAckControlMessage(
                 { v: 2, msgId: 'control-drain-ack', ts: 1, senderId: 'peer-2' },
                 {
@@ -460,22 +450,19 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
             ),
             { kind: 'ws-client', peerId: 'peer-2' }
         );
-        await controlStored.promise;
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        releaseEmptyRead.resolve();
-        await Promise.all([admission, acceptControl]);
+        expect(accepted.right).toEqual({ kind: 'control', handled: true });
+        releaseForwarding.resolve();
+        await admission;
 
-        const ackPayloads = readAckPayloads(controlMessages);
-        expect(ackPayloads).toHaveLength(1);
-        expect(ackPayloads[0]).toMatchObject({
+        await expect.poll(() => readAckPayloads(controlMessages)).toEqual([expect.objectContaining({
             ackedMsgId: msg.id.msgId,
             toPeerId: 'peer-1',
             status: 'subtree-complete'
-        });
+        })]);
     });
 
     it('does not complete deferred subtree ack after the source message expires', async () => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['Date'] });
 
         const { runtime, controlMessages, forwardedIds, controlAcceptances } = createInboundHarness();
 
@@ -508,7 +495,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         expect(forwardedIds).toEqual([msg.id.msgId]);
         expect(controlMessages).toHaveLength(0);
 
-        await vi.advanceTimersByTimeAsync(100);
+        vi.setSystemTime(Date.now() + 100);
         await runtime.handleIncomingMessage(
             newALAckControlMessage(
                 { v: 2, msgId: 'control-expired-ack', ts: 1, senderId: 'peer-2' },
@@ -531,7 +518,7 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
 
 describe('ALInboundMessageRuntime durable effects', () => {
     it('retries durable control effects after a transient send failure', async () => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['Date'] });
 
         let shouldFailFirstNack = true;
         const sentControls: ALMessage[] = [];
@@ -558,16 +545,16 @@ describe('ALInboundMessageRuntime durable effects', () => {
             'al.control.repair.v1'
         ]);
 
-        await vi.advanceTimersByTimeAsync(100);
+        vi.setSystemTime(Date.now() + 100);
 
-        expect(sentControls.map((msg) => msg.payload.typeId).sort()).toEqual([
+        await expect.poll(() => sentControls.map((msg) => msg.payload.typeId).sort()).toEqual([
             'al.control.nack.v1',
             'al.control.repair.v1'
         ]);
     });
 
     it('retries durable local dispatch after a transient handler failure', async () => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['Date'] });
 
         const delivered: string[] = [];
         let shouldFailFirstDispatch = true;
@@ -609,9 +596,9 @@ describe('ALInboundMessageRuntime durable effects', () => {
 
         expect(delivered).toEqual([]);
 
-        await vi.advanceTimersByTimeAsync(100);
+        vi.setSystemTime(Date.now() + 100);
 
-        expect(delivered).toEqual([msg.id.msgId]);
+        await expect.poll(() => delivered).toEqual([msg.id.msgId]);
     });
 
     it('does not retry durable local dispatch after the message expires', async () => {
@@ -658,7 +645,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
 
         expect(delivered).toEqual([]);
 
-        await vi.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(30_000);
 
         expect(delivered).toEqual([]);
     });
@@ -682,14 +669,15 @@ describe('ALInboundMessageRuntime durable effects', () => {
         const seq1 = createOrderedMessage(1, 'one');
 
         await runtime.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
-        await vi.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(30_000);
         await runtime.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
+        await vi.advanceTimersByTimeAsync(30_000);
         expect(dispatchedTexts).toEqual(['one']);
     });
 
     it('replays persisted durable effects after runtime restart', async () => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['Date'] });
 
         const persistence = createInboundPersistenceFixture();
         const stores = persistence.openStores();
@@ -712,16 +700,16 @@ describe('ALInboundMessageRuntime durable effects', () => {
             persistence.openStores()
         );
         await runtime2.ready();
-        await vi.advanceTimersByTimeAsync(100);
+        vi.setSystemTime(Date.now() + 100);
 
-        expect(controlMessages.map((msg) => msg.payload.typeId).sort()).toEqual([
+        await expect.poll(() => controlMessages.map((msg) => msg.payload.typeId).sort()).toEqual([
             'al.control.nack.v1',
             'al.control.repair.v1'
         ]);
     });
 
     it('replays completed pending acks from control-message acceptance after restart', async () => {
-        vi.useFakeTimers();
+        vi.useFakeTimers({ toFake: ['Date'] });
 
         const persistence = createInboundPersistenceFixture();
         const stores = persistence.openStores();
@@ -761,8 +749,9 @@ describe('ALInboundMessageRuntime durable effects', () => {
             persistence.openStores()
         );
         await runtime2.ready();
-        await vi.advanceTimersByTimeAsync(100);
+        vi.setSystemTime(Date.now() + 100);
 
+        await expect.poll(() => readAckPayloads(controlMessages)).toHaveLength(1);
         const ackPayloads = readAckPayloads(controlMessages);
 
         expect(ackPayloads).toHaveLength(1);
@@ -800,7 +789,6 @@ function createInboundHarness(
     stores = createDefaultInMemoryALInboundRuntimeStores(),
     overrides: InboundHarnessOverrides = {}
 ): InboundHarness {
-    const inbox = new InMemoryQueueBox(new Map());
     const dispatchedTexts: string[] = [];
     const controlMessages: ALMessage[] = [];
     const forwardedIds: string[] = [];
@@ -808,7 +796,7 @@ function createInboundHarness(
 
     const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'self',
-        inbox,
+
         stores,
         planIncomingMessage: (msg, source, observations) =>
             planALMessageHandling(msg, {

@@ -4,6 +4,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi,
     type MockInstance
 } from 'vitest';
@@ -67,15 +68,14 @@ describe('durable WS outbox owner misses', () => {
         const ownerSocket = createSocket();
         const misses: WsOutboxDeliveryOutcome[] = [];
         const nonOwner = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: createSocket().socket,
             name: 'server-without-target',
             targetResolver: { resolvePeerRecipients: () => [] },
             outboundDeliveryOutcome: (outcome) => misses.push(outcome)
         });
+        onTestFinished(() => nonOwner.dispose());
         const owner = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: ownerSocket.socket,
             name: 'server-with-target',
@@ -83,6 +83,7 @@ describe('durable WS outbox owner misses', () => {
                 resolvePeerRecipients: () => [{ peerId: 'writer-session', connectionId: 'writer-session' }]
             }
         });
+        onTestFinished(() => owner.dispose());
 
         await nonOwner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
 
@@ -126,7 +127,6 @@ describe('durable WS outbox owner misses', () => {
             }
         });
         const owner = createDefaultWsQueueBoxServerService({
-            inbox: new InMemoryQueueBox(),
             outbox: outbox,
             socket: ownerSocket.socket,
             name: 'server-with-target',
@@ -135,6 +135,7 @@ describe('durable WS outbox owner misses', () => {
             },
             outboundStores: { admissionStore }
         });
+        onTestFinished(() => owner.dispose());
 
         await owner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
         await vi.waitFor(() => {
@@ -169,15 +170,13 @@ describe('durable WS outbox owner misses', () => {
             wsQBoxServerService: nonOwner,
             bridge: bus,
             channel: 'ws',
-            publisherId: 'non-owner',
-            delivery: 'key'
+            publisherId: 'non-owner'
         });
         installQueueBoxPubSubBridge({
             wsQBoxServerService: owner,
             bridge: bus,
             channel: 'ws',
-            publisherId: 'owner',
-            delivery: 'key'
+            publisherId: 'owner'
         });
 
         await nonOwner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
@@ -215,7 +214,7 @@ describe('durable WS outbox owner misses', () => {
             bridge: bus,
             channel: 'ws',
             publisherId: 'claimant',
-            delivery: 'key',
+
             timing: (event) => timing.push(event)
         });
         installQueueBoxPubSubBridge({
@@ -223,7 +222,7 @@ describe('durable WS outbox owner misses', () => {
             bridge: bus,
             channel: 'ws',
             publisherId: 'remote',
-            delivery: 'key',
+
             timing: (event) => timing.push(event)
         });
 
@@ -263,16 +262,14 @@ describe('durable WS outbox owner misses', () => {
             wsQBoxServerService: claimant,
             bridge: bus,
             channel: 'ws',
-            publisherId: 'claimant',
-            delivery: 'key'
+            publisherId: 'claimant'
         });
         await claimantReadiness;
         const remoteReadiness = installQueueBoxPubSubBridge({
             wsQBoxServerService: remote,
             bridge: bus,
             channel: 'ws',
-            publisherId: 'remote',
-            delivery: 'key'
+            publisherId: 'remote'
         });
         await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(
             createUnicastMessage('published-before-readiness', 'reply-before-readiness'),
@@ -321,8 +318,7 @@ describe('durable WS outbox owner misses', () => {
             wsQBoxServerService: service,
             bridge: createBridgeBus(),
             channel: 'ws',
-            publisherId: 'claimant',
-            delivery: 'key'
+            publisherId: 'claimant'
         });
 
         await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
@@ -357,8 +353,7 @@ describe('durable WS outbox owner misses', () => {
             wsQBoxServerService: service,
             bridge: bus,
             channel: 'ws',
-            publisherId: 'claimant',
-            delivery: 'key'
+            publisherId: 'claimant'
         });
 
         await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
@@ -406,15 +401,14 @@ describe('durable WS outbox owner misses', () => {
                 wsQBoxServerService: claimant,
                 bridge: bus,
                 channel: 'ws',
-                publisherId: 'claimant',
-                delivery: 'key'
+                publisherId: 'claimant'
             });
             installQueueBoxPubSubBridge({
                 wsQBoxServerService: remote,
                 bridge: bus,
                 channel: 'ws',
                 publisherId: 'remote',
-                delivery: 'key',
+
                 retryPolicy: remoteRetryPolicy,
                 jitterUnit: () => 0
             });
@@ -483,8 +477,7 @@ function createSocket(): WsOutboxTestSocket {
 }
 
 function createService(input: CreateWsOutboxServiceInput): WsQueueBoxServerService {
-    return createDefaultWsQueueBoxServerService({
-        inbox: new InMemoryQueueBox(),
+    const service = createDefaultWsQueueBoxServerService({
         outbox: input.outbox,
         socket: input.socket.socket,
         name: input.name,
@@ -493,6 +486,8 @@ function createService(input: CreateWsOutboxServiceInput): WsQueueBoxServerServi
             resolveBroadcastRecipients: input.resolveRecipients
         }
     });
+    onTestFinished(() => service.dispose());
+    return service;
 }
 
 function createBridgeBus(): QueueBoxPubSubBridge {

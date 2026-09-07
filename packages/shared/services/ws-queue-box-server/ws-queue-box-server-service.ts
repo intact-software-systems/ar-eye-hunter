@@ -9,6 +9,7 @@ import {
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import {
     planALMessageHandling,
+    resolveALMessageExpireAtMs,
     resolveALQosNormalizationInput,
     type ALMessageHandlingPlan,
     type ALMessagePlanningObservations,
@@ -25,7 +26,7 @@ import type {
 import { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import { createDefaultALOutboundRuntimeResources } from '../../alm/outbound/create-default-al-outbound-message-runtime.ts';
 import { EnqueuedType } from '../../api/api-config.ts';
-import type { ResilienceDto } from '../../queuebox/DequeueResourceEntryController.ts';
+import { NonRetryableException, type ResilienceDto } from '../../queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
@@ -53,7 +54,6 @@ import { WsQueueBoxServerTargetResolution } from './ws-queue-box-server-target-r
 export namespace WsQueueBoxServerService {
     export interface Input {
         readonly queueEngine?: InboxOutboxEngine;
-        readonly inbox: QueueBoxResourceEntryRepository;
         readonly outbox: QueueBoxResourceEntryRepository;
         readonly socket: JsonWebSocketServer;
         readonly name: string;
@@ -77,7 +77,6 @@ export namespace WsQueueBoxServerService {
     }
 
     export interface Dependencies {
-        readonly inbox: QueueBoxResourceEntryRepository;
         readonly outbox: QueueBoxResourceEntryRepository;
         readonly socket: JsonWebSocketServer;
         readonly name: string;
@@ -101,11 +100,6 @@ export class WsQueueBoxServerService {
         this.OUTBOX_ENQUEUE_TYPE
     ]);
 
-    public static readonly INBOX_ENQUEUE_TYPE = EnqueuedType.WS_INBOX;
-    public static readonly INBOX_DEQUEUE_TYPES = new Set<string>([
-        this.INBOX_ENQUEUE_TYPE
-    ]);
-
     private readonly onInboxWebSocketMessageCallbacks = new Map<string, OnWebSocketServerMessageCallback<ALMessage>>();
 
     private readonly onAnyInboxWebSocketMessageCallbacks = new Map<
@@ -118,6 +112,7 @@ export class WsQueueBoxServerService {
         entry: ResourceEntry
     ) => Promise<void>;
     private readonly inboundRuntime: ALInboundMessageRuntime;
+    private readonly inboundQueueEngine: InboxOutboxEngine;
     private readonly outboundRuntime: ALOutboundMessageRuntime<WsQueueBoxServerPreparedMessage>;
     private readonly qosProvider?: ALQosInputProvider;
     private readonly targetResolution: WsQueueBoxServerTargetResolution;
@@ -128,13 +123,12 @@ export class WsQueueBoxServerService {
     private readonly forwardsRoomScopedMessages: boolean;
     private inboundAuthorizer: WsServerInboundAuthorizer | undefined;
     private disposed = false;
-    public readonly inbox: QueueBoxResourceEntryRepository;
     public readonly outbox: QueueBoxResourceEntryRepository;
     public readonly socket: JsonWebSocketServer;
     public readonly name: string;
 
     constructor(dependencies: WsQueueBoxServerService.Dependencies) {
-        this.inbox = dependencies.inbox;
+        this.inboundQueueEngine = dependencies.inboundRuntime.queueEngine;
         this.outbox = dependencies.outbox;
         this.socket = dependencies.socket;
         this.name = dependencies.name;
@@ -210,9 +204,9 @@ export class WsQueueBoxServerService {
     ): ALInboundMessageRuntime {
         return new ALInboundMessageRuntime({
             ...dependencies.inboundRuntime,
-            inbox: this.inbox,
             planIncomingMessage: (message, fromPeerId, runtime) =>
                 this.planIncomingMessage(message, fromPeerId, runtime),
+            canDispatchMessage: (message) => this.hasInboxConsumer(message),
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             dispatchInboxEntry: (entry, plan, source) => this.dispatchInboxEntry(entry, plan, source),
             sendControlMessage: (message) => this.sendControlMessage(message),
@@ -271,6 +265,7 @@ export class WsQueueBoxServerService {
             WsQueueBoxServerService.ALL_IN,
             callback
         );
+        this.inboundQueueEngine.wake();
         return this;
     }
 
@@ -279,6 +274,7 @@ export class WsQueueBoxServerService {
         callback: OnWebSocketServerMessageCallback<ALMessage>
     ): WsQueueBoxServerService {
         this.onAnyInboxWebSocketMessageCallbacks.set(id, callback);
+        this.inboundQueueEngine.wake();
         return this;
     }
 
@@ -287,6 +283,7 @@ export class WsQueueBoxServerService {
         callback: OnWebSocketServerMessageCallback<ALMessage>
     ): WsQueueBoxServerService {
         this.onInboxWebSocketMessageCallbacks.set(id, callback);
+        this.inboundQueueEngine.wake();
         return this;
     }
 
@@ -335,20 +332,6 @@ export class WsQueueBoxServerService {
         resilience: ResilienceDto
     ): Promise<void> {
         await this.outboundRuntime.dequeue(typesToDequeue, resilience);
-    }
-
-    async dequeueInbox(
-        typesToDequeue: Set<string>,
-        resilience: ResilienceDto
-    ): Promise<void> {
-        await QueueBoxUtilities.defaultDequeue(
-            this.inbox,
-            typesToDequeue,
-            resilience,
-            QueueBoxUtilities.withRetryDisposition(
-                async (entry) => await this.inboundRuntime.dispatchStoredEntry(entry)
-            )
-        );
     }
 
     private sendControlMessage(message: ALMessage): Promise<void> {
@@ -479,6 +462,12 @@ export class WsQueueBoxServerService {
         );
     }
 
+    private hasInboxConsumer(message: ALMessage): boolean {
+        return this.onInboxWebSocketMessageCallbacks.has(message.payload.typeId) ||
+            this.onInboxWebSocketMessageCallbacks.has(WsQueueBoxServerService.ALL_IN) ||
+            this.onAnyInboxWebSocketMessageCallbacks.size > 0;
+    }
+
     private async dispatchInboxEntry(
         entry: ResourceEntry,
         plan: ALMessageHandlingPlan,
@@ -486,44 +475,43 @@ export class WsQueueBoxServerService {
     ): Promise<void | 'completed' | 'retry'> {
         const message = decodePersistedALMessage(entry.resource);
         const authority = await this.readCurrentDispatchAuthority(message);
-        if (authority !== 'authorized') {
+        if (typeof authority === 'string') {
             return authority;
         }
 
-        const context: WebSocketServerMessageContext = { server: this.socket, source };
-        let exclusiveCallback;
-        let wildcard = undefined;
-
-        if (plan?.ownership.exclusive) {
-            exclusiveCallback = this.onInboxWebSocketMessageCallbacks.get(message.payload.typeId) ??
-                this.onInboxWebSocketMessageCallbacks.get(
-                    WsQueueBoxServerService.ALL_IN
-                );
-
-            await exclusiveCallback?.onMessage(message, entry, context);
+        if (entry.audit.expiryTs.epochMilliseconds <= Date.now()) {
+            throw new NonRetryableException('Inbound message expired during authorization');
         }
-        else {
-            exclusiveCallback = this.onInboxWebSocketMessageCallbacks.get(
-                message.payload.typeId
-            );
-            await exclusiveCallback?.onMessage(message, entry, context);
 
-            wildcard = this.onInboxWebSocketMessageCallbacks.get(
-                WsQueueBoxServerService.ALL_IN
-            );
-            await wildcard?.onMessage(message, entry, context);
+        const context: WebSocketServerMessageContext = { server: this.socket, source };
+        const selected = this.onInboxWebSocketMessageCallbacks.get(message.payload.typeId) ??
+            (plan.ownership.exclusive
+                ? this.onInboxWebSocketMessageCallbacks.get(WsQueueBoxServerService.ALL_IN)
+                : undefined);
+        await selected?.onMessage(message, entry, context);
+        const wildcard = plan.ownership.exclusive
+            ? undefined
+            : this.onInboxWebSocketMessageCallbacks.get(WsQueueBoxServerService.ALL_IN);
+        if (wildcard !== undefined) {
+            if (entry.audit.expiryTs.epochMilliseconds <= Date.now()) {
+                throw new NonRetryableException('Inbound message expired before wildcard delivery');
+            }
+            await wildcard.onMessage(message, entry, context);
         }
 
         for (const callback of this.onAnyInboxWebSocketMessageCallbacks.values()) {
+            if (entry.audit.expiryTs.epochMilliseconds <= Date.now()) {
+                throw new NonRetryableException('Inbound message expired before observer delivery');
+            }
             await callback.onMessage(message, entry, context);
         }
 
         if (
-            exclusiveCallback === undefined &&
+            selected === undefined &&
             wildcard === undefined &&
             this.onAnyInboxWebSocketMessageCallbacks.size === 0
         ) {
-            console.warn('No callback for typeId ', message.payload.typeId);
+            return 'retry';
         }
     }
 
@@ -576,11 +564,18 @@ export class WsQueueBoxServerService {
         plan: ALMessageHandlingPlan
     ): Promise<void | 'completed' | 'retry'> {
         const authority = await this.readCurrentDispatchAuthority(message);
-        if (authority !== 'authorized') {
+        if (typeof authority === 'string') {
             return authority;
         }
+        const expiresAtMs = resolveALMessageExpireAtMs(message, plan.effective);
+        if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
+            throw new NonRetryableException('Inbound message expired before forwarding');
+        }
         const nextHopPeerIds = plan.forwarding.nextHopPeerIds
-            .filter((peerId) => peerId !== fromPeerId);
+            .filter((peerId) =>
+                peerId !== fromPeerId &&
+                (authority.roomRecipientPeerIds === undefined || authority.roomRecipientPeerIds.includes(peerId))
+            );
 
         if (nextHopPeerIds.length === 0) {
             return Promise.resolve();
@@ -612,7 +607,9 @@ export class WsQueueBoxServerService {
         return Promise.resolve();
     }
 
-    private async readCurrentDispatchAuthority(message: ALMessage): Promise<'authorized' | 'completed' | 'retry'> {
+    private async readCurrentDispatchAuthority(
+        message: ALMessage
+    ): Promise<Extract<WsServerInboundAuthorization, { authorized: true; }> | 'completed' | 'retry'> {
         if (this.disposed) {
             return 'retry';
         }
@@ -628,7 +625,7 @@ export class WsQueueBoxServerService {
             return 'retry';
         }
         return authorization.authorized
-            ? 'authorized'
+            ? authorization
             : authorization.reason === 'not-yet-in-sync'
             ? 'retry'
             : 'completed';
@@ -637,7 +634,6 @@ export class WsQueueBoxServerService {
 
 export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerService.Input): WsQueueBoxServerService {
     return new WsQueueBoxServerService({
-        inbox: input.inbox,
         outbox: input.outbox,
         socket: input.socket,
         name: input.name,
@@ -645,9 +641,9 @@ export function createDefaultWsQueueBoxServerService(input: WsQueueBoxServerServ
         targetResolver: input.targetResolver ?? {},
         inboundRuntime: createDefaultALInboundRuntimeResources({
             stores: input.inboundStores,
+            queueEngine: input.queueEngine,
             selfPeerId: input.name,
-            toInboxEntry: (message) =>
-                QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxServerService.INBOX_ENQUEUE_TYPE)
+            toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.WS_INBOX)
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
             stores: input.outboundStores,

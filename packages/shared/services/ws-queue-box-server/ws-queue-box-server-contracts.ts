@@ -9,6 +9,7 @@ export interface WsServerResolvedRecipient {
 
 export type WsServerLiveSendStatus =
     | 'sent-live'
+    | 'expired'
     | 'no-recipients'
     | 'partial-failure'
     | 'failed';

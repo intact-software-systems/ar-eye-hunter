@@ -11,6 +11,7 @@ import type {
     ALInboundAdmissionRead,
     ALInboundBufferedReleaseReadDto,
     ALInboundCommitBundle,
+    ALInboundDurableEffect,
     ALInboundMessageReadDto
 } from './al-inbound-admission-store.ts';
 import {
@@ -28,6 +29,7 @@ import {
 } from './al-inbound-planner-snapshot.ts';
 import {
     prepareALInboundCommitBundle,
+    toALInboundDispatchEntry,
     type ALInboundEffectFacts
 } from './prepare-al-inbound-commit-bundle.ts';
 import {
@@ -55,6 +57,12 @@ export interface ComputeALInboundBufferedReleaseInput {
     readonly facts: ALInboundEffectFacts;
 }
 
+export interface ALInboundBufferedRelease extends ALInboundCommitBundle {
+    readonly localDelivery:
+        | Extract<ALInboundDurableEffect, { readonly kind: 'dispatch-local'; }>
+        | undefined;
+}
+
 function computeALInboundMessageRead(
     read: ALInboundAdmissionRead,
     plan: ALMessageHandlingPlan
@@ -70,6 +78,8 @@ function computeALInboundMessageRead(
         : undefined;
     return {
         kind: 'incoming',
+        orderingTrackTtlMs: read.orderingTrackTtlMs,
+        namespace: read.namespace,
         msg: read.msg,
         fromPeerId: read.fromPeerId,
         source: read.source,
@@ -165,39 +175,36 @@ function computeALInboundAdmissionChanges(
 
 export function computeALInboundBufferedRelease(
     input: ComputeALInboundBufferedReleaseInput
-): ALInboundCommitBundle {
-    const changes = computeALInboundBufferedReleaseChanges(
-        input.read,
-        input.plan,
-        computeALInboundBufferedReleaseSupersedenceAcceptance(input.read)
-    );
-    return prepareALInboundCommitBundle({ ...changes, facts: input.facts });
-}
-
-function computeALInboundBufferedReleaseChanges(
-    read: ALInboundBufferedReleaseReadDto,
-    plan: ALMessageHandlingPlan,
-    supersedenceAcceptance: ALSupersedenceAcceptance | undefined
-): ALInboundAdmissionChanges {
+): ALInboundBufferedRelease {
+    const { read, plan, facts } = input;
+    const supersedenceAcceptance = computeALInboundBufferedReleaseSupersedenceAcceptance(read);
     const superseded = supersedenceAcceptance?.observation.status === 'superseded';
     const deliverable = !plan.dropReason && plan.localDelivery.enabled && !superseded;
     const acknowledgements = deliverable
         ? computeBufferedAcknowledgements(read, read.snapshot.plan, supersedenceAcceptance)
         : { mutations: [], immediateEffects: [], completedEffects: [] };
-    return {
+    const intent = deliverable
+        ? toALInboundLocalDeliveryEffects({ msg: read.snapshot.msg, plan })[0]?.payload
+        : undefined;
+    const expireAtTimestamp = resolveALMessageExpireAtMs(read.snapshot.msg, plan.effective) ??
+        read.nowMs + read.retention.durableEffectTtlMs;
+    const localDelivery = intent?.kind === 'dispatch-local'
+        ? { kind: intent.kind, entry: toALInboundDispatchEntry(facts.inboxEntry, expireAtTimestamp) }
+        : undefined;
+    const bundle = prepareALInboundCommitBundle({
         read,
+        facts,
         mutations: [
             {
                 kind: 'set-msg-owner',
-                msgId: read.snapshot.msg.id.msgId,
-                senderId: read.snapshot.msg.id.senderId,
-                source: read.source,
-                supersedenceKey: read.snapshot.plan.supersedence.key ?? null,
-                expireAtTimestamp: read.nowMs + read.retention.msgOwnerTtlMs
+                value: {
+                    msgId: read.snapshot.msg.id.msgId,
+                    senderId: read.snapshot.msg.id.senderId,
+                    source: read.source,
+                    supersedenceKey: read.snapshot.plan.supersedence.key ?? null
+                },
+                expireAtTimestamp: Math.max(read.nowMs + read.retention.msgOwnerTtlMs, expireAtTimestamp)
             },
-            ...(!deliverable
-                ? [{ kind: 'delete-buffered' as const, trackKey: read.snapshot.trackKey, seq: read.snapshot.seq }]
-                : []),
             ...(deliverable
                 ? toSupersedenceMutations(
                     supersedenceAcceptance,
@@ -207,26 +214,23 @@ function computeALInboundBufferedReleaseChanges(
             ...acknowledgements.mutations
         ],
         effects: [
-            ...(deliverable
-                ? toALInboundLocalDeliveryEffects({
-                    msg: read.snapshot.msg,
-                    plan
-                })
-                : []),
             ...acknowledgements.immediateEffects,
             ...acknowledgements.completedEffects
         ]
-    };
+    });
+    return { ...bundle, localDelivery };
 }
 
 function toAdmittedMessageMutations(read: ALInboundMessageReadDto): readonly ALInboundAdmissionMutation[] {
     const mutations: ALInboundAdmissionMutation[] = [
         {
             kind: 'set-msg-owner',
-            msgId: read.msg.id.msgId,
-            senderId: read.msg.id.senderId,
-            source: read.source,
-            supersedenceKey: read.plan.supersedence.key ?? null,
+            value: {
+                msgId: read.msg.id.msgId,
+                senderId: read.msg.id.senderId,
+                source: read.source,
+                supersedenceKey: read.plan.supersedence.key ?? null
+            },
             expireAtTimestamp: read.nowMs + read.retention.msgOwnerTtlMs
         }
     ];

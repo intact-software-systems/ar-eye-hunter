@@ -63,7 +63,6 @@ describe('browser RTC runtime composition', () => {
             return networkConnect.promise;
         });
         const queueBox = createDefaultWsQueueBoxClientService({
-            inbox: new InMemoryQueueBox(),
             outbox: new InMemoryQueueBox(),
             socket,
             sessionId: 'self'
@@ -171,6 +170,7 @@ describe('browser RTC runtime composition', () => {
             qboxEngine: new InboxOutboxEngine(),
             resilience: toResilienceDto()
         });
+        onTestFinished(() => manager.dispose());
 
         const result = await manager.enqueueIfAbsent(
             newALMulticastMessage(

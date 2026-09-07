@@ -394,7 +394,7 @@ and membership epochs.
 **Status:** Partly resolved. **Severity:** Medium. **Confidence:** Proven from code.
 
 [Inbound runtime](../../packages/shared/alm/inbound/al-inbound-message-runtime.ts),
-[effect worker](../../packages/shared/alm/inbound/al-inbound-durable-effect-worker.ts), and
+[QueueBox work handler](../../packages/shared/alm/inbound/al-inbound-work-handler.ts), and
 [admitted delivery](../../packages/shared/alm/inbound/al-inbound-admitted-delivery.ts) now fence
 disposal. Inspected tests cover disposal during admission/storage waits and cancellation of
 pending retries. The old claim that dispose only clears one timer is false.

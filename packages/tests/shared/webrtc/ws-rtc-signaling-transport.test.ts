@@ -123,7 +123,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
 function createSignalingQueueBox(): WsQueueBoxClientService {
     const service = createDefaultWsQueueBoxClientService({
         socket: new JsonWebSocketClient('ws://test'),
-        inbox: new InMemoryQueueBox(new Map()),
+
         outbox: new InMemoryQueueBox(new Map()),
         sessionId: 'session-1'
     }).enableDefaultCallbacks();

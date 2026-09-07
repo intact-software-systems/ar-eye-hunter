@@ -20,7 +20,6 @@ export function createRallarMiddleware(
         wsQBoxServerService: infrastructure.wsQBoxServerService,
         inboxQueueReader: infrastructure.inboxQueueReader,
         outboxQueueReader: infrastructure.outboxQueueReader,
-        wsInboxResilience: options.resilience.inbox,
         wsOutboxResilience: options.resilience.outbox ?? options.resilience.inbox,
         appInboxResilience: infrastructure.appInboxResilience,
         appOutboxResilience: infrastructure.appOutboxResilience

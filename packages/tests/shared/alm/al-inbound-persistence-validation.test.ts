@@ -4,13 +4,17 @@ import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import { encodeALAdmissionResourceEntry } from '@shared/alm/al-admission-resource-entry-validation.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionObservations,
     type ALInboundCommitBundle,
-    type ALInboundControlOwnerIndex
+    type ALInboundControlOwnerIndex,
+    type ALInboundDurableEffect
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { computeALInboundWorkEntry, decodeALInboundWorkEntry, toALInboundWorkKey, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -53,16 +57,24 @@ function createBufferedSnapshot() {
     return { trackKey: toALOrderingTrackKey(message)!, seq: 2, msg: message, plan: planMessage(message) };
 }
 
-function createStoredEffect(effectId = 'effect') {
-    return {
+function createWork(effectId = 'effect', payload: ALInboundDurableEffect = { kind: 'release-buffered', trackKey: 'track', seq: 2 }) {
+    return computeALInboundWorkEntry({
+        namespace: 'inbound',
         effectId,
-        payload: { kind: 'release-buffered', trackKey: 'track', seq: 2 },
-        status: 'pending',
-        attempts: 0,
-        retryAtMs: 0,
-        updatedAtMs: Date.now(),
+        payload,
+        observedAtMs: Date.now(),
         expireAtTimestamp: Date.now() + 60_000
-    };
+    });
+}
+
+async function claimWork(store: ReturnType<typeof createFixture>['store']) {
+    const page = await store.workQueue.readWorkPage({
+        typeId: toALInboundWorkType(store.namespace),
+        status: EntityStatus.NEW,
+        maxToRead: 10,
+        cursor: null
+    });
+    return await store.claimReadyEffects({ entries: page.entries, maxCount: 10 });
 }
 
 interface PendingAdmissionBundleInput {
@@ -78,10 +90,12 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
         observations: input.observations,
         mutations: [{
             kind: 'set-msg-owner',
-            msgId: message.id.msgId,
-            senderId: input.senderId,
-            source: { kind: 'ws-client', peerId: input.senderId },
-            supersedenceKey: null,
+            value: {
+                msgId: message.id.msgId,
+                senderId: input.senderId,
+                source: { kind: 'ws-client', peerId: input.senderId },
+                supersedenceKey: null
+            },
             expireAtTimestamp: input.expireAtTimestamp
         }, {
             kind: 'set-control-pending',
@@ -155,10 +169,12 @@ describe('inbound admission persisted values', () => {
                 observations: (await readIncoming(store, message)).observations,
                 mutations: [{
                     kind: 'set-msg-owner',
-                    msgId: message.id.msgId,
-                    senderId: message.id.senderId,
-                    source: { kind: 'ws-client', peerId: message.id.senderId, roomRecipientPeerIds },
-                    supersedenceKey: null,
+                    value: {
+                        msgId: message.id.msgId,
+                        senderId: message.id.senderId,
+                        source: { kind: 'ws-client', peerId: message.id.senderId, roomRecipientPeerIds },
+                        supersedenceKey: null
+                    },
                     expireAtTimestamp
                 }],
                 durableEffects: []
@@ -200,6 +216,7 @@ describe('inbound admission persisted values', () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
+            await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
             await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, {
                 ...snapshot,
                 plan: { ...snapshot.plan, effective: { ...snapshot.plan.effective, ack: { algo: 'hop', opts: {} } } }
@@ -228,6 +245,7 @@ describe('inbound admission persisted values', () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
+            await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
             await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, {
                 ...snapshot,
                 plan: { ...snapshot.plan, ...corruption }
@@ -252,25 +270,29 @@ describe('inbound admission persisted values', () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
+            await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
             await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, {
                 ...snapshot,
                 msg: { ...message, id: { ...message.id, senderId: 'wrong-sender' } }
             });
         });
 
-        await expect(store.readDeliveryPredecessors(snapshot.trackKey, 4)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(store.readOrderedDelivery(snapshot.trackKey, 4)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
-    it('fails a whole effect claim on malformed rows without leasing valid siblings', async () => {
-        const { state, backend, store } = createFixture();
-        await backend.write(async (transaction) => {
-            await transaction.set('inbound:effect:valid', createStoredEffect('valid'));
-            await transaction.set('inbound:effect:malformed', { ...createStoredEffect('malformed'), payload: { kind: 'release-buffered' } });
-        });
+    it('marks malformed work NON_RETRYABLE while reserving valid siblings', async () => {
+        const { store } = createFixture();
+        const valid = createWork('valid').entry;
+        const malformed = { ...createWork('malformed').entry, resource: '{invalid-json' };
+        await store.workQueue.enqueue(valid);
+        await store.workQueue.enqueue(malformed);
 
-        await expect(store.claimReadyEffects({ workerId: 'worker', maxCount: 10, leaseMs: 100, nowMs: Date.now() }))
-            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
-        expect(state.data.get('inbound:effect:valid')?.value).toMatchObject({ status: 'pending', attempts: 0 });
+        expect((await claimWork(store)).map((effect) => effect.effectId)).toEqual(['valid']);
+        expect(await store.workQueue.getItem(valid.key)).toMatchObject({ status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } });
+        expect(await store.workQueue.getItem(malformed.key)).toMatchObject({
+            status: EntityStatus.NON_RETRYABLE,
+            dequeueAudit: { attempts: 1, nextTs: undefined }
+        });
     });
 
     it.each([
@@ -281,78 +303,75 @@ describe('inbound admission persisted values', () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
+            await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
             await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, delivery });
         });
 
-        await expect(store.readDeliveryPredecessors(snapshot.trackKey, 4)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(store.readOrderedDelivery(snapshot.trackKey, 4)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
     it.each([
-        { status: 'unknown' },
-        { status: 'running', leaseOwner: 'worker' },
-        { status: 'pending', leaseOwner: 'worker', leaseUntilMs: 10 },
-        { attempts: 0.5 },
-        { retryAtMs: Number.NaN },
-        { lastError: { message: 'not a string' } },
-        { payload: { kind: 'forward-message', msg: message, fromPeerId: 'sender', plan: {} } },
-        { payload: { kind: 'send-control', msg: message } },
-        { payload: { kind: 'unknown' } },
-        { payload: { kind: 'send-control', msg: { ...message, payload: { typeId: 'al.control.ack.v1', resource: '{}' } } } }
-    ])('rejects corrupt effect headers or payloads in direct lifecycle operations', async (corruption) => {
-        const { backend, store } = createFixture();
-        await backend.write(async (transaction) => {
-            await transaction.set('inbound:effect:effect', { ...createStoredEffect(), ...corruption });
-        });
-
-        await expect(store.completeEffect('effect', 'worker')).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        { kind: 'forward-message', msg: message, fromPeerId: 'sender', plan: {} },
+        { kind: 'send-control', msg: message },
+        { kind: 'unknown' },
+        { kind: 'send-control', msg: { ...message, payload: { typeId: 'al.control.ack.v1', resource: '{}' } } }
+    ])('terminalizes corrupt work payloads at observed reservation', async (payload) => {
+        const { store } = createFixture();
+        const entry = {
+            ...createWork().entry,
+            resource: JSON.stringify({ namespace: 'inbound', effectId: 'effect', payload })
+        };
+        await store.workQueue.enqueue(entry);
+        expect(await claimWork(store)).toEqual([]);
+        expect(await store.workQueue.getItem(entry.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
     });
 
-    it.each([
-        { name: 'track', payload: { kind: 'release-buffered', trackKey: 'another-track', seq: 2 } },
-        { name: 'sequence', payload: { kind: 'release-buffered', trackKey: toALOrderingTrackKey(message), seq: 50 } },
-        {
-            name: 'message',
-            payload: {
-                kind: 'dispatch-local',
-                entry: QueueBoxUtilities.toResourceEntryFromMsg({ ...message, id: { ...message.id, msgId: 'another-message' } }, 'inbox')
-            }
-        },
-        { name: 'non-delivery', payload: { kind: 'forward-message', msg: message, plan: planMessage(message), fromPeerId: 'sender' } },
-        {
-            name: 'missing-inbox',
-            payload: { kind: 'enqueue-inbox', entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox') }
-        }
-    ])(
+    it.each(
+        [
+            { name: 'track', payload: { kind: 'release-buffered', trackKey: 'another-track', seq: 2 } },
+            { name: 'sequence', payload: { kind: 'release-buffered', trackKey: toALOrderingTrackKey(message)!, seq: 50 } },
+            {
+                name: 'message',
+                payload: {
+                    kind: 'dispatch-local',
+                    entry: QueueBoxUtilities.toResourceEntryFromMsg({ ...message, id: { ...message.id, msgId: 'another-message' } }, 'inbox')
+                }
+            },
+            { name: 'non-delivery', payload: { kind: 'forward-message', msg: message, plan: planMessage(message), fromPeerId: 'sender' } }
+        ] satisfies readonly { name: string; payload: ALInboundDurableEffect; }[]
+    )(
         'rejects a structurally valid effect with a mismatched $name delivery owner',
         async ({ payload }) => {
             const { backend, store } = createFixture();
             const snapshot = createBufferedSnapshot();
             await backend.write(async (transaction) => {
+                await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
                 await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, delivery: { effectId: 'owner' } });
-                await transaction.set('inbound:effect:owner', { ...createStoredEffect('owner'), payload });
             });
 
-            await expect(store.readDeliveryPredecessors(snapshot.trackKey, 3)).rejects.toMatchObject({
-                name: 'ALAdmissionCorruptionError',
-                key: 'inbound:effect:owner'
-            });
+            await store.workQueue.enqueue(createWork('owner', payload).entry);
+            await expect(store.readOrderedDelivery(snapshot.trackKey, 3)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
         }
     );
 
-    it('keeps an exact release owner fenced and allows a completed owner to disappear', async () => {
+    it('requires durable delivery progress before a cleaned-up work owner can be skipped', async () => {
         const { backend, store } = createFixture();
         const snapshot = createBufferedSnapshot();
         await backend.write(async (transaction) => {
-            await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, delivery: { effectId: 'arbitrary-owner' } });
-            await transaction.set('inbound:effect:arbitrary-owner', {
-                ...createStoredEffect('arbitrary-owner'),
-                payload: { kind: 'release-buffered', trackKey: snapshot.trackKey, seq: snapshot.seq }
-            });
+            await transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 1, expireAtTimestamp: Date.now() + 60_000 });
+            await transaction.set(`inbound:buffered:${snapshot.trackKey}:2`, { ...snapshot, delivery: { effectId: 'owner' } });
         });
-
-        await expect(store.readDeliveryPredecessors(snapshot.trackKey, 3)).resolves.toEqual([{ kind: 'effect' }]);
-        await backend.write((transaction) => transaction.remove('inbound:effect:arbitrary-owner'));
-        await expect(store.readDeliveryPredecessors(snapshot.trackKey, 3)).resolves.toEqual([]);
+        const work = createWork('owner', { kind: 'release-buffered', trackKey: snapshot.trackKey, seq: 2 });
+        await store.workQueue.enqueue(work.entry);
+        expect(await store.readOrderedDelivery(snapshot.trackKey, 3)).toEqual({ completedThrough: 1, predecessor: { kind: 'effect' } });
+        const [reservation] = await claimWork(store);
+        await store.completeEffect(reservation!.entry);
+        await store.workQueue.removeItem(work.entry.key);
+        expect(await store.readOrderedDelivery(snapshot.trackKey, 3)).toEqual({ completedThrough: 1, predecessor: { kind: 'resync-required' } });
+        await backend.write((transaction) =>
+            transaction.set(`inbound:delivered:${snapshot.trackKey}`, { completedThrough: 2, expireAtTimestamp: Date.now() + 60_000 })
+        );
+        expect(await store.readOrderedDelivery(snapshot.trackKey, 3)).toEqual({ completedThrough: 2, predecessor: undefined });
     });
 
     it('rejects control history whose message ID differs from the trusted requested slot', async () => {
@@ -373,56 +392,59 @@ describe('inbound admission persisted values', () => {
         { dequeueAudit: { attempts: 'one' } },
         { audit: { date: '12:00:00', createdBy: 'sender', createdTs: '2026-08-31T12:00:00', expiryTs: 'not-a-time' } },
         { resource: '{}' }
-    ])('rejects malformed or wrong-route durable queue entries', async (corruption) => {
-        const { backend, store } = createFixture();
-        await backend.write(async (transaction) => {
-            await transaction.set('inbound:effect:effect', {
-                ...createStoredEffect(),
+    ])('marks malformed or wrong-route embedded queue entries as NON_RETRYABLE', async (corruption) => {
+        const { store } = createFixture();
+        const entry = {
+            ...createWork().entry,
+            resource: JSON.stringify({
+                namespace: 'inbound',
+                effectId: 'effect',
                 payload: {
                     kind: 'dispatch-local',
-                    entry: { ...QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox'), ...corruption }
+                    entry: { ...encodeALAdmissionResourceEntry(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')), ...corruption }
                 }
-            });
-        });
-
-        await expect(store.claimReadyEffects({ workerId: 'worker', maxCount: 1, leaseMs: 100, nowMs: Date.now() }))
-            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+            })
+        };
+        await store.workQueue.enqueue(entry);
+        expect(await claimWork(store)).toEqual([]);
+        expect(await store.workQueue.getItem(entry.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
     });
 
-    it('rejects a listed effect whose identity does not equal the complete suffix', async () => {
-        const { backend, store } = createFixture();
-        await backend.write(async (transaction) => {
-            await transaction.set('inbound:effect:prefix:effect', createStoredEffect('effect'));
-        });
-
-        await expect(store.peekNextEffectReadyAt()).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
-        await expect(store.completeEffect('prefix:effect', 'worker')).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    it.each([
+        { namespace: 'wrong-scope', effectId: 'effect' },
+        { namespace: 'inbound', effectId: 'prefix:effect' }
+    ])('rejects queued work whose stored identity differs from its slot', async (identity) => {
+        const { store } = createFixture();
+        const work = createWork();
+        const entry = { ...work.entry, resource: JSON.stringify({ ...identity, payload: work.payload }) };
+        expect(() => decodeALInboundWorkEntry(entry, 'inbound')).toThrow(ALAdmissionCorruptionError);
+        await store.workQueue.enqueue(entry);
+        expect(await claimWork(store)).toEqual([]);
+        expect(await store.workQueue.getItem(entry.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
     });
 
     it('rolls back earlier admission writes when the existing durable effect is corrupt', async () => {
-        const { state, backend, store } = createFixture();
-        await backend.write(async (transaction) => {
-            await transaction.set('inbound:effect:effect', { ...createStoredEffect(), attempts: -1 });
-        });
+        const { state, store } = createFixture();
+        const work = createWork();
+        await store.workQueue.enqueue({ ...work.entry, resource: '{invalid-json' });
 
         await expect(store.commitBundle({
             senderId: message.id.senderId,
             observations: (await readIncoming(store, message)).observations,
             mutations: [{
                 kind: 'set-msg-owner',
-                msgId: message.id.msgId,
-                senderId: message.id.senderId,
-                source: { kind: 'ws-client', peerId: message.id.senderId },
-                supersedenceKey: null,
+                value: {
+                    msgId: message.id.msgId,
+                    senderId: message.id.senderId,
+                    source: { kind: 'ws-client', peerId: message.id.senderId },
+                    supersedenceKey: null
+                },
                 expireAtTimestamp: Date.now() + 60_000
             }],
-            durableEffects: [{
-                effectId: 'effect',
-                expireAtTimestamp: Date.now() + 60_000,
-                payload: { kind: 'release-buffered', trackKey: 'track', seq: 2 }
-            }]
+            durableEffects: [createWork()]
         })).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
-        expect([...state.data.keys()]).toEqual(['inbound:effect:effect']);
+        expect([...state.data.keys()]).toEqual([]);
+        expect((await store.workQueue.getItem(work.entry.key))?.resource).toBe('{invalid-json');
     });
 
     it('rejects a durable effect identity reused for different payload ownership', async () => {
@@ -431,25 +453,17 @@ describe('inbound admission persisted values', () => {
             senderId: message.id.senderId,
             observations: (await readIncoming(store, message)).observations,
             mutations: [],
-            durableEffects: [{
-                effectId: 'effect',
-                expireAtTimestamp: Date.now() + 60_000,
-                payload: { kind: 'release-buffered', trackKey: 'track', seq: 2 }
-            }]
+            durableEffects: [createWork()]
         });
 
         await expect(store.commitBundle({
             senderId: message.id.senderId,
             observations: (await readIncoming(store, message)).observations,
             mutations: [],
-            durableEffects: [{
-                effectId: 'effect',
-                expireAtTimestamp: Date.now() + 60_000,
-                payload: { kind: 'release-buffered', trackKey: 'other-track', seq: 2 }
-            }]
+            durableEffects: [createWork('effect', { kind: 'release-buffered', trackKey: 'other-track', seq: 2 })]
         })).rejects.toMatchObject({
             name: 'ALAdmissionCorruptionError',
-            key: 'inbound:effect:effect'
+            key: JSON.stringify(toALInboundWorkKey('inbound', 'effect'))
         });
     });
 
@@ -464,10 +478,12 @@ describe('inbound admission persisted values', () => {
             observations: (await readIncoming(store, message)).observations,
             mutations: [{
                 kind: 'set-msg-owner',
-                msgId: message.id.msgId,
-                senderId: message.id.senderId,
-                source: { kind: 'ws-client', peerId: message.id.senderId },
-                supersedenceKey: null,
+                value: {
+                    msgId: message.id.msgId,
+                    senderId: message.id.senderId,
+                    source: { kind: 'ws-client', peerId: message.id.senderId },
+                    supersedenceKey: null
+                },
                 expireAtTimestamp: Date.now() + 60_000
             }],
             durableEffects: []
@@ -478,10 +494,12 @@ describe('inbound admission persisted values', () => {
                 observations: (await readIncoming(store, secondMessage)).observations,
                 mutations: [{
                     kind: 'set-msg-owner',
-                    msgId: secondMessage.id.msgId,
-                    senderId: secondMessage.id.senderId,
-                    source: { kind: 'ws-client', peerId: secondMessage.id.senderId },
-                    supersedenceKey: null,
+                    value: {
+                        msgId: secondMessage.id.msgId,
+                        senderId: secondMessage.id.senderId,
+                        source: { kind: 'ws-client', peerId: secondMessage.id.senderId },
+                        supersedenceKey: null
+                    },
                     expireAtTimestamp: Date.now() + 60_000
                 }],
                 durableEffects: []
@@ -639,41 +657,37 @@ describe('inbound admission persisted values', () => {
             handled: true
         });
         expect(state.data.has('inbound:control:pending:message:sender%3Awith%3Adelimiter')).toBe(false);
-        const history = state.data.get('inbound:control:acks:message:sender%3Awith%3Adelimiter')?.value as {
-            readonly values: readonly unknown[];
-        };
-        expect(history.values).toHaveLength(256);
+        expect((await readIncoming(store, message)).acks).toHaveLength(256);
     });
 
-    it('round-trips one canonical local-delivery envelope and rejects a malformed embedded message', async () => {
-        const { state, backend, store } = createFixture();
+    it('round-trips the local-delivery envelope and rejects malformed embedded messages on replay', async () => {
+        const { store } = createFixture();
+        const work = createWork('dispatch', { kind: 'dispatch-local', entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox') });
         await store.commitBundle({
             senderId: message.id.senderId,
             observations: (await readIncoming(store, message)).observations,
             mutations: [],
-            durableEffects: [{
-                effectId: 'dispatch',
-                expireAtTimestamp: Date.now() + 60_000,
-                payload: { kind: 'dispatch-local', entry: QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox') }
-            }]
+            durableEffects: [work]
         });
-        const [claimed] = await store.claimReadyEffects({ workerId: 'worker', maxCount: 1, leaseMs: 100, nowMs: Date.now() });
-        expect(claimed?.payload).toMatchObject({
-            kind: 'dispatch-local',
-            entry: { resource: JSON.stringify(message) }
-        });
-        expect(claimed?.payload).not.toHaveProperty('msg');
-        expect(claimed?.payload).not.toHaveProperty('plan');
-        const stored = state.data.get('inbound:effect:dispatch')?.value;
-        expect(stored).toBeDefined();
-        const serialized = JSON.stringify(stored);
-        const corrupt: unknown = JSON.parse(serialized.replace('\\"v\\":2', '\\"v\\":3'));
-        await backend.write(async (transaction) => {
-            await transaction.set('inbound:effect:dispatch', corrupt);
-        });
-
-        await expect(store.rescheduleEffect({ effectId: 'dispatch', workerId: 'worker', retryAtMs: Date.now(), lastError: undefined }))
-            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        const [claimed] = await claimWork(store);
+        expect(claimed?.payload).toMatchObject({ kind: 'dispatch-local', entry: { resource: JSON.stringify(message) } });
+        const malformed = {
+            ...createWork('malformed-dispatch').entry,
+            resource: JSON.stringify({
+                namespace: 'inbound',
+                effectId: 'malformed-dispatch',
+                payload: {
+                    kind: 'dispatch-local',
+                    entry: {
+                        ...encodeALAdmissionResourceEntry(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')),
+                        resource: JSON.stringify({ ...message, id: { ...message.id, v: 3 } })
+                    }
+                }
+            })
+        };
+        await store.workQueue.enqueue(malformed);
+        expect(await claimWork(store)).toEqual([]);
+        expect(await store.workQueue.getItem(malformed.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
     });
 });
 
@@ -689,10 +703,12 @@ async function seedPendingAcknowledgement(
             observations: (await readIncoming(store, message)).observations,
             mutations: [{
                 kind: 'set-msg-owner',
-                msgId: message.id.msgId,
-                senderId: message.id.senderId,
-                source: { kind: 'ws-client', peerId: message.id.senderId },
-                supersedenceKey: null,
+                value: {
+                    msgId: message.id.msgId,
+                    senderId: message.id.senderId,
+                    source: { kind: 'ws-client', peerId: message.id.senderId },
+                    supersedenceKey: null
+                },
                 expireAtTimestamp
             }, {
                 kind: 'set-control-pending',

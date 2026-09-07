@@ -27,7 +27,6 @@ import {
     planALMessageHandling,
     QueueBoxUtilities,
     type ALMessage,
-    type Key,
     type ResourceEntry
 } from '@shared/mod.ts';
 
@@ -71,6 +70,7 @@ describe('AL state retained across runtime recreation', () => {
         await runtime1.handleIncomingMessage(msg, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([msg.id.msgId]);
 
+        runtime1.dispose();
         const restartedRuntime = createDefaultInboundRuntime(
             createRetainedInboundStoreSet(stores),
             dispatchedMsgIds
@@ -92,6 +92,7 @@ describe('AL state retained across runtime recreation', () => {
         await runtime1.handleIncomingMessage(seq2, { kind: 'ws-client', peerId: 'peer-1' });
         expect(dispatchedMsgIds).toEqual([]);
 
+        runtime1.dispose();
         const runtime2 = createDefaultInboundRuntime(
             createRetainedInboundStoreSet(stores),
             dispatchedMsgIds,
@@ -100,7 +101,7 @@ describe('AL state retained across runtime recreation', () => {
 
         await runtime2.handleIncomingMessage(seq1, { kind: 'ws-client', peerId: 'peer-1' });
 
-        expect(dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
+        await expect.poll(() => dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
         expect(controlMessages.map((msg) => msg.payload.typeId)).toContain(
             'al.control.nack.v1'
         );
@@ -128,6 +129,7 @@ describe('AL state retained across runtime recreation', () => {
 
         const [firstEntry] = await enqueueOutboundOrThrow(runtime1, firstPresence);
 
+        runtime1.dispose();
         const restartedForSupersedence = createDefaultOutboundRuntime(
             createRetainedOutboundStoreSet(stores),
             sent,
@@ -170,6 +172,7 @@ describe('AL state retained across runtime recreation', () => {
         await enqueueOutboundOrThrow(restartedForSupersedence, seq1);
         await enqueueOutboundOrThrow(restartedForSupersedence, seq2);
 
+        restartedForSupersedence.dispose();
         const restartedForRepair = createDefaultOutboundRuntime(
             createRetainedOutboundStoreSet(stores),
             sent,
@@ -286,7 +289,7 @@ function createDefaultInboundRuntime(
 ) {
     const runtime = createDefaultALInboundMessageRuntime({
         selfPeerId: 'self',
-        inbox: new InMemoryQueueBox(new Map<Key, ResourceEntry>()),
+
         stores: stores.runtimeStores,
         planIncomingMessage: (msg, source, observations) =>
             planALMessageHandling(msg, {

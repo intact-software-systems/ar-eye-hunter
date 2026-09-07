@@ -38,7 +38,6 @@ export async function createBrowserWebSocketQueueBox(
         resilience: input.resilience
     };
     registerBrowserWebSocketOutboxTask(taskInput);
-    registerBrowserWebSocketInboxTask(taskInput);
     await connectInitialSocket(wsQueueBox.socket, input);
     wsQueueBox
         .enableReconnect()
@@ -53,7 +52,6 @@ function createBrowserWebSocketQueueBoxService(
     const { clientData, socket } = input;
     return createDefaultWsQueueBoxClientService({
         queueEngine: input.qboxEngine,
-        inbox: createBrowserQueueBox(`ws-inbox-${clientData.sessionId}`),
         outbox: createBrowserQueueBox(`ws-outbox-${clientData.sessionId}`),
         socket,
         sessionId: clientData.sessionId,
@@ -92,31 +90,6 @@ function registerBrowserWebSocketOutboxTask(
             runnable: () =>
                 input.wsQueueBox.dequeueOutbox(
                     WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
-                    input.resilience
-                ),
-            ongoingTasks: []
-        }
-    );
-}
-
-function registerBrowserWebSocketInboxTask(
-    input: RegisterBrowserWebSocketQueueTaskInput
-): void {
-    input.qboxEngine.includeTask(
-        WsQueueBoxClientService.INBOX_ENQUEUE_TYPE,
-        {
-            name: WsQueueBoxClientService.INBOX_ENQUEUE_TYPE,
-            maxConcurrency: () => 1,
-            isWork: () =>
-                input.wsQueueBox
-                    .inbox
-                    .isAnyEntryToLock(
-                        WsQueueBoxClientService.INBOX_DEQUEUE_TYPES,
-                        input.resilience.toWorkAdvertisementOptions()
-                    ),
-            runnable: () =>
-                input.wsQueueBox.dequeueInbox(
-                    WsQueueBoxClientService.INBOX_DEQUEUE_TYPES,
                     input.resilience
                 ),
             ongoingTasks: []

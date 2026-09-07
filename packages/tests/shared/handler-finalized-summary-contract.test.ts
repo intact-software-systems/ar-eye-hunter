@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
 import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/queue-box-types.ts';
@@ -12,9 +13,11 @@ describe('handler-finalized group presence summary contract', () => {
             const { reserved, current } = entries();
 
             expect(
-                isIdempotentHandlerFinalizedRelease(current, reserved, {
-                    status: EntityStatus.COMPLETED,
-                    delayMs: null
+                isIdempotentHandlerFinalizedRelease({
+                    current,
+                    reserved,
+                    disposition: { status: EntityStatus.COMPLETED, delayMs: null },
+                    observedAt: Temporal.Instant.fromEpochMilliseconds(2_000)
                 })
             ).toBe(accepted);
         }
