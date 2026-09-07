@@ -3027,6 +3027,29 @@
         ]
       },
       "description": "No-browser API-v1 reconnect hydration across a lifecycle stage change and across nodes. api-v1-group-state-reconnect-resync already drops a socket, mutates the group and reopens, but it reopens on the same node and the group never changes stage. Here the socket is dropped during connecting, the group is activated from the tertiary while the client is offline, and the client reconnects on the secondary with a fresh ws-ticket for the same session. The reconnect must be hydrated by a unicast overlay.topology frame from a node that never held the socket it replaces, a floored read on the third node must reach the post-change revision, and the layout version must not have moved: a stage change is not a replan."
+    },
+    {
+      "id": "api-v1-group-activation-partial-coverage",
+      "recipe": "tests/api-v1/api-v1-group-activation-partial-coverage.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-activation-partial-coverage",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 activation degraded band from partial coverage, the arm api-v1-activation-clock-decay cannot reach: with one planned edge a lapsed observation is a rate of zero and the band is failed, not degraded. Three members plan two or three edges and exactly one is ever reported, named by reading the manager's own next hop out of the published layout so the recipe never guesses the topology. minimumViableRate 0.25 against successRate 0.95 puts a single observed edge above the floor and below success whatever the planner chose. degraded is a dwell-held band so one instantaneous reading cannot reach it, the group must still be connecting because partial coverage is not activation, and the formation view must agree with the group row."
     }
   ]
 }
