@@ -552,6 +552,73 @@
       }
     },
     {
+      "name": "upsertScopePrincipal",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{scopeApplicationId}/workspaces/{scopeWorkspaceId}/clients/{scopeClientId}/principal/requests/adminops-upsert-principal-{runId}",
+        "headers": {
+          "Authorization": "{scopeAuthHeader}",
+          "x-client-id": "{scopeClientId}"
+        },
+        "body": {
+          "username": "adminops-scope-{runId}",
+          "displayName": "Admin operations scope client",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principal": {
+            "principalId": "{scopeClientId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "upsertScopeInstance",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{scopeApplicationId}/workspaces/{scopeWorkspaceId}/clients/{scopeClientId}/instances/adminops-instance-{runId}/requests/adminops-upsert-instance-{runId}",
+        "headers": {
+          "Authorization": "{scopeAuthHeader}",
+          "x-client-id": "{scopeClientId}"
+        },
+        "body": {
+          "status": "active",
+          "platform": "server"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectScopeClientSession",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{scopeApplicationId}/workspaces/{scopeWorkspaceId}/clients/{scopeClientId}/instances/adminops-instance-{runId}/sessions/{scopeSessionId}/requests/adminops-connect-session-{runId}",
+        "headers": {
+          "Authorization": "{scopeAuthHeader}",
+          "x-client-id": "{scopeClientId}"
+        },
+        "body": {
+          "generationId": "adminops-client-generation-{runId}",
+          "presenceState": "online",
+          "transport": "ws"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
       "name": "connectScopedPresence",
       "type": "http",
       "connection": "api",
@@ -589,7 +656,9 @@
           "backoffMultiplier": 1.25
         },
         "outputs": {
-          "scopedPrincipals": "body.clients.totalPrincipals"
+          "scopedPrincipals": "body.clients.totalPrincipals",
+          "scopedOnlinePrincipals": "body.clients.onlinePrincipals",
+          "scopedActiveSessions": "body.clients.activeSessions"
         }
       },
       "expect": {
@@ -606,16 +675,26 @@
       }
     },
     {
-      "name": "thePopulatedScopeCountsItsPrincipal",
+      "name": "thePopulatedScopeCountsItsClientAndItsSession",
       "type": "assert",
       "actual": {
-        "principals": "{scopedPrincipals}"
+        "principals": "{scopedPrincipals}",
+        "online": "{scopedOnlinePrincipals}",
+        "sessions": "{scopedActiveSessions}"
       },
       "expect": {
         "missingActualValue": "MISSING",
         "comparators": [
           {
             "path": "principals",
+            "gte": 1
+          },
+          {
+            "path": "online",
+            "gte": 1
+          },
+          {
+            "path": "sessions",
             "gte": 1
           }
         ]
