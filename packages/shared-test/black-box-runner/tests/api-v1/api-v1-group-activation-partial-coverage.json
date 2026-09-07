@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 activation `degraded` band from PARTIAL coverage -- the arm api-v1-activation-clock-decay could not reach, because with one planned edge a lapsed observation is a rate of zero and the band is `failed`. Three members plan two or three edges and exactly ONE of them is ever reported, named by reading Alice's own next hop out of the published layout so the recipe never has to guess the topology. minimumViableRate is 0.25 and successRate 0.95, so a single observed edge is above the floor and below the success rate whatever the planner chose. `degraded` is a dwell-HELD band, so this cannot be reached by one instantaneous reading, and the group must still be `connecting`: partial coverage is not activation. The formation view has to agree with the group row -- one observed edge out of a planned set of at least two.",
+  "description": "No-browser API-v1 activation `degraded` band from PARTIAL coverage -- the arm api-v1-activation-clock-decay could not reach, because with one planned edge a lapsed observation is a rate of zero and the band is `failed`. Three members plan two or three edges and exactly ONE of them is ever reported. The topology is PINNED to a mesh first, so three members are three edges and the reported pair is one of them by construction rather than by the planner's size heuristics; the reporting direction is canonicalised because RTT ingestion takes the pair in order. minimumViableRate is 0.25 against successRate 0.95, so one edge of three is above the floor and below success. `degraded` is a dwell-HELD band, so this cannot be reached by one instantaneous reading, and the group must still be `connecting`: partial coverage is not activation. The formation view has to agree with the group row -- one observed edge out of a planned set of at least two.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -569,6 +569,34 @@
       }
     },
     {
+      "name": "pinTheTopologyToAMesh",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config/requests/partialcoverage-pin-mesh-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "config": {
+            "topologyKind": "mesh"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "config": {
+            "config": {
+              "topologyKind": "mesh"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "planTheLayout",
       "type": "http",
       "connection": "api",
@@ -611,8 +639,7 @@
           "layoutGroupRevision": "body.snapshot.sourceGroupStateCausalRevision.groupRevision",
           "layoutPresenceRevision": "body.snapshot.sourceGroupStateCausalRevision.presenceRevision",
           "layoutVersion": "body.snapshot.version",
-          "layoutState": "body.snapshot.state",
-          "aliceFirstHopSessionId": "body.snapshot.nextHopsBySessionId.{aliceSessionId}.0"
+          "layoutState": "body.snapshot.state"
         }
       },
       "expect": {
@@ -668,6 +695,44 @@
       }
     },
     {
+      "name": "deriveTheCanonicalReporter",
+      "type": "set",
+      "output": "rttReporter",
+      "transform": {
+        "if": {
+          "condition": {
+            "operator": "lexicallyBefore",
+            "values": [
+              {
+                "path": "outputs.aliceSessionId"
+              },
+              {
+                "path": "outputs.bobSessionId"
+              }
+            ]
+          },
+          "then": {
+            "connection": "wsAlice",
+            "sessionIdFrom": {
+              "path": "outputs.aliceSessionId"
+            },
+            "sessionIdTo": {
+              "path": "outputs.bobSessionId"
+            }
+          },
+          "else": {
+            "connection": "wsBob",
+            "sessionIdFrom": {
+              "path": "outputs.bobSessionId"
+            },
+            "sessionIdTo": {
+              "path": "outputs.aliceSessionId"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "deriveTheSingleEdgeResource",
       "type": "set",
       "output": "singleEdgeResource",
@@ -675,11 +740,11 @@
         "concat": [
           "{\"sessionIdFrom\":\"",
           {
-            "path": "outputs.aliceSessionId"
+            "path": "outputs.rttReporter.sessionIdFrom"
           },
           "\",\"sessionIdTo\":\"",
           {
-            "path": "outputs.aliceFirstHopSessionId"
+            "path": "outputs.rttReporter.sessionIdTo"
           },
           "\",\"rttMs\":21,\"createdAtEpochMs\":",
           {
@@ -692,19 +757,19 @@
     {
       "name": "reportExactlyOneOfThePlannedEdges",
       "type": "ws.send",
-      "connection": "wsAlice",
+      "connection": "{rttReporter.connection}",
       "request": {
         "send": {
           "id": {
             "v": 2,
             "msgId": "rtt-partialcoverage-{runId}",
             "ts": 0,
-            "senderId": "{aliceSessionId}",
-            "sessionId": "{aliceSessionId}"
+            "senderId": "{rttReporter.sessionIdFrom}",
+            "sessionId": "{rttReporter.sessionIdFrom}"
           },
           "route": {
             "topicId": "rtt",
-            "resourceId": "{aliceSessionId} {aliceFirstHopSessionId}",
+            "resourceId": "{rttReporter.sessionIdFrom} {rttReporter.sessionIdTo}",
             "contextId": "1"
           },
           "delivery": {
@@ -818,7 +883,7 @@
           },
           {
             "path": "planned",
-            "gte": 2
+            "equals": 3
           }
         ]
       }

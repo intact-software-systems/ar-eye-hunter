@@ -1,5 +1,5 @@
 {
-  "description": "No-browser API-v1 presence lease expiry against a lifecycle-managed group. The corpus asserts the lease BOUNDS (api-v1-presence-lease-bound rejects future timestamps) and never the expiry itself: `disconnectReason` appears in no recipe and the internal `expired` reason has never been observed. Bob connects with a lease that lapses seconds later while Alice takes the default 24h one, the group is driven to connecting, and the 60s reconciliation sweep is then allowed to fire. The sweep DELETES the expired row rather than marking it disconnected, so the assertion is that exactly one session survives and it is Alice's; membership and lifecycleState must be untouched, because a lapsed lease is a presence fact and not a roster or stage change; and Bob must be able to take a fresh lease without rejoining. The sweep has no HTTP surface, so this is settle-sequenced rather than raced (D7). The expiry also does NOT move causalRevision.presenceRevision, which the floored reads are keyed on: that divergence is pinned twice, once at the sweep and once after the events settle, so a merely late presence summary would fail it rather than hide behind it. See open finding 15.",
+  "description": "No-browser API-v1 presence lease expiry against a lifecycle-managed group. The corpus asserts the lease BOUNDS (api-v1-presence-lease-bound rejects future timestamps) and never the expiry itself: `disconnectReason` appears in no recipe and the internal `expired` reason has never been observed. Bob connects with a lease that lapses seconds later while Alice takes the default 24h one, the group is driven to connecting, and the 60s reconciliation sweep is then allowed to fire. The sweep DELETES the expired row rather than marking it disconnected, so the assertion is that exactly one session survives and it is Alice's; membership and lifecycleState must be untouched, because a lapsed lease is a presence fact and not a roster or stage change; and Bob must be able to take a fresh lease without rejoining. The sweep has no HTTP surface, so this is settle-sequenced rather than raced (D7). The recipe separates the two things that make a lapsed lease disappear, because conflating them is how it reads as one event: the snapshot filters a lapsed session out of activeSessions at READ time, moving the roster with no write and no change to causalRevision.presenceRevision, and only the later sweep writes the row away and advances that revision. onlineMemberCount alone therefore proves nothing about the sweep -- the event does. See open finding 15.",
   "variables": {
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
@@ -422,7 +422,7 @@
       }
     },
     {
-      "name": "theLapsedLeaseIsSweptAway",
+      "name": "theLapsedLeaseLeavesTheRosterImmediately",
       "type": "http",
       "connection": "api",
       "request": {
@@ -433,16 +433,14 @@
           "x-client-id": "{aliceClientId}"
         },
         "poll": {
-          "maxAttempts": 60,
-          "maxDurationMs": 95000,
-          "backoffMs": 2000,
-          "backoffMultiplier": 1
+          "maxAttempts": 40,
+          "maxDurationMs": 25000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.2
         },
         "outputs": {
-          "sessionsAfterSweep": "body.activeSessions",
-          "membersAfterSweep": "body.members",
-          "presenceRevisionAfterSweep": "body.causalRevision.presenceRevision",
-          "lifecycleStateAfterSweep": "body.group.lifecycleState"
+          "sessionsAtFilter": "body.activeSessions",
+          "presenceRevisionAtFilter": "body.causalRevision.presenceRevision"
         }
       },
       "expect": {
@@ -454,11 +452,11 @@
       }
     },
     {
-      "name": "onlyTheLapsedLeaseWasSwept",
+      "name": "theReadTimeFilterMovedTheRosterWithoutTheChangeToken",
       "type": "assert",
       "actual": {
-        "sessions": "{sessionsAfterSweep}",
-        "members": "{membersAfterSweep}"
+        "sessions": "{sessionsAtFilter}",
+        "revisionAtFilter": "{presenceRevisionAtFilter}"
       },
       "expect": {
         "missingActualValue": "MISSING",
@@ -476,26 +474,10 @@
             "equals": "active"
           },
           {
-            "path": "members",
-            "length": 2
+            "path": "revisionAtFilter",
+            "equals": "{presenceRevisionBeforeSweep}"
           }
         ]
-      }
-    },
-    {
-      "name": "theExpiryDroppedPresenceNotMembershipOrTheLifecycle",
-      "type": "assert",
-      "actual": {
-        "lifecycleBefore": "{lifecycleStateBeforeSweep}",
-        "lifecycleAfter": "{lifecycleStateAfterSweep}"
-      },
-      "expect": {
-        "missingActualValue": "MISSING",
-        "comparison": "exact",
-        "body": {
-          "lifecycleBefore": "connecting",
-          "lifecycleAfter": "connecting"
-        }
       }
     },
     {
@@ -504,38 +486,33 @@
       "connection": "api",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events?eventType=session-disconnected&limit=1",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/events",
         "headers": {
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
+        "poll": {
+          "maxAttempts": 60,
+          "maxDurationMs": 95000,
+          "backoffMs": 2000,
+          "backoffMultiplier": 1
+        },
         "outputs": {
-          "expiryEventReason": "body.0.reason",
-          "expiryEventType": "body.0.eventType"
+          "groupEventsAfterSweep": "body"
         }
       },
       "expect": {
-        "status": 200
+        "status": 200,
+        "body": [
+          {
+            "eventType": "session-disconnected",
+            "reason": "expired"
+          }
+        ]
       }
     },
     {
-      "name": "theSweepNamedItselfExpired",
-      "type": "assert",
-      "actual": {
-        "reason": "{expiryEventReason}",
-        "eventType": "{expiryEventType}"
-      },
-      "expect": {
-        "missingActualValue": "MISSING",
-        "comparison": "exact",
-        "body": {
-          "reason": "expired",
-          "eventType": "session-disconnected"
-        }
-      }
-    },
-    {
-      "name": "theRosterIsStillShortOneSessionAfterTheEventsSettle",
+      "name": "theSweepAdvancedTheChangeToken",
       "type": "http",
       "connection": "api",
       "request": {
@@ -546,39 +523,48 @@
           "x-client-id": "{aliceClientId}"
         },
         "outputs": {
-          "presenceRevisionSettled": "body.causalRevision.presenceRevision",
-          "sessionsSettled": "body.activeSessions"
+          "presenceRevisionAfterSweep": "body.causalRevision.presenceRevision",
+          "sessionsAfterSweep": "body.activeSessions",
+          "membersAfterSweep": "body.members",
+          "lifecycleStateAfterSweep": "body.group.lifecycleState"
         }
       },
       "expect": {
         "status": 200,
         "body": {
-          "onlineMemberCount": 1
+          "onlineMemberCount": 1,
+          "memberCount": 2
         }
       }
     },
     {
-      "name": "theExpiryNeverMovedThePresenceRevision",
+      "name": "theSweepDroppedPresenceNotMembershipOrTheLifecycle",
       "type": "assert",
       "actual": {
-        "afterSweep": "{presenceRevisionAfterSweep}",
-        "settled": "{presenceRevisionSettled}",
-        "sessions": "{sessionsSettled}"
+        "lifecycleBefore": "{lifecycleStateBeforeSweep}",
+        "lifecycleAfter": "{lifecycleStateAfterSweep}",
+        "revisionAfterSweep": "{presenceRevisionAfterSweep}",
+        "sessions": "{sessionsAfterSweep}",
+        "members": "{membersAfterSweep}"
       },
       "expect": {
         "missingActualValue": "MISSING",
+        "body": {
+          "lifecycleBefore": "connecting",
+          "lifecycleAfter": "connecting"
+        },
         "comparators": [
           {
-            "path": "afterSweep",
-            "equals": "{presenceRevisionBeforeSweep}"
-          },
-          {
-            "path": "settled",
-            "equals": "{presenceRevisionBeforeSweep}"
+            "path": "revisionAfterSweep",
+            "gt": "{presenceRevisionBeforeSweep}"
           },
           {
             "path": "sessions",
             "length": 1
+          },
+          {
+            "path": "members",
+            "length": 2
           }
         ]
       }
