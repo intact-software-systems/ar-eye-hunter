@@ -1,0 +1,726 @@
+{
+  "description": "No-browser API-v1 graph diagnostic reads: the two GET routes the OpenAPI assertion covers and no recipe requests. Both are cache state machines with three refresh modes, and the corpus pins none of them. refresh=never on a cold cache is the only arm that answers 404 for a group that exists and is readable; refresh=if-missing computes once and then serves the same snapshot; refresh=always recomputes and must advance the version, which the compute itself never does -- it returns version 1 every time and only the current+1 rule makes it monotone. The recipe also pins that includeMeasured defaults to absent, that an unknown refresh mode is rejected by the route rather than by the schema, and that the scoped global graph is a separate cache entry under the reserved __global__ id which neither disturbs nor is disturbed by the group one.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_GRAPHDIAG_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-graphdiag"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_GRAPHDIAG_WORKSPACE_ID",
+      "default": "workspace-graphdiag-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_GRAPHDIAG_GROUP_ID",
+      "default": "graphdiag-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_GRAPHDIAG_PASSWORD",
+      "default": "api-v1-graphdiag-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/graphdiag-register-alice-{runId}",
+        "body": {
+          "username": "graphdiag-alice-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alice client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/graphdiag-login-alice-{runId}",
+        "body": {
+          "username": "graphdiag-alice-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/graphdiag-register-bob-{runId}",
+        "body": {
+          "username": "graphdiag-bob-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "bob client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/graphdiag-login-bob-{runId}",
+        "body": {
+          "username": "graphdiag-bob-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobSessionId": "body.sessionId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTheGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/graphdiag-create-group-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Graph diagnostics {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "bobJoins",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/requests/graphdiag-bob-joins-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectAlicePresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/requests/graphdiag-alice-presence-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "generationId": "graphdiag-generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectBobPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}/requests/graphdiag-bob-presence-{runId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "generationId": "graphdiag-generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "aColdCacheRefusesToServeUnderRefreshNever",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest?refresh=never",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "comparison": "exact",
+        "body": {
+          "error": "No cached graph diagnostic for {applicationId}/{workspaceId}/{groupId}"
+        }
+      }
+    },
+    {
+      "name": "readingTheGroupSnapshotFeedsTheDiagnosticSource",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "theFirstReadComputesAndCaches",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest?refresh=if-missing",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 25,
+          "maxDurationMs": 15000,
+          "backoffMs": 150,
+          "backoffMultiplier": 1.25
+        },
+        "outputs": {
+          "firstVersion": "body.snapshot.version",
+          "firstCreatedAtEpochMs": "body.snapshot.createdAtEpochMs"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupId}"
+          },
+          "snapshot": {
+            "groupRef": {
+              "groupId": "{groupId}"
+            }
+          },
+          "cache": {
+            "hit": false,
+            "refreshed": true
+          }
+        }
+      }
+    },
+    {
+      "name": "refreshNeverNowServesTheCache",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest?refresh=never",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "neverVersion": "body.snapshot.version",
+          "neverCreatedAtEpochMs": "body.snapshot.createdAtEpochMs"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "cache": {
+            "hit": true,
+            "refreshed": false
+          }
+        }
+      }
+    },
+    {
+      "name": "refreshIfMissingDoesNotRecomputeAWarmCache",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest?refresh=if-missing",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "ifMissingVersion": "body.snapshot.version",
+          "ifMissingCreatedAtEpochMs": "body.snapshot.createdAtEpochMs"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "cache": {
+            "hit": true,
+            "refreshed": false
+          }
+        }
+      }
+    },
+    {
+      "name": "refreshAlwaysRecomputesAWarmCache",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest?refresh=always",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "alwaysVersion": "body.snapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "cache": {
+            "hit": true,
+            "refreshed": true
+          }
+        }
+      }
+    },
+    {
+      "name": "theWarmReadsServedOneSnapshotAndAlwaysAdvancedIt",
+      "type": "assert",
+      "actual": {
+        "never": "{neverVersion}",
+        "ifMissing": "{ifMissingVersion}",
+        "always": "{alwaysVersion}",
+        "neverCreatedAt": "{neverCreatedAtEpochMs}",
+        "ifMissingCreatedAt": "{ifMissingCreatedAtEpochMs}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "never",
+            "equals": "{firstVersion}"
+          },
+          {
+            "path": "ifMissing",
+            "equals": "{firstVersion}"
+          },
+          {
+            "path": "neverCreatedAt",
+            "equals": "{firstCreatedAtEpochMs}"
+          },
+          {
+            "path": "ifMissingCreatedAt",
+            "equals": "{firstCreatedAtEpochMs}"
+          },
+          {
+            "path": "always",
+            "gt": "{firstVersion}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "measuredIsAbsentUntilItIsAskedFor",
+      "type": "assert",
+      "actual": {
+        "measured": "{resultsByName.theFirstReadComputesAndCaches.0.actual.body.snapshot.measured}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparison": "exact",
+        "body": {
+          "measured": "MISSING"
+        }
+      }
+    },
+    {
+      "name": "includeMeasuredAddsTheMeasuredGraph",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest?refresh=always&includeMeasured=true",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "measuredVersion": "body.snapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "measured": {
+              "groupRef": {
+                "groupId": "{groupId}"
+              },
+              "coreNodes": "array"
+            }
+          },
+          "cache": {
+            "hit": true,
+            "refreshed": true
+          }
+        }
+      }
+    },
+    {
+      "name": "theMeasuredReadAdvancedTheVersionAgain",
+      "type": "assert",
+      "actual": {
+        "measuredVersion": "{measuredVersion}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "measuredVersion",
+            "gt": "{alwaysVersion}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "anUnknownRefreshModeIsRejected",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest?refresh=sometimes",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "comparison": "exact",
+        "body": {
+          "error": "Invalid graph refresh mode: sometimes"
+        }
+      }
+    },
+    {
+      "name": "anAbsentGroupHasNoDiagnostic",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}-absent/graphs/latest?refresh=if-missing",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "comparison": "exact",
+        "body": {
+          "error": "Group not found: {groupId}-absent"
+        }
+      }
+    },
+    {
+      "name": "theScopedGlobalGraphIsColdToo",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global?refresh=never",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "comparison": "exact",
+        "body": {
+          "error": "No cached graph diagnostic for {applicationId}/{workspaceId}/__global__"
+        }
+      }
+    },
+    {
+      "name": "theFirstGlobalReadComputesAndCaches",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global?refresh=if-missing",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "globalFirstVersion": "body.snapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "__global__"
+          },
+          "cache": {
+            "hit": false,
+            "refreshed": true
+          }
+        }
+      }
+    },
+    {
+      "name": "theGlobalCacheIsServedWarm",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global?refresh=never",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "globalNeverVersion": "body.snapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "cache": {
+            "hit": true,
+            "refreshed": false
+          }
+        }
+      }
+    },
+    {
+      "name": "theGlobalGraphAlsoAdvancesOnAlways",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global?refresh=always",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "globalAlwaysVersion": "body.snapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "cache": {
+            "hit": true,
+            "refreshed": true
+          }
+        }
+      }
+    },
+    {
+      "name": "theGlobalGraphKeepsItsOwnMonotonicVersion",
+      "type": "assert",
+      "actual": {
+        "never": "{globalNeverVersion}",
+        "always": "{globalAlwaysVersion}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "never",
+            "equals": "{globalFirstVersion}"
+          },
+          {
+            "path": "always",
+            "gt": "{globalFirstVersion}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "theGroupDiagnosticSurvivedTheGlobalReads",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest?refresh=never",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "finalGroupVersion": "body.snapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "cache": {
+            "hit": true,
+            "refreshed": false
+          }
+        }
+      }
+    },
+    {
+      "name": "theTwoDiagnosticsAreSeparateCacheEntries",
+      "type": "assert",
+      "actual": {
+        "group": "{finalGroupVersion}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "group",
+            "equals": "{measuredVersion}"
+          }
+        ]
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

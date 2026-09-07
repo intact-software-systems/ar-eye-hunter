@@ -1000,6 +1000,10 @@ function validateStrictExpectIsHonoured(
     }
 
     const action = String(asRecord(step.request).action || '').toLowerCase();
+    if (type.length <= 0 || type.startsWith('http')) {
+        return httpIgnoredAssertionIssues(expectedKeys, path);
+    }
+
     const isWsSend = type.startsWith('ws') && (action === 'send' || action.length <= 0);
     if (!isWsSend) {
         return [];
@@ -1012,6 +1016,29 @@ function validateStrictExpectIsHonoured(
             code: 'STRICT_EXPECT_IGNORED',
             message: `WebSocket send steps read only expect.message and expect.messages; expect.${key} is ignored. ` +
                 'Use a ws.wait step for it.',
+            path: `${path}.expect.${key}`
+        }));
+}
+
+/**
+ * `anyOf` is an ASSERT-step key. An HTTP step takes its accepted statuses from
+ * `status`/`statusCode`/`statusCodes`/`allowedStatusCodes` and its accepted
+ * bodies from `bodyAnyOf`, so `expect.anyOf` is read by nothing — and it fails
+ * silently, because a 2xx answer with no expected status passes anyway.
+ */
+const HTTP_IGNORED_ASSERTION_KEYS = ['anyOf'];
+
+function httpIgnoredAssertionIssues(
+    expectedKeys: readonly string[],
+    path: string
+): readonly BlackBoxRunnerPreflightIssue[] {
+    return expectedKeys
+        .filter((key) => HTTP_IGNORED_ASSERTION_KEYS.includes(key))
+        .map((key): BlackBoxRunnerPreflightIssue => ({
+            severity: 'error',
+            code: 'STRICT_EXPECT_IGNORED',
+            message: `HTTP steps do not read expect.${key}; use expect.statusCodes for several accepted ` +
+                'statuses and expect.bodyAnyOf for several accepted bodies.',
             path: `${path}.expect.${key}`
         }));
 }

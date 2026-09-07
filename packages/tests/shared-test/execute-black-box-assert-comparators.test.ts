@@ -117,6 +117,87 @@ describe('executeBlackBox ASSERT expect.comparators', () => {
         expect(report.resultsByName.assertBodyAndComparators[0].status).toBe('SUCCESS');
     });
 
+    // `path` plus `equals` is also a valid transform-only spec, so the generic
+    // placeholder resolver used to skip the whole entry and the comparator
+    // compared against the literal "{expectedVersion}".
+    it('resolves a placeholder bound on equals, which collides with a transform key', async () => {
+        const report = await executeBlackBox(
+            [
+                {
+                    SET: {
+                        request: {
+                            output: 'expectedVersion',
+                            value: 4,
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 1
+                        },
+                        response: {}
+                    },
+                    setExpectedVersion: {}
+                },
+                {
+                    ASSERT: {
+                        request: {
+                            actual: { version: 4, other: 5 },
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 2
+                        },
+                        response: {
+                            comparators: [
+                                { path: 'version', equals: '{expectedVersion}' },
+                                { path: 'other', notEquals: '{expectedVersion}' }
+                            ]
+                        }
+                    },
+                    assertEqualsPlaceholder: {}
+                }
+            ],
+            0,
+            { failFast: true }
+        );
+
+        expect(report.summary.failure).toBe(0);
+        expect(report.resultsByName.assertEqualsPlaceholder[0].status).toBe('SUCCESS');
+    });
+
+    it('fails an equals placeholder bound when the values differ', async () => {
+        const report = await executeBlackBox(
+            [
+                {
+                    SET: {
+                        request: {
+                            output: 'expectedVersion',
+                            value: 4,
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 1
+                        },
+                        response: {}
+                    },
+                    setExpectedVersion: {}
+                },
+                {
+                    ASSERT: {
+                        request: {
+                            actual: { version: 5 },
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 2
+                        },
+                        response: {
+                            comparators: [{ path: 'version', equals: '{expectedVersion}' }]
+                        }
+                    },
+                    assertEqualsPlaceholderMismatch: {}
+                }
+            ],
+            0,
+            { failFast: false }
+        );
+
+        expect(report.summary.failure).toBe(1);
+        expect(report.resultsByName.assertEqualsPlaceholderMismatch[0].details.failures[0].expected)
+            .toBe(4);
+    });
+
     it('fails an entry without any known comparator key', async () => {
         const report = await executeBlackBox(
             [assertStep({

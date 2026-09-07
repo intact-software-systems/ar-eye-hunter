@@ -2095,7 +2095,7 @@
           }
         ]
       },
-      "description": "No-browser API-v1 admin operations auth denial, admin overview success, and OpenAPI contract coverage."
+      "description": "No-browser API-v1 admin operations auth denial, admin overview success, and OpenAPI contract coverage. The scoped admin reads are pinned against two scopes at once: one nothing has ever written, which must answer all-zero, and one this recipe populates with exactly one group, which must answer one -- the pair is what distinguishes a read that filters by scope from a read that ignores its scope, and the unscoped variants must omit the scope echo. CRDT integrity and debug export are driven over a document that was never written, which pins that redaction is opt-OUT: only an explicit redactPayloads false disables it. metrics/reset is deliberately NOT exercised here -- it resets the server-wide RTC-topology and group-formation metric owners that the formation burst and churn recipes read on the same server, so it needs its own profile."
     },
     {
       "id": "api-v1-admin-support",
@@ -2853,6 +2853,52 @@
         ]
       },
       "description": "No-browser API-v1 activation command race: a latecomer join against the activation that closes the lobby, released together by a barrier. Activation is driven manually on purpose, because the criterion has no HTTP surface and racing it would be settle-sequenced rather than a parallel block. Neither side asserts an outcome; what is required is that the activation was answered and the lobby is closed whichever way the race went."
+    },
+    {
+      "id": "api-v1-crdt-admin-write-surface",
+      "recipe": "tests/api-v1/api-v1-crdt-admin-write-surface.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-crdt-admin-write-surface",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 CRDT admin write surface: backup-export, rebuild-projection and erase need a CRDT admin session and no recipe drives their success path, only the invalid-mode and invalid-lifecycle rejections. Backup-export of an absent document must be the documented null rather than an error, the two write routes must answer the same way for the same absent document, and the read surface must still answer afterwards."
+    },
+    {
+      "id": "api-v1-graph-diagnostics-read",
+      "recipe": "tests/api-v1/api-v1-graph-diagnostics-read.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-graph-diagnostics-read",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 graph diagnostic reads: the two GET routes the OpenAPI assertion covers and no recipe requests. Both are cache state machines with three refresh modes and the corpus pins none of them: never on a cold cache is the only 404 for a group that exists, if-missing computes once and then serves the same snapshot, and always must advance a version the compute itself never advances. Also pins includeMeasured defaulting to absent, an unknown refresh mode rejected by the route rather than the schema, and the scoped global graph as a separate cache entry."
     }
   ]
 }

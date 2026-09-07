@@ -1,0 +1,218 @@
+{
+  "description": "No-browser API-v1 CRDT admin write surface: backup-export, rebuild-projection and erase are reachable only with a CRDT admin session, and no recipe drives their success path -- api-v1-admin-operations pins only the invalid-mode and invalid-lifecycle rejections. Backup-export of an absent document does NOT answer the documented null: RallarCrdtBackupBundleApiResponse declares result required and nullable, the export returns undefined on both backends, and the route envelope lets context.json drop the key -- so the body is {ok:true} and a client decoding the declared schema would reject it. That exact body is pinned here rather than tolerated. The two write routes are then required to answer the same way for the same absent document, and the read surface is required to still answer afterwards, which separates a refused write from a broken admin session.",
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "loginTheDemoAdmin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/crdtadminwrite-login-admin-{runId}",
+        "body": {
+          "username": "admin",
+          "password": "admin"
+        },
+        "outputs": {
+          "adminClientId": "body.clientId",
+          "adminAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "admin",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAdminAuthHeader",
+      "type": "set",
+      "output": "adminAuthHeader",
+      "secret": true,
+      "redactAs": "adminAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.adminAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "backupExportOfAnAbsentDocumentOmitsResultInsteadOfNulling",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/crdt/admin/documents/backup-export",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "document": {
+            "applicationId": "crdtadminwrite-{runId}",
+            "workspaceId": "workspace-crdtw-{runId}",
+            "scope": "principal",
+            "documentType": "checklist",
+            "documentId": "crdtadminwrite-doc-{runId}",
+            "principalId": "{adminClientId}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "exact",
+        "body": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "name": "rebuildProjectionIsAcceptedForAnAbsentDocument",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/crdt/admin/documents/rebuild-projection/requests/crdtadminwrite-rebuild-projection-{runId}",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "document": {
+            "applicationId": "crdtadminwrite-{runId}",
+            "workspaceId": "workspace-crdtw-{runId}",
+            "scope": "principal",
+            "documentType": "checklist",
+            "documentId": "crdtadminwrite-doc-{runId}",
+            "principalId": "{adminClientId}"
+          }
+        },
+        "outputs": {
+          "rebuildStatus": "statusCode"
+        }
+      },
+      "expect": {
+        "statusCodes": [
+          200,
+          404
+        ]
+      }
+    },
+    {
+      "name": "eraseAcceptsAValidMode",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/crdt/admin/documents/erase/requests/crdtadminwrite-erase-document-{runId}",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "document": {
+            "applicationId": "crdtadminwrite-{runId}",
+            "workspaceId": "workspace-crdtw-{runId}",
+            "scope": "principal",
+            "documentType": "checklist",
+            "documentId": "crdtadminwrite-doc-{runId}",
+            "principalId": "{adminClientId}"
+          },
+          "mode": "soft"
+        },
+        "outputs": {
+          "eraseStatus": "statusCode"
+        }
+      },
+      "expect": {
+        "statusCodes": [
+          200,
+          404
+        ]
+      }
+    },
+    {
+      "name": "bothWritesAgreeOnTheAbsentDocument",
+      "type": "assert",
+      "actual": {
+        "rebuild": "{rebuildStatus}",
+        "erase": "{eraseStatus}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "rebuild",
+            "equals": "{eraseStatus}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "theAdminReadSurfaceStillAnswers",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/crdt/admin/documents/list",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "document": {
+            "applicationId": "crdtadminwrite-{runId}",
+            "workspaceId": "workspace-crdtw-{runId}",
+            "scope": "principal",
+            "documentType": "checklist",
+            "documentId": "crdtadminwrite-doc-{runId}",
+            "principalId": "{adminClientId}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ],
+  "postRunAssertions": [
+    {
+      "name": "no failed steps",
+      "path": "summary.failure",
+      "eq": 0
+    }
+  ]
+}

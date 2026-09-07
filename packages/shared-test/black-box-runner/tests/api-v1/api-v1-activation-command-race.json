@@ -458,19 +458,11 @@
                 }
               },
               "expect": {
-                "anyOf": [
-                  {
-                    "status": 200
-                  },
-                  {
-                    "status": 400
-                  },
-                  {
-                    "status": 403
-                  },
-                  {
-                    "status": 409
-                  }
+                "statusCodes": [
+                  200,
+                  400,
+                  403,
+                  409
                 ]
               }
             }
@@ -496,19 +488,11 @@
                 }
               },
               "expect": {
-                "anyOf": [
-                  {
-                    "status": 200
-                  },
-                  {
-                    "status": 400
-                  },
-                  {
-                    "status": 403
-                  },
-                  {
-                    "status": 409
-                  }
+                "statusCodes": [
+                  200,
+                  400,
+                  403,
+                  409
                 ]
               }
             }
