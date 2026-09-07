@@ -682,8 +682,14 @@
           "groupId": "{statusGroupId}",
           "actorKind": "service",
           "eventRevision": "integer",
-          "resultingRevision": "{activationEvent.event.causalRevision.groupRevision}"
-        }
+          "resultingRevision": "integer"
+        },
+        "comparators": [
+          {
+            "path": "resultingRevision",
+            "gte": "{activationEvent.event.causalRevision.groupRevision}"
+          }
+        ]
       }
     },
     {
