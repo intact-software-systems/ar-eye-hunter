@@ -66,6 +66,7 @@ function validateAttemptObservations(
     let transientRetries = 0;
     for (const [index, observation] of observations.entries()) {
         const observationPath = `${path}.attemptObservations[${index}]`;
+        const errorsBeforeObservation = errors.length;
         if (!isObject(observation) || !commandsById.has(observation.commandId)) {
             errors.push(`${observationPath}.commandId must link to a raw command`);
             continue;
@@ -95,6 +96,7 @@ function validateAttemptObservations(
                 `${observationPath}.source must disclose a timing-sink source`
             );
         }
+        const validHistoryFields = errors.length === errorsBeforeObservation;
         validateAttemptFailure(observation, observationPath, errors);
         const terminalOutcome = observation.outcome === 'accepted' ||
             observation.outcome === 'exhausted';
@@ -102,6 +104,9 @@ function validateAttemptObservations(
             errors.push(
                 `${observationPath}.terminal must be false for conflicts and true for accepted/exhausted`
             );
+        }
+        if (!validHistoryFields || typeof observation.terminal !== 'boolean') {
+            continue;
         }
         const historyKey = `${observation.commandId}\u0000${observation.operationId}`;
         const history = histories.get(historyKey) ?? [];

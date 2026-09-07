@@ -4,8 +4,9 @@
  */
 export function compareNumber({ actual, expected, path, errors, source }) {
     if (!numbersEqual(actual, expected)) {
+        const actualDescription = typeof actual === 'number' ? actual : `<${actual === null ? 'null' : typeof actual}>`;
         errors.push(
-            `${path} does not match ${source}: expected=${expected}, actual=${actual}`
+            `${path} does not match ${source}: expected=${expected}, actual=${actualDescription}`
         );
     }
 }

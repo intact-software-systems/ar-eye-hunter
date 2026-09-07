@@ -959,6 +959,36 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
+    // Performance artifacts enter these raw validators before any arithmetic,
+    // string operation, linking, or aggregate derivation. Rejected shapes keep
+    // their field diagnostics through both comparison roles; guarded derivation
+    // still reports semantic mismatches. The benchmark's sole unknown is an
+    // opaque rejected promise reason rethrown after its existing drain settles.
+    Object.freeze({
+        path: 'scripts/perf/api-v1-state-write-artifact-validation.mjs',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'scripts/perf/compare-api-v1-state-write-results.mjs',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'scripts/perf/validate-state-write-attempt-evidence.mjs',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'scripts/perf/validate-state-write-durable-evidence.mjs',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'scripts/perf/api-v1-state-write-concurrency-bench.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // Cohesion review kept these lifecycle/decoder owners and their directory
     // together. Bounds describe only the reviewed signal and never change the
     // global thresholds or authorize a refactor-or-register tier exception.

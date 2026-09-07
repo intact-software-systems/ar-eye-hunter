@@ -24,17 +24,17 @@ import {
 export function deriveFinalDurableCorrectness(
     { sample, commandsById, path, errors }
 ) {
-    const evidence = sample.durableEvidence;
+    const evidence = isObject(sample) ? sample.durableEvidence : undefined;
     if (!isObject(evidence)) {
         errors.push(`${path}.durableEvidence must be an object`);
         return emptyDurableCorrectness();
     }
+    const errorsBeforeEvidence = errors.length;
     validateDurableEvidenceShape(evidence, path, errors);
-    const appInbox = Array.isArray(evidence.appInbox) ? evidence.appInbox : [];
-    const receipts = Array.isArray(evidence.receipts) ? evidence.receipts : [];
-    const resourceOutbox = Array.isArray(evidence.resourceOutbox)
-        ? evidence.resourceOutbox
-        : [];
+    if (errors.length !== errorsBeforeEvidence) {
+        return emptyDurableCorrectness();
+    }
+    const { appInbox, receipts, resourceOutbox } = evidence;
     const acceptedCommands = [...commandsById.values()].filter((command) => command.status === 'accepted');
     validateReceiptEvidence({
         receipts,
@@ -43,17 +43,23 @@ export function deriveFinalDurableCorrectness(
         path,
         errors
     });
+    if (errors.length !== errorsBeforeEvidence) {
+        return emptyDurableCorrectness();
+    }
     const receiptsByCommand = new Map(
         receipts.map((receipt) => [receipt?.commandId, receipt])
     );
-    validateAppInboxEvidence({
+    const validAppInbox = validateAppInboxEvidence({
         entries: appInbox,
         commandsById: commandsById,
         receiptsByCommand: receiptsByCommand,
         path: path,
         errors: errors
     });
-    validateOutboxEvidence({ resourceOutbox, commandsById, path, errors });
+    const validOutbox = validateOutboxEvidence({ resourceOutbox, commandsById, path, errors });
+    if (!validAppInbox || !validOutbox) {
+        return emptyDurableCorrectness();
+    }
     const completion = { acceptedCommands, appInbox, receipts, resourceOutbox };
     validateOutboxReceiptLinks({ ...completion, receiptsByCommand, path, errors });
     validateAtomicCompletion({ ...completion, sample, path, errors });
@@ -113,14 +119,15 @@ function validateReceiptEvidence(
             errors.push(
                 `${path}.durableEvidence.receipts[${index}] is malformed or unlinked`
             );
+            return undefined;
         }
-        validateReceiptResultBindings(
+        validateReceiptResultBindings({
             receipt,
-            commandsById.get(receipt?.commandId),
+            command: commandsById.get(receipt?.commandId),
             path,
             index,
             errors
-        );
+        });
         if (
             isDenseStringArray(receipt?.receiptIds) &&
             new Set(receipt.receiptIds).size !== receipt.receiptIds.length
@@ -155,6 +162,7 @@ function validateOutboxEvidence(
     { resourceOutbox, commandsById, path, errors }
 ) {
     const effectIds = new Set();
+    let validShape = true;
     for (const [index, effect] of resourceOutbox.entries()) {
         if (
             !isObject(effect) || typeof effect.effectId !== 'string' ||
@@ -170,6 +178,8 @@ function validateOutboxEvidence(
             errors.push(
                 `${path}.durableEvidence.resourceOutbox[${index}] is malformed or unlinked`
             );
+            validShape = false;
+            continue;
         }
         if (effectIds.has(effect?.effectId)) {
             errors.push(
@@ -178,6 +188,7 @@ function validateOutboxEvidence(
         }
         effectIds.add(effect?.effectId);
     }
+    return validShape;
 }
 
 function validateOutboxReceiptLinks(
@@ -272,10 +283,12 @@ function validateAppInboxEvidence(
     { entries, commandsById, receiptsByCommand, path, errors }
 ) {
     const identities = new Set();
+    let validShape = true;
     for (const [index, entry] of entries.entries()) {
         if (
             !isObject(entry) || typeof entry.commandId !== 'string' ||
             !commandsById.has(entry.commandId) ||
+            typeof entry.commandType !== 'string' ||
             typeof entry.operationId !== 'string' ||
             entry.operationId.length === 0 || typeof entry.resourceId !== 'string' ||
             entry.resourceId.length === 0 || typeof entry.topicId !== 'string' ||
@@ -290,6 +303,8 @@ function validateAppInboxEvidence(
             errors.push(
                 `${path}.durableEvidence.appInbox[${index}] is malformed or incomplete`
             );
+            validShape = false;
+            continue;
         }
         const binding = receiptsByCommand.get(entry?.commandId)?.resultBindings
             ?.find(
@@ -314,6 +329,7 @@ function validateAppInboxEvidence(
         }
         identities.add(identity);
     }
+    return validShape;
 }
 
 function embeddedResultReceipt(entry) {

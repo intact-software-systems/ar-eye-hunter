@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import {
     compareNumber,
     isDenseArray,
+    isDenseStringArray,
     isNonNegativeNumber,
     isObject,
     requireMetric,
@@ -539,7 +540,11 @@ function validateSample({ sample, path, runIndex, errors }) {
         );
         return;
     }
+    const errorsBeforeCommands = errors.length;
     const commandsById = validateSampleCommands(sample, path, errors);
+    if (errors.length !== errorsBeforeCommands) {
+        return;
+    }
     const attempts = deriveAttempts({
         observations: sample.attemptObservations,
         commandsById: commandsById,
@@ -725,6 +730,9 @@ function validateSampleLatency({ sample, attempts, path, errors }) {
             source: 'raw samples'
         });
     }
+    if (!Number.isFinite(sample.durationMs)) {
+        return;
+    }
     compareNumber({
         actual: sample.throughputPerSecond,
         expected: attempts.accepted / (sample.durationMs / 1_000),
@@ -822,13 +830,23 @@ function canDeriveWorkloadSample(sample) {
         isObject(sample.durableEvidence) &&
         isDenseArray(sample.durableEvidence.appInbox) &&
         isDenseArray(sample.durableEvidence.receipts) &&
+        sample.durableEvidence.receipts.every((receipt) =>
+            isObject(receipt) && typeof receipt.commandId === 'string' &&
+            isDenseStringArray(receipt.outboxIds)
+        ) &&
+        Number.isFinite(sample.durableEvidence.atomicCompletionFailures) &&
         isDenseArray(sample.durableEvidence.resourceOutbox) &&
         isDenseArray(sample.durableEvidence.intermediateMutationIntents) &&
         isObject(sample.correctness) &&
-        isDenseArray(sample.correctness.dbwFindings) &&
-        isObject(sample.sql) &&
-        isObject(sample.postgres) &&
-        isObject(sample.timingsMs);
+        isDenseStringArray(sample.correctness.dbwFindings) &&
+        hasFiniteMetrics(sample.sql, SQL_METRICS) &&
+        hasFiniteMetrics(sample.postgres, POSTGRES_METRICS) &&
+        hasFiniteMetrics(sample.timingsMs, TIMING_BUCKETS);
+}
+
+// Derivation needs safe values; the validators retain semantic range/linkage diagnostics.
+function hasFiniteMetrics(values, fields) {
+    return isObject(values) && fields.every((field) => Number.isFinite(values[field]));
 }
 
 function deriveWorkloadSummary(samples) {
@@ -858,9 +876,9 @@ function deriveWorkloadSummary(samples) {
             attempts,
             attemptsPerAcceptedMutation: attempts / accepted
         },
-        sql: medianObject(samples.map((sample) => sample.sql)),
-        postgres: medianObject(samples.map((sample) => sample.postgres)),
-        timingsMs: medianObject(samples.map((sample) => sample.timingsMs)),
+        sql: medianObject(samples.map((sample) => sample.sql), SQL_METRICS),
+        postgres: medianObject(samples.map((sample) => sample.postgres), POSTGRES_METRICS),
+        timingsMs: medianObject(samples.map((sample) => sample.timingsMs), TIMING_BUCKETS),
         correctness: deriveWorkloadCorrectness(samples, accepted)
     };
 }
@@ -930,9 +948,10 @@ function validateDerivedSummary({ summary, derived, path, errors }) {
             source: 'raw durable samples'
         });
     }
+    const findings = summary?.correctness?.dbwFindings;
     if (
-        !sameStringArray(
-            [...(summary?.correctness?.dbwFindings ?? [])].sort(),
+        isDenseStringArray(findings) && !sameStringArray(
+            findings.toSorted(),
             [...derived.correctness.dbwFindings].sort()
         )
     ) {
@@ -982,12 +1001,8 @@ function percentile(values, ratio) {
     return sorted[Math.ceil(sorted.length * ratio) - 1];
 }
 
-function medianObject(values) {
-    return Object.fromEntries(
-        Object.keys(values[0]).map((
-            key
-        ) => [key, median(values.map((value) => value[key]))])
-    );
+function medianObject(values, fields) {
+    return Object.fromEntries(fields.map((field) => [field, median(values.map((value) => value[field]))]));
 }
 
 function median(values) {
