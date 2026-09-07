@@ -1,3 +1,9 @@
+import {
+    decodeJsonComparisonInput,
+    type JsonComparisonInputIssue,
+    type JsonComparisonValues
+} from './json-comparison-input.ts';
+
 const ANY = 'any' as const;
 const ANY_INTEGER = 'integer' as const;
 const ANY_FLOAT = 'float' as const;
@@ -9,66 +15,88 @@ export type JsonValue =
     | number
     | boolean
     | null
-    | { [key: string]: JsonValue | undefined; }
-    | JsonValue[];
+    | JsonComparisonObject
+    | readonly (JsonValue | undefined)[];
+
+export interface JsonComparisonObject {
+    readonly [key: string]: JsonValue | undefined;
+}
 
 export interface CompareConfig {
-    compareValues: boolean;
-    compareExact: boolean;
-    compareArraysComplete: boolean;
-    compareArrayOrder: boolean;
-    ignoreJsonKeys: string[];
-    ignoreJsonPaths: string[];
+    readonly compareValues: boolean;
+    readonly compareExact: boolean;
+    readonly compareArraysComplete: boolean;
+    readonly compareArrayOrder: boolean;
+    readonly ignoreJsonKeys: readonly string[];
+    readonly ignoreJsonPaths: readonly string[];
 }
 
 export interface CompatibleResult {
-    isEqual: true;
+    readonly isEqual: true;
 }
 
-export interface NotCompatibleResult {
-    isEqual: false;
-    message: string;
-    expected: unknown;
-    actual: unknown;
-    [key: string]: unknown;
+export interface NotCompatibleResult extends ComparisonMismatchDetails {
+    readonly isEqual: false;
+    readonly message: string;
+    readonly expected: JsonValue | undefined;
+    readonly actual: JsonValue | undefined;
+    readonly inputIssues?: readonly JsonComparisonInputIssue[];
 }
 
 export type ComparisonResult = CompatibleResult | NotCompatibleResult;
 
 interface ComparisonContext {
-    config: CompareConfig;
-    path: string;
+    readonly config: CompareConfig;
+    readonly path: string;
 }
 
-interface ComparisonInput {
-    expected: unknown;
-    actual: unknown;
-    context: ComparisonContext;
+interface ComparisonInput extends JsonComparisonValues {
+    readonly context: ComparisonContext;
 }
 
 interface Mismatch {
-    message: string;
-    details?: Record<string, unknown>;
+    readonly message: string;
+    readonly details?: ComparisonMismatchDetails;
 }
 
 interface ArrayMatches {
-    expectedFound: unknown[];
-    expectedNotFound: unknown[];
-    actualNotFound: unknown[];
+    readonly expectedFound: readonly (JsonValue | undefined)[];
+    readonly expectedNotFound: readonly (JsonValue | undefined)[];
+    readonly actualNotFound: readonly (JsonValue | undefined)[];
+}
+
+interface ComparisonMismatchDetails {
+    readonly keyNotExpected?: string;
+    readonly expectedFound?: readonly (JsonValue | undefined)[];
+    readonly expectedNotFound?: readonly (JsonValue | undefined)[];
+    readonly actualNotFound?: readonly (JsonValue | undefined)[];
+    readonly cause?: NotCompatibleResult;
+}
+
+interface ObjectComparisonInput extends ComparisonInput {
+    readonly expected: JsonComparisonObject;
+}
+
+interface ArrayComparisonInput extends ComparisonInput {
+    readonly expected: readonly (JsonValue | undefined)[];
 }
 
 interface ObjectPropertyComparison {
-    key: string;
-    expected: Readonly<Record<string, unknown>>;
-    actual: Readonly<Record<string, unknown>>;
-    context: ComparisonContext;
+    readonly key: string;
+    readonly expected: JsonComparisonObject;
+    readonly actual: JsonComparisonObject;
+    readonly context: ComparisonContext;
 }
 
 export function expandPath(path: string, key: string): string {
     return path.length === 0 ? key : path + '.' + key;
 }
 
-function toNotCompatible(expected: unknown, actual: unknown, mismatch: Mismatch): NotCompatibleResult {
+function toNotCompatible(
+    expected: JsonValue | undefined,
+    actual: JsonValue | undefined,
+    mismatch: Mismatch
+): NotCompatibleResult {
     return {
         isEqual: false,
         message: mismatch.message,
@@ -82,11 +110,15 @@ function toCompatible(): CompatibleResult {
     return { isEqual: true };
 }
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+function isRecord(value: JsonValue | undefined): value is JsonComparisonObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function matchesWildcard(expected: unknown, actual: unknown): boolean | undefined {
+function isJsonArray(value: JsonValue | undefined): value is readonly (JsonValue | undefined)[] {
+    return Array.isArray(value);
+}
+
+function matchesWildcard(expected: JsonValue | undefined, actual: JsonValue | undefined): boolean | undefined {
     if (expected === ANY) {
         return true;
     }
@@ -112,7 +144,7 @@ function matchesWildcard(expected: unknown, actual: unknown): boolean | undefine
     return undefined;
 }
 
-function isValueEqual(expected: unknown, actual: unknown, compareExact: boolean): boolean {
+function isValueEqual(expected: JsonValue | undefined, actual: JsonValue | undefined, compareExact: boolean): boolean {
     if (expected === undefined || actual === undefined) {
         return expected === actual;
     }
@@ -134,8 +166,8 @@ function isValueEqual(expected: unknown, actual: unknown, compareExact: boolean)
 }
 
 function compareKeys(
-    expected: Readonly<Record<string, unknown>>,
-    actual: Readonly<Record<string, unknown>>
+    expected: JsonComparisonObject,
+    actual: JsonComparisonObject
 ): ComparisonResult {
     const expectedKeys = Object.keys(expected);
     const actualKeys = Object.keys(actual);
@@ -153,7 +185,7 @@ function compareScalar(input: ComparisonInput): ComparisonResult {
     const { expected, actual, context: { config } } = input;
     return config.compareValues && !isValueEqual(expected, actual, config.compareExact)
         ? toNotCompatible(expected, actual, {
-            message: '!isValueEqual(' + String(expected) + ', ' + String(actual) + ')'
+            message: 'JSON values differ'
         })
         : toCompatible();
 }
@@ -168,7 +200,7 @@ function compareObjectProperty(input: ObjectPropertyComparison): ComparisonResul
     }
     if (!Object.hasOwn(actual, key)) {
         return toNotCompatible(expected, actual, {
-            message: '!' + String(actual) + '.hasOwnProperty(' + key + ')'
+            message: 'actual.hasOwnProperty(' + key + ') is false'
         });
     }
     return compareValue({
@@ -178,11 +210,8 @@ function compareObjectProperty(input: ObjectPropertyComparison): ComparisonResul
     });
 }
 
-function compareObjects(input: ComparisonInput): ComparisonResult {
+function compareObjects(input: ObjectComparisonInput): ComparisonResult {
     const { expected, actual, context } = input;
-    if (!isRecord(expected)) {
-        return compareScalar(input);
-    }
     if (!isRecord(actual)) {
         return toNotCompatible(expected, actual, { message: 'actual is not a json object' });
     }
@@ -202,13 +231,13 @@ function compareObjects(input: ComparisonInput): ComparisonResult {
 }
 
 function computeArrayMatches(
-    expected: readonly unknown[],
-    actual: readonly unknown[],
+    expected: readonly (JsonValue | undefined)[],
+    actual: readonly (JsonValue | undefined)[],
     context: ComparisonContext
 ): ArrayMatches {
     const matchedActualIndexes = new Set<number>();
-    const expectedFound: unknown[] = [];
-    const expectedNotFound: unknown[] = [];
+    const expectedFound: (JsonValue | undefined)[] = [];
+    const expectedNotFound: (JsonValue | undefined)[] = [];
     for (const expectedValue of expected) {
         const matchIndex = actual.findIndex((actualValue, index) =>
             !matchedActualIndexes.has(index) &&
@@ -251,12 +280,9 @@ function compareArrayMatches(input: ComparisonInput, matches: ArrayMatches): Com
     return toCompatible();
 }
 
-function compareArrays(input: ComparisonInput): ComparisonResult {
+function compareArrays(input: ArrayComparisonInput): ComparisonResult {
     const { expected, actual, context } = input;
-    if (!Array.isArray(expected)) {
-        return compareScalar(input);
-    }
-    if (!Array.isArray(actual)) {
+    if (!isJsonArray(actual)) {
         return toNotCompatible(expected, actual, { message: 'expected array was object' });
     }
     return context.config.compareArrayOrder
@@ -265,8 +291,8 @@ function compareArrays(input: ComparisonInput): ComparisonResult {
 }
 
 function compareOrderedArrays(
-    expected: readonly unknown[],
-    actual: readonly unknown[],
+    expected: readonly (JsonValue | undefined)[],
+    actual: readonly (JsonValue | undefined)[],
     context: ComparisonContext
 ): ComparisonResult {
     if (expected.length !== actual.length) {
@@ -289,17 +315,27 @@ function compareOrderedArrays(
 }
 
 function compareValue(input: ComparisonInput): ComparisonResult {
-    if (Array.isArray(input.expected)) {
-        return compareArrays(input);
+    if (isJsonArray(input.expected)) {
+        return compareArrays({ ...input, expected: input.expected });
     }
     if (isRecord(input.expected)) {
-        return compareObjects(input);
+        return compareObjects({ ...input, expected: input.expected });
     }
     return compareScalar(input);
 }
 
 export function compareJson(expected: unknown, actual: unknown, config: CompareConfig): ComparisonResult {
-    return compareValue({ expected, actual, context: { config, path: '' } });
+    const decoded = decodeJsonComparisonInput(expected, actual);
+    if (decoded.left) {
+        return {
+            isEqual: false,
+            message: 'Comparison input is not a JSON value',
+            expected: undefined,
+            actual: undefined,
+            inputIssues: decoded.left
+        };
+    }
+    return compareValue({ ...decoded.right!, context: { config, path: '' } });
 }
 
 export const COMPARISON = {
@@ -361,15 +397,12 @@ function isComparison(value: string): value is Comparison {
 
 export function toConfig(
     comparison: Comparison | string,
-    ignoreJsonKeys: string[] = [],
-    ignoreJsonPaths: string[] = []
+    ignoreJsonKeys: readonly string[] = [],
+    ignoreJsonPaths: readonly string[] = []
 ): CompareConfig {
     const normalizedComparison = comparison.toLowerCase();
     if (!isComparison(normalizedComparison)) {
-        throw {
-            error: 'Comparison unsupported: ' + normalizedComparison,
-            comparisons: COMPARISON
-        };
+        throw new TypeError('Comparison unsupported: ' + normalizedComparison);
     }
     const compareFlags = COMPARE_FLAGS_BY_COMPARISON[normalizedComparison];
     return { ...compareFlags, ignoreJsonKeys, ignoreJsonPaths };

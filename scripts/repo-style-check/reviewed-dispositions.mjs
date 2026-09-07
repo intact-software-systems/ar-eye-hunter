@@ -11,6 +11,51 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'toError'
     }),
+    // JSON comparison accepts native input at its facade and decoder only.
+    // Descriptor-built snapshots remove accessors, prototypes, and caller-owned
+    // mutation before the JsonValue core runs. The private worklist is raw input
+    // inside that decoder; the test deliberately exercises the native boundary.
+    // Semantic tests cover invalid values, cycles, hidden hooks, shared graphs,
+    // immutable diagnostics, and the existing comparison policies.
+    Object.freeze({
+        path: 'packages/shared-test/json-compare/compare-json-values.ts',
+        rule: 'boundary.unknown',
+        symbol: 'compareJson'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/json-compare/json-compare.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/json-compare/json-comparison-input.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/json-compare/json-comparison-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeJsonComparisonInput'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/json-compare/json-comparison-input.ts',
+        rule: 'boundary.unknown',
+        symbol: 'captureJsonComparisonValue'
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/compare-json.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Scalar, object, and array branches form one recursive comparison policy.
+    // Keep them together after extracting native-input decoding. This bounds the
+    // reviewed warning; it does not permit growth into an exception tier.
+    Object.freeze({
+        path: 'packages/shared-test/json-compare/compare-json-values.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 63
+    }),
     // These exact JSON readers reject malformed input at the external boundary.
     // The live reader recursively produces only RtcBaselineJson; the typecheck
     // fixture reader returns only a validated string array. No unknown values

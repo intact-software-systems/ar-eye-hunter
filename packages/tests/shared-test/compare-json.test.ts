@@ -15,6 +15,185 @@ describe('CompareJson facade', () => {
         expect(compareJson(expected, actual, toConfig(COMPARISON.COMPATIBLE)).isEqual).toBe(true);
     });
 
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, 1n, Symbol('value'), () => 1, new Date(0), new Map()])(
+        'reports unsupported native values before comparison: %s',
+        (value) => {
+            const result = CompareJson.compatible({ value: 'any' }, { value });
+
+            expect(result.isEqual).toBe(false);
+            if (!result.isEqual) {
+                expect(result.inputIssues).toEqual([
+                    { input: 'actual', path: '$.value', reason: 'unsupported-value' }
+                ]);
+                expect(() => JSON.stringify(result)).not.toThrow();
+            }
+        }
+    );
+
+    it('rejects cyclic input while allowing shared non-cyclic JSON values', () => {
+        const cyclic: Record<string, object> = {};
+        cyclic.self = cyclic;
+        const rejected = CompareJson.compatible({ self: 'any' }, cyclic);
+        expect(rejected.isEqual).toBe(false);
+        if (!rejected.isEqual) {
+            expect(rejected.inputIssues).toEqual([
+                { input: 'actual', path: '$.self', reason: 'cyclic-value' }
+            ]);
+        }
+        const shared = Object.freeze({ id: 1 });
+        expect(CompareJson.exact({ left: { id: 1 }, right: { id: 1 } }, { left: shared, right: shared }).isEqual).toBe(true);
+    });
+
+    it('does not execute accessors when validating native input', () => {
+        let accesses = 0;
+        const actual = {
+            get value() {
+                accesses++;
+                return 1;
+            }
+        };
+
+        const result = CompareJson.compatible({ value: 'integer' }, actual);
+
+        expect(result.isEqual).toBe(false);
+        expect(accesses).toBe(0);
+        if (!result.isEqual) {
+            expect(result.inputIssues).toEqual([
+                { input: 'actual', path: '$.value', reason: 'accessor-property' }
+            ]);
+        }
+    });
+
+    it('preserves missing values and one-to-one array matching without changing frozen inputs', () => {
+        const expected = Object.freeze({ values: Object.freeze([1, 1]), absent: undefined });
+        const actual = Object.freeze({ values: Object.freeze([1]), absent: undefined });
+
+        expect(CompareJson.compatible(undefined, undefined).isEqual).toBe(true);
+        expect(CompareJson.compatible('any', undefined).isEqual).toBe(false);
+        expect(CompareJson.compatible({ absent: undefined }, {}).isEqual).toBe(false);
+        const result = CompareJson.compatible(expected, actual);
+        expect(result.isEqual).toBe(false);
+        if (!result.isEqual) {
+            expect(result.expectedFound).toEqual([1]);
+            expect(result.expectedNotFound).toEqual([1]);
+            expect(result.actualNotFound).toEqual([]);
+        }
+        expect(expected).toEqual({ values: [1, 1], absent: undefined });
+        expect(actual).toEqual({ values: [1], absent: undefined });
+    });
+
+    it('captures JSON data without hidden accessors, serialization hooks, or later input changes', () => {
+        let accesses = 0;
+        const actual = { id: 1 };
+        Object.defineProperties(actual, {
+            hidden: {
+                get: () => {
+                    accesses++;
+                    return 7;
+                }
+            },
+            toJSON: {
+                value: () => {
+                    throw new Error('native serialization hook');
+                }
+            }
+        });
+
+        const result = CompareJson.compatible({ hidden: 7 }, actual);
+        actual.id = 2;
+
+        expect(result.isEqual).toBe(false);
+        expect(accesses).toBe(0);
+        if (!result.isEqual) {
+            expect(result.actual).toEqual({ id: 1 });
+            expect(() => JSON.stringify(result)).not.toThrow();
+        }
+    });
+
+    it('reports mismatches for JSON objects that cannot be converted to strings', () => {
+        const nullPrototype = Object.create(null);
+        nullPrototype.id = 1;
+
+        for (const actual of [nullPrototype, { toString: 1, valueOf: 2 }]) {
+            expect(CompareJson.compatible({ required: 1 }, actual).isEqual).toBe(false);
+            expect(CompareJson.compatible('integer', actual).isEqual).toBe(false);
+        }
+    });
+
+    it('rejects custom array prototypes instead of invoking their iterator', () => {
+        let iterations = 0;
+        const actual = [2];
+        Object.setPrototypeOf(actual, {
+            [Symbol.iterator]: function* () {
+                iterations++;
+                yield 1;
+            }
+        });
+
+        const result = CompareJson.compatible([1], actual);
+
+        expect(result.isEqual).toBe(false);
+        expect(iterations).toBe(0);
+        if (!result.isEqual) {
+            expect(result.inputIssues).toEqual([{ input: 'actual', path: '$', reason: 'unsupported-value' }]);
+        }
+    });
+
+    it('preserves sparse array length and reads hidden array data without invoking accessors', () => {
+        const data = new Array<number>(2);
+        Object.defineProperty(data, '1', { value: 7 });
+        expect(CompareJson.compare([undefined, 7], data, { comparison: COMPARISON.EXACT_ORDERED }).isEqual).toBe(true);
+        let accesses = 0;
+        const accessor = new Array<number>(1);
+        Object.defineProperty(accessor, '0', {
+            get: () => {
+                accesses++;
+                return 7;
+            }
+        });
+
+        const result = CompareJson.compatible([7], accessor);
+
+        expect(result.isEqual).toBe(false);
+        expect(accesses).toBe(0);
+        if (!result.isEqual) {
+            expect(result.inputIssues).toEqual([{ input: 'actual', path: '$[0]', reason: 'accessor-property' }]);
+        }
+    });
+
+    it('captures shared subtrees without expanding every reference path', () => {
+        let inspections = 0;
+        let actual: object = {};
+        for (let depth = 0; depth < 16; depth++) {
+            actual = new Proxy({ left: actual, right: actual }, {
+                ownKeys(target) {
+                    inspections++;
+                    return Reflect.ownKeys(target);
+                }
+            });
+        }
+
+        expect(CompareJson.compatible('any', actual).isEqual).toBe(true);
+        expect(inspections).toBeLessThan(100);
+    });
+
+    it('preserves prototype-looking JSON keys as data and contains inspection failures', () => {
+        const expected = JSON.parse('{"__proto__":{"role":"member"},"constructor":1}');
+        const actual = JSON.parse('{"__proto__":{"role":"member"},"constructor":2}');
+        const result = CompareJson.exact(expected, actual);
+        expect(result.isEqual).toBe(false);
+        expect(CompareJson.exact(expected, expected).isEqual).toBe(true);
+        expect(Object.hasOwn({}, 'role')).toBe(false);
+
+        const revoked = Proxy.revocable({}, {});
+        revoked.revoke();
+        const rejected = CompareJson.compatible('any', revoked.proxy);
+        expect(rejected.isEqual).toBe(false);
+        if (!rejected.isEqual) {
+            expect(rejected.inputIssues).toEqual([{ input: 'actual', path: '$', reason: 'uninspectable-value' }]);
+        }
+    });
+
     it('selects a comparison through the facade named input', () => {
         const result = CompareJson.compare(
             { id: 'integer' },
@@ -26,10 +205,7 @@ describe('CompareJson facade', () => {
     });
 
     it.each(['constructor', '__proto__'])('rejects inherited comparison key %s', (comparison) => {
-        expect(() => toConfig(comparison)).toThrow(expect.objectContaining({
-            error: 'Comparison unsupported: ' + comparison,
-            comparisons: COMPARISON
-        }));
+        expect(() => toConfig(comparison)).toThrow(new TypeError('Comparison unsupported: ' + comparison));
     });
 
     it('compatible should allow extra actual fields', () => {

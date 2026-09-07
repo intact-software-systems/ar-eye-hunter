@@ -1,45 +1,154 @@
-// deno-lint-ignore-file no-explicit-any
 import { Either } from '../../../shared/resilience/Either.ts';
-import { compareJson, COMPARISON, toConfig, type ComparisonResult } from '../../json-compare/compare-json-values.ts';
+import {
+    compareJson,
+    COMPARISON,
+    toConfig,
+    type ComparisonResult,
+    type JsonComparisonObject,
+    type JsonValue,
+    type NotCompatibleResult
+} from '../../json-compare/compare-json-values.ts';
 import { toInteractionOutputFields } from '../execution/black-box-scenario-results.ts';
+import type {
+    RallarRemoteBrowserConfig,
+    RallarRemoteBrowserControlResultEnvelope
+} from '../rallar-remote-browser-provider.ts';
 import { normalizeBlackBoxResponseHeaders } from './normalize-black-box-response-headers.ts';
 
-export interface ToHttpStatusInput {
-    readonly config: any;
+interface HttpInteractionRequest {
+    readonly method?: string;
+    readonly path?: string;
+    readonly timeoutMs?: number | string;
+    readonly scenarioExecutionNumber?: number;
+    readonly interactionExecutionNumber?: number;
+    readonly repeatIndex?: number;
+    readonly correlation?: JsonComparisonObject;
+    readonly input?: JsonValue;
+    readonly output?: JsonValue;
+    readonly outputPath?: JsonValue;
+    readonly outputs?: JsonValue;
+    readonly transform?: JsonValue;
+    readonly secret?: boolean;
+    readonly redact?: boolean;
+    readonly redactAs?: string;
+}
+
+interface HttpResponseExpectation {
+    readonly headers?: JsonComparisonObject;
+    readonly comparison?: string;
+    readonly ignoreJsonKeys?: readonly string[];
+    readonly ignoreJsonPaths?: readonly string[];
+    readonly statusCode?: JsonValue;
+    readonly status?: JsonValue;
+    readonly statusCodes?: JsonValue;
+    readonly allowedStatusCodes?: JsonValue;
+    readonly body?: JsonValue;
+    readonly bodyAnyOf?: JsonValue;
+    readonly anyBodyOf?: JsonValue;
+    readonly bodyIn?: JsonValue;
+}
+
+interface HttpInteraction {
+    readonly request: HttpInteractionRequest;
+    readonly response?: HttpResponseExpectation;
+}
+
+interface HttpInteractionConfig {
+    readonly interactionName: string;
+    readonly interaction: HttpInteraction;
+    readonly interactionConfig?: JsonComparisonObject;
+}
+
+interface HttpResponseObservation {
+    readonly status: number;
+    readonly statusText: string;
+    readonly ok?: boolean;
+    readonly headers?: Headers | Readonly<Record<string, string>>;
+    readonly blackBoxAttemptNumber?: number;
+    readonly blackBoxMaxAttempts?: number;
+}
+
+export interface ToHttpStatusInput extends ToHttpInteractionStatusInput {
     readonly result: string;
-    readonly actualJson: any;
-    readonly response: any;
-    readonly interaction: any;
-    readonly details?: any;
+    readonly details?: HttpResponseMismatchDetails | RemoteHttpFailureDetails;
 }
 
 export interface ToHttpInteractionStatusInput {
-    readonly config: any;
-    readonly interaction: any;
-    readonly response: any;
-    readonly actualJson: any;
+    readonly config: HttpInteractionConfig;
+    readonly interaction: HttpInteraction;
+    readonly response: HttpResponseObservation;
+    readonly actualJson: JsonValue | undefined;
+}
+
+interface HttpInteractionStatus {
+    readonly name: string;
+    readonly status: 'SUCCESS' | 'FAILURE';
+    readonly result?: string;
+    readonly runnerRunId?: JsonValue;
+    readonly runnerStepId?: JsonValue;
+    readonly correlation?: JsonComparisonObject;
+    readonly method?: string;
+    readonly path?: string;
+    readonly timeoutMs?: number | string;
+    readonly attemptNumber?: number;
+    readonly maxAttempts?: number;
+    readonly scenarioExecutionNumber?: number;
+    readonly interactionExecutionNumber?: number;
+    readonly repeatIndex?: number;
+    readonly expected?: HttpResponseExpectation;
+    readonly actual: {
+        readonly body: JsonValue | undefined;
+        readonly headers: Readonly<Record<string, string>>;
+        readonly statusCode: number;
+        readonly statusText: string;
+    };
+    readonly details?: HttpResponseMismatchDetails | RemoteHttpFailureDetails;
+    readonly input?: JsonValue;
+    readonly output?: JsonValue;
+    readonly outputPath?: JsonValue;
+    readonly outputs?: JsonValue;
+    readonly transform?: JsonValue;
+    readonly secret?: boolean;
+    readonly redact?: boolean;
+    readonly redactAs?: string;
 }
 
 interface HttpResponseMismatch {
     readonly result: string;
-    readonly details?: Readonly<Record<string, unknown>>;
+    readonly details?: HttpResponseMismatchDetails;
+}
+
+type HttpResponseMismatchDetails = NotCompatibleResult | {
+    readonly expectedStatusCodes?: readonly number[];
+    readonly expectedHeaders?: JsonComparisonObject;
+    readonly headerComparison?: NotCompatibleResult;
+    readonly bodyAnyOf?: readonly (JsonValue | undefined)[];
+    readonly comparisons?: readonly ComparisonResult[];
+};
+
+interface RemoteHttpFailureDetails {
+    readonly remote: RallarRemoteBrowserConfig;
+    readonly result: RallarRemoteBrowserControlResultEnvelope;
 }
 
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
 
-function isRecord(value: any): value is Record<string, any> {
+function isRecord(value: JsonValue | undefined): value is JsonComparisonObject {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function toLowercaseHeaderNames(expectedHeaders: Record<string, any>): Record<string, any> {
+function toLowercaseHeaderNames(expectedHeaders: JsonComparisonObject): JsonComparisonObject {
     return Object.fromEntries(
         Object.entries(expectedHeaders)
             .map(([name, value]) => [String(name).toLowerCase(), value])
     );
 }
 
-function compareExpectedHeaders(interaction: any, response: any): ComparisonResult | undefined {
+function compareExpectedHeaders(
+    interaction: HttpInteraction,
+    response: HttpResponseObservation
+): ComparisonResult | undefined {
     const expectedHeaders = interaction.response?.headers;
     if (!isRecord(expectedHeaders)) {
         return undefined;
@@ -56,7 +165,9 @@ function compareExpectedHeaders(interaction: any, response: any): ComparisonResu
     );
 }
 
-function toCorrelationReportFields(interaction: any): any {
+function toCorrelationReportFields(
+    interaction: HttpInteraction
+): Pick<HttpInteractionStatus, 'runnerRunId' | 'runnerStepId' | 'correlation'> {
     const correlation = interaction?.request?.correlation;
     if (!correlation) {
         return {};
@@ -69,7 +180,7 @@ function toCorrelationReportFields(interaction: any): any {
     };
 }
 
-export function toStatus(input: ToHttpStatusInput): any {
+export function toStatus(input: ToHttpStatusInput): HttpInteractionStatus {
     const { config, result, actualJson, response, interaction } = input;
     return {
         name: config.interactionName,
@@ -96,7 +207,7 @@ export function toStatus(input: ToHttpStatusInput): any {
     };
 }
 
-function toSuccessStatus(input: ToHttpInteractionStatusInput): any {
+function toSuccessStatus(input: ToHttpInteractionStatusInput): HttpInteractionStatus {
     const { config, actualJson, response, interaction } = input;
     return {
         name: config.interactionName,
@@ -122,10 +233,12 @@ function toSuccessStatus(input: ToHttpInteractionStatusInput): any {
     };
 }
 
-function toNumberList(value: unknown): number[] {
+function toNumberList(value: JsonValue | undefined): number[] {
     if (Array.isArray(value)) {
         return value
-            .map((item) => Number.parseInt(String(item), 10))
+            .map((item) =>
+                typeof item === 'string' || typeof item === 'number' ? Number.parseInt(String(item), 10) : Number.NaN
+            )
             .filter((item) => Number.isFinite(item));
     }
 
@@ -133,7 +246,7 @@ function toNumberList(value: unknown): number[] {
         return toNumberList(value.split(','));
     }
 
-    if (value !== undefined && value !== null) {
+    if (typeof value === 'string' || typeof value === 'number') {
         const parsed = Number.parseInt(String(value), 10);
         return Number.isFinite(parsed)
             ? [parsed]
@@ -143,7 +256,7 @@ function toNumberList(value: unknown): number[] {
     return [];
 }
 
-function expectedHttpStatusCodes(response: any): number[] {
+function expectedHttpStatusCodes(response: HttpResponseExpectation | undefined): number[] {
     return [
         ...toNumberList(response?.statusCode),
         ...toNumberList(response?.status),
@@ -152,7 +265,9 @@ function expectedHttpStatusCodes(response: any): number[] {
     ];
 }
 
-function bodyExpectationAlternatives(response: any): any[] {
+function bodyExpectationAlternatives(
+    response: HttpResponseExpectation | undefined
+): readonly (JsonValue | undefined)[] {
     const alternatives = response?.bodyAnyOf ?? response?.anyBodyOf ?? response?.bodyIn;
 
     return Array.isArray(alternatives)
@@ -160,7 +275,11 @@ function bodyExpectationAlternatives(response: any): any[] {
         : [];
 }
 
-function compareExpectedBody(expectedBody: any, actualJson: any, interaction: any): ComparisonResult {
+function compareExpectedBody(
+    expectedBody: JsonValue | undefined,
+    actualJson: JsonValue | undefined,
+    interaction: HttpInteraction
+): ComparisonResult {
     return compareJson(
         expectedBody,
         actualJson,
@@ -172,14 +291,14 @@ function compareExpectedBody(expectedBody: any, actualJson: any, interaction: an
     );
 }
 
-export function toHttpInteractionStatus(input: ToHttpInteractionStatusInput): any {
-    return validateHttpResponse(input).fold(
+export function toHttpInteractionStatus(input: ToHttpInteractionStatusInput): HttpInteractionStatus {
+    return computeHttpResponseMismatch(input).fold(
         (mismatch) => toStatus({ ...input, ...mismatch }),
         () => toSuccessStatus(input)
     );
 }
 
-function validateHttpResponse(input: ToHttpInteractionStatusInput): Either<HttpResponseMismatch, true> {
+function computeHttpResponseMismatch(input: ToHttpInteractionStatusInput): Either<HttpResponseMismatch, true> {
     const { interaction, response } = input;
     const statusMismatch = computeHttpStatusMismatch(interaction, response);
     if (statusMismatch) {
@@ -189,14 +308,17 @@ function validateHttpResponse(input: ToHttpInteractionStatusInput): Either<HttpR
     if (headerComparison !== undefined && !headerComparison.isEqual) {
         return Either.ofLeft({
             result: 'Expected response headers not the same as actual response headers',
-            details: { expectedHeaders: interaction.response.headers, headerComparison }
+            details: { expectedHeaders: interaction.response?.headers, headerComparison }
         });
     }
     const bodyMismatch = computeHttpBodyMismatch(input);
     return bodyMismatch ? Either.ofLeft(bodyMismatch) : Either.ofRight(true);
 }
 
-function computeHttpStatusMismatch(interaction: any, response: any): HttpResponseMismatch | undefined {
+function computeHttpStatusMismatch(
+    interaction: HttpInteraction,
+    response: HttpResponseObservation
+): HttpResponseMismatch | undefined {
     const expectedStatuses = expectedHttpStatusCodes(interaction.response);
     const actualStatusCode = Number.parseInt(String(response.status), 10);
     if (expectedStatuses.length > 0 && !expectedStatuses.includes(actualStatusCode)) {
