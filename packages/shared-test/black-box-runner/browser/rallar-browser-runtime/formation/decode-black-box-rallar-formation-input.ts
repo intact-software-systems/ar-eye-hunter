@@ -36,6 +36,7 @@ type FormationCommand = typeof FORMATION_COMMANDS[number];
 const FORMATION_INPUT_KEYS = ['command', 'layout', 'landing'];
 
 const DEFAULT_FORMATION_TIMEOUT_MS = 15_000;
+const ADAPTER_DEADLINE_MARGIN_MS = 3_000;
 
 export interface BlackBoxRallarFormationInputIssue {
     readonly path: string;
@@ -175,11 +176,18 @@ function decodeFormationLanding(
     return known;
 }
 
+/**
+ * The in-browser wait must expire before the adapter abandons the command, or the adapter's generic
+ * timeout replaces the diagnosis the wait would have reported: which state the room was actually in.
+ */
 function decodeFormationTimeout(value: unknown): number | undefined {
     if (value === undefined) {
         return DEFAULT_FORMATION_TIMEOUT_MS;
     }
-    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+        return undefined;
+    }
+    return Math.max(1_000, value - ADAPTER_DEADLINE_MARGIN_MS);
 }
 
 function decodeFormationRoomRef(record: Readonly<Record<string, unknown>>): GroupRef | undefined {
