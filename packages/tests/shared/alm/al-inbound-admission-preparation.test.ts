@@ -31,6 +31,23 @@ describe('inbound admission preparation boundary', () => {
         vi.useRealTimers();
     });
 
+    it.each(['msgId', 'senderId', 'dedup', 'ordering'] as const)('rejects a candidate with original observations from another %s scope', async (scope) => {
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const prepared = await readAdmission(stores.admissionStore, createMessage(1));
+        const bundle = computeALInboundAdmission({ ...prepared, canForward: false });
+        const observations = {
+            ...bundle.observations,
+            ...(scope === 'msgId' ? { msgId: 'other-message' } : {}),
+            ...(scope === 'senderId' ? { senderId: 'other-sender' } : {}),
+            ...(scope === 'dedup' ? { dedup: undefined } : {}),
+            ...(scope === 'ordering' ? { ordering: undefined } : {})
+        };
+
+        await expect(stores.admissionStore.commitBundle({ ...bundle, observations })).rejects.toThrow(TypeError);
+
+        expect(await stores.admissionStore.commitBundle(bundle)).toBe('committed');
+    });
+
     it('computes one repeatable final bundle from captured read, policy, and effect facts', async () => {
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const prepared = await readAdmission(stores.admissionStore, createMessage(1));
@@ -50,7 +67,7 @@ describe('inbound admission preparation boundary', () => {
             'send-control'
         ]);
         expect(first.durableEffects.every((effect) => Number.isSafeInteger(effect.expireAtTimestamp))).toBe(true);
-        expect(first.versionExpireAtTimestamp).toBe(prepared.read.nowMs + prepared.read.retention.versionTtlMs);
+        expect(first.observations).toEqual(prepared.read.observations);
     });
 
     it('computes a repeatable final buffered-release bundle from captured values', async () => {
@@ -61,7 +78,7 @@ describe('inbound admission preparation boundary', () => {
             kind: 'buffered-release' as const,
             nowMs: prepared.read.nowMs,
             source: prepared.read.source,
-            clientRecord: prepared.read.clientRecord,
+            observations: prepared.read.observations,
             snapshot: { trackKey: 'sender:chat', seq: 1, msg: message, plan: prepared.plan },
             supersedence: {},
             supersedenceTrackTtlMs: prepared.read.supersedenceTrackTtlMs,
@@ -130,17 +147,8 @@ describe('inbound admission preparation boundary', () => {
             if (admissionCandidate && injectConflict) {
                 injectConflict = false;
                 await commitBundle({
-                    senderId: bundle.senderId,
-                    expectedVersion: bundle.expectedVersion,
-                    versionExpireAtTimestamp: bundle.versionExpireAtTimestamp,
-                    mutations: [{
-                        kind: 'set-msg-owner',
-                        msgId: 'concurrent-message',
-                        senderId: bundle.senderId,
-                        source: { kind: 'ws-client', peerId: bundle.senderId },
-                        supersedenceKey: null,
-                        expireAtTimestamp: bundle.versionExpireAtTimestamp
-                    }],
+                    ...bundle,
+                    mutations: bundle.mutations.filter((mutation) => mutation.kind === 'set-msg-owner'),
                     durableEffects: []
                 });
             }
@@ -205,7 +213,7 @@ describe('inbound admission preparation boundary', () => {
                 expect(controls.filter((message) => message.payload.typeId === 'al.control.ack.v1')).toEqual([firstAck, firstAck]);
             });
             await vi.waitFor(async () => {
-                expect(await stores.admissionStore.peekNextEffectReadyAt(nowMs)).toBeUndefined();
+                expect(await stores.admissionStore.peekNextEffectReadyAt()).toBeUndefined();
             });
         }
         finally {

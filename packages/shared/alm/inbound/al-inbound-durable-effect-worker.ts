@@ -136,7 +136,7 @@ export class ALInboundDurableEffectWorker {
             }
         }
 
-        const nextReadyAt = await this.admissionStore.peekNextEffectReadyAt(this.dependencies.clock.nowMs());
+        const nextReadyAt = await this.admissionStore.peekNextEffectReadyAt();
         if (nextReadyAt !== undefined) {
             this.scheduleEffectDrainAt(nextReadyAt);
         }

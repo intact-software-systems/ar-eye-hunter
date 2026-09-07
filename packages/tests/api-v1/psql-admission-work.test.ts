@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALInboundAdmissionStore, ALInboundWriteRequest } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALOutboundWorkKey } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from '@shared/alm/outbound/to-al-outbound-prepared-fingerprint.ts';
@@ -11,7 +12,8 @@ import {
     createALOutboundAdmissionStore,
     newALAckControlMessage,
     newALUnicastMessage,
-    normalizeALRuntimeStoreRetention
+    normalizeALRuntimeStoreRetention,
+    planALMessageHandling
 } from '@shared/mod.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -70,7 +72,7 @@ describe('PostgreSQL inbound admission', () => {
         await expect(backend.write((read) => read.read('missing', decodeIndexedRecord))).resolves.toBeUndefined();
     });
 
-    it('conditionally advances the inbound sender version', async () => {
+    it('conditionally admits message provenance and rejects the original stale candidate', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:admission';
         const store = createALInboundAdmissionStore({
@@ -81,10 +83,9 @@ describe('PostgreSQL inbound admission', () => {
             retention: normalizeALRuntimeStoreRetention()
         });
 
-        const status = await store.commitMutations({
+        const candidate = {
             senderId: 'peer-1',
-            expectedVersion: undefined,
-            versionExpireAtTimestamp: Date.now() + 60_000,
+            observations: (await readIncoming(store)).observations,
             mutations: [
                 {
                     kind: 'set-msg-owner',
@@ -95,18 +96,16 @@ describe('PostgreSQL inbound admission', () => {
                     expireAtTimestamp: Date.now() + 60_000
                 }
             ]
-        });
+        } satisfies ALInboundWriteRequest;
 
-        expect(status).toBe('committed');
-        const versionEntry = await repository.findEntry(namespace, `${namespace}:version:peer-1`);
-        expect(versionEntry).toBeDefined();
-        expect(JSON.parse(versionEntry!.value)).toEqual({
-            senderId: 'peer-1',
-            version: 1
-        });
+        expect(await store.commitMutations(candidate)).toBe('committed');
+        expect(await store.commitMutations(candidate)).toBe('conflict');
+        const owner = await repository.findEntry(namespace, `${namespace}:msg-owner:msg-1:peer-1`);
+        expect(JSON.parse(owner!.value)).toMatchObject({ msgId: 'msg-1', senderId: 'peer-1' });
+        expect(await repository.findEntry(namespace, `${namespace}:version:peer-1`)).toBeUndefined();
     });
 
-    it('bumps the owning sender version when accepting a control message', async () => {
+    it('records inbound receipt progress while retaining message provenance', async () => {
         const { sql, repository } = await createPSqlAdmissionTestStorage();
         const namespace = 'psql-test:inbound:admission';
         const store = createALInboundAdmissionStore({
@@ -119,8 +118,7 @@ describe('PostgreSQL inbound admission', () => {
 
         await store.commitMutations({
             senderId: 'peer-1',
-            expectedVersion: undefined,
-            versionExpireAtTimestamp: Date.now() + 60_000,
+            observations: (await readIncoming(store)).observations,
             mutations: [
                 {
                     kind: 'set-msg-owner',
@@ -149,7 +147,6 @@ describe('PostgreSQL inbound admission', () => {
                 {
                     kind: 'set-control-owners',
                     msgId: 'msg-1',
-                    expected: undefined,
                     value: { ambiguous: false, values: [{ peerId: 'peer-2', senderId: 'peer-1' }] },
                     expireAtTimestamp: Date.now() + 60_000
                 }
@@ -169,11 +166,10 @@ describe('PostgreSQL inbound admission', () => {
         );
 
         expect(acceptance.handled).toBe(true);
-        const versionEntry = await repository.findEntry(namespace, `${namespace}:version:peer-1`);
-        expect(JSON.parse(versionEntry!.value)).toEqual({
-            senderId: 'peer-1',
-            version: 2
-        });
+        const pending = await repository.findEntry(namespace, `${namespace}:control:pending:msg-1:peer-1`);
+        expect(JSON.parse(pending!.value)).toMatchObject({ value: { ackedFromPeerIds: ['peer-2'] } });
+        const owner = await store.readStoredPlanningState({ msg: (await readIncoming(store)).msg, nowMs: Date.now() });
+        expect(owner.source).toEqual({ kind: 'ws-client', peerId: 'peer-1' });
 
         const ackEntry = await repository.findEntry(namespace, `${namespace}:control:acks:msg-1:peer-1`);
         expect(ackEntry).toBeDefined();
@@ -397,4 +393,16 @@ function decodePreparedOutboundSend(value: unknown, msg: ALMessage): TestPrepare
         throw new TypeError('Stored prepared send must match its outbound message');
     }
     return { kind: value.kind, msgId: value.msgId };
+}
+
+async function readIncoming(store: ALInboundAdmissionStore) {
+    const original = newALUnicastMessage('peer-1', { topicId: 'chat', resourceId: 'msg-1', contextId: 'self' }, 'self', 'chat', {});
+    const msg = { ...original, id: { ...original.id, msgId: 'msg-1' } };
+    const nowMs = Date.now();
+    return await store.readIncomingMessage({
+        msg,
+        source: { kind: 'ws-client', peerId: msg.id.senderId },
+        nowMs,
+        prePlan: planALMessageHandling(msg, { selfPeerId: 'self', nowMs })
+    });
 }

@@ -15,7 +15,7 @@ import {
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import type { ALSupersedencePersistenceValue } from '../al-contracts/al-runtime.ts';
 
-import type { ALVersionedClientRecord } from './inbound/al-inbound-admission-store.ts';
+import type { ALOutboundVersionedClientRecord } from './outbound/al-outbound-admission-store.ts';
 
 export function decodeALAdmissionString(value: unknown): string {
     if (typeof value !== 'string' || value.length === 0) {
@@ -31,7 +31,10 @@ export function decodeALAdmissionNumber(value: unknown): number {
     return value;
 }
 
-export function decodeALAdmissionClientRecord(value: unknown, expectedSenderId: string): ALVersionedClientRecord {
+export function decodeALAdmissionClientRecord(
+    value: unknown,
+    expectedSenderId: string
+): ALOutboundVersionedClientRecord {
     const record = decodeALAdmissionRecord(value, ['senderId', 'version']);
     const senderId = decodeALAdmissionString(record.senderId);
     if (senderId !== expectedSenderId) {

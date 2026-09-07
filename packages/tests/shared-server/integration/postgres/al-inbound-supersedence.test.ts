@@ -16,6 +16,36 @@ import { createRuntimeStatePostgresSql, requirePostgresDatabaseUrl } from '../..
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
 describe('Postgres inbound shared supersedence', () => {
+    postgresIt('admits independent messages from the same sender across concurrent connections', async () => {
+        const [first, second] = await createStores();
+        const firstDecision = await readDecision(first, createMessage('same-sender', 1, 'first-topic'));
+        const secondDecision = await readDecision(second, createMessage('same-sender', 2, 'second-topic'));
+
+        expect(
+            await Promise.all([
+                first.commitBundle(firstDecision.bundle),
+                second.commitBundle(secondDecision.bundle)
+            ])
+        ).toEqual(['committed', 'committed']);
+
+        const effects = await first.claimReadyEffects({ workerId: 'observer', maxCount: 10, leaseMs: 10_000, nowMs: Date.now() });
+        expect(effects).toHaveLength(2);
+    });
+
+    postgresIt('admits one concurrent copy of the same message across independent connections', async () => {
+        const [first, second] = await createStores();
+        const message = createMessage('same-sender', 1);
+        const firstDecision = await readDecision(first, message);
+        const secondDecision = await readDecision(second, message);
+
+        expect((await Promise.all([
+            first.commitBundle(firstDecision.bundle),
+            second.commitBundle(secondDecision.bundle)
+        ])).sort()).toEqual(['committed', 'conflict']);
+
+        const effects = await first.claimReadyEffects({ workerId: 'observer', maxCount: 10, leaseMs: 10_000, nowMs: Date.now() });
+        expect(effects).toHaveLength(1);
+    });
     postgresIt('rejects an earlier observation even when its commit starts after another connection commits', async () => {
         const [first, second] = await createStores();
         const older = createMessage('sender-a', 1);
@@ -27,7 +57,7 @@ describe('Postgres inbound shared supersedence', () => {
         expect(await first.commitBundle(oldDecision.bundle)).toBe('conflict');
 
         const refreshed = await readDecision(first, older);
-        expect(refreshed.read.clientRecord).toBeUndefined();
+        expect(refreshed.read.observations.messageOwner).toBeUndefined();
         expect(refreshed.read.dedupExpiresAt).toBeUndefined();
         expect(refreshed.plan.supersedence.status).toBe('superseded');
         const effects = await first.claimReadyEffects({ workerId: 'observer', maxCount: 10, leaseMs: 10_000, nowMs: Date.now() });
@@ -85,14 +115,14 @@ async function createStores(): Promise<readonly [ALInboundAdmissionStore, ALInbo
     ];
 }
 
-function createMessage(senderId: string, version: number): ALMessage {
+function createMessage(senderId: string, version: number, supersedenceKey = 'shared-topic'): ALMessage {
     const message = newALUnicastMessage(
         senderId,
         { topicId: 'latest-values', resourceId: crypto.randomUUID(), contextId: 'receiver' },
         'receiver',
         'latest-value.v1',
         { version },
-        { qos: { delivery: { algo: 'best-effort' }, ack: { algo: 'none' }, supersedence: { algo: 'latest-wins', opts: { supersedenceKey: 'shared-topic' } } } }
+        { qos: { delivery: { algo: 'best-effort' }, ack: { algo: 'none' }, supersedence: { algo: 'latest-wins', opts: { supersedenceKey } } } }
     );
     const createdTs = Date.now() - 1_000 + version;
     return { ...message, id: { ...message.id, ts: createdTs }, audit: { ...message.audit, createdTs } };

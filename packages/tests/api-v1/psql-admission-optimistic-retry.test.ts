@@ -10,7 +10,9 @@ import {
     createDefaultPSqlALOutboundRuntimeStores
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { decodeALOutboundPreparedMessage } from '@shared/alm/outbound/al-outbound-effect-validation.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
@@ -39,12 +41,12 @@ describe('PSql admission optimistic retry', () => {
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
-        conflictNextAdmissionCommit(storage, { namespace, senderId: 'peer-1' });
+        const message = createInboundMessage('inbound-conflict');
+        conflictNextInboundCommit(storage, namespace, message);
 
         await expect(store.commitMutations({
             senderId: 'peer-1',
-            expectedVersion: undefined,
-            versionExpireAtTimestamp: Date.now() + 60_000,
+            observations: (await readIncoming(store, message)).observations,
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: 'inbound-conflict',
@@ -67,12 +69,12 @@ describe('PSql admission optimistic retry', () => {
             supersedenceTrackTtlMs: 60_000,
             retention: normalizeALRuntimeStoreRetention()
         });
+        const message = createInboundMessage('inbound-error');
         vi.spyOn(sql, 'begin').mockRejectedValueOnce(new Error('inbound storage unavailable'));
 
         await expect(store.commitMutations({
             senderId: 'peer-1',
-            expectedVersion: undefined,
-            versionExpireAtTimestamp: Date.now() + 60_000,
+            observations: (await readIncoming(store, message)).observations,
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: 'inbound-error',
@@ -86,7 +88,7 @@ describe('PSql admission optimistic retry', () => {
 
     it('requires a fresh carrier delivery after an inbound apply-time CAS loss', async () => {
         const storage = await createPSqlAdmissionTestStorage();
-        const { sql, repository } = storage;
+        const { sql } = storage;
         const namespace = 'psql-test:inbound:runtime-retry';
         const plan: ALInboundPlanner = (
             msg,
@@ -100,6 +102,7 @@ describe('PSql admission optimistic retry', () => {
             overlayNeighborPeerIds: [],
             ...observations
         });
+        const deliveredMessageIds: string[] = [];
         const runtime = createDefaultALInboundMessageRuntime({
             selfPeerId: 'self',
             inbox: new InMemoryQueueBox(new Map()),
@@ -115,41 +118,26 @@ describe('PSql admission optimistic retry', () => {
             planIncomingMessage: plan,
             readStoredEntry: (entry) => decodePersistedALMessage(entry.resource),
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
-            dispatchInboxEntry: () => Promise.resolve(undefined),
+            dispatchInboxEntry: async (entry) => {
+                deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
+            },
             sendControlMessage: () => Promise.resolve(undefined)
         });
         onTestFinished(() => runtime.dispose());
         await runtime.ready();
-        conflictNextAdmissionCommit(storage, { namespace: `${namespace}:inbound:admission`, senderId: 'peer-1' });
-        const msg = newALUnicastMessage(
-            'peer-1',
-            { topicId: 'chat', resourceId: 'inbound-runtime-retry', contextId: 'chat-1' },
-            'self',
-            'chat.private-text.v1',
-            { text: 'retry' }
-        );
+        const msg = createInboundMessage('inbound-runtime-retry');
+        conflictNextInboundCommit(storage, `${namespace}:inbound:admission`, msg);
 
         const source = { kind: 'ws-client' as const, peerId: 'peer-1' };
         const conflicted = await runtime.handleIncomingMessage(msg, source);
 
-        const admissionNamespace = `${namespace}:inbound:admission`;
         expect(conflicted.right).toEqual({ kind: 'not-admitted', reason: 'conflict' });
-        expect(
-            await repository.findEntry(
-                admissionNamespace,
-                `${admissionNamespace}:version:peer-1`
-            )
-        ).toMatchObject({ value: JSON.stringify({ senderId: 'peer-1', version: 1 }) });
+        expect(deliveredMessageIds).toEqual([]);
 
         const admitted = await runtime.handleIncomingMessage(msg, source);
 
         expect(admitted.right).toEqual({ kind: 'admitted' });
-        expect(
-            await repository.findEntry(
-                admissionNamespace,
-                `${admissionNamespace}:version:peer-1`
-            )
-        ).toMatchObject({ value: JSON.stringify({ senderId: 'peer-1', version: 2 }) });
+        expect(deliveredMessageIds).toEqual([msg.id.msgId]);
         runtime.dispose();
     });
 
@@ -286,6 +274,45 @@ function conflictNextAdmissionCommit(
             scope.namespace,
             `${scope.namespace}:version:${scope.senderId}`,
             JSON.stringify({ senderId: scope.senderId, version: 1 }),
+            Date.now() + 60_000
+        );
+        return await begin(write);
+    });
+}
+
+function createInboundMessage(msgId: string): ALMessage {
+    const original = newALUnicastMessage(
+        'peer-1',
+        { topicId: 'chat', resourceId: msgId, contextId: 'chat-1' },
+        'self',
+        'chat.private-text.v1',
+        { text: 'retry' }
+    );
+    return { ...original, id: { ...original.id, msgId } };
+}
+
+async function readIncoming(store: ALInboundAdmissionStore, msg: ALMessage) {
+    const nowMs = Date.now();
+    return await store.readIncomingMessage({
+        msg,
+        source: { kind: 'ws-client', peerId: msg.id.senderId },
+        nowMs,
+        prePlan: planALMessageHandling(msg, { selfPeerId: 'self', nowMs })
+    });
+}
+
+function conflictNextInboundCommit(storage: PSqlAdmissionTestStorage, namespace: string, msg: ALMessage): void {
+    const begin = storage.sql.begin;
+    vi.spyOn(storage.sql, 'begin').mockImplementationOnce(async (write) => {
+        await storage.repository.upsert(
+            namespace,
+            `${namespace}:msg-owner:${encodeURIComponent(msg.id.msgId)}:${encodeURIComponent(msg.id.senderId)}`,
+            JSON.stringify({
+                msgId: msg.id.msgId,
+                senderId: msg.id.senderId,
+                source: { kind: 'ws-client', peerId: msg.id.senderId },
+                supersedenceKey: null
+            }),
             Date.now() + 60_000
         );
         return await begin(write);

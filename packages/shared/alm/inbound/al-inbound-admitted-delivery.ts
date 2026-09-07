@@ -186,8 +186,7 @@ export class ALInboundAdmittedDelivery {
         }
         const status = await this.admissionStore.commitMutations({
             senderId: msg.id.senderId,
-            expectedVersion: read.clientRecord?.version,
-            versionExpireAtTimestamp: read.nowMs + read.retention.versionTtlMs,
+            observations: read.observations,
             mutations: [{ kind: 'delete-buffered', trackKey, seq }]
         });
         return status === 'conflict' ? 'retry' : 'completed';

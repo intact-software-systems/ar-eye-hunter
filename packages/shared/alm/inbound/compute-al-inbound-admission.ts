@@ -4,7 +4,6 @@ import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al
 import { resolveExpireAtTimestampWithFallback } from '../ALStoreRetention.ts';
 import {
     acceptALSupersedenceObservation,
-    type ALLatestSupersedenceValue,
     type ALSupersedenceAcceptance
 } from '../compute-al-supersedence-observation.ts';
 import type {
@@ -75,7 +74,7 @@ function computeALInboundMessageRead(
         fromPeerId: read.fromPeerId,
         source: read.source,
         nowMs: read.nowMs,
-        clientRecord: read.clientRecord,
+        observations: read.observations,
         pendingAck: read.pendingAck,
         acks: read.acks,
         controlOwners: read.controlOwners,
@@ -202,8 +201,7 @@ function computeALInboundBufferedReleaseChanges(
             ...(deliverable
                 ? toSupersedenceMutations(
                     supersedenceAcceptance,
-                    read.snapshot.plan.supersedence.key,
-                    read.supersedence.latest
+                    read.snapshot.plan.supersedence.key
                 )
                 : []),
             ...acknowledgements.mutations
@@ -251,7 +249,7 @@ function toIncomingDeliveryMutations(read: ALInboundMessageReadDto): readonly AL
     const plan = read.plan;
     const mutations = plan.localDelivery.deferred
         ? []
-        : [...toSupersedenceMutations(read.supersedenceAcceptance, plan.supersedence.key, read.supersedence.latest)];
+        : [...toSupersedenceMutations(read.supersedenceAcceptance, plan.supersedence.key)];
     if (
         (!plan.localDelivery.enabled && !plan.localDelivery.deferred) ||
         plan.orderingRuntime.trackKey === undefined || plan.orderingRuntime.seq === undefined
@@ -285,14 +283,13 @@ function toIncomingDeliveryMutations(read: ALInboundMessageReadDto): readonly AL
 
 function toSupersedenceMutations(
     acceptance: ALInboundMessageReadDto['supersedenceAcceptance'],
-    supersedenceKey: string | undefined,
-    expected: ALLatestSupersedenceValue | undefined
+    supersedenceKey: string | undefined
 ): readonly ALInboundAdmissionMutation[] {
     if (!acceptance?.latestWrite || !supersedenceKey) {
         return [];
     }
     return [
-        { kind: 'set-supersedence-latest', supersedenceKey, expected, value: acceptance.latestWrite },
+        { kind: 'set-supersedence-latest', supersedenceKey, value: acceptance.latestWrite },
         ...acceptance.replacementWrites.map((replacement): ALInboundAdmissionMutation => ({
             kind: 'set-supersedence-replacement',
             msgId: replacement.msgId,
@@ -359,7 +356,6 @@ function toControlOwnerMutation(
     return {
         kind: 'set-control-owners',
         msgId: read.msg.id.msgId,
-        expected: read.controlOwners,
         value: computeInboundControlOwnerIndex(
             read.controlOwners,
             read.msg.id.senderId,

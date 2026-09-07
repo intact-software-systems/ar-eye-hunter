@@ -84,8 +84,7 @@ export function prepareALInboundCommitBundle(
     );
     return {
         senderId: msg.id.senderId,
-        expectedVersion: read.clientRecord?.version,
-        versionExpireAtTimestamp: read.nowMs + read.retention.versionTtlMs,
+        observations: read.observations,
         mutations: input.mutations.map((mutation) =>
             mutation.kind === 'set-msg-owner'
                 ? { ...mutation, expireAtTimestamp: ownerExpireAtTimestamp }

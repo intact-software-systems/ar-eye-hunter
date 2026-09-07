@@ -22,6 +22,62 @@ import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { createPSqlAdmissionTestStorage } from '../../shared-server/al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 
 describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supersedence in %s', (storage) => {
+    it('admits independent messages from the same sender using their original reads', async () => {
+        const store = await createStore(storage);
+        const first = await readDecision(store, createMessage('same-sender', 1, 'first-topic'));
+        const second = await readDecision(store, createMessage('same-sender', 2, 'second-topic'));
+        const original = JSON.stringify(second.bundle);
+
+        expect(await store.commitBundle(first.bundle)).toBe('committed');
+        expect(await store.commitBundle(second.bundle)).toBe('committed');
+
+        expect(JSON.stringify(second.bundle)).toBe(original);
+        expect(await completeEffects(store)).toEqual(expect.arrayContaining([first.read.msg.id.msgId, second.read.msg.id.msgId]));
+    });
+
+    it('still conflicts when two decisions admit the same message', async () => {
+        const store = await createStore(storage);
+        const message = createMessage('same-sender', 1);
+        const first = await readDecision(store, message);
+        const duplicate = await readDecision(store, message);
+
+        expect(await store.commitBundle(first.bundle)).toBe('committed');
+        expect(await store.commitBundle(duplicate.bundle)).toBe('conflict');
+        expect((await readDecision(store, message)).plan.dropReason).toContain('Duplicate message');
+        expect(await completeEffects(store)).toEqual([message.id.msgId]);
+    });
+
+    it('conflicts on a shared semantic dedup key across otherwise independent senders', async () => {
+        const store = await createStore(storage);
+        const firstMessage = createMessage('sender-a', 1, 'first-topic');
+        const secondMessage = createMessage('sender-b', 2, 'second-topic');
+        const dedup = { algo: 'semantic-key' as const, opts: { semanticKey: 'same-command' } };
+        const first = await readDecision(store, { ...firstMessage, qos: { ...firstMessage.qos, dedup } });
+        const second = await readDecision(store, { ...secondMessage, qos: { ...secondMessage.qos, dedup } });
+
+        expect(await store.commitBundle(first.bundle)).toBe('committed');
+        expect(await store.commitBundle(second.bundle)).toBe('conflict');
+
+        const retry = await readDecision(store, second.read.msg);
+        expect(retry.plan.dropReason).toContain('Duplicate message');
+        expect(retry.read.observations.messageOwner).toBeUndefined();
+        expect(await completeEffects(store)).toEqual([firstMessage.id.msgId]);
+    });
+
+    it('recomputes a shared ordering track after a different message advances it', async () => {
+        const store = await createStore(storage);
+        const first = { ...createMessage('same-sender', 1, 'first-topic'), ordering: { orderingKey: 'ordered', seq: 1 } };
+        const second = { ...createMessage('same-sender', 2, 'second-topic'), ordering: { orderingKey: 'ordered', seq: 2 } };
+        const firstDecision = await readDecision(store, first);
+        const secondDecision = await readDecision(store, second);
+
+        expect(await store.commitBundle(secondDecision.bundle)).toBe('committed');
+        expect(await store.commitBundle(firstDecision.bundle)).toBe('conflict');
+        const retry = await readDecision(store, first);
+        expect(retry.plan.orderingRuntime.releasableSeqs).toEqual([2]);
+        expect(await store.commitBundle(retry.bundle)).toBe('committed');
+    });
+
     it.each([false, true])('rejects a stale sender decision without recording its delivery or deduplication (populated: %s)', async (populated) => {
         const store = await createStore(storage);
         if (populated) {
@@ -42,7 +98,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('inbound shared supers
 
         expect(JSON.stringify(oldDecision.bundle)).toBe(originalCandidate);
         const refreshed = await readDecision(store, older);
-        expect(refreshed.read.clientRecord).toBeUndefined();
+        expect(refreshed.read.observations.messageOwner).toBeUndefined();
         expect(refreshed.read.dedupExpiresAt).toBeUndefined();
         expect(refreshed.plan.supersedence.status).toBe('superseded');
         expect(refreshed.read.supersedence.latest?.latestMsgId).toBe(newer.id.msgId);

@@ -56,11 +56,12 @@ describe('IndexedDB AL runtime stores', () => {
         const inboundStores = createDefaultIndexedDbALInboundRuntimeStores();
         const outboundStores = createDefaultIndexedDbALOutboundRuntimeStores();
 
+        const original = newALUnicastMessage('peer-default-schema', { topicId: 'chat', resourceId: 'schema', contextId: 'self' }, 'self', 'chat', {});
+        const message = { ...original, id: { ...original.id, msgId: 'message-default-schema' } };
         await expect(
             inboundStores.admissionStore.commitMutations({
                 senderId: 'peer-default-schema',
-                expectedVersion: undefined,
-                versionExpireAtTimestamp: Date.now() + 60_000,
+                observations: (await readInboundAdmission(inboundStores.admissionStore, message)).observations,
                 mutations: [{
                     kind: 'set-msg-owner',
                     msgId: 'message-default-schema',
@@ -245,7 +246,7 @@ describe('IndexedDB AL runtime stores', () => {
         expect(typeof inboxEffect.payload.entry.audit.expiryTs).toBe('object');
     });
 
-    it('expires inbound control history and owner versions before rejecting late controls', async () => {
+    it('expires inbound control history and message provenance before rejecting late controls', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
@@ -256,8 +257,7 @@ describe('IndexedDB AL runtime stores', () => {
             namespace,
             retention: {
                 controlHistoryTtlMs: 20,
-                msgOwnerTtlMs: 20,
-                versionTtlMs: 20
+                msgOwnerTtlMs: 20
             }
         });
         const msg = newALUnicastMessage(
@@ -278,8 +278,7 @@ describe('IndexedDB AL runtime stores', () => {
         expect(
             await stores.admissionStore.commitMutations({
                 senderId: msg.id.senderId,
-                expectedVersion: undefined,
-                versionExpireAtTimestamp: Date.now() + 20,
+                observations: (await readInboundAdmission(stores.admissionStore, msg)).observations,
                 mutations: [
                     {
                         kind: 'set-msg-owner',
@@ -308,7 +307,6 @@ describe('IndexedDB AL runtime stores', () => {
                     {
                         kind: 'set-control-owners',
                         msgId: msg.id.msgId,
-                        expected: undefined,
                         value: {
                             ambiguous: false,
                             values: [
@@ -343,7 +341,7 @@ describe('IndexedDB AL runtime stores', () => {
             nowMs: beforeReadAtMs,
             prePlan: planner(msg, source, { nowMs: beforeReadAtMs })
         });
-        expect(beforeExpiry.clientRecord?.version).toBe(2);
+        expect(beforeExpiry.observations.messageOwner?.msgId).toBe(msg.id.msgId);
         expect(beforeExpiry.acks).toHaveLength(1);
 
         await vi.advanceTimersByTimeAsync(21);
@@ -368,7 +366,7 @@ describe('IndexedDB AL runtime stores', () => {
             nowMs: afterReadAtMs,
             prePlan: planner(msg, source, { nowMs: afterReadAtMs })
         });
-        expect(afterExpiry.clientRecord).toBeUndefined();
+        expect(afterExpiry.observations.messageOwner).toBeUndefined();
         expect(afterExpiry.acks).toEqual([]);
     });
 
@@ -785,7 +783,7 @@ function createFlakyInboundAdmissionStore(
                 : inner.claimReadyEffects(input),
         completeEffect: (effectId, workerId) => inner.completeEffect(effectId, workerId),
         rescheduleEffect: (input) => inner.rescheduleEffect(input),
-        peekNextEffectReadyAt: (nowMs) => inner.peekNextEffectReadyAt(nowMs),
+        peekNextEffectReadyAt: () => inner.peekNextEffectReadyAt(),
         acceptControlMessage: (msg) => inner.acceptControlMessage(msg)
     };
 }
@@ -900,4 +898,15 @@ function groupRef(groupId: string) {
         workspaceId: 'workspace-1',
         groupId
     };
+}
+
+async function readInboundAdmission(store: ALInboundAdmissionStore, msg: ALMessage) {
+    const source = { kind: 'ws-client' as const, peerId: msg.id.senderId };
+    const nowMs = Date.now();
+    return await store.readIncomingMessage({
+        msg,
+        source,
+        nowMs,
+        prePlan: createInboundPlanner()(msg, source, { nowMs })
+    });
 }

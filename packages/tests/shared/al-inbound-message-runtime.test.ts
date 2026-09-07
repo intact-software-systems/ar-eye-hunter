@@ -136,17 +136,8 @@ describe('ALInboundMessageRuntime', () => {
             if (!rejectedFirstCommit && bundle.senderId === 'peer-1') {
                 rejectedFirstCommit = true;
                 await commitBundle({
-                    senderId: 'peer-1',
-                    expectedVersion: bundle.expectedVersion,
-                    versionExpireAtTimestamp: bundle.versionExpireAtTimestamp,
-                    mutations: [{
-                        kind: 'set-msg-owner',
-                        msgId: 'external-version-bump',
-                        senderId: 'peer-1',
-                        source: { kind: 'ws-client', peerId: 'peer-1' },
-                        supersedenceKey: null,
-                        expireAtTimestamp: bundle.versionExpireAtTimestamp
-                    }],
+                    ...bundle,
+                    mutations: bundle.mutations.filter((mutation) => mutation.kind === 'set-msg-owner'),
                     durableEffects: []
                 });
             }
@@ -233,9 +224,17 @@ describe('ALInboundMessageRuntime', () => {
         vi.useFakeTimers();
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const expireAtTimestamp = Date.now() + 300000;
+        const original = createOrderedMessage(1, 'pending');
+        const pendingMessage = { ...original, id: { ...original.id, msgId: 'missing-msg' } };
+        const read = await stores.admissionStore.readIncomingMessage({
+            msg: pendingMessage,
+            source: { kind: 'ws-client', peerId: 'peer-1' },
+            nowMs: Date.now(),
+            prePlan: planALMessageHandling(pendingMessage, { selfPeerId: 'self', nowMs: Date.now() })
+        });
         await stores.admissionStore.commitMutations({
             senderId: 'peer-1',
-            versionExpireAtTimestamp: expireAtTimestamp,
+            observations: read.observations,
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: 'missing-msg',
@@ -261,7 +260,6 @@ describe('ALInboundMessageRuntime', () => {
             }, {
                 kind: 'set-control-owners',
                 msgId: 'missing-msg',
-                expected: undefined,
                 value: { ambiguous: false, values: [{ peerId: 'peer-2', senderId: 'peer-1' }] },
                 expireAtTimestamp
             }]
@@ -299,7 +297,7 @@ describe('ALInboundMessageRuntime', () => {
         expect(controlAcceptances).toHaveLength(1);
     });
 
-    it('redelivers buffered work when a downstream ack updates the sender version', async () => {
+    it('redelivers buffered work when a downstream ack changes its original pending receipt', async () => {
         vi.useFakeTimers();
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const baseAdmission = stores.admissionStore;
@@ -434,8 +432,8 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         const controlStored = Promise.withResolvers<void>();
         const readNextReadyAt = stores.admissionStore.peekNextEffectReadyAt.bind(stores.admissionStore);
         const acceptControlMessage = stores.admissionStore.acceptControlMessage.bind(stores.admissionStore);
-        vi.spyOn(stores.admissionStore, 'peekNextEffectReadyAt').mockImplementation(async (nowMs) => {
-            const readyAt = await readNextReadyAt(nowMs);
+        vi.spyOn(stores.admissionStore, 'peekNextEffectReadyAt').mockImplementation(async () => {
+            const readyAt = await readNextReadyAt();
             emptyRead.resolve();
             await releaseEmptyRead.promise;
             return readyAt;

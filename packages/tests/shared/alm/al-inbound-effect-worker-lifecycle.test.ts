@@ -6,6 +6,7 @@ import {
     type ALMessagePlanningObservations
 } from '@shared/al-contracts/al-policy.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
+import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -28,7 +29,7 @@ describe('inbound durable effect worker lifecycle', () => {
         const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', { text: 'hello' });
         await resources.admissionStore.commitBundle({
             senderId: message.id.senderId,
-            versionExpireAtTimestamp: Date.now() + 60_000,
+            observations: (await readAdmission(resources.admissionStore, message)).observations,
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: message.id.msgId,
@@ -122,7 +123,7 @@ describe('inbound durable effect worker lifecycle', () => {
         );
         await resources.admissionStore.commitBundle({
             senderId: message.id.senderId,
-            versionExpireAtTimestamp: Date.now() + 60_000,
+            observations: (await readAdmission(resources.admissionStore, message)).observations,
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: message.id.msgId,
@@ -168,9 +169,10 @@ describe('inbound durable effect worker lifecycle', () => {
             selfPeerId: 'receiver',
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox')
         });
+        const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'buffered', contextId: 'room' }, 'receiver', 'chat', {});
         await resources.admissionStore.commitBundle({
             senderId: 'sender',
-            versionExpireAtTimestamp: Date.now() + 60_000,
+            observations: (await readAdmission(resources.admissionStore, message)).observations,
             mutations: [],
             durableEffects: [{
                 effectId: 'corrupt-buffered-release',
@@ -215,8 +217,8 @@ describe('inbound durable effect worker lifecycle', () => {
         const committed = Promise.withResolvers<void>();
         const readNextReadyAt = resources.admissionStore.peekNextEffectReadyAt.bind(resources.admissionStore);
         const commitBundle = resources.admissionStore.commitBundle.bind(resources.admissionStore);
-        vi.spyOn(resources.admissionStore, 'peekNextEffectReadyAt').mockImplementation(async (nowMs) => {
-            const readyAt = await readNextReadyAt(nowMs);
+        vi.spyOn(resources.admissionStore, 'peekNextEffectReadyAt').mockImplementation(async () => {
+            const readyAt = await readNextReadyAt();
             emptyRead.resolve();
             await releaseEmptyRead.promise;
             return readyAt;
@@ -307,5 +309,16 @@ function planIncomingMessage(
         connectedPeerIds: ['sender'],
         groupMemberPeerIds: ['sender', 'receiver'],
         overlayNeighborPeerIds: []
+    });
+}
+
+async function readAdmission(store: ALInboundAdmissionStore, message: ALMessage) {
+    const source = { kind: 'ws-client' as const, peerId: message.id.senderId };
+    const nowMs = Date.now();
+    return await store.readIncomingMessage({
+        msg: message,
+        source,
+        nowMs,
+        prePlan: planIncomingMessage(message, source, { nowMs })
     });
 }

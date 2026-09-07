@@ -7,6 +7,7 @@ import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts'
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import {
     createALInboundAdmissionStore,
+    type ALInboundAdmissionObservations,
     type ALInboundCommitBundle,
     type ALInboundControlOwnerIndex
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
@@ -66,7 +67,7 @@ function createStoredEffect(effectId = 'effect') {
 
 interface PendingAdmissionBundleInput {
     readonly senderId: string;
-    readonly expectedIndex: ALInboundControlOwnerIndex | undefined;
+    readonly observations: ALInboundAdmissionObservations;
     readonly nextIndex: ALInboundControlOwnerIndex;
     readonly expireAtTimestamp: number;
 }
@@ -74,7 +75,7 @@ interface PendingAdmissionBundleInput {
 function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInboundCommitBundle {
     return {
         senderId: input.senderId,
-        versionExpireAtTimestamp: input.expireAtTimestamp,
+        observations: input.observations,
         mutations: [{
             kind: 'set-msg-owner',
             msgId: message.id.msgId,
@@ -101,7 +102,6 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
         }, {
             kind: 'set-control-owners',
             msgId: message.id.msgId,
-            expected: input.expectedIndex,
             value: input.nextIndex,
             expireAtTimestamp: input.expireAtTimestamp
         }],
@@ -110,15 +110,20 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
 }
 
 describe('inbound admission persisted values', () => {
-    it('rejects a delimiter-containing client identity mismatch before admission planning', async () => {
+    it('rejects a delimiter-containing message owner mismatch before admission planning', async () => {
         const { backend, store } = createFixture();
         await backend.write(async (transaction) => {
-            await transaction.set('inbound:version:sender:with:delimiter', { senderId: 'delimiter', version: 1 });
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: 'delimiter',
+                source: { kind: 'ws-client', peerId: 'delimiter' },
+                supersedenceKey: null
+            });
         });
 
         await expect(readIncoming(store, message)).rejects.toMatchObject({
             name: 'ALAdmissionCorruptionError',
-            key: 'inbound:version:sender:with:delimiter'
+            key: 'inbound:msg-owner:message:sender%3Awith%3Adelimiter'
         });
     });
 
@@ -147,7 +152,7 @@ describe('inbound admission persisted values', () => {
         expect(
             await store.commitBundle({
                 senderId: message.id.senderId,
-                versionExpireAtTimestamp: expireAtTimestamp,
+                observations: (await readIncoming(store, message)).observations,
                 mutations: [{
                     kind: 'set-msg-owner',
                     msgId: message.id.msgId,
@@ -402,7 +407,7 @@ describe('inbound admission persisted values', () => {
 
         await expect(store.commitBundle({
             senderId: message.id.senderId,
-            versionExpireAtTimestamp: Date.now() + 60_000,
+            observations: (await readIncoming(store, message)).observations,
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: message.id.msgId,
@@ -424,7 +429,7 @@ describe('inbound admission persisted values', () => {
         const { store } = createFixture();
         await store.commitBundle({
             senderId: message.id.senderId,
-            versionExpireAtTimestamp: Date.now() + 60_000,
+            observations: (await readIncoming(store, message)).observations,
             mutations: [],
             durableEffects: [{
                 effectId: 'effect',
@@ -435,8 +440,7 @@ describe('inbound admission persisted values', () => {
 
         await expect(store.commitBundle({
             senderId: message.id.senderId,
-            expectedVersion: 1,
-            versionExpireAtTimestamp: Date.now() + 60_000,
+            observations: (await readIncoming(store, message)).observations,
             mutations: [],
             durableEffects: [{
                 effectId: 'effect',
@@ -457,7 +461,7 @@ describe('inbound admission persisted values', () => {
         };
         await store.commitBundle({
             senderId: message.id.senderId,
-            versionExpireAtTimestamp: Date.now() + 60_000,
+            observations: (await readIncoming(store, message)).observations,
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: message.id.msgId,
@@ -471,7 +475,7 @@ describe('inbound admission persisted values', () => {
         expect(
             await store.commitBundle({
                 senderId: secondMessage.id.senderId,
-                versionExpireAtTimestamp: Date.now() + 60_000,
+                observations: (await readIncoming(store, secondMessage)).observations,
                 mutations: [{
                     kind: 'set-msg-owner',
                     msgId: secondMessage.id.msgId,
@@ -504,7 +508,7 @@ describe('inbound admission persisted values', () => {
         expect(
             await store.commitBundle(createPendingAdmissionBundle({
                 senderId: message.id.senderId,
-                expectedIndex: undefined,
+                observations: (await readIncoming(store, message)).observations,
                 nextIndex: firstIndex,
                 expireAtTimestamp
             }))
@@ -512,7 +516,7 @@ describe('inbound admission persisted values', () => {
         expect(
             await store.commitBundle(createPendingAdmissionBundle({
                 senderId: 'second-sender',
-                expectedIndex: firstIndex,
+                observations: (await readIncoming(store, { ...message, id: { ...message.id, senderId: 'second-sender' } })).observations,
                 nextIndex: { ambiguous: false, values: [{ peerId: 'receiver', senderId: null }] },
                 expireAtTimestamp
             }))
@@ -529,15 +533,25 @@ describe('inbound admission persisted values', () => {
             ]);
     });
 
-    it('reports a typed conflict when the sender version changes after an ACK read', async () => {
+    it('reports a typed conflict when pending receipt progress changes after an ACK read', async () => {
         const { backend, state, store } = createFixture();
         await seedPendingAcknowledgement(store, ['receiver']);
         const write = backend.write.bind(backend);
         vi.spyOn(backend, 'write').mockImplementationOnce(async (operation) => {
             await write(async (transaction) => {
                 await transaction.set(
-                    `inbound:version:${message.id.senderId}`,
-                    { senderId: message.id.senderId, version: 2 },
+                    'inbound:control:pending:message:sender%3Awith%3Adelimiter',
+                    {
+                        kind: 'pending',
+                        value: {
+                            toPeerId: 'upstream',
+                            status: 'subtree-complete',
+                            localReady: false,
+                            expectedFromPeerIds: ['receiver'],
+                            ackedFromPeerIds: [],
+                            expireAtTimestamp: Date.now() + 60_000
+                        }
+                    },
                     Date.now() + 60_000
                 );
             });
@@ -635,7 +649,7 @@ describe('inbound admission persisted values', () => {
         const { state, backend, store } = createFixture();
         await store.commitBundle({
             senderId: message.id.senderId,
-            versionExpireAtTimestamp: Date.now() + 60_000,
+            observations: (await readIncoming(store, message)).observations,
             mutations: [],
             durableEffects: [{
                 effectId: 'dispatch',
@@ -672,7 +686,7 @@ async function seedPendingAcknowledgement(
     expect(
         await store.commitBundle({
             senderId: message.id.senderId,
-            versionExpireAtTimestamp: expireAtTimestamp,
+            observations: (await readIncoming(store, message)).observations,
             mutations: [{
                 kind: 'set-msg-owner',
                 msgId: message.id.msgId,
@@ -699,7 +713,6 @@ async function seedPendingAcknowledgement(
             }, {
                 kind: 'set-control-owners',
                 msgId: message.id.msgId,
-                expected: undefined,
                 value: {
                     ambiguous: false,
                     values: expectedFromPeerIds.map((peerId) => ({ peerId, senderId: message.id.senderId }))
